@@ -1,0 +1,74 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { navItems } from "@/lib/navigation";
+import { RESTAURANT } from "@/lib/mock-data";
+import { cn } from "@/lib/utils";
+import { Bot } from "lucide-react";
+
+export function AppSidebar() {
+  const pathname = usePathname();
+
+  return (
+    <aside className="hidden h-screen w-72 shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
+      {/* Brand */}
+      <div className="flex items-center gap-3 px-6 py-5">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-conversations to-brain text-white shadow-card">
+          <Bot className="h-6 w-6" />
+        </div>
+        <div>
+          <h1 className="text-lg font-bold leading-tight text-slate-900">MaitreAI</h1>
+          <p className="text-xs text-slate-500">{RESTAURANT.name}</p>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
+        {navItems.map((item) => {
+          const active = pathname === item.href || pathname.startsWith(item.href + "/");
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                active
+                  ? "bg-slate-50 text-slate-900"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-9 w-9 items-center justify-center rounded-lg transition-colors",
+                  active
+                    ? cn(item.accentBg, "text-white shadow-card")
+                    : "bg-slate-100 text-slate-500 group-hover:bg-slate-200"
+                )}
+              >
+                <Icon className="h-[18px] w-[18px]" />
+              </span>
+              <span className="flex-1">{item.label}</span>
+              {active && <span className={cn("h-2 w-2 rounded-full", item.accentBg)} />}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Footer status */}
+      <div className="border-t border-slate-100 p-4">
+        <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-3">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-conversations opacity-75" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-conversations" />
+          </span>
+          <div className="text-xs">
+            <p className="font-semibold text-slate-800">الموظف الذكي نشط</p>
+            <p className="text-slate-500">متصل بواتساب</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
