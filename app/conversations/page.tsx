@@ -1,6 +1,6 @@
 "use client";
 
-import { customers, orders } from "@/lib/mock-data";
+import { customers } from "@/lib/mock-data";
 import { useConversationEngine } from "@/lib/ai/useConversationEngine";
 import { useHasHydrated } from "@/lib/store";
 import { ConversationList } from "@/components/conversations/ConversationList";
@@ -9,15 +9,27 @@ import { CustomerContextPanel } from "@/components/conversations/CustomerContext
 
 export default function ConversationsPage() {
   const hydrated = useHasHydrated();
-  const { conversations, selectedId, selected, intentHistory, selectConversation, sendCustomer, sendHuman, takeover, returnToAi } =
-    useConversationEngine();
+  const {
+    conversations,
+    selectedId,
+    selected,
+    intentHistory,
+    createdOrder,
+    selectConversation,
+    sendCustomer,
+    sendHuman,
+    takeover,
+    returnToAi,
+    confirmOrder,
+    sendPaymentLink,
+    markPaid,
+  } = useConversationEngine();
 
   if (!hydrated || !selected) {
     return <div className="h-[calc(100vh-7rem)] animate-pulse rounded-2xl border border-slate-200 bg-slate-50" />;
   }
 
   const customer = customers.find((c) => c.name === selected.customer);
-  const order = selected.linkedOrderId ? orders.find((o) => o.id === selected.linkedOrderId) : undefined;
   const lastIntent = [...intentHistory].reverse().find((h) => h.conversationId === selected.id);
 
   return (
@@ -41,7 +53,15 @@ export default function ConversationsPage() {
 
         {/* Pane 3: context + AI insights */}
         <div className="hidden border-r border-slate-100 bg-slate-50/40 xl:block">
-          <CustomerContextPanel conversation={selected} customer={customer} order={order} lastIntent={lastIntent} />
+          <CustomerContextPanel
+            conversation={selected}
+            customer={customer}
+            lastIntent={lastIntent}
+            createdOrder={createdOrder}
+            onConfirmOrder={confirmOrder}
+            onSendPaymentLink={sendPaymentLink}
+            onMarkPaid={markPaid}
+          />
         </div>
       </div>
     </div>

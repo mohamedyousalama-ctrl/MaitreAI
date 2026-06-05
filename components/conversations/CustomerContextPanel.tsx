@@ -1,5 +1,4 @@
-import type { Conversation, Customer, IntentHistoryEntry, Order } from "@/lib/types";
-import { CurrentOrderCard } from "./CurrentOrderCard";
+import type { Conversation, Customer, IntentHistoryEntry, LocalOrder } from "@/lib/types";
 import { AiInsightsPanel } from "./AiInsightsPanel";
 import { formatCurrency } from "@/lib/utils";
 import { Phone, Star, Store, User } from "lucide-react";
@@ -7,11 +6,22 @@ import { Phone, Star, Store, User } from "lucide-react";
 interface CustomerContextPanelProps {
   conversation: Conversation;
   customer?: Customer;
-  order?: Order;
   lastIntent?: IntentHistoryEntry;
+  createdOrder?: LocalOrder;
+  onConfirmOrder?: () => void;
+  onSendPaymentLink?: () => void;
+  onMarkPaid?: () => void;
 }
 
-export function CustomerContextPanel({ conversation, customer, order, lastIntent }: CustomerContextPanelProps) {
+export function CustomerContextPanel({
+  conversation,
+  customer,
+  lastIntent,
+  createdOrder,
+  onConfirmOrder,
+  onSendPaymentLink,
+  onMarkPaid,
+}: CustomerContextPanelProps) {
   return (
     <div className="flex h-full flex-col overflow-y-auto p-4">
       {/* Customer profile */}
@@ -33,9 +43,16 @@ export function CustomerContextPanel({ conversation, customer, order, lastIntent
         )}
       </div>
 
-      {/* AI insights — the heart of Sprint 3 */}
+      {/* AI insights + order/payment controls */}
       <div className="mt-4">
-        <AiInsightsPanel conversation={conversation} lastIntent={lastIntent} />
+        <AiInsightsPanel
+          conversation={conversation}
+          lastIntent={lastIntent}
+          createdOrder={createdOrder}
+          onConfirmOrder={onConfirmOrder}
+          onSendPaymentLink={onSendPaymentLink}
+          onMarkPaid={onMarkPaid}
+        />
       </div>
 
       {/* Customer stats */}
@@ -47,13 +64,6 @@ export function CustomerContextPanel({ conversation, customer, order, lastIntent
             <p className="text-xs text-slate-500">الصنف المفضل</p>
             <p className="mt-0.5 text-sm font-semibold text-slate-800">{customer.favoriteItem}</p>
           </div>
-        </div>
-      )}
-
-      {/* Linked existing order (mock) */}
-      {order && (
-        <div className="mt-4">
-          <CurrentOrderCard order={order} />
         </div>
       )}
 

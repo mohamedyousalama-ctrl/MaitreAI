@@ -9,9 +9,23 @@ WhatsApp-first AI order management system for restaurants.
 - **Sprint 3** — Conversation State + AI Intent Mock Engine: the Conversations
   page is now **interactive and intelligent** using local rule-based logic that
   reads the editable Restaurant Brain (no real AI / WhatsApp / network).
+- **Sprint 4** — Local Order Engine: conversation draft orders become **real
+  persisted orders** that flow through Orders → Kitchen → tracking, with a
+  payment **placeholder** (mock link + manual mark-paid). No real payment.
 
 > ⚠️ Still **no real integrations**. WhatsApp, AI, payment, and backend are
 > mocked/placeholders. See _Known Limitations_ below.
+
+## Order engine (Sprint 4)
+
+End-to-end local flow: in **المحادثات** type "أبغى برجر كلاسيك وكولا" → AI builds a
+draft → click **تأكيد الطلب** to create a real order (`pending_payment`/`unpaid`).
+Use **إرسال رابط دفع تجريبي** then **تأكيد الدفع** (mock) — the conversation
+receives system messages at each step. The order appears on **الطلبات** and, once
+paid, on **المطبخ**; kitchen actions (بدء التحضير / تجهيز كجاهز / إكمال) advance the
+order status and push updates back to the conversation. Asking "وين طلبي؟" replies
+with the real current status. Orders, items, statuses, payment, kitchen state, and
+events persist to `localStorage` via a dedicated order store.
 
 ## Conversation engine (Sprint 3)
 

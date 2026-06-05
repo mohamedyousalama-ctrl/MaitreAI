@@ -17,3 +17,18 @@ export function formatCurrency(amount: number): string {
 export function formatOrderId(id: string): string {
   return `#${id}`;
 }
+
+/** Clock time with western digits + Arabic meridiem, e.g. "3:05 م". */
+export function formatClock(ts: number): string {
+  const d = new Date(ts);
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const mer = h < 12 ? "ص" : "م";
+  h = h % 12 || 12;
+  return `${h}:${m.toString().padStart(2, "0")} ${mer}`;
+}
+
+/** Whole minutes elapsed since the given timestamp (min 0). */
+export function minutesAgo(ts: number): number {
+  return Math.max(0, Math.round((Date.now() - ts) / 60000));
+}

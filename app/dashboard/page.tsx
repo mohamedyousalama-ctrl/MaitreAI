@@ -1,15 +1,15 @@
+"use client";
+
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { ModuleCard } from "@/components/ui/ModuleCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { PaymentStatusBadge } from "@/components/ui/PaymentStatusBadge";
-import {
-  aiDailySummary,
-  conversations,
-  dashboardKpis,
-  orders,
-  systemStatus,
-} from "@/lib/mock-data";
+import { OrderStatusBadge, OrderPaymentBadge } from "@/components/orders/OrderStatusBadges";
+import { useOrderStore } from "@/lib/order-store";
+import { useConversationStore } from "@/lib/conversation-store";
+import { useHasHydrated } from "@/lib/store";
+import { aiDailySummary, systemStatus } from "@/lib/mock-data";
 import { formatCurrency, formatOrderId } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -25,18 +25,33 @@ import {
   Bot,
   ArrowLeft,
 } from "lucide-react";
-import Link from "next/link";
-
-const KPI_META: Record<string, { icon: typeof ShoppingBag; accent: string }> = {
-  ordersToday: { icon: ShoppingBag, accent: "bg-orders" },
-  revenueToday: { icon: DollarSign, accent: "bg-brain" },
-  openConversations: { icon: MessageCircle, accent: "bg-conversations" },
-  paidOrders: { icon: CreditCard, accent: "bg-promotions" },
-  avgOrderValue: { icon: TrendingUp, accent: "bg-dashboard" },
-  avgResponseTime: { icon: Timer, accent: "bg-kitchen" },
-};
 
 export default function DashboardPage() {
+  const hydrated = useHasHydrated();
+  const orders = useOrderStore((s) => s.orders);
+  const conversations = useConversationStore((s) => s.conversations);
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const todayMs = startOfToday.getTime();
+
+  const todayOrders = orders.filter((o) => o.createdAt >= todayMs && o.orderStatus !== "cancelled");
+  const paidToday = todayOrders.filter((o) => o.paymentStatus === "paid");
+  const revenue = paidToday.reduce((s, o) => s + o.total, 0);
+  const aov = paidToday.length ? Math.round(revenue / paidToday.length) : 0;
+  const openConversations = conversations.filter((c) => c.status !== "طلب مكتمل").length;
+  const recentOrders = [...orders].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
+  const recentConversations = conversations.slice(0, 4);
+
+  const kpis = [
+    { key: "ordersToday", label: "طلبات اليوم", value: String(todayOrders.length), icon: ShoppingBag, accent: "bg-orders" },
+    { key: "revenueToday", label: "إيرادات اليوم", value: formatCurrency(revenue), icon: DollarSign, accent: "bg-brain" },
+    { key: "openConversations", label: "محادثات مفتوحة", value: String(openConversations), icon: MessageCircle, accent: "bg-conversations" },
+    { key: "paidOrders", label: "طلبات مدفوعة", value: String(paidToday.length), icon: CreditCard, accent: "bg-promotions" },
+    { key: "avgOrderValue", label: "متوسط قيمة الطلب", value: formatCurrency(aov), icon: TrendingUp, accent: "bg-dashboard" },
+    { key: "avgResponseTime", label: "متوسط زمن الرد", value: "8 ثانية", icon: Timer, accent: "bg-kitchen" },
+  ];
+
   return (
     <div>
       <PageHeader
@@ -60,13 +75,6 @@ export default function DashboardPage() {
               </div>
               <p className="mt-1 font-semibold text-brain">{aiDailySummary.headline}</p>
               <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{aiDailySummary.body}</p>
-              <ul className="mt-3 flex flex-wrap gap-2">
-                {aiDailySummary.highlights.map((h, i) => (
-                  <li key={i} className="rounded-full bg-white/70 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-emerald-100">
-                    {h}
-                  </li>
-                ))}
-              </ul>
             </div>
           </div>
         </div>
@@ -74,20 +82,9 @@ export default function DashboardPage() {
 
       {/* KPI cards */}
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {dashboardKpis.map((kpi) => {
-          const meta = KPI_META[kpi.key];
-          return (
-            <MetricCard
-              key={kpi.key}
-              label={kpi.label}
-              value={kpi.value}
-              delta={kpi.delta}
-              trend={kpi.trend}
-              icon={meta?.icon}
-              accentBg={meta?.accent}
-            />
-          );
-        })}
+        {kpis.map((kpi) => (
+          <MetricCard key={kpi.key} label={kpi.label} value={hydrated ? kpi.value : "…"} icon={kpi.icon} accentBg={kpi.accent} />
+        ))}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -104,7 +101,7 @@ export default function DashboardPage() {
           }
         >
           <ul className="space-y-3">
-            {conversations.slice(0, 4).map((c) => (
+            {recentConversations.map((c) => (
               <li key={c.id} className="flex items-center gap-3">
                 <span
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
@@ -146,12 +143,12 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {orders.slice(0, 5).map((o) => (
+                {recentOrders.map((o) => (
                   <tr key={o.id} className="border-t border-slate-50">
-                    <td className="py-2.5 font-semibold text-slate-700">{formatOrderId(o.id)}</td>
-                    <td className="py-2.5 text-slate-600">{o.customer}</td>
-                    <td className="py-2.5"><StatusBadge status={o.status} className="scale-90 origin-right" /></td>
-                    <td className="py-2.5"><PaymentStatusBadge status={o.paymentStatus} className="scale-90 origin-right" /></td>
+                    <td className="py-2.5 font-semibold text-slate-700">{formatOrderId(o.orderNumber)}</td>
+                    <td className="py-2.5 text-slate-600">{o.customerName}</td>
+                    <td className="py-2.5"><OrderStatusBadge status={o.orderStatus} className="scale-90 origin-right" /></td>
+                    <td className="py-2.5"><OrderPaymentBadge status={o.paymentStatus} className="scale-90 origin-right" /></td>
                     <td className="py-2.5 font-semibold text-slate-800">{formatCurrency(o.total)}</td>
                   </tr>
                 ))}
@@ -166,10 +163,7 @@ export default function DashboardPage() {
         <ModuleCard title="حالة النظام" icon={CheckCircle2} accentBg="bg-brain">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {systemStatus.map((s) => (
-              <div
-                key={s.label}
-                className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3"
-              >
+              <div key={s.label} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
                 {s.ok ? (
                   <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                 ) : (

@@ -20,7 +20,9 @@ import type {
   RestaurantProfile,
   DraftOrder,
   OrderEntity,
+  OrderStatusKey,
 } from "../types";
+import { trackingReply } from "../orders";
 
 export interface Brain {
   profile: RestaurantProfile;
@@ -186,7 +188,12 @@ function describeOrder(items: OrderEntity[]): string {
   return items.map((i) => `${i.name}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`).join("، ");
 }
 
-export function analyzeMessage(raw: string, brain: Brain): IntentResult {
+export interface AnalyzeContext {
+  // Latest local order for this conversation (for order_tracking).
+  latestOrder?: { orderNumber: string; orderStatus: OrderStatusKey };
+}
+
+export function analyzeMessage(raw: string, brain: Brain, ctx: AnalyzeContext = {}): IntentResult {
   const text = normalize(raw);
   const entities = extractEntities(text, brain);
   const intent = detectIntent(text, entities);
@@ -346,10 +353,15 @@ export function analyzeMessage(raw: string, brain: Brain): IntentResult {
       break;
     }
     case "order_tracking": {
-      sources = ["الأسئلة الشائعة"];
-      confidence = 80;
       suggestedAction = "تزويد العميل بحالة الطلب";
-      reply = `طلبك قيد المتابعة، وبأحدثك بأي تطور${e(tone, "🛵")}.`;
+      if (ctx.latestOrder) {
+        confidence = 92;
+        reply = trackingReply(ctx.latestOrder);
+      } else {
+        confidence = 70;
+        reply = "لا أجد طلباً نشطاً في هذه المحادثة. هل ترغب بإنشاء طلب جديد؟";
+        suggestedAction = "اقتراح إنشاء طلب جديد";
+      }
       break;
     }
     case "complaint": {

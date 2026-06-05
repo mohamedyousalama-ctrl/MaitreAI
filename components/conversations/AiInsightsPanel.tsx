@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { Conversation, IntentHistoryEntry } from "@/lib/types";
+import type { Conversation, IntentHistoryEntry, LocalOrder } from "@/lib/types";
 import { INTENT_LABELS } from "@/lib/ai/engine";
 import { AIConfidenceBadge } from "@/components/ui/AIConfidenceBadge";
-import { formatCurrency, cn } from "@/lib/utils";
+import { OrderStatusBadge, OrderPaymentBadge } from "@/components/orders/OrderStatusBadges";
+import { formatCurrency, formatOrderId, cn } from "@/lib/utils";
 import {
   Sparkles,
   Bot,
@@ -16,14 +17,28 @@ import {
   ShoppingBag,
   Code2,
   ChevronDown,
+  CheckCircle2,
+  Link2,
+  CreditCard,
 } from "lucide-react";
 
 interface AiInsightsPanelProps {
   conversation: Conversation;
   lastIntent?: IntentHistoryEntry;
+  createdOrder?: LocalOrder;
+  onConfirmOrder?: () => void;
+  onSendPaymentLink?: () => void;
+  onMarkPaid?: () => void;
 }
 
-export function AiInsightsPanel({ conversation, lastIntent }: AiInsightsPanelProps) {
+export function AiInsightsPanel({
+  conversation,
+  lastIntent,
+  createdOrder,
+  onConfirmOrder,
+  onSendPaymentLink,
+  onMarkPaid,
+}: AiInsightsPanelProps) {
   const [debugOpen, setDebugOpen] = useState(false);
   const isHuman = conversation.owner === "human";
   const intent = conversation.currentIntent;
@@ -153,7 +168,53 @@ export function AiInsightsPanel({ conversation, lastIntent }: AiInsightsPanelPro
             <span className="text-xs font-semibold text-slate-600">الإجمالي التقديري</span>
             <span className="text-sm font-bold text-slate-900">{formatCurrency(draftTotal)}</span>
           </div>
-          <p className="mt-1 text-[10px] text-slate-400">* مسودة مبدئية — محرك الطلبات الكامل في المرحلة القادمة.</p>
+          {onConfirmOrder && (
+            <button
+              onClick={onConfirmOrder}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-orders px-3 py-2.5 text-sm font-semibold text-white shadow-card transition hover:opacity-90"
+            >
+              <CheckCircle2 className="h-4 w-4" /> تأكيد الطلب
+            </button>
+          )}
+          <p className="mt-1.5 text-[10px] text-slate-400">* مسودة مبدئية — يتم إنشاء طلب فعلي عند التأكيد.</p>
+        </div>
+      )}
+
+      {/* Created order + payment placeholder */}
+      {createdOrder && (
+        <div className="mt-3 rounded-xl border border-orders/20 bg-white p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-orders">
+              <ShoppingBag className="h-3.5 w-3.5" /> الطلب {formatOrderId(createdOrder.orderNumber)}
+            </div>
+            <OrderStatusBadge status={createdOrder.orderStatus} className="scale-90 origin-left" />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-sm">
+            <OrderPaymentBadge status={createdOrder.paymentStatus} className="scale-90 origin-right" />
+            <span className="font-bold text-slate-900">{formatCurrency(createdOrder.total)}</span>
+          </div>
+
+          {createdOrder.paymentStatus !== "paid" && createdOrder.orderStatus !== "cancelled" && (
+            <div className="mt-3 flex flex-col gap-2">
+              {createdOrder.paymentStatus !== "payment_link_sent" && onSendPaymentLink && (
+                <button
+                  onClick={onSendPaymentLink}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Link2 className="h-4 w-4" /> إرسال رابط دفع تجريبي
+                </button>
+              )}
+              {onMarkPaid && (
+                <button
+                  onClick={onMarkPaid}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-promotions px-3 py-2 text-sm font-semibold text-white shadow-card hover:opacity-90"
+                >
+                  <CreditCard className="h-4 w-4" /> تأكيد الدفع
+                </button>
+              )}
+            </div>
+          )}
+          <p className="mt-1.5 text-[10px] text-slate-400">* دفع تجريبي — تكامل الدفع الفعلي في المرحلة القادمة.</p>
         </div>
       )}
 

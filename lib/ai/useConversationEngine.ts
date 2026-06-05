@@ -9,6 +9,8 @@
 import { useCallback } from "react";
 import { useConversationStore, nowTime } from "../conversation-store";
 import { useRestaurantStore, newId } from "../store";
+import { useOrderStore } from "../order-store";
+import { customers } from "../mock-data";
 import { analyzeMessage, applyDraft, type Brain } from "./engine";
 import type { ChatMessage, ConversationOwner, IntentHistoryEntry } from "../types";
 
@@ -51,7 +53,12 @@ export function useConversationEngine() {
     store.setTyping(convId, true);
     setTimeout(() => {
       const brain = snapshotBrain();
-      const result = analyzeMessage(trimmed, brain);
+      const latestOrder = useOrderStore.getState().getLatestOrderByConversation(convId);
+      const result = analyzeMessage(trimmed, brain, {
+        latestOrder: latestOrder
+          ? { orderNumber: latestOrder.orderNumber, orderStatus: latestOrder.orderStatus }
+          : undefined,
+      });
       const latest = useConversationStore.getState().conversations.find((c) => c.id === convId);
 
       const aiMessage: ChatMessage = {
@@ -112,15 +119,73 @@ export function useConversationEngine() {
     useConversationStore.getState().returnToAi(useConversationStore.getState().selectedId);
   }, []);
 
+  // Reactive: the latest local order linked to the selected conversation.
+  const orders = useOrderStore((s) => s.orders);
+  const createdOrder = selected
+    ? orders
+        .filter((o) => o.conversationId === selected.id)
+        .sort((a, b) => b.createdAt - a.createdAt)[0]
+    : undefined;
+
+  // Confirm the conversation draft → create a real local order.
+  const confirmOrder = useCallback(() => {
+    const convStore = useConversationStore.getState();
+    const convId = convStore.selectedId;
+    const conv = convStore.conversations.find((c) => c.id === convId);
+    if (!conv?.draftOrder || conv.draftOrder.items.length === 0) return;
+
+    const brain = snapshotBrain();
+    const branch = brain.branches.find((b) => b.name === conv.branch);
+    const area = conv.entities?.deliveryArea
+      ? brain.deliveryAreas.find((a) => a.name === conv.entities!.deliveryArea)
+      : undefined;
+    const customer = customers.find((c) => c.name === conv.customer);
+
+    const order = useOrderStore.getState().createOrderFromDraft(
+      {
+        conversationId: conv.id,
+        customerId: customer?.id,
+        customerName: conv.customer,
+        customerPhone: conv.phone,
+        branchId: branch?.id,
+        branchName: conv.branch,
+        fulfillmentType: "delivery",
+        deliveryAreaId: area?.id,
+        draft: conv.draftOrder,
+      },
+      brain
+    );
+
+    convStore.attachOrder(conv.id, order.id);
+    convStore.addSystemMessage(
+      conv.id,
+      `تم إنشاء الطلب #${order.orderNumber} بإجمالي ${order.total} ر.س. الخطوة التالية: إرسال رابط الدفع.`
+    );
+  }, []);
+
+  const sendPaymentLink = useCallback(() => {
+    const o = useOrderStore.getState().getLatestOrderByConversation(useConversationStore.getState().selectedId);
+    if (o) useOrderStore.getState().sendPaymentLinkMock(o.id);
+  }, []);
+
+  const markPaid = useCallback(() => {
+    const o = useOrderStore.getState().getLatestOrderByConversation(useConversationStore.getState().selectedId);
+    if (o) useOrderStore.getState().markPaid(o.id);
+  }, []);
+
   return {
     conversations,
     selectedId,
     selected,
     intentHistory,
+    createdOrder,
     selectConversation,
     sendCustomer,
     sendHuman,
     takeover,
     returnToAi,
+    confirmOrder,
+    sendPaymentLink,
+    markPaid,
   };
 }

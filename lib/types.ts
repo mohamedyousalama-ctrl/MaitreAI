@@ -17,7 +17,7 @@ export type ModuleKey =
   | "settings";
 
 // ---------------------------------------------------------------------------
-// Orders
+// Orders (legacy Arabic-status shape — still used by some read-only mock data)
 // ---------------------------------------------------------------------------
 export type OrderStatus =
   | "جديد"
@@ -28,6 +28,75 @@ export type OrderStatus =
   | "خرج للتوصيل"
   | "مكتمل"
   | "ملغي";
+
+// ---------------------------------------------------------------------------
+// Local order engine (Sprint 4) — enum-keyed statuses
+// ---------------------------------------------------------------------------
+export type OrderStatusKey =
+  | "draft"
+  | "pending_confirmation"
+  | "pending_payment"
+  | "paid"
+  | "preparing"
+  | "ready"
+  | "out_for_delivery"
+  | "delivered"
+  | "cancelled";
+
+export type PaymentStatusKey = "unpaid" | "payment_link_sent" | "paid" | "failed" | "refunded";
+
+export type KitchenStatusKey = "new" | "preparing" | "ready" | "completed";
+
+export type FulfillmentKey = "delivery" | "pickup";
+
+export type OrderActor = "ai" | "human" | "system";
+
+export interface OrderEvent {
+  id: string;
+  type: string;
+  label: string;
+  timestamp: number;
+  actor: OrderActor;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LocalOrderItem {
+  id: string;
+  menuItemId?: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  modifiers: string[];
+  notes?: string;
+  total: number;
+}
+
+export interface LocalOrder {
+  id: string;
+  orderNumber: string;
+  conversationId?: string;
+  customerId?: string;
+  customerName: string;
+  customerPhone: string;
+  source: "whatsapp";
+  branchId?: string;
+  branchName: string;
+  fulfillmentType: FulfillmentKey;
+  deliveryAreaId?: string;
+  deliveryAddress?: string;
+  items: LocalOrderItem[];
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  currency: string;
+  paymentStatus: PaymentStatusKey;
+  orderStatus: OrderStatusKey;
+  kitchenStatus: KitchenStatusKey;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+  events: OrderEvent[];
+}
 
 export type PaymentStatus = "مدفوع" | "بانتظار الدفع" | "غير مدفوع" | "مسترجع";
 

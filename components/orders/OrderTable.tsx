@@ -1,13 +1,12 @@
 "use client";
 
-import type { Order } from "@/lib/types";
-import { formatCurrency, formatOrderId, cn } from "@/lib/utils";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import { PaymentStatusBadge } from "@/components/ui/PaymentStatusBadge";
+import type { LocalOrder } from "@/lib/types";
+import { formatCurrency, formatOrderId, formatClock, cn } from "@/lib/utils";
+import { OrderStatusBadge, OrderPaymentBadge } from "./OrderStatusBadges";
 import { MessageCircle } from "lucide-react";
 
 interface OrderTableProps {
-  orders: Order[];
+  orders: LocalOrder[];
   activeId?: string;
   onSelect?: (id: string) => void;
 }
@@ -38,16 +37,16 @@ export function OrderTable({ orders, activeId, onSelect }: OrderTableProps) {
                 activeId === o.id && "bg-orders/5"
               )}
             >
-              <td className="px-4 py-3 font-semibold text-slate-800">{formatOrderId(o.id)}</td>
-              <td className="px-4 py-3 text-slate-600">{o.customer}</td>
-              <td className="px-4 py-3 text-slate-600">{o.branch}</td>
-              <td className="px-4 py-3"><StatusBadge status={o.status} /></td>
-              <td className="px-4 py-3"><PaymentStatusBadge status={o.paymentStatus} /></td>
+              <td className="px-4 py-3 font-semibold text-slate-800">{formatOrderId(o.orderNumber)}</td>
+              <td className="px-4 py-3 text-slate-600">{o.customerName}</td>
+              <td className="px-4 py-3 text-slate-600">{o.branchName}</td>
+              <td className="px-4 py-3"><OrderStatusBadge status={o.orderStatus} /></td>
+              <td className="px-4 py-3"><OrderPaymentBadge status={o.paymentStatus} /></td>
               <td className="px-4 py-3 font-semibold text-slate-800">{formatCurrency(o.total)}</td>
-              <td className="px-4 py-3 text-slate-500">{o.time}</td>
+              <td className="px-4 py-3 text-slate-500">{formatClock(o.createdAt)}</td>
               <td className="px-4 py-3">
                 <span className="inline-flex items-center gap-1 text-xs text-conversations">
-                  <MessageCircle className="h-3.5 w-3.5" /> {o.source}
+                  <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
                 </span>
               </td>
             </tr>

@@ -37,6 +37,9 @@ interface ConversationState {
   selectConversation: (id: string) => void;
   addCustomerMessage: (convId: string, text: string) => string;
   addHumanMessage: (convId: string, text: string) => void;
+  addSystemMessage: (convId: string, text: string) => void;
+  setStatus: (convId: string, status: Conversation["status"]) => void;
+  attachOrder: (convId: string, orderId: string) => void;
   setTyping: (convId: string, value: boolean) => void;
   commitAiTurn: (
     convId: string,
@@ -90,6 +93,31 @@ export const useConversationStore = create<ConversationState>()(
           })),
         }));
       },
+
+      addSystemMessage: (convId, text) => {
+        const time = nowTime();
+        set((s) => ({
+          conversations: patchConv(s.conversations, convId, (c) => ({
+            ...c,
+            messages: [...c.messages, { id: newId("msg"), sender: "system", text, time }],
+            lastMessage: text,
+            lastTime: time,
+          })),
+        }));
+      },
+
+      setStatus: (convId, status) =>
+        set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, status })) })),
+
+      attachOrder: (convId, orderId) =>
+        set((s) => ({
+          conversations: patchConv(s.conversations, convId, (c) => ({
+            ...c,
+            linkedOrderId: orderId,
+            draftOrder: undefined,
+            status: "بانتظار الدفع",
+          })),
+        })),
 
       setTyping: (convId, value) =>
         set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, aiTyping: value })) })),
