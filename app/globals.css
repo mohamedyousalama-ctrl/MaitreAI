@@ -56,3 +56,20 @@ body {
 .typing-dot {
   animation: typing-bounce 1.2s infinite ease-in-out;
 }
+
+/* Overlay + panel animations for drawers and modals (RTL: start = right) */
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-overlay { animation: overlay-in 0.2s ease-out; }
+.animate-drawer { animation: drawer-in 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.animate-modal { animation: modal-in 0.2s ease-out; }

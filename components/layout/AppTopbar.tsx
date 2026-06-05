@@ -1,9 +1,13 @@
 "use client";
 
 import { Bell, Search, ChevronDown } from "lucide-react";
-import { RESTAURANT } from "@/lib/mock-data";
+import { useRestaurantStore, useHasHydrated } from "@/lib/store";
+import { seedProfile } from "@/lib/seed-data";
 
 export function AppTopbar() {
+  const hydrated = useHasHydrated();
+  const name = useRestaurantStore((s) => s.profile.name);
+  const restaurantName = hydrated ? name : seedProfile.name;
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white/80 px-4 backdrop-blur md:px-6">
       {/* Search */}
@@ -38,7 +42,7 @@ export function AppTopbar() {
           </span>
           <div className="hidden text-start text-xs sm:block">
             <p className="font-semibold text-slate-800">مدير المطعم</p>
-            <p className="text-slate-500">{RESTAURANT.name}</p>
+            <p className="text-slate-500">{restaurantName}</p>
           </div>
           <ChevronDown className="hidden h-4 w-4 text-slate-400 sm:block" />
         </button>

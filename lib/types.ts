@@ -102,10 +102,21 @@ export interface MenuItem {
   price: number;
   available: boolean;
   description: string;
-  modifiers: string[];
+  imageUrl: string;
+  modifierIds: string[]; // references Modifier.id
   ingredients: string[];
   allergens: string[];
-  aiReadiness: number; // 0-100 placeholder score
+}
+
+// ---------------------------------------------------------------------------
+// Modifiers (reusable library, attached to menu items)
+// ---------------------------------------------------------------------------
+export interface Modifier {
+  id: string;
+  name: string;
+  priceImpact: number; // can be 0 or positive
+  category: string;
+  active: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,11 +126,78 @@ export interface Branch {
   id: string;
   name: string;
   address: string;
-  hours: string;
+  hours: string; // working hours
+  whatsappNumber: string;
   deliveryZones: string[];
+  open: boolean; // status: open/closed
+  notes: string;
+  // derived/legacy: whether a whatsapp number is configured
   whatsappConnected: boolean;
-  open: boolean;
   phone: string;
+}
+
+// ---------------------------------------------------------------------------
+// Restaurant profile (singleton)
+// ---------------------------------------------------------------------------
+export interface RestaurantProfile {
+  name: string;
+  logoUrl: string;
+  phone: string;
+  email: string;
+  currency: string;
+  defaultLanguage: string;
+  timezone: string;
+  businessType: string;
+}
+
+// ---------------------------------------------------------------------------
+// Delivery areas
+// ---------------------------------------------------------------------------
+export interface DeliveryArea {
+  id: string;
+  name: string;
+  minOrder: number;
+  deliveryFee: number;
+  estimatedTime: string; // e.g. "30-45 دقيقة"
+  active: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// FAQ
+// ---------------------------------------------------------------------------
+export interface FaqItem {
+  id: string;
+  question: string;
+  answer: string;
+  category: string;
+  active: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Policies (singleton, editable text per policy)
+// ---------------------------------------------------------------------------
+export interface Policies {
+  refund: string;
+  cancellation: string;
+  delivery: string;
+  replacement: string;
+  payment: string;
+}
+
+// ---------------------------------------------------------------------------
+// AI tone configuration
+// ---------------------------------------------------------------------------
+export type AiPersonality = "formal" | "friendly" | "premium" | "fastfood" | "luxury";
+export type AiResponseLength = "short" | "medium" | "detailed";
+export type AiEmojiUsage = "none" | "minimal" | "normal";
+export type AiLanguage = "ar" | "en" | "bilingual";
+
+export interface AiToneConfig {
+  personality: AiPersonality;
+  responseLength: AiResponseLength;
+  emojiUsage: AiEmojiUsage;
+  language: AiLanguage;
+  greeting: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,10 +235,14 @@ export interface Customer {
 // ---------------------------------------------------------------------------
 // Restaurant Brain (knowledge)
 // ---------------------------------------------------------------------------
+export type KnowledgeStatus = "complete" | "attention" | "missing";
+
 export interface KnowledgeArea {
   key: string;
   label: string;
   score: number; // 0-100
+  status: KnowledgeStatus;
+  detail: string; // short human-readable explanation of the score
 }
 
 export interface KnowledgeAlert {

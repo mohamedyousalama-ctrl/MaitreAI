@@ -1,11 +1,33 @@
 # MaitreAI — موظف واتساب الذكي للمطاعم
 
-WhatsApp-first AI order management system for restaurants. This repository is
-the **Sprint 1 MVP App Foundation** — the approved Claude Design converted into a
-clean, scalable Next.js app. Arabic RTL, premium bright SaaS style, **mock data only**.
+WhatsApp-first AI order management system for restaurants.
 
-> ⚠️ This sprint contains **no real integrations**. WhatsApp, AI, payment, and
-> backend are all mocked/placeholders. See _Known Limitations_ below.
+- **Sprint 1** — MVP App Foundation: the approved Claude Design converted into a
+  clean, scalable Next.js app (Arabic RTL, premium SaaS style).
+- **Sprint 2** — Restaurant Brain Setup + Local CRUD: restaurant configuration
+  is now **fully editable and persisted locally** (no backend).
+
+> ⚠️ Still **no real integrations**. WhatsApp, AI, payment, and backend are
+> mocked/placeholders. See _Known Limitations_ below.
+
+## Editable configuration (Sprint 2)
+
+The owner can configure everything below without touching code; changes persist
+to `localStorage` (Zustand `persist`) and survive refresh:
+
+- **Restaurant Profile** (Settings)
+- **Branches** — full CRUD (Branches)
+- **Menu items** — full CRUD (Menu)
+- **Modifiers** — reusable library, attachable to items (Menu → إدارة الإضافات)
+- **Ingredients & Allergens** — per item via tag editors (Menu)
+- **Delivery Areas** — full CRUD (Restaurant Brain)
+- **FAQ** — full CRUD (Restaurant Brain)
+- **Policies** — editable text, 5 policies (Restaurant Brain)
+- **AI Tone** — personality / length / emoji / language / greeting (Settings)
+
+The **Restaurant Brain score** is computed locally (no AI) from how complete each
+area is, and updates live as you edit. "استعادة الافتراضي" in Settings resets all
+local data to the seed.
 
 ## Tech Stack
 

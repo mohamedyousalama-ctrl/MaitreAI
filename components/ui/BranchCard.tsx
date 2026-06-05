@@ -1,8 +1,14 @@
 import type { Branch } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { MapPin, Clock, Truck, Phone, MessageCircle } from "lucide-react";
+import { MapPin, Clock, Truck, Phone, MessageCircle, Pencil, Trash2 } from "lucide-react";
 
-export function BranchCard({ branch }: { branch: Branch }) {
+interface BranchCardProps {
+  branch: Branch;
+  onEdit?: (branch: Branch) => void;
+  onDelete?: (branch: Branch) => void;
+}
+
+export function BranchCard({ branch, onEdit, onDelete }: BranchCardProps) {
   return (
     <div className="card flex flex-col p-5 transition hover:shadow-card-hover">
       <div className="flex items-start justify-between">
@@ -22,6 +28,26 @@ export function BranchCard({ branch }: { branch: Branch }) {
               {branch.open ? "مفتوح الآن" : "مغلق"}
             </span>
           </div>
+        </div>
+        <div className="flex items-center gap-1">
+          {onEdit && (
+            <button
+              onClick={() => onEdit(branch)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-branches"
+              aria-label="تعديل"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={() => onDelete(branch)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500"
+              aria-label="حذف"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -49,6 +75,10 @@ export function BranchCard({ branch }: { branch: Branch }) {
           ))}
         </div>
       </div>
+
+      {branch.notes && (
+        <p className="mt-3 rounded-lg bg-amber-50/60 px-3 py-2 text-xs text-amber-700">{branch.notes}</p>
+      )}
 
       <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
         <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500">

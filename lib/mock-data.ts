@@ -1,142 +1,17 @@
 // ============================================================================
-// MaitreAI — Centralized mock data
-// Realistic Saudi restaurant data for مطعم الذواقة. This is the single source
-// of truth for the UI during Sprint 1. No component should hardcode domain data.
+// MaitreAI — Read-only runtime mock data
+// Operational data that is NOT yet owner-editable (orders, conversations,
+// customers, promotions, dashboard). Editable restaurant CONFIGURATION lives in
+// the Zustand store (lib/store.ts), seeded from lib/seed-data.ts.
 // ============================================================================
 
-import type {
-  Branch,
-  Conversation,
-  Customer,
-  KnowledgeAlert,
-  KnowledgeArea,
-  Kpi,
-  MenuItem,
-  Order,
-  Promotion,
-} from "./types";
+import type { Conversation, Customer, Kpi, Order, Promotion } from "./types";
 
 export const RESTAURANT = {
   name: "مطعم الذواقة",
   tagline: "موظف واتساب الذكي للمطاعم",
   currency: "ر.س",
 };
-
-// ---------------------------------------------------------------------------
-// Branches
-// ---------------------------------------------------------------------------
-export const branches: Branch[] = [
-  {
-    id: "b1",
-    name: "فرع الياسمين",
-    address: "حي الياسمين، شارع الأمير محمد بن سلمان، الرياض",
-    hours: "12:00 ظهراً - 2:00 صباحاً",
-    deliveryZones: ["الياسمين", "النرجس", "العقيق"],
-    whatsappConnected: true,
-    open: true,
-    phone: "+966 50 123 4567",
-  },
-  {
-    id: "b2",
-    name: "فرع العليا",
-    address: "حي العليا، طريق الملك فهد، الرياض",
-    hours: "1:00 ظهراً - 1:00 صباحاً",
-    deliveryZones: ["العليا", "السليمانية", "المروج"],
-    whatsappConnected: true,
-    open: true,
-    phone: "+966 50 234 5678",
-  },
-  {
-    id: "b3",
-    name: "فرع النرجس",
-    address: "حي النرجس، شارع أنس بن مالك، الرياض",
-    hours: "12:00 ظهراً - 12:00 منتصف الليل",
-    deliveryZones: ["النرجس", "الياسمين", "بنبان"],
-    whatsappConnected: false,
-    open: false,
-    phone: "+966 50 345 6789",
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Menu
-// ---------------------------------------------------------------------------
-export const menuCategories = ["الكل", "برجر", "مقبلات", "مشروبات", "وجبات", "حلويات"];
-
-export const menuItems: MenuItem[] = [
-  {
-    id: "m1",
-    name: "برجر كلاسيك",
-    category: "برجر",
-    price: 32,
-    available: true,
-    description: "لحم بقري طازج مع جبنة شيدر وصلصة الذواقة الخاصة",
-    modifiers: ["جبنة إضافية", "بدون بصل", "حار", "خبز محمص"],
-    ingredients: ["لحم بقري", "جبنة شيدر", "خس", "طماطم", "صلصة خاصة"],
-    allergens: ["جلوتين", "ألبان"],
-    aiReadiness: 95,
-  },
-  {
-    id: "m2",
-    name: "برجر دجاج حار",
-    category: "برجر",
-    price: 30,
-    available: true,
-    description: "صدر دجاج مقرمش بنكهة حارة مع مايونيز الثوم",
-    modifiers: ["زيادة حار", "بدون مايونيز", "جبنة إضافية"],
-    ingredients: ["دجاج", "بهارات حارة", "مايونيز ثوم", "مخلل"],
-    allergens: ["جلوتين", "بيض"],
-    aiReadiness: 88,
-  },
-  {
-    id: "m3",
-    name: "بطاطس كبيرة",
-    category: "مقبلات",
-    price: 15,
-    available: true,
-    description: "بطاطس مقلية ذهبية مقرمشة",
-    modifiers: ["بنكهة الجبن", "حار", "صوص إضافي"],
-    ingredients: ["بطاطس", "زيت", "ملح"],
-    allergens: [],
-    aiReadiness: 70,
-  },
-  {
-    id: "m4",
-    name: "كولا",
-    category: "مشروبات",
-    price: 6,
-    available: true,
-    description: "مشروب غازي بارد",
-    modifiers: ["بدون ثلج", "حجم كبير"],
-    ingredients: ["مشروب غازي"],
-    allergens: [],
-    aiReadiness: 60,
-  },
-  {
-    id: "m5",
-    name: "وجبة العائلة",
-    category: "وجبات",
-    price: 145,
-    available: true,
-    description: "4 برجر + 2 بطاطس كبيرة + 4 مشروبات + حلى",
-    modifiers: ["اختيار البرجر", "اختيار المشروبات"],
-    ingredients: ["برجر", "بطاطس", "مشروبات", "حلى"],
-    allergens: ["جلوتين", "ألبان"],
-    aiReadiness: 82,
-  },
-  {
-    id: "m6",
-    name: "كنافة",
-    category: "حلويات",
-    price: 25,
-    available: false,
-    description: "كنافة بالجبن مع القطر والفستق",
-    modifiers: ["فستق إضافي", "قطر جانبي"],
-    ingredients: ["عجينة كنافة", "جبنة", "قطر", "فستق"],
-    allergens: ["جلوتين", "ألبان", "مكسرات"],
-    aiReadiness: 45,
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Customers
@@ -388,7 +263,7 @@ export const conversations: Conversation[] = [
         time: "1:10 م",
         confidence: 97,
       },
-      { id: "y3", sender: "customer", text: "في صرصور بالطلب اللي وصلني أمس!!", time: "1:12 م", confidence: undefined },
+      { id: "y3", sender: "customer", text: "في صرصور بالطلب اللي وصلني أمس!!", time: "1:12 م" },
       {
         id: "y4",
         sender: "ai",
@@ -525,53 +400,6 @@ export const promotions: Promotion[] = [
     redemptions: 0,
   },
 ];
-
-// ---------------------------------------------------------------------------
-// Restaurant Brain — knowledge health
-// ---------------------------------------------------------------------------
-export const knowledgeAreas: KnowledgeArea[] = [
-  { key: "menu", label: "معرفة المنيو", score: 88 },
-  { key: "branch", label: "معرفة الفروع", score: 76 },
-  { key: "policy", label: "معرفة السياسات", score: 64 },
-  { key: "delivery", label: "مناطق التوصيل", score: 82 },
-  { key: "faq", label: "الأسئلة الشائعة", score: 70 },
-  { key: "tone", label: "نبرة الصوت", score: 91 },
-];
-
-export const overallKnowledgeScore = 79;
-
-export const knowledgeAlerts: KnowledgeAlert[] = [
-  {
-    id: "a1",
-    area: "السياسات",
-    message: "سياسة الاسترجاع والاستبدال غير مكتملة — يحتاج الذكاء الاصطناعي تفاصيل أوضح",
-    severity: "high",
-  },
-  {
-    id: "a2",
-    area: "المنيو",
-    message: "صنف «كنافة» غير متوفر حالياً وجاهزيته للذكاء الاصطناعي منخفضة (45%)",
-    severity: "medium",
-  },
-  {
-    id: "a3",
-    area: "الفروع",
-    message: "فرع النرجس غير مرتبط بواتساب بعد",
-    severity: "medium",
-  },
-];
-
-export const faqs = [
-  { q: "كم وقت التوصيل؟", a: "عادة من 30 إلى 45 دقيقة حسب المنطقة." },
-  { q: "هل يوجد حد أدنى للطلب؟", a: "الحد الأدنى للتوصيل 30 ر.س." },
-  { q: "ما طرق الدفع المتاحة؟", a: "مدى، آبل باي، والبطاقات الائتمانية عبر رابط الدفع." },
-];
-
-export const toneOfVoice = {
-  style: "ودود ومحترف بلهجة سعودية خفيفة",
-  emojis: "استخدام معتدل",
-  greeting: "السلام عليكم ورحمة الله، أهلاً بك في مطعم الذواقة 🌟",
-};
 
 // ---------------------------------------------------------------------------
 // Dashboard KPIs & AI daily summary

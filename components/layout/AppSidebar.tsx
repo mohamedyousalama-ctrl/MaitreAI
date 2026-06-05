@@ -3,12 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
-import { RESTAURANT } from "@/lib/mock-data";
+import { useRestaurantStore, useHasHydrated } from "@/lib/store";
+import { seedProfile } from "@/lib/seed-data";
 import { cn } from "@/lib/utils";
 import { Bot } from "lucide-react";
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const hydrated = useHasHydrated();
+  const name = useRestaurantStore((s) => s.profile.name);
+  const restaurantName = hydrated ? name : seedProfile.name;
 
   return (
     <aside className="hidden h-screen w-72 shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
@@ -19,7 +23,7 @@ export function AppSidebar() {
         </div>
         <div>
           <h1 className="text-lg font-bold leading-tight text-slate-900">MaitreAI</h1>
-          <p className="text-xs text-slate-500">{RESTAURANT.name}</p>
+          <p className="text-xs text-slate-500">{restaurantName}</p>
         </div>
       </div>
 
