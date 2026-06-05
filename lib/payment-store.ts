@@ -16,7 +16,10 @@ import { sendOutbound } from "./messaging/service";
 import { DEFAULT_EXPIRY_MS, isSessionActive } from "./payments";
 import type { PaymentEvent, PaymentEventActor, PaymentMethodKey, PaymentSession } from "./types";
 
-const DEFAULT_ORIGIN = "http://localhost:3000";
+// Server-side fallback only — checkout links are generated in the browser, so
+// in production this resolves to window.location.origin (the deployed URL).
+// NEXT_PUBLIC_APP_URL lets a deploy override the non-browser fallback.
+const DEFAULT_ORIGIN = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export function currentOrigin(): string {
   return typeof window !== "undefined" ? window.location.origin : DEFAULT_ORIGIN;
