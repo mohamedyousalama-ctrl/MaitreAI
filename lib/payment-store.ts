@@ -12,6 +12,7 @@ import { persist } from "zustand/middleware";
 import { newId } from "./store";
 import { useOrderStore } from "./order-store";
 import { useConversationStore } from "./conversation-store";
+import { sendOutbound } from "./messaging/service";
 import { DEFAULT_EXPIRY_MS, isSessionActive } from "./payments";
 import type { PaymentEvent, PaymentEventActor, PaymentMethodKey, PaymentSession } from "./types";
 
@@ -113,7 +114,23 @@ export const usePaymentStore = create<PaymentState>()(
         if (session.conversationId) {
           useConversationStore.getState().setStatus(session.conversationId, "بانتظار الدفع");
         }
-        notify(session.conversationId, `رابط الدفع لطلب #${session.orderNumber}:\n${session.checkoutUrl}`);
+        const linkText = `رابط الدفع لطلب #${session.orderNumber}:\n${session.checkoutUrl}`;
+        notify(session.conversationId, linkText);
+
+        // Also route the link through the messaging adapter so the outbound log
+        // records it as a channel message. No real send unless WhatsApp is
+        // configured — otherwise the adapter returns a "skipped" result.
+        const conv = session.conversationId
+          ? useConversationStore.getState().conversations.find((c) => c.id === session.conversationId)
+          : undefined;
+        void sendOutbound({
+          channel: conv?.channel ?? "whatsapp",
+          to: session.customerPhone,
+          text: linkText,
+          kind: "payment_link",
+          metadata: { url: session.checkoutUrl, orderNumber: session.orderNumber, sessionId: session.id },
+        });
+
         return { ...session, status: "link_sent" };
       },
 
