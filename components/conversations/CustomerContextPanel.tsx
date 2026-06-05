@@ -1,15 +1,17 @@
-import type { Conversation, Customer, Order } from "@/lib/types";
+import type { Conversation, Customer, IntentHistoryEntry, Order } from "@/lib/types";
 import { CurrentOrderCard } from "./CurrentOrderCard";
+import { AiInsightsPanel } from "./AiInsightsPanel";
 import { formatCurrency } from "@/lib/utils";
-import { Lightbulb, Phone, Star, Store, User } from "lucide-react";
+import { Phone, Star, Store, User } from "lucide-react";
 
 interface CustomerContextPanelProps {
   conversation: Conversation;
   customer?: Customer;
   order?: Order;
+  lastIntent?: IntentHistoryEntry;
 }
 
-export function CustomerContextPanel({ conversation, customer, order }: CustomerContextPanelProps) {
+export function CustomerContextPanel({ conversation, customer, order, lastIntent }: CustomerContextPanelProps) {
   return (
     <div className="flex h-full flex-col overflow-y-auto p-4">
       {/* Customer profile */}
@@ -31,6 +33,11 @@ export function CustomerContextPanel({ conversation, customer, order }: Customer
         )}
       </div>
 
+      {/* AI insights — the heart of Sprint 3 */}
+      <div className="mt-4">
+        <AiInsightsPanel conversation={conversation} lastIntent={lastIntent} />
+      </div>
+
       {/* Customer stats */}
       {customer && (
         <div className="mt-4 grid grid-cols-2 gap-2">
@@ -43,17 +50,7 @@ export function CustomerContextPanel({ conversation, customer, order }: Customer
         </div>
       )}
 
-      {/* Suggested action */}
-      {conversation.suggestedAction && (
-        <div className="mt-4 rounded-2xl border border-purple-100 bg-purple-50/60 p-3">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-promotions">
-            <Lightbulb className="h-4 w-4" /> الإجراء المقترح من الذكاء الاصطناعي
-          </div>
-          <p className="mt-1.5 text-sm text-slate-700">{conversation.suggestedAction}</p>
-        </div>
-      )}
-
-      {/* Current order */}
+      {/* Linked existing order (mock) */}
       {order && (
         <div className="mt-4">
           <CurrentOrderCard order={order} />

@@ -61,12 +61,93 @@ export interface Order {
 // ---------------------------------------------------------------------------
 export type ConversationStatus =
   | "AI نشط"
+  | "طلب قيد البناء"
   | "بانتظار الدفع"
   | "يحتاج تدخل موظف"
   | "تم التحويل لموظف"
   | "طلب مكتمل";
 
-export type MessageSender = "customer" | "ai" | "agent" | "system";
+export type MessageSender = "customer" | "ai" | "agent" | "human" | "system";
+
+export type ConversationOwner = "ai" | "human";
+
+// Intents the local rule-based engine can detect.
+export type IntentType =
+  | "greeting"
+  | "menu_question"
+  | "branch_question"
+  | "working_hours"
+  | "delivery_area"
+  | "ingredient_allergen"
+  | "create_order"
+  | "modify_order"
+  | "cancel_order"
+  | "payment_question"
+  | "order_tracking"
+  | "complaint"
+  | "human_request"
+  | "unknown";
+
+// Arabic-labelled knowledge sources surfaced under AI replies.
+export type KnowledgeSource =
+  | "المنيو"
+  | "الإضافات"
+  | "الفروع"
+  | "مناطق التوصيل"
+  | "السياسات"
+  | "الأسئلة الشائعة"
+  | "إعدادات النبرة";
+
+export interface OrderEntity {
+  name: string;
+  quantity: number;
+}
+
+export interface ExtractedEntities {
+  items: OrderEntity[];
+  modifiers: string[];
+  branch?: string;
+  deliveryArea?: string;
+  allergens: string[];
+  paymentIntent: boolean;
+  complaintKeywords: string[];
+}
+
+export interface DraftOrderItem {
+  name: string;
+  quantity: number;
+  price: number;
+  modifiers: string[];
+}
+
+export interface DraftOrder {
+  items: DraftOrderItem[];
+}
+
+// Full output of analysing one customer message.
+export interface IntentResult {
+  intent: IntentType;
+  confidence: number;
+  entities: ExtractedEntities;
+  sources: KnowledgeSource[];
+  suggestedAction: string;
+  reply: string;
+  status: ConversationStatus;
+  escalate: boolean;
+  escalationReason?: string;
+}
+
+export interface IntentHistoryEntry {
+  id: string;
+  conversationId: string;
+  messageId: string;
+  detectedIntent: IntentType;
+  confidence: number;
+  entities: ExtractedEntities;
+  sourcesUsed: KnowledgeSource[];
+  suggestedAction: string;
+  createdAt: number;
+}
 
 export interface ChatMessage {
   id: string;
@@ -74,13 +155,20 @@ export interface ChatMessage {
   text: string;
   time: string;
   confidence?: number; // AI confidence 0-100 for ai messages
+  intent?: IntentType;
+  sources?: KnowledgeSource[];
+  suggestedAction?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Conversation {
   id: string;
-  customer: string;
+  customer: string; // customer display name
+  customerId?: string;
   phone: string;
   avatarColor: string;
+  channel: "whatsapp";
+  owner: ConversationOwner;
   status: ConversationStatus;
   lastMessage: string;
   lastTime: string;
@@ -90,6 +178,12 @@ export interface Conversation {
   aiTyping?: boolean;
   suggestedAction?: string;
   linkedOrderId?: string;
+  // AI engine working state
+  aiConfidence?: number;
+  currentIntent?: IntentType;
+  entities?: ExtractedEntities;
+  escalationReason?: string;
+  draftOrder?: DraftOrder;
 }
 
 // ---------------------------------------------------------------------------

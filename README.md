@@ -6,9 +6,29 @@ WhatsApp-first AI order management system for restaurants.
   clean, scalable Next.js app (Arabic RTL, premium SaaS style).
 - **Sprint 2** — Restaurant Brain Setup + Local CRUD: restaurant configuration
   is now **fully editable and persisted locally** (no backend).
+- **Sprint 3** — Conversation State + AI Intent Mock Engine: the Conversations
+  page is now **interactive and intelligent** using local rule-based logic that
+  reads the editable Restaurant Brain (no real AI / WhatsApp / network).
 
 > ⚠️ Still **no real integrations**. WhatsApp, AI, payment, and backend are
 > mocked/placeholders. See _Known Limitations_ below.
+
+## Conversation engine (Sprint 3)
+
+Open **المحادثات**, select a customer, and type as the customer (simulation mode):
+the local engine detects intent, extracts entities from the live menu/branches/
+delivery areas, generates an Arabic reply, scores confidence, lists the knowledge
+sources used, updates the conversation status, builds a lightweight **draft order
+preview**, and auto-escalates to a human when needed (complaints, allergen gaps,
+unknown delivery areas, low confidence, or an explicit "أبغى أكلم موظف").
+
+- **Human takeover** — "تحويل لموظف" switches ownership to a human (AI stops),
+  the composer becomes "أنت ترد كموظف"; "إعادة للذكاء الاصطناعي" hands it back.
+- **AI insights panel** (right pane) shows intent, confidence, suggested action,
+  sources, owner, escalation reason, detected entities, the draft order, and a
+  collapsible **AI Debug** JSON view of the raw intent result.
+- Conversations, messages, owner, status, confidence, suggested action, and
+  intent history persist to `localStorage` via a dedicated Zustand store.
 
 ## Editable configuration (Sprint 2)
 

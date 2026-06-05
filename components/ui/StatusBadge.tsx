@@ -15,6 +15,7 @@ const ORDER_STATUS_STYLES: Record<OrderStatus, string> = {
 
 const CONVERSATION_STATUS_STYLES: Record<ConversationStatus, string> = {
   "AI نشط": "bg-blue-50 text-blue-700 ring-blue-200",
+  "طلب قيد البناء": "bg-indigo-50 text-indigo-700 ring-indigo-200",
   "بانتظار الدفع": "bg-amber-50 text-amber-700 ring-amber-200",
   "يحتاج تدخل موظف": "bg-red-50 text-red-700 ring-red-200",
   "تم التحويل لموظف": "bg-orange-50 text-orange-700 ring-orange-200",
