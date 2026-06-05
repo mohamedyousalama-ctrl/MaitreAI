@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { OrderTable } from "@/components/orders/OrderTable";
 import { OrderCard } from "@/components/orders/OrderCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useOrderStore } from "@/lib/order-store";
+import { usePaymentStore } from "@/lib/payment-store";
 import { useHasHydrated } from "@/lib/store";
 import { ORDER_STATUS_LABELS } from "@/lib/orders";
 import type { OrderStatusKey } from "@/lib/types";
@@ -26,8 +27,13 @@ const FILTERS: ("all" | OrderStatusKey)[] = [
 export default function OrdersPage() {
   const hydrated = useHasHydrated();
   const orders = useOrderStore((s) => s.orders);
+  const sweepExpired = usePaymentStore((s) => s.sweepExpired);
   const [filter, setFilter] = useState<"all" | OrderStatusKey>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    sweepExpired();
+  }, [sweepExpired]);
 
   const sorted = [...orders].sort((a, b) => b.createdAt - a.createdAt);
   const filtered = filter === "all" ? sorted : sorted.filter((o) => o.orderStatus === filter);

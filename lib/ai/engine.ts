@@ -191,6 +191,8 @@ function describeOrder(items: OrderEntity[]): string {
 export interface AnalyzeContext {
   // Latest local order for this conversation (for order_tracking).
   latestOrder?: { orderNumber: string; orderStatus: OrderStatusKey };
+  // Latest payment session status for that order (for order_tracking nuance).
+  latestPaymentStatus?: string;
 }
 
 export function analyzeMessage(raw: string, brain: Brain, ctx: AnalyzeContext = {}): IntentResult {
@@ -356,7 +358,7 @@ export function analyzeMessage(raw: string, brain: Brain, ctx: AnalyzeContext = 
       suggestedAction = "تزويد العميل بحالة الطلب";
       if (ctx.latestOrder) {
         confidence = 92;
-        reply = trackingReply(ctx.latestOrder);
+        reply = trackingReply(ctx.latestOrder, ctx.latestPaymentStatus);
       } else {
         confidence = 70;
         reply = "لا أجد طلباً نشطاً في هذه المحادثة. هل ترغب بإنشاء طلب جديد؟";

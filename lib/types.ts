@@ -98,6 +98,52 @@ export interface LocalOrder {
   events: OrderEvent[];
 }
 
+// ---------------------------------------------------------------------------
+// Payment sessions (Sprint 5) — local mock provider simulation
+// ---------------------------------------------------------------------------
+export type PaymentSessionStatus =
+  | "created"
+  | "link_sent"
+  | "opened"
+  | "paid"
+  | "failed"
+  | "expired"
+  | "cancelled"
+  | "refunded";
+
+export type PaymentEventActor = "system" | "customer" | "mock_provider" | "human";
+
+export type PaymentMethodKey = "mada" | "applepay" | "card";
+
+export interface PaymentEvent {
+  id: string;
+  type: string;
+  label: string;
+  timestamp: number;
+  actor: PaymentEventActor;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PaymentSession {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  conversationId?: string;
+  customerName: string;
+  customerPhone: string;
+  amount: number;
+  currency: string;
+  status: PaymentSessionStatus;
+  provider: string; // "mock"
+  method?: PaymentMethodKey;
+  checkoutUrl: string;
+  expiresAt: number;
+  paidAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  events: PaymentEvent[];
+}
+
 export type PaymentStatus = "مدفوع" | "بانتظار الدفع" | "غير مدفوع" | "مسترجع";
 
 export type FulfillmentType = "توصيل" | "استلام";

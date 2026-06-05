@@ -10,11 +10,26 @@ WhatsApp-first AI order management system for restaurants.
   page is now **interactive and intelligent** using local rule-based logic that
   reads the editable Restaurant Brain (no real AI / WhatsApp / network).
 - **Sprint 4** — Local Order Engine: conversation draft orders become **real
-  persisted orders** that flow through Orders → Kitchen → tracking, with a
-  payment **placeholder** (mock link + manual mark-paid). No real payment.
+  persisted orders** that flow through Orders → Kitchen → tracking.
+- **Sprint 5** — Payment Link Mock + Webhook Simulation: a working local
+  **checkout page** (`/checkout/[sessionId]`) with a simulated provider callback
+  that flips order/payment status and notifies the conversation. No real provider.
 
 > ⚠️ Still **no real integrations**. WhatsApp, AI, payment, and backend are
 > mocked/placeholders. See _Known Limitations_ below.
+
+## Payment simulation (Sprint 5)
+
+In **المحادثات**, after confirming an order click **إرسال رابط الدفع** — the chat
+receives a real local link `http://localhost:3000/checkout/{sessionId}`. Open it
+to see a polished RTL checkout (مدى / آبل باي / بطاقة), an expiry countdown, and
+**ادفع الآن** / **محاكاة فشل الدفع** buttons. Paying simulates a provider callback:
+the payment session → `paid`, the order → `paid` (→ Kitchen), and the conversation
+gets a confirmation. Failure and expiry post their own messages and a new link can
+be re-sent. The Orders detail panel shows the payment session, link (copy/open),
+and event timeline; the Dashboard shows links-sent / paid / failed / expired /
+conversion-rate. Manual "تأكيد الدفع يدوياً" remains as an admin override only.
+Sessions persist to `localStorage` and auto-expire after 15 minutes.
 
 ## Order engine (Sprint 4)
 

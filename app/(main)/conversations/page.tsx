@@ -15,6 +15,7 @@ export default function ConversationsPage() {
     selected,
     intentHistory,
     createdOrder,
+    paymentSession,
     selectConversation,
     sendCustomer,
     sendHuman,
@@ -58,6 +59,7 @@ export default function ConversationsPage() {
             customer={customer}
             lastIntent={lastIntent}
             createdOrder={createdOrder}
+            paymentSession={paymentSession}
             onConfirmOrder={confirmOrder}
             onSendPaymentLink={sendPaymentLink}
             onMarkPaid={markPaid}

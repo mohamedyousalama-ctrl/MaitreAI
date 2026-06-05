@@ -1,4 +1,4 @@
-import type { Conversation, Customer, IntentHistoryEntry, LocalOrder } from "@/lib/types";
+import type { Conversation, Customer, IntentHistoryEntry, LocalOrder, PaymentSession } from "@/lib/types";
 import { AiInsightsPanel } from "./AiInsightsPanel";
 import { formatCurrency } from "@/lib/utils";
 import { Phone, Star, Store, User } from "lucide-react";
@@ -8,6 +8,7 @@ interface CustomerContextPanelProps {
   customer?: Customer;
   lastIntent?: IntentHistoryEntry;
   createdOrder?: LocalOrder;
+  paymentSession?: PaymentSession;
   onConfirmOrder?: () => void;
   onSendPaymentLink?: () => void;
   onMarkPaid?: () => void;
@@ -18,6 +19,7 @@ export function CustomerContextPanel({
   customer,
   lastIntent,
   createdOrder,
+  paymentSession,
   onConfirmOrder,
   onSendPaymentLink,
   onMarkPaid,
@@ -49,6 +51,7 @@ export function CustomerContextPanel({
           conversation={conversation}
           lastIntent={lastIntent}
           createdOrder={createdOrder}
+          paymentSession={paymentSession}
           onConfirmOrder={onConfirmOrder}
           onSendPaymentLink={onSendPaymentLink}
           onMarkPaid={onMarkPaid}

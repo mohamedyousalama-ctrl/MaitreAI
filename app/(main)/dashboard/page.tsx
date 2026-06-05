@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -8,6 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { OrderStatusBadge, OrderPaymentBadge } from "@/components/orders/OrderStatusBadges";
 import { useOrderStore } from "@/lib/order-store";
 import { useConversationStore } from "@/lib/conversation-store";
+import { usePaymentStore } from "@/lib/payment-store";
 import { useHasHydrated } from "@/lib/store";
 import { aiDailySummary, systemStatus } from "@/lib/mock-data";
 import { formatCurrency, formatOrderId } from "@/lib/utils";
@@ -24,12 +26,27 @@ import {
   XCircle,
   Bot,
   ArrowLeft,
+  Link2,
+  Clock,
+  Percent,
 } from "lucide-react";
 
 export default function DashboardPage() {
   const hydrated = useHasHydrated();
   const orders = useOrderStore((s) => s.orders);
   const conversations = useConversationStore((s) => s.conversations);
+  const sessions = usePaymentStore((s) => s.sessions);
+  const sweepExpired = usePaymentStore((s) => s.sweepExpired);
+
+  useEffect(() => {
+    sweepExpired();
+  }, [sweepExpired]);
+
+  const linksSent = sessions.filter((s) => s.status !== "created").length;
+  const paidSessions = sessions.filter((s) => s.status === "paid").length;
+  const failedSessions = sessions.filter((s) => s.status === "failed").length;
+  const expiredSessions = sessions.filter((s) => s.status === "expired").length;
+  const conversionRate = linksSent ? Math.round((paidSessions / linksSent) * 100) : 0;
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -158,6 +175,19 @@ export default function DashboardPage() {
         </ModuleCard>
       </div>
 
+      {/* Payment metrics */}
+      <div className="mt-6">
+        <ModuleCard title="مؤشرات الدفع" icon={CreditCard} accentBg="bg-promotions">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <PayStat icon={Link2} label="روابط مرسلة" value={hydrated ? String(linksSent) : "…"} color="text-blue-600" />
+            <PayStat icon={CheckCircle2} label="مدفوعة" value={hydrated ? String(paidSessions) : "…"} color="text-emerald-600" />
+            <PayStat icon={XCircle} label="فاشلة" value={hydrated ? String(failedSessions) : "…"} color="text-red-600" />
+            <PayStat icon={Clock} label="منتهية" value={hydrated ? String(expiredSessions) : "…"} color="text-amber-600" />
+            <PayStat icon={Percent} label="نسبة التحويل" value={hydrated ? `${conversionRate}%` : "…"} color="text-promotions" />
+          </div>
+        </ModuleCard>
+      </div>
+
       {/* System status */}
       <div className="mt-6">
         <ModuleCard title="حالة النظام" icon={CheckCircle2} accentBg="bg-brain">
@@ -178,6 +208,26 @@ export default function DashboardPage() {
           </div>
         </ModuleCard>
       </div>
+    </div>
+  );
+}
+
+function PayStat({
+  icon: Icon,
+  label,
+  value,
+  color,
+}: {
+  icon: typeof Link2;
+  label: string;
+  value: string;
+  color: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+      <Icon className={`h-5 w-5 ${color}`} />
+      <p className="mt-2 text-xl font-bold text-slate-900">{value}</p>
+      <p className="text-xs text-slate-500">{label}</p>
     </div>
   );
 }

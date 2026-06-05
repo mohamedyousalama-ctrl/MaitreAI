@@ -55,7 +55,6 @@ interface OrderState {
   updatePaymentStatus: (id: string, status: PaymentStatusKey, actor?: OrderActor) => void;
   updateKitchenStatus: (id: string, status: KitchenStatusKey, actor?: OrderActor) => void;
   cancelOrder: (id: string, actor?: OrderActor) => void;
-  sendPaymentLinkMock: (id: string) => void;
   markPaid: (id: string, actor?: OrderActor) => void;
   addOrderEvent: (id: string, event: Omit<OrderEvent, "id" | "timestamp">) => void;
   getOrdersByConversation: (conversationId: string) => LocalOrder[];
@@ -173,18 +172,6 @@ export const useOrderStore = create<OrderState>()(
           ),
         }));
         notifyConversation(order, orderStatusMessage(order, "cancelled"));
-      },
-
-      sendPaymentLinkMock: (id) => {
-        const order = get().orders.find((o) => o.id === id);
-        if (!order) return;
-        const event = ev("payment", "تم إرسال رابط دفع تجريبي", "human");
-        set((s) => ({
-          orders: s.orders.map((o) =>
-            o.id === id ? { ...o, paymentStatus: "payment_link_sent", updatedAt: event.timestamp, events: [...o.events, event] } : o
-          ),
-        }));
-        notifyConversation(order, `رابط الدفع التجريبي لطلب #${order.orderNumber}: pay.maitre.ai/${order.orderNumber}`);
       },
 
       markPaid: (id, actor = "human") => {

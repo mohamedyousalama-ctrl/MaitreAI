@@ -10,6 +10,8 @@ import { useCallback } from "react";
 import { useConversationStore, nowTime } from "../conversation-store";
 import { useRestaurantStore, newId } from "../store";
 import { useOrderStore } from "../order-store";
+import { usePaymentStore, currentOrigin } from "../payment-store";
+import { isSessionActive } from "../payments";
 import { customers } from "../mock-data";
 import { analyzeMessage, applyDraft, type Brain } from "./engine";
 import type { ChatMessage, ConversationOwner, IntentHistoryEntry } from "../types";
@@ -54,10 +56,14 @@ export function useConversationEngine() {
     setTimeout(() => {
       const brain = snapshotBrain();
       const latestOrder = useOrderStore.getState().getLatestOrderByConversation(convId);
+      const latestSession = latestOrder
+        ? usePaymentStore.getState().getSessionByOrder(latestOrder.id)
+        : undefined;
       const result = analyzeMessage(trimmed, brain, {
         latestOrder: latestOrder
           ? { orderNumber: latestOrder.orderNumber, orderStatus: latestOrder.orderStatus }
           : undefined,
+        latestPaymentStatus: latestSession?.status,
       });
       const latest = useConversationStore.getState().conversations.find((c) => c.id === convId);
 
@@ -119,12 +125,16 @@ export function useConversationEngine() {
     useConversationStore.getState().returnToAi(useConversationStore.getState().selectedId);
   }, []);
 
-  // Reactive: the latest local order linked to the selected conversation.
+  // Reactive: the latest local order + payment session for the selected conversation.
   const orders = useOrderStore((s) => s.orders);
+  const sessions = usePaymentStore((s) => s.sessions);
   const createdOrder = selected
     ? orders
         .filter((o) => o.conversationId === selected.id)
         .sort((a, b) => b.createdAt - a.createdAt)[0]
+    : undefined;
+  const paymentSession = createdOrder
+    ? sessions.filter((s) => s.orderId === createdOrder.id).sort((a, b) => b.createdAt - a.createdAt)[0]
     : undefined;
 
   // Confirm the conversation draft → create a real local order.
@@ -163,14 +173,19 @@ export function useConversationEngine() {
     );
   }, []);
 
+  // Primary flow: generate a working mock checkout link and post it to the chat.
   const sendPaymentLink = useCallback(() => {
     const o = useOrderStore.getState().getLatestOrderByConversation(useConversationStore.getState().selectedId);
-    if (o) useOrderStore.getState().sendPaymentLinkMock(o.id);
+    if (o) usePaymentStore.getState().sendPaymentLink(o.id, currentOrigin());
   }, []);
 
+  // Admin override: mark paid directly (routes through the active session if any).
   const markPaid = useCallback(() => {
     const o = useOrderStore.getState().getLatestOrderByConversation(useConversationStore.getState().selectedId);
-    if (o) useOrderStore.getState().markPaid(o.id);
+    if (!o) return;
+    const sess = usePaymentStore.getState().getSessionByOrder(o.id);
+    if (sess && isSessionActive(sess.status)) usePaymentStore.getState().simulateSuccess(sess.id, "card");
+    else useOrderStore.getState().markPaid(o.id, "human");
   }, []);
 
   return {
@@ -179,6 +194,7 @@ export function useConversationEngine() {
     selected,
     intentHistory,
     createdOrder,
+    paymentSession,
     selectConversation,
     sendCustomer,
     sendHuman,

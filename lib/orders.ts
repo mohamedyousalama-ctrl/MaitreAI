@@ -121,13 +121,18 @@ export function orderStatusForKitchen(kitchen: KitchenStatusKey): OrderStatusKey
 // ---------------------------------------------------------------------------
 // Customer-facing tracking reply for the order_tracking intent
 // ---------------------------------------------------------------------------
-export function trackingReply(order: { orderNumber: string; orderStatus: OrderStatusKey }): string {
+export function trackingReply(
+  order: { orderNumber: string; orderStatus: OrderStatusKey },
+  paymentSessionStatus?: string
+): string {
   const n = order.orderNumber;
   switch (order.orderStatus) {
     case "pending_payment":
     case "pending_confirmation":
     case "draft":
-      return `طلبك #${n} جاهز للتأكيد، والمتبقي إرسال رابط الدفع أو إتمام الدفع.`;
+      if (paymentSessionStatus === "expired")
+        return `رابط الدفع لطلبك #${n} منتهي، سأرسل لك رابطاً جديداً.`;
+      return `طلبك #${n} بانتظار الدفع. يمكنك إتمام الدفع من الرابط المرسل.`;
     case "paid":
       return `تم تأكيد طلبك #${n} وهو الآن بانتظار بدء التحضير.`;
     case "preparing":

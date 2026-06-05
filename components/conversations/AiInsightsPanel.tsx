@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { Conversation, IntentHistoryEntry, LocalOrder } from "@/lib/types";
+import Link from "next/link";
+import type { Conversation, IntentHistoryEntry, LocalOrder, PaymentSession } from "@/lib/types";
 import { INTENT_LABELS } from "@/lib/ai/engine";
 import { AIConfidenceBadge } from "@/components/ui/AIConfidenceBadge";
 import { OrderStatusBadge, OrderPaymentBadge } from "@/components/orders/OrderStatusBadges";
-import { formatCurrency, formatOrderId, cn } from "@/lib/utils";
+import { PAYMENT_SESSION_LABELS, PAYMENT_METHOD_LABELS, isSessionActive } from "@/lib/payments";
+import { formatCurrency, formatOrderId, formatClock, cn } from "@/lib/utils";
 import {
   Sparkles,
   Bot,
@@ -20,12 +22,15 @@ import {
   CheckCircle2,
   Link2,
   CreditCard,
+  ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 
 interface AiInsightsPanelProps {
   conversation: Conversation;
   lastIntent?: IntentHistoryEntry;
   createdOrder?: LocalOrder;
+  paymentSession?: PaymentSession;
   onConfirmOrder?: () => void;
   onSendPaymentLink?: () => void;
   onMarkPaid?: () => void;
@@ -35,6 +40,7 @@ export function AiInsightsPanel({
   conversation,
   lastIntent,
   createdOrder,
+  paymentSession,
   onConfirmOrder,
   onSendPaymentLink,
   onMarkPaid,
@@ -194,27 +200,64 @@ export function AiInsightsPanel({
             <span className="font-bold text-slate-900">{formatCurrency(createdOrder.total)}</span>
           </div>
 
-          {createdOrder.paymentStatus !== "paid" && createdOrder.orderStatus !== "cancelled" && (
+          {/* Payment session state */}
+          {createdOrder.paymentStatus === "paid" ? (
+            <div className="mt-3 flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700">
+                <CheckCircle2 className="h-4 w-4" /> تم الدفع
+              </span>
+              <span className="text-xs text-emerald-600">
+                {paymentSession?.method ? PAYMENT_METHOD_LABELS[paymentSession.method] : "دفع"}
+                {paymentSession?.paidAt ? ` · ${formatClock(paymentSession.paidAt)}` : ""}
+              </span>
+            </div>
+          ) : createdOrder.orderStatus !== "cancelled" ? (
             <div className="mt-3 flex flex-col gap-2">
-              {createdOrder.paymentStatus !== "payment_link_sent" && onSendPaymentLink && (
+              {paymentSession && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500">حالة جلسة الدفع</span>
+                  <span className="font-semibold text-slate-700">{PAYMENT_SESSION_LABELS[paymentSession.status]}</span>
+                </div>
+              )}
+
+              {paymentSession && isSessionActive(paymentSession.status) && (
+                <Link
+                  href={`/checkout/${paymentSession.id}`}
+                  target="_blank"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-brain/30 bg-brain/5 px-3 py-2 text-sm font-semibold text-brain hover:bg-brain/10"
+                >
+                  <ExternalLink className="h-4 w-4" /> فتح صفحة الدفع
+                </Link>
+              )}
+
+              {onSendPaymentLink && (
                 <button
                   onClick={onSendPaymentLink}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-promotions px-3 py-2 text-sm font-semibold text-white shadow-card hover:opacity-90"
                 >
-                  <Link2 className="h-4 w-4" /> إرسال رابط دفع تجريبي
+                  {paymentSession && !isSessionActive(paymentSession.status) ? (
+                    <>
+                      <RefreshCw className="h-4 w-4" /> إعادة إرسال رابط الدفع
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="h-4 w-4" /> إرسال رابط الدفع
+                    </>
+                  )}
                 </button>
               )}
+
               {onMarkPaid && (
                 <button
                   onClick={onMarkPaid}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-promotions px-3 py-2 text-sm font-semibold text-white shadow-card hover:opacity-90"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
                 >
-                  <CreditCard className="h-4 w-4" /> تأكيد الدفع
+                  <CreditCard className="h-3.5 w-3.5" /> تأكيد الدفع يدوياً (إداري)
                 </button>
               )}
             </div>
-          )}
-          <p className="mt-1.5 text-[10px] text-slate-400">* دفع تجريبي — تكامل الدفع الفعلي في المرحلة القادمة.</p>
+          ) : null}
+          <p className="mt-1.5 text-[10px] text-slate-400">* دفع تجريبي محلي — لا يوجد مزود دفع فعلي.</p>
         </div>
       )}
 

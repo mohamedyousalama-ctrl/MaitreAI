@@ -1,7 +1,11 @@
 "use client";
 
-import type { LocalOrder } from "@/lib/types";
+import { useState } from "react";
+import Link from "next/link";
+import type { LocalOrder, PaymentSession } from "@/lib/types";
 import { useOrderStore } from "@/lib/order-store";
+import { usePaymentStore, currentOrigin } from "@/lib/payment-store";
+import { PAYMENT_SESSION_LABELS, PAYMENT_SESSION_STYLES, PAYMENT_METHOD_LABELS, isSessionActive } from "@/lib/payments";
 import { formatCurrency, formatOrderId, formatClock, cn } from "@/lib/utils";
 import { OrderStatusBadge, OrderPaymentBadge } from "./OrderStatusBadges";
 import {
@@ -11,25 +15,28 @@ import {
   Truck,
   ShoppingBag,
   Link2,
+  Copy,
+  Check,
+  ExternalLink,
   CreditCard,
   ChefHat,
   CheckCircle2,
   XCircle,
+  RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 
-/** Detailed order card with items, timeline, and status action buttons. */
+/** Detailed order card with items, payment session, timeline, and actions. */
 export function OrderCard({ order }: { order: LocalOrder }) {
-  const sendPaymentLinkMock = useOrderStore((s) => s.sendPaymentLinkMock);
-  const markPaid = useOrderStore((s) => s.markPaid);
   const updateOrderStatus = useOrderStore((s) => s.updateOrderStatus);
   const cancelOrder = useOrderStore((s) => s.cancelOrder);
+  const markPaidOverride = useOrderStore((s) => s.markPaid);
+  const session = usePaymentStore((s) =>
+    s.sessions.filter((x) => x.orderId === order.id).sort((a, b) => b.createdAt - a.createdAt)[0]
+  );
 
-  const actions = orderActions(order, {
-    sendPaymentLinkMock,
-    markPaid,
-    updateOrderStatus,
-    cancelOrder,
-  });
+  const lifecycle = lifecycleActions(order, { updateOrderStatus, cancelOrder });
+  const showPayment = order.orderStatus === "pending_payment" || !!session;
 
   return (
     <div className="flex flex-col gap-4">
@@ -64,7 +71,6 @@ export function OrderCard({ order }: { order: LocalOrder }) {
                   {it.name} <span className="text-slate-400">×{it.quantity}</span>
                 </span>
                 {it.modifiers.length > 0 && <p className="text-xs text-slate-400">{it.modifiers.join("، ")}</p>}
-                {it.notes && <p className="text-xs text-amber-600">{it.notes}</p>}
               </div>
               <span className="text-slate-600">{formatCurrency(it.total)}</span>
             </li>
@@ -80,6 +86,15 @@ export function OrderCard({ order }: { order: LocalOrder }) {
         </div>
       </div>
 
+      {/* Payment */}
+      {showPayment && (
+        <PaymentSection
+          order={order}
+          session={session}
+          onMarkPaidOverride={() => markPaidOverride(order.id, "human")}
+        />
+      )}
+
       {order.notes && (
         <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3">
           <p className="text-xs font-bold text-amber-700">ملاحظات</p>
@@ -87,7 +102,7 @@ export function OrderCard({ order }: { order: LocalOrder }) {
         </div>
       )}
 
-      {/* Timeline */}
+      {/* Order timeline */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <p className="mb-3 text-sm font-semibold text-slate-700">سجل الطلب</p>
         <ol className="space-y-3">
@@ -103,10 +118,10 @@ export function OrderCard({ order }: { order: LocalOrder }) {
         </ol>
       </div>
 
-      {/* Actions */}
-      {actions.length > 0 && (
+      {/* Lifecycle actions */}
+      {lifecycle.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {actions.map((a) => (
+          {lifecycle.map((a) => (
             <button
               key={a.key}
               onClick={a.run}
@@ -129,16 +144,129 @@ export function OrderCard({ order }: { order: LocalOrder }) {
   );
 }
 
-interface OrderActionsApi {
-  sendPaymentLinkMock: (id: string) => void;
-  markPaid: (id: string) => void;
+function PaymentSection({
+  order,
+  session,
+  onMarkPaidOverride,
+}: {
+  order: LocalOrder;
+  session?: PaymentSession;
+  onMarkPaidOverride: () => void;
+}) {
+  const sendPaymentLink = usePaymentStore((s) => s.sendPaymentLink);
+  const cancelSession = usePaymentStore((s) => s.cancelSession);
+  const refundSession = usePaymentStore((s) => s.refundSession);
+  const simulateSuccess = usePaymentStore((s) => s.simulateSuccess);
+  const [copied, setCopied] = useState(false);
+
+  const active = session && isSessionActive(session.status);
+  const isPaid = order.paymentStatus === "paid";
+
+  const copy = () => {
+    if (!session) return;
+    navigator.clipboard?.writeText(session.checkoutUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const adminPaid = () => {
+    if (active && session) simulateSuccess(session.id, "card");
+    else onMarkPaidOverride();
+  };
+
+  return (
+    <div className="rounded-2xl border border-promotions/20 bg-white p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-promotions">
+          <CreditCard className="h-4 w-4" /> الدفع
+        </p>
+        {session && (
+          <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset", PAYMENT_SESSION_STYLES[session.status])}>
+            {PAYMENT_SESSION_LABELS[session.status]}
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-1.5 text-sm">
+        <Row label="المبلغ" value={formatCurrency(order.total)} />
+        {session && <Row label="ينتهي في" value={formatClock(session.expiresAt)} />}
+        {session?.method && <Row label="طريقة الدفع" value={PAYMENT_METHOD_LABELS[session.method]} />}
+      </div>
+
+      {/* Checkout link */}
+      {session && active && (
+        <div className="mt-3 flex items-center gap-2 rounded-xl bg-slate-50 p-2">
+          <span dir="ltr" className="flex-1 truncate text-xs text-slate-500">{session.checkoutUrl}</span>
+          <button onClick={copy} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700" aria-label="نسخ">
+            {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+          </button>
+          <Link href={`/checkout/${session.id}`} target="_blank" className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-brain" aria-label="فتح">
+            <ExternalLink className="h-4 w-4" />
+          </Link>
+        </div>
+      )}
+
+      {/* Payment events */}
+      {session && session.events.length > 0 && (
+        <ol className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+          {session.events.map((e) => (
+            <li key={e.id} className="flex items-center justify-between text-xs">
+              <span className="text-slate-600">{e.label}</span>
+              <span className="text-slate-400">{formatClock(e.timestamp)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {/* Payment actions */}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {!isPaid && order.orderStatus !== "cancelled" && (
+          <button
+            onClick={() => sendPaymentLink(order.id, currentOrigin())}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-promotions px-3 py-2 text-sm font-semibold text-white shadow-card hover:opacity-90"
+          >
+            {session && !active ? <RefreshCw className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+            {session && !active ? "إعادة إرسال الرابط" : "إرسال رابط الدفع"}
+          </button>
+        )}
+        {!isPaid && order.orderStatus !== "cancelled" && (
+          <button
+            onClick={adminPaid}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <CheckCircle2 className="h-4 w-4" /> تأكيد الدفع يدوياً
+          </button>
+        )}
+        {session && active && (
+          <button
+            onClick={() => cancelSession(session.id)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <XCircle className="h-4 w-4" /> إلغاء جلسة الدفع
+          </button>
+        )}
+        {isPaid && session && session.status !== "refunded" && (
+          <button
+            onClick={() => refundSession(session.id)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+          >
+            <RotateCcw className="h-4 w-4" /> استرجاع المبلغ
+          </button>
+        )}
+      </div>
+      <p className="mt-2 text-[10px] text-slate-400">* دفع تجريبي محلي — لا يوجد مزود دفع فعلي.</p>
+    </div>
+  );
+}
+
+interface LifecycleApi {
   updateOrderStatus: (id: string, status: LocalOrder["orderStatus"]) => void;
   cancelOrder: (id: string) => void;
 }
 
 type Variant = "primary" | "muted" | "danger";
 
-function orderActions(order: LocalOrder, api: OrderActionsApi) {
+function lifecycleActions(order: LocalOrder, api: LifecycleApi) {
   const id = order.id;
   const list: { key: string; label: string; icon: typeof CreditCard; variant: Variant; run: () => void }[] = [];
   const cancelAction = { key: "cancel", label: "إلغاء الطلب", icon: XCircle, variant: "danger" as Variant, run: () => api.cancelOrder(id) };
@@ -146,9 +274,6 @@ function orderActions(order: LocalOrder, api: OrderActionsApi) {
   switch (order.orderStatus) {
     case "pending_payment":
     case "pending_confirmation":
-      if (order.paymentStatus !== "payment_link_sent")
-        list.push({ key: "link", label: "إرسال رابط دفع تجريبي", icon: Link2, variant: "muted", run: () => api.sendPaymentLinkMock(id) });
-      list.push({ key: "paid", label: "تأكيد الدفع", icon: CreditCard, variant: "primary", run: () => api.markPaid(id) });
       list.push(cancelAction);
       break;
     case "paid":
