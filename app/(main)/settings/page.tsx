@@ -6,6 +6,9 @@ import { SettingsCard, SettingsRow, Toggle } from "@/components/ui/SettingsCard"
 import { TextField, SelectField, TextAreaField } from "@/components/ui/FormControls";
 import { StatusSelector } from "@/components/ui/StatusSelector";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { WhatsAppStatusCard } from "@/components/messaging/WhatsAppStatusCard";
+import { OutboundLogList } from "@/components/messaging/MessageLogList";
+import { useMessageLogStore } from "@/lib/messaging/message-log-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import type { AiEmojiUsage, AiLanguage, AiPersonality, AiResponseLength } from "@/lib/types";
 import {
@@ -49,6 +52,7 @@ export default function SettingsPage() {
   const aiTone = useRestaurantStore((s) => s.aiTone);
   const updateAiTone = useRestaurantStore((s) => s.updateAiTone);
   const resetAll = useRestaurantStore((s) => s.resetAll);
+  const outbound = useMessageLogStore((s) => s.outbound);
 
   const [resetOpen, setResetOpen] = useState(false);
 
@@ -122,13 +126,8 @@ export default function SettingsPage() {
             </div>
           </SettingsCard>
 
-          {/* WhatsApp connection — placeholder */}
-          <SettingsCard title="ربط واتساب" description="حالة الاتصال بواتساب للأعمال" icon={MessageCircle} accentBg="bg-conversations">
-            <SettingsRow label="الحالة" value={<span className="font-semibold text-conversations">متصل (تجريبي)</span>} />
-            <SettingsRow label="الرقم" value={profile.phone} />
-            <SettingsRow label="الردود التلقائية" value={<Toggle checked />} />
-            <p className="text-xs text-slate-400">* تكامل واتساب الفعلي سيتم في مرحلة لاحقة.</p>
-          </SettingsCard>
+          {/* WhatsApp connection — live status (Sprint 6) */}
+          <WhatsAppStatusCard />
 
           {/* Payment provider — placeholder */}
           <SettingsCard title="بوابة الدفع" description="مزود خدمة الدفع وروابط الدفع" icon={CreditCard} accentBg="bg-promotions">
@@ -152,6 +151,16 @@ export default function SettingsPage() {
             <SettingsRow label="لغة الواجهة" value="العربية (RTL)" />
             <SettingsRow label="لغة الردود الافتراضية" value={profile.defaultLanguage} />
             <SettingsRow label="الرد بلغة العميل تلقائياً" value={<Toggle checked />} />
+          </SettingsCard>
+
+          {/* Outbound message log (Sprint 6) */}
+          <SettingsCard
+            title="سجل الرسائل الصادرة"
+            description="آخر الرسائل المرسلة عبر القنوات (محاكاة محلية)"
+            icon={MessageCircle}
+            accentBg="bg-orders"
+          >
+            <OutboundLogList entries={outbound.slice(0, 6)} />
           </SettingsCard>
         </div>
       )}

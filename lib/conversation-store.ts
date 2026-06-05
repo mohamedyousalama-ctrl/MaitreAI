@@ -9,6 +9,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
+  ChannelKey,
   ChatMessage,
   Conversation,
   IntentHistoryEntry,
@@ -35,6 +36,12 @@ interface ConversationState {
   intentHistory: IntentHistoryEntry[];
 
   selectConversation: (id: string) => void;
+  findOrCreateByPhone: (args: {
+    phone: string;
+    name?: string;
+    channel?: ChannelKey;
+    branch?: string;
+  }) => string;
   addCustomerMessage: (convId: string, text: string) => string;
   addHumanMessage: (convId: string, text: string) => void;
   addSystemMessage: (convId: string, text: string) => void;
@@ -60,12 +67,42 @@ const patchConv = (
 
 export const useConversationStore = create<ConversationState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       conversations: cloneSeed(),
       selectedId: seedConversations[0]?.id ?? "",
       intentHistory: [],
 
       selectConversation: (id) => set({ selectedId: id }),
+
+      // Match an existing conversation by phone (digits only) or create a new one.
+      // Used by the messaging simulator + inbound webhook injection.
+      findOrCreateByPhone: ({ phone, name, channel = "whatsapp", branch }) => {
+        const digits = (p: string) => p.replace(/\D/g, "");
+        const target = digits(phone);
+        const existing = get().conversations.find((c) => digits(c.phone) === target);
+        if (existing) {
+          set({ selectedId: existing.id });
+          return existing.id;
+        }
+        const id = newId("conv");
+        const palette = ["#2563eb", "#9333ea", "#059669", "#f97316", "#06b6d4", "#db2777"];
+        const conv: Conversation = {
+          id,
+          customer: name?.trim() || phone,
+          phone,
+          avatarColor: palette[Math.floor(Math.random() * palette.length)],
+          channel,
+          owner: "ai",
+          status: "AI نشط",
+          lastMessage: "",
+          lastTime: nowTime(),
+          unread: 0,
+          branch: branch || "فرع الياسمين",
+          messages: [],
+        };
+        set((s) => ({ conversations: [conv, ...s.conversations], selectedId: id }));
+        return id;
+      },
 
       addCustomerMessage: (convId, text) => {
         const id = newId("msg");

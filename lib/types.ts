@@ -4,6 +4,11 @@
 // later sprints can swap the data source without touching the UI layer.
 // ============================================================================
 
+// Channel model lives in the messaging layer (Sprint 6); re-used here so a
+// conversation can record which channel it originated from.
+import type { ChannelKey } from "./messaging/types";
+export type { ChannelKey };
+
 export type ModuleKey =
   | "dashboard"
   | "conversations"
@@ -282,7 +287,7 @@ export interface Conversation {
   customerId?: string;
   phone: string;
   avatarColor: string;
-  channel: "whatsapp";
+  channel: ChannelKey;
   owner: ConversationOwner;
   status: ConversationStatus;
   lastMessage: string;
