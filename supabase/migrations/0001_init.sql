@@ -32,6 +32,10 @@ create table if not exists public.restaurants (
   ai_tone jsonb not null default '{}'::jsonb,
   brain_score int not null default 0,
   active boolean not null default true,
+  -- Amendment 01 (A4): open/closed master switch + pre-orders
+  is_open boolean not null default true,
+  closed_message text,
+  accept_preorders boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -40,7 +44,8 @@ create table if not exists public.members (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null references public.restaurants(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
-  role text not null default 'owner',          -- owner | manager | staff
+  -- Amendment 01 (A5): launch roles are exactly manager | operation
+  role text not null default 'manager' check (role in ('manager','operation')),
   branch_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -237,9 +242,10 @@ create table if not exists public.orders (
   delivery_fee numeric(10,2) not null default 0,
   total numeric(10,2) not null default 0,
   currency text not null default 'ر.س',
+  -- Amendment 01 (A3): kitchen board removed; status is driven by order_status
+  -- transitions (preparing/ready/out_for_delivery/delivered) on the Orders page.
   order_status text not null default 'draft',
   payment_status text not null default 'unpaid',
-  kitchen_status text not null default 'new',
   address text,
   zone_id uuid references public.delivery_zones(id) on delete set null,
   notes text,

@@ -33,9 +33,9 @@ begin
       82)
   returning id into r_id;
 
-  -- Owner membership -------------------------------------------------------
+  -- Manager membership (Amendment 01 A5: roles = manager | operation) -------
   insert into public.members (restaurant_id, user_id, role)
-  values (r_id, p_user_id, 'owner');
+  values (r_id, p_user_id, 'manager');
 
   -- Branches ---------------------------------------------------------------
   insert into public.branches (restaurant_id, name, address, phone, hours, active)
