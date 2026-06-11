@@ -3,6 +3,7 @@
 import { Bell, Search, ChevronDown } from "lucide-react";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { seedProfile } from "@/lib/seed-data";
+import { SignOutButton } from "./SignOutButton";
 
 export function AppTopbar() {
   const hydrated = useHasHydrated();
@@ -46,6 +47,9 @@ export function AppTopbar() {
           </div>
           <ChevronDown className="hidden h-4 w-4 text-slate-400 sm:block" />
         </button>
+
+        {/* Sign out (only rendered when Supabase auth is active) */}
+        <SignOutButton />
       </div>
     </header>
   );
