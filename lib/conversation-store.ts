@@ -1,21 +1,27 @@
 // ============================================================================
-// MaitreAI — Conversation state engine (Zustand + localStorage persist)
-// Holds the live conversations, messages, selection, owner (AI/human), and the
-// intent history produced by the local mock AI engine. No backend, no network.
+// MaitreAI — Conversation state engine (Sprint 7 Pass 2)
+// DB-backed when Supabase is configured: loads the tenant's conversations,
+// writes messages/status through to Postgres, and stays in sync via realtime.
+// Demo mode keeps the original seed + localStorage behavior. Ephemeral AI
+// working state (draftOrder/entities/typing) lives client-side only.
 // ============================================================================
 
 "use client";
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type {
-  ChannelKey,
-  ChatMessage,
-  Conversation,
-  IntentHistoryEntry,
-} from "./types";
+import type { ChannelKey, ChatMessage, Conversation, IntentHistoryEntry } from "./types";
 import { conversations as seedConversations } from "./mock-data";
 import { newId } from "./store";
+import { createClient } from "./supabase/client";
+import {
+  ensureConversationDb,
+  insertMessageDb,
+  loadConversations,
+  subscribeConversations,
+  updateConversationDb,
+} from "./db/conversations";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Local time string with western digits, e.g. "3:05 م". */
 export function nowTime(): string {
@@ -29,182 +35,259 @@ export function nowTime(): string {
 }
 
 const cloneSeed = (): Conversation[] => JSON.parse(JSON.stringify(seedConversations));
+const fire = (p: PromiseLike<unknown>) => void Promise.resolve(p).then(undefined, (e) => console.error("[conv:db]", e));
+const digits = (p: string) => p.replace(/\D/g, "");
 
 interface ConversationState {
   conversations: Conversation[];
   selectedId: string;
   intentHistory: IntentHistoryEntry[];
 
+  _sb: SupabaseClient | null;
+  _rid: string | null;
+  dbReady: boolean;
+  initFromDb: (restaurantId: string) => Promise<(() => void) | undefined>;
+  reload: () => Promise<void>;
+
   selectConversation: (id: string) => void;
-  findOrCreateByPhone: (args: {
-    phone: string;
-    name?: string;
-    channel?: ChannelKey;
-    branch?: string;
-  }) => string;
+  findOrCreateByPhone: (args: { phone: string; name?: string; channel?: ChannelKey; branch?: string }) => string;
   addCustomerMessage: (convId: string, text: string) => string;
   addHumanMessage: (convId: string, text: string) => void;
   addSystemMessage: (convId: string, text: string) => void;
   setStatus: (convId: string, status: Conversation["status"]) => void;
   attachOrder: (convId: string, orderId: string) => void;
   setTyping: (convId: string, value: boolean) => void;
-  commitAiTurn: (
-    convId: string,
-    aiMessage: ChatMessage,
-    patch: Partial<Conversation>,
-    history: IntentHistoryEntry
-  ) => void;
+  commitAiTurn: (convId: string, aiMessage: ChatMessage, patch: Partial<Conversation>, history: IntentHistoryEntry) => void;
   takeoverToHuman: (convId: string) => void;
   returnToAi: (convId: string) => void;
   resetConversations: () => void;
 }
 
-const patchConv = (
-  list: Conversation[],
-  id: string,
-  fn: (c: Conversation) => Conversation
-): Conversation[] => list.map((c) => (c.id === id ? fn(c) : c));
+const patchConv = (list: Conversation[], id: string, fn: (c: Conversation) => Conversation): Conversation[] =>
+  list.map((c) => (c.id === id ? fn(c) : c));
+
+let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useConversationStore = create<ConversationState>()(
   persist(
-    (set, get) => ({
-      conversations: cloneSeed(),
-      selectedId: seedConversations[0]?.id ?? "",
-      intentHistory: [],
+    (set, get) => {
+      const msgId = () => (get()._sb ? crypto.randomUUID() : newId("msg"));
+      const aiMeta = (m: ChatMessage) => ({
+        confidence: m.confidence,
+        intent: m.intent,
+        sources: m.sources,
+        suggestedAction: m.suggestedAction,
+      });
 
-      selectConversation: (id) => set({ selectedId: id }),
+      return {
+        conversations: cloneSeed(),
+        selectedId: seedConversations[0]?.id ?? "",
+        intentHistory: [],
 
-      // Match an existing conversation by phone (digits only) or create a new one.
-      // Used by the messaging simulator + inbound webhook injection.
-      findOrCreateByPhone: ({ phone, name, channel = "whatsapp", branch }) => {
-        const digits = (p: string) => p.replace(/\D/g, "");
-        const target = digits(phone);
-        const existing = get().conversations.find((c) => digits(c.phone) === target);
-        if (existing) {
-          set({ selectedId: existing.id });
-          return existing.id;
-        }
-        const id = newId("conv");
-        const palette = ["#2563eb", "#9333ea", "#059669", "#f97316", "#06b6d4", "#db2777"];
-        const conv: Conversation = {
-          id,
-          customer: name?.trim() || phone,
-          phone,
-          avatarColor: palette[Math.floor(Math.random() * palette.length)],
-          channel,
-          owner: "ai",
-          status: "AI نشط",
-          lastMessage: "",
-          lastTime: nowTime(),
-          unread: 0,
-          branch: branch || "فرع الياسمين",
-          messages: [],
-        };
-        set((s) => ({ conversations: [conv, ...s.conversations], selectedId: id }));
-        return id;
-      },
+        _sb: null,
+        _rid: null,
+        dbReady: false,
 
-      addCustomerMessage: (convId, text) => {
-        const id = newId("msg");
-        const time = nowTime();
-        set((s) => ({
-          conversations: patchConv(s.conversations, convId, (c) => ({
-            ...c,
-            messages: [...c.messages, { id, sender: "customer", text, time }],
-            lastMessage: text,
-            lastTime: time,
-            unread: 0,
-          })),
-        }));
-        return id;
-      },
+        initFromDb: async (restaurantId) => {
+          const sb = createClient();
+          if (!sb) return undefined;
+          set({ _sb: sb, _rid: restaurantId });
+          const convs = await loadConversations(sb, restaurantId);
+          set({ conversations: convs, selectedId: convs[0]?.id ?? "", dbReady: true });
+          return subscribeConversations(sb, restaurantId, () => {
+            clearTimeout(reloadTimer);
+            reloadTimer = setTimeout(() => fire(get().reload()), 250);
+          });
+        },
 
-      addHumanMessage: (convId, text) => {
-        const time = nowTime();
-        set((s) => ({
-          conversations: patchConv(s.conversations, convId, (c) => ({
-            ...c,
-            messages: [...c.messages, { id: newId("msg"), sender: "human", text, time }],
-            lastMessage: `موظف: ${text}`,
-            lastTime: time,
-          })),
-        }));
-      },
+        reload: async () => {
+          const { _sb, _rid } = get();
+          if (!_sb || !_rid) return;
+          const fresh = await loadConversations(_sb, _rid);
+          const cur = new Map(get().conversations.map((c) => [c.id, c]));
+          // Preserve ephemeral client-only working state across reloads.
+          const merged = fresh.map((f) => {
+            const e = cur.get(f.id);
+            return e
+              ? { ...f, draftOrder: e.draftOrder, entities: e.entities, aiTyping: e.aiTyping, linkedOrderId: e.linkedOrderId ?? f.linkedOrderId, suggestedAction: e.suggestedAction ?? f.suggestedAction }
+              : f;
+          });
+          set({ conversations: merged });
+        },
 
-      addSystemMessage: (convId, text) => {
-        const time = nowTime();
-        set((s) => ({
-          conversations: patchConv(s.conversations, convId, (c) => ({
-            ...c,
-            messages: [...c.messages, { id: newId("msg"), sender: "system", text, time }],
-            lastMessage: text,
-            lastTime: time,
-          })),
-        }));
-      },
+        selectConversation: (id) => set({ selectedId: id }),
 
-      setStatus: (convId, status) =>
-        set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, status })) })),
-
-      attachOrder: (convId, orderId) =>
-        set((s) => ({
-          conversations: patchConv(s.conversations, convId, (c) => ({
-            ...c,
-            linkedOrderId: orderId,
-            draftOrder: undefined,
-            status: "بانتظار الدفع",
-          })),
-        })),
-
-      setTyping: (convId, value) =>
-        set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, aiTyping: value })) })),
-
-      commitAiTurn: (convId, aiMessage, patch, history) =>
-        set((s) => ({
-          conversations: patchConv(s.conversations, convId, (c) => ({
-            ...c,
-            messages: [...c.messages, aiMessage],
-            aiTyping: false,
-            lastMessage: aiMessage.text,
-            lastTime: aiMessage.time,
-            ...patch,
-          })),
-          intentHistory: [...s.intentHistory, history],
-        })),
-
-      takeoverToHuman: (convId) =>
-        set((s) => ({
-          conversations: patchConv(s.conversations, convId, (c) => ({
-            ...c,
-            owner: "human",
-            status: "تم التحويل لموظف",
-            aiTyping: false,
-            messages: [
-              ...c.messages,
-              { id: newId("msg"), sender: "system", text: "تم تحويل المحادثة إلى موظف", time: nowTime() },
-            ],
-          })),
-        })),
-
-      returnToAi: (convId) =>
-        set((s) => ({
-          conversations: patchConv(s.conversations, convId, (c) => ({
-            ...c,
+        findOrCreateByPhone: ({ phone, name, channel = "whatsapp", branch }) => {
+          const target = digits(phone);
+          const existing = get().conversations.find((c) => digits(c.phone) === target);
+          if (existing) {
+            set({ selectedId: existing.id });
+            return existing.id;
+          }
+          const { _sb, _rid } = get();
+          const id = _sb ? crypto.randomUUID() : newId("conv");
+          const palette = ["#2563eb", "#9333ea", "#059669", "#f97316", "#06b6d4", "#db2777"];
+          const conv: Conversation = {
+            id,
+            customer: name?.trim() || phone,
+            phone,
+            avatarColor: palette[Math.floor(Math.random() * palette.length)],
+            channel,
             owner: "ai",
             status: "AI نشط",
-            escalationReason: undefined,
-            messages: [
-              ...c.messages,
-              { id: newId("msg"), sender: "system", text: "تمت إعادة المحادثة إلى الموظف الذكي", time: nowTime() },
-            ],
-          })),
-        })),
+            lastMessage: "",
+            lastTime: nowTime(),
+            unread: 0,
+            branch: branch || "",
+            messages: [],
+          };
+          set((s) => ({ conversations: [conv, ...s.conversations], selectedId: id }));
+          if (_sb && _rid) fire(ensureConversationDb(_sb, _rid, id, { phone, name, channel }));
+          return id;
+        },
 
-      resetConversations: () => set({ conversations: cloneSeed(), intentHistory: [], selectedId: seedConversations[0]?.id ?? "" }),
-    }),
+        addCustomerMessage: (convId, text) => {
+          const id = msgId();
+          const time = nowTime();
+          set((s) => ({
+            conversations: patchConv(s.conversations, convId, (c) => ({
+              ...c,
+              messages: [...c.messages, { id, sender: "customer", text, time }],
+              lastMessage: text,
+              lastTime: time,
+              unread: 0,
+            })),
+          }));
+          const { _sb, _rid } = get();
+          if (_sb && _rid) fire(insertMessageDb(_sb, _rid, convId, { id, sender: "customer", text }));
+          return id;
+        },
+
+        addHumanMessage: (convId, text) => {
+          const id = msgId();
+          const time = nowTime();
+          set((s) => ({
+            conversations: patchConv(s.conversations, convId, (c) => ({
+              ...c,
+              messages: [...c.messages, { id, sender: "human", text, time }],
+              lastMessage: `موظف: ${text}`,
+              lastTime: time,
+            })),
+          }));
+          const { _sb, _rid } = get();
+          if (_sb && _rid) fire(insertMessageDb(_sb, _rid, convId, { id, sender: "human", text }));
+        },
+
+        addSystemMessage: (convId, text) => {
+          const id = msgId();
+          const time = nowTime();
+          set((s) => ({
+            conversations: patchConv(s.conversations, convId, (c) => ({
+              ...c,
+              messages: [...c.messages, { id, sender: "system", text, time }],
+              lastMessage: text,
+              lastTime: time,
+            })),
+          }));
+          const { _sb, _rid } = get();
+          if (_sb && _rid) fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text }));
+        },
+
+        setStatus: (convId, status) => {
+          set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, status })) }));
+          const { _sb } = get();
+          if (_sb) fire(updateConversationDb(_sb, convId, { status }));
+        },
+
+        attachOrder: (convId, orderId) => {
+          set((s) => ({
+            conversations: patchConv(s.conversations, convId, (c) => ({
+              ...c,
+              linkedOrderId: orderId,
+              draftOrder: undefined,
+              status: "بانتظار الدفع",
+            })),
+          }));
+          const { _sb } = get();
+          if (_sb) fire(updateConversationDb(_sb, convId, { status: "بانتظار الدفع" }));
+        },
+
+        setTyping: (convId, value) =>
+          set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, aiTyping: value })) })),
+
+        commitAiTurn: (convId, aiMessage, patch, history) => {
+          const id = msgId();
+          const msg = { ...aiMessage, id };
+          set((s) => ({
+            conversations: patchConv(s.conversations, convId, (c) => ({
+              ...c,
+              messages: [...c.messages, msg],
+              aiTyping: false,
+              lastMessage: msg.text,
+              lastTime: msg.time,
+              ...patch,
+            })),
+            intentHistory: [...s.intentHistory, history],
+          }));
+          const { _sb, _rid } = get();
+          if (_sb && _rid) {
+            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "ai", text: msg.text, meta: aiMeta(msg) }));
+            fire(
+              updateConversationDb(_sb, convId, {
+                status: patch.status,
+                owner: patch.owner,
+                last_intent: patch.currentIntent ?? null,
+                confidence: patch.aiConfidence ?? null,
+                escalation_reason: patch.escalationReason ?? null,
+              })
+            );
+          }
+        },
+
+        takeoverToHuman: (convId) => {
+          const id = msgId();
+          set((s) => ({
+            conversations: patchConv(s.conversations, convId, (c) => ({
+              ...c,
+              owner: "human",
+              status: "تم التحويل لموظف",
+              aiTyping: false,
+              messages: [...c.messages, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف", time: nowTime() }],
+            })),
+          }));
+          const { _sb, _rid } = get();
+          if (_sb && _rid) {
+            fire(updateConversationDb(_sb, convId, { owner: "human", status: "تم التحويل لموظف" }));
+            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف" }));
+          }
+        },
+
+        returnToAi: (convId) => {
+          const id = msgId();
+          set((s) => ({
+            conversations: patchConv(s.conversations, convId, (c) => ({
+              ...c,
+              owner: "ai",
+              status: "AI نشط",
+              escalationReason: undefined,
+              messages: [...c.messages, { id, sender: "system", text: "تمت إعادة المحادثة إلى الموظف الذكي", time: nowTime() }],
+            })),
+          }));
+          const { _sb, _rid } = get();
+          if (_sb && _rid) {
+            fire(updateConversationDb(_sb, convId, { owner: "ai", status: "AI نشط", escalation_reason: null }));
+            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: "تمت إعادة المحادثة إلى الموظف الذكي" }));
+          }
+        },
+
+        resetConversations: () =>
+          set({ conversations: cloneSeed(), intentHistory: [], selectedId: seedConversations[0]?.id ?? "" }),
+      };
+    },
     {
       name: "maitreai-conversations",
       version: 1,
+      partialize: (s) => ({ conversations: s.conversations, selectedId: s.selectedId, intentHistory: s.intentHistory }),
     }
   )
 );
