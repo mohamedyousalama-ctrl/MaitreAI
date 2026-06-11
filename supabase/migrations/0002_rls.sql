@@ -46,7 +46,8 @@ begin
     'restaurants','members','branches','menu_categories','menu_items','modifiers',
     'menu_item_modifiers','delivery_zones','policies','faqs','promotions','customers',
     'conversations','messages','orders','order_events','payment_sessions',
-    'agent_runs','onboarding_state'
+    'agent_runs','onboarding_state',
+    'segments','campaigns','promotion_redemptions'  -- Amendment 02 (C7)
   ] loop
     execute format('alter table public.%I enable row level security;', t);
   end loop;
@@ -110,3 +111,23 @@ begin
          with check (public.is_member_of(restaurant_id));', t);
   end loop;
 end $$;
+
+-- Manager-only tables (Amendment 02 D3): segments + campaigns — operation has
+-- no read or write. promotions stays in the config group (operation read-only).
+do $$
+declare t text;
+begin
+  foreach t in array array['segments','campaigns'] loop
+    execute format('drop policy if exists %1$s_rw on public.%1$s;', t);
+    execute format(
+      'create policy %1$s_rw on public.%1$s
+         using (public.is_manager_of(restaurant_id))
+         with check (public.is_manager_of(restaurant_id));', t);
+  end loop;
+end $$;
+
+-- promotion_redemptions (Amendment 02 C7): members may READ (analytics); writes
+-- happen only via the service role on order completion (no client write policy).
+drop policy if exists promotion_redemptions_read on public.promotion_redemptions;
+create policy promotion_redemptions_read on public.promotion_redemptions
+  for select using (public.is_member_of(restaurant_id));

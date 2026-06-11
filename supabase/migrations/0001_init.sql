@@ -95,6 +95,9 @@ create table if not exists public.menu_items (
   available boolean not null default true,
   ingredients text[] not null default '{}',
   allergens text[] not null default '{}',
+  -- Amendment 02 (B4): dish image governance
+  image_kind text not null default 'card' check (image_kind in ('real','illustrative','card')),
+  image_status text not null default 'approved' check (image_status in ('approved','pending','rejected')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -159,23 +162,71 @@ create table if not exists public.faqs (
 );
 create index if not exists faqs_restaurant_idx on public.faqs(restaurant_id);
 
+-- Amendment 02 (C7): full Promotion Machine model.
 create table if not exists public.promotions (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null references public.restaurants(id) on delete cascade,
   name text not null,
-  type text not null default 'discount',        -- combo | discount | bogo
-  items jsonb not null default '[]'::jsonb,
-  bundle_price numeric(10,2),
-  discount_pct numeric(5,2),
-  starts_at timestamptz,
-  ends_at timestamptz,
-  days_of_week int[] not null default '{}',
-  active boolean not null default true,
+  type text not null default 'percent_off'
+    check (type in ('percent_off','amount_off','combo','bogo',
+                    'free_item_over_threshold','free_delivery','first_order',
+                    'promo_code','happy_hour')),
+  config jsonb not null default '{}'::jsonb,        -- items/categories/amounts/thresholds
+  code text,                                        -- shareable code (unique per restaurant)
+  segment_ids uuid[] not null default '{}',
+  custom_filter jsonb,
+  schedule jsonb not null default '{}'::jsonb,      -- start/end/days/windows
+  caps jsonb not null default '{}'::jsonb,          -- total/per_customer/per_day
+  budget_cap numeric(12,2),
+  spent numeric(12,2) not null default 0,
+  eligibility jsonb not null default '{}'::jsonb,   -- min_order/branches/fulfillment/channels/first_order_only
+  stacking text not null default 'exclusive' check (stacking in ('exclusive','stackable')),
+  state text not null default 'draft'
+    check (state in ('draft','scheduled','active','paused','ended','archived')),
   created_from_text text,
+  created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index if not exists promotions_restaurant_idx on public.promotions(restaurant_id);
+create unique index if not exists promotions_code_uniq
+  on public.promotions(restaurant_id, code) where code is not null;
+
+-- AI targeting segments (built-in + NL-custom).
+create table if not exists public.segments (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  name text not null,
+  kind text not null default 'custom' check (kind in ('builtin','custom')),
+  definition jsonb not null default '{}'::jsonb,
+  last_count int not null default 0,
+  refreshed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists segments_restaurant_idx on public.segments(restaurant_id);
+
+-- (promotion_redemptions is defined after the orders table — it references it.)
+
+-- Outbound marketing campaigns (promotion + segment + template + schedule).
+create table if not exists public.campaigns (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  promotion_id uuid references public.promotions(id) on delete set null,
+  segment_id uuid references public.segments(id) on delete set null,
+  template_name text,
+  scheduled_at timestamptz,
+  state text not null default 'draft'
+    check (state in ('draft','scheduled','sending','done','cancelled')),
+  sent_count int not null default 0,
+  delivered_count int not null default 0,
+  read_count int not null default 0,
+  opted_out_count int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists campaigns_restaurant_idx on public.campaigns(restaurant_id);
+create index if not exists campaigns_promotion_idx on public.campaigns(promotion_id);
 
 -- ===========================================================================
 -- CRM + conversations + orders
@@ -191,6 +242,12 @@ create table if not exists public.customers (
   ltv numeric(12,2) not null default 0,
   orders_count int not null default 0,
   last_seen_at timestamptz,
+  -- Amendment 02 (C5.2): marketing consent + frequency tracking
+  marketing_opt_in boolean not null default false,
+  opt_in_source text,
+  opt_in_at timestamptz,
+  opted_out_at timestamptz,
+  last_marketing_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (restaurant_id, phone)
@@ -242,6 +299,9 @@ create table if not exists public.orders (
   delivery_fee numeric(10,2) not null default 0,
   total numeric(10,2) not null default 0,
   currency text not null default 'ر.س',
+  -- Amendment 02 (C7): promotion discounts applied to this order
+  discount_total numeric(10,2) not null default 0,
+  applied_promotions jsonb not null default '[]'::jsonb,  -- [{id,name,amount}]
   -- Amendment 01 (A3): kitchen board removed; status is driven by order_status
   -- transitions (preparing/ready/out_for_delivery/delivered) on the Orders page.
   order_status text not null default 'draft',
@@ -254,6 +314,20 @@ create table if not exists public.orders (
 );
 create index if not exists orders_restaurant_idx on public.orders(restaurant_id);
 create index if not exists orders_conversation_idx on public.orders(conversation_id);
+
+-- Amendment 02 (C7): redemptions — append-only; written by the server (service
+-- role) on order completion. Defined here because it references orders+customers.
+create table if not exists public.promotion_redemptions (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  promotion_id uuid not null references public.promotions(id) on delete cascade,
+  order_id uuid references public.orders(id) on delete set null,
+  customer_id uuid references public.customers(id) on delete set null,
+  amount_discounted numeric(10,2) not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists promotion_redemptions_restaurant_idx on public.promotion_redemptions(restaurant_id);
+create index if not exists promotion_redemptions_promotion_idx on public.promotion_redemptions(promotion_id);
 
 create table if not exists public.order_events (
   id uuid primary key default gen_random_uuid(),
@@ -322,8 +396,8 @@ declare t text;
 begin
   foreach t in array array[
     'restaurants','members','branches','menu_categories','menu_items','modifiers',
-    'delivery_zones','policies','faqs','promotions','customers','conversations',
-    'orders','payment_sessions','onboarding_state'
+    'delivery_zones','policies','faqs','promotions','segments','campaigns',
+    'customers','conversations','orders','payment_sessions','onboarding_state'
   ] loop
     execute format(
       'drop trigger if exists trg_touch_%1$s on public.%1$s;
