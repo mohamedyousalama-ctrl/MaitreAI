@@ -94,7 +94,9 @@ function (does NOT insert data until called with a user).
   `/login`. Add `<URL>/auth/callback` to Auth → URL Configuration → Redirect URLs
   if you also use magic links.
 - **Phone OTP** (preferred for MENA) requires an SMS provider (Twilio / MessageBird)
-  configured in Auth → Providers → Phone. Until then, use email to sign in.
+  configured in Auth → Providers → Phone. **Deferred (owner decision):** email OTP
+  is sufficient for now; configuring the SMS provider is an explicit **prerequisite
+  for the onboarding sprint** (self-serve signup). Until then, use email to sign in.
 
 ## D. Set env vars (local `.env.local` and Vercel)
 | Name | Value | Scope |
