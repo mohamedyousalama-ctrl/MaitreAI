@@ -60,16 +60,15 @@ export function AppSidebar() {
         })}
       </nav>
 
-      {/* Footer status */}
+      {/* Footer status — truthful (no false connection claims, PRD Amendment 03 F3) */}
       <div className="border-t border-slate-100 p-4">
         <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-3">
           <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-conversations opacity-75" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-conversations" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-slate-300" />
           </span>
           <div className="text-xs">
-            <p className="font-semibold text-slate-800">الموظف الذكي نشط</p>
-            <p className="text-slate-500">متصل بواتساب</p>
+            <p className="font-semibold text-slate-800">{restaurantName}</p>
+            <p className="text-slate-500">الوضع التجريبي</p>
           </div>
         </div>
       </div>
