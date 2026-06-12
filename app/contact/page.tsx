@@ -33,7 +33,7 @@ export default function ContactPage() {
         </a>
 
         <section className="mt-10 rounded-2xl border border-slate-200 bg-slate-50 p-6">
-          <h2 className="text-sm font-semibold text-slate-700">بيانات الشركة — Company Details</h2>
+          <h2 dir="rtl" className="text-sm font-semibold text-slate-700">بيانات الشركة — Company Details</h2>
           <div className="mt-3 space-y-2 text-sm leading-relaxed text-slate-600">
             <p dir="rtl">
               MaitreAI هو منتج من شركة سيتي بيكر (ش.ذ.م.م) — سجل تجاري رقم ٢١٦٥٦٥ — ١٤٩ شارع النصر،

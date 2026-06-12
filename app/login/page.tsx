@@ -18,6 +18,11 @@ type Step = "request" | "verify";
 // no false affordances). Flip NEXT_PUBLIC_PHONE_OTP_ENABLED=true once SMS is live.
 const PHONE_OTP_ENABLED = process.env.NEXT_PUBLIC_PHONE_OTP_ENABLED === "true";
 
+// Brand terracotta CTA — matches the landing-page primary button (#b5502e).
+// Used inline (as the landing page does) so the shared Tailwind theme stays
+// untouched. Replaces the old WhatsApp-green (`conversations`) button styling.
+const BRAND_CTA = "#b5502e";
+
 const METHODS: { v: Method; label: string; icon: typeof Mail }[] = [
   ...(PHONE_OTP_ENABLED ? [{ v: "phone" as Method, label: "الجوال", icon: Phone }] : []),
   { v: "email" as Method, label: "البريد", icon: Mail },
@@ -91,7 +96,7 @@ export default function LoginPage() {
         {/* Brand */}
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-mark.svg" alt="MaitreAi" width={56} height={56} className="h-14 w-14" />
+          <img src="/logo-mark.svg" alt="MaitreAI" width={56} height={56} className="h-14 w-14" />
           <h1 className="text-xl font-bold text-slate-900">MaitreAI</h1>
           <p className="text-sm text-slate-500">
             مساعد تشغيل ومبيعات للمطاعم — يدير الطلبات، المحادثات، الدفع، والعروض من مكان واحد.
@@ -108,7 +113,8 @@ export default function LoginPage() {
               </p>
               <Link
                 href="/dashboard"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-conversations px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
+                style={{ backgroundColor: BRAND_CTA }}
               >
                 الدخول للوضع التجريبي <ArrowRight className="h-4 w-4" />
               </Link>
@@ -146,12 +152,13 @@ export default function LoginPage() {
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder={method === "phone" ? "+9665XXXXXXXX" : "you@example.com"}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-conversations focus:ring-2 focus:ring-conversations/10"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-[#b5502e] focus:ring-2 focus:ring-[#b5502e]/10"
                   />
                   <button
                     onClick={sendCode}
                     disabled={loading || !identifier.trim()}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-conversations px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 disabled:opacity-40"
+                    style={{ backgroundColor: BRAND_CTA }}
                   >
                     {loading && <Loader2 className="h-4 w-4 animate-spin" />} إرسال رمز الدخول
                   </button>
@@ -164,12 +171,13 @@ export default function LoginPage() {
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     placeholder="______"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-center text-lg tracking-[0.5em] outline-none focus:border-conversations focus:ring-2 focus:ring-conversations/10"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-center text-lg tracking-[0.5em] outline-none focus:border-[#b5502e] focus:ring-2 focus:ring-[#b5502e]/10"
                   />
                   <button
                     onClick={verifyCode}
                     disabled={loading || !code.trim()}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-conversations px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 disabled:opacity-40"
+                    style={{ backgroundColor: BRAND_CTA }}
                   >
                     {loading && <Loader2 className="h-4 w-4 animate-spin" />} تأكيد وتسجيل الدخول
                   </button>

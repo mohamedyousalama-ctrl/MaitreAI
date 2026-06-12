@@ -14,7 +14,7 @@ export default function Home() {
     <div className="flex min-h-screen flex-col" style={{ backgroundColor: "#faf6ef", color: "#2a211b" }}>
       <main className="flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="MaitreAi" width={232} height={56} className="h-14 w-auto" />
+        <img src="/logo.svg" alt="MaitreAI" width={232} height={56} className="h-14 w-auto" />
 
         <h1 className="mt-8 text-4xl font-bold tracking-tight sm:text-5xl" style={{ color: "#2a211b" }}>
           شغّل طلبات مطعمك بذكاء
