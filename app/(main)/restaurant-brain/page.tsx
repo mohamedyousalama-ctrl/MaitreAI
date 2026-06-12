@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { MenuMemoryTabs } from "@/components/layout/MenuMemoryTabs";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ModuleCard } from "@/components/ui/ModuleCard";
 import { OverallScoreGauge } from "@/components/restaurant-brain/KnowledgeHealthCard";
@@ -109,7 +110,7 @@ export default function RestaurantBrainPage() {
   if (!hydrated) {
     return (
       <div>
-        <PageHeader title="عقل المطعم" subtitle="قاعدة معرفة الموظف الذكي" icon={BrainCircuit} accentBg="bg-brain" />
+        <PageHeader title="ذاكرة المطعم" subtitle="قاعدة معرفة الموظف الذكي" icon={BrainCircuit} accentBg="bg-brain" />
         <div className="card h-96 animate-pulse bg-slate-50" />
       </div>
     );
@@ -117,8 +118,9 @@ export default function RestaurantBrainPage() {
 
   return (
     <div>
+      <MenuMemoryTabs />
       <PageHeader
-        title="عقل المطعم"
+        title="ذاكرة المطعم"
         subtitle="قاعدة معرفة الموظف الذكي — يتم حساب الجاهزية تلقائياً من اكتمال الإعدادات"
         icon={BrainCircuit}
         accentBg="bg-brain"

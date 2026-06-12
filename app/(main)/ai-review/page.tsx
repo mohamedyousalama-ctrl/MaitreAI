@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ModuleCard } from "@/components/ui/ModuleCard";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { MenuMemoryTabs } from "@/components/layout/MenuMemoryTabs";
 import { AIConfidenceBadge } from "@/components/ui/AIConfidenceBadge";
 import { conversations } from "@/lib/mock-data";
 import { Sparkles, ShieldCheck, MessageCircle } from "lucide-react";
@@ -17,8 +18,9 @@ export default function AIReviewPage() {
 
   return (
     <div>
+      <MenuMemoryTabs />
       <PageHeader
-        title="مركز مراجعة الذكاء الاصطناعي"
+        title="مراجعة المساعد"
         subtitle="مراجعة ردود الموظف الذكي منخفضة الثقة (واجهة مبدئية)"
         icon={Sparkles}
         accentBg="bg-promotions"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MenuMemoryTabs } from "@/components/layout/MenuMemoryTabs";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { MenuItemCard } from "@/components/menu/MenuItemCard";
 import { MenuItemForm, type MenuItemFormValues } from "@/components/menu/MenuItemForm";
@@ -46,6 +47,7 @@ export default function MenuPage() {
 
   return (
     <div>
+      <MenuMemoryTabs />
       <PageHeader
         title="المنيو"
         subtitle="إدارة الأصناف والإضافات وجاهزية الذكاء الاصطناعي"
