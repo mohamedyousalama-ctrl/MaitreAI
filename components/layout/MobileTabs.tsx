@@ -5,13 +5,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
+import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 export function MobileTabs() {
   const pathname = usePathname();
+  const role = useRole();
+  const items = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#ece0d2] bg-white lg:hidden">
-      {navItems.map((item) => {
+      {items.map((item) => {
         const matches = item.match ?? [item.href];
         const active = matches.some((m) => pathname === m || pathname.startsWith(m + "/"));
         const Icon = item.icon;

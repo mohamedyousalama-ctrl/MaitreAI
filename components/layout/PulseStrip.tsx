@@ -15,6 +15,7 @@ import { useConversationStore } from "@/lib/conversation-store";
 import { useOrderStore } from "@/lib/order-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { useRole } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 import { Power, Bot, AlertTriangle, ShoppingBag, Banknote, Printer, CreditCard } from "lucide-react";
 
@@ -37,6 +38,7 @@ function Dot({ label, state }: { label: string; state: "ok" | "warn" | "off" }) 
 export function PulseStrip() {
   const hydrated = useHasHydrated();
   const configured = isSupabaseConfigured();
+  const role = useRole();
   const { isOpen, agentEnabled, setOpen, setAgentEnabled } = useOpsStore();
   const conversations = useConversationStore((s) => s.conversations);
   const orders = useOrderStore((s) => s.orders);
@@ -120,11 +122,13 @@ export function PulseStrip() {
           طلبات اليوم: {ordersCount}
         </span>
 
-        {/* Today's revenue (manager view) */}
-        <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#faf6ef] px-2.5 py-1.5 text-xs font-semibold text-[#6a5c4e]" title="إيرادات اليوم">
-          <Banknote className="h-3.5 w-3.5" />
-          {revenue} {currency}
-        </span>
+        {/* Today's revenue — manager only (revenue hidden for operation, §M2) */}
+        {role !== "operation" && (
+          <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#faf6ef] px-2.5 py-1.5 text-xs font-semibold text-[#6a5c4e]" title="إيرادات اليوم">
+            <Banknote className="h-3.5 w-3.5" />
+            {revenue} {currency}
+          </span>
+        )}
 
         <span className="mx-1 h-5 w-px shrink-0 bg-[#ece0d2]" />
 

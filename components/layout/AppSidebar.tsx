@@ -6,6 +6,7 @@ import { navItems } from "@/lib/navigation";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { seedProfile } from "@/lib/seed-data";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 // Warm-hospitality palette (Amendment 04 §M1): cream surfaces, charcoal ink,
@@ -17,6 +18,8 @@ export function AppSidebar() {
   const name = useRestaurantStore((s) => s.profile.name);
   const restaurantName = hydrated ? name : seedProfile.name;
   const configured = isSupabaseConfigured();
+  const role = useRole();
+  const items = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
 
   return (
     <aside className="hidden h-screen w-72 shrink-0 flex-col border-l border-[#ece0d2] bg-white lg:flex">
@@ -32,7 +35,7 @@ export function AppSidebar() {
 
       {/* Nav */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const matches = item.match ?? [item.href];
           const active = matches.some((m) => pathname === m || pathname.startsWith(m + "/"));
           const Icon = item.icon;
