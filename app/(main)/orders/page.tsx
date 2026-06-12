@@ -1,93 +1,204 @@
 "use client";
 
+// ============================================================================
+// MaitreAI — الطلبات / orders pipeline (Amendment 04 §M5)
+// Four glanceable stages (جديدة → قيد التحضير → جاهزة → خرجت للتوصيل) plus a
+// collapsed مكتملة column. Big-button advance, browser-print receipt (F4
+// fallback), COD/paid marker, fulfillment icon, and a late-order highlight that
+// feeds the Pulse strip. Replaces the deleted kitchen board.
+// ============================================================================
+
 import { useEffect, useState } from "react";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { OrderTable } from "@/components/orders/OrderTable";
-import { OrderCard } from "@/components/orders/OrderCard";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { useOrderStore } from "@/lib/order-store";
 import { usePaymentStore } from "@/lib/payment-store";
 import { useHasHydrated } from "@/lib/store";
-import { ORDER_STATUS_LABELS } from "@/lib/orders";
-import type { OrderStatusKey } from "@/lib/types";
-import { ShoppingBag, X } from "lucide-react";
+import type { LocalOrder, OrderStatusKey } from "@/lib/types";
+import { Printer, Bike, ShoppingBag, ChevronDown, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const FILTERS: ("all" | OrderStatusKey)[] = [
-  "all",
-  "pending_payment",
-  "paid",
-  "preparing",
-  "ready",
-  "out_for_delivery",
-  "delivered",
-  "cancelled",
-];
+const LATE_MS = 30 * 60 * 1000;
 
-export default function OrdersPage() {
+type Stage = { key: string; label: string; statuses: OrderStatusKey[]; tint: string };
+const STAGES: Stage[] = [
+  { key: "new", label: "جديدة", statuses: ["pending_confirmation", "pending_payment", "paid"], tint: "#b5502e" },
+  { key: "preparing", label: "قيد التحضير", statuses: ["preparing"], tint: "#e0912e" },
+  { key: "ready", label: "جاهزة", statuses: ["ready"], tint: "#3c7a52" },
+  { key: "out", label: "خرجت للتوصيل", statuses: ["out_for_delivery"], tint: "#4e9466" },
+];
+const DONE: OrderStatusKey[] = ["delivered", "cancelled"];
+
+function nextStatus(o: LocalOrder): OrderStatusKey | null {
+  switch (o.orderStatus) {
+    case "pending_confirmation":
+    case "pending_payment":
+    case "paid":
+      return "preparing";
+    case "preparing":
+      return "ready";
+    case "ready":
+      return o.fulfillmentType === "delivery" ? "out_for_delivery" : "delivered";
+    case "out_for_delivery":
+      return "delivered";
+    default:
+      return null;
+  }
+}
+const ADVANCE_LABEL: Record<string, string> = {
+  preparing: "ابدأ التحضير",
+  ready: "جاهز",
+  out_for_delivery: "خرج للتوصيل",
+  delivered: "تم التسليم",
+};
+
+function printReceipt(o: LocalOrder) {
+  const w = window.open("", "_blank", "width=380,height=640");
+  if (!w) return;
+  const rows = o.items
+    .map((i) => `<tr><td>${i.quantity}× ${i.name}</td><td style="text-align:left">${i.total} ${o.currency}</td></tr>`)
+    .join("");
+  w.document.write(
+    `<html dir="rtl"><head><meta charset="utf-8"><title>طلب #${o.orderNumber}</title></head>
+     <body style="font-family:Tahoma,Arial,sans-serif;padding:14px;color:#2a211b">
+       <h2 style="margin:0">${o.branchName || "المطعم"}</h2>
+       <p style="margin:4px 0">طلب #${o.orderNumber} — ${o.customerName}</p>
+       <hr><table style="width:100%;border-collapse:collapse">${rows}</table><hr>
+       <p style="font-weight:bold">الإجمالي: ${o.total} ${o.currency}</p>
+       <p>${o.fulfillmentType === "delivery" ? "توصيل: " + (o.deliveryAddress || "") : "استلام من الفرع"}</p>
+     </body></html>`
+  );
+  w.document.close();
+  w.focus();
+  w.print();
+}
+
+function OrderCard({ o, onAdvance }: { o: LocalOrder; onAdvance: (o: LocalOrder) => void }) {
+  const next = nextStatus(o);
+  const paid = o.paymentStatus === "paid";
+  const late = o.createdAt < Date.now() - LATE_MS && !DONE.includes(o.orderStatus);
+  const mins = Math.max(0, Math.round((Date.now() - o.createdAt) / 60000));
+  return (
+    <div className={cn("rounded-xl border bg-white p-3", late ? "border-[#cc3a33]" : "border-[#ece0d2]")}>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-bold text-[#2a211b]">#{o.orderNumber}</span>
+        <span className="flex items-center gap-1 text-[11px] text-[#9b8b7c]">
+          {o.fulfillmentType === "delivery" ? <Bike className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+          <Clock className="h-3 w-3" /> {mins}د
+        </span>
+      </div>
+      <p className="mt-0.5 truncate text-sm text-[#4a3f36]">{o.customerName}</p>
+      <p className="mt-1 truncate text-xs text-[#9b8b7c]">
+        {o.items.reduce((s, i) => s + i.quantity, 0)} صنف · {o.total} {o.currency}
+      </p>
+      <div className="mt-2 flex items-center gap-1.5">
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+            paid ? "bg-[#e7f1ea] text-[#3c7a52]" : "bg-[#fbefd9] text-[#9a6c1e]"
+          )}
+        >
+          {paid ? "مدفوع" : "دفع عند الاستلام"}
+        </span>
+        {late && <span className="rounded-full bg-[#f7e3df] px-2 py-0.5 text-[10px] font-semibold text-[#cc3a33]">متأخر</span>}
+      </div>
+      <div className="mt-2.5 flex items-center gap-2">
+        {next && (
+          <button
+            onClick={() => onAdvance(o)}
+            className="flex-1 rounded-lg bg-[#b5502e] px-2 py-1.5 text-xs font-semibold text-white hover:opacity-95"
+          >
+            {ADVANCE_LABEL[next] ?? "التالي"}
+          </button>
+        )}
+        <button
+          onClick={() => printReceipt(o)}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e4d8c8] text-[#6a5c4e] hover:bg-[#faf6ef]"
+          aria-label="طباعة"
+          title="طباعة (متصفح)"
+        >
+          <Printer className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function OrdersPipeline() {
   const hydrated = useHasHydrated();
   const orders = useOrderStore((s) => s.orders);
+  const updateOrderStatus = useOrderStore((s) => s.updateOrderStatus);
   const sweepExpired = usePaymentStore((s) => s.sweepExpired);
-  const [filter, setFilter] = useState<"all" | OrderStatusKey>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showDone, setShowDone] = useState(false);
 
   useEffect(() => {
     sweepExpired();
   }, [sweepExpired]);
 
-  const sorted = [...orders].sort((a, b) => b.createdAt - a.createdAt);
-  const filtered = filter === "all" ? sorted : sorted.filter((o) => o.orderStatus === filter);
-  const selected = orders.find((o) => o.id === selectedId);
+  const advance = (o: LocalOrder) => {
+    const n = nextStatus(o);
+    if (n) updateOrderStatus(o.id, n, "human");
+  };
+
+  const inStage = (s: Stage) => (hydrated ? orders.filter((o) => s.statuses.includes(o.orderStatus)) : []);
+  const done = hydrated ? orders.filter((o) => DONE.includes(o.orderStatus)) : [];
 
   return (
-    <div>
-      <PageHeader title="الطلبات" subtitle="كل الطلبات المحلية الواردة عبر واتساب" icon={ShoppingBag} accentBg="bg-orders" />
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
-              filter === f
-                ? "bg-orders text-white shadow-card"
-                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            )}
-          >
-            {f === "all" ? "الكل" : ORDER_STATUS_LABELS[f]}
-          </button>
-        ))}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-[#2a211b]">الطلبات</h1>
+        <span className="text-sm text-[#9b8b7c]">{hydrated ? orders.length : 0} طلب</span>
       </div>
 
-      {!hydrated ? (
-        <div className="card h-72 animate-pulse bg-slate-50" />
-      ) : (
-        <div className={cn("grid gap-6", selected ? "lg:grid-cols-[1fr_400px]" : "grid-cols-1")}>
-          <div className="card overflow-hidden">
-            {filtered.length === 0 ? (
-              <EmptyState title="لا توجد طلبات" description="ستظهر الطلبات هنا عند تأكيدها من المحادثات." icon={ShoppingBag} />
-            ) : (
-              <OrderTable orders={filtered} activeId={selectedId ?? undefined} onSelect={setSelectedId} />
-            )}
-          </div>
-
-          {selected && (
-            <div className="card h-fit p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-bold text-slate-900">تفاصيل الطلب</h2>
-                <button
-                  onClick={() => setSelectedId(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {STAGES.map((s) => {
+          const list = inStage(s);
+          return (
+            <div key={s.key} className="rounded-2xl bg-[#faf6ef] p-2.5">
+              <div className="mb-2 flex items-center justify-between px-1">
+                <span className="flex items-center gap-2 text-sm font-bold text-[#2a211b]">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.tint }} />
+                  {s.label}
+                </span>
+                <span className="text-xs font-semibold text-[#9b8b7c]">{list.length}</span>
               </div>
-              <OrderCard order={selected} />
+              <div className="space-y-2">
+                {list.map((o) => (
+                  <OrderCard key={o.id} o={o} onAdvance={advance} />
+                ))}
+                {list.length === 0 && <p className="px-1 py-6 text-center text-xs text-[#c2a98f]">لا توجد طلبات</p>}
+              </div>
             </div>
-          )}
-        </div>
-      )}
+          );
+        })}
+      </div>
+
+      {/* مكتملة (collapsed) */}
+      <div className="rounded-2xl border border-[#ece0d2] bg-white">
+        <button
+          onClick={() => setShowDone((v) => !v)}
+          className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold text-[#4a3f36]"
+        >
+          <span>مكتملة ({done.length})</span>
+          <ChevronDown className={cn("h-4 w-4 transition-transform", showDone && "rotate-180")} />
+        </button>
+        {showDone && (
+          <div className="grid grid-cols-1 gap-2 border-t border-[#ece0d2] p-3 sm:grid-cols-2 lg:grid-cols-4">
+            {done.map((o) => (
+              <div key={o.id} className="rounded-xl border border-[#ece0d2] bg-[#faf6ef] p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[#2a211b]">#{o.orderNumber}</span>
+                  <span className="text-[11px] text-[#9b8b7c]">
+                    {o.orderStatus === "cancelled" ? "ملغي" : "تم التسليم"}
+                  </span>
+                </div>
+                <p className="truncate text-xs text-[#9b8b7c]">
+                  {o.customerName} · {o.total} {o.currency}
+                </p>
+              </div>
+            ))}
+            {done.length === 0 && <p className="col-span-full py-4 text-center text-xs text-[#c2a98f]">لا شيء بعد</p>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
