@@ -1,233 +1,190 @@
 "use client";
 
-import { useEffect } from "react";
-import Link from "next/link";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { MetricCard } from "@/components/ui/MetricCard";
-import { ModuleCard } from "@/components/ui/ModuleCard";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import { OrderStatusBadge, OrderPaymentBadge } from "@/components/orders/OrderStatusBadges";
-import { useOrderStore } from "@/lib/order-store";
+// ============================================================================
+// MaitreAI — الرئيسية / the Maître console (Amendment 04 §M3)
+// The home IS a short conversation with «المساعد»: a warm greeting, a proactive
+// line derived from REAL state (no fabricated numbers — F3), suggestion chips,
+// a composer wired to navigation/command intents (full admin-agent write-tools
+// arrive in Sprint 11), and summoned cards that appear only when there's
+// something to act on.
+// ============================================================================
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useConversationStore } from "@/lib/conversation-store";
-import { usePaymentStore } from "@/lib/payment-store";
-import { useHasHydrated } from "@/lib/store";
-import { aiDailySummary, systemStatus } from "@/lib/mock-data";
-import { formatCurrency, formatOrderId } from "@/lib/utils";
-import {
-  LayoutDashboard,
-  ShoppingBag,
-  DollarSign,
-  MessageCircle,
-  CreditCard,
-  TrendingUp,
-  Timer,
-  Sparkles,
-  CheckCircle2,
-  XCircle,
-  Bot,
-  ArrowLeft,
-  Link2,
-  Clock,
-  Percent,
-} from "lucide-react";
+import { useOrderStore } from "@/lib/order-store";
+import { useRestaurantStore, useHasHydrated } from "@/lib/store";
+import { useOpsStore } from "@/lib/ops-store";
+import { seedProfile } from "@/lib/seed-data";
+import { AlertTriangle, ArrowLeft, Send, ShoppingBag, MessageCircle } from "lucide-react";
 
-export default function DashboardPage() {
-  const hydrated = useHasHydrated();
-  const orders = useOrderStore((s) => s.orders);
-  const conversations = useConversationStore((s) => s.conversations);
-  const sessions = usePaymentStore((s) => s.sessions);
-  const sweepExpired = usePaymentStore((s) => s.sweepExpired);
-
-  useEffect(() => {
-    sweepExpired();
-  }, [sweepExpired]);
-
-  const linksSent = sessions.filter((s) => s.status !== "created").length;
-  const paidSessions = sessions.filter((s) => s.status === "paid").length;
-  const failedSessions = sessions.filter((s) => s.status === "failed").length;
-  const expiredSessions = sessions.filter((s) => s.status === "expired").length;
-  const conversionRate = linksSent ? Math.round((paidSessions / linksSent) * 100) : 0;
-
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const todayMs = startOfToday.getTime();
-
-  const todayOrders = orders.filter((o) => o.createdAt >= todayMs && o.orderStatus !== "cancelled");
-  const paidToday = todayOrders.filter((o) => o.paymentStatus === "paid");
-  const revenue = paidToday.reduce((s, o) => s + o.total, 0);
-  const aov = paidToday.length ? Math.round(revenue / paidToday.length) : 0;
-  const openConversations = conversations.filter((c) => c.status !== "طلب مكتمل").length;
-  const recentOrders = [...orders].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
-  const recentConversations = conversations.slice(0, 4);
-
-  const kpis = [
-    { key: "ordersToday", label: "طلبات اليوم", value: String(todayOrders.length), icon: ShoppingBag, accent: "bg-orders" },
-    { key: "revenueToday", label: "إيرادات اليوم", value: formatCurrency(revenue), icon: DollarSign, accent: "bg-brain" },
-    { key: "openConversations", label: "محادثات مفتوحة", value: String(openConversations), icon: MessageCircle, accent: "bg-conversations" },
-    { key: "paidOrders", label: "طلبات مدفوعة", value: String(paidToday.length), icon: CreditCard, accent: "bg-promotions" },
-    { key: "avgOrderValue", label: "متوسط قيمة الطلب", value: formatCurrency(aov), icon: TrendingUp, accent: "bg-dashboard" },
-    { key: "avgResponseTime", label: "متوسط زمن الرد", value: "8 ثانية", icon: Timer, accent: "bg-kitchen" },
-  ];
-
-  return (
-    <div>
-      <PageHeader
-        title="لوحة التحكم"
-        subtitle="نظرة عامة على أداء مطعم الذواقة اليوم"
-        icon={LayoutDashboard}
-        accentBg="bg-dashboard"
-      />
-
-      {/* AI daily summary */}
-      <div className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-l from-brain to-conversations p-[1px] shadow-card">
-        <div className="rounded-2xl bg-gradient-to-l from-emerald-50 to-green-50 p-5">
-          <div className="flex items-start gap-4">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brain text-white shadow-card">
-              <Bot className="h-6 w-6" />
-            </span>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-slate-900">ملخص الموظف الذكي اليومي</h2>
-                <Sparkles className="h-4 w-4 text-brain" />
-              </div>
-              <p className="mt-1 font-semibold text-brain">{aiDailySummary.headline}</p>
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{aiDailySummary.body}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* KPI cards */}
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {kpis.map((kpi) => (
-          <MetricCard key={kpi.key} label={kpi.label} value={hydrated ? kpi.value : "…"} icon={kpi.icon} accentBg={kpi.accent} />
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Recent conversations */}
-        <ModuleCard
-          title="أحدث المحادثات"
-          icon={MessageCircle}
-          accentBg="bg-conversations"
-          className="lg:col-span-1"
-          action={
-            <Link href="/conversations" className="flex items-center gap-1 text-xs font-semibold text-conversations">
-              عرض الكل <ArrowLeft className="h-3.5 w-3.5" />
-            </Link>
-          }
-        >
-          <ul className="space-y-3">
-            {recentConversations.map((c) => (
-              <li key={c.id} className="flex items-center gap-3">
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                  style={{ backgroundColor: c.avatarColor }}
-                >
-                  {c.customer.charAt(0)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-800">{c.customer}</p>
-                  <p className="truncate text-xs text-slate-500">{c.lastMessage}</p>
-                </div>
-                <StatusBadge status={c.status} className="scale-90" />
-              </li>
-            ))}
-          </ul>
-        </ModuleCard>
-
-        {/* Recent orders */}
-        <ModuleCard
-          title="أحدث الطلبات"
-          icon={ShoppingBag}
-          accentBg="bg-orders"
-          className="lg:col-span-2"
-          action={
-            <Link href="/orders" className="flex items-center gap-1 text-xs font-semibold text-orders">
-              عرض الكل <ArrowLeft className="h-3.5 w-3.5" />
-            </Link>
-          }
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-start text-xs text-slate-400">
-                  <th className="pb-2 text-start font-medium">الطلب</th>
-                  <th className="pb-2 text-start font-medium">العميل</th>
-                  <th className="pb-2 text-start font-medium">الحالة</th>
-                  <th className="pb-2 text-start font-medium">الدفع</th>
-                  <th className="pb-2 text-start font-medium">الإجمالي</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentOrders.map((o) => (
-                  <tr key={o.id} className="border-t border-slate-50">
-                    <td className="py-2.5 font-semibold text-slate-700">{formatOrderId(o.orderNumber)}</td>
-                    <td className="py-2.5 text-slate-600">{o.customerName}</td>
-                    <td className="py-2.5"><OrderStatusBadge status={o.orderStatus} className="scale-90 origin-right" /></td>
-                    <td className="py-2.5"><OrderPaymentBadge status={o.paymentStatus} className="scale-90 origin-right" /></td>
-                    <td className="py-2.5 font-semibold text-slate-800">{formatCurrency(o.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </ModuleCard>
-      </div>
-
-      {/* Payment metrics */}
-      <div className="mt-6">
-        <ModuleCard title="مؤشرات الدفع" icon={CreditCard} accentBg="bg-promotions">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-            <PayStat icon={Link2} label="روابط مرسلة" value={hydrated ? String(linksSent) : "…"} color="text-blue-600" />
-            <PayStat icon={CheckCircle2} label="مدفوعة" value={hydrated ? String(paidSessions) : "…"} color="text-emerald-600" />
-            <PayStat icon={XCircle} label="فاشلة" value={hydrated ? String(failedSessions) : "…"} color="text-red-600" />
-            <PayStat icon={Clock} label="منتهية" value={hydrated ? String(expiredSessions) : "…"} color="text-amber-600" />
-            <PayStat icon={Percent} label="نسبة التحويل" value={hydrated ? `${conversionRate}%` : "…"} color="text-promotions" />
-          </div>
-        </ModuleCard>
-      </div>
-
-      {/* System status */}
-      <div className="mt-6">
-        <ModuleCard title="حالة النظام" icon={CheckCircle2} accentBg="bg-brain">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {systemStatus.map((s) => (
-              <div key={s.label} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
-                {s.ok ? (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-red-500" />
-                )}
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">{s.label}</p>
-                  <p className={s.ok ? "text-xs text-emerald-600" : "text-xs text-red-500"}>{s.status}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ModuleCard>
-      </div>
-    </div>
-  );
+function startOfToday(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
 }
 
-function PayStat({
-  icon: Icon,
-  label,
-  value,
-  color,
-}: {
-  icon: typeof Link2;
-  label: string;
-  value: string;
-  color: string;
-}) {
+const CHIPS: { label: string; route: string }[] = [
+  { label: "التصعيدات", route: "/conversations" },
+  { label: "طلبات اليوم", route: "/orders" },
+  { label: "المنيو والذاكرة", route: "/restaurant-brain" },
+  { label: "اعمل عرض", route: "/promotions" },
+];
+
+export default function HomeConsole() {
+  const router = useRouter();
+  const hydrated = useHasHydrated();
+  const name = useRestaurantStore((s) => s.profile.name);
+  const restaurantName = hydrated ? name : seedProfile.name;
+  const conversations = useConversationStore((s) => s.conversations);
+  const orders = useOrderStore((s) => s.orders);
+  const { isOpen, agentEnabled, setOpen } = useOpsStore();
+
+  const [input, setInput] = useState("");
+  const [reply, setReply] = useState<string | null>(null);
+
+  const escalations = conversations.filter(
+    (c) => c.status === "يحتاج تدخل موظف" || c.status === "تم التحويل لموظف" || c.owner === "human"
+  ).length;
+  const openConvs = conversations.filter((c) => c.status !== "طلب مكتمل").length;
+  const since = startOfToday();
+  const ordersToday = orders.filter((o) => o.createdAt >= since).length;
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "صباح الخير" : "مساء الخير";
+
+  const proactive = !hydrated
+    ? ""
+    : escalations > 0
+    ? `عندك ${escalations} محادثة تحتاج تدخّلك الآن.`
+    : !isOpen
+    ? "المطعم مغلق حالياً — افتحه من الشريط العلوي عندما تكون جاهزاً."
+    : !agentEnabled
+    ? "المساعد متوقف حالياً ولا يرد على العملاء."
+    : "كل شيء يسير بسلاسة — لا توجد تصعيدات تحتاج تدخّلك.";
+
+  // Command/navigation intents (Sprint 8.5). Full NL command set is Sprint 11.
+  function runCommand() {
+    const t = input.trim();
+    if (!t) return;
+    setReply(null);
+    const has = (...w: string[]) => w.some((x) => t.includes(x));
+    if (has("تصعيد")) return router.push("/conversations");
+    if (has("طلب", "الطلبات")) return router.push("/orders");
+    if (has("منيو", "قائمة", "ذاكرة")) return router.push("/restaurant-brain");
+    if (has("عرض", "خصم", "حملة")) return router.push("/promotions");
+    if (has("عميل", "العملاء")) return router.push("/customers");
+    if (has("محادث")) return router.push("/conversations");
+    if (has("إعداد", "الإعدادات")) return router.push("/settings");
+    if (has("سكّر", "اقفل", "اغلق", "أغلق")) {
+      setOpen(false);
+      return setReply("تم إغلاق المطعم. لن تُستقبل طلبات حتى تعيد فتحه.");
+    }
+    if (has("افتح")) {
+      setOpen(true);
+      return setReply("تم فتح المطعم.");
+    }
+    setReply("أوامر المساعد الكاملة قريبًا. جرّب: «التصعيدات»، «الطلبات»، «اعمل عرض»، «سكّر المطعم».");
+  }
+
   return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
-      <Icon className={`h-5 w-5 ${color}`} />
-      <p className="mt-2 text-xl font-bold text-slate-900">{value}</p>
-      <p className="text-xs text-slate-500">{label}</p>
+    <div className="mx-auto max-w-3xl space-y-5">
+      {/* Maître greeting */}
+      <div className="rounded-2xl border border-[#ece0d2] bg-white p-5">
+        <div className="flex items-start gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-mark.svg" alt="المساعد" width={44} height={44} className="h-11 w-11 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm text-[#9b8b7c]">{restaurantName}</p>
+            <h1 className="text-xl font-bold text-[#2a211b]">{greeting} 👋</h1>
+            <p className="mt-1 text-[#4a3f36]">{proactive}</p>
+            {hydrated && (
+              <p className="mt-1 text-sm text-[#9b8b7c]">
+                اليوم: {ordersToday} طلب · {openConvs} محادثة مفتوحة.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Composer */}
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-[#e4d8c8] bg-[#faf6ef] px-3 py-2">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runCommand()}
+            placeholder="اكتب أمرك للمساعد…"
+            className="w-full bg-transparent text-sm text-[#2a211b] outline-none placeholder:text-[#9b8b7c]"
+          />
+          <button
+            onClick={runCommand}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#b5502e] text-white hover:opacity-95"
+            aria-label="إرسال"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Suggestion chips */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {CHIPS.map((c) => (
+            <button
+              key={c.label}
+              onClick={() => router.push(c.route)}
+              className="rounded-full border border-[#e4d8c8] bg-white px-3 py-1.5 text-xs font-medium text-[#6a5c4e] hover:bg-[#faf6ef]"
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        {reply && (
+          <div className="mt-3 rounded-xl bg-[#faf6ef] px-3 py-2 text-sm text-[#4a3f36]">{reply}</div>
+        )}
+      </div>
+
+      {/* Summoned cards — appear only when there's something to act on */}
+      {hydrated && escalations > 0 && (
+        <button
+          onClick={() => router.push("/conversations")}
+          className="flex w-full items-center gap-3 rounded-2xl border border-[#e7c9bf] bg-[#fbeee9] p-4 text-right"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#cc3a33] text-white">
+            <AlertTriangle className="h-5 w-5" />
+          </span>
+          <span className="flex-1">
+            <span className="block font-semibold text-[#2a211b]">{escalations} محادثة تحتاج تدخّلك</span>
+            <span className="block text-sm text-[#6a5c4e]">حوّلها المساعد إليك — تولَّ الرد من «المحادثات».</span>
+          </span>
+          <ArrowLeft className="h-4 w-4 text-[#a8432a]" />
+        </button>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => router.push("/orders")}
+          className="flex items-center gap-3 rounded-2xl border border-[#ece0d2] bg-white p-4 text-right"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f0e7da] text-[#b5502e]">
+            <ShoppingBag className="h-5 w-5" />
+          </span>
+          <span>
+            <span className="block text-lg font-bold text-[#2a211b]">{hydrated ? ordersToday : "—"}</span>
+            <span className="block text-xs text-[#9b8b7c]">طلبات اليوم</span>
+          </span>
+        </button>
+        <button
+          onClick={() => router.push("/conversations")}
+          className="flex items-center gap-3 rounded-2xl border border-[#ece0d2] bg-white p-4 text-right"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e7f1ea] text-[#3c7a52]">
+            <MessageCircle className="h-5 w-5" />
+          </span>
+          <span>
+            <span className="block text-lg font-bold text-[#2a211b]">{hydrated ? openConvs : "—"}</span>
+            <span className="block text-xs text-[#9b8b7c]">محادثات مفتوحة</span>
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
