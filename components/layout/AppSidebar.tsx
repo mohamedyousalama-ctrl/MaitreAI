@@ -7,8 +7,10 @@ import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { seedProfile } from "@/lib/seed-data";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { cn } from "@/lib/utils";
-import { Bot } from "lucide-react";
 
+// Warm-hospitality palette (Amendment 04 §M1): cream surfaces, charcoal ink,
+// terracotta accent. Header app name = «مساعد المطعم». Terminology per the
+// Arabic guide (no «عقل المطعم»/«المطبخ»/«مركز مراجعة الذكاء»).
 export function AppSidebar() {
   const pathname = usePathname();
   const hydrated = useHasHydrated();
@@ -17,15 +19,14 @@ export function AppSidebar() {
   const configured = isSupabaseConfigured();
 
   return (
-    <aside className="hidden h-screen w-72 shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
+    <aside className="hidden h-screen w-72 shrink-0 flex-col border-l border-[#ece0d2] bg-white lg:flex">
       {/* Brand */}
       <div className="flex items-center gap-3 px-6 py-5">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-conversations to-brain text-white shadow-card">
-          <Bot className="h-6 w-6" />
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-mark.svg" alt="MaitreAI" width={44} height={44} className="h-11 w-11" />
         <div>
-          <h1 className="text-lg font-bold leading-tight text-slate-900">MaitreAI</h1>
-          <p className="text-xs text-slate-500">{restaurantName}</p>
+          <h1 className="text-lg font-bold leading-tight text-[#2a211b]">مساعد المطعم</h1>
+          <p className="text-xs text-[#9b8b7c]">{restaurantName}</p>
         </div>
       </div>
 
@@ -41,36 +42,36 @@ export function AppSidebar() {
               className={cn(
                 "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                 active
-                  ? "bg-slate-50 text-slate-900"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                  ? "bg-[#f7efe6] text-[#2a211b]"
+                  : "text-[#6a5c4e] hover:bg-[#faf6ef] hover:text-[#2a211b]"
               )}
             >
               <span
                 className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-lg transition-colors",
                   active
-                    ? cn(item.accentBg, "text-white shadow-card")
-                    : "bg-slate-100 text-slate-500 group-hover:bg-slate-200"
+                    ? "bg-[#b5502e] text-white shadow-sm"
+                    : "bg-[#efe5d8] text-[#9b8b7c] group-hover:bg-[#e4d8c8]"
                 )}
               >
                 <Icon className="h-[18px] w-[18px]" />
               </span>
               <span className="flex-1">{item.label}</span>
-              {active && <span className={cn("h-2 w-2 rounded-full", item.accentBg)} />}
+              {active && <span className="h-2 w-2 rounded-full bg-[#b5502e]" />}
             </Link>
           );
         })}
       </nav>
 
       {/* Footer status — truthful (no false connection claims, PRD Amendment 03 F3) */}
-      <div className="border-t border-slate-100 p-4">
-        <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-3">
+      <div className="border-t border-[#ece0d2] p-4">
+        <div className="flex items-center gap-3 rounded-xl bg-[#faf6ef] px-3 py-3">
           <span className="relative flex h-2.5 w-2.5">
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-slate-300" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#c2a98f]" />
           </span>
           <div className="text-xs">
-            <p className="font-semibold text-slate-800">{restaurantName}</p>
-            {!configured && <p className="text-slate-500">الوضع التجريبي</p>}
+            <p className="font-semibold text-[#2a211b]">{restaurantName}</p>
+            {!configured && <p className="text-[#9b8b7c]">الوضع التجريبي</p>}
           </div>
         </div>
       </div>
