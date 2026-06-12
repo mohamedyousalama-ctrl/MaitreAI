@@ -48,6 +48,9 @@ let userId, restaurantId;
         })
         .subscribe((status) => status === "SUBSCRIBED" && resolve());
     });
+    // Settle the subscription (avoids the cold-start race; the app's subscription
+    // is long-lived so this never applies in practice).
+    await new Promise((r) => setTimeout(r, 600));
 
     // Insert customer + conversation + message as service role (webhook-style).
     const { data: cust } = await admin.from("customers").insert({ restaurant_id: restaurantId, phone: "+966500001111", name: "عميل ريالتايم" }).select("id").single();
