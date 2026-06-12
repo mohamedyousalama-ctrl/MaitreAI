@@ -26,12 +26,12 @@ const REGISTRY: Record<LlmUseCase, ModelConfig> = {
     priceIn: 3,
     priceOut: 15,
   },
-  // Owner-side natural-language parsing (menu/promo ingestion) — stronger model.
+  // Owner-side natural-language routing/parsing. Thinking disabled — this is a
+  // short JSON classifier (low max_tokens); thinking would eat the output budget.
   admin_parse: {
     model: process.env.AI_MODEL_ADMIN_PARSE || "claude-opus-4-8",
-    maxTokens: 4096,
-    thinking: "adaptive",
-    effort: "medium",
+    maxTokens: 1024,
+    thinking: "disabled",
     priceIn: 5,
     priceOut: 25,
   },

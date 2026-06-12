@@ -1,0 +1,197 @@
+// ============================================================================
+// MaitreAI — Admin Agent (Amendment 05 §P, Phase 1) — SERVER ONLY
+// The console's free-text brain. SESSION-authenticated + role-enforced. Free
+// text → a SMALL classifier LLM (low max_tokens) that only routes: it returns
+// {intent, params, sentence} as JSON — it never writes the card body. Read
+// intents compute their data from the DB here (§P5: computed cards). Write
+// intents return a PREVIEW only; the actual write runs on a separate confirm
+// call (§P2: no write without confirmation). Every turn is logged to agent_runs.
+// Fixed chips stay client-side deterministic ($0) and never hit this route.
+// ============================================================================
+
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { getServerTenant } from "@/lib/db/tenant-server";
+import { getAdapter, modelFor, costUsd } from "@/lib/ai/llm";
+import type { LlmMessage } from "@/lib/ai/llm/types";
+
+export const runtime = "nodejs";
+
+type Role = "manager" | "operation";
+const MANAGER_ONLY = new Set(["set_open", "set_agent", "payments_summary"]);
+
+const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم (لست من يكتب البيانات). صنّف رسالة المدير إلى نية واحدة واستخرج المعاملات.
+أعد JSON مضغوطاً فقط بالشكل: {"intent":"...","params":{...},"sentence":"جملة عربية قصيرة واحدة"}.
+النوايا المسموحة:
+- daily_ops (ملخص اليوم) | escalations (التصعيدات) | orders_summary (حالة الطلبات) | payments_summary (المدفوعات) | agent_health (حالة المساعد)
+- set_open params:{"open":true|false} (فتح/إغلاق المطعم)
+- set_agent params:{"enabled":true|false} (تشغيل/إيقاف المساعد)
+- set_item_availability params:{"item":"اسم الصنف","available":true|false}
+- off_scope (إذا كان الطلب خارج تشغيل المطعم: عام/أخبار/غير متعلق) — اجعل sentence سطراً واحداً يعيد التوجيه بأدب لنطاق المطعم.
+لنوايا التغيير (set_*): اجعل الجملة اقتراحاً ينتظر التأكيد (مثل «جاهز لإغلاق المطعم بعد تأكيدك») — لا تقل «تمّ» قبل التنفيذ.
+لا تخترع بيانات. أعِد JSON فقط دون أي نص آخر.`;
+
+function parseRouter(text: string): { intent: string; params: Record<string, unknown>; sentence: string } | null {
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const j = JSON.parse(m[0]);
+    return { intent: String(j.intent || "off_scope"), params: j.params || {}, sentence: String(j.sentence || "") };
+  } catch {
+    return null;
+  }
+}
+
+const startOfToday = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+
+export async function POST(req: Request) {
+  const supabase = createClient();
+  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const tenant = await getServerTenant();
+  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const restaurantId = tenant.restaurantId;
+  const role = tenant.role as Role;
+
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+
+  // ---- CONFIRM path: execute a previously-previewed write (no LLM) ----------
+  const confirm = body.confirm as { intent: string; params: Record<string, unknown> } | undefined;
+  if (confirm) {
+    if (MANAGER_ONLY.has(confirm.intent) && role !== "manager") {
+      return NextResponse.json({ error: "forbidden", message: "هذا الإجراء للمدير فقط." }, { status: 403 });
+    }
+    let result = "تم.";
+    try {
+      if (confirm.intent === "set_open") {
+        await supabase.from("restaurants").update({ is_open: !!confirm.params.open }).eq("id", restaurantId);
+        result = confirm.params.open ? "تم فتح المطعم ✅" : "تم إغلاق المطعم 🌙";
+      } else if (confirm.intent === "set_agent") {
+        await supabase.from("restaurants").update({ agent_mode: confirm.params.enabled ? "live" : "paused" }).eq("id", restaurantId);
+        result = confirm.params.enabled ? "تم تشغيل المساعد ✅" : "تم إيقاف المساعد ⏸️";
+      } else if (confirm.intent === "set_item_availability") {
+        const name = String(confirm.params.item ?? "");
+        const { data: items } = await supabase
+          .from("menu_items")
+          .select("id,name")
+          .eq("restaurant_id", restaurantId)
+          .ilike("name", `%${name}%`)
+          .limit(1);
+        const item = items?.[0];
+        if (!item) return NextResponse.json({ error: "item_not_found", message: `لم أجد صنف «${name}».` }, { status: 404 });
+        await supabase.from("menu_items").update({ available: !!confirm.params.available }).eq("id", item.id);
+        result = `${confirm.params.available ? "تم تفعيل" : "تم إيقاف"} «${item.name}».`;
+      } else {
+        return NextResponse.json({ error: "unknown_action" }, { status: 400 });
+      }
+    } catch (e) {
+      return NextResponse.json({ error: "write_failed", detail: e instanceof Error ? e.message : String(e) }, { status: 502 });
+    }
+    await supabase.from("agent_runs").insert({
+      restaurant_id: restaurantId, trigger: "owner", input: `confirm:${confirm.intent}`, output: result, adapter: "system", tokens: 0, cost_usd: 0,
+    });
+    return NextResponse.json({ result });
+  }
+
+  // ---- CLASSIFY path: free text → router LLM → read card or write preview ----
+  const text = String(body.text ?? "").trim();
+  if (!text) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+
+  const t0 = Date.now();
+  const adapter = await getAdapter();
+  const messages: LlmMessage[] = [{ role: "user", content: text }];
+  const res = await adapter.generate({ system: ROUTER_SYSTEM, messages, maxTokens: 300 }, "admin_parse");
+  const cfg = modelFor("admin_parse");
+  const cost = costUsd(cfg, res.usage.inputTokens, res.usage.outputTokens);
+  const parsed = parseRouter(res.text) ?? { intent: "off_scope", params: {}, sentence: "أساعدك في تشغيل مطعمك فقط." };
+
+  // Log the admin turn (per-surface cost visibility, §P5).
+  await supabase.from("agent_runs").insert({
+    restaurant_id: restaurantId, trigger: "owner", input: text, output: parsed.sentence,
+    model: res.model, adapter: adapter.name, input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens,
+    cache_read_tokens: res.usage.cacheReadTokens, cost_usd: cost, latency_ms: Date.now() - t0,
+    tokens: res.usage.inputTokens + res.usage.outputTokens, tools_used: [parsed.intent],
+  });
+
+  const intent = parsed.intent;
+
+  // Role guards.
+  if (MANAGER_ONLY.has(intent) && role !== "manager") {
+    return NextResponse.json({ sentence: "هذا الإجراء متاح للمدير فقط.", intent: "off_scope" });
+  }
+
+  // Read intents → compute the card body from the DB.
+  if (intent === "daily_ops" || intent === "orders_summary" || intent === "payments_summary") {
+    const since = startOfToday();
+    const { data: orders } = await supabase
+      .from("orders")
+      .select("order_status,payment_status,total,created_at")
+      .eq("restaurant_id", restaurantId);
+    const rows = (orders ?? []) as { order_status: string; payment_status: string; total: number; created_at: string }[];
+    const today = rows.filter((o) => new Date(o.created_at).getTime() >= since);
+    const revenue = today.filter((o) => o.payment_status === "paid").reduce((s, o) => s + Number(o.total || 0), 0);
+    const byStage: Record<string, number> = {};
+    for (const o of rows) byStage[o.order_status] = (byStage[o.order_status] || 0) + 1;
+    return NextResponse.json({
+      sentence: parsed.sentence,
+      card: { type: intent === "payments_summary" ? "payments" : "daily_ops", data: { ordersToday: today.length, revenue, byStage } },
+    });
+  }
+  if (intent === "escalations") {
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select("id,status,owner")
+      .eq("restaurant_id", restaurantId);
+    const list = (convs ?? []) as { status: string; owner: string }[];
+    const count = list.filter((c) => c.owner === "human" || c.status === "يحتاج تدخل موظف" || c.status === "تم التحويل لموظف").length;
+    return NextResponse.json({ sentence: parsed.sentence, card: { type: "escalations", data: { count } } });
+  }
+  if (intent === "agent_health") {
+    const { data: runs } = await supabase
+      .from("agent_runs")
+      .select("cost_usd,latency_ms,created_at")
+      .eq("restaurant_id", restaurantId)
+      .gte("created_at", new Date(startOfToday()).toISOString());
+    const r = (runs ?? []) as { cost_usd: number; latency_ms: number }[];
+    const cost = r.reduce((s, x) => s + Number(x.cost_usd || 0), 0);
+    const avgLatency = r.length ? Math.round(r.reduce((s, x) => s + Number(x.latency_ms || 0), 0) / r.length) : 0;
+    return NextResponse.json({ sentence: parsed.sentence, card: { type: "agent_health", data: { turns: r.length, cost, avgLatency } } });
+  }
+
+  // Write intents → PREVIEW only (execution requires a confirm call).
+  if (intent === "set_open" || intent === "set_agent" || intent === "set_item_availability") {
+    const { data: r } = await supabase.from("restaurants").select("is_open,agent_mode").eq("id", restaurantId).single();
+    const row = (r ?? {}) as { is_open?: boolean; agent_mode?: string };
+    if (intent === "set_open") {
+      const after = !!parsed.params.open;
+      return NextResponse.json({
+        sentence: parsed.sentence,
+        preview: { intent, params: { open: after }, label: "حالة المطعم", before: row.is_open ? "مفتوح" : "مغلق", after: after ? "مفتوح" : "مغلق" },
+      });
+    }
+    if (intent === "set_agent") {
+      const after = !!parsed.params.enabled;
+      const cur = row.agent_mode === "paused" ? "متوقف" : "يعمل";
+      return NextResponse.json({
+        sentence: parsed.sentence,
+        preview: { intent, params: { enabled: after }, label: "المساعد", before: cur, after: after ? "يعمل" : "متوقف" },
+      });
+    }
+    // set_item_availability
+    const name = String(parsed.params.item ?? "");
+    const { data: items } = await supabase.from("menu_items").select("id,name,available").eq("restaurant_id", restaurantId).ilike("name", `%${name}%`).limit(1);
+    const item = items?.[0] as { name: string; available: boolean } | undefined;
+    if (!item) return NextResponse.json({ sentence: `لم أجد صنف «${name}» في المنيو.`, intent: "off_scope" });
+    const after = !!parsed.params.available;
+    return NextResponse.json({
+      sentence: parsed.sentence,
+      preview: { intent, params: { item: item.name, available: after }, label: `توفّر «${item.name}»`, before: item.available ? "متوفر" : "غير متوفر", after: after ? "متوفر" : "غير متوفر" },
+    });
+  }
+
+  // off-scope (or unrecognized) → one-line redirect.
+  return NextResponse.json({ sentence: parsed.sentence || "أقدر أساعدك في تشغيل مطعمك: الطلبات، التصعيدات، المنيو، حالة المطعم.", intent: "off_scope" });
+}
