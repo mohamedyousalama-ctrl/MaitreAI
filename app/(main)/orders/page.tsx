@@ -128,6 +128,7 @@ export default function OrdersPipeline() {
   const updateOrderStatus = useOrderStore((s) => s.updateOrderStatus);
   const sweepExpired = usePaymentStore((s) => s.sweepExpired);
   const [showDone, setShowDone] = useState(false);
+  const [filter, setFilter] = useState<"all" | "delivery" | "pickup" | "late" | "unpaid">("all");
 
   useEffect(() => {
     sweepExpired();
@@ -138,7 +139,22 @@ export default function OrdersPipeline() {
     if (n) updateOrderStatus(o.id, n, "human");
   };
 
-  const inStage = (s: Stage) => (hydrated ? orders.filter((o) => s.statuses.includes(o.orderStatus)) : []);
+  const matchesFilter = (o: LocalOrder) => {
+    if (filter === "delivery") return o.fulfillmentType === "delivery";
+    if (filter === "pickup") return o.fulfillmentType === "pickup";
+    if (filter === "late") return o.createdAt < Date.now() - LATE_MS && !DONE.includes(o.orderStatus);
+    if (filter === "unpaid") return o.paymentStatus !== "paid";
+    return true;
+  };
+  const FILTERS: { k: typeof filter; label: string }[] = [
+    { k: "all", label: "الكل" },
+    { k: "delivery", label: "توصيل" },
+    { k: "pickup", label: "استلام" },
+    { k: "late", label: "متأخرة" },
+    { k: "unpaid", label: "غير مدفوعة" },
+  ];
+
+  const inStage = (s: Stage) => (hydrated ? orders.filter((o) => s.statuses.includes(o.orderStatus) && matchesFilter(o)) : []);
   const done = hydrated ? orders.filter((o) => DONE.includes(o.orderStatus)) : [];
 
   return (
@@ -146,6 +162,22 @@ export default function OrdersPipeline() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-[#2a211b]">الطلبات</h1>
         <span className="text-sm text-[#9b8b7c]">{hydrated ? orders.length : 0} طلب</span>
+      </div>
+
+      {/* Filters (§R3) */}
+      <div className="flex flex-wrap gap-2">
+        {FILTERS.map((f) => (
+          <button
+            key={f.k}
+            onClick={() => setFilter(f.k)}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+              filter === f.k ? "border-[#b5502e] bg-[#b5502e] text-white" : "border-[#e4d8c8] bg-white text-[#6a5c4e] hover:bg-[#faf6ef]"
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

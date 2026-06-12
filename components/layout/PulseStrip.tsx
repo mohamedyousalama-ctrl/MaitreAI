@@ -10,6 +10,7 @@
 // ============================================================================
 
 import { useOpsStore } from "@/lib/ops-store";
+import Link from "next/link";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useOrderStore } from "@/lib/order-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
@@ -100,8 +101,9 @@ export function PulseStrip() {
 
         <span className="mx-1 h-5 w-px shrink-0 bg-[#ece0d2]" />
 
-        {/* Escalations */}
-        <span
+        {/* Escalations → filtered conversations (§R2) */}
+        <Link
+          href="/conversations"
           className={cn(
             "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold",
             escalations > 0 ? "bg-[#f7e3df] text-[#cc3a33]" : "bg-[#faf6ef] text-[#6a5c4e]"
@@ -110,7 +112,7 @@ export function PulseStrip() {
         >
           <AlertTriangle className="h-3.5 w-3.5" />
           تصعيدات: {escalations}
-        </span>
+        </Link>
 
         {/* Today's orders */}
         <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#faf6ef] px-2.5 py-1.5 text-xs font-semibold text-[#6a5c4e]" title="طلبات اليوم">
@@ -126,8 +128,8 @@ export function PulseStrip() {
 
         <span className="mx-1 h-5 w-px shrink-0 bg-[#ece0d2]" />
 
-        {/* Channel/status dots — honest states, never a false green */}
-        <span className="flex shrink-0 items-center gap-3 pl-1">
+        {/* Channel/status dots — honest states; tap → settings/diagnostics (§R2) */}
+        <Link href="/settings" className="flex shrink-0 items-center gap-3 pl-1">
           <Dot label={whatsappLive ? "واتساب متصل" : "واتساب غير متصل"} state={whatsappLive ? "ok" : "off"} />
           <span className="flex items-center gap-1.5 text-xs text-[#6a5c4e]" title="الطابعة غير مهيأة بعد">
             <Printer className="h-3.5 w-3.5 text-[#c2a98f]" />
@@ -135,7 +137,7 @@ export function PulseStrip() {
           <span className="flex items-center gap-1.5 text-xs text-[#6a5c4e]" title="الدفع في الوضع التجريبي">
             <CreditCard className="h-3.5 w-3.5 text-[#e0912e]" />
           </span>
-        </span>
+        </Link>
       </div>
     </div>
   );
