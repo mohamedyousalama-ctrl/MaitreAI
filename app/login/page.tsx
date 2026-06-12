@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { cn } from "@/lib/utils";
 import { Bot, Phone, Mail, Loader2, ArrowRight } from "lucide-react";
+import { SiteFooter } from "@/components/SiteFooter";
 
 type Method = "phone" | "email";
 type Step = "request" | "verify";
@@ -57,7 +58,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+    <div className="flex min-h-screen flex-col bg-slate-50">
+      <div className="flex flex-1 items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Brand */}
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
@@ -165,6 +167,8 @@ export default function LoginPage() {
           بالدخول أنت توافق على الشروط وسياسة الخصوصية
         </p>
       </div>
+      </div>
+      <SiteFooter />
     </div>
   );
 }

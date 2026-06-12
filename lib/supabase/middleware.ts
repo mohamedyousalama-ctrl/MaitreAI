@@ -13,8 +13,9 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./env";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
-// Routes that must stay reachable without a session.
-const PUBLIC_PREFIXES = ["/login", "/auth", "/checkout", "/api"];
+// Routes that must stay reachable without a session. "/" and "/contact" are the
+// public landing/legal pages (no login wall — platform reviewers must see them).
+const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/auth", "/checkout", "/api"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));

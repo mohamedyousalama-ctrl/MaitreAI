@@ -7,10 +7,12 @@
 
 import Link from "next/link";
 import { Sparkles, ArrowRight } from "lucide-react";
+import { SiteFooter } from "@/components/SiteFooter";
 
 export default function OnboardingPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+    <div className="flex min-h-screen flex-col bg-slate-50">
+      <div className="flex flex-1 items-center justify-center p-4">
       <div className="card max-w-md p-8 text-center">
         <span className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-promotions to-orders text-white shadow-card">
           <Sparkles className="h-7 w-7" />
@@ -31,6 +33,8 @@ export default function OnboardingPage() {
           المتابعة <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
+      </div>
+      <SiteFooter />
     </div>
   );
 }
