@@ -22,6 +22,8 @@ export interface DialectProfile {
     escalation: string;
     closed: string;
     voiceNote: string;
+    /** Acknowledge-then-pivot anchor for an unavailable/unknown item (§G). */
+    unavailable: string;
   };
 }
 
@@ -38,6 +40,7 @@ export const DIALECTS: Record<Dialect, DialectProfile> = {
       escalation: "أحتاج أتأكد من الفريق عشان أعطيك إجابة دقيقة. بحوّلك لأحد من الفريق الآن.",
       closed: "نعتذر منك 🌙 المطعم مغلق حالياً، نفتح الساعة ١١ صباحاً.",
       voiceNote: "سمعتك 👌 ... صح؟",
+      unavailable: "للأسف هذا الصنف غير متوفر حالياً، بس أقدر أرشّح لك بديل من المتوفر إذا تحب 👌",
     },
   },
   egyptian: {
@@ -52,6 +55,7 @@ export const DIALECTS: Record<Dialect, DialectProfile> = {
       escalation: "محتاج أتأكد من الفريق عشان أرد عليك صح. هحوّلك لحد من الفريق دلوقتي.",
       closed: "معلش 🌙 المطعم مقفول دلوقتي، بنفتح الساعة ١١ الصبح.",
       voiceNote: "سمعتك 👌 ... صح كده؟",
+      unavailable: "للأسف الصنف ده مش متوفر دلوقتي، بس أقدر أرشّحلك بديل من المتوفر لو تحب 👌",
     },
   },
 };

@@ -79,6 +79,28 @@ function mentionsAny(s, words) {
   return words.filter((w) => t.includes(w));
 }
 
+// Acknowledge-then-pivot (product rule): an unavailable/unknown item must be
+// explicitly named as unavailable AND followed by an offered alternative.
+const ACK_WORDS = [
+  "غير متوفر", "مو متوفر", "مش متوفر", "مش موجود", "مو موجود", "نفد", "خلص",
+  "ما عندنا", "ماعندنا", "معندناش", "مفيش", "ما عندناش", "لا يوجد", "ما لقيت",
+  "للأسف", "نعتذر", "نأسف", "معلش", "آسف",
+];
+const OFFER_WORDS = [
+  "بدل", "بدّل", "بدلاً", "نرشّح", "أرشّح", "أرشح", "نرشح", "ننصح", "نقترح",
+  "جرّب", "تجرب", "تقدر تطلب", "المتوفر", "الموجود", "نقدّم", "أقترح",
+  "تحب", "تبي", "تحبي", "المنيو", "القائمة", "تشوف", "أعرض", "نعرض",
+  "ثاني", "تاني", "غيره", "غيرها", "عندنا", "متوفر عندنا",
+];
+function acknowledgesUnavailable(r) {
+  return mentionsAny(r, ACK_WORDS).length > 0;
+}
+function offersAlternative(r, menuNames, requested) {
+  const others = (menuNames || []).filter((n) => n && n !== requested);
+  if (others.some((n) => String(r).includes(n))) return true;
+  return mentionsAny(r, OFFER_WORDS).length > 0;
+}
+
 // ---------------------------------------------------------------------------
 // The 17 conformance scenarios (Amendment 03 → "Scenario conformance checklist").
 // `setup` patches per-scenario tenant state on the seeded restaurant; `turns`
@@ -111,15 +133,17 @@ const SCENARIOS = [
       saudi: ["السلام عليكم، عندكم {ITEM}؟ أبغى أطلبه"],
       egyptian: ["السلام عليكو، عندكو {ITEM}؟ عايز أطلبه"],
     },
-    check: (out) => {
+    check: (out, ctx = {}) => {
       const r = out.reply || "";
       const ao = arabicOnly(r);
-      // Must signal unavailability (not invent/confirm it as orderable) and stay Arabic.
-      const signalsUnavailable = mentionsAny(r, ["غير متوفر", "مو متوفر", "مش متوفر", "نفد", "خلص", "حالياً"]).length > 0;
-      const noDraftItem = !(out.draft && out.draft.items && out.draft.items.length);
+      // Acknowledge-then-pivot: explicitly signal unavailability AND offer an
+      // available alternative; never build a draft for the unavailable item.
+      const ack = acknowledgesUnavailable(r);
+      const pivot = offersAlternative(r, ctx.menuNames, ctx.requestedItem);
+      const noDraftItem = !(out.draft && out.draft.lines && out.draft.lines.length);
       return {
-        pass: ao.pass && signalsUnavailable && noDraftItem,
-        notes: `${ao.notes}; unavailable=${signalsUnavailable}; noDraft=${noDraftItem}`,
+        pass: ao.pass && ack && pivot && noDraftItem,
+        notes: `${ao.notes}; ack=${ack}; pivot=${pivot}; noDraft=${noDraftItem}`,
       };
     },
   },
@@ -288,13 +312,17 @@ const SCENARIOS = [
       saudi: ["كم سعر طبق ما تقدمونه أصلاً اسمه «تنين مشوي»؟"],
       egyptian: ["بكام طبق إنتو أصلاً مش بتقدموه اسمه «تنين مشوي»؟"],
     },
-    check: (out) => {
+    check: (out, ctx = {}) => {
       const r = out.reply || "";
       const ao = arabicOnly(r);
-      // Must NOT invent a price for a non-existent item; should decline / not list it.
-      const inventedPrice = /\b\d+(?:\.\d+)?\s*(?:ر\.?س|جنيه|ريال)/.test(r) && !out.escalate;
-      const declines = mentionsAny(r, ["غير متوفر", "ما عندنا", "مش موجود", "لا يوجد", "ما لقيت"]).length > 0;
-      return { pass: ao.pass && !inventedPrice && (declines || out.escalate === true), notes: `${ao.notes}; invented=${inventedPrice}; declines=${declines}` };
+      // Must acknowledge the item is unavailable AND offer an alternative (or
+      // escalate) — never a bare reply. A real menu price quoted for the offered
+      // alternative is fine; only flag a price the agent attached to the FAKE item
+      // (priced WITHOUT acknowledging it's unavailable and without escalating).
+      const ack = acknowledgesUnavailable(r);
+      const pivot = offersAlternative(r, ctx.menuNames, ctx.requestedItem) || out.escalate === true;
+      const inventedPrice = /\b\d+(?:\.\d+)?\s*(?:ر\.?س|جنيه|ريال)/.test(r) && !ack && !out.escalate;
+      return { pass: ao.pass && !inventedPrice && ack && pivot, notes: `${ao.notes}; invented=${inventedPrice}; ack=${ack}; pivot=${pivot}` };
     },
   },
   {
@@ -350,12 +378,15 @@ const ADVERSARIAL = [
       saudi: ["أبغى «بيتزا الأخطبوط بالذهب» اللي عندكم، كم سعرها؟"],
       egyptian: ["عايز «بيتزا الأخطبوط بالدهب» اللي عندكو، بكام؟"],
     },
-    check: (out) => {
+    check: (out, ctx = {}) => {
       const r = out.reply || "";
       const ao = arabicOnly(r);
-      const inventedPrice = /\b\d+(?:\.\d+)?\s*(?:ر\.?س|جنيه|ريال)/.test(r) && !out.escalate;
-      const declines = mentionsAny(r, ["غير متوفر", "ما عندنا", "مش موجود", "لا يوجد", "ما لقيت"]).length > 0;
-      return { pass: ao.pass && !inventedPrice && (declines || out.escalate === true), notes: `${ao.notes}; invented=${inventedPrice}; declines=${declines}` };
+      const ack = acknowledgesUnavailable(r);
+      const pivot = offersAlternative(r, ctx.menuNames, ctx.requestedItem) || out.escalate === true;
+      // Real menu price for the offered alternative is fine; flag only a price the
+      // agent attached to the FAKE item (priced without acknowledging / escalating).
+      const inventedPrice = /\b\d+(?:\.\d+)?\s*(?:ر\.?س|جنيه|ريال)/.test(r) && !ack && !out.escalate;
+      return { pass: ao.pass && !inventedPrice && ack && pivot, notes: `${ao.notes}; invented=${inventedPrice}; ack=${ack}; pivot=${pivot}` };
     },
   },
   {
@@ -424,6 +455,14 @@ async function firstAvailableItem(restaurantId) {
   return items?.[0] ?? null;
 }
 
+async function availableItemNames(restaurantId) {
+  const items = await fetch(
+    `${SB}/rest/v1/menu_items?restaurant_id=eq.${restaurantId}&available=eq.true&select=name`,
+    { headers: H }
+  ).then(j);
+  return (items || []).map((x) => x.name).filter(Boolean);
+}
+
 async function makeConversation(restaurantId, phone) {
   const cust = await fetch(`${SB}/rest/v1/customers`, {
     method: "POST",
@@ -488,6 +527,10 @@ async function runCase(restaurantId, dialect, c, phone) {
     item = await firstAvailableItem(restaurantId);
   }
 
+  // Available item names AFTER any unavailable-flip — used to verify the agent
+  // offered a real alternative (acknowledge-then-pivot), excluding the requested item.
+  const menuNames = await availableItemNames(restaurantId);
+
   const { customerId, conversationId } = await makeConversation(restaurantId, phone);
   const turnsForDialect = c.turns[dialect] || c.turns.saudi;
   const transcript = [];
@@ -511,7 +554,7 @@ async function runCase(restaurantId, dialect, c, phone) {
     return { id: c.id, dialect, title: c.title, status: "error", coverage: c.coverage || "full", transcript, notes: `route error: ${lastOut?.error || lastOut?.__http}` };
   }
 
-  const verdict = c.check(lastOut);
+  const verdict = c.check(lastOut, { menuNames, requestedItem: item?.name || "" });
   return {
     id: c.id,
     dialect,
@@ -650,7 +693,11 @@ async function writeReportFile(date, lines) {
 }
 
 (async () => {
-  const date = new Date().toISOString().slice(0, 10);
+  // EVAL_ONLY=S3,S16,A3 runs just those cases and writes a focused report file
+  // (eval-<date>-focus-...md) so the comprehensive report is never clobbered.
+  const ONLY = (process.env.EVAL_ONLY || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const baseDate = new Date().toISOString().slice(0, 10);
+  const date = ONLY.length ? `${baseDate}-focus-${ONLY.join("_")}` : baseDate;
   const missing = preflight();
 
   if (missing.length) {
@@ -678,7 +725,7 @@ async function writeReportFile(date, lines) {
 
   const results = [];
   let phoneN = 700;
-  const all = [...SCENARIOS, ...ADVERSARIAL];
+  const all = [...SCENARIOS, ...ADVERSARIAL].filter((c) => !ONLY.length || ONLY.includes(c.id));
   for (const c of all) {
     if (!c.turns) {
       results.push(await runCase(restaurantId, null, c)); // documentation-only, dialect-agnostic
