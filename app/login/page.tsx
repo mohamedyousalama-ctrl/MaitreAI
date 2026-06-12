@@ -162,6 +162,19 @@ export default function LoginPage() {
                   >
                     {loading && <Loader2 className="h-4 w-4 animate-spin" />} إرسال رمز الدخول
                   </button>
+                  {/* Reach the code field without a fresh send (e.g. when rate-limited
+                      or when a code was issued out of band). No dead-end (F3). */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep("verify");
+                      setError(null);
+                    }}
+                    disabled={!identifier.trim()}
+                    className="w-full text-center text-xs text-slate-400 hover:text-slate-600 disabled:opacity-40"
+                  >
+                    لديك رمز بالفعل؟ أدخله
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-3">
