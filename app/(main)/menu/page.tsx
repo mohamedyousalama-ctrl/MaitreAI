@@ -50,7 +50,7 @@ export default function MenuPage() {
       <MenuMemoryTabs />
       <PageHeader
         title="المنيو"
-        subtitle="إدارة الأصناف والإضافات وجاهزية الذكاء الاصطناعي"
+        subtitle="إدارة الأصناف والإضافات وجاهزية المساعد"
         icon={UtensilsCrossed}
         accentBg="bg-menu"
         actions={

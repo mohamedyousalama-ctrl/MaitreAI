@@ -33,7 +33,7 @@ export function PromotionCard({ promo }: { promo: Promotion }) {
 
       {promo.aiSuggested && (
         <div className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-promotions ring-1 ring-purple-100">
-          <Sparkles className="h-3.5 w-3.5" /> مقترح من الذكاء الاصطناعي
+          <Sparkles className="h-3.5 w-3.5" /> مقترح من المساعد
         </div>
       )}
 
