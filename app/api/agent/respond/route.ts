@@ -59,8 +59,9 @@ export async function POST(req: Request) {
     ...((row.ai_tone as Partial<AiToneConfig>) ?? {}),
   };
 
-  // Optional prior turns for context.
+  // Optional prior turns + handover note for context.
   let history: LlmMessage[] = [];
+  let handoverNote: string | undefined;
   if (conversationId) {
     const { data: msgs } = await admin
       .from("messages")
@@ -74,6 +75,8 @@ export async function POST(req: Request) {
         role: m.sender === "customer" ? "user" : "assistant",
         content: m.text as string,
       }));
+    const { data: conv } = await admin.from("conversations").select("handover_note").eq("id", conversationId).single();
+    handoverNote = (conv?.handover_note as string | null) ?? undefined;
   }
 
   const ctx: BrainContext = {
@@ -94,6 +97,7 @@ export async function POST(req: Request) {
     mode,
     isOpen: !!row.is_open,
     autoAccept: !!row.auto_accept_orders,
+    handoverNote,
   };
 
   const t0 = Date.now();

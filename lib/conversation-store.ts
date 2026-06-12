@@ -59,7 +59,7 @@ interface ConversationState {
   setTyping: (convId: string, value: boolean) => void;
   commitAiTurn: (convId: string, aiMessage: ChatMessage, patch: Partial<Conversation>, history: IntentHistoryEntry) => void;
   takeoverToHuman: (convId: string) => void;
-  returnToAi: (convId: string) => void;
+  returnToAi: (convId: string, note?: string) => void;
   resetConversations: () => void;
 }
 
@@ -262,21 +262,24 @@ export const useConversationStore = create<ConversationState>()(
           }
         },
 
-        returnToAi: (convId) => {
+        returnToAi: (convId, note) => {
           const id = msgId();
+          const summary = note?.trim();
+          const sysText = summary ? `تمت إعادة المحادثة إلى المساعد · ملخص: ${summary}` : "تمت إعادة المحادثة إلى المساعد";
           set((s) => ({
             conversations: patchConv(s.conversations, convId, (c) => ({
               ...c,
               owner: "ai",
               status: "AI نشط",
               escalationReason: undefined,
-              messages: [...c.messages, { id, sender: "system", text: "تمت إعادة المحادثة إلى الموظف الذكي", time: nowTime() }],
+              messages: [...c.messages, { id, sender: "system", text: sysText, time: nowTime() }],
             })),
           }));
           const { _sb, _rid } = get();
           if (_sb && _rid) {
-            fire(updateConversationDb(_sb, convId, { owner: "ai", status: "AI نشط", escalation_reason: null }));
-            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: "تمت إعادة المحادثة إلى الموظف الذكي" }));
+            // §E7: persist the handover summary so the Brain honors it on resume.
+            fire(updateConversationDb(_sb, convId, { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null }));
+            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: sysText }));
           }
         },
 

@@ -174,8 +174,8 @@ export function useConversationEngine() {
     useConversationStore.getState().takeoverToHuman(useConversationStore.getState().selectedId);
   }, []);
 
-  const returnToAi = useCallback(() => {
-    useConversationStore.getState().returnToAi(useConversationStore.getState().selectedId);
+  const returnToAi = useCallback((note?: string) => {
+    useConversationStore.getState().returnToAi(useConversationStore.getState().selectedId, note);
   }, []);
 
   // Reactive: the latest local order + payment session for the selected conversation.

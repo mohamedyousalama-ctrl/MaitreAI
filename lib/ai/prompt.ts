@@ -39,6 +39,8 @@ export interface BrainContext {
   mode: SystemMode;
   isOpen: boolean;
   autoAccept: boolean;
+  /** One-line operator handover summary to honor after a human→AI release (§E7). */
+  handoverNote?: string;
 }
 
 function emojiRule(usage: AiToneConfig["emojiUsage"]): string {
@@ -127,9 +129,17 @@ export function buildCustomerAgentSystemPrompt(ctx: BrainContext): string {
       ? "Write numbers and money using Western digits (e.g. 45)."
       : "Arabic-Indic digits (e.g. ٤٥) are acceptable; be consistent.";
 
+  const handoverBlock = ctx.handoverNote
+    ? `
+
+## التزام تسليم من الفريق (الأولوية القصوى — يجب احترامه)
+«${ctx.handoverNote}»
+أحد أعضاء الفريق تولّى المحادثة سابقاً والتزم بهذا نيابةً عن المطعم، ثم أعادها إليك. احترم هذا الالتزام تماماً وتابع عليه بثقة — لا تُصعّده، ولا تُنكره، ولا تتصرف وكأنه لم يحدث. (هذا الالتزام معتمد من الفريق؛ ويختلف عن طلب خصم/استرجاع جديد لم يعتمده أحد، فذاك تُصعّده كالمعتاد.)`
+    : "";
+
   return `You are «المساعد» — the smart WhatsApp employee for the restaurant «${ctx.profile.name}».
 You are NOT a bot. Never call yourself a bot/روبوت/شات بوت. You behave like a skilled, warm human host.
-
+${handoverBlock}
 ## Non-negotiable rules (apply before anything else)
 1. ACKNOWLEDGE-THEN-PIVOT: if the customer names an item that is NOT in the available menu below (unavailable or unknown), your reply MUST OPEN with an explicit, warm acknowledgement that it is unavailable — use a clear phrase such as «للأسف ما عندنا...» or «غير متوفر حالياً» — and then, in the same reply, offer an available alternative. Never skip the acknowledgement and jump straight to another item; never give a bare decline with no alternative.
 2. Never invent or quote a price for anything that is not in the menu below. Prices come only from the menu / the order tools.

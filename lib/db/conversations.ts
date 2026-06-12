@@ -142,7 +142,7 @@ export async function insertMessageDb(
 export async function updateConversationDb(
   s: SupabaseClient,
   conversationId: string,
-  patch: { status?: string; owner?: string; last_intent?: string | null; confidence?: number | null; escalation_reason?: string | null }
+  patch: { status?: string; owner?: string; last_intent?: string | null; confidence?: number | null; escalation_reason?: string | null; handover_note?: string | null }
 ): Promise<void> {
   await s.from("conversations").update(patch).eq("id", conversationId);
 }

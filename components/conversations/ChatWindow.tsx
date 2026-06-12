@@ -12,7 +12,7 @@ interface ChatWindowProps {
   onSendCustomer: (text: string) => void;
   onSendHuman: (text: string) => void;
   onTakeover: () => void;
-  onReturnToAi: () => void;
+  onReturnToAi: (note?: string) => void;
 }
 
 // §M4: AI-owned → composer reads «اكتب لتتولى المحادثة» and typing/sending takes
@@ -75,7 +75,13 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
   }
 
   function release() {
-    if (window.confirm("سيكمل المساعد متابعة هذه المحادثة تلقائيًا. هل تريد المتابعة؟")) onReturnToAi();
+    // §E7: capture a one-line handover summary the assistant must honor on resume.
+    const note = window.prompt(
+      "ملخص التسليم للمساعد (اختياري) — أي وعد أو سياق يجب أن يكمل عليه، مثل «وعدت العميل بخصم ١٠٪»:",
+      ""
+    );
+    if (note === null) return; // cancelled
+    onReturnToAi(note.trim() || undefined);
   }
 
   return (

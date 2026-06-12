@@ -68,6 +68,8 @@ export async function POST(req: Request) {
     llmHealthy: true,
   });
   const aiTone: AiToneConfig = { ...seedAiTone, ...((row.ai_tone as Partial<AiToneConfig>) ?? {}) };
+  const { data: convRow } = await supabase.from("conversations").select("handover_note").eq("id", conversationId).single();
+  const handoverNote = (convRow?.handover_note as string | null) ?? undefined;
 
   const ctx: BrainContext = {
     profile: {
@@ -87,6 +89,7 @@ export async function POST(req: Request) {
     mode,
     isOpen: !!row.is_open,
     autoAccept: !!row.auto_accept_orders,
+    handoverNote,
   };
 
   try {
