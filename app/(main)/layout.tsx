@@ -1,11 +1,13 @@
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
+import { DataBootstrap } from "@/components/DataBootstrap";
 
 // App shell (sidebar + topbar). The checkout route lives outside this group so
 // the mock payment page renders full-screen without the dashboard chrome.
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
+      <DataBootstrap />
       <AppSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <AppTopbar />

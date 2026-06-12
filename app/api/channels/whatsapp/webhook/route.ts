@@ -1,14 +1,11 @@
 // ============================================================================
-// MaitreAI — WhatsApp Cloud API webhook (Sprint 6)
+// MaitreAI — WhatsApp Cloud API webhook (Sprint 6 + Sprint 7 Pass 2)
 // GET  : Meta webhook verification handshake (hub.mode/verify_token/challenge).
-// POST : accepts a WhatsApp webhook payload, optionally verifies the X-Hub
-//        signature, normalizes inbound messages, logs them server-side, and
-//        returns 200 quickly.
-//
-// IMPORTANT (no database yet): this route does NOT persist messages or push
-// them into the browser Zustand stores — server routes cannot reach localStorage.
-// It normalizes + logs to the server console only. The local simulator injects
-// messages into the client stores instead. Persistence arrives in a later sprint.
+// POST : verifies the X-Hub signature (when an app secret is set), normalizes
+//        inbound messages, and — when Supabase is configured — persists them
+//        idempotently (customer + conversation + message, deduped on
+//        channel_message_id). Falls back to console logging in test mode.
+//        Returns 200 quickly so Meta does not retry.
 // ============================================================================
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -18,6 +15,9 @@ import {
   verifyWhatsAppWebhook,
 } from "@/lib/messaging/adapters/whatsapp";
 import { isWhatsAppConfigured, readWhatsAppEnv } from "@/lib/messaging/config";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { persistInboundMessage } from "@/lib/db/messages";
+import { resolveWebhookRestaurantId } from "@/lib/db/restaurants";
 
 export const dynamic = "force-dynamic";
 
@@ -96,8 +96,27 @@ export async function POST(req: NextRequest) {
 
   const messages = normalizeWhatsAppInbound(payload);
 
-  // No DB yet → log server-side only and acknowledge fast (Meta needs a 200).
-  if (messages.length > 0) {
+  // Persist to Supabase when configured (idempotent on channel_message_id);
+  // otherwise fall back to console logging (test mode).
+  let persisted = 0;
+  let deduped = 0;
+  const admin = createAdminClient();
+  if (admin && messages.length > 0) {
+    const restaurantId = await resolveWebhookRestaurantId(admin);
+    if (restaurantId) {
+      for (const m of messages) {
+        try {
+          const r = await persistInboundMessage(admin, restaurantId, m);
+          if (r.inserted) persisted++;
+          else deduped++;
+        } catch (e) {
+          console.error("[whatsapp:webhook] persist error", e);
+        }
+      }
+    } else {
+      console.warn("[whatsapp:webhook] no restaurant to attach inbound messages to");
+    }
+  } else if (messages.length > 0) {
     console.log(
       `[whatsapp:webhook] received ${messages.length} message(s)`,
       messages.map((m) => ({ from: m.from, name: m.customerName, text: m.text }))
@@ -108,7 +127,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     mode: isWhatsAppConfigured(env) ? "connected" : "test",
     received: messages.length,
-    // Echo normalized messages back in dev so the payload shape is easy to verify.
-    normalized: messages,
+    persisted,
+    deduped,
   });
 }

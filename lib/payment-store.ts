@@ -14,7 +14,18 @@ import { useOrderStore } from "./order-store";
 import { useConversationStore } from "./conversation-store";
 import { sendOutbound } from "./messaging/service";
 import { DEFAULT_EXPIRY_MS, isSessionActive } from "./payments";
-import type { PaymentEvent, PaymentEventActor, PaymentMethodKey, PaymentSession } from "./types";
+import { createClient } from "./supabase/client";
+import { insertSessionDb, loadSessions, subscribeSessions, updateSessionStatusDb } from "./db/payments";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  PaymentEvent,
+  PaymentEventActor,
+  PaymentMethodKey,
+  PaymentSession,
+  PaymentSessionStatus,
+} from "./types";
+
+const fire = (p: PromiseLike<unknown>) => void Promise.resolve(p).then(undefined, (e) => console.error("[payments:db]", e));
 
 // Server-side fallback only — checkout links are generated in the browser, so
 // in production this resolves to window.location.origin (the deployed URL).
@@ -35,6 +46,12 @@ const pev = (type: string, label: string, actor: PaymentEventActor): PaymentEven
 
 interface PaymentState {
   sessions: PaymentSession[];
+
+  _sb: SupabaseClient | null;
+  _rid: string | null;
+  dbReady: boolean;
+  initFromDb: (restaurantId: string) => Promise<(() => void) | undefined>;
+  reload: () => Promise<void>;
 
   createPaymentSession: (orderId: string, origin?: string) => PaymentSession | undefined;
   sendPaymentLink: (orderId: string, origin?: string) => PaymentSession | undefined;
@@ -67,6 +84,28 @@ export const usePaymentStore = create<PaymentState>()(
     (set, get) => ({
       sessions: [],
 
+      _sb: null,
+      _rid: null,
+      dbReady: false,
+
+      initFromDb: async (restaurantId) => {
+        const sb = createClient();
+        if (!sb) return undefined;
+        set({ _sb: sb, _rid: restaurantId });
+        const sessions = await loadSessions(sb, restaurantId);
+        set({ sessions, dbReady: true });
+        return subscribeSessions(sb, restaurantId, () => fire(get().reload()));
+      },
+
+      reload: async () => {
+        const { _sb, _rid } = get();
+        if (!_sb || !_rid) return;
+        const fresh = await loadSessions(_sb, _rid);
+        const freshIds = new Set(fresh.map((s) => s.id));
+        const pending = get().sessions.filter((s) => !freshIds.has(s.id) && s.createdAt > Date.now() - 5000);
+        set({ sessions: [...pending, ...fresh] });
+      },
+
       createPaymentSession: (orderId, origin = currentOrigin()) => {
         const order = useOrderStore.getState().orders.find((o) => o.id === orderId);
         if (!order) return undefined;
@@ -78,7 +117,7 @@ export const usePaymentStore = create<PaymentState>()(
         if (existing) return existing;
 
         const now = Date.now();
-        const id = newId("pay");
+        const id = get()._sb ? crypto.randomUUID() : newId("pay");
         const session: PaymentSession = {
           id,
           orderId,
@@ -97,6 +136,8 @@ export const usePaymentStore = create<PaymentState>()(
           events: [pev("created", "تم إنشاء جلسة الدفع", "system")],
         };
         set((s) => ({ sessions: [session, ...s.sessions] }));
+        const { _sb, _rid } = get();
+        if (_sb && _rid) fire(insertSessionDb(_sb, _rid, session));
         return session;
       },
 
@@ -112,6 +153,7 @@ export const usePaymentStore = create<PaymentState>()(
             events: [...x.events, event],
           })),
         }));
+        if (get()._sb) fire(updateSessionStatusDb(get()._sb!, session.id, "link_sent"));
         // Sync order + conversation.
         useOrderStore.getState().updatePaymentStatus(session.orderId, "payment_link_sent");
         if (session.conversationId) {
@@ -144,6 +186,7 @@ export const usePaymentStore = create<PaymentState>()(
         set((s) => ({
           sessions: patch(s.sessions, sessionId, (x) => ({ ...x, status: "opened", updatedAt: event.timestamp, events: [...x.events, event] })),
         }));
+        if (get()._sb) fire(updateSessionStatusDb(get()._sb!, sessionId, "opened"));
       },
 
       simulateSuccess: (sessionId, method = "mada") => {
@@ -160,6 +203,7 @@ export const usePaymentStore = create<PaymentState>()(
             events: [...x.events, event],
           })),
         }));
+        if (get()._sb) fire(updateSessionStatusDb(get()._sb!, sessionId, "paid", method));
         // Provider "callback" → order becomes paid (this also notifies the conversation).
         useOrderStore.getState().markPaid(session.orderId, "system");
       },
@@ -171,6 +215,7 @@ export const usePaymentStore = create<PaymentState>()(
         set((s) => ({
           sessions: patch(s.sessions, sessionId, (x) => ({ ...x, status: "failed", updatedAt: event.timestamp, events: [...x.events, event] })),
         }));
+        if (get()._sb) fire(updateSessionStatusDb(get()._sb!, sessionId, "failed"));
         useOrderStore.getState().updatePaymentStatus(session.orderId, "failed");
         notify(session.conversationId, `لم تكتمل عملية الدفع لطلب #${session.orderNumber}. يمكنك المحاولة مرة أخرى.`);
       },
@@ -182,6 +227,7 @@ export const usePaymentStore = create<PaymentState>()(
         set((s) => ({
           sessions: patch(s.sessions, sessionId, (x) => ({ ...x, status: "expired", updatedAt: event.timestamp, events: [...x.events, event] })),
         }));
+        if (get()._sb) fire(updateSessionStatusDb(get()._sb!, sessionId, "expired"));
         useOrderStore.getState().updatePaymentStatus(session.orderId, "unpaid");
         notify(session.conversationId, `انتهت صلاحية رابط الدفع لطلب #${session.orderNumber}. يمكننا إرسال رابط جديد.`);
       },
@@ -193,6 +239,7 @@ export const usePaymentStore = create<PaymentState>()(
         set((s) => ({
           sessions: patch(s.sessions, sessionId, (x) => ({ ...x, status: "cancelled", updatedAt: event.timestamp, events: [...x.events, event] })),
         }));
+        if (get()._sb) fire(updateSessionStatusDb(get()._sb!, sessionId, "cancelled"));
         useOrderStore.getState().updatePaymentStatus(session.orderId, "unpaid");
       },
 
@@ -203,6 +250,7 @@ export const usePaymentStore = create<PaymentState>()(
         set((s) => ({
           sessions: patch(s.sessions, sessionId, (x) => ({ ...x, status: "refunded", updatedAt: event.timestamp, events: [...x.events, event] })),
         }));
+        if (get()._sb) fire(updateSessionStatusDb(get()._sb!, sessionId, "refunded"));
         useOrderStore.getState().updatePaymentStatus(session.orderId, "refunded");
         notify(session.conversationId, `تمت معالجة استرجاع المبلغ لطلب #${session.orderNumber}.`);
       },
@@ -231,6 +279,7 @@ export const usePaymentStore = create<PaymentState>()(
     {
       name: "maitreai-payments",
       version: 1,
+      partialize: (s) => ({ sessions: s.sessions }),
     }
   )
 );

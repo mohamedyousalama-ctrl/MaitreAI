@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { seedProfile } from "@/lib/seed-data";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { cn } from "@/lib/utils";
 import { Bot } from "lucide-react";
 
@@ -13,6 +14,7 @@ export function AppSidebar() {
   const hydrated = useHasHydrated();
   const name = useRestaurantStore((s) => s.profile.name);
   const restaurantName = hydrated ? name : seedProfile.name;
+  const configured = isSupabaseConfigured();
 
   return (
     <aside className="hidden h-screen w-72 shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
@@ -68,7 +70,7 @@ export function AppSidebar() {
           </span>
           <div className="text-xs">
             <p className="font-semibold text-slate-800">{restaurantName}</p>
-            <p className="text-slate-500">الوضع التجريبي</p>
+            {!configured && <p className="text-slate-500">الوضع التجريبي</p>}
           </div>
         </div>
       </div>

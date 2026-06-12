@@ -1,7 +1,9 @@
 // ============================================================================
-// MaitreAI — Restaurant configuration store (Zustand + localStorage persist)
-// Single source of truth for all OWNER-EDITABLE restaurant configuration.
-// No backend: state is persisted to localStorage and rehydrated on load.
+// MaitreAI — Restaurant configuration store (Sprint 7 Pass 2)
+// UI-facing source of truth for owner-editable config. When Supabase is
+// configured the store is DB-backed (hydrate from the tenant via RLS, mutations
+// write through, ids come from Postgres). In demo mode it keeps the original
+// seed + localStorage behavior so the app still runs with no backend.
 // ============================================================================
 
 "use client";
@@ -9,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   AiToneConfig,
   Branch,
@@ -29,10 +32,35 @@ import {
   seedPolicies,
   seedProfile,
 } from "./seed-data";
+import { createClient } from "./supabase/client";
+import {
+  loadBrain,
+  updateProfileDb,
+  updateAiToneDb,
+  addBranchDb,
+  updateBranchDb,
+  deleteBranchDb,
+  addMenuItemDb,
+  updateMenuItemDb,
+  deleteMenuItemDb,
+  addModifierDb,
+  updateModifierDb,
+  deleteModifierDb,
+  addDeliveryAreaDb,
+  updateDeliveryAreaDb,
+  deleteDeliveryAreaDb,
+  addFaqDb,
+  updateFaqDb,
+  deleteFaqDb,
+  updatePoliciesDb,
+} from "./db/brain";
 
-// Lightweight unique id generator (no external dep).
+// Lightweight unique id generator (no external dep) — demo mode only.
 export const newId = (prefix: string) =>
   `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+const fire = (p: PromiseLike<unknown>) =>
+  void Promise.resolve(p).then(undefined, (e) => console.error("[brain:db]", e));
 
 interface RestaurantState {
   profile: RestaurantProfile;
@@ -44,45 +72,44 @@ interface RestaurantState {
   policies: Policies;
   aiTone: AiToneConfig;
 
-  // Profile
+  // DB-backing (Pass 2)
+  _sb: SupabaseClient | null;
+  _rid: string | null;
+  dbReady: boolean;
+  initFromDb: (restaurantId: string) => Promise<void>;
+  refreshBrain: () => Promise<void>;
+
   updateProfile: (patch: Partial<RestaurantProfile>) => void;
 
-  // Branches
   addBranch: (b: Omit<Branch, "id">) => void;
   updateBranch: (id: string, patch: Partial<Branch>) => void;
   deleteBranch: (id: string) => void;
 
-  // Menu items
   addMenuItem: (m: Omit<MenuItem, "id">) => void;
   updateMenuItem: (id: string, patch: Partial<MenuItem>) => void;
   deleteMenuItem: (id: string) => void;
 
-  // Modifiers
   addModifier: (m: Omit<Modifier, "id">) => void;
   updateModifier: (id: string, patch: Partial<Modifier>) => void;
   deleteModifier: (id: string) => void;
 
-  // Delivery areas
   addDeliveryArea: (d: Omit<DeliveryArea, "id">) => void;
   updateDeliveryArea: (id: string, patch: Partial<DeliveryArea>) => void;
   deleteDeliveryArea: (id: string) => void;
 
-  // FAQ
   addFaq: (f: Omit<FaqItem, "id">) => void;
   updateFaq: (id: string, patch: Partial<FaqItem>) => void;
   deleteFaq: (id: string) => void;
 
-  // Policies & AI tone
   updatePolicies: (patch: Partial<Policies>) => void;
   updateAiTone: (patch: Partial<AiToneConfig>) => void;
 
-  // Maintenance
   resetAll: () => void;
 }
 
 export const useRestaurantStore = create<RestaurantState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       profile: seedProfile,
       branches: seedBranches,
       menuItems: seedMenuItems,
@@ -92,61 +119,159 @@ export const useRestaurantStore = create<RestaurantState>()(
       policies: seedPolicies,
       aiTone: seedAiTone,
 
-      updateProfile: (patch) => set((s) => ({ profile: { ...s.profile, ...patch } })),
+      _sb: null,
+      _rid: null,
+      dbReady: false,
 
-      addBranch: (b) =>
-        set((s) => ({
-          branches: [
-            ...s.branches,
-            { ...b, id: newId("b"), whatsappConnected: !!b.whatsappNumber },
-          ],
-        })),
-      updateBranch: (id, patch) =>
+      initFromDb: async (restaurantId) => {
+        const sb = createClient();
+        if (!sb) return;
+        set({ _sb: sb, _rid: restaurantId });
+        await get().refreshBrain();
+        set({ dbReady: true });
+      },
+
+      refreshBrain: async () => {
+        const { _sb, _rid } = get();
+        if (!_sb || !_rid) return;
+        const data = await loadBrain(_sb, _rid);
+        set({
+          profile: data.profile,
+          branches: data.branches,
+          menuItems: data.menuItems,
+          modifiers: data.modifiers,
+          deliveryAreas: data.deliveryAreas,
+          faqs: data.faqs,
+          policies: data.policies,
+        });
+      },
+
+      updateProfile: (patch) => {
+        set((s) => ({ profile: { ...s.profile, ...patch } }));
+        const { _sb, _rid } = get();
+        if (_sb && _rid) fire(updateProfileDb(_sb, _rid, patch));
+      },
+
+      addBranch: (b) => {
+        const { _sb, _rid } = get();
+        if (_sb && _rid) {
+          fire(addBranchDb(_sb, _rid, b).then(() => get().refreshBrain()));
+          return;
+        }
+        set((s) => ({ branches: [...s.branches, { ...b, id: newId("b"), whatsappConnected: !!b.whatsappNumber }] }));
+      },
+      updateBranch: (id, patch) => {
         set((s) => ({
           branches: s.branches.map((b) =>
-            b.id === id
-              ? { ...b, ...patch, whatsappConnected: !!(patch.whatsappNumber ?? b.whatsappNumber) }
-              : b
+            b.id === id ? { ...b, ...patch, whatsappConnected: !!(patch.whatsappNumber ?? b.whatsappNumber) } : b
           ),
-        })),
-      deleteBranch: (id) => set((s) => ({ branches: s.branches.filter((b) => b.id !== id) })),
+        }));
+        const { _sb } = get();
+        if (_sb) fire(updateBranchDb(_sb, id, patch));
+      },
+      deleteBranch: (id) => {
+        set((s) => ({ branches: s.branches.filter((b) => b.id !== id) }));
+        const { _sb } = get();
+        if (_sb) fire(deleteBranchDb(_sb, id));
+      },
 
-      addMenuItem: (m) => set((s) => ({ menuItems: [...s.menuItems, { ...m, id: newId("m") }] })),
-      updateMenuItem: (id, patch) =>
-        set((s) => ({ menuItems: s.menuItems.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
-      deleteMenuItem: (id) => set((s) => ({ menuItems: s.menuItems.filter((m) => m.id !== id) })),
+      addMenuItem: (m) => {
+        const { _sb, _rid } = get();
+        if (_sb && _rid) {
+          fire(addMenuItemDb(_sb, _rid, m).then(() => get().refreshBrain()));
+          return;
+        }
+        set((s) => ({ menuItems: [...s.menuItems, { ...m, id: newId("m") }] }));
+      },
+      updateMenuItem: (id, patch) => {
+        set((s) => ({ menuItems: s.menuItems.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
+        const { _sb, _rid } = get();
+        if (_sb && _rid) fire(updateMenuItemDb(_sb, _rid, id, patch));
+      },
+      deleteMenuItem: (id) => {
+        set((s) => ({ menuItems: s.menuItems.filter((m) => m.id !== id) }));
+        const { _sb } = get();
+        if (_sb) fire(deleteMenuItemDb(_sb, id));
+      },
 
-      addModifier: (m) => set((s) => ({ modifiers: [...s.modifiers, { ...m, id: newId("mod") }] })),
-      updateModifier: (id, patch) =>
-        set((s) => ({ modifiers: s.modifiers.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
-      deleteModifier: (id) =>
+      addModifier: (m) => {
+        const { _sb, _rid } = get();
+        if (_sb && _rid) {
+          fire(addModifierDb(_sb, _rid, m).then(() => get().refreshBrain()));
+          return;
+        }
+        set((s) => ({ modifiers: [...s.modifiers, { ...m, id: newId("mod") }] }));
+      },
+      updateModifier: (id, patch) => {
+        set((s) => ({ modifiers: s.modifiers.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
+        const { _sb } = get();
+        if (_sb) fire(updateModifierDb(_sb, id, patch));
+      },
+      deleteModifier: (id) => {
         set((s) => ({
-          // Also detach the deleted modifier from any menu item that references it.
           modifiers: s.modifiers.filter((m) => m.id !== id),
-          menuItems: s.menuItems.map((m) => ({
-            ...m,
-            modifierIds: m.modifierIds.filter((mid) => mid !== id),
-          })),
-        })),
+          menuItems: s.menuItems.map((m) => ({ ...m, modifierIds: m.modifierIds.filter((mid) => mid !== id) })),
+        }));
+        const { _sb } = get();
+        if (_sb) fire(deleteModifierDb(_sb, id)); // FK cascade clears menu_item_modifiers
+      },
 
-      addDeliveryArea: (d) =>
-        set((s) => ({ deliveryAreas: [...s.deliveryAreas, { ...d, id: newId("d") }] })),
-      updateDeliveryArea: (id, patch) =>
-        set((s) => ({
-          deliveryAreas: s.deliveryAreas.map((d) => (d.id === id ? { ...d, ...patch } : d)),
-        })),
-      deleteDeliveryArea: (id) =>
-        set((s) => ({ deliveryAreas: s.deliveryAreas.filter((d) => d.id !== id) })),
+      addDeliveryArea: (d) => {
+        const { _sb, _rid } = get();
+        if (_sb && _rid) {
+          fire(addDeliveryAreaDb(_sb, _rid, d).then(() => get().refreshBrain()));
+          return;
+        }
+        set((s) => ({ deliveryAreas: [...s.deliveryAreas, { ...d, id: newId("d") }] }));
+      },
+      updateDeliveryArea: (id, patch) => {
+        set((s) => ({ deliveryAreas: s.deliveryAreas.map((d) => (d.id === id ? { ...d, ...patch } : d)) }));
+        const { _sb } = get();
+        if (_sb) fire(updateDeliveryAreaDb(_sb, id, patch));
+      },
+      deleteDeliveryArea: (id) => {
+        set((s) => ({ deliveryAreas: s.deliveryAreas.filter((d) => d.id !== id) }));
+        const { _sb } = get();
+        if (_sb) fire(deleteDeliveryAreaDb(_sb, id));
+      },
 
-      addFaq: (f) => set((s) => ({ faqs: [...s.faqs, { ...f, id: newId("f") }] })),
-      updateFaq: (id, patch) =>
-        set((s) => ({ faqs: s.faqs.map((f) => (f.id === id ? { ...f, ...patch } : f)) })),
-      deleteFaq: (id) => set((s) => ({ faqs: s.faqs.filter((f) => f.id !== id) })),
+      addFaq: (f) => {
+        const { _sb, _rid } = get();
+        if (_sb && _rid) {
+          fire(addFaqDb(_sb, _rid, f).then(() => get().refreshBrain()));
+          return;
+        }
+        set((s) => ({ faqs: [...s.faqs, { ...f, id: newId("f") }] }));
+      },
+      updateFaq: (id, patch) => {
+        set((s) => ({ faqs: s.faqs.map((f) => (f.id === id ? { ...f, ...patch } : f)) }));
+        const { _sb } = get();
+        if (_sb) fire(updateFaqDb(_sb, id, patch));
+      },
+      deleteFaq: (id) => {
+        set((s) => ({ faqs: s.faqs.filter((f) => f.id !== id) }));
+        const { _sb } = get();
+        if (_sb) fire(deleteFaqDb(_sb, id));
+      },
 
-      updatePolicies: (patch) => set((s) => ({ policies: { ...s.policies, ...patch } })),
-      updateAiTone: (patch) => set((s) => ({ aiTone: { ...s.aiTone, ...patch } })),
+      updatePolicies: (patch) => {
+        set((s) => ({ policies: { ...s.policies, ...patch } }));
+        const { _sb, _rid } = get();
+        if (_sb && _rid) fire(updatePoliciesDb(_sb, _rid, patch));
+      },
+      updateAiTone: (patch) => {
+        const tone = { ...get().aiTone, ...patch };
+        set({ aiTone: tone });
+        const { _sb, _rid } = get();
+        if (_sb && _rid) fire(updateAiToneDb(_sb, _rid, tone));
+      },
 
-      resetAll: () =>
+      resetAll: () => {
+        const { _sb, _rid } = get();
+        if (_sb && _rid) {
+          fire(_sb.rpc("reset_restaurant", { p_restaurant_id: _rid }).then(() => get().refreshBrain()));
+          return;
+        }
         set({
           profile: seedProfile,
           branches: seedBranches,
@@ -156,19 +281,30 @@ export const useRestaurantStore = create<RestaurantState>()(
           faqs: seedFaqs,
           policies: seedPolicies,
           aiTone: seedAiTone,
-        }),
+        });
+      },
     }),
     {
       name: "maitreai-restaurant-config",
       version: 1,
+      // Never persist the supabase client / tenant handle.
+      partialize: (s) => ({
+        profile: s.profile,
+        branches: s.branches,
+        menuItems: s.menuItems,
+        modifiers: s.modifiers,
+        deliveryAreas: s.deliveryAreas,
+        faqs: s.faqs,
+        policies: s.policies,
+        aiTone: s.aiTone,
+      }),
     }
   )
 );
 
 /**
  * Returns true once the persisted store has rehydrated on the client.
- * Use this to gate rendering of store-dependent UI and avoid SSR/CSR
- * hydration mismatches.
+ * Gates store-dependent UI to avoid SSR/CSR hydration mismatches.
  */
 export function useHasHydrated() {
   const [hydrated, setHydrated] = useState(false);
