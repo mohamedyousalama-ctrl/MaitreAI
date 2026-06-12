@@ -36,3 +36,28 @@ export function modeAllowsAgentReply(mode: SystemMode): boolean {
 export function modeAllowsOrders(mode: SystemMode): boolean {
   return mode === "test" || mode === "live";
 }
+
+/** Inputs for deriving the effective mode at runtime (§F). */
+export interface ModeInputs {
+  supabaseConfigured: boolean;
+  agentMode: string; // stored intent: setup | test | live | paused
+  isOpen: boolean;
+  llmHealthy: boolean;
+}
+
+/**
+ * Effective mode = the owner's configured intent combined with reality.
+ * Precedence: no backend → demo; owner paused → paused; not enabled → setup;
+ * provider down → degraded; closed by hours → closed; else test/live.
+ * Status text must only ever claim a state that is actually true (F3).
+ */
+export function deriveSystemMode(i: ModeInputs): SystemMode {
+  if (!i.supabaseConfigured) return "demo";
+  if (i.agentMode === "paused") return "paused";
+  if (i.agentMode === "setup") return "setup";
+  if (!i.llmHealthy) return "degraded";
+  if (!i.isOpen) return "closed";
+  if (i.agentMode === "test") return "test";
+  if (i.agentMode === "live") return "live";
+  return "setup";
+}
