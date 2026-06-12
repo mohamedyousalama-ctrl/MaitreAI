@@ -1,0 +1,18 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MaitreAi">
+  <title>MaitreAi</title>
+  <defs>
+    <linearGradient id="maGrad" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e8a23a"/>
+      <stop offset=".55" stop-color="#c2602f"/>
+      <stop offset="1" stop-color="#a8432a"/>
+    </linearGradient>
+  </defs>
+  <!-- app-icon tile, warm-hospitality gradient (saffron → terracotta) -->
+  <rect width="64" height="64" rx="15" fill="url(#maGrad)"/>
+  <!-- cloche dome + plate (cream) -->
+  <path d="M13 42a19 17 0 0 1 38 0Z" fill="#faf6ef"/>
+  <rect x="10.5" y="42.5" width="43" height="5" rx="2.5" fill="#faf6ef"/>
+  <!-- growth arrow rising from the dome (charcoal ink) -->
+  <path d="M29 37 L38.5 16" stroke="#2a211b" stroke-width="3.6" stroke-linecap="round"/>
+  <path d="M31.5 16.5 L39 15 L38 22.4" fill="none" stroke="#2a211b" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

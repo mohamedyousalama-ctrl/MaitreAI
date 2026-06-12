@@ -6,7 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { cn } from "@/lib/utils";
-import { Bot, Phone, Mail, Loader2, ArrowRight } from "lucide-react";
+import { Phone, Mail, Loader2, ArrowRight } from "lucide-react";
 import { SiteFooter } from "@/components/SiteFooter";
 
 type Method = "phone" | "email";
@@ -16,7 +16,7 @@ export default function LoginPage() {
   const router = useRouter();
   const configured = isSupabaseConfigured();
 
-  const [method, setMethod] = useState<Method>("phone");
+  const [method, setMethod] = useState<Method>("email");
   const [step, setStep] = useState<Step>("request");
   const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
@@ -63,11 +63,12 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Brand */}
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-conversations to-brain text-white shadow-card">
-            <Bot className="h-7 w-7" />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-mark.svg" alt="MaitreAi" width={56} height={56} className="h-14 w-14" />
           <h1 className="text-xl font-bold text-slate-900">MaitreAI</h1>
-          <p className="text-sm text-slate-500">موظف واتساب الذكي للمطاعم</p>
+          <p className="text-sm text-slate-500">
+            مساعد تشغيل ومبيعات للمطاعم — يدير الطلبات، المحادثات، الدفع، والعروض من مكان واحد.
+          </p>
         </div>
 
         <div className="card p-6">
