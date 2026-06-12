@@ -13,8 +13,72 @@ import { useOrderStore } from "@/lib/order-store";
 import { usePaymentStore } from "@/lib/payment-store";
 import { useHasHydrated } from "@/lib/store";
 import type { LocalOrder, OrderStatusKey } from "@/lib/types";
-import { Printer, Bike, ShoppingBag, ChevronDown, Clock } from "lucide-react";
+import { ORDER_STATUS_LABELS } from "@/lib/orders";
+import { Printer, Bike, ShoppingBag, ChevronDown, Clock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+function OrderDrawer({ o, onClose, onAdvance, onCancel }: { o: LocalOrder; onClose: () => void; onAdvance: (o: LocalOrder) => void; onCancel: (o: LocalOrder) => void }) {
+  const next = nextStatus(o);
+  const closable = o.orderStatus !== "cancelled" && o.orderStatus !== "delivered";
+  return (
+    <div className="fixed inset-0 z-40">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl bg-white lg:inset-y-0 lg:left-auto lg:right-0 lg:max-h-none lg:w-[420px] lg:rounded-none">
+        <div className="sticky top-0 flex items-center justify-between border-b border-[#ece0d2] bg-white px-4 py-3">
+          <div>
+            <p className="font-bold text-[#2a211b]">طلب #{o.orderNumber}</p>
+            <p className="text-xs text-[#9b8b7c]">{ORDER_STATUS_LABELS[o.orderStatus]}</p>
+          </div>
+          <button onClick={onClose} className="text-[#9b8b7c]"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="space-y-4 p-4 text-[#2a211b]">
+          <div className="text-sm">
+            <p className="font-semibold">{o.customerName}</p>
+            <p className="text-xs text-[#9b8b7c]">{o.customerPhone}</p>
+            <p className="mt-1 text-xs text-[#6a5c4e]">
+              {o.fulfillmentType === "delivery" ? `توصيل: ${o.deliveryAddress || "—"}` : "استلام من الفرع"}
+            </p>
+          </div>
+          <div className="space-y-1 border-t border-[#ece0d2] pt-3">
+            {o.items.map((i) => (
+              <div key={i.id} className="flex justify-between text-sm">
+                <span>{i.quantity}× {i.name}{i.modifiers.length ? ` (${i.modifiers.join("، ")})` : ""}{i.notes ? ` — ${i.notes}` : ""}</span>
+                <span className="text-[#6a5c4e]">{i.total} {o.currency}</span>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-[#ece0d2] pt-2 text-sm">
+            <div className="flex justify-between text-[#6a5c4e]"><span>المجموع الفرعي</span><span>{o.subtotal} {o.currency}</span></div>
+            {o.deliveryFee > 0 && <div className="flex justify-between text-[#6a5c4e]"><span>التوصيل</span><span>{o.deliveryFee} {o.currency}</span></div>}
+            <div className="mt-1 flex justify-between font-bold"><span>الإجمالي</span><span>{o.total} {o.currency}</span></div>
+            <div className="mt-1 text-xs text-[#9b8b7c]">الدفع: {o.paymentStatus === "paid" ? "مدفوع" : o.paymentStatus === "refunded" ? "مُسترجع" : "غير مدفوع"}</div>
+          </div>
+          <div className="border-t border-[#ece0d2] pt-3">
+            <p className="mb-1 text-xs font-semibold text-[#9b8b7c]">مسار الطلب</p>
+            <div className="space-y-1">
+              {o.events.map((e) => (
+                <p key={e.id} className="flex items-center gap-1.5 text-xs text-[#6a5c4e]">
+                  <Clock className="h-3 w-3" /> {e.label} · {new Date(e.timestamp).toLocaleTimeString("ar")}
+                </p>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 border-t border-[#ece0d2] pt-3">
+            {next && (
+              <button onClick={() => onAdvance(o)} className="rounded-lg bg-[#b5502e] px-3 py-2 text-xs font-semibold text-white hover:opacity-95">
+                {ADVANCE_LABEL[next] ?? "التالي"}
+              </button>
+            )}
+            <button onClick={() => printReceipt(o)} className="rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">إعادة طباعة</button>
+            {closable && (
+              <button onClick={() => onCancel(o)} className="rounded-lg border border-[#e7c9bf] px-3 py-2 text-xs font-semibold text-[#cc3a33] hover:bg-[#fbeee9]">إلغاء الطلب</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const LATE_MS = 30 * 60 * 1000;
 
@@ -71,13 +135,13 @@ function printReceipt(o: LocalOrder) {
   w.print();
 }
 
-function OrderCard({ o, onAdvance }: { o: LocalOrder; onAdvance: (o: LocalOrder) => void }) {
+function OrderCard({ o, onAdvance, onSelect }: { o: LocalOrder; onAdvance: (o: LocalOrder) => void; onSelect: (o: LocalOrder) => void }) {
   const next = nextStatus(o);
   const paid = o.paymentStatus === "paid";
   const late = o.createdAt < Date.now() - LATE_MS && !DONE.includes(o.orderStatus);
   const mins = Math.max(0, Math.round((Date.now() - o.createdAt) / 60000));
   return (
-    <div className={cn("rounded-xl border bg-white p-3", late ? "border-[#cc3a33]" : "border-[#ece0d2]")}>
+    <div onClick={() => onSelect(o)} className={cn("cursor-pointer rounded-xl border bg-white p-3", late ? "border-[#cc3a33]" : "border-[#ece0d2]")}>
       <div className="flex items-center justify-between">
         <span className="text-sm font-bold text-[#2a211b]">#{o.orderNumber}</span>
         <span className="flex items-center gap-1 text-[11px] text-[#9b8b7c]">
@@ -103,14 +167,20 @@ function OrderCard({ o, onAdvance }: { o: LocalOrder; onAdvance: (o: LocalOrder)
       <div className="mt-2.5 flex items-center gap-2">
         {next && (
           <button
-            onClick={() => onAdvance(o)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAdvance(o);
+            }}
             className="flex-1 rounded-lg bg-[#b5502e] px-2 py-1.5 text-xs font-semibold text-white hover:opacity-95"
           >
             {ADVANCE_LABEL[next] ?? "التالي"}
           </button>
         )}
         <button
-          onClick={() => printReceipt(o)}
+          onClick={(e) => {
+            e.stopPropagation();
+            printReceipt(o);
+          }}
           className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e4d8c8] text-[#6a5c4e] hover:bg-[#faf6ef]"
           aria-label="طباعة"
           title="طباعة (متصفح)"
@@ -126,9 +196,12 @@ export default function OrdersPipeline() {
   const hydrated = useHasHydrated();
   const orders = useOrderStore((s) => s.orders);
   const updateOrderStatus = useOrderStore((s) => s.updateOrderStatus);
+  const cancelOrder = useOrderStore((s) => s.cancelOrder);
   const sweepExpired = usePaymentStore((s) => s.sweepExpired);
   const [showDone, setShowDone] = useState(false);
   const [filter, setFilter] = useState<"all" | "delivery" | "pickup" | "late" | "unpaid">("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedOrder = selectedId ? orders.find((o) => o.id === selectedId) : null;
 
   useEffect(() => {
     sweepExpired();
@@ -194,7 +267,7 @@ export default function OrdersPipeline() {
               </div>
               <div className="space-y-2">
                 {list.map((o) => (
-                  <OrderCard key={o.id} o={o} onAdvance={advance} />
+                  <OrderCard key={o.id} o={o} onAdvance={advance} onSelect={(x) => setSelectedId(x.id)} />
                 ))}
                 {list.length === 0 && <p className="px-1 py-6 text-center text-xs text-[#c2a98f]">لا توجد طلبات</p>}
               </div>
@@ -231,6 +304,17 @@ export default function OrdersPipeline() {
           </div>
         )}
       </div>
+
+      {selectedOrder && (
+        <OrderDrawer
+          o={selectedOrder}
+          onClose={() => setSelectedId(null)}
+          onAdvance={(o) => advance(o)}
+          onCancel={(o) => {
+            if (window.confirm(`إلغاء الطلب #${o.orderNumber}؟`)) cancelOrder(o.id, "human");
+          }}
+        />
+      )}
     </div>
   );
 }
