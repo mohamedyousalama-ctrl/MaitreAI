@@ -29,7 +29,7 @@
 // run is auditable either way.
 // ============================================================================
 
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, appendFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -692,6 +692,79 @@ async function writeReportFile(date, lines) {
   console.log(`report → ${path}`);
 }
 
+// ---------------------------------------------------------------------------
+// Admin Agent read-only group (Amendment 05 §Q / §P) — router classification.
+// The route is session-auth, so we validate routing + the off-scope guard by
+// calling the live router model directly. Mirrors app/api/agent/admin/route.ts.
+// ---------------------------------------------------------------------------
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+const ADMIN_ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم (لست من يكتب البيانات). صنّف رسالة المدير إلى نية واحدة.
+أعد JSON مضغوطاً فقط: {"intent":"...","params":{...},"sentence":"جملة قصيرة"}.
+النوايا: daily_ops | escalations | orders_summary (حالة/عدد الطلبات) | payments_summary (المبيعات/الإيرادات/المدفوعات) | agent_health | set_open params:{"open":bool} | set_agent params:{"enabled":bool} | set_item_availability params:{"item":"...","available":bool} | off_scope (خارج تشغيل المطعم).
+أعِد JSON فقط.`;
+
+const ADMIN_CASES = [
+  { id: "AD-OFF1", phrase: "كم عاصمة فرنسا؟", expect: ["off_scope"], tier: "T1" },
+  { id: "AD-OFF2", phrase: "اكتب لي قصيدة قصيرة", expect: ["off_scope"], tier: "T1" },
+  { id: "AD-OFF3", phrase: "ما رأيك في السياسة؟", expect: ["off_scope"], tier: "T1" },
+  { id: "AD-WRITE", phrase: "سكّر المطعم", expect: ["set_open"], tier: "T1" },
+  { id: "AD-DAILY", phrase: "وش أخبار اليوم؟", expect: ["daily_ops"], tier: "T2" },
+  { id: "AD-ESC", phrase: "كم تصعيد عندي؟", expect: ["escalations"], tier: "T2" },
+  { id: "AD-ORD", phrase: "حالة الطلبات", expect: ["orders_summary", "daily_ops"], tier: "T2" },
+  { id: "AD-PAY", phrase: "كم مبيعات اليوم؟", expect: ["payments_summary", "daily_ops"], tier: "T2" },
+  { id: "AD-HEALTH", phrase: "كيف أداء المساعد؟", expect: ["agent_health"], tier: "T2" },
+  { id: "AD-AVAIL", phrase: "أوقف صنف برجر كلاسيك", expect: ["set_item_availability"], tier: "T2" },
+  { id: "AD-OPEN", phrase: "افتح المطعم", expect: ["set_open"], tier: "T2" },
+  { id: "AD-AGENT", phrase: "أوقف المساعد", expect: ["set_agent"], tier: "T2" },
+];
+
+async function classifyAdmin(phrase) {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: "claude-opus-4-8", max_tokens: 300, system: ADMIN_ROUTER_SYSTEM, messages: [{ role: "user", content: phrase }] }),
+  }).then((x) => x.json());
+  const txt = (r.content?.find((b) => b.type === "text")?.text || "").trim();
+  try {
+    return { intent: String(JSON.parse((txt.match(/\{[\s\S]*\}/) || [])[0]).intent || "off_scope") };
+  } catch {
+    return { intent: "(unparseable)" };
+  }
+}
+
+async function runAdminGroup() {
+  if (!ANTHROPIC_KEY) return [];
+  const out = [];
+  for (const c of ADMIN_CASES) {
+    try {
+      const { intent } = await classifyAdmin(c.phrase);
+      out.push({ ...c, got: intent, pass: c.expect.includes(intent) });
+    } catch (e) {
+      out.push({ ...c, got: `error: ${e.message}`, pass: false });
+    }
+  }
+  return out;
+}
+
+async function appendAdminSection(date, admin) {
+  if (!admin.length) return;
+  const path = join(ROOT, "reports", `eval-${date}.md`);
+  const t1 = admin.filter((a) => a.tier === "T1");
+  const lines = [
+    "",
+    "## Admin Agent — read-only router group (§Q / §P)",
+    "",
+    `- T1 (off-scope guard + write-preview routing): **${t1.filter((a) => a.pass).length}/${t1.length}** ${t1.every((a) => a.pass) ? "✅ (must be 100%)" : "❌ T1 FAIL — blocks go-live"}`,
+    `- Total: **${admin.filter((a) => a.pass).length}/${admin.length}** passed`,
+    "",
+    "| ID | Tier | Phrase | Expected | Got | Status |",
+    "|---|---|---|---|---|---|",
+    ...admin.map((a) => `| ${a.id} | ${a.tier} | ${a.phrase} | ${a.expect.join("/")} | ${a.got} | ${a.pass ? "✅" : "❌"} |`),
+    "",
+  ];
+  await appendFile(path, lines.join("\n") + "\n", "utf8");
+}
+
 (async () => {
   // EVAL_ONLY=S3,S16,A3 runs just those cases and writes a focused report file
   // (eval-<date>-focus-...md) so the comprehensive report is never clobbered.
@@ -746,8 +819,13 @@ async function writeReportFile(date, lines) {
 
   await writeReport(date, results, { blocked: false });
 
-  const failed = results.filter((r) => r.status === "fail" || r.status === "error").length;
-  console.log(`done — ${results.length} cases, ${failed} failing/errored`);
+  // Admin read-only router group (full runs only).
+  const admin = ONLY.length ? [] : await runAdminGroup();
+  await appendAdminSection(date, admin);
+  const adminFail = admin.filter((a) => !a.pass).length;
+
+  const failed = results.filter((r) => r.status === "fail" || r.status === "error").length + adminFail;
+  console.log(`done — ${results.length} customer cases, ${admin.length} admin cases, ${failed} failing/errored`);
   process.exit(failed ? 1 : 0);
 })().catch((e) => {
   console.error("HARNESS CRASH:", e);

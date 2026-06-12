@@ -23,7 +23,7 @@ const MANAGER_ONLY = new Set(["set_open", "set_agent", "payments_summary"]);
 const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم (لست من يكتب البيانات). صنّف رسالة المدير إلى نية واحدة واستخرج المعاملات.
 أعد JSON مضغوطاً فقط بالشكل: {"intent":"...","params":{...},"sentence":"جملة عربية قصيرة واحدة"}.
 النوايا المسموحة:
-- daily_ops (ملخص اليوم) | escalations (التصعيدات) | orders_summary (حالة الطلبات) | payments_summary (المدفوعات) | agent_health (حالة المساعد)
+- daily_ops (ملخص اليوم) | escalations (التصعيدات) | orders_summary (حالة/عدد الطلبات) | payments_summary (المدفوعات والمبيعات والإيرادات) | agent_health (حالة المساعد)
 - set_open params:{"open":true|false} (فتح/إغلاق المطعم)
 - set_agent params:{"enabled":true|false} (تشغيل/إيقاف المساعد)
 - set_item_availability params:{"item":"اسم الصنف","available":true|false}
