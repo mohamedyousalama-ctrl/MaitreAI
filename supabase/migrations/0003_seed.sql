@@ -26,7 +26,7 @@ begin
   insert into public.restaurants (name, phone, email, currency, country,
       default_language, dialect, timezone, business_type, ai_tone, brain_score)
   values ('مطعم الذواقة', '+966 50 123 4567', 'info@aldhawaqah.sa', 'ر.س', 'SA',
-      'ar', 'gulf', 'Asia/Riyadh', 'مطعم وجبات سريعة',
+      'ar', 'saudi', 'Asia/Riyadh', 'مطعم وجبات سريعة',
       jsonb_build_object('personality','friendly','responseLength','medium',
         'emojiUsage','minimal','language','ar',
         'greeting','أهلاً بك في مطعم الذواقة 🌟 كيف أقدر أخدمك اليوم؟'),

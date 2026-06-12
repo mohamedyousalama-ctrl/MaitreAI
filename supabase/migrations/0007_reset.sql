@@ -40,7 +40,7 @@ begin
   -- Reset profile + persona to demo defaults --------------------------------
   update public.restaurants set
     name = 'مطعم الذواقة', phone = '+966 50 123 4567', email = 'info@aldhawaqah.sa',
-    currency = 'ر.س', country = 'SA', default_language = 'ar', dialect = 'gulf',
+    currency = 'ر.س', country = 'SA', default_language = 'ar', dialect = 'saudi',
     timezone = 'Asia/Riyadh', business_type = 'مطعم وجبات سريعة', brain_score = 82,
     is_open = true, accept_preorders = false, closed_message = null,
     ai_tone = jsonb_build_object('personality','friendly','responseLength','medium',

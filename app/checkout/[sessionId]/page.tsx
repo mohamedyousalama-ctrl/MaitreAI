@@ -295,13 +295,16 @@ export default function CheckoutPage() {
             {processing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Lock className="h-4 w-4" />}
             {processing ? "جارٍ المعالجة..." : `ادفع الآن ${formatCurrency(view.amount)}`}
           </button>
-          <button
-            onClick={fail}
-            disabled={processing}
-            className="w-full rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
-          >
-            محاكاة فشل الدفع
-          </button>
+          {/* Dev/demo-only control — never shown to real customers (Amendment 03 F3). */}
+          {!configured && (
+            <button
+              onClick={fail}
+              disabled={processing}
+              className="w-full rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+            >
+              محاكاة فشل الدفع
+            </button>
+          )}
 
           <Link href="/conversations" className="flex items-center justify-center gap-1 pt-1 text-xs text-slate-400 hover:text-slate-600">
             <ArrowLeft className="h-3.5 w-3.5" /> العودة إلى التطبيق (عرض توضيحي)

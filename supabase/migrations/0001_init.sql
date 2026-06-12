@@ -26,7 +26,7 @@ create table if not exists public.restaurants (
   currency text not null default 'ر.س',
   country text not null default 'SA',
   default_language text not null default 'ar',
-  dialect text not null default 'gulf',        -- gulf | egyptian | levantine | maghrebi
+  dialect text not null default 'saudi',       -- saudi | egyptian (Amendment 03 K6)
   timezone text not null default 'Asia/Riyadh',
   business_type text default '',
   ai_tone jsonb not null default '{}'::jsonb,
