@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Lalezar&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  @keyframes mai-up { from { transform: translateY(9px); } to { transform: translateY(0); } }
+  @keyframes mai-slideup { from { transform: translateY(22px); } to { transform: translateY(0); } }
+  .mai-thread::-webkit-scrollbar { width: 0; }
+  .mai-ov-scroll::-webkit-scrollbar { width: 0; }
+</style>
+</helmet>
+
+<div dir="rtl" style="min-height:100%;background:#ECECEE;font-family:'IBM Plex Sans Arabic','Tajawal',system-ui,sans-serif;color:#16181D;padding:30px 26px 60px;background-image:radial-gradient(circle at 18% 0%, #f5f5f7, #e7e7ea 60%);">
+<div style="max-width:980px;margin:0 auto;">
+
+  <header style="margin-bottom:22px;display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+    <div style="width:42px;height:42px;border-radius:12px;background:#F2792B;color:#1F2421;display:flex;align-items:center;justify-content:center;font:400 24px 'Lalezar';transform:rotate(-4deg);flex:0 0 auto;">▶</div>
+    <div style="flex:1;min-width:280px;">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+        <h1 style="font:900 28px/1.05 'Tajawal';margin:0;letter-spacing:-.5px;">نموذج تفاعلي — الرحلة (أ)</h1>
+        <span dir="ltr" style="font:600 12px 'IBM Plex Sans Arabic';color:#6B7079;background:#fff;border:1px solid #E1E1E6;padding:5px 11px;border-radius:999px;">Interactive · tap through it →</span>
+      </div>
+      <p style="margin:9px 0 0;color:#4E535B;font-size:13.5px;line-height:1.6;max-width:680px;">محادثة ← «تصفّح المنيو» ← منيو ويب ← السلة ← «أرسل الطلب» <b>يعود داخل واتساب كصورة مسودّة</b> ← الدفع ← التتبّع. <span dir="ltr" style="color:#8A9097;">Burger الذواقة · Pop preset · Western digits (KSA) · everything is tappable.</span></p>
+    </div>
+  </header>
+
+  <div style="display:flex;gap:30px;align-items:flex-start;flex-wrap:wrap;justify-content:center;">
+
+    <!-- ===== THE PHONE ===== -->
+    <div style="flex:0 0 auto;">
+      <div style="width:312px;height:644px;background:#0d0d0f;border-radius:42px;padding:7px;box-shadow:0 30px 60px -28px rgba(0,0,0,.55),0 3px 8px rgba(0,0,0,.25);position:relative;">
+        <div style="position:absolute;top:15px;left:50%;transform:translateX(-50%);width:96px;height:18px;background:#0d0d0f;border-radius:10px;z-index:30;"></div>
+        <div style="width:100%;height:100%;border-radius:36px;overflow:hidden;position:relative;background:#E5DDD5;">
+
+          <!-- WA HEADER -->
+          <div style="position:absolute;top:0;left:0;right:0;z-index:20;background:#075E54;color:#fff;">
+            <div style="display:flex;justify-content:space-between;padding:8px 16px 0;font-size:10.5px;opacity:.85;"><span>9:41</span><span style="letter-spacing:1px;">5G ▮▮▮ 84%</span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 12px 11px;">
+              <span style="font-size:20px;cursor:pointer;" onClick="{{ goBackHeader }}">›</span>
+              <div style="width:34px;height:34px;border-radius:50%;background:#1F2421;color:#F2792B;display:flex;align-items:center;justify-content:center;font:400 18px 'Lalezar';">ب</div>
+              <div style="flex:1;line-height:1.2;"><div style="font:700 13.5px 'IBM Plex Sans Arabic';">برجر الذواقة 🔥</div><div style="font-size:9.5px;opacity:.82;">{{ presence }}</div></div>
+              <span style="font-size:15px;opacity:.85;">📞</span><span style="font-size:15px;opacity:.85;">⋮</span>
+            </div>
+          </div>
+
+          <!-- CHAT THREAD -->
+          <div class="mai-thread" ref="{{ threadRef }}" style="position:absolute;top:62px;bottom:54px;left:0;right:0;overflow-y:auto;padding:12px 11px;display:flex;flex-direction:column;gap:9px;background-image:linear-gradient(rgba(229,221,213,.6),rgba(229,221,213,.6));">
+
+            <sc-for list="{{ messages }}" as="m" hint-placeholder-count="3">
+
+              <!-- center pill -->
+              <sc-if value="{{ m.center }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:center;font-size:9.5px;color:#6f6f68;background:rgba(255,255,255,.6);border-radius:999px;padding:4px 11px;animation:mai-up .35s ease forwards;">{{ m.text }}</div>
+              </sc-if>
+
+              <!-- incoming text -->
+              <sc-if value="{{ m.inText }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:flex-start;max-width:84%;background:#fff;border-radius:13px 4px 13px 13px;padding:8px 11px;font-size:11.5px;line-height:1.5;box-shadow:0 1px .5px rgba(0,0,0,.13);animation:mai-up .35s ease forwards;">{{ m.text }}</div>
+              </sc-if>
+
+              <!-- incoming big text -->
+              <sc-if value="{{ m.bigText }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:flex-start;max-width:84%;background:#fff;border-radius:13px;padding:9px 12px;font:400 17px 'Lalezar';box-shadow:0 1px .5px rgba(0,0,0,.13);animation:mai-up .35s ease forwards;">{{ m.text }}</div>
+              </sc-if>
+
+              <!-- outgoing text -->
+              <sc-if value="{{ m.outText }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:flex-end;max-width:82%;background:#DCF8C6;border-radius:4px 13px 13px 13px;padding:8px 11px;font-size:11.5px;line-height:1.5;box-shadow:0 1px .5px rgba(0,0,0,.13);animation:mai-up .35s ease forwards;">{{ m.text }}</div>
+              </sc-if>
+
+              <!-- interactive LIST primitive -->
+              <sc-if value="{{ m.list }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:flex-start;max-width:92%;width:92%;position:relative;margin-top:5px;animation:mai-up .35s ease forwards;">
+                  <span style="position:absolute;top:-8px;right:9px;z-index:2;background:#075E54;color:#fff;font:700 8px 'IBM Plex Sans Arabic';padding:2px 7px;border-radius:999px;">📋 قائمة تفاعلية</span>
+                  <div style="background:#fff;border-radius:11px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.14);">
+                    <div style="padding:9px 12px;font:700 11px 'IBM Plex Sans Arabic';border-bottom:1px solid #EEE;display:flex;justify-content:space-between;align-items:center;">🔥 الأكثر طلبًا<span style="font-size:8px;color:#888;font-weight:500;">اختر ›</span></div>
+                    <div style="padding:8px 12px;display:flex;justify-content:space-between;font-size:10.5px;border-bottom:1px solid #F4F4F4;cursor:pointer;" onClick="{{ openMenu }}"><span>دبل وحش</span><span style="color:#888;">45 ر.س</span></div>
+                    <div style="padding:8px 12px;display:flex;justify-content:space-between;font-size:10.5px;border-bottom:1px solid #F4F4F4;cursor:pointer;" onClick="{{ openMenu }}"><span>دجاج مقرمش ناري</span><span style="color:#888;">38 ر.س</span></div>
+                    <div style="padding:9px 12px;text-align:center;font:700 9.5px 'IBM Plex Sans Arabic';color:#075E54;background:#FAFAFA;cursor:pointer;" onClick="{{ openMenu }}">🍔 كل الأصناف (24)</div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- DRAFT order as rendered PNG -->
+              <sc-if value="{{ m.draft }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:flex-start;width:90%;position:relative;animation:mai-up .5s cubic-bezier(.2,.7,.3,1) forwards;">
+                  <span style="position:absolute;top:-8px;right:9px;z-index:2;background:#1F2421;color:#FFD23F;font:700 8px 'IBM Plex Sans Arabic';padding:2px 7px;border-radius:999px;">🖼️ صورة مولّدة (PNG)</span>
+                  <div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 3px 7px rgba(0,0,0,.2);">
+                    <div style="background:#1F2421;color:#fff;padding:9px 12px;display:flex;align-items:center;gap:8px;"><div style="width:24px;height:24px;border-radius:7px;background:#F2792B;color:#1F2421;display:flex;align-items:center;justify-content:center;font:400 13px 'Lalezar';">ب</div><span style="font:400 14px 'Lalezar';color:#F2792B;flex:1;">مسودّة طلبك</span><span style="font-size:8px;background:rgba(255,255,255,.15);border-radius:999px;padding:2px 8px;">لم تُرسَل</span></div>
+                    <div style="padding:9px 12px;font-size:10.5px;line-height:1.85;color:#222;">
+                      <sc-for list="{{ m.lines }}" as="ln" hint-placeholder-count="2">
+                        <div style="display:flex;justify-content:space-between;"><span>{{ ln.name }} ×{{ ln.qty }}</span><span>{{ ln.sum }}</span></div>
+                      </sc-for>
+                      <div style="display:flex;justify-content:space-between;font-weight:800;border-top:1px dashed #DADADA;margin-top:5px;padding-top:6px;"><span>الإجمالي قبل التوصيل</span><span style="font:400 14px 'Lalezar';color:#F2792B;">{{ m.subtotal }} ر.س</span></div>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- RECEIPT as rendered PNG -->
+              <sc-if value="{{ m.receipt }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:flex-start;width:90%;position:relative;animation:mai-up .5s cubic-bezier(.2,.7,.3,1) forwards;">
+                  <span style="position:absolute;top:-8px;right:9px;z-index:2;background:#1F2421;color:#FFD23F;font:700 8px 'IBM Plex Sans Arabic';padding:2px 7px;border-radius:999px;">🖼️ إيصال (PNG)</span>
+                  <div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 3px 7px rgba(0,0,0,.2);">
+                    <div style="background:#1F2421;color:#fff;padding:9px 12px;display:flex;align-items:center;gap:8px;"><div style="width:24px;height:24px;border-radius:7px;background:#F2792B;color:#1F2421;display:flex;align-items:center;justify-content:center;font:400 13px 'Lalezar';">ب</div><div style="flex:1;line-height:1.15;"><div style="font:400 14px 'Lalezar';color:#F2792B;">برجر الذواقة 🔥</div><div style="font-size:8px;opacity:.7;">إيصال · طلب #4821</div></div><span style="font-size:8px;background:#1F8A5B;border-radius:999px;padding:2px 8px;">مدفوع ✓</span></div>
+                    <div style="padding:9px 12px;font-size:10.5px;line-height:1.8;color:#222;">
+                      <sc-for list="{{ m.lines }}" as="ln" hint-placeholder-count="2">
+                        <div style="display:flex;justify-content:space-between;"><span>{{ ln.name }} ×{{ ln.qty }}</span><span>{{ ln.sum }}</span></div>
+                      </sc-for>
+                      <div style="display:flex;justify-content:space-between;color:#888;border-top:1px dashed #DADADA;margin-top:5px;padding-top:6px;"><span>التوصيل</span><span>12 ر.س</span></div>
+                      <div style="display:flex;justify-content:space-between;font-weight:800;"><span>الإجمالي</span><span style="font:400 15px 'Lalezar';color:#F2792B;">{{ m.total }} ر.س</span></div>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- progress bubble -->
+              <sc-if value="{{ m.progress }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:flex-start;max-width:88%;background:#fff;border-radius:13px;padding:9px 12px;box-shadow:0 1px .5px rgba(0,0,0,.13);animation:mai-up .35s ease forwards;">
+                  <div style="font-size:11px;margin-bottom:6px;">{{ m.text }}</div>
+                  <div style="height:7px;border-radius:7px;background:#F0EDE6;overflow:hidden;"><div style="height:100%;background:linear-gradient(90deg,#F2792B,#FFD23F);width:{{ m.pctw }};transition:width .6s ease;"></div></div>
+                </div>
+              </sc-if>
+
+              <!-- map bubble -->
+              <sc-if value="{{ m.map }}" hint-placeholder-val="{{ false }}">
+                <div style="align-self:flex-start;max-width:88%;background:#fff;border-radius:13px;overflow:hidden;box-shadow:0 1px .5px rgba(0,0,0,.13);animation:mai-up .35s ease forwards;">
+                  <div style="height:78px;background:linear-gradient(150deg,#cfd6cf,#aebbae);position:relative;"><div style="position:absolute;top:46%;right:38%;width:9px;height:9px;border-radius:50%;background:#F2792B;box-shadow:0 0 0 5px rgba(242,121,43,.3);"></div><span style="position:absolute;bottom:16%;left:28%;font-size:16px;">🛵</span></div>
+                  <div style="padding:7px 12px;font-size:10.5px;">{{ m.text }}</div>
+                </div>
+              </sc-if>
+
+            </sc-for>
+
+            <!-- typing indicator -->
+            <sc-if value="{{ typing }}" hint-placeholder-val="{{ false }}">
+              <div style="align-self:flex-start;background:#fff;border-radius:13px;padding:8px 13px;font-size:15px;letter-spacing:2px;color:#bbb;box-shadow:0 1px .5px rgba(0,0,0,.13);">•••</div>
+            </sc-if>
+
+            <!-- reply buttons (≤3) -->
+            <sc-if value="{{ hasButtons }}" hint-placeholder-val="{{ false }}">
+              <div style="align-self:flex-start;width:92%;position:relative;margin-top:3px;">
+                <span style="position:absolute;top:-8px;right:9px;z-index:2;background:#F2792B;color:#1F2421;font:700 8px 'IBM Plex Sans Arabic';padding:2px 7px;border-radius:999px;">🔘 أزرار ردّ</span>
+                <div style="display:flex;flex-direction:column;gap:5px;">
+                  <sc-for list="{{ buttons }}" as="b" hint-placeholder-count="2">
+                    <div onClick="{{ b.onTap }}" style="cursor:pointer;border-radius:11px;text-align:center;padding:10px;font-weight:700;{{ b.css }}">{{ b.label }}</div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+          </div>
+
+          <!-- WA INPUT BAR -->
+          <div style="position:absolute;bottom:0;left:0;right:0;z-index:20;background:#F0F0F0;padding:8px 11px;display:flex;align-items:center;gap:7px;">
+            <div style="flex:1;background:#fff;border-radius:999px;height:30px;display:flex;align-items:center;padding:0 13px;font-size:10.5px;color:#9aa;">رسالة…</div>
+            <div style="width:30px;height:30px;border-radius:50%;background:#075E54;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;">🎤</div>
+          </div>
+
+          <!-- ===== WEB OVERLAY (menu / cart / checkout) ===== -->
+          <sc-if value="{{ overlayOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;z-index:25;animation:mai-slideup .4s cubic-bezier(.3,.8,.3,1) forwards;">
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;background:#E5DDD5;">
+
+              <!-- overlay header -->
+              <div style="flex:0 0 auto;background:#075E54;color:#fff;padding:8px 12px 11px;">
+                <div style="display:flex;justify-content:space-between;padding:0 4px 5px;font-size:10.5px;opacity:.85;"><span>9:41</span><span>5G ▮▮▮</span></div>
+                <div style="display:flex;align-items:center;gap:9px;">
+                  <span style="font-size:20px;cursor:pointer;" onClick="{{ overlayBack }}">›</span>
+                  <div style="width:30px;height:30px;border-radius:50%;background:#1F2421;color:#F2792B;display:flex;align-items:center;justify-content:center;font:400 15px 'Lalezar';">ب</div>
+                  <div style="flex:1;line-height:1.15;"><div style="font:700 12.5px 'IBM Plex Sans Arabic';">{{ overlayTitle }}</div><div style="font-size:9px;opacity:.8;">نفس المحادثة · بلا تطبيق</div></div>
+                  <span style="font-size:12px;background:#F2792B;color:#1F2421;border-radius:999px;padding:3px 10px;font-weight:700;">🛒 {{ count }}</span>
+                </div>
+              </div>
+
+              <!-- ===== MENU VIEW ===== -->
+              <sc-if value="{{ isMenu }}" hint-placeholder-val="{{ true }}">
+                <div class="mai-ov-scroll" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;">
+                  <div style="flex:0 0 auto;padding:9px 11px 4px;display:flex;gap:6px;">
+                    <span style="background:#F2792B;color:#1F2421;font:400 13px 'Lalezar';padding:3px 12px;border-radius:999px;">برجر</span>
+                    <span style="background:#fff;font:400 13px 'Lalezar';padding:3px 12px;border-radius:999px;box-shadow:0 1px .5px rgba(0,0,0,.12);">دجاج</span>
+                    <span style="background:#fff;font:400 13px 'Lalezar';padding:3px 12px;border-radius:999px;box-shadow:0 1px .5px rgba(0,0,0,.12);">جانبية</span>
+                  </div>
+                  <div style="padding:8px 11px;display:flex;flex-direction:column;gap:9px;">
+                    <div style="align-self:flex-start;background:#fff;border-radius:13px 4px 13px 13px;padding:5px 12px;font:400 14px 'Lalezar';box-shadow:0 1px .5px rgba(0,0,0,.13);">🍔 البرجر</div>
+
+                    <!-- item: dbl -->
+                    <div style="background:#fff;border-radius:12px;padding:9px;display:flex;gap:9px;align-items:center;box-shadow:0 1px .5px rgba(0,0,0,.13);position:relative;">
+                      <span style="position:absolute;top:-7px;right:10px;background:#FF4D4D;color:#fff;font:400 10px 'Lalezar';padding:0 9px;border-radius:999px;transform:rotate(-5deg);">حار 🌶️</span>
+                      <div style="width:50px;height:50px;border-radius:9px;flex:0 0 auto;background:radial-gradient(58% 52% at 50% 40%,#f3c781,#c07f2c 52%,#6f3f17);box-shadow:inset 0 9px 15px -6px rgba(255,255,255,.4),inset 0 -13px 19px -6px rgba(0,0,0,.45);"></div>
+                      <div style="flex:1;line-height:1.3;"><div style="font:400 15px 'Lalezar';">دبل وحش</div><div style="font-size:9px;color:#888;">أنغوس · شيدر مزدوج</div><div style="font:400 14px 'Lalezar';color:#F2792B;">45 ر.س</div></div>
+                      <sc-if value="{{ q.dblZero }}" hint-placeholder-val="{{ true }}"><span onClick="{{ addDbl }}" style="cursor:pointer;background:#F2792B;color:#1F2421;font:400 16px 'Lalezar';width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #c95f1c;">＋</span></sc-if>
+                      <sc-if value="{{ q.dblHas }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:7px;background:#FFF1E6;border-radius:999px;padding:3px 5px;"><span onClick="{{ decDbl }}" style="cursor:pointer;width:22px;height:22px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;">−</span><b style="font:400 14px 'Lalezar';min-width:12px;text-align:center;">{{ cart.dbl }}</b><span onClick="{{ addDbl }}" style="cursor:pointer;width:22px;height:22px;border-radius:50%;background:#F2792B;color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;">＋</span></span></sc-if>
+                    </div>
+
+                    <!-- item: chicken -->
+                    <div style="background:#fff;border-radius:12px;padding:9px;display:flex;gap:9px;align-items:center;box-shadow:0 1px .5px rgba(0,0,0,.13);">
+                      <div style="width:50px;height:50px;border-radius:9px;flex:0 0 auto;background:radial-gradient(58% 52% at 50% 42%,#f0cf86,#cf9433 52%,#7a4e16);box-shadow:inset 0 9px 15px -6px rgba(255,255,255,.4),inset 0 -13px 19px -6px rgba(0,0,0,.45);"></div>
+                      <div style="flex:1;line-height:1.3;"><div style="font:400 15px 'Lalezar';">دجاج مقرمش ناري</div><div style="font-size:9px;color:#888;">صدر مقرمش · صوص حار</div><div style="font:400 14px 'Lalezar';color:#F2792B;">38 ر.س</div></div>
+                      <sc-if value="{{ q.chkZero }}" hint-placeholder-val="{{ true }}"><span onClick="{{ addChk }}" style="cursor:pointer;background:#F2792B;color:#1F2421;font:400 16px 'Lalezar';width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #c95f1c;">＋</span></sc-if>
+                      <sc-if value="{{ q.chkHas }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:7px;background:#FFF1E6;border-radius:999px;padding:3px 5px;"><span onClick="{{ decChk }}" style="cursor:pointer;width:22px;height:22px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;">−</span><b style="font:400 14px 'Lalezar';min-width:12px;text-align:center;">{{ cart.chk }}</b><span onClick="{{ addChk }}" style="cursor:pointer;width:22px;height:22px;border-radius:50%;background:#F2792B;color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;">＋</span></span></sc-if>
+                    </div>
+
+                    <div style="align-self:flex-start;background:#fff;border-radius:13px;padding:5px 12px;font:400 14px 'Lalezar';box-shadow:0 1px .5px rgba(0,0,0,.13);margin-top:2px;">🍟 الجانبية</div>
+                    <!-- item: fries -->
+                    <div style="background:#fff;border-radius:12px;padding:9px;display:flex;gap:9px;align-items:center;box-shadow:0 1px .5px rgba(0,0,0,.13);">
+                      <div style="width:50px;height:50px;border-radius:9px;flex:0 0 auto;background:radial-gradient(58% 52% at 50% 42%,#f2d58a,#d99f33 55%,#8a5a16);box-shadow:inset 0 9px 15px -6px rgba(255,255,255,.4),inset 0 -13px 19px -6px rgba(0,0,0,.45);"></div>
+                      <div style="flex:1;line-height:1.3;"><div style="font:400 15px 'Lalezar';">بطاطس ودجز</div><div style="font:400 14px 'Lalezar';color:#F2792B;">12 ر.س</div></div>
+                      <sc-if value="{{ q.frZero }}" hint-placeholder-val="{{ true }}"><span onClick="{{ addFr }}" style="cursor:pointer;background:#F2792B;color:#1F2421;font:400 16px 'Lalezar';width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #c95f1c;">＋</span></sc-if>
+                      <sc-if value="{{ q.frHas }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:7px;background:#FFF1E6;border-radius:999px;padding:3px 5px;"><span onClick="{{ decFr }}" style="cursor:pointer;width:22px;height:22px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;">−</span><b style="font:400 14px 'Lalezar';min-width:12px;text-align:center;">{{ cart.fr }}</b><span onClick="{{ addFr }}" style="cursor:pointer;width:22px;height:22px;border-radius:50%;background:#F2792B;color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;">＋</span></span></sc-if>
+                    </div>
+                  </div>
+                </div>
+                <!-- running cart bar -->
+                <div style="flex:0 0 auto;padding:9px 11px;background:#E5DDD5;">
+                  <div onClick="{{ openCart }}" style="cursor:pointer;background:#DCF8C6;border-radius:12px;padding:10px 13px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px .5px rgba(0,0,0,.15);opacity:{{ cartBarOpacity }};">
+                    <span style="font-size:10.5px;line-height:1.3;">🛒 طلبك: {{ count }} أصناف<br><b style="font:400 15px 'Lalezar';">{{ subtotal }} ر.س</b></span>
+                    <span style="background:#075E54;color:#fff;font:700 11px 'IBM Plex Sans Arabic';padding:9px 14px;border-radius:999px;">عرض السلة ←</span>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- ===== CART VIEW ===== -->
+              <sc-if value="{{ isCart }}" hint-placeholder-val="{{ false }}">
+                <div class="mai-ov-scroll" style="flex:1;overflow-y:auto;padding:12px 11px;display:flex;flex-direction:column;gap:9px;">
+                  <div style="align-self:flex-start;max-width:80%;background:#fff;border-radius:13px 4px 13px 13px;padding:8px 11px;font-size:11px;box-shadow:0 1px .5px rgba(0,0,0,.13);">راجِع طلبك — تقدر تعدّل الكميات 👇</div>
+                  <div style="align-self:flex-end;width:92%;background:#DCF8C6;border-radius:4px 13px 13px 13px;overflow:hidden;box-shadow:0 1px 1px rgba(0,0,0,.14);">
+                    <div style="padding:9px 12px 6px;font:400 15px 'Lalezar';border-bottom:1px solid rgba(0,0,0,.07);">🛒 طلبك</div>
+                    <sc-for list="{{ cartLines }}" as="ln" hint-placeholder-count="2">
+                      <div style="padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:10.5px;border-bottom:1px solid rgba(0,0,0,.05);">
+                        <span>{{ ln.name }}</span>
+                        <span style="display:flex;align-items:center;gap:8px;"><span style="display:flex;align-items:center;gap:5px;background:#fff;border-radius:999px;padding:2px 4px;"><span onClick="{{ ln.dec }}" style="cursor:pointer;width:18px;height:18px;border-radius:50%;background:#eef;display:flex;align-items:center;justify-content:center;font-size:13px;">−</span><b>{{ ln.qty }}</b><span onClick="{{ ln.inc }}" style="cursor:pointer;width:18px;height:18px;border-radius:50%;background:#F2792B;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;">＋</span></span><b style="font:400 12px 'Lalezar';min-width:24px;text-align:left;">{{ ln.sum }}</b></span>
+                      </div>
+                    </sc-for>
+                    <div style="padding:9px 12px;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.4);"><span style="font-size:10px;color:#444;">الإجمالي (قبل التوصيل)</span><span style="font:400 16px 'Lalezar';">{{ subtotal }} ر.س</span></div>
+                  </div>
+                  <div style="align-self:center;font-size:9px;color:#7a8a78;background:rgba(255,255,255,.5);border-radius:999px;padding:3px 11px;">✓ يُحفظ في نفس المحادثة — بلا تسجيل دخول</div>
+                </div>
+                <div style="flex:0 0 auto;padding:10px 11px;background:#E5DDD5;">
+                  <div onClick="{{ sendOrder }}" style="cursor:pointer;background:#075E54;color:#fff;border-radius:13px;padding:13px;text-align:center;font:400 18px 'Lalezar';">أرسل الطلب للمطعم ↩</div>
+                </div>
+              </sc-if>
+
+              <!-- ===== CHECKOUT VIEW ===== -->
+              <sc-if value="{{ isCheckout }}" hint-placeholder-val="{{ false }}">
+                <div class="mai-ov-scroll" style="flex:1;overflow-y:auto;padding:12px 11px;display:flex;flex-direction:column;gap:9px;">
+                  <div style="align-self:flex-start;max-width:78%;background:#fff;border-radius:13px 4px 13px 13px;padding:8px 11px;font-size:11px;box-shadow:0 1px .5px rgba(0,0,0,.13);">وين نوصّل لك؟ 📍</div>
+                  <div style="align-self:flex-end;max-width:86%;background:#DCF8C6;border-radius:4px 13px 13px 13px;overflow:hidden;box-shadow:0 1px .5px rgba(0,0,0,.13);"><div style="height:46px;background:linear-gradient(120deg,#cfd6cf,#b9c4b9);"></div><div style="padding:7px 11px;font-size:10px;line-height:1.4;">الرياض · حي الياسمين · مبنى 12 <span style="color:#3a7d44;">✎</span></div></div>
+                  <div style="align-self:flex-start;max-width:78%;background:#fff;border-radius:13px 4px 13px 13px;padding:8px 11px;font-size:11px;box-shadow:0 1px .5px rgba(0,0,0,.13);">تدفع كيف؟ 💳</div>
+                  <div style="align-self:flex-end;width:84%;display:flex;flex-direction:column;gap:6px;">
+                    <div onClick="{{ pickApple }}" style="cursor:pointer;border-radius:11px;text-align:center;padding:10px;font:700 11px 'IBM Plex Sans Arabic';{{ appleCss }}"> Pay</div>
+                    <div onClick="{{ pickMada }}" style="cursor:pointer;border-radius:11px;padding:10px 13px;display:flex;justify-content:space-between;align-items:center;font:700 11px 'IBM Plex Sans Arabic';{{ madaCss }}"><span>مدى</span><span style="width:13px;height:13px;border-radius:50%;{{ madaDot }}"></span></div>
+                    <div onClick="{{ pickCod }}" style="cursor:pointer;border-radius:11px;padding:10px 13px;display:flex;justify-content:space-between;align-items:center;font-size:10.5px;{{ codCss }}"><span>💵 الدفع عند الاستلام</span><span style="width:13px;height:13px;border-radius:50%;{{ codDot }}"></span></div>
+                  </div>
+                  <div style="align-self:flex-start;max-width:86%;background:#fff;border-radius:13px;padding:8px 11px;font-size:10px;line-height:1.6;box-shadow:0 1px .5px rgba(0,0,0,.13);">الإجمالي <b style="font:400 13px 'Lalezar';">{{ total }} ر.س</b> · شامل التوصيل 12 ✅</div>
+                </div>
+                <div style="flex:0 0 auto;padding:10px 11px;background:#E5DDD5;">
+                  <div onClick="{{ pay }}" style="cursor:pointer;background:#F2792B;color:#1F2421;border-radius:13px;padding:13px;text-align:center;font:400 18px 'Lalezar';box-shadow:0 4px 0 #c95f1c;">🔒 {{ payLabel }}</div>
+                </div>
+              </sc-if>
+
+            </div>
+          </div>
+          </sc-if>
+
+        </div>
+      </div>
+
+      <!-- restart -->
+      <div style="text-align:center;margin-top:14px;"><span onClick="{{ resetDemo }}" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #E1E1E6;border-radius:999px;padding:7px 15px;font:700 11px 'IBM Plex Sans Arabic';color:#54585F;box-shadow:0 2px 6px -3px rgba(0,0,0,.2);">🔁 ابدأ الرحلة من جديد</span></div>
+    </div>
+
+    <!-- ===== SIDE: stage tracker ===== -->
+    <div style="flex:0 0 auto;width:248px;align-self:flex-start;margin-top:34px;">
+      <div style="background:#fff;border:1px solid #E6E6EA;border-radius:16px;padding:16px;box-shadow:0 14px 34px -28px rgba(0,0,0,.3);">
+        <div style="font:800 14px 'Tajawal';margin-bottom:3px;">أين أنت في الرحلة؟</div>
+        <div dir="ltr" style="font-size:10.5px;color:#9A9AA2;margin-bottom:13px;">The chat↔web↔chat loop</div>
+        <sc-for list="{{ steps }}" as="s" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 0;">
+            <span style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 11px 'IBM Plex Sans Arabic';flex:0 0 auto;{{ s.dotCss }}">{{ s.icon }}</span>
+            <span style="font-size:12px;font-weight:{{ s.weight }};color:{{ s.color }};">{{ s.label }}</span>
+            <span style="flex:1;"></span>
+            <span style="font-size:11px;color:#1F8A5B;">{{ s.check }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="background:#FBFBFC;border:1px solid #EDEDF0;border-radius:14px;padding:13px 14px;margin-top:12px;">
+        <div style="font:700 11px 'IBM Plex Sans Arabic';color:#075E54;margin-bottom:6px;">💡 لاحظ</div>
+        <div style="font-size:11px;line-height:1.65;color:#54585F;">الويب يفتح ويغلق فوق نفس المحادثة. عند الإرسال تهبط <b>صورة المسودّة</b> داخل الشات ومعها <b>أزرار ردّ</b> حقيقية — لا مغادرة محسوسة.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 980, &quot;height&quot;: 760}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.threadRef = React.createRef();
+    this.timers = [];
+    this.state = this.freshState();
+  }
+
+  freshState() {
+    return {
+      screen: 'chat',        // chat | menu | cart | checkout
+      stage: 'intro',        // intro | drafted | confirmed | paid | tracking
+      cart: { dbl: 0, chk: 0, fr: 0 },
+      pay: 'mada',
+      typing: false,
+      messages: [
+        { id: 1, inText: true, text: 'يا هلا! 😎 جوعان؟ افتح المنيو وأنا أكمّل الطلب معك هنا 👇' },
+        { id: 2, list: true },
+      ],
+    };
+  }
+
+  PRICES = { dbl: 45, chk: 38, fr: 12 };
+  NAMES = { dbl: 'دبل وحش 🔥', chk: 'دجاج مقرمش ناري', fr: 'بطاطس ودجز' };
+
+  componentWillUnmount() { this.clearTimers(); }
+  clearTimers() { this.timers.forEach(t => clearTimeout(t)); this.timers = []; }
+  componentDidUpdate() {
+    const el = this.threadRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+  push(msg) { this.setState(s => ({ messages: [...s.messages, { id: Date.now() + Math.random(), ...msg }] })); }
+  later(ms, fn) { this.timers.push(setTimeout(fn, ms)); }
+
+  subtotal() { const c = this.state.cart, p = this.PRICES; return c.dbl*p.dbl + c.chk*p.chk + c.fr*p.fr; }
+  count() { const c = this.state.cart; return c.dbl + c.chk + c.fr; }
+  lines() {
+    const c = this.state.cart, p = this.PRICES, n = this.NAMES, out = [];
+    ['dbl','chk','fr'].forEach(k => { if (c[k] > 0) out.push({ name: n[k], qty: c[k], sum: c[k]*p[k] }); });
+    return out;
+  }
+
+  // ----- menu actions -----
+  add(k) { this.setState(s => ({ cart: { ...s.cart, [k]: s.cart[k] + 1 } })); }
+  dec(k) { this.setState(s => ({ cart: { ...s.cart, [k]: Math.max(0, s.cart[k] - 1) } })); }
+  openMenu = () => this.setState({ screen: 'menu' });
+  openCart = () => { if (this.count() > 0) this.setState({ screen: 'cart' }); };
+  overlayBack = () => {
+    if (this.state.screen === 'cart') this.setState({ screen: 'menu' });
+    else if (this.state.screen === 'checkout') this.setState({ screen: 'chat' });
+    else this.setState({ screen: 'chat' });
+  };
+  goBackHeader = () => {};
+
+  // ----- the hand-off: cart -> back in chat as draft PNG -----
+  sendOrder = () => {
+    const lines = this.lines().map(l => ({ ...l }));
+    const sub = this.subtotal();
+    this.setState({ screen: 'chat', stage: 'drafted' });
+    this.push({ center: true, text: 'عُدت من المنيو ✓' });
+    this.later(180, () => this.push({ draft: true, lines, subtotal: sub }));
+    this.later(420, () => { this.setState({ typing: true }); });
+    this.later(1100, () => { this.setState({ typing: false }); this.push({ inText: true, text: 'وصلتني مسودّة طلبك 📝 راجِعها وأكّد الإرسال 👆' }); });
+  };
+
+  confirmOrder = () => {
+    this.push({ outText: true, text: '✅ أكّد الطلب' });
+    this.setState({ stage: 'confirmed', typing: true });
+    this.later(900, () => { this.setState({ typing: false }); this.push({ inText: true, text: 'تمام! ✅ استلمنا طلبك. باقي الدفع بس 💳' }); });
+  };
+  cancelOrder = () => { this.push({ outText: true, text: '🗑️ ألغِ الطلب' }); this.later(500, () => this.resetDemo()); };
+
+  openCheckout = () => this.setState({ screen: 'checkout' });
+
+  // ----- payment -----
+  pay = () => {
+    const lines = this.lines().map(l => ({ ...l }));
+    const total = this.subtotal() + 12;
+    this.setState({ screen: 'chat', stage: 'paid' });
+    this.later(160, () => this.push({ receipt: true, lines, total }));
+    this.later(520, () => this.setState({ typing: true }));
+    this.later(1200, () => { this.setState({ typing: false }); this.push({ inText: true, text: 'تم استلام الدفع ✅ نبدأ التحضير الحين' }); });
+    // progressive tracking
+    this.later(1900, () => this.push({ progress: true, text: '🧑‍🍳 الشيف يجهّز طلبك · 🟠🟠⚪⚪', pctw: '38%' }));
+    this.later(3400, () => this.push({ map: true, text: '🛵 المندوب خرج! · 3:22م' }));
+    this.later(3700, () => this.push({ progress: true, text: '🛵 في الطريق إليك · 🟠🟠🟠⚪', pctw: '74%' }));
+    this.later(4800, () => { this.push({ bigText: true, text: '⏱️ يوصلك خلال 12 دقيقة' }); this.setState({ stage: 'tracking' }); });
+  };
+
+  resetDemo = () => { this.clearTimers(); this.setState(this.freshState()); };
+
+  // ----- buttons per stage -----
+  buttonsFor() {
+    const primary = 'background:#F2792B;color:#1F2421;font:400 16px \'Lalezar\';box-shadow:0 3px 0 #c95f1c;padding:11px;';
+    const ghost = 'background:#fff;color:#075E54;font:700 11px \'IBM Plex Sans Arabic\';box-shadow:0 1px .5px rgba(0,0,0,.12);';
+    const s = this.state;
+    if (s.screen !== 'chat') return [];
+    if (s.stage === 'intro') return [
+      { label: '🍔 تصفّح المنيو الكامل ←', css: primary, onTap: this.openMenu },
+      { label: '⭐ الأكثر طلبًا', css: ghost, onTap: this.openMenu },
+      { label: '☎️ أكلّم أحد', css: ghost, onTap: () => {} },
+    ];
+    if (s.stage === 'drafted') return [
+      { label: '✅ تأكيد وإرسال', css: primary, onTap: this.confirmOrder },
+      { label: '✏️ عدّل الطلب', css: ghost, onTap: this.openMenu },
+      { label: '🗑️ ألغِ', css: ghost, onTap: this.cancelOrder },
+    ];
+    if (s.stage === 'confirmed') return [
+      { label: '💳 ادفع الآن', css: primary, onTap: this.openCheckout },
+    ];
+    if (s.stage === 'tracking') return [
+      { label: '📞 اتصل بالمندوب', css: ghost, onTap: () => {} },
+      { label: '🔁 ابدأ من جديد', css: ghost, onTap: this.resetDemo },
+    ];
+    return [];
+  }
+
+  stepsModel() {
+    const order = ['intro','browse','drafted','confirmed','paid','tracking'];
+    const s = this.state;
+    let active = s.stage;
+    if (s.screen === 'menu' || s.screen === 'cart') active = 'browse';
+    const idx = { intro:0, browse:1, drafted:2, confirmed:3, paid:4, tracking:5 }[active] ?? 0;
+    const defs = [
+      { icon: '💬', label: 'المحادثة' },
+      { icon: '🍔', label: 'تصفّح المنيو + السلة' },
+      { icon: '📝', label: 'مسودّة داخل الشات' },
+      { icon: '✅', label: 'تأكيد الطلب' },
+      { icon: '💳', label: 'الدفع' },
+      { icon: '🛵', label: 'التتبّع' },
+    ];
+    return defs.map((d, i) => {
+      const done = i < idx, on = i === idx;
+      return {
+        icon: done ? '✓' : d.icon,
+        label: d.label,
+        check: done ? '✓' : '',
+        weight: on ? '800' : '500',
+        color: on ? '#16181D' : (done ? '#54585F' : '#A6A6AD'),
+        dotCss: on ? 'background:#F2792B;color:#1F2421;'
+              : done ? 'background:#D9F0E3;color:#1F8A5B;'
+              : 'background:#F0F0F3;color:#A6A6AD;',
+      };
+    });
+  }
+
+  renderVals() {
+    const s = this.state, c = s.cart;
+    const count = this.count(), subtotal = this.subtotal(), total = subtotal + 12;
+    const radioOn = 'background:#075E54;color:#fff;';
+    const radioOff = 'background:#fff;color:#333;box-shadow:0 1px .5px rgba(0,0,0,.12);';
+    const dotOn = 'border:4px solid #fff;', dotOff = 'border:1.5px solid #ccc;';
+    const overlayOpen = s.screen !== 'chat';
+    const titles = { menu: 'القائمة الكاملة', cart: 'سلّتك', checkout: 'إتمام الدفع' };
+    const payLabels = { mada: 'ادفع بمدى', apple: 'ادفع عبر  Pay', cod: 'أكّد · دفع عند الاستلام' };
+
+    return {
+      messages: s.messages,
+      typing: s.typing,
+      presence: s.typing ? 'يكتب…' : 'متصل الآن · MaitreAI',
+      threadRef: this.threadRef,
+
+      buttons: this.buttonsFor(),
+      hasButtons: this.buttonsFor().length > 0,
+
+      // overlay
+      overlayOpen,
+      overlayTitle: titles[s.screen] || '',
+      isMenu: s.screen === 'menu',
+      isCart: s.screen === 'cart',
+      isCheckout: s.screen === 'checkout',
+      overlayBack: this.overlayBack,
+
+      // menu qty flags + handlers
+      cart: { dbl: c.dbl, chk: c.chk, fr: c.fr },
+      q: { dblZero: c.dbl===0, dblHas: c.dbl>0, chkZero: c.chk===0, chkHas: c.chk>0, frZero: c.fr===0, frHas: c.fr>0 },
+      addDbl: () => this.add('dbl'), decDbl: () => this.dec('dbl'),
+      addChk: () => this.add('chk'), decChk: () => this.dec('chk'),
+      addFr: () => this.add('fr'),  decFr: () => this.dec('fr'),
+      openMenu: this.openMenu, openCart: this.openCart,
+      count, subtotal, total,
+      cartBarOpacity: count > 0 ? '1' : '.5',
+
+      // cart lines with steppers
+      cartLines: this.lines().map(l => {
+        const key = l.name === this.NAMES.dbl ? 'dbl' : l.name === this.NAMES.chk ? 'chk' : 'fr';
+        return { name: l.name, qty: l.qty, sum: l.sum + ' ر.س', inc: () => this.add(key), dec: () => this.dec(key) };
+      }),
+      sendOrder: this.sendOrder,
+
+      // checkout
+      pickApple: () => this.setState({ pay: 'apple' }),
+      pickMada: () => this.setState({ pay: 'mada' }),
+      pickCod: () => this.setState({ pay: 'cod' }),
+      appleCss: s.pay === 'apple' ? 'background:#000;color:#fff;border:2px solid #000;' : 'background:#000;color:#fff;opacity:.55;',
+      madaCss: s.pay === 'mada' ? radioOn : radioOff,
+      madaDot: s.pay === 'mada' ? dotOn : dotOff,
+      codCss: s.pay === 'cod' ? radioOn : radioOff,
+      codDot: s.pay === 'cod' ? dotOn : dotOff,
+      payLabel: payLabels[s.pay],
+      pay: this.pay,
+      openCheckout: this.openCheckout,
+      confirmOrder: this.confirmOrder, cancelOrder: this.cancelOrder,
+
+      resetDemo: this.resetDemo,
+      goBackHeader: this.goBackHeader,
+
+      steps: this.stepsModel(),
+    };
+  }
+}
+</script>
+</body>
+</html>

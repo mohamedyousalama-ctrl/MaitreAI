@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0}
+  @keyframes mai-pulse{0%{opacity:1}50%{opacity:.35}100%{opacity:1}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#e8ded0;font-family:'IBM Plex Sans',system-ui,sans-serif;padding:40px 14px 90px;color:#2a211b;">
+
+  <header style="max-width:1340px;margin:0 auto 28px;">
+    <div style="font-size:11px;letter-spacing:.22em;color:#9b8b7c;font-weight:600;text-transform:uppercase;">Higher fidelity · Hybrid direction</div>
+    <h1 style="font-size:42px;line-height:1.04;margin:13px 0 0;font-weight:700;letter-spacing:-.015em;color:#2a211b;">MaitreAI — the Maître × Pulse hybrid</h1>
+    <p style="max-width:740px;font-size:15.5px;line-height:1.6;color:#6a5c4e;margin:16px 0 0;">A console you run by talking to one AI employee — with a glanceable Pulse status strip pinned on top, and a real orders pipeline one tap away. Menu, promotions, customers and the Restaurant Brain all arrive as <b style="color:#4a3f36;">summoned cards</b> inside the thread. Arabic-first (RTL); annotations in English.</p>
+  </header>
+
+  <!-- DESIGN LANGUAGE LEGEND -->
+  <section style="max-width:1340px;margin:0 auto 30px;background:#fbf7f1;border:1px solid #e4d8c8;border-radius:22px;padding:22px 24px;display:flex;gap:30px;flex-wrap:wrap;align-items:center;">
+    <div style="flex:1;min-width:240px;">
+      <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#9b8b7c;font-weight:700;margin-bottom:12px;">Palette · warm hospitality</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:center;"><div style="width:42px;height:42px;border-radius:11px;background:#b5502e;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);"></div><span style="font-size:8.5px;color:#9b8b7c;">Clay</span></div>
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:center;"><div style="width:42px;height:42px;border-radius:11px;background:#e0912e;"></div><span style="font-size:8.5px;color:#9b8b7c;">Saffron</span></div>
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:center;"><div style="width:42px;height:42px;border-radius:11px;background:#cc3a33;"></div><span style="font-size:8.5px;color:#9b8b7c;">Escalation</span></div>
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:center;"><div style="width:42px;height:42px;border-radius:11px;background:#4e9466;"></div><span style="font-size:8.5px;color:#9b8b7c;">Ready</span></div>
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:center;"><div style="width:42px;height:42px;border-radius:11px;background:#5c667a;"></div><span style="font-size:8.5px;color:#9b8b7c;">New</span></div>
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:center;"><div style="width:42px;height:42px;border-radius:11px;background:#3e8e8e;"></div><span style="font-size:8.5px;color:#9b8b7c;">Out</span></div>
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:center;"><div style="width:42px;height:42px;border-radius:11px;background:#faf6ef;box-shadow:inset 0 0 0 1px #e4d8c8;"></div><span style="font-size:8.5px;color:#9b8b7c;">Cream</span></div>
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:center;"><div style="width:42px;height:42px;border-radius:11px;background:#2a211b;"></div><span style="font-size:8.5px;color:#9b8b7c;">Ink</span></div>
+      </div>
+    </div>
+    <div style="width:1px;height:74px;background:#e4d8c8;"></div>
+    <div style="flex:1;min-width:240px;">
+      <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#9b8b7c;font-weight:700;margin-bottom:10px;">Type · loves Arabic</div>
+      <div dir="rtl" style="font-family:'Readex Pro',sans-serif;font-size:30px;font-weight:600;color:#2a211b;line-height:1.2;">مساعد المطعم — برجر الذواقة</div>
+      <div style="display:flex;gap:14px;margin-top:8px;align-items:baseline;flex-wrap:wrap;"><span style="font-family:'Readex Pro',sans-serif;font-size:14px;color:#6a5c4e;">Readex&nbsp;Pro · 300–700</span><span style="font-size:12px;color:#9b8b7c;">Modern, warm, tuned for Arabic + Latin · escalation = red-amber family</span></div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION A — MANAGER HOME × 2 DIALECTS ============ -->
+  <section style="max-width:1340px;margin:0 auto 30px;background:#fbf7f1;border:1px solid #e4d8c8;border-radius:24px;padding:26px 16px 30px;">
+    <div style="display:flex;align-items:flex-start;gap:15px;margin-bottom:22px;">
+      <div style="width:40px;height:40px;border-radius:12px;background:#b5502e;color:#fff;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-family:'IBM Plex Sans';">A</div>
+      <div>
+        <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em;">Manager home · the console + pinned status strip</h2>
+        <p style="margin:5px 0 0;font-size:14px;color:#b5502e;font-weight:500;">Same screen, two dialect skins — Saudi (برجر الذواقة) &amp; Egyptian (كشري التحرير). Pulse strip stays pinned above the thread.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start;">
+
+      <!-- ===== SAUDI HOME ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <!-- status bar -->
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="display:flex;gap:5px;align-items:center;"><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;display:inline-block;position:relative;"></span></span></div>
+            <!-- app bar -->
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 14px 10px;">
+              <div style="width:36px;height:36px;border-radius:12px;background:linear-gradient(145deg,#c2602f,#a8432a);display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 4px 10px -4px rgba(168,66,42,.5);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" fill="#fff"/><circle cx="18.5" cy="4.5" r="1.6" fill="#ffe1b0"/></svg></div>
+              <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:9.5px;color:#9b8b7c;">برجر الذواقة · فرع الرياض</span></div>
+              <div style="margin-inline-start:auto;position:relative;width:34px;height:34px;border-radius:11px;background:#f3ebdf;display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9z" stroke="#6a5c4e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.7 21a2 2 0 01-3.4 0" stroke="#6a5c4e" stroke-width="1.8" stroke-linecap="round"/></svg><span style="position:absolute;top:6px;left:8px;width:7px;height:7px;border-radius:50%;background:#cc3a33;border:1.5px solid #f3ebdf;"></span></div>
+            </div>
+            <!-- PINNED STATUS STRIP -->
+            <div style="margin:0 12px;background:#fff;border:1px solid #ece0d2;border-radius:18px;padding:11px 12px;display:flex;flex-direction:column;gap:11px;box-shadow:0 10px 24px -16px rgba(42,33,27,.4);flex:none;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;display:flex;align-items:center;gap:7px;background:#e7f1ea;border-radius:11px;padding:6px 9px;">
+                  <div style="width:32px;height:19px;border-radius:999px;background:#4e9466;display:flex;align-items:center;padding:2px;"><div style="width:15px;height:15px;border-radius:50%;background:#fff;margin-inline-start:auto;box-shadow:0 1px 2px rgba(0,0,0,.2);"></div></div>
+                  <div style="display:flex;flex-direction:column;line-height:1.15;"><span style="font-size:8px;color:#5e8a70;">المطعم</span><span style="font-size:11px;font-weight:700;color:#3c7a52;">مفتوح</span></div>
+                </div>
+                <div style="flex:1;display:flex;align-items:center;gap:7px;background:#fbefd9;border-radius:11px;padding:6px 9px;">
+                  <div style="width:32px;height:19px;border-radius:999px;background:#e0912e;display:flex;align-items:center;padding:2px;"><div style="width:15px;height:15px;border-radius:50%;background:#fff;margin-inline-start:auto;box-shadow:0 1px 2px rgba(0,0,0,.2);"></div></div>
+                  <div style="display:flex;flex-direction:column;line-height:1.15;"><span style="font-size:8px;color:#b07d27;">المساعد</span><span style="font-size:11px;font-weight:700;color:#9a6c1e;">يعمل</span></div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;">
+                <div style="flex:1;display:flex;align-items:center;gap:7px;justify-content:center;">
+                  <div style="width:28px;height:28px;border-radius:50%;background:conic-gradient(#cc3a33 68%,#f1d2cf 0);display:flex;align-items:center;justify-content:center;flex:none;"><div style="width:21px;height:21px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#cc3a33;">٣</div></div>
+                  <div style="display:flex;flex-direction:column;line-height:1.2;"><span style="font-size:10px;font-weight:700;color:#cc3a33;">تصعيدات</span><span style="font-size:8px;color:#c98a86;">أقرب ٢:١٤</span></div>
+                </div>
+                <div style="width:1px;height:26px;background:#efe5d8;"></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;line-height:1.15;"><span style="font-size:15px;font-weight:700;color:#2a211b;">٤٥</span><span style="font-size:8px;color:#9b8b7c;">طلبات اليوم</span></div>
+                <div style="width:1px;height:26px;background:#efe5d8;"></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;line-height:1.15;"><span style="font-size:15px;font-weight:700;color:#2a211b;">٤٬٢٥٠</span><span style="font-size:8px;color:#9b8b7c;">مبيعات · ر.س</span></div>
+              </div>
+            </div>
+            <!-- CHAT AREA -->
+            <div style="flex:1;margin-top:10px;background:#f4ece0;border-top-left-radius:20px;border-top-right-radius:20px;display:flex;flex-direction:column;overflow:hidden;">
+              <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:13px 12px 6px;">
+                <div style="align-self:center;font-size:8.5px;color:#a89683;background:#eadfce;padding:3px 11px;border-radius:999px;">اليوم · ٩:٠٠ ص</div>
+                <!-- AI msg -->
+                <div style="align-self:flex-start;max-width:88%;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;display:flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg></div>
+                  <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 12px;box-shadow:0 4px 12px -10px rgba(42,33,27,.4);"><span style="font-size:12px;color:#3c322a;line-height:1.6;">هلا أبو فهد 👋 كل شي تمام. عندك ٣ محادثات تبي تدخّلك و٧ طلبات شغّالة. تبي أبدأ بالأهم؟</span></div>
+                </div>
+                <!-- operator msg -->
+                <div style="align-self:flex-end;max-width:80%;background:#f6e3d8;border:1px solid #eecdb9;border-radius:16px;border-bottom-left-radius:5px;padding:9px 12px;"><span style="font-size:12px;color:#8a4326;line-height:1.55;">ورّني التصعيد المستعجل</span></div>
+                <!-- AI msg + escalation teaser -->
+                <div style="align-self:flex-start;max-width:88%;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;"></div>
+                  <div style="display:flex;flex-direction:column;gap:7px;">
+                    <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 12px;"><span style="font-size:12px;color:#3c322a;line-height:1.6;">أكيد، هذا أعجلهم 👇</span></div>
+                    <div style="width:206px;background:#fff;border:1px solid #f1c9c4;border-radius:14px;overflow:hidden;box-shadow:0 8px 20px -14px rgba(204,58,51,.5);">
+                      <div style="background:#fbe7e4;padding:7px 11px;display:flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:#cc3a33;animation:mai-pulse 1.6s infinite;"></span><span style="font-size:9px;font-weight:700;color:#b4322b;">تصعيد · شكوى تأخير</span><span style="margin-inline-start:auto;font-size:9px;font-weight:700;color:#cc3a33;">٢:١٤</span></div>
+                      <div style="padding:9px 11px;display:flex;flex-direction:column;gap:8px;">
+                        <div style="display:flex;align-items:center;gap:7px;"><div style="width:26px;height:26px;border-radius:50%;background:#e9d6c4;"></div><div style="display:flex;flex-direction:column;line-height:1.25;"><span style="font-size:10px;font-weight:600;color:#2a211b;">منيرة الحربي</span><span style="font-size:8px;color:#9b8b7c;">٣ طلبات سابقة · VIP</span></div></div>
+                        <div style="background:#fbefd9;border:1px dashed #e0b066;border-radius:9px;padding:7px 8px;"><span style="font-size:8px;font-weight:700;color:#9a6c1e;display:block;margin-bottom:3px;">ردّ مقترح</span><span style="font-size:10px;color:#6a5c4e;line-height:1.5;">«نعتذر منك يا منيرة، طلبك بالطريق ووصل…»</span></div>
+                        <div style="display:flex;gap:6px;"><div style="flex:1;height:31px;border-radius:10px;background:#b5502e;color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:5px;">أرسل الرد</div><div style="height:31px;padding:0 13px;border-radius:10px;border:1px solid #ddc9b6;color:#6a5c4e;font-size:11px;font-weight:600;display:flex;align-items:center;">تولّ</div></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- quick chips -->
+              <div style="display:flex;gap:6px;padding:4px 12px 0;overflow:hidden;">
+                <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">أرقام اليوم</span>
+                <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">سوِّ عرض</span>
+                <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">سكّر المطعم</span>
+              </div>
+              <!-- composer -->
+              <div style="padding:9px 12px 10px;display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:40px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;display:flex;align-items:center;padding:0 8px 0 14px;gap:8px;"><span style="flex:1;font-size:11.5px;color:#a89683;">اكتب لمساعدك…</span><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="#9b8b7c" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="#9b8b7c" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+                <div style="width:40px;height:40px;border-radius:50%;background:#b5502e;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px rgba(181,80,46,.6);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+            </div>
+            <!-- bottom nav -->
+            <div style="height:54px;flex:none;border-top:1px solid #ece0d2;background:#fff;display:flex;align-items:center;justify-content:space-around;padding:0 20px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 01-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1121 11.5z" stroke="#b5502e" stroke-width="1.8" stroke-linejoin="round"/></svg><span style="font-size:9px;color:#b5502e;font-weight:600;">المساعد</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h12" stroke="#a89683" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9px;color:#a89683;">الطلبات</span><span style="position:absolute;top:-3px;left:6px;min-width:14px;height:14px;border-radius:7px;background:#cc3a33;color:#fff;font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;">٧</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;">Saudi skin · <span style="color:#9b8b7c;">«هلا أبو فهد» · ر.س · سوِّ عرض</span></div>
+      </div>
+
+      <!-- ===== EGYPTIAN HOME ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="display:flex;gap:5px;align-items:center;"><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;display:inline-block;"></span></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 14px 10px;">
+              <div style="width:36px;height:36px;border-radius:12px;background:linear-gradient(145deg,#c2602f,#a8432a);display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 4px 10px -4px rgba(168,66,42,.5);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" fill="#fff"/><circle cx="18.5" cy="4.5" r="1.6" fill="#ffe1b0"/></svg></div>
+              <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:9.5px;color:#9b8b7c;">كشري التحرير · فرع وسط البلد</span></div>
+              <div style="margin-inline-start:auto;position:relative;width:34px;height:34px;border-radius:11px;background:#f3ebdf;display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9z" stroke="#6a5c4e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.7 21a2 2 0 01-3.4 0" stroke="#6a5c4e" stroke-width="1.8" stroke-linecap="round"/></svg><span style="position:absolute;top:6px;left:8px;width:7px;height:7px;border-radius:50%;background:#cc3a33;border:1.5px solid #f3ebdf;"></span></div>
+            </div>
+            <div style="margin:0 12px;background:#fff;border:1px solid #ece0d2;border-radius:18px;padding:11px 12px;display:flex;flex-direction:column;gap:11px;box-shadow:0 10px 24px -16px rgba(42,33,27,.4);flex:none;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;display:flex;align-items:center;gap:7px;background:#e7f1ea;border-radius:11px;padding:6px 9px;">
+                  <div style="width:32px;height:19px;border-radius:999px;background:#4e9466;display:flex;align-items:center;padding:2px;"><div style="width:15px;height:15px;border-radius:50%;background:#fff;margin-inline-start:auto;box-shadow:0 1px 2px rgba(0,0,0,.2);"></div></div>
+                  <div style="display:flex;flex-direction:column;line-height:1.15;"><span style="font-size:8px;color:#5e8a70;">المطعم</span><span style="font-size:11px;font-weight:700;color:#3c7a52;">مفتوح</span></div>
+                </div>
+                <div style="flex:1;display:flex;align-items:center;gap:7px;background:#fbefd9;border-radius:11px;padding:6px 9px;">
+                  <div style="width:32px;height:19px;border-radius:999px;background:#e0912e;display:flex;align-items:center;padding:2px;"><div style="width:15px;height:15px;border-radius:50%;background:#fff;margin-inline-start:auto;box-shadow:0 1px 2px rgba(0,0,0,.2);"></div></div>
+                  <div style="display:flex;flex-direction:column;line-height:1.15;"><span style="font-size:8px;color:#b07d27;">المساعد</span><span style="font-size:11px;font-weight:700;color:#9a6c1e;">شغّال</span></div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;">
+                <div style="flex:1;display:flex;align-items:center;gap:7px;justify-content:center;">
+                  <div style="width:28px;height:28px;border-radius:50%;background:conic-gradient(#cc3a33 68%,#f1d2cf 0);display:flex;align-items:center;justify-content:center;flex:none;"><div style="width:21px;height:21px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#cc3a33;">٣</div></div>
+                  <div style="display:flex;flex-direction:column;line-height:1.2;"><span style="font-size:10px;font-weight:700;color:#cc3a33;">تصعيدات</span><span style="font-size:8px;color:#c98a86;">أقرب ٢:١٤</span></div>
+                </div>
+                <div style="width:1px;height:26px;background:#efe5d8;"></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;line-height:1.15;"><span style="font-size:15px;font-weight:700;color:#2a211b;">٤٥</span><span style="font-size:8px;color:#9b8b7c;">طلبات النهاردة</span></div>
+                <div style="width:1px;height:26px;background:#efe5d8;"></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;line-height:1.15;"><span style="font-size:15px;font-weight:700;color:#2a211b;">٤٬٢٥٠</span><span style="font-size:8px;color:#9b8b7c;">مبيعات · ج.م</span></div>
+              </div>
+            </div>
+            <div style="flex:1;margin-top:10px;background:#f4ece0;border-top-left-radius:20px;border-top-right-radius:20px;display:flex;flex-direction:column;overflow:hidden;">
+              <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:13px 12px 6px;">
+                <div style="align-self:center;font-size:8.5px;color:#a89683;background:#eadfce;padding:3px 11px;border-radius:999px;">النهاردة · ٩:٠٠ ص</div>
+                <div style="align-self:flex-start;max-width:88%;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;display:flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg></div>
+                  <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 12px;box-shadow:0 4px 12px -10px rgba(42,33,27,.4);"><span style="font-size:12px;color:#3c322a;line-height:1.6;">أهلاً يا ريّس 👋 كله تمام. عندك ٣ محادثات عايزة تدخّلك و٧ طلبات شغّالة. أبدأ بالأهم؟</span></div>
+                </div>
+                <div style="align-self:flex-end;max-width:80%;background:#f6e3d8;border:1px solid #eecdb9;border-radius:16px;border-bottom-left-radius:5px;padding:9px 12px;"><span style="font-size:12px;color:#8a4326;line-height:1.55;">وريني التصعيد المستعجل</span></div>
+                <div style="align-self:flex-start;max-width:88%;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;"></div>
+                  <div style="display:flex;flex-direction:column;gap:7px;">
+                    <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 12px;"><span style="font-size:12px;color:#3c322a;line-height:1.6;">تمام، ده أهمهم 👇</span></div>
+                    <div style="width:206px;background:#fff;border:1px solid #f1c9c4;border-radius:14px;overflow:hidden;box-shadow:0 8px 20px -14px rgba(204,58,51,.5);">
+                      <div style="background:#fbe7e4;padding:7px 11px;display:flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:#cc3a33;animation:mai-pulse 1.6s infinite;"></span><span style="font-size:9px;font-weight:700;color:#b4322b;">تصعيد · شكوى تأخير</span><span style="margin-inline-start:auto;font-size:9px;font-weight:700;color:#cc3a33;">٢:١٤</span></div>
+                      <div style="padding:9px 11px;display:flex;flex-direction:column;gap:8px;">
+                        <div style="display:flex;align-items:center;gap:7px;"><div style="width:26px;height:26px;border-radius:50%;background:#e9d6c4;"></div><div style="display:flex;flex-direction:column;line-height:1.25;"><span style="font-size:10px;font-weight:600;color:#2a211b;">منى عبد الله</span><span style="font-size:8px;color:#9b8b7c;">٣ طلبات سابقة · VIP</span></div></div>
+                        <div style="background:#fbefd9;border:1px dashed #e0b066;border-radius:9px;padding:7px 8px;"><span style="font-size:8px;font-weight:700;color:#9a6c1e;display:block;margin-bottom:3px;">ردّ مقترح</span><span style="font-size:10px;color:#6a5c4e;line-height:1.5;">«آسفين يا منى، طلبك في الطريق وهيوصل…»</span></div>
+                        <div style="display:flex;gap:6px;"><div style="flex:1;height:31px;border-radius:10px;background:#b5502e;color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:5px;">ابعت الرد</div><div style="height:31px;padding:0 13px;border-radius:10px;border:1px solid #ddc9b6;color:#6a5c4e;font-size:11px;font-weight:600;display:flex;align-items:center;">أنا أرد</div></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex;gap:6px;padding:4px 12px 0;overflow:hidden;">
+                <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">أرقام النهاردة</span>
+                <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">اعمل عرض</span>
+                <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">اقفل المطعم</span>
+              </div>
+              <div style="padding:9px 12px 10px;display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:40px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;display:flex;align-items:center;padding:0 8px 0 14px;gap:8px;"><span style="flex:1;font-size:11.5px;color:#a89683;">اكتب لمساعدك…</span><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="#9b8b7c" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="#9b8b7c" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+                <div style="width:40px;height:40px;border-radius:50%;background:#b5502e;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px rgba(181,80,46,.6);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+            </div>
+            <div style="height:54px;flex:none;border-top:1px solid #ece0d2;background:#fff;display:flex;align-items:center;justify-content:space-around;padding:0 20px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 01-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1121 11.5z" stroke="#b5502e" stroke-width="1.8" stroke-linejoin="round"/></svg><span style="font-size:9px;color:#b5502e;font-weight:600;">المساعد</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h12" stroke="#a89683" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9px;color:#a89683;">الطلبات</span><span style="position:absolute;top:-3px;left:6px;min-width:14px;height:14px;border-radius:7px;background:#cc3a33;color:#fff;font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;">٧</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;">Egyptian skin · <span style="color:#9b8b7c;">«أهلاً يا ريّس» · ج.م · اعمل عرض</span></div>
+      </div>
+
+      <!-- annotation callout -->
+      <div style="width:248px;flex:none;background:#fff;border:1px solid #e4d8c8;border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:14px;align-self:stretch;">
+        <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9b8b7c;font-weight:700;font-family:'IBM Plex Sans';">The pinned strip</div>
+        <p style="margin:0;font-size:12.5px;line-height:1.6;color:#6a5c4e;font-family:'IBM Plex Sans';">Pulse's glance layer, always above the thread:</p>
+        <div style="display:flex;flex-direction:column;gap:10px;font-family:'IBM Plex Sans';">
+          <div style="display:flex;gap:9px;align-items:flex-start;"><span style="width:9px;height:9px;border-radius:50%;background:#4e9466;margin-top:4px;flex:none;"></span><span style="font-size:12px;color:#4a3f36;line-height:1.45;"><b>Open / Closed</b> &amp; <b>AI pause</b> — two-tap toggles, never buried.</span></div>
+          <div style="display:flex;gap:9px;align-items:flex-start;"><span style="width:9px;height:9px;border-radius:50%;background:#cc3a33;margin-top:4px;flex:none;"></span><span style="font-size:12px;color:#4a3f36;line-height:1.45;"><b>Escalations</b> with an SLA ring + nearest deadline.</span></div>
+          <div style="display:flex;gap:9px;align-items:flex-start;"><span style="width:9px;height:9px;border-radius:50%;background:#2a211b;margin-top:4px;flex:none;"></span><span style="font-size:12px;color:#4a3f36;line-height:1.45;"><b>Today</b> — live orders &amp; revenue at a glance.</span></div>
+        </div>
+        <div style="border-top:1px solid #efe5d8;padding-top:13px;font-family:'IBM Plex Sans';">
+          <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9b8b7c;font-weight:700;margin-bottom:7px;">Dialect</div>
+          <p style="margin:0;font-size:12px;line-height:1.55;color:#6a5c4e;">Only the greeting, verbs &amp; chips swap — <span dir="rtl" style="font-family:'Readex Pro';">هلا / تبي / سوِّ</span> vs <span dir="rtl" style="font-family:'Readex Pro';">أهلاً / عايزة / اعمل</span>. Currency follows region (ر.س / ج.م).</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ SECTION B — SUMMONED CARDS ============ -->
+  <section style="max-width:1340px;margin:0 auto 30px;background:#fbf7f1;border:1px solid #e4d8c8;border-radius:24px;padding:26px 16px 30px;">
+    <div style="display:flex;align-items:flex-start;gap:15px;margin-bottom:22px;">
+      <div style="width:40px;height:40px;border-radius:12px;background:#b5502e;color:#fff;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-family:'IBM Plex Sans';">B</div>
+      <div>
+        <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em;">Summoned cards · sections arrive inside the thread</h2>
+        <p style="margin:5px 0 0;font-size:14px;color:#b5502e;font-weight:500;">Promotions, Image Studio &amp; menu edits — you ask in a sentence, the AI returns an actionable card. The strip collapses to one line as you scroll.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start;">
+
+      <!-- ===== B1: PROMOTION FROM A SENTENCE ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 14px 9px;">
+              <div style="width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,#c2602f,#a8432a);display:flex;align-items:center;justify-content:center;flex:none;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" fill="#fff"/></svg></div>
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:13.5px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:9px;color:#9b8b7c;">كشري التحرير</span></div>
+            </div>
+            <!-- CONDENSED STRIP -->
+            <div style="margin:0 12px;background:#fff;border:1px solid #ece0d2;border-radius:13px;padding:7px 11px;display:flex;align-items:center;gap:8px;flex:none;box-shadow:0 6px 16px -14px rgba(42,33,27,.4);">
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#4e9466;"></span><span style="font-size:9.5px;font-weight:600;color:#3c7a52;">مفتوح</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#e0912e;"></span><span style="font-size:9.5px;font-weight:600;color:#9a6c1e;">المساعد</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:5px;"><span style="width:18px;height:18px;border-radius:50%;background:conic-gradient(#cc3a33 68%,#f1d2cf 0);display:flex;align-items:center;justify-content:center;"><span style="width:12px;height:12px;border-radius:50%;background:#fff;font-size:7px;font-weight:700;color:#cc3a33;display:flex;align-items:center;justify-content:center;">٣</span></span><span style="font-size:9.5px;font-weight:600;color:#cc3a33;">تصعيدات</span></span>
+              <span style="margin-inline-start:auto;font-size:9.5px;color:#9b8b7c;">٤٥ طلب</span>
+            </div>
+            <div style="flex:1;margin-top:9px;background:#f4ece0;border-top-left-radius:20px;border-top-right-radius:20px;display:flex;flex-direction:column;overflow:hidden;">
+              <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:13px 12px 6px;">
+                <div style="align-self:flex-end;max-width:86%;background:#f6e3d8;border:1px solid #eecdb9;border-radius:16px;border-bottom-left-radius:5px;padding:9px 12px;"><span style="font-size:11.5px;color:#8a4326;line-height:1.55;">اعمل عرض: اشتري برجر وخد التاني بنص السعر، الخميس والجمعة بس</span></div>
+                <div style="align-self:flex-start;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;display:flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg></div>
+                  <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 12px;"><span style="font-size:11.5px;color:#3c322a;line-height:1.55;">جهّزتلك العرض، راجعه قبل ما يشتغل 👇</span></div>
+                </div>
+                <!-- PROMO PREVIEW CARD -->
+                <div style="align-self:flex-start;width:228px;margin-inline-start:10px;background:#fff;border:1px solid #ece0d2;border-radius:15px;overflow:hidden;box-shadow:0 12px 28px -18px rgba(42,33,27,.45);">
+                  <div style="background:linear-gradient(135deg,#b5502e,#cc6a36);padding:10px 12px;display:flex;align-items:center;gap:7px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0l-7-7a2 2 0 01-.6-1.4V5a2 2 0 012-2h7.2a2 2 0 011.4.6l7 7a2 2 0 010 2.8z" stroke="#fff" stroke-width="1.8"/><circle cx="8" cy="8" r="1.4" fill="#fff"/></svg><span style="font-size:10px;font-weight:700;color:#fff;">عرض جديد · مسودة</span><span style="margin-inline-start:auto;font-size:8.5px;color:#ffe1cf;">جاهز للتفعيل</span></div>
+                  <div style="padding:11px 12px;display:flex;flex-direction:column;gap:9px;">
+                    <span style="font-size:15px;font-weight:700;color:#2a211b;">١+١ بنص السعر 🍔</span>
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                      <div style="display:flex;justify-content:space-between;"><span style="font-size:9.5px;color:#9b8b7c;">الصنف</span><span style="font-size:10px;font-weight:600;color:#4a3f36;">برجر كلاسيك</span></div>
+                      <div style="display:flex;justify-content:space-between;"><span style="font-size:9.5px;color:#9b8b7c;">الخصم</span><span style="font-size:10px;font-weight:600;color:#4a3f36;">التاني -٥٠٪</span></div>
+                      <div style="display:flex;justify-content:space-between;"><span style="font-size:9.5px;color:#9b8b7c;">الأيام</span><span style="font-size:10px;font-weight:600;color:#4a3f36;">الخميس + الجمعة</span></div>
+                      <div style="display:flex;justify-content:space-between;"><span style="font-size:9.5px;color:#9b8b7c;">القناة</span><span style="font-size:10px;font-weight:600;color:#4a3f36;">واتساب + انستغرام</span></div>
+                    </div>
+                    <div style="background:#fbefd9;border-radius:9px;padding:7px 9px;display:flex;align-items:center;gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM4 21a8 8 0 0116 0" stroke="#9a6c1e" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9.5px;color:#9a6c1e;">متوقّع يوصل ~٨٠٠ عميل سجّلوا قبل كده</span></div>
+                    <div style="display:flex;gap:6px;"><div style="flex:1;height:33px;border-radius:10px;background:#b5502e;color:#fff;font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;">فعّل العرض</div><div style="height:33px;padding:0 13px;border-radius:10px;border:1px solid #ddc9b6;color:#6a5c4e;font-size:11px;font-weight:600;display:flex;align-items:center;">عدّل</div><div style="height:33px;padding:0 12px;border-radius:10px;border:1px solid #ddc9b6;color:#a89683;font-size:11px;display:flex;align-items:center;">ألغِ</div></div>
+                  </div>
+                </div>
+              </div>
+              <div style="padding:9px 12px 10px;display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:40px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;display:flex;align-items:center;padding:0 8px 0 14px;gap:8px;"><span style="flex:1;font-size:11.5px;color:#a89683;">اكتب لمساعدك…</span><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="#9b8b7c" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="#9b8b7c" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+                <div style="width:40px;height:40px;border-radius:50%;background:#b5502e;display:flex;align-items:center;justify-content:center;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+            </div>
+            <div style="height:54px;flex:none;border-top:1px solid #ece0d2;background:#fff;display:flex;align-items:center;justify-content:space-around;padding:0 20px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 01-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1121 11.5z" stroke="#b5502e" stroke-width="1.8" stroke-linejoin="round"/></svg><span style="font-size:9px;color:#b5502e;font-weight:600;">المساعد</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h12" stroke="#a89683" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9px;color:#a89683;">الطلبات</span><span style="position:absolute;top:-3px;left:6px;min-width:14px;height:14px;border-radius:7px;background:#cc3a33;color:#fff;font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;">٧</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;">Promotion from a sentence · <span style="color:#9b8b7c;">confirm / edit / cancel</span></div>
+      </div>
+
+      <!-- ===== B2: IMAGE STUDIO ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 14px 9px;">
+              <div style="width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,#c2602f,#a8432a);display:flex;align-items:center;justify-content:center;flex:none;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" fill="#fff"/></svg></div>
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:13.5px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:9px;color:#9b8b7c;">كشري التحرير</span></div>
+            </div>
+            <div style="margin:0 12px;background:#fff;border:1px solid #ece0d2;border-radius:13px;padding:7px 11px;display:flex;align-items:center;gap:8px;flex:none;box-shadow:0 6px 16px -14px rgba(42,33,27,.4);">
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#4e9466;"></span><span style="font-size:9.5px;font-weight:600;color:#3c7a52;">مفتوح</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#e0912e;"></span><span style="font-size:9.5px;font-weight:600;color:#9a6c1e;">المساعد</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:5px;"><span style="width:18px;height:18px;border-radius:50%;background:conic-gradient(#cc3a33 68%,#f1d2cf 0);display:flex;align-items:center;justify-content:center;"><span style="width:12px;height:12px;border-radius:50%;background:#fff;font-size:7px;font-weight:700;color:#cc3a33;display:flex;align-items:center;justify-content:center;">٣</span></span><span style="font-size:9.5px;font-weight:600;color:#cc3a33;">تصعيدات</span></span>
+              <span style="margin-inline-start:auto;font-size:9.5px;color:#9b8b7c;">٤٥ طلب</span>
+            </div>
+            <div style="flex:1;margin-top:9px;background:#f4ece0;border-top-left-radius:20px;border-top-right-radius:20px;display:flex;flex-direction:column;overflow:hidden;">
+              <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:13px 12px 6px;">
+                <div style="align-self:flex-end;max-width:80%;background:#f6e3d8;border:1px solid #eecdb9;border-radius:16px;border-bottom-left-radius:5px;padding:9px 12px;"><span style="font-size:11.5px;color:#8a4326;line-height:1.55;">اعملّي صورة للعرض ده للستوري</span></div>
+                <div style="align-self:flex-start;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;display:flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg></div>
+                  <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 12px;"><span style="font-size:11.5px;color:#3c322a;line-height:1.55;">صمّمتلك صورة بهوية المطعم 👇</span></div>
+                </div>
+                <!-- IMAGE STUDIO CARD -->
+                <div style="align-self:flex-start;width:230px;margin-inline-start:10px;background:#fff;border:1px solid #ece0d2;border-radius:15px;overflow:hidden;box-shadow:0 12px 28px -18px rgba(42,33,27,.45);">
+                  <!-- generated promo image -->
+                  <div style="height:172px;position:relative;background:radial-gradient(120% 90% at 75% 20%,#e0912e 0%,#b5502e 55%,#7e3320 100%);overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                    <div style="position:absolute;width:128px;height:128px;border-radius:50%;background:radial-gradient(circle at 38% 35%,rgba(255,255,255,.22),rgba(255,255,255,0) 60%);bottom:-30px;left:-24px;"></div>
+                    <div style="position:absolute;top:9px;right:10px;display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.28);border-radius:999px;padding:3px 8px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#ffe1b0"/></svg><span style="font-size:8px;color:#fff;font-weight:600;">صُمّم بالمساعد</span></div>
+                    <span style="font-size:9px;color:#ffe1cf;letter-spacing:.18em;font-weight:600;">كشري التحرير يقدّم</span>
+                    <span style="font-size:30px;color:#fff;font-weight:700;line-height:1.05;margin-top:5px;text-shadow:0 2px 12px rgba(0,0,0,.25);">١+١</span>
+                    <span style="font-size:15px;color:#fff;font-weight:600;">بنص السعر</span>
+                    <span style="margin-top:7px;font-size:9px;color:#fff;background:rgba(0,0,0,.25);padding:3px 11px;border-radius:999px;">الخميس + الجمعة</span>
+                  </div>
+                  <div style="padding:10px 11px;display:flex;flex-direction:column;gap:9px;">
+                    <div style="display:flex;gap:6px;align-items:center;">
+                      <div style="width:34px;height:34px;border-radius:8px;background:radial-gradient(120% 90% at 75% 20%,#e0912e,#b5502e);border:2px solid #b5502e;"></div>
+                      <div style="width:34px;height:34px;border-radius:8px;background:radial-gradient(120% 90% at 30% 30%,#3e8e8e,#1f5a5a);"></div>
+                      <div style="width:34px;height:34px;border-radius:8px;background:radial-gradient(120% 90% at 50% 80%,#cc6a36,#7e3320);"></div>
+                      <span style="margin-inline-start:auto;font-size:8.5px;color:#9b8b7c;">٣ بدائل · ١٠٢٤×١٠٢٤</span>
+                    </div>
+                    <div style="display:flex;gap:6px;"><div style="flex:1;height:33px;border-radius:10px;background:#b5502e;color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;">استخدم في الحملة</div><div style="height:33px;padding:0 12px;border-radius:10px;border:1px solid #ddc9b6;color:#6a5c4e;font-size:11px;font-weight:600;display:flex;align-items:center;">عدّل</div><div style="width:33px;height:33px;border-radius:10px;border:1px solid #ddc9b6;display:flex;align-items:center;justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13" stroke="#b08b76" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+                  </div>
+                </div>
+              </div>
+              <div style="padding:9px 12px 10px;display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:40px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;display:flex;align-items:center;padding:0 8px 0 14px;gap:8px;"><span style="flex:1;font-size:11.5px;color:#a89683;">اكتب لمساعدك…</span><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="#9b8b7c" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="#9b8b7c" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+                <div style="width:40px;height:40px;border-radius:50%;background:#b5502e;display:flex;align-items:center;justify-content:center;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+            </div>
+            <div style="height:54px;flex:none;border-top:1px solid #ece0d2;background:#fff;display:flex;align-items:center;justify-content:space-around;padding:0 20px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 01-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1121 11.5z" stroke="#b5502e" stroke-width="1.8" stroke-linejoin="round"/></svg><span style="font-size:9px;color:#b5502e;font-weight:600;">المساعد</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h12" stroke="#a89683" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9px;color:#a89683;">الطلبات</span><span style="position:absolute;top:-3px;left:6px;min-width:14px;height:14px;border-radius:7px;background:#cc3a33;color:#fff;font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;">٧</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;">Image Studio · <span style="color:#9b8b7c;">use in campaign / edit / delete</span></div>
+      </div>
+
+      <!-- ===== B3: MENU ITEM EDIT ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 14px 9px;">
+              <div style="width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,#c2602f,#a8432a);display:flex;align-items:center;justify-content:center;flex:none;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" fill="#fff"/></svg></div>
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:13.5px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:9px;color:#9b8b7c;">كشري التحرير</span></div>
+            </div>
+            <div style="margin:0 12px;background:#fff;border:1px solid #ece0d2;border-radius:13px;padding:7px 11px;display:flex;align-items:center;gap:8px;flex:none;box-shadow:0 6px 16px -14px rgba(42,33,27,.4);">
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#4e9466;"></span><span style="font-size:9.5px;font-weight:600;color:#3c7a52;">مفتوح</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#e0912e;"></span><span style="font-size:9.5px;font-weight:600;color:#9a6c1e;">المساعد</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:5px;"><span style="width:18px;height:18px;border-radius:50%;background:conic-gradient(#cc3a33 68%,#f1d2cf 0);display:flex;align-items:center;justify-content:center;"><span style="width:12px;height:12px;border-radius:50%;background:#fff;font-size:7px;font-weight:700;color:#cc3a33;display:flex;align-items:center;justify-content:center;">٣</span></span><span style="font-size:9.5px;font-weight:600;color:#cc3a33;">تصعيدات</span></span>
+              <span style="margin-inline-start:auto;font-size:9.5px;color:#9b8b7c;">٤٥ طلب</span>
+            </div>
+            <div style="flex:1;margin-top:9px;background:#f4ece0;border-top-left-radius:20px;border-top-right-radius:20px;display:flex;flex-direction:column;overflow:hidden;">
+              <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:13px 12px 6px;">
+                <div style="align-self:flex-end;max-width:80%;background:#f6e3d8;border:1px solid #eecdb9;border-radius:16px;border-bottom-left-radius:5px;padding:9px 12px;"><span style="font-size:11.5px;color:#8a4326;line-height:1.55;">غيّر سعر الكشري الخاص لـ ٤٥ وحدّث صورته</span></div>
+                <div style="align-self:flex-start;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;display:flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg></div>
+                  <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 12px;"><span style="font-size:11.5px;color:#3c322a;line-height:1.55;">حدّثت الطبق وزامنت الصورة 👇</span></div>
+                </div>
+                <!-- MENU ITEM CARD -->
+                <div style="align-self:flex-start;width:228px;margin-inline-start:10px;background:#fff;border:1px solid #ece0d2;border-radius:15px;overflow:hidden;box-shadow:0 12px 28px -18px rgba(42,33,27,.45);">
+                  <div style="display:flex;gap:10px;padding:11px 12px;">
+                    <div style="width:62px;height:62px;border-radius:12px;background:radial-gradient(120% 90% at 70% 25%,#e7b766,#b5502e);flex:none;position:relative;overflow:hidden;"><span style="position:absolute;bottom:4px;right:4px;display:flex;align-items:center;gap:2px;background:rgba(0,0,0,.32);border-radius:999px;padding:2px 5px;"><svg width="8" height="8" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#ffe1b0"/></svg><span style="font-size:6.5px;color:#fff;">محدّثة</span></span></div>
+                    <div style="flex:1;display:flex;flex-direction:column;gap:5px;justify-content:center;">
+                      <span style="font-size:13px;font-weight:700;color:#2a211b;">الكشري الخاص</span>
+                      <span style="font-size:9px;color:#9b8b7c;">أطباق رئيسية · الأكثر مبيعًا</span>
+                      <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:11px;color:#a89683;text-decoration:line-through;">٤٠</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#9b8b7c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:15px;font-weight:700;color:#b5502e;">٤٥ ج.م</span></div>
+                    </div>
+                  </div>
+                  <div style="padding:0 12px 11px;display:flex;flex-direction:column;gap:9px;">
+                    <div style="display:flex;align-items:center;gap:7px;background:#e7f1ea;border-radius:9px;padding:7px 9px;"><div style="width:30px;height:18px;border-radius:999px;background:#4e9466;display:flex;align-items:center;padding:2px;"><div style="width:14px;height:14px;border-radius:50%;background:#fff;margin-inline-start:auto;"></div></div><span style="font-size:10px;font-weight:600;color:#3c7a52;">متوفّر الآن</span><span style="margin-inline-start:auto;font-size:8.5px;color:#5e8a70;">ظاهر للعملاء</span></div>
+                    <div style="display:flex;gap:6px;"><div style="flex:1;height:33px;border-radius:10px;background:#b5502e;color:#fff;font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;">احفظ</div><div style="height:33px;padding:0 14px;border-radius:10px;border:1px solid #ddc9b6;color:#6a5c4e;font-size:11px;font-weight:600;display:flex;align-items:center;">تراجع</div></div>
+                  </div>
+                </div>
+              </div>
+              <div style="padding:9px 12px 10px;display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:40px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;display:flex;align-items:center;padding:0 8px 0 14px;gap:8px;"><span style="flex:1;font-size:11.5px;color:#a89683;">اكتب لمساعدك…</span><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="#9b8b7c" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="#9b8b7c" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+                <div style="width:40px;height:40px;border-radius:50%;background:#b5502e;display:flex;align-items:center;justify-content:center;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+            </div>
+            <div style="height:54px;flex:none;border-top:1px solid #ece0d2;background:#fff;display:flex;align-items:center;justify-content:space-around;padding:0 20px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 01-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1121 11.5z" stroke="#b5502e" stroke-width="1.8" stroke-linejoin="round"/></svg><span style="font-size:9px;color:#b5502e;font-weight:600;">المساعد</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h12" stroke="#a89683" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9px;color:#a89683;">الطلبات</span><span style="position:absolute;top:-3px;left:6px;min-width:14px;height:14px;border-radius:7px;background:#cc3a33;color:#fff;font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;">٧</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;">Menu edit · <span style="color:#9b8b7c;">price + AI photo sync</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ SECTION C — TAKEOVER ROUND-TRIP ============ -->
+  <section style="max-width:1340px;margin:0 auto 30px;background:#fbf7f1;border:1px solid #e4d8c8;border-radius:24px;padding:26px 16px 30px;">
+    <div style="display:flex;align-items:flex-start;gap:15px;margin-bottom:22px;padding:0 12px;">
+      <div style="width:40px;height:40px;border-radius:12px;background:#b5502e;color:#fff;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-family:'IBM Plex Sans';">C</div>
+      <div>
+        <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em;">The takeover round-trip · human steps in, then hands back</h2>
+        <p style="margin:5px 0 0;font-size:14px;color:#b5502e;font-weight:500;">Escalation card → customer chat slides up (AI paused, copilot suggesting) → release to AI with a one-line summary you confirm.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start;">
+
+      <!-- ===== C1: ESCALATION IN THREAD ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 14px 9px;">
+              <div style="width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,#c2602f,#a8432a);display:flex;align-items:center;justify-content:center;flex:none;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" fill="#fff"/></svg></div>
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:13.5px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:9px;color:#9b8b7c;">كشري التحرير</span></div>
+            </div>
+            <div style="margin:0 12px;background:#fff;border:1px solid #ece0d2;border-radius:13px;padding:7px 11px;display:flex;align-items:center;gap:8px;flex:none;box-shadow:0 6px 16px -14px rgba(42,33,27,.4);">
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#4e9466;"></span><span style="font-size:9.5px;font-weight:600;color:#3c7a52;">مفتوح</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#e0912e;"></span><span style="font-size:9.5px;font-weight:600;color:#9a6c1e;">المساعد</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:5px;"><span style="width:18px;height:18px;border-radius:50%;background:conic-gradient(#cc3a33 68%,#f1d2cf 0);display:flex;align-items:center;justify-content:center;"><span style="width:12px;height:12px;border-radius:50%;background:#fff;font-size:7px;font-weight:700;color:#cc3a33;display:flex;align-items:center;justify-content:center;">٣</span></span><span style="font-size:9.5px;font-weight:600;color:#cc3a33;">تصعيدات</span></span>
+              <span style="margin-inline-start:auto;font-size:9.5px;color:#9b8b7c;">٤٥ طلب</span>
+            </div>
+            <div style="flex:1;margin-top:9px;background:#f4ece0;border-top-left-radius:20px;border-top-right-radius:20px;display:flex;flex-direction:column;overflow:hidden;">
+              <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:13px 12px 6px;">
+                <div style="align-self:flex-start;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;display:flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg></div>
+                  <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 12px;max-width:200px;"><span style="font-size:11.5px;color:#3c322a;line-height:1.55;">منى زعلانة من التأخير 😟 جهّزتلك رد، أبعته ولا تحب تردّ بنفسك؟</span></div>
+                </div>
+                <!-- escalation card -->
+                <div style="align-self:flex-start;width:218px;margin-inline-start:10px;background:#fff;border:1px solid #f1c9c4;border-radius:15px;overflow:hidden;box-shadow:0 12px 28px -18px rgba(204,58,51,.5);">
+                  <div style="background:#fbe7e4;padding:8px 11px;display:flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:#cc3a33;animation:mai-pulse 1.6s infinite;"></span><span style="font-size:9.5px;font-weight:700;color:#b4322b;">تصعيد عاجل · شكوى تأخير</span><span style="margin-inline-start:auto;font-size:9.5px;font-weight:700;color:#cc3a33;">٢:١٤</span></div>
+                  <div style="padding:10px 11px;display:flex;flex-direction:column;gap:9px;">
+                    <div style="display:flex;align-items:center;gap:8px;"><div style="width:30px;height:30px;border-radius:50%;background:#e9d6c4;"></div><div style="display:flex;flex-direction:column;line-height:1.25;"><span style="font-size:11px;font-weight:600;color:#2a211b;">منى عبد الله</span><span style="font-size:8.5px;color:#9b8b7c;">طلب #١٢٤٨ · متأخّر ١٨ د · VIP</span></div></div>
+                    <div style="background:#f7efe6;border-radius:9px;padding:8px 9px;"><span style="font-size:10px;color:#6a5c4e;line-height:1.55;">«بقالي نص ساعة مستنية وطلبي ماجاش، ده آخر مرة أطلب منكم!»</span></div>
+                    <div style="background:#fbefd9;border:1px dashed #e0b066;border-radius:9px;padding:7px 9px;"><span style="font-size:8px;font-weight:700;color:#9a6c1e;display:block;margin-bottom:3px;">ردّ مقترح من المساعد</span><span style="font-size:9.5px;color:#6a5c4e;line-height:1.5;">«آسفين جدًا يا منى 🙏 طلبك خرج وهيوصلك خلال ٥ دقايق، وأضفنا حلوى هدية…»</span></div>
+                    <div style="display:flex;gap:6px;"><div style="flex:1;height:33px;border-radius:10px;background:#fff;border:1.5px solid #b5502e;color:#b5502e;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;">ابعت ردّي</div><div style="flex:1;height:33px;border-radius:10px;background:#b5502e;color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:5px;box-shadow:0 6px 14px -6px rgba(181,80,46,.6);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M16 3h5v5M21 3l-7 7M10 6H6a3 3 0 00-3 3v9a3 3 0 003 3h9a3 3 0 003-3v-4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>أنا أرد</div></div>
+                  </div>
+                </div>
+                <div style="align-self:center;font-size:8.5px;color:#b59a85;display:flex;align-items:center;gap:5px;margin-top:2px;">اضغط «أنا أرد» عشان تستلم المحادثة ↓</div>
+              </div>
+              <div style="padding:9px 12px 10px;display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:40px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;display:flex;align-items:center;padding:0 14px;"><span style="flex:1;font-size:11.5px;color:#a89683;">اكتب لمساعدك…</span></div>
+                <div style="width:40px;height:40px;border-radius:50%;background:#b5502e;display:flex;align-items:center;justify-content:center;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+            </div>
+            <div style="height:54px;flex:none;border-top:1px solid #ece0d2;background:#fff;display:flex;align-items:center;justify-content:space-around;padding:0 20px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 01-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1121 11.5z" stroke="#b5502e" stroke-width="1.8" stroke-linejoin="round"/></svg><span style="font-size:9px;color:#b5502e;font-weight:600;">المساعد</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h12" stroke="#a89683" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9px;color:#a89683;">الطلبات</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;"><span style="display:inline-flex;width:17px;height:17px;border-radius:50%;background:#b5502e;color:#fff;font-size:10px;align-items:center;justify-content:center;margin-inline-end:5px;font-family:'IBM Plex Sans';">1</span>Escalation flagged in thread</div>
+      </div>
+
+      <!-- ===== C2: CUSTOMER OVERLAY · OPERATOR TYPING ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 14px 9px;opacity:.45;">
+              <div style="width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;"></div>
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:13.5px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:9px;color:#9b8b7c;">كشري التحرير</span></div>
+            </div>
+            <div style="flex:1;background:#f4ece0;opacity:.4;"></div>
+            <!-- dim backdrop -->
+            <div style="position:absolute;inset:0;background:rgba(27,20,15,.34);"></div>
+            <!-- overlay sheet -->
+            <div style="position:absolute;left:0;right:0;bottom:0;top:78px;background:#faf6ef;border-radius:24px 24px 0 0;box-shadow:0 -14px 36px -10px rgba(27,20,15,.4);display:flex;flex-direction:column;overflow:hidden;">
+              <div style="width:38px;height:4px;border-radius:999px;background:#e0d3c2;align-self:center;margin-top:7px;"></div>
+              <!-- customer header -->
+              <div style="display:flex;align-items:center;gap:9px;padding:9px 13px 10px;border-bottom:1px solid #ece0d2;">
+                <span style="font-size:18px;color:#9b8b7c;">›</span>
+                <div style="width:32px;height:32px;border-radius:50%;background:#e9d6c4;flex:none;"></div>
+                <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:12.5px;font-weight:700;color:#2a211b;">منى عبد الله</span><span style="font-size:8.5px;color:#9b8b7c;">واتساب · طلب #١٢٤٨</span></div>
+                <span style="margin-inline-start:auto;display:flex;align-items:center;gap:4px;background:#fbe7e4;border-radius:999px;padding:4px 9px;"><span style="width:6px;height:6px;border-radius:50%;background:#cc3a33;"></span><span style="font-size:8.5px;font-weight:700;color:#b4322b;">المساعد متوقف</span></span>
+              </div>
+              <!-- customer thread -->
+              <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:12px 12px 6px;background:#f4ece0;">
+                <div style="align-self:flex-start;max-width:78%;background:#fff;border:1px solid #ece0d2;border-radius:14px;border-bottom-right-radius:4px;padding:8px 11px;"><span style="font-size:10.5px;color:#5a4f45;line-height:1.5;opacity:.7;"><span style="font-size:7.5px;color:#9a6c1e;font-weight:700;display:block;margin-bottom:2px;">المساعد · سابقًا</span>أهلاً يا منى، طلبك بيتجهّز ✨</span></div>
+                <div style="align-self:flex-end;max-width:80%;background:#fff;border:1px solid #f1c9c4;border-radius:14px;border-bottom-left-radius:4px;padding:8px 11px;"><span style="font-size:10.5px;color:#b4322b;line-height:1.5;">بقالي نص ساعة مستنية وطلبي ماجاش! 😡</span></div>
+                <div style="align-self:flex-start;display:flex;align-items:center;gap:6px;padding:2px 4px;"><div style="display:flex;gap:3px;"><span style="width:5px;height:5px;border-radius:50%;background:#b59a85;animation:mai-pulse 1.2s infinite;"></span><span style="width:5px;height:5px;border-radius:50%;background:#b59a85;animation:mai-pulse 1.2s .2s infinite;"></span><span style="width:5px;height:5px;border-radius:50%;background:#b59a85;animation:mai-pulse 1.2s .4s infinite;"></span></div><span style="font-size:8px;color:#9b8b7c;">أنت بتكتب…</span></div>
+              </div>
+              <!-- copilot suggestion -->
+              <div style="margin:0 11px;background:#fff;border:1px solid #ead9b6;border-radius:13px;padding:8px 10px;display:flex;align-items:center;gap:8px;box-shadow:0 8px 20px -16px rgba(154,108,30,.6);">
+                <div style="width:22px;height:22px;border-radius:7px;background:#fbefd9;display:flex;align-items:center;justify-content:center;flex:none;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#e0912e"/></svg></div>
+                <div style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:0;"><span style="font-size:8px;color:#9a6c1e;font-weight:700;">اقتراح الكوبايلوت</span><span style="font-size:9.5px;color:#6a5c4e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">طمّنها إن الطلب وصل + اعتذار + حلوى هدية</span></div>
+                <span style="font-size:9.5px;font-weight:700;color:#b5502e;flex:none;">استخدم</span>
+              </div>
+              <!-- active composer -->
+              <div style="padding:9px 11px 11px;display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:40px;border-radius:999px;background:#fff;border:1.5px solid #b5502e;display:flex;align-items:center;padding:0 14px;gap:1px;"><span style="font-size:11px;color:#3c322a;">آسفين جدًا يا منى، طلبك</span><span style="width:1.5px;height:16px;background:#b5502e;animation:mai-pulse 1s infinite;"></span></div>
+                <div style="width:40px;height:40px;border-radius:50%;background:#b5502e;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px rgba(181,80,46,.6);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;"><span style="display:inline-flex;width:17px;height:17px;border-radius:50%;background:#b5502e;color:#fff;font-size:10px;align-items:center;justify-content:center;margin-inline-end:5px;font-family:'IBM Plex Sans';">2</span>You take over · AI paused · copilot helps</div>
+      </div>
+
+      <!-- ===== C3: RELEASE + HANDOVER SUMMARY ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 14px 9px;opacity:.45;">
+              <div style="width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;"></div>
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:13.5px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:9px;color:#9b8b7c;">كشري التحرير</span></div>
+            </div>
+            <div style="flex:1;background:#f4ece0;opacity:.4;"></div>
+            <div style="position:absolute;inset:0;background:rgba(27,20,15,.4);"></div>
+            <!-- release sheet -->
+            <div style="position:absolute;left:0;right:0;bottom:0;background:#faf6ef;border-radius:24px 24px 0 0;box-shadow:0 -14px 36px -10px rgba(27,20,15,.4);display:flex;flex-direction:column;overflow:hidden;padding-bottom:12px;">
+              <div style="width:38px;height:4px;border-radius:999px;background:#e0d3c2;align-self:center;margin:8px 0 4px;"></div>
+              <div style="padding:8px 16px 12px;display:flex;flex-direction:column;gap:13px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <div style="width:38px;height:38px;border-radius:11px;background:#e7f1ea;display:flex;align-items:center;justify-content:center;flex:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#4e9466" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                  <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:15px;font-weight:700;color:#2a211b;">ترجيع المحادثة للمساعد</span><span style="font-size:9.5px;color:#9b8b7c;">منى عبد الله · طلب #١٢٤٨</span></div>
+                </div>
+                <!-- editable summary -->
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  <span style="font-size:9px;font-weight:700;color:#9a6c1e;display:flex;align-items:center;gap:5px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#e0912e"/></svg>ملخّص للمساعد يكمل عليه — عدّله لو حابب</span>
+                  <div style="background:#fff;border:1px solid #ead9b6;border-radius:12px;padding:10px 11px;"><span style="font-size:11px;color:#4a3f36;line-height:1.6;">اعتذرنا عن التأخير، أكّدنا وصول الطلب خلال ٥ دقايق، وأضفنا حلوى هدية. العميلة هدّت ورضيت.</span></div>
+                </div>
+                <!-- auto-resume toggle -->
+                <div style="display:flex;align-items:center;gap:9px;background:#fff;border:1px solid #ece0d2;border-radius:11px;padding:9px 11px;">
+                  <div style="width:32px;height:19px;border-radius:999px;background:#4e9466;display:flex;align-items:center;padding:2px;flex:none;"><div style="width:15px;height:15px;border-radius:50%;background:#fff;margin-inline-start:auto;"></div></div>
+                  <div style="display:flex;flex-direction:column;line-height:1.3;"><span style="font-size:11px;font-weight:600;color:#3c322a;">يكمّل المساعد المتابعة تلقائيًا</span><span style="font-size:8.5px;color:#9b8b7c;">هيرجع يرد على منى من هنا</span></div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                  <div style="flex:1;height:42px;border-radius:12px;background:#b5502e;color:#fff;font-size:12.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 8px 18px -8px rgba(181,80,46,.6);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg>سلّم للمساعد</div>
+                  <div style="height:42px;padding:0 16px;border-radius:12px;border:1px solid #ddc9b6;color:#6a5c4e;font-size:12px;font-weight:600;display:flex;align-items:center;">كمّل أنا</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;justify-content:center;"><span style="width:6px;height:6px;border-radius:50%;background:#4e9466;"></span><span style="font-size:8.5px;color:#9b8b7c;">بعد التسليم المساعد يستأنف الردود تلقائيًا</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;"><span style="display:inline-flex;width:17px;height:17px;border-radius:50%;background:#b5502e;color:#fff;font-size:10px;align-items:center;justify-content:center;margin-inline-end:5px;font-family:'IBM Plex Sans';">3</span>Release · confirm the one-line summary</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ SECTION D — ORDERS PIPELINE ============ -->
+  <section style="max-width:1340px;margin:0 auto 30px;background:#fbf7f1;border:1px solid #e4d8c8;border-radius:24px;padding:26px 16px 30px;">
+    <div style="display:flex;align-items:flex-start;gap:15px;margin-bottom:22px;padding:0 12px;">
+      <div style="width:40px;height:40px;border-radius:12px;background:#b5502e;color:#fff;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-family:'IBM Plex Sans';">D</div>
+      <div>
+        <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em;">Orders tab · the Pulse pipeline</h2>
+        <p style="margin:5px 0 0;font-size:14px;color:#b5502e;font-weight:500;">New → preparing → ready → out for delivery. Swipe a card to advance; print or reprint the kitchen ticket from each. No kitchen-board screen needed.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start;">
+
+      <!-- ===== D1: PIPELINE ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 14px 9px;">
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:16px;font-weight:700;color:#2a211b;">الطلبات</span><span style="font-size:9px;color:#9b8b7c;">١٢ نشط · كشري التحرير</span></div>
+              <div style="margin-inline-start:auto;display:flex;align-items:center;gap:5px;background:#e7f1ea;border-radius:999px;padding:5px 9px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#3c7a52" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:8.5px;font-weight:600;color:#3c7a52;">طباعة تلقائية</span></div>
+            </div>
+            <div style="margin:0 12px 4px;background:#fff;border:1px solid #ece0d2;border-radius:13px;padding:7px 11px;display:flex;align-items:center;gap:8px;flex:none;box-shadow:0 6px 16px -14px rgba(42,33,27,.4);">
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#4e9466;"></span><span style="font-size:9.5px;font-weight:600;color:#3c7a52;">مفتوح</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#e0912e;"></span><span style="font-size:9.5px;font-weight:600;color:#9a6c1e;">المساعد</span></span>
+              <span style="width:1px;height:14px;background:#efe5d8;"></span>
+              <span style="display:flex;align-items:center;gap:5px;"><span style="width:18px;height:18px;border-radius:50%;background:conic-gradient(#cc3a33 68%,#f1d2cf 0);display:flex;align-items:center;justify-content:center;"><span style="width:12px;height:12px;border-radius:50%;background:#fff;font-size:7px;font-weight:700;color:#cc3a33;display:flex;align-items:center;justify-content:center;">٣</span></span><span style="font-size:9.5px;font-weight:600;color:#cc3a33;">تصعيدات</span></span>
+              <span style="margin-inline-start:auto;font-size:9.5px;color:#9b8b7c;">٤٬٢٥٠</span>
+            </div>
+            <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:11px;padding:9px 12px 8px;">
+              <!-- group: new -->
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <div style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:3px;background:#5c667a;"></span><span style="font-size:11px;font-weight:700;color:#4a3f36;">جديدة</span><span style="font-size:9px;color:#9b8b7c;background:#eceef2;border-radius:999px;padding:1px 7px;">٢</span></div>
+                <div style="background:#fff;border:1px solid #ece0d2;border-radius:12px;padding:9px 10px;display:flex;align-items:center;gap:8px;"><span style="font-size:11.5px;font-weight:700;color:#2a211b;">#١٢٥٠</span><div style="flex:1;display:flex;flex-direction:column;gap:2px;"><span style="font-size:9.5px;color:#4a3f36;">أحمد سمير · ٢ صنف</span><span style="font-size:8px;color:#9b8b7c;">توصيل · المعادي</span></div><div style="width:28px;height:28px;border-radius:8px;background:#f3ebdf;display:flex;align-items:center;justify-content:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#9b8b7c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+              </div>
+              <!-- group: preparing (with swipe) -->
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <div style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:3px;background:#e0912e;"></span><span style="font-size:11px;font-weight:700;color:#4a3f36;">قيد التحضير</span><span style="font-size:9px;color:#9b8b7c;background:#fbefd9;border-radius:999px;padding:1px 7px;">٥</span></div>
+                <!-- swiping card -->
+                <div style="position:relative;height:50px;">
+                  <div style="position:absolute;inset:0;background:#4e9466;border-radius:12px;display:flex;align-items:center;justify-content:flex-end;padding:0 14px;gap:6px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:11px;font-weight:700;color:#fff;">جاهز</span></div>
+                  <div style="position:absolute;inset:0;transform:translateX(42px);background:#fff;border:1px solid #ece0d2;border-radius:12px;padding:9px 10px;display:flex;align-items:center;gap:8px;box-shadow:-6px 0 14px -6px rgba(0,0,0,.14);"><span style="font-size:11.5px;font-weight:700;color:#2a211b;">#١٢٤٨</span><div style="flex:1;display:flex;flex-direction:column;gap:2px;"><span style="font-size:9.5px;color:#4a3f36;">منى عبد الله · ٣ أصناف</span><span style="font-size:8px;color:#e0912e;font-weight:600;">١٢:٠٤ · متأخّر</span></div><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#9b8b7c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                </div>
+                <div style="background:#fff;border:1px solid #ece0d2;border-radius:12px;padding:9px 10px;display:flex;align-items:center;gap:8px;"><span style="font-size:11.5px;font-weight:700;color:#2a211b;">#١٢٤٧</span><div style="flex:1;display:flex;flex-direction:column;gap:2px;"><span style="font-size:9.5px;color:#4a3f36;">سارة فؤاد · ١ صنف</span><span style="font-size:8px;color:#9b8b7c;">استلام من الفرع</span></div><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#9b8b7c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <!-- group: ready -->
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <div style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:3px;background:#4e9466;"></span><span style="font-size:11px;font-weight:700;color:#4a3f36;">جاهزة</span><span style="font-size:9px;color:#9b8b7c;background:#e7f1ea;border-radius:999px;padding:1px 7px;">٣</span></div>
+                <div style="background:#fff;border:1px solid #ece0d2;border-radius:12px;padding:9px 10px;display:flex;align-items:center;gap:8px;"><span style="font-size:11.5px;font-weight:700;color:#2a211b;">#١٢٤٤</span><div style="flex:1;display:flex;flex-direction:column;gap:2px;"><span style="font-size:9.5px;color:#4a3f36;">خالد عادل · ٤ أصناف</span><span style="font-size:8px;color:#3c7a52;font-weight:600;">في انتظار المندوب</span></div><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#9b8b7c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <!-- group: out -->
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <div style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:3px;background:#3e8e8e;"></span><span style="font-size:11px;font-weight:700;color:#4a3f36;">خرجت للتوصيل</span><span style="font-size:9px;color:#9b8b7c;background:#e2f0f0;border-radius:999px;padding:1px 7px;">٢</span></div>
+              </div>
+            </div>
+            <div style="height:54px;flex:none;border-top:1px solid #ece0d2;background:#fff;display:flex;align-items:center;justify-content:space-around;padding:0 20px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 01-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1121 11.5z" stroke="#a89683" stroke-width="1.8" stroke-linejoin="round"/></svg><span style="font-size:9px;color:#a89683;">المساعد</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h12" stroke="#b5502e" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9px;color:#b5502e;font-weight:600;">الطلبات</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;">Pipeline · <span style="color:#9b8b7c;">swipe → جاهز to advance</span></div>
+      </div>
+
+      <!-- ===== D2: ORDER DETAIL + PRINT/REPRINT ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 14px 10px;">
+              <span style="font-size:19px;color:#9b8b7c;">›</span>
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:15px;font-weight:700;color:#2a211b;">طلب #١٢٤٨</span><span style="font-size:9px;color:#9b8b7c;">١٢:٠٤ م · توصيل</span></div>
+              <span style="margin-inline-start:auto;font-size:9px;font-weight:700;color:#9a6c1e;background:#fbefd9;border-radius:999px;padding:5px 10px;">قيد التحضير</span>
+            </div>
+            <!-- stepper -->
+            <div style="padding:0 14px 10px;display:flex;align-items:center;gap:4px;">
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="width:11px;height:11px;border-radius:50%;background:#5c667a;"></span><span style="font-size:7px;color:#5c667a;font-weight:600;">جديد</span></div>
+              <div style="flex:1;height:2px;background:#e0912e;margin-bottom:11px;"></div>
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="width:13px;height:13px;border-radius:50%;background:#e0912e;border:2px solid #fbe3bf;"></span><span style="font-size:7px;color:#e0912e;font-weight:700;">تحضير</span></div>
+              <div style="flex:1;height:2px;background:#e6dccb;margin-bottom:11px;"></div>
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="width:11px;height:11px;border-radius:50%;background:#e6dccb;"></span><span style="font-size:7px;color:#b59a85;">جاهز</span></div>
+              <div style="flex:1;height:2px;background:#e6dccb;margin-bottom:11px;"></div>
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="width:11px;height:11px;border-radius:50%;background:#e6dccb;"></span><span style="font-size:7px;color:#b59a85;">توصيل</span></div>
+            </div>
+            <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:2px 14px;background:#f4ece0;">
+              <!-- customer -->
+              <div style="background:#fff;border:1px solid #ece0d2;border-radius:12px;padding:10px 11px;display:flex;align-items:center;gap:9px;margin-top:11px;"><div style="width:30px;height:30px;border-radius:50%;background:#e9d6c4;"></div><div style="flex:1;display:flex;flex-direction:column;gap:2px;"><span style="font-size:11px;font-weight:600;color:#2a211b;">منى عبد الله</span><span style="font-size:8.5px;color:#9b8b7c;">٠١٠٠ ٠٠٠ ٠٠٠ · شارع ٩، المعادي</span></div><div style="width:30px;height:30px;border-radius:9px;background:#e7f1ea;display:flex;align-items:center;justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20.5 3.5L3.8 9.2c-1 .3-1 1.7 0 2l6.5 2.3 2.3 6.5c.3 1 1.7 1 2 0L22.5 4.5a.8.8 0 00-1-1z" stroke="#3c7a52" stroke-width="1.6" stroke-linejoin="round"/></svg></div></div>
+              <!-- items -->
+              <div style="background:#fff;border:1px solid #ece0d2;border-radius:12px;padding:10px 11px;display:flex;flex-direction:column;gap:8px;">
+                <div style="display:flex;justify-content:space-between;"><span style="font-size:10.5px;color:#4a3f36;">٢× كشري خاص</span><span style="font-size:10.5px;color:#6a5c4e;">٩٠</span></div>
+                <div style="display:flex;justify-content:space-between;"><span style="font-size:10.5px;color:#4a3f36;">١× برجر كلاسيك</span><span style="font-size:10.5px;color:#6a5c4e;">٦٠</span></div>
+                <div style="border-top:1px dashed #e6dccb;padding-top:7px;display:flex;justify-content:space-between;"><span style="font-size:9px;color:#9b8b7c;">توصيل</span><span style="font-size:9.5px;color:#6a5c4e;">١٥</span></div>
+                <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11px;font-weight:700;color:#2a211b;">الإجمالي</span><span style="font-size:14px;font-weight:700;color:#b5502e;">١٦٥ ج.م</span></div>
+              </div>
+            </div>
+            <!-- action bar -->
+            <div style="padding:9px 13px 11px;background:#faf6ef;border-top:1px solid #ece0d2;display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;gap:8px;">
+                <div style="flex:1;height:40px;border-radius:11px;background:#fff;border:1px solid #ddc9b6;color:#4a3f36;font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#6a5c4e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>اطبع التذكرة</div>
+                <div style="flex:1;height:40px;border-radius:11px;background:#fff;border:1px solid #ddc9b6;color:#4a3f36;font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M3 12a9 9 0 1015.5-6.2M21 3v6h-6" stroke="#6a5c4e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>إعادة طباعة</div>
+              </div>
+              <div style="height:44px;border-radius:12px;background:#4e9466;color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 8px 18px -8px rgba(78,148,102,.6);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>علّم جاهز</div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;">Order detail · <span style="color:#9b8b7c;">print / reprint ticket</span></div>
+      </div>
+
+      <!-- annotation -->
+      <div style="width:248px;flex:none;background:#fff;border:1px solid #e4d8c8;border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:14px;align-self:stretch;">
+        <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9b8b7c;font-weight:700;font-family:'IBM Plex Sans';">Why a pipeline, not a board</div>
+        <p style="margin:0;font-size:12.5px;line-height:1.6;color:#6a5c4e;font-family:'IBM Plex Sans';">Staff never see a kitchen-board screen. The phone <b>is</b> the board: four glanceable stages, one swipe to advance.</p>
+        <div style="display:flex;flex-direction:column;gap:9px;font-family:'IBM Plex Sans';">
+          <div style="display:flex;gap:9px;align-items:center;"><span style="width:9px;height:9px;border-radius:3px;background:#5c667a;flex:none;"></span><span style="font-size:11.5px;color:#4a3f36;">New — just landed from WhatsApp</span></div>
+          <div style="display:flex;gap:9px;align-items:center;"><span style="width:9px;height:9px;border-radius:3px;background:#e0912e;flex:none;"></span><span style="font-size:11.5px;color:#4a3f36;">Preparing — ticket auto-printed</span></div>
+          <div style="display:flex;gap:9px;align-items:center;"><span style="width:9px;height:9px;border-radius:3px;background:#4e9466;flex:none;"></span><span style="font-size:11.5px;color:#4a3f36;">Ready — awaiting pickup / rider</span></div>
+          <div style="display:flex;gap:9px;align-items:center;"><span style="width:9px;height:9px;border-radius:3px;background:#3e8e8e;flex:none;"></span><span style="font-size:11.5px;color:#4a3f36;">Out — on the way to the customer</span></div>
+        </div>
+        <div style="border-top:1px solid #efe5d8;padding-top:13px;font-family:'IBM Plex Sans';">
+          <p style="margin:0;font-size:12px;line-height:1.55;color:#6a5c4e;"><b style="color:#4a3f36;">Print &amp; reprint</b> live on every card and in the detail — for the thermal kitchen printer, including a torn-ticket reprint.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ SECTION E — ROLE VARIANT · OPERATION ============ -->
+  <section style="max-width:1340px;margin:0 auto 30px;background:#fbf7f1;border:1px solid #e4d8c8;border-radius:24px;padding:26px 16px 30px;">
+    <div style="display:flex;align-items:flex-start;gap:15px;margin-bottom:22px;padding:0 12px;">
+      <div style="width:40px;height:40px;border-radius:12px;background:#b5502e;color:#fff;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-family:'IBM Plex Sans';">E</div>
+      <div>
+        <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em;">Role variant · the Operation (floor) staff</h2>
+        <p style="margin:5px 0 0;font-size:14px;color:#b5502e;font-weight:500;">Same app, scoped down: status strip is read-only (except order actions), no promotions / Brain / settings cards, and the Orders pipeline is their home.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start;">
+
+      <!-- ===== E1: OPERATION HOME ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 14px 9px;">
+              <div style="width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,#c2602f,#a8432a);display:flex;align-items:center;justify-content:center;flex:none;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" fill="#fff"/></svg></div>
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:13.5px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:9px;color:#9b8b7c;">محمود · موظّف صالة</span></div>
+              <span style="margin-inline-start:auto;display:flex;align-items:center;gap:4px;background:#f0ece4;border-radius:999px;padding:4px 9px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#9b8b7c" stroke-width="1.8"/><path d="M8 11V8a4 4 0 018 0v3" stroke="#9b8b7c" stroke-width="1.8"/></svg><span style="font-size:8.5px;font-weight:600;color:#7a6c5d;">تشغيل</span></span>
+            </div>
+            <!-- READ-ONLY STRIP -->
+            <div style="margin:0 12px;background:#fff;border:1px solid #ece0d2;border-radius:18px;padding:11px 12px;display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 24px -16px rgba(42,33,27,.4);flex:none;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;display:flex;align-items:center;gap:6px;background:#f3f5f3;border-radius:11px;padding:7px 9px;"><span style="width:8px;height:8px;border-radius:50%;background:#4e9466;"></span><span style="font-size:10.5px;font-weight:700;color:#3c7a52;">مفتوح</span></div>
+                <div style="flex:1;display:flex;align-items:center;gap:6px;background:#f7f3ec;border-radius:11px;padding:7px 9px;"><span style="width:8px;height:8px;border-radius:50%;background:#e0912e;"></span><span style="font-size:10.5px;font-weight:700;color:#9a6c1e;">المساعد يعمل</span></div>
+                <div style="display:flex;align-items:center;gap:3px;flex:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#b3a392" stroke-width="1.8"/><path d="M8 11V8a4 4 0 018 0v3" stroke="#b3a392" stroke-width="1.8"/></svg></div>
+              </div>
+              <div style="display:flex;align-items:center;">
+                <div style="flex:1;display:flex;align-items:center;gap:7px;justify-content:center;"><div style="width:26px;height:26px;border-radius:50%;background:conic-gradient(#cc3a33 68%,#f1d2cf 0);display:flex;align-items:center;justify-content:center;flex:none;"><div style="width:19px;height:19px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#cc3a33;">٣</div></div><span style="font-size:9.5px;font-weight:700;color:#cc3a33;">للمتابعة</span></div>
+                <div style="width:1px;height:24px;background:#efe5d8;"></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;line-height:1.15;"><span style="font-size:15px;font-weight:700;color:#2a211b;">٧</span><span style="font-size:8px;color:#9b8b7c;">شغّالة</span></div>
+                <div style="width:1px;height:24px;background:#efe5d8;"></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;line-height:1.15;"><span style="font-size:15px;font-weight:700;color:#3c7a52;">٣</span><span style="font-size:8px;color:#9b8b7c;">جاهزة</span></div>
+              </div>
+            </div>
+            <div style="flex:1;margin-top:10px;background:#f4ece0;border-top-left-radius:20px;border-top-right-radius:20px;display:flex;flex-direction:column;overflow:hidden;">
+              <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:13px 12px 6px;">
+                <div style="align-self:flex-start;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;display:flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg></div>
+                  <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 12px;max-width:198px;"><span style="font-size:11.5px;color:#3c322a;line-height:1.55;">أهلاً يا محمود 👋 فيه ٣ طلبات جاهزة للتسليم و١ متأخّر. أبدأ بالمتأخّر؟</span></div>
+                </div>
+                <div style="align-self:flex-end;max-width:80%;background:#f6e3d8;border:1px solid #eecdb9;border-radius:16px;border-bottom-left-radius:5px;padding:9px 12px;"><span style="font-size:11.5px;color:#8a4326;line-height:1.55;">اطبع تذكرة #١٢٤٨</span></div>
+                <div style="align-self:flex-start;display:flex;gap:7px;align-items:flex-end;">
+                  <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;"></div>
+                  <div style="background:#fff;border:1px solid #ece0d2;border-radius:16px;border-bottom-right-radius:5px;padding:9px 11px;display:flex;align-items:center;gap:8px;"><div style="width:30px;height:30px;border-radius:9px;background:#e7f1ea;display:flex;align-items:center;justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#3c7a52" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span style="font-size:10.5px;color:#3c322a;">اتطبعت ✓ تذكرة #١٢٤٨</span></div>
+                </div>
+              </div>
+              <div style="display:flex;gap:6px;padding:4px 12px 0;overflow:hidden;align-items:center;">
+                <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">الطلبات المتأخرة</span>
+                <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">التصعيدات</span>
+                <span style="font-size:10px;padding:7px 11px;border-radius:999px;background:#f0ece4;border:1px solid #e4d8c8;color:#b3a392;white-space:nowrap;display:flex;align-items:center;gap:4px;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#b3a392" stroke-width="2"/><path d="M8 11V8a4 4 0 018 0v3" stroke="#b3a392" stroke-width="2"/></svg>العروض</span>
+              </div>
+              <div style="padding:9px 12px 10px;display:flex;align-items:center;gap:8px;">
+                <div style="flex:1;height:40px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;display:flex;align-items:center;padding:0 14px;"><span style="flex:1;font-size:11.5px;color:#a89683;">اسأل عن طلب…</span></div>
+                <div style="width:40px;height:40px;border-radius:50%;background:#b5502e;display:flex;align-items:center;justify-content:center;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+            </div>
+            <div style="height:54px;flex:none;border-top:1px solid #ece0d2;background:#fff;display:flex;align-items:center;justify-content:space-around;padding:0 20px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 01-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1121 11.5z" stroke="#b5502e" stroke-width="1.8" stroke-linejoin="round"/></svg><span style="font-size:9px;color:#b5502e;font-weight:600;">المساعد</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h12" stroke="#a89683" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9px;color:#a89683;">الطلبات</span><span style="position:absolute;top:-3px;left:6px;min-width:14px;height:14px;border-radius:7px;background:#cc3a33;color:#fff;font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;">٧</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;">Operation home · <span style="color:#9b8b7c;">read-only strip · العروض locked</span></div>
+      </div>
+
+      <!-- ===== E2: OPERATION ORDERS (their home) ===== -->
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+        <div style="width:272px;height:600px;background:#1b1714;border-radius:44px;padding:7px;flex:none;box-shadow:0 30px 60px -24px rgba(27,20,15,.55),0 8px 20px -12px rgba(27,20,15,.3);">
+          <div dir="rtl" style="height:100%;background:#faf6ef;border-radius:37px;overflow:hidden;display:flex;flex-direction:column;position:relative;font-family:'Readex Pro',sans-serif;">
+            <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:11px 22px 0;font-size:12px;color:#2a211b;font-weight:600;"><span>٩:٤١</span><span style="width:16px;height:9px;border:1.5px solid #2a211b;border-radius:2px;"></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 14px 9px;">
+              <div style="display:flex;flex-direction:column;gap:1px;"><span style="font-size:16px;font-weight:700;color:#2a211b;">الطلبات</span><span style="font-size:9px;color:#9b8b7c;">شاشتك الأساسية · محمود</span></div>
+              <span style="margin-inline-start:auto;display:flex;align-items:center;gap:4px;background:#e7f1ea;border-radius:999px;padding:5px 9px;"><span style="width:6px;height:6px;border-radius:50%;background:#4e9466;"></span><span style="font-size:8.5px;font-weight:600;color:#3c7a52;">مفتوح</span></span>
+            </div>
+            <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:10px;padding:6px 12px 8px;">
+              <!-- late highlight -->
+              <div style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:3px;background:#e0912e;"></span><span style="font-size:11px;font-weight:700;color:#4a3f36;">قيد التحضير</span><span style="font-size:9px;color:#9b8b7c;background:#fbefd9;border-radius:999px;padding:1px 7px;">٥</span></div>
+              <div style="background:#fff;border:1.5px solid #f0d2a0;border-radius:14px;padding:11px;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 20px -16px rgba(224,145,46,.5);">
+                <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:700;color:#2a211b;">#١٢٤٨</span><span style="font-size:8.5px;color:#fff;background:#e0912e;border-radius:6px;padding:2px 7px;font-weight:700;">متأخّر ١٨ د</span><span style="margin-inline-start:auto;font-size:9px;color:#9b8b7c;">٣ أصناف</span></div>
+                <div style="display:flex;gap:8px;"><div style="flex:1;height:38px;border-radius:11px;background:#4e9466;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>علّم جاهز</div><div style="width:44px;height:38px;border-radius:11px;background:#fff;border:1px solid #ddc9b6;display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#6a5c4e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+              </div>
+              <div style="background:#fff;border:1px solid #ece0d2;border-radius:14px;padding:11px;display:flex;flex-direction:column;gap:10px;">
+                <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:700;color:#2a211b;">#١٢٤٧</span><span style="margin-inline-start:auto;font-size:9px;color:#9b8b7c;">١ صنف · استلام</span></div>
+                <div style="display:flex;gap:8px;"><div style="flex:1;height:38px;border-radius:11px;background:#4e9466;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>علّم جاهز</div><div style="width:44px;height:38px;border-radius:11px;background:#fff;border:1px solid #ddc9b6;display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#6a5c4e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:2px;"><span style="width:9px;height:9px;border-radius:3px;background:#4e9466;"></span><span style="font-size:11px;font-weight:700;color:#4a3f36;">جاهزة</span><span style="font-size:9px;color:#9b8b7c;background:#e7f1ea;border-radius:999px;padding:1px 7px;">٣</span></div>
+              <div style="background:#fff;border:1px solid #ece0d2;border-radius:12px;padding:9px 11px;display:flex;align-items:center;gap:8px;opacity:.92;"><span style="font-size:12px;font-weight:700;color:#2a211b;">#١٢٤٤</span><span style="flex:1;font-size:9px;color:#3c7a52;font-weight:600;">سلّم للمندوب</span><div style="height:30px;padding:0 13px;border-radius:9px;background:#3e8e8e;color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;">خرج</div></div>
+            </div>
+            <div style="height:54px;flex:none;border-top:1px solid #ece0d2;background:#fff;display:flex;align-items:center;justify-content:space-around;padding:0 20px;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 01-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1121 11.5z" stroke="#a89683" stroke-width="1.8" stroke-linejoin="round"/></svg><span style="font-size:9px;color:#a89683;">المساعد</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M3 12h18M3 18h12" stroke="#b5502e" stroke-width="1.8" stroke-linecap="round"/></svg><span style="font-size:9px;color:#b5502e;font-weight:600;">الطلبات</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#6a5c4e;text-align:center;max-width:272px;font-weight:500;">Operation orders · <span style="color:#9b8b7c;">big advance + print, their main space</span></div>
+      </div>
+
+      <!-- annotation -->
+      <div style="width:248px;flex:none;background:#fff;border:1px solid #e4d8c8;border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:13px;align-self:stretch;">
+        <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9b8b7c;font-weight:700;font-family:'IBM Plex Sans';">Manager vs Operation</div>
+        <div style="display:flex;flex-direction:column;gap:11px;font-family:'IBM Plex Sans';">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#b5502e;margin-bottom:4px;">Manager — full control</div>
+            <p style="margin:0;font-size:11.5px;line-height:1.5;color:#6a5c4e;">Toggles Open/Closed &amp; AI, creates promos, edits menu, opens the Brain, sees revenue.</p>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#7a6c5d;margin-bottom:4px;">Operation — scoped</div>
+            <p style="margin:0;font-size:11.5px;line-height:1.5;color:#6a5c4e;">Strip is <b>read-only</b> (lock icon); no promotions / Brain / settings. Acts on orders &amp; takeovers only — Orders is home.</p>
+          </div>
+        </div>
+        <div style="border-top:1px solid #efe5d8;padding-top:12px;font-family:'IBM Plex Sans';">
+          <p style="margin:0;font-size:11.5px;line-height:1.55;color:#6a5c4e;">Revenue hidden for floor staff — they see <b style="color:#4a3f36;">order counts</b>, not money.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ SECTION F — DESKTOP / TILL ============ -->
+  <section style="max-width:1340px;margin:0 auto 30px;background:#fbf7f1;border:1px solid #e4d8c8;border-radius:24px;padding:26px 20px 30px;">
+    <div style="display:flex;align-items:flex-start;gap:15px;margin-bottom:22px;padding:0 4px;">
+      <div style="width:40px;height:40px;border-radius:12px;background:#b5502e;color:#fff;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-family:'IBM Plex Sans';">F</div>
+      <div>
+        <h2 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em;">Desktop / till · the cashier PC</h2>
+        <p style="margin:5px 0 0;font-size:14px;color:#b5502e;font-weight:500;">Same hybrid, one wide canvas: Pulse strip across the top, Maître thread on the left, the live orders pipeline on the right. Manager role.</p>
+      </div>
+    </div>
+
+    <!-- desktop window -->
+    <div dir="rtl" style="width:100%;max-width:1200px;margin:0 auto;height:660px;background:#faf6ef;border-radius:16px;border:1px solid #d9cbb8;overflow:hidden;box-shadow:0 40px 80px -34px rgba(27,20,15,.5),0 10px 26px -16px rgba(27,20,15,.3);font-family:'Readex Pro',sans-serif;display:flex;flex-direction:column;">
+      <!-- window title bar -->
+      <div dir="ltr" style="height:34px;flex:none;background:#efe6d8;border-bottom:1px solid #e0d3c2;display:flex;align-items:center;padding:0 14px;gap:8px;">
+        <span style="width:11px;height:11px;border-radius:50%;background:#e0726a;"></span>
+        <span style="width:11px;height:11px;border-radius:50%;background:#e7b24b;"></span>
+        <span style="width:11px;height:11px;border-radius:50%;background:#67a86f;"></span>
+        <span style="margin:0 auto;font-size:11px;color:#9b8b7c;font-family:'IBM Plex Sans';">MaitreAI — till · برجر الذواقة (الرياض)</span>
+      </div>
+      <!-- APP TOP BAR with Pulse strip -->
+      <div style="height:74px;flex:none;background:#fff;border-bottom:1px solid #ece0d2;display:flex;align-items:center;padding:0 20px;gap:20px;">
+        <div style="display:flex;align-items:center;gap:11px;flex:none;">
+          <div style="width:42px;height:42px;border-radius:13px;background:linear-gradient(145deg,#c2602f,#a8432a);display:flex;align-items:center;justify-content:center;box-shadow:0 5px 12px -4px rgba(168,66,42,.5);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6L12 2z" fill="#fff"/><circle cx="18.5" cy="4.5" r="1.6" fill="#ffe1b0"/></svg></div>
+          <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:16px;font-weight:700;color:#2a211b;">مساعد المطعم</span><span style="font-size:10px;color:#9b8b7c;">برجر الذواقة · فرع الرياض</span></div>
+        </div>
+        <!-- strip -->
+        <div style="margin-inline-start:auto;display:flex;align-items:center;gap:14px;">
+          <div style="display:flex;align-items:center;gap:8px;background:#e7f1ea;border-radius:12px;padding:8px 12px;"><div style="width:38px;height:22px;border-radius:999px;background:#4e9466;display:flex;align-items:center;padding:2px;"><div style="width:18px;height:18px;border-radius:50%;background:#fff;margin-inline-start:auto;box-shadow:0 1px 2px rgba(0,0,0,.2);"></div></div><div style="display:flex;flex-direction:column;line-height:1.15;"><span style="font-size:9px;color:#5e8a70;">المطعم</span><span style="font-size:12px;font-weight:700;color:#3c7a52;">مفتوح</span></div></div>
+          <div style="display:flex;align-items:center;gap:8px;background:#fbefd9;border-radius:12px;padding:8px 12px;"><div style="width:38px;height:22px;border-radius:999px;background:#e0912e;display:flex;align-items:center;padding:2px;"><div style="width:18px;height:18px;border-radius:50%;background:#fff;margin-inline-start:auto;box-shadow:0 1px 2px rgba(0,0,0,.2);"></div></div><div style="display:flex;flex-direction:column;line-height:1.15;"><span style="font-size:9px;color:#b07d27;">المساعد</span><span style="font-size:12px;font-weight:700;color:#9a6c1e;">يعمل</span></div></div>
+          <div style="width:1px;height:38px;background:#efe5d8;"></div>
+          <div style="display:flex;align-items:center;gap:9px;"><div style="width:36px;height:36px;border-radius:50%;background:conic-gradient(#cc3a33 68%,#f1d2cf 0);display:flex;align-items:center;justify-content:center;"><div style="width:27px;height:27px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#cc3a33;">٣</div></div><div style="display:flex;flex-direction:column;line-height:1.2;"><span style="font-size:12px;font-weight:700;color:#cc3a33;">تصعيدات</span><span style="font-size:9px;color:#c98a86;">أقرب ٢:١٤</span></div></div>
+          <div style="width:1px;height:38px;background:#efe5d8;"></div>
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1.1;"><span style="font-size:19px;font-weight:700;color:#2a211b;">٤٥</span><span style="font-size:9px;color:#9b8b7c;">طلبات اليوم</span></div>
+          <div style="width:1px;height:38px;background:#efe5d8;"></div>
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1.1;"><span style="font-size:19px;font-weight:700;color:#2a211b;">٤٬٢٥٠</span><span style="font-size:9px;color:#9b8b7c;">مبيعات · ر.س</span></div>
+        </div>
+        <div style="width:1px;height:38px;background:#efe5d8;"></div>
+        <div style="display:flex;align-items:center;gap:8px;flex:none;"><div style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;"><span style="font-size:11px;font-weight:600;color:#2a211b;">أبو فهد</span><span style="font-size:8.5px;color:#9b8b7c;">مدير</span></div><div style="width:34px;height:34px;border-radius:50%;background:#e9d6c4;"></div></div>
+      </div>
+      <!-- BODY: pipeline (right) + thread (left) -->
+      <div style="flex:1;display:flex;overflow:hidden;">
+        <!-- PIPELINE PANE (right) -->
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;border-inline-end:1px solid #ece0d2;">
+          <div style="height:48px;flex:none;display:flex;align-items:center;padding:0 20px;gap:10px;border-bottom:1px solid #f0e7da;">
+            <span style="font-size:15px;font-weight:700;color:#2a211b;">الطلبات</span>
+            <span style="font-size:10px;color:#9b8b7c;">١٢ نشط</span>
+            <div style="margin-inline-start:auto;display:flex;align-items:center;gap:6px;background:#e7f1ea;border-radius:999px;padding:5px 11px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#3c7a52" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:9px;font-weight:600;color:#3c7a52;">طباعة تلقائية مفعّلة</span></div>
+          </div>
+          <div style="flex:1;overflow:hidden;padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:16px 18px;align-content:start;">
+            <!-- col 1 -->
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <div style="display:flex;align-items:center;gap:7px;"><span style="width:10px;height:10px;border-radius:3px;background:#5c667a;"></span><span style="font-size:12px;font-weight:700;color:#4a3f36;">جديدة</span><span style="font-size:9.5px;color:#9b8b7c;background:#eceef2;border-radius:999px;padding:1px 8px;">٢</span></div>
+              <div style="background:#fff;border:1px solid #ece0d2;border-radius:13px;padding:11px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 16px -14px rgba(42,33,27,.3);"><span style="font-size:13px;font-weight:700;color:#2a211b;">#١٢٥٠</span><div style="flex:1;display:flex;flex-direction:column;gap:2px;"><span style="font-size:10.5px;color:#4a3f36;">أحمد سمير · ٢ صنف · ١٤٠ ر.س</span><span style="font-size:8.5px;color:#9b8b7c;">توصيل · حي النخيل</span></div><div style="height:32px;padding:0 13px;border-radius:9px;background:#5c667a;color:#fff;font-size:10.5px;font-weight:600;display:flex;align-items:center;">قبول</div><div style="width:32px;height:32px;border-radius:9px;background:#f3ebdf;display:flex;align-items:center;justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#9b8b7c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+              <div style="display:flex;align-items:center;gap:7px;margin-top:4px;"><span style="width:10px;height:10px;border-radius:3px;background:#4e9466;"></span><span style="font-size:12px;font-weight:700;color:#4a3f36;">جاهزة</span><span style="font-size:9.5px;color:#9b8b7c;background:#e7f1ea;border-radius:999px;padding:1px 8px;">٣</span></div>
+              <div style="background:#fff;border:1px solid #ece0d2;border-radius:13px;padding:11px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 16px -14px rgba(42,33,27,.3);"><span style="font-size:13px;font-weight:700;color:#2a211b;">#١٢٤٤</span><div style="flex:1;display:flex;flex-direction:column;gap:2px;"><span style="font-size:10.5px;color:#4a3f36;">خالد عادل · ٤ أصناف</span><span style="font-size:8.5px;color:#3c7a52;font-weight:600;">في انتظار المندوب</span></div><div style="height:32px;padding:0 13px;border-radius:9px;background:#3e8e8e;color:#fff;font-size:10.5px;font-weight:600;display:flex;align-items:center;">خرج للتوصيل</div></div>
+            </div>
+            <!-- col 2 -->
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <div style="display:flex;align-items:center;gap:7px;"><span style="width:10px;height:10px;border-radius:3px;background:#e0912e;"></span><span style="font-size:12px;font-weight:700;color:#4a3f36;">قيد التحضير</span><span style="font-size:9.5px;color:#9b8b7c;background:#fbefd9;border-radius:999px;padding:1px 8px;">٥</span></div>
+              <div style="background:#fff;border:1.5px solid #f0d2a0;border-radius:13px;padding:11px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 8px 18px -14px rgba(224,145,46,.45);"><span style="font-size:13px;font-weight:700;color:#2a211b;">#١٢٤٨</span><div style="flex:1;display:flex;flex-direction:column;gap:2px;"><span style="font-size:10.5px;color:#4a3f36;">منيرة الحربي · ٣ أصناف</span><span style="font-size:8.5px;color:#cc3a33;font-weight:700;">متأخّر ١٨ د · VIP</span></div><div style="height:32px;padding:0 14px;border-radius:9px;background:#4e9466;color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>جاهز</div><div style="width:32px;height:32px;border-radius:9px;background:#f3ebdf;display:flex;align-items:center;justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#9b8b7c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+              <div style="background:#fff;border:1px solid #ece0d2;border-radius:13px;padding:11px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 16px -14px rgba(42,33,27,.3);"><span style="font-size:13px;font-weight:700;color:#2a211b;">#١٢٤٧</span><div style="flex:1;display:flex;flex-direction:column;gap:2px;"><span style="font-size:10.5px;color:#4a3f36;">سارة فؤاد · ١ صنف</span><span style="font-size:8.5px;color:#9b8b7c;">استلام من الفرع</span></div><div style="height:32px;padding:0 14px;border-radius:9px;background:#4e9466;color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>جاهز</div><div style="width:32px;height:32px;border-radius:9px;background:#f3ebdf;display:flex;align-items:center;justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 01-1-1v-5a2 2 0 012-2h14a2 2 0 012 2v5a1 1 0 01-1 1h-2M8 14h8v6H8z" stroke="#9b8b7c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+            </div>
+          </div>
+        </div>
+        <!-- THREAD PANE (left) -->
+        <div style="width:374px;flex:none;background:#f4ece0;display:flex;flex-direction:column;overflow:hidden;">
+          <div style="height:48px;flex:none;display:flex;align-items:center;gap:9px;padding:0 16px;border-bottom:1px solid #e6dccb;background:#faf6ef;">
+            <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(145deg,#c2602f,#a8432a);display:flex;align-items:center;justify-content:center;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg></div>
+            <span style="font-size:13px;font-weight:700;color:#2a211b;">المساعد</span>
+            <span style="margin-inline-start:auto;font-size:9px;color:#4e9466;display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:#4e9466;"></span>متصل</span>
+          </div>
+          <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:9px;padding:14px 14px 6px;">
+            <div style="align-self:flex-start;max-width:90%;display:flex;gap:7px;align-items:flex-end;">
+              <div style="width:24px;height:24px;border-radius:8px;background:linear-gradient(145deg,#c2602f,#a8432a);flex:none;display:flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 5L19 9.5l-5.4 1.5L12 16l-1.6-5L5 9.5 10.4 8 12 3z" fill="#fff"/></svg></div>
+              <div style="background:#fff;border:1px solid #ece0d2;border-radius:15px;border-bottom-right-radius:5px;padding:9px 12px;"><span style="font-size:11.5px;color:#3c322a;line-height:1.6;">هلا أبو فهد 👋 طلب #١٢٤٨ متأخّر ومنيرة (VIP) زعلانة. جهّزت رد، تبي أبعته؟</span></div>
+            </div>
+            <!-- escalation card -->
+            <div style="align-self:flex-start;width:240px;margin-inline-start:31px;background:#fff;border:1px solid #f1c9c4;border-radius:14px;overflow:hidden;box-shadow:0 10px 24px -16px rgba(204,58,51,.5);">
+              <div style="background:#fbe7e4;padding:7px 11px;display:flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:#cc3a33;animation:mai-pulse 1.6s infinite;"></span><span style="font-size:9px;font-weight:700;color:#b4322b;">تصعيد · شكوى تأخير</span><span style="margin-inline-start:auto;font-size:9px;font-weight:700;color:#cc3a33;">٢:١٤</span></div>
+              <div style="padding:10px 11px;display:flex;flex-direction:column;gap:8px;">
+                <div style="display:flex;align-items:center;gap:7px;"><div style="width:28px;height:28px;border-radius:50%;background:#e9d6c4;"></div><div style="display:flex;flex-direction:column;line-height:1.25;"><span style="font-size:10.5px;font-weight:600;color:#2a211b;">منيرة الحربي</span><span style="font-size:8px;color:#9b8b7c;">طلب #١٢٤٨ · VIP</span></div></div>
+                <div style="background:#fbefd9;border:1px dashed #e0b066;border-radius:9px;padding:7px 9px;"><span style="font-size:8px;font-weight:700;color:#9a6c1e;display:block;margin-bottom:3px;">ردّ مقترح من المساعد</span><span style="font-size:9.5px;color:#6a5c4e;line-height:1.5;">«نعتذر منك يا منيرة، طلبك بالطريق ووصل خلال ٥ دقايق…»</span></div>
+                <div style="display:flex;gap:6px;"><div style="flex:1;height:31px;border-radius:9px;background:#b5502e;color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;">أرسل الرد</div><div style="height:31px;padding:0 13px;border-radius:9px;border:1px solid #ddc9b6;color:#6a5c4e;font-size:11px;font-weight:600;display:flex;align-items:center;">تولّ</div></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;padding:4px 14px 0;overflow:hidden;">
+            <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">أرقام اليوم</span>
+            <span style="font-size:10.5px;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;color:#6a5c4e;white-space:nowrap;">سوِّ عرض</span>
+          </div>
+          <div style="padding:10px 14px 12px;display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;height:40px;border-radius:999px;background:#fff;border:1px solid #e4d8c8;display:flex;align-items:center;padding:0 14px;"><span style="flex:1;font-size:11.5px;color:#a89683;">اكتب لمساعدك…</span></div>
+            <div style="width:40px;height:40px;border-radius:50%;background:#b5502e;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px rgba(181,80,46,.6);"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:12px;color:#6a5c4e;margin-top:14px;font-weight:500;">One canvas · <span style="color:#9b8b7c;">Pulse strip on top · Maître thread left · pipeline right · runs on the cashier PC</span></div>
+  </section>
+
+  <footer style="max-width:1340px;margin:14px auto 0;padding:22px 12px 0;border-top:1px solid #d9cbb8;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:16px;">
+    <p style="margin:0;max-width:680px;font-size:13px;line-height:1.6;color:#6a5c4e;font-family:'IBM Plex Sans';">The hybrid: a conversation-first console with Pulse's glance layer pinned on top and a real orders pipeline a tap away — everything else summoned as cards. Warm, Arabic-first, role-aware, dialect-aware, and ready for the till.</p>
+    <span style="font-size:11px;color:#a89683;font-family:'IBM Plex Sans';">MaitreAI · Maître × Pulse hybrid · hi-fi</span>
+  </footer>
+
+  <div data-end style="height:1px;"></div>
+</div>
+</x-dc>
+</body>
+</html>
