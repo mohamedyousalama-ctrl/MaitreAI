@@ -1,5 +1,5 @@
-<svg width="232" height="56" viewBox="0 0 232 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MaitreAi">
-  <title>MaitreAi</title>
+<svg width="232" height="56" viewBox="0 0 232 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MaitreAI">
+  <title>MaitreAI</title>
   <defs>
     <linearGradient id="lockGrad" x1="6" y1="5" x2="46" y2="49" gradientUnits="userSpaceOnUse">
       <stop stop-color="#e8a23a"/>
@@ -15,6 +15,6 @@
     <path d="M31.5 16.5 L39 15 L38 22.4" fill="none" stroke="#2a211b" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="62" y="37" font-family="'Readex Pro',system-ui,-apple-system,sans-serif" font-weight="700" font-size="29" letter-spacing="-0.5">
-    <tspan fill="#2a211b">Maitre</tspan><tspan fill="#b5502e">Ai</tspan>
+    <tspan fill="#2a211b">Maitre</tspan><tspan fill="#b5502e">AI</tspan>
   </text>
 </svg>
