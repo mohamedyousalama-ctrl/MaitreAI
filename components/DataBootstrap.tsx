@@ -13,6 +13,7 @@ import { getBrowserTenant } from "@/lib/db/tenant";
 import { useRestaurantStore } from "@/lib/store";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useOrderStore } from "@/lib/order-store";
+import { usePaymentStore } from "@/lib/payment-store";
 
 export function DataBootstrap() {
   useEffect(() => {
@@ -26,13 +27,16 @@ export function DataBootstrap() {
       await useRestaurantStore.getState().initFromDb(tenant.restaurantId);
       const stopConv = await useConversationStore.getState().initFromDb(tenant.restaurantId);
       const stopOrders = await useOrderStore.getState().initFromDb(tenant.restaurantId);
+      const stopPay = await usePaymentStore.getState().initFromDb(tenant.restaurantId);
       if (cancelled) {
         stopConv?.();
         stopOrders?.();
+        stopPay?.();
       } else {
         cleanup = () => {
           stopConv?.();
           stopOrders?.();
+          stopPay?.();
         };
       }
     })();

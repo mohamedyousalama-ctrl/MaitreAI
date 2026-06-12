@@ -1,0 +1,77 @@
+// ============================================================================
+// MaitreAI — public mock-checkout API (Sprint 7 Pass 2)
+// Lets the customer's checkout page (opened cross-device, unauthenticated)
+// resolve and advance a payment session via the service role. The manager sees
+// the outcome through the order's payment status (orders realtime). This is the
+// MOCK provider; a real provider + signed webhooks arrive in a later sprint.
+// ============================================================================
+
+import { NextResponse, type NextRequest } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+const ACTIVE = new Set(["created", "link_sent", "opened"]);
+
+async function loadView(admin: ReturnType<typeof createAdminClient>, sessionId: string) {
+  const { data } = await admin!
+    .from("payment_sessions")
+    .select("id, status, amount, currency, expires_at, order_id, restaurant_id, orders(order_number, customers(name)), restaurants(name)")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!data) return null;
+  const row = data as Record<string, any>;
+  return {
+    id: row.id,
+    status: row.status as string,
+    amount: Number(row.amount),
+    currency: row.currency as string,
+    expiresAt: row.expires_at ? new Date(row.expires_at).getTime() : 0,
+    orderId: row.order_id as string,
+    orderNumber: row.orders?.order_number ?? "",
+    customerName: row.orders?.customers?.name ?? "",
+    restaurantName: row.restaurants?.name ?? "",
+  };
+}
+
+export async function GET(_req: NextRequest, { params }: { params: { sessionId: string } }) {
+  const admin = createAdminClient();
+  if (!admin) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+  const view = await loadView(admin, params.sessionId);
+  if (!view) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
+
+  // Lazily expire on read.
+  if (ACTIVE.has(view.status) && view.expiresAt && Date.now() > view.expiresAt) {
+    await admin.from("payment_sessions").update({ status: "expired", updated_at: new Date().toISOString() }).eq("id", view.id);
+    view.status = "expired";
+  }
+  return NextResponse.json({ ok: true, session: view });
+}
+
+export async function POST(req: NextRequest, { params }: { params: { sessionId: string } }) {
+  const admin = createAdminClient();
+  if (!admin) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+
+  const body = (await req.json().catch(() => ({}))) as { action?: string; method?: string };
+  const sessionId = params.sessionId;
+  const view = await loadView(admin, sessionId);
+  if (!view) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
+  if (!ACTIVE.has(view.status) && body.action !== "open") {
+    return NextResponse.json({ ok: true, session: view }); // already resolved — no-op
+  }
+
+  const now = new Date().toISOString();
+  if (body.action === "open") {
+    if (view.status === "created" || view.status === "link_sent") {
+      await admin.from("payment_sessions").update({ status: "opened", updated_at: now }).eq("id", sessionId);
+      view.status = "opened";
+    }
+  } else if (body.action === "success") {
+    await admin.from("payment_sessions").update({ status: "paid", provider_ref: body.method ?? "mada", updated_at: now }).eq("id", sessionId);
+    await admin.from("orders").update({ payment_status: "paid", order_status: "paid", updated_at: now }).eq("id", view.orderId);
+    view.status = "paid";
+  } else if (body.action === "fail") {
+    await admin.from("payment_sessions").update({ status: "failed", updated_at: now }).eq("id", sessionId);
+    await admin.from("orders").update({ payment_status: "failed", updated_at: now }).eq("id", view.orderId);
+    view.status = "failed";
+  }
+  return NextResponse.json({ ok: true, session: view });
+}
