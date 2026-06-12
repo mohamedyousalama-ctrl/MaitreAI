@@ -12,6 +12,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { getBrowserTenant } from "@/lib/db/tenant";
 import { useRestaurantStore } from "@/lib/store";
 import { useConversationStore } from "@/lib/conversation-store";
+import { useOrderStore } from "@/lib/order-store";
 
 export function DataBootstrap() {
   useEffect(() => {
@@ -24,8 +25,16 @@ export function DataBootstrap() {
       if (!tenant || cancelled) return;
       await useRestaurantStore.getState().initFromDb(tenant.restaurantId);
       const stopConv = await useConversationStore.getState().initFromDb(tenant.restaurantId);
-      if (cancelled) stopConv?.();
-      else cleanup = () => stopConv?.();
+      const stopOrders = await useOrderStore.getState().initFromDb(tenant.restaurantId);
+      if (cancelled) {
+        stopConv?.();
+        stopOrders?.();
+      } else {
+        cleanup = () => {
+          stopConv?.();
+          stopOrders?.();
+        };
+      }
     })();
 
     return () => {

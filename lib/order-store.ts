@@ -1,8 +1,9 @@
 // ============================================================================
-// MaitreAI — Local order engine store (Zustand + localStorage persist)
-// Turns conversation draft orders into real persisted orders, drives the
-// Orders/Kitchen pages, and notifies the related conversation on status change.
-// No backend, no payment provider, no network.
+// MaitreAI — Order engine store (Sprint 7 Pass 2)
+// DB-backed when Supabase is configured: orders load from the tenant, mutations
+// write through to Postgres, and realtime keeps every device in sync. Demo mode
+// keeps the original seed + localStorage behavior. The event log is client-side
+// (Pass 2); status/payment/totals/items are persisted.
 // ============================================================================
 
 "use client";
@@ -20,6 +21,15 @@ import {
   ORDER_STATUS_LABELS,
   PAYMENT_STATUS_LABELS,
 } from "./orders";
+import { createClient } from "./supabase/client";
+import {
+  ensureCustomerId,
+  insertOrderDb,
+  loadOrders,
+  subscribeOrders,
+  updateOrderDb,
+} from "./db/orders";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Brain } from "./ai/engine";
 import type {
   DraftOrder,
@@ -50,6 +60,12 @@ interface OrderState {
   orders: LocalOrder[];
   nextNumber: number;
 
+  _sb: SupabaseClient | null;
+  _rid: string | null;
+  dbReady: boolean;
+  initFromDb: (restaurantId: string) => Promise<(() => void) | undefined>;
+  reload: () => Promise<void>;
+
   createOrderFromDraft: (input: CreateOrderInput, brain: Brain) => LocalOrder;
   updateOrderStatus: (id: string, status: OrderStatusKey, actor?: OrderActor) => void;
   updatePaymentStatus: (id: string, status: PaymentStatusKey, actor?: OrderActor) => void;
@@ -61,6 +77,8 @@ interface OrderState {
   getLatestOrderByConversation: (conversationId: string) => LocalOrder | undefined;
   resetOrders: () => void;
 }
+
+const fire = (p: PromiseLike<unknown>) => void Promise.resolve(p).then(undefined, (e) => console.error("[orders:db]", e));
 
 const ev = (type: string, label: string, actor: OrderActor): OrderEvent => ({
   id: newId("ev"),
@@ -76,13 +94,42 @@ function notifyConversation(order: LocalOrder | undefined, text: string | undefi
   useConversationStore.getState().addSystemMessage(order.conversationId, text);
 }
 
+let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+
 export const useOrderStore = create<OrderState>()(
   persist(
     (set, get) => ({
       orders: buildSeedOrders(),
       nextNumber: 1048,
 
+      _sb: null,
+      _rid: null,
+      dbReady: false,
+
+      initFromDb: async (restaurantId) => {
+        const sb = createClient();
+        if (!sb) return undefined;
+        set({ _sb: sb, _rid: restaurantId });
+        const orders = await loadOrders(sb, restaurantId);
+        set({ orders, dbReady: true });
+        return subscribeOrders(sb, restaurantId, () => {
+          clearTimeout(reloadTimer);
+          reloadTimer = setTimeout(() => fire(get().reload()), 200);
+        });
+      },
+
+      reload: async () => {
+        const { _sb, _rid } = get();
+        if (!_sb || !_rid) return;
+        const fresh = await loadOrders(_sb, _rid);
+        // Keep any optimistic order not yet visible in the DB result.
+        const freshIds = new Set(fresh.map((o) => o.id));
+        const pending = get().orders.filter((o) => !freshIds.has(o.id) && o.createdAt > Date.now() - 5000);
+        set({ orders: [...pending, ...fresh] });
+      },
+
       createOrderFromDraft: (input, brain) => {
+        const { _sb, _rid } = get();
         const items = buildOrderItems(input.draft, brain, () => newId("oi"));
         const area =
           input.fulfillmentType === "delivery" && input.deliveryAreaId
@@ -94,7 +141,7 @@ export const useOrderStore = create<OrderState>()(
         const number = get().nextNumber;
 
         const order: LocalOrder = {
-          id: newId("ord"),
+          id: _sb ? crypto.randomUUID() : newId("ord"),
           orderNumber: String(number),
           conversationId: input.conversationId,
           customerId: input.customerId,
@@ -121,6 +168,14 @@ export const useOrderStore = create<OrderState>()(
         };
 
         set((s) => ({ orders: [order, ...s.orders], nextNumber: s.nextNumber + 1 }));
+
+        if (_sb && _rid) {
+          fire(
+            ensureCustomerId(_sb, _rid, order.customerPhone, order.customerName).then((cid) =>
+              insertOrderDb(_sb, _rid, order, cid)
+            )
+          );
+        }
         return order;
       },
 
@@ -133,6 +188,8 @@ export const useOrderStore = create<OrderState>()(
             o.id === id ? { ...o, orderStatus: status, updatedAt: event.timestamp, events: [...o.events, event] } : o
           ),
         }));
+        const { _sb } = get();
+        if (_sb) fire(updateOrderDb(_sb, id, { order_status: status }));
         notifyConversation(order, orderStatusMessage(order, status));
         if (status === "delivered" && order.conversationId) {
           useConversationStore.getState().setStatus(order.conversationId, "طلب مكتمل");
@@ -146,6 +203,8 @@ export const useOrderStore = create<OrderState>()(
             o.id === id ? { ...o, paymentStatus: status, updatedAt: event.timestamp, events: [...o.events, event] } : o
           ),
         }));
+        const { _sb } = get();
+        if (_sb) fire(updateOrderDb(_sb, id, { payment_status: status }));
       },
 
       updateKitchenStatus: (id, status, actor = "human") => {
@@ -155,7 +214,7 @@ export const useOrderStore = create<OrderState>()(
             o.id === id ? { ...o, kitchenStatus: status, updatedAt: event.timestamp, events: [...o.events, event] } : o
           ),
         }));
-        // Keep order status in sync with kitchen progress (notifies conversation).
+        // Keep order status in sync with kitchen progress (persists + notifies).
         get().updateOrderStatus(id, orderStatusForKitchen(status), actor);
       },
 
@@ -171,6 +230,8 @@ export const useOrderStore = create<OrderState>()(
               : o
           ),
         }));
+        const { _sb } = get();
+        if (_sb) fire(updateOrderDb(_sb, id, { order_status: "cancelled", payment_status: refunded }));
         notifyConversation(order, orderStatusMessage(order, "cancelled"));
       },
 
@@ -185,6 +246,8 @@ export const useOrderStore = create<OrderState>()(
               : o
           ),
         }));
+        const { _sb } = get();
+        if (_sb) fire(updateOrderDb(_sb, id, { payment_status: "paid", order_status: "paid" }));
         notifyConversation(order, `تم استلام الدفع لطلب #${order.orderNumber}. بدأ تجهيز الطلب.`);
       },
 
@@ -207,6 +270,7 @@ export const useOrderStore = create<OrderState>()(
     {
       name: "maitreai-orders",
       version: 1,
+      partialize: (s) => ({ orders: s.orders, nextNumber: s.nextNumber }),
     }
   )
 );
