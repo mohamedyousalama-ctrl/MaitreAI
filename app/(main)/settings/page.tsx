@@ -7,6 +7,7 @@ import { TextField, SelectField, TextAreaField } from "@/components/ui/FormContr
 import { StatusSelector } from "@/components/ui/StatusSelector";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { WhatsAppStatusCard } from "@/components/messaging/WhatsAppStatusCard";
+import { PrintSettingsCard } from "@/components/settings/PrintSettingsCard";
 import { OutboundLogList } from "@/components/messaging/MessageLogList";
 import { useMessageLogStore } from "@/lib/messaging/message-log-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
@@ -136,6 +137,9 @@ export default function SettingsPage() {
 
           {/* WhatsApp connection — live status (Sprint 6) */}
           <WhatsAppStatusCard />
+
+          {/* Print settings — auto-print + paper width (S9-5 / §O #5) */}
+          <PrintSettingsCard />
 
           {/* Payment provider — placeholder */}
           <SettingsCard title="بوابة الدفع" description="مزود خدمة الدفع وروابط الدفع" icon={CreditCard} accentBg="bg-promotions">

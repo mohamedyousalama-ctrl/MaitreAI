@@ -8,7 +8,7 @@
 // feeds the Pulse strip. Replaces the deleted kitchen board.
 // ============================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOrderStore } from "@/lib/order-store";
 import { usePaymentStore } from "@/lib/payment-store";
 import { useHasHydrated } from "@/lib/store";
@@ -17,11 +17,11 @@ import { ORDER_STATUS_LABELS } from "@/lib/orders";
 import { Printer, Bike, ShoppingBag, ChevronDown, Clock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-function OrderDrawer({ o, onClose, onAdvance, onCancel }: { o: LocalOrder; onClose: () => void; onAdvance: (o: LocalOrder) => void; onCancel: (o: LocalOrder) => void }) {
+function OrderDrawer({ o, onClose, onAdvance, onCancel, printWidth }: { o: LocalOrder; onClose: () => void; onAdvance: (o: LocalOrder) => void; onCancel: (o: LocalOrder) => void; printWidth: PrintWidth }) {
   const next = nextStatus(o);
   const closable = o.orderStatus !== "cancelled" && o.orderStatus !== "delivered";
   const [sending, setSending] = useState<"idle" | "loading" | "ok" | "err">("idle");
-  const openImage = (kind: "receipt" | "ticket") => window.open(`/api/orders/${o.id}/image?kind=${kind}`, "_blank");
+  const openImage = (kind: "receipt" | "ticket") => window.open(`/api/orders/${o.id}/image?kind=${kind}&w=${printWidth}`, "_blank");
   async function sendReceipt() {
     setSending("loading");
     try {
@@ -82,7 +82,7 @@ function OrderDrawer({ o, onClose, onAdvance, onCancel }: { o: LocalOrder; onClo
                 {ADVANCE_LABEL[next] ?? "التالي"}
               </button>
             )}
-            <button onClick={() => openImage("ticket")} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">
+            <button onClick={() => printTicket(o.id, printWidth)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">
               <Printer className="h-3.5 w-3.5" /> تذكرة المطبخ
             </button>
             <button onClick={() => openImage("receipt")} className="rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">إيصال العميل</button>
@@ -159,6 +159,22 @@ function printReceipt(o: LocalOrder) {
   w.print();
 }
 
+type PrintWidth = "58mm" | "80mm" | "standard";
+
+/** Open the server-rendered kitchen-ticket PNG and trigger the device-OS print
+ *  dialog (no driver code — browser/share-sheet handles the actual printer). */
+function printTicket(orderId: string, width: PrintWidth) {
+  const w = window.open("", "_blank", "width=420,height=720");
+  if (!w) return;
+  const url = `/api/orders/${orderId}/image?kind=ticket&w=${width}`;
+  w.document.write(
+    `<html dir="rtl"><head><meta charset="utf-8"><title>تذكرة المطبخ</title>
+     <style>@page{margin:6mm}body{margin:0}img{width:100%;display:block}</style></head>
+     <body><img src="${url}" onload="window.focus();window.print();"></body></html>`
+  );
+  w.document.close();
+}
+
 function OrderCard({ o, onAdvance, onSelect }: { o: LocalOrder; onAdvance: (o: LocalOrder) => void; onSelect: (o: LocalOrder) => void }) {
   const next = nextStatus(o);
   const paid = o.paymentStatus === "paid";
@@ -227,9 +243,53 @@ export default function OrdersPipeline() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedOrder = selectedId ? orders.find((o) => o.id === selectedId) : null;
 
+  // S9-5 printing: per-tenant auto-print + paper width, device-level printer flag.
+  const [autoPrint, setAutoPrint] = useState(false);
+  const [printWidth, setPrintWidth] = useState<PrintWidth>("standard");
+  const [printerOnline, setPrinterOnline] = useState(true);
+  const seenRef = useRef<Set<string>>(new Set());
+  const seededRef = useRef(false);
+
   useEffect(() => {
     sweepExpired();
   }, [sweepExpired]);
+
+  useEffect(() => {
+    setPrinterOnline(localStorage.getItem("maitreai-printer-offline") !== "1");
+    fetch("/api/settings/print")
+      .then((r) => r.json())
+      .then((d) => {
+        if (typeof d.autoPrint === "boolean") setAutoPrint(d.autoPrint);
+        if (d.printWidth) setPrintWidth(d.printWidth as PrintWidth);
+      })
+      .catch(() => {});
+  }, []);
+
+  function togglePrinter() {
+    setPrinterOnline((v) => {
+      const next = !v;
+      localStorage.setItem("maitreai-printer-offline", next ? "0" : "1");
+      return next;
+    });
+  }
+
+  // Auto-print newly-arrived orders once (seed seen-set on first load so existing
+  // orders don't print). Suppressed when the printer is marked offline.
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!seededRef.current) {
+      orders.forEach((o) => seenRef.current.add(o.id));
+      seededRef.current = true;
+      return;
+    }
+    for (const o of orders) {
+      if (seenRef.current.has(o.id)) continue;
+      seenRef.current.add(o.id);
+      if (autoPrint && printerOnline && o.orderStatus === "pending_confirmation") {
+        printTicket(o.id, printWidth);
+      }
+    }
+  }, [orders, hydrated, autoPrint, printerOnline, printWidth]);
 
   const advance = (o: LocalOrder) => {
     const n = nextStatus(o);
@@ -265,6 +325,24 @@ export default function OrdersPipeline() {
         <h1 className="text-xl font-bold text-[#2a211b]">الطلبات</h1>
         <span className="text-sm text-[#9b8b7c]">{hydrated ? orders.length : 0} طلب</span>
       </div>
+
+      {/* Printing status (S9-5 / §O #5): auto-print info, or printer-offline
+          degraded banner with a manual-print reminder + a re-enable control. */}
+      {autoPrint && !printerOnline ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e7c9bf] bg-[#fbeee9] px-4 py-2.5 text-sm">
+          <span className="font-semibold text-[#cc3a33]">⚠ الطابعة غير متصلة — اطبع الطلبات يدوياً من زر «تذكرة المطبخ».</span>
+          <button onClick={togglePrinter} className="rounded-lg border border-[#cc3a33] px-3 py-1.5 text-xs font-semibold text-[#cc3a33] hover:bg-white">
+            الطابعة متصلة الآن
+          </button>
+        </div>
+      ) : autoPrint ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#cde3d4] bg-[#f0f7f2] px-4 py-2.5 text-sm">
+          <span className="font-semibold text-[#3c7a52]">🖨️ الطباعة التلقائية مفعّلة · الطابعة متصلة</span>
+          <button onClick={togglePrinter} className="rounded-lg border border-[#cde3d4] px-3 py-1.5 text-xs font-semibold text-[#3c7a52] hover:bg-white">
+            تعطيل (الطابعة غير متصلة)
+          </button>
+        </div>
+      ) : null}
 
       {/* Filters (§R3) */}
       <div className="flex flex-wrap gap-2">
@@ -337,6 +415,7 @@ export default function OrdersPipeline() {
       {selectedOrder && (
         <OrderDrawer
           o={selectedOrder}
+          printWidth={printWidth}
           onClose={() => setSelectedId(null)}
           onAdvance={(o) => advance(o)}
           onCancel={(o) => {

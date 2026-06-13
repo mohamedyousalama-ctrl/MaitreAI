@@ -83,58 +83,71 @@ function fmtDate(iso?: string): string {
   return `${dd}/${mm} · ${h}:${min} ${mer}`;
 }
 
-// Tiny SVG text helpers (RTL right-aligned labels / LTR-anchored amounts).
-const W = 600;
-const PAD = 40;
-const RIGHT = W - PAD;
-const LEFT = PAD;
-function tRight(y: number, text: string, size: number, fill: string, weight = 400) {
-  return `<text x="${RIGHT}" y="${y}" font-family="Noto Sans Arabic" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="end">${esc(text)}</text>`;
+// Width presets. Thermal widths print clean on the rolls restaurants actually
+// own; "standard" is for A4/letter or a phone share-sheet. The strategy stays
+// device-OS print (browser dialog / share sheet) + the PNG — no driver code.
+export type ReceiptWidth = "58mm" | "80mm" | "standard";
+export const RECEIPT_WIDTHS: Record<ReceiptWidth, number> = { "58mm": 384, "80mm": 576, standard: 600 };
+export function toReceiptWidth(v: string | null | undefined): ReceiptWidth {
+  return v === "58mm" || v === "80mm" ? v : "standard";
 }
-function tLeft(y: number, text: string, size: number, fill: string, weight = 400) {
-  return `<text x="${LEFT}" y="${y}" font-family="Noto Sans Arabic" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="start">${esc(text)}</text>`;
-}
-function tMid(y: number, text: string, size: number, fill: string, weight = 400) {
-  return `<text x="${W / 2}" y="${y}" font-family="Noto Sans Arabic" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="middle">${esc(text)}</text>`;
-}
-function rule(y: number, color = "#e4d8c8") {
-  return `<line x1="${LEFT}" y1="${y}" x2="${RIGHT}" y2="${y}" stroke="${color}" stroke-width="1.5"/>`;
+
+/** Per-width layout context: scaled SVG text/line helpers (RTL aware). */
+function layout(width: ReceiptWidth) {
+  const W = RECEIPT_WIDTHS[width];
+  const k = W / 600; // scale the 600px base design down for narrow rolls
+  const s = (n: number) => Math.round(n * k);
+  const PAD = s(40);
+  const RIGHT = W - PAD;
+  const LEFT = PAD;
+  const t = (x: number, anchor: string, y: number, text: string, size: number, fill: string, weight: number) =>
+    `<text x="${x}" y="${y}" font-family="Noto Sans Arabic" font-size="${s(size)}" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}">${esc(text)}</text>`;
+  return {
+    W,
+    s,
+    PAD,
+    tRight: (y: number, text: string, size: number, fill: string, weight = 400) => t(RIGHT, "end", y, text, size, fill, weight),
+    tLeft: (y: number, text: string, size: number, fill: string, weight = 400) => t(LEFT, "start", y, text, size, fill, weight),
+    tMid: (y: number, text: string, size: number, fill: string, weight = 400) => t(W / 2, "middle", y, text, size, fill, weight),
+    rule: (y: number, color = "#e4d8c8") => `<line x1="${LEFT}" y1="${y}" x2="${RIGHT}" y2="${y}" stroke="${color}" stroke-width="1.5"/>`,
+  };
 }
 
 // --- customer receipt (branded) ---------------------------------------------
-export function buildReceiptSvg(d: ReceiptData): { svg: string; width: number } {
+export function buildReceiptSvg(d: ReceiptData, width: ReceiptWidth = "standard"): { svg: string; width: number } {
+  const { W, s, PAD, tRight, tLeft, tMid, rule } = layout(width);
   const parts: string[] = [];
-  let y = 80;
+  let y = s(80);
   parts.push(tMid(y, d.restaurantName, 38, "#2a211b", 600));
-  y += 34;
+  y += s(34);
   parts.push(tMid(y, `إيصال طلب · ${ltr(d.orderNumber)}`, 20, "#b5502e", 500));
-  y += 26;
+  y += s(26);
   parts.push(tMid(y, `${FULFILL_AR[d.fulfillment]} · ${fmtDate(d.createdAt)}`, 18, "#9b8b7c"));
-  y += 28;
+  y += s(28);
   parts.push(rule(y));
-  y += 36;
+  y += s(36);
 
   for (const it of d.items) {
     parts.push(tRight(y, `${it.quantity}×  ${it.name}`, 26, "#2a211b", 500));
     parts.push(tLeft(y, money(it.total, d.currency), 26, "#2a211b", 500));
-    y += 34;
+    y += s(34);
     if (it.modifiers?.length) {
       parts.push(tRight(y, it.modifiers.join("، "), 20, "#9b8b7c"));
-      y += 28;
+      y += s(28);
     }
     if (it.notes) {
       parts.push(tRight(y, `ملاحظة: ${it.notes}`, 20, "#9b8b7c"));
-      y += 28;
+      y += s(28);
     }
   }
 
-  y += 6;
+  y += s(6);
   parts.push(rule(y));
-  y += 36;
+  y += s(36);
   const totalsRow = (label: string, amount: string, bold = false) => {
     parts.push(tRight(y, label, bold ? 28 : 22, bold ? "#2a211b" : "#6a5c4e", bold ? 600 : 400));
     parts.push(tLeft(y, amount, bold ? 28 : 22, bold ? "#b5502e" : "#6a5c4e", bold ? 600 : 400));
-    y += bold ? 40 : 32;
+    y += bold ? s(40) : s(32);
   };
   totalsRow("المجموع الفرعي", money(d.subtotal, d.currency));
   if (d.fulfillment === "delivery") totalsRow("رسوم التوصيل", money(d.deliveryFee, d.currency));
@@ -143,64 +156,65 @@ export function buildReceiptSvg(d: ReceiptData): { svg: string; width: number } 
 
   if (d.paymentStatus) {
     parts.push(tRight(y, `الدفع: ${PAYMENT_AR[d.paymentStatus] ?? d.paymentStatus}`, 20, "#6a5c4e"));
-    y += 30;
+    y += s(30);
   }
   if (d.fulfillment === "delivery" && d.address) {
     parts.push(tRight(y, `العنوان: ${d.address}`, 20, "#6a5c4e"));
-    y += 30;
+    y += s(30);
   }
 
-  y += 10;
+  y += s(10);
   parts.push(rule(y));
-  y += 36;
+  y += s(36);
   parts.push(tMid(y, `شكراً لطلبك من ${d.restaurantName}`, 20, "#b5502e", 500));
-  y += 30;
+  y += s(30);
 
   const H = y + PAD;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <rect width="${W}" height="${H}" fill="#faf6ef"/>
-<rect x="0" y="0" width="${W}" height="10" fill="#b5502e"/>
+<rect x="0" y="0" width="${W}" height="${s(10)}" fill="#b5502e"/>
 ${parts.join("\n")}
 </svg>`;
   return { svg, width: W };
 }
 
 // --- kitchen ticket (high-contrast, operator-facing) ------------------------
-export function buildKitchenTicketSvg(d: ReceiptData): { svg: string; width: number } {
+export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "standard"): { svg: string; width: number } {
+  const { W, s, PAD, tRight, tLeft, rule } = layout(width);
   const parts: string[] = [];
-  let y = 70;
+  let y = s(70);
   parts.push(tRight(y, `طلب ${ltr(d.orderNumber)}`, 42, "#000", 700));
   parts.push(tLeft(y, FULFILL_AR[d.fulfillment], 30, "#000", 700));
-  y += 32;
+  y += s(32);
   parts.push(tRight(y, fmtDate(d.createdAt), 20, "#444"));
   if (d.customerName) parts.push(tLeft(y, d.customerName, 20, "#444"));
-  y += 22;
+  y += s(22);
   parts.push(rule(y, "#000"));
-  y += 44;
+  y += s(44);
 
   for (const it of d.items) {
     parts.push(tRight(y, `${it.quantity}×  ${it.name}`, 34, "#000", 700));
-    y += 38;
+    y += s(38);
     if (it.modifiers?.length) {
       parts.push(tRight(y, `+ ${it.modifiers.join("، ")}`, 24, "#333"));
-      y += 30;
+      y += s(30);
     }
     if (it.notes) {
       parts.push(tRight(y, `ملاحظة: ${it.notes}`, 24, "#000", 700));
-      y += 30;
+      y += s(30);
     }
-    y += 6;
+    y += s(6);
   }
 
   parts.push(rule(y, "#000"));
-  y += 36;
+  y += s(36);
   if (d.fulfillment === "delivery" && d.address) {
     parts.push(tRight(y, `العنوان: ${d.address}`, 22, "#000"));
-    y += 30;
+    y += s(30);
   }
   if (d.customerPhone) {
     parts.push(tRight(y, `الهاتف: ${d.customerPhone}`, 22, "#000"));
-    y += 30;
+    y += s(30);
   }
 
   const H = y + PAD;
@@ -211,11 +225,11 @@ ${parts.join("\n")}
   return { svg, width: W };
 }
 
-export function renderReceiptPng(d: ReceiptData): Buffer {
-  const { svg, width } = buildReceiptSvg(d);
-  return rasterize(svg, width);
+export function renderReceiptPng(d: ReceiptData, width: ReceiptWidth = "standard"): Buffer {
+  const { svg, width: w } = buildReceiptSvg(d, width);
+  return rasterize(svg, w);
 }
-export function renderKitchenTicketPng(d: ReceiptData): Buffer {
-  const { svg, width } = buildKitchenTicketSvg(d);
-  return rasterize(svg, width);
+export function renderKitchenTicketPng(d: ReceiptData, width: ReceiptWidth = "standard"): Buffer {
+  const { svg, width: w } = buildKitchenTicketSvg(d, width);
+  return rasterize(svg, w);
 }

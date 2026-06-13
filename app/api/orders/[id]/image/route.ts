@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { loadReceiptData } from "@/lib/render/load";
-import { renderReceiptPng, renderKitchenTicketPng } from "@/lib/render/receipt";
+import { renderReceiptPng, renderKitchenTicketPng, toReceiptWidth } from "@/lib/render/receipt";
 
 export const runtime = "nodejs";
 
@@ -23,8 +23,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   const data = await loadReceiptData(supabase, params.id);
   if (!data) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
 
-  const kind = new URL(req.url).searchParams.get("kind") === "ticket" ? "ticket" : "receipt";
-  const png = kind === "ticket" ? renderKitchenTicketPng(data) : renderReceiptPng(data);
+  const sp = new URL(req.url).searchParams;
+  const kind = sp.get("kind") === "ticket" ? "ticket" : "receipt";
+  const width = toReceiptWidth(sp.get("w"));
+  const png = kind === "ticket" ? renderKitchenTicketPng(data, width) : renderReceiptPng(data, width);
 
   return new NextResponse(new Uint8Array(png), {
     status: 200,
