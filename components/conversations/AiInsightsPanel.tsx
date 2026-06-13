@@ -63,15 +63,15 @@ export function AiInsightsPanel({
   }
 
   return (
-    <div className="rounded-2xl border border-purple-100 bg-gradient-to-b from-purple-50/70 to-white p-4">
+    <div className="rounded-2xl bg-white/70 p-4 shadow-glass ring-1 ring-[#ece0d2]/60">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-sm font-bold text-promotions">
-          <Sparkles className="h-4 w-4" /> رؤى الموظف الذكي
+        <div className="flex items-center gap-1.5 text-sm font-bold text-[#b5502e]">
+          <Sparkles className="h-4 w-4" /> رؤى المساعد
         </div>
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
-            isHuman ? "bg-orange-50 text-orange-600" : "bg-brain/10 text-brain"
+            isHuman ? "bg-[#fbefd9] text-[#9a6c1e]" : "bg-[#e7f3ec] text-[#3c7a52]"
           )}
         >
           {isHuman ? <User className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
@@ -81,17 +81,17 @@ export function AiInsightsPanel({
 
       {/* Intent + confidence */}
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <div className="rounded-xl border border-slate-100 bg-white p-3">
-          <p className="text-xs text-slate-500">النية</p>
-          <p className="mt-0.5 text-sm font-bold text-slate-800">{intent ? INTENT_LABELS[intent] : "—"}</p>
+        <div className="rounded-xl bg-[#faf6ef] p-3 ring-1 ring-[#ece0d2]/50">
+          <p className="text-xs text-[#9b8b7c]">النية</p>
+          <p className="mt-0.5 text-sm font-bold text-[#2a211b]">{intent ? INTENT_LABELS[intent] : "—"}</p>
         </div>
-        <div className="rounded-xl border border-slate-100 bg-white p-3">
-          <p className="text-xs text-slate-500">الثقة</p>
+        <div className="rounded-xl bg-[#faf6ef] p-3 ring-1 ring-[#ece0d2]/50">
+          <p className="text-xs text-[#9b8b7c]">الثقة</p>
           <div className="mt-1">
             {typeof conversation.aiConfidence === "number" ? (
               <AIConfidenceBadge value={conversation.aiConfidence} />
             ) : (
-              <span className="text-sm text-slate-400">—</span>
+              <span className="text-sm text-[#b9a892]">—</span>
             )}
           </div>
         </div>
