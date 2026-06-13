@@ -116,6 +116,7 @@ export async function runCustomerTurn(
     isOpen: !!row.is_open,
     autoAccept: !!row.auto_accept_orders,
     handoverNote,
+    personaName: (row.agent_persona_name as string | null) ?? undefined,
   };
 
   const t0 = Date.now();
