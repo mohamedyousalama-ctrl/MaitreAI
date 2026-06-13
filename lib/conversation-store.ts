@@ -38,6 +38,15 @@ const cloneSeed = (): Conversation[] => JSON.parse(JSON.stringify(seedConversati
 const fire = (p: PromiseLike<unknown>) => void Promise.resolve(p).then(undefined, (e) => console.error("[conv:db]", e));
 const digits = (p: string) => p.replace(/\D/g, "");
 
+/** Push an operator/takeover message onto the real WhatsApp transport (S9-1).
+ *  Server-side it no-ops gracefully in test mode / non-WhatsApp channels. */
+const sendOverWhatsApp = (conversationId: string, messageId: string, text: string) =>
+  fetch("/api/whatsapp/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversationId, messageId, text }),
+  });
+
 interface ConversationState {
   conversations: Conversation[];
   selectedId: string;
@@ -175,7 +184,10 @@ export const useConversationStore = create<ConversationState>()(
             })),
           }));
           const { _sb, _rid } = get();
-          if (_sb && _rid) fire(insertMessageDb(_sb, _rid, convId, { id, sender: "human", text }));
+          // Persist first, then put it on the WhatsApp wire (so the send route
+          // can reconcile the row by id). No-ops in test/non-WhatsApp mode.
+          if (_sb && _rid)
+            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "human", text }).then(() => sendOverWhatsApp(convId, id, text)));
         },
 
         addSystemMessage: (convId, text) => {

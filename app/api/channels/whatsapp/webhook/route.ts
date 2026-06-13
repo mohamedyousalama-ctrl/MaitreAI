@@ -18,7 +18,9 @@ import { isWhatsAppConfigured, readWhatsAppEnv } from "@/lib/messaging/config";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMessage } from "@/lib/db/messages";
 import { resolveWebhookRestaurantId } from "@/lib/db/restaurants";
+import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // --- GET: verification handshake -------------------------------------------
@@ -100,17 +102,36 @@ export async function POST(req: NextRequest) {
   // otherwise fall back to console logging (test mode).
   let persisted = 0;
   let deduped = 0;
+  let responded = 0;
   const admin = createAdminClient();
   if (admin && messages.length > 0) {
     const restaurantId = await resolveWebhookRestaurantId(admin);
     if (restaurantId) {
+      // Persist first (dedupe on redelivery), collecting NEW conversations to answer.
+      const toAnswer = new Set<string>();
       for (const m of messages) {
         try {
           const r = await persistInboundMessage(admin, restaurantId, m);
-          if (r.inserted) persisted++;
-          else deduped++;
+          if (r.inserted) {
+            persisted++;
+            if (r.conversationId) toAnswer.add(r.conversationId);
+          } else {
+            deduped++;
+          }
         } catch (e) {
           console.error("[whatsapp:webhook] persist error", e);
+        }
+      }
+
+      // Run the Brain once per touched conversation and send the reply over
+      // WhatsApp. Synchronous (well within Meta's webhook timeout); failures are
+      // caught so we always return 200 and Meta never re-queues our LLM errors.
+      for (const conversationId of toAnswer) {
+        try {
+          const res = await respondAndSendWhatsApp(admin, restaurantId, conversationId);
+          if (res.status === "responded") responded++;
+        } catch (e) {
+          console.error("[whatsapp:webhook] respond error", e);
         }
       }
     } else {
@@ -129,5 +150,6 @@ export async function POST(req: NextRequest) {
     received: messages.length,
     persisted,
     deduped,
+    responded,
   });
 }
