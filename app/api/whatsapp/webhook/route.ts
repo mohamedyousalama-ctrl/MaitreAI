@@ -66,10 +66,51 @@ function verifySignature(rawBody: string, signatureHeader: string | null, appSec
 export async function POST(req: NextRequest) {
   const env = readWhatsAppEnv();
   const rawBody = await req.text();
+  const sig = req.headers.get("x-hub-signature-256");
+
+  // --- TEMP inbound diagnostic (S9): log EVERY POST attempt incl. 401s, so we
+  // can tell from the DB whether Meta is delivering and whether the signature
+  // matches. No message content — only shape + signature prefixes. Remove once
+  // the live round-trip is confirmed. ---
+  try {
+    const dbg = createAdminClient();
+    if (dbg) {
+      const expected = env.appSecret ? "sha256=" + createHmac("sha256", env.appSecret).update(rawBody).digest("hex") : null;
+      let shape: Record<string, unknown> = {};
+      try {
+        const p = JSON.parse(rawBody) as { object?: string; entry?: { changes?: { value?: { messages?: unknown[]; statuses?: unknown[] } }[] }[] };
+        const v = p?.entry?.[0]?.changes?.[0]?.value;
+        const msgs = (v?.messages ?? []) as { type?: string; from?: string }[];
+        shape = {
+          object: p?.object ?? null,
+          hasMessages: msgs.length > 0,
+          msgCount: msgs.length,
+          hasStatuses: ((v?.statuses ?? []) as unknown[]).length > 0,
+          firstType: msgs[0]?.type ?? null,
+          fromPresent: !!msgs[0]?.from,
+        };
+      } catch {
+        shape = { parseError: true };
+      }
+      await dbg.from("webhook_debug").insert({
+        detail: {
+          appSecretSet: !!env.appSecret,
+          sigPresent: !!sig,
+          sigReceivedPrefix: sig ? sig.slice(0, 23) : null,
+          sigComputedPrefix: expected ? expected.slice(0, 23) : null,
+          sigOk: !!sig && !!expected && sig === expected,
+          rawLen: rawBody.length,
+          ...shape,
+        },
+      });
+    }
+  } catch {
+    /* never let diagnostics break the webhook */
+  }
+  // --- end diagnostic ---
 
   // Signature check only when an app secret is configured (placeholder-friendly).
   if (env.appSecret) {
-    const sig = req.headers.get("x-hub-signature-256");
     if (!verifySignature(rawBody, sig, env.appSecret)) {
       return NextResponse.json({ ok: false, message: "invalid signature" }, { status: 401 });
     }
