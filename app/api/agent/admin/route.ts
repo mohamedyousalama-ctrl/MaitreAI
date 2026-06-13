@@ -18,7 +18,10 @@ import type { LlmMessage } from "@/lib/ai/llm/types";
 export const runtime = "nodejs";
 
 type Role = "manager" | "operation";
-const MANAGER_ONLY = new Set(["set_open", "set_agent", "payments_summary"]);
+const MANAGER_ONLY = new Set([
+  "set_open", "set_agent", "payments_summary",
+  "set_item_availability", "edit_price", "add_item", "remove_item",
+]);
 
 const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم (لست من يكتب البيانات). صنّف رسالة المدير إلى نية واحدة واستخرج المعاملات.
 أعد JSON مضغوطاً فقط بالشكل: {"intent":"...","params":{...},"sentence":"جملة عربية قصيرة واحدة"}.
@@ -27,6 +30,9 @@ const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم
 - set_open params:{"open":true|false} (فتح/إغلاق المطعم)
 - set_agent params:{"enabled":true|false} (تشغيل/إيقاف المساعد)
 - set_item_availability params:{"item":"اسم الصنف","available":true|false}
+- edit_price params:{"item":"اسم الصنف","price":رقم} (تغيير سعر صنف موجود)
+- add_item params:{"name":"اسم الصنف","price":رقم,"category":"التصنيف (اختياري)"} (إضافة صنف جديد للمنيو)
+- remove_item params:{"item":"اسم الصنف"} (حذف صنف من المنيو)
 - off_scope (إذا كان الطلب خارج تشغيل المطعم: عام/أخبار/غير متعلق) — اجعل sentence سطراً واحداً يعيد التوجيه بأدب لنطاق المطعم.
 لنوايا التغيير (set_*): اجعل الجملة اقتراحاً ينتظر التأكيد (مثل «جاهز لإغلاق المطعم بعد تأكيدك») — لا تقل «تمّ» قبل التنفيذ.
 لا تخترع بيانات. أعِد JSON فقط دون أي نص آخر.`;
@@ -84,6 +90,24 @@ export async function POST(req: Request) {
         if (!item) return NextResponse.json({ error: "item_not_found", message: `لم أجد صنف «${name}».` }, { status: 404 });
         await supabase.from("menu_items").update({ available: !!confirm.params.available }).eq("id", item.id);
         result = `${confirm.params.available ? "تم تفعيل" : "تم إيقاف"} «${item.name}».`;
+      } else if (confirm.intent === "edit_price") {
+        const id = String(confirm.params.id ?? "");
+        const price = Number(confirm.params.price);
+        if (!id || !Number.isFinite(price)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("menu_items").update({ price }).eq("id", id).eq("restaurant_id", restaurantId);
+        result = `تم تحديث سعر «${confirm.params.item}» إلى ${price}.`;
+      } else if (confirm.intent === "add_item") {
+        const name = String(confirm.params.name ?? "").trim();
+        const price = Number(confirm.params.price);
+        const category = String(confirm.params.category ?? "").trim();
+        if (!name || !Number.isFinite(price)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("menu_items").insert({ restaurant_id: restaurantId, name, price, category: category || null, available: true });
+        result = `تمت إضافة «${name}» للمنيو بسعر ${price}.`;
+      } else if (confirm.intent === "remove_item") {
+        const id = String(confirm.params.id ?? "");
+        if (!id) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("menu_items").delete().eq("id", id).eq("restaurant_id", restaurantId);
+        result = `تم حذف «${confirm.params.item}» من المنيو.`;
       } else {
         return NextResponse.json({ error: "unknown_action" }, { status: 400 });
       }
@@ -189,6 +213,43 @@ export async function POST(req: Request) {
     return NextResponse.json({
       sentence: parsed.sentence,
       preview: { intent, params: { item: item.name, available: after }, label: `توفّر «${item.name}»`, before: item.available ? "متوفر" : "غير متوفر", after: after ? "متوفر" : "غير متوفر" },
+    });
+  }
+
+  // Menu price/CRUD write intents → PREVIEW only (§P2). Money from DB.
+  if (intent === "edit_price" || intent === "add_item" || intent === "remove_item") {
+    const { data: rr } = await supabase.from("restaurants").select("currency,dialect").eq("id", restaurantId).single();
+    const cur = String(rr?.currency || (rr?.dialect === "saudi" ? "ر.س" : "ج.م"));
+    if (intent === "edit_price") {
+      const name = String(parsed.params.item ?? "");
+      const price = Number(parsed.params.price);
+      if (!name || !Number.isFinite(price)) return NextResponse.json({ sentence: "حدّد الصنف والسعر الجديد من فضلك.", intent: "off_scope" });
+      const { data: items } = await supabase.from("menu_items").select("id,name,price").eq("restaurant_id", restaurantId).ilike("name", `%${name}%`).limit(1);
+      const item = items?.[0] as { id: string; name: string; price: number } | undefined;
+      if (!item) return NextResponse.json({ sentence: `لم أجد صنف «${name}» في المنيو.`, intent: "off_scope" });
+      return NextResponse.json({
+        sentence: parsed.sentence,
+        preview: { intent, params: { id: item.id, item: item.name, price }, label: `سعر «${item.name}»`, before: `${item.price} ${cur}`, after: `${price} ${cur}` },
+      });
+    }
+    if (intent === "add_item") {
+      const name = String(parsed.params.name ?? "").trim();
+      const price = Number(parsed.params.price);
+      const category = String(parsed.params.category ?? "").trim();
+      if (!name || !Number.isFinite(price)) return NextResponse.json({ sentence: "حدّد اسم الصنف وسعره من فضلك.", intent: "off_scope" });
+      return NextResponse.json({
+        sentence: parsed.sentence,
+        preview: { intent, params: { name, price, category }, label: "إضافة صنف", before: "—", after: `${name} · ${price} ${cur}${category ? ` · ${category}` : ""}` },
+      });
+    }
+    // remove_item
+    const name = String(parsed.params.item ?? "");
+    const { data: items } = await supabase.from("menu_items").select("id,name").eq("restaurant_id", restaurantId).ilike("name", `%${name}%`).limit(1);
+    const item = items?.[0] as { id: string; name: string } | undefined;
+    if (!item) return NextResponse.json({ sentence: `لم أجد صنف «${name}» في المنيو.`, intent: "off_scope" });
+    return NextResponse.json({
+      sentence: parsed.sentence,
+      preview: { intent, params: { id: item.id, item: item.name }, label: "حذف صنف", before: item.name, after: "محذوف" },
     });
   }
 
