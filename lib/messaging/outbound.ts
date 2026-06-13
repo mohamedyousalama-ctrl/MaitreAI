@@ -8,7 +8,14 @@
 // ============================================================================
 
 import "server-only";
-import { whatsappAdapter, buildWhatsAppButtonsBody, buildWhatsAppListBody, sendWhatsAppBody } from "./adapters/whatsapp";
+import {
+  whatsappAdapter,
+  buildWhatsAppButtonsBody,
+  buildWhatsAppListBody,
+  buildWhatsAppImageBody,
+  sendWhatsAppBody,
+  uploadWhatsAppMedia,
+} from "./adapters/whatsapp";
 import { isWhatsAppConfigured } from "./config";
 import type { SendResult } from "./types";
 import type { Presentation } from "@/lib/ai/tools";
@@ -178,4 +185,39 @@ export async function sendWhatsAppInteractive(
     retries,
   });
   return { ...fb, fallbackToText: true };
+}
+
+export interface SendImageArgs {
+  to: string;
+  png: Buffer;
+  caption?: string;
+  lastInboundAtMs?: number | null;
+  retries?: number;
+}
+
+/** Upload a PNG and send it as a WhatsApp image (e.g. a receipt). */
+export async function sendWhatsAppImage(args: SendImageArgs): Promise<WindowedSendResult> {
+  const base = { channel: "whatsapp" as const, to: args.to };
+  if (!isWhatsAppConfigured()) {
+    return { ...base, ok: false, status: "skipped", error: "WhatsApp غير مُهيأ (الوضع التجريبي).", windowState: "test_mode", attempts: 0 };
+  }
+  if (args.lastInboundAtMs !== undefined && !within24hWindow(args.lastInboundAtMs)) {
+    return { ...base, ok: false, status: "failed", error: "خارج نافذة الـ24 ساعة — يتطلب قالباً معتمداً.", windowState: "out_of_window", attempts: 0 };
+  }
+
+  const upload = await uploadWhatsAppMedia(args.png, "image/png", "receipt.png");
+  if (!upload.ok || !upload.mediaId) {
+    return { ...base, ok: false, status: "failed", error: upload.error ?? "media upload failed", windowState: "in_window", attempts: 1 };
+  }
+
+  const body = buildWhatsAppImageBody(args.to, upload.mediaId, args.caption);
+  const retries = args.retries ?? 2;
+  let last: SendResult = { ...base, ok: false, status: "failed", error: "no attempt" };
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    last = await sendWhatsAppBody(body as Record<string, unknown>);
+    if (last.ok) return { ...last, windowState: "in_window", attempts: attempt + 1 };
+    if (!shouldRetry(last) || attempt === retries) break;
+    await delay(BACKOFF_MS[attempt] ?? 4000);
+  }
+  return { ...last, windowState: "in_window", attempts: retries + 1 };
 }

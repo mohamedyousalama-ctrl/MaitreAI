@@ -20,6 +20,19 @@ import { cn } from "@/lib/utils";
 function OrderDrawer({ o, onClose, onAdvance, onCancel }: { o: LocalOrder; onClose: () => void; onAdvance: (o: LocalOrder) => void; onCancel: (o: LocalOrder) => void }) {
   const next = nextStatus(o);
   const closable = o.orderStatus !== "cancelled" && o.orderStatus !== "delivered";
+  const [sending, setSending] = useState<"idle" | "loading" | "ok" | "err">("idle");
+  const openImage = (kind: "receipt" | "ticket") => window.open(`/api/orders/${o.id}/image?kind=${kind}`, "_blank");
+  async function sendReceipt() {
+    setSending("loading");
+    try {
+      const r = await fetch(`/api/orders/${o.id}/send-receipt`, { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      setSending(r.ok ? (j.status === "skipped" ? "ok" : "ok") : "err");
+    } catch {
+      setSending("err");
+    }
+    setTimeout(() => setSending("idle"), 2500);
+  }
   return (
     <div className="fixed inset-0 z-40">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
@@ -69,7 +82,18 @@ function OrderDrawer({ o, onClose, onAdvance, onCancel }: { o: LocalOrder; onClo
                 {ADVANCE_LABEL[next] ?? "التالي"}
               </button>
             )}
-            <button onClick={() => printReceipt(o)} className="rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">إعادة طباعة</button>
+            <button onClick={() => openImage("ticket")} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">
+              <Printer className="h-3.5 w-3.5" /> تذكرة المطبخ
+            </button>
+            <button onClick={() => openImage("receipt")} className="rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">إيصال العميل</button>
+            <button
+              onClick={sendReceipt}
+              disabled={sending === "loading"}
+              className="rounded-lg border border-[#cde3d4] bg-[#f0f7f2] px-3 py-2 text-xs font-semibold text-[#3c7a52] hover:bg-[#e6f1ea] disabled:opacity-60"
+            >
+              {sending === "loading" ? "جارٍ الإرسال…" : sending === "ok" ? "تم الإرسال ✓" : sending === "err" ? "تعذّر الإرسال" : "إرسال الإيصال للعميل"}
+            </button>
+            <button onClick={() => printReceipt(o)} className="rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">طباعة سريعة</button>
             {closable && (
               <button onClick={() => onCancel(o)} className="rounded-lg border border-[#e7c9bf] px-3 py-2 text-xs font-semibold text-[#cc3a33] hover:bg-[#fbeee9]">إلغاء الطلب</button>
             )}
@@ -209,7 +233,12 @@ export default function OrdersPipeline() {
 
   const advance = (o: LocalOrder) => {
     const n = nextStatus(o);
-    if (n) updateOrderStatus(o.id, n, "human");
+    if (!n) return;
+    // Accepting a new order (→ قيد التحضير) = confirm → send the receipt to the
+    // customer over WhatsApp (S9-3). No-ops gracefully in test mode / no phone.
+    const isConfirm = ["pending_confirmation", "pending_payment", "paid"].includes(o.orderStatus) && n === "preparing";
+    updateOrderStatus(o.id, n, "human");
+    if (isConfirm) void fetch(`/api/orders/${o.id}/send-receipt`, { method: "POST" }).catch(() => {});
   };
 
   const matchesFilter = (o: LocalOrder) => {

@@ -210,6 +210,39 @@ export async function sendWhatsAppBody(body: Record<string, unknown>): Promise<S
   return postToGraph(env, body);
 }
 
+/** Upload binary media (e.g. a receipt PNG) and return its media id for sending. */
+export async function uploadWhatsAppMedia(
+  bytes: Buffer,
+  mime = "image/png",
+  filename = "receipt.png"
+): Promise<SendResult & { mediaId?: string }> {
+  const env = readWhatsAppEnv();
+  if (!isWhatsAppConfigured(env)) return { ...SKIPPED("media") };
+  const url = `https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${env.phoneNumberId}/media`;
+  try {
+    const fd = new FormData();
+    fd.append("messaging_product", "whatsapp");
+    fd.append("file", new Blob([new Uint8Array(bytes)], { type: mime }), filename);
+    const res = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${env.accessToken}` }, body: fd });
+    const json: unknown = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, channel: CHANNEL, to: "media", status: "failed", error: `WhatsApp media ${res.status}`, raw: json };
+    return { ok: true, channel: CHANNEL, to: "media", status: "sent", mediaId: (json as { id?: string })?.id, raw: json };
+  } catch (err) {
+    return { ok: false, channel: CHANNEL, to: "media", status: "failed", error: err instanceof Error ? err.message : "network error" };
+  }
+}
+
+/** Image message body referencing an uploaded media id. */
+export function buildWhatsAppImageBody(to: string, mediaId: string, caption?: string) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "image",
+    image: { id: mediaId, ...(caption ? { caption } : {}) },
+  };
+}
+
 async function sendWhatsAppMessage(message: OutboundMessage): Promise<SendResult> {
   const env = readWhatsAppEnv();
   if (!isWhatsAppConfigured(env)) return SKIPPED(message.to);
