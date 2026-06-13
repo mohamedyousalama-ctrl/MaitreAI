@@ -27,13 +27,15 @@ export type WhatsAppMode = "connected" | "not_configured" | "test";
 /** Graph API version used when (and if) real sending is enabled. */
 export const WHATSAPP_GRAPH_VERSION = "v19.0";
 
-/** Read raw WhatsApp env vars. Server-only — values may be empty strings. */
+/** Read raw WhatsApp env vars. Server-only — values may be empty strings.
+ *  Trimmed: a trailing space/newline pasted into the dashboard would otherwise
+ *  silently break HMAC signature validation (different key bytes). */
 export function readWhatsAppEnv(): WhatsAppEnv {
   return {
-    accessToken: process.env.WHATSAPP_ACCESS_TOKEN ?? "",
-    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? "",
-    verifyToken: process.env.WHATSAPP_VERIFY_TOKEN ?? "",
-    appSecret: process.env.WHATSAPP_APP_SECRET ?? "",
+    accessToken: (process.env.WHATSAPP_ACCESS_TOKEN ?? "").trim(),
+    phoneNumberId: (process.env.WHATSAPP_PHONE_NUMBER_ID ?? "").trim(),
+    verifyToken: (process.env.WHATSAPP_VERIFY_TOKEN ?? "").trim(),
+    appSecret: (process.env.WHATSAPP_APP_SECRET ?? "").trim(),
   };
 }
 
