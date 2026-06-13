@@ -21,6 +21,7 @@ type Role = "manager" | "operation";
 const MANAGER_ONLY = new Set([
   "set_open", "set_agent", "payments_summary",
   "set_item_availability", "edit_price", "add_item", "remove_item",
+  "add_modifier", "edit_modifier", "remove_modifier",
 ]);
 
 const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم (لست من يكتب البيانات). صنّف رسالة المدير إلى نية واحدة واستخرج المعاملات.
@@ -33,6 +34,9 @@ const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم
 - edit_price params:{"item":"اسم الصنف","price":رقم} (تغيير سعر صنف موجود)
 - add_item params:{"name":"اسم الصنف","price":رقم,"category":"التصنيف (اختياري)"} (إضافة صنف جديد للمنيو)
 - remove_item params:{"item":"اسم الصنف"} (حذف صنف من المنيو)
+- add_modifier params:{"name":"اسم الإضافة","price_impact":رقم,"category":"التصنيف (اختياري)"} (إضافة خيار/إضافة جديدة مثل جبنة إضافية +٥)
+- edit_modifier params:{"modifier":"اسم الإضافة","price_impact":رقم} (تغيير سعر إضافة موجودة)
+- remove_modifier params:{"modifier":"اسم الإضافة"} (حذف إضافة)
 - off_scope (إذا كان الطلب خارج تشغيل المطعم: عام/أخبار/غير متعلق) — اجعل sentence سطراً واحداً يعيد التوجيه بأدب لنطاق المطعم.
 لنوايا التغيير (set_*): اجعل الجملة اقتراحاً ينتظر التأكيد (مثل «جاهز لإغلاق المطعم بعد تأكيدك») — لا تقل «تمّ» قبل التنفيذ.
 لا تخترع بيانات. أعِد JSON فقط دون أي نص آخر.`;
@@ -108,6 +112,24 @@ export async function POST(req: Request) {
         if (!id) return NextResponse.json({ error: "bad_params" }, { status: 400 });
         await supabase.from("menu_items").delete().eq("id", id).eq("restaurant_id", restaurantId);
         result = `تم حذف «${confirm.params.item}» من المنيو.`;
+      } else if (confirm.intent === "add_modifier") {
+        const name = String(confirm.params.name ?? "").trim();
+        const impact = Number(confirm.params.price_impact);
+        const category = String(confirm.params.category ?? "").trim();
+        if (!name || !Number.isFinite(impact)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("modifiers").insert({ restaurant_id: restaurantId, name, price_impact: impact, category: category || "", active: true });
+        result = `تمت إضافة خيار «${name}».`;
+      } else if (confirm.intent === "edit_modifier") {
+        const id = String(confirm.params.id ?? "");
+        const impact = Number(confirm.params.price_impact);
+        if (!id || !Number.isFinite(impact)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("modifiers").update({ price_impact: impact }).eq("id", id).eq("restaurant_id", restaurantId);
+        result = `تم تحديث قيمة «${confirm.params.modifier}» إلى ${impact}.`;
+      } else if (confirm.intent === "remove_modifier") {
+        const id = String(confirm.params.id ?? "");
+        if (!id) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("modifiers").delete().eq("id", id).eq("restaurant_id", restaurantId);
+        result = `تم حذف خيار «${confirm.params.modifier}».`;
       } else {
         return NextResponse.json({ error: "unknown_action" }, { status: 400 });
       }
@@ -250,6 +272,40 @@ export async function POST(req: Request) {
     return NextResponse.json({
       sentence: parsed.sentence,
       preview: { intent, params: { id: item.id, item: item.name }, label: "حذف صنف", before: item.name, after: "محذوف" },
+    });
+  }
+
+  // Modifier (add-on / option) write intents → PREVIEW only (§P2).
+  if (intent === "add_modifier" || intent === "edit_modifier" || intent === "remove_modifier") {
+    const { data: rr } = await supabase.from("restaurants").select("currency,dialect").eq("id", restaurantId).single();
+    const cur = String(rr?.currency || (rr?.dialect === "saudi" ? "ر.س" : "ج.م"));
+    const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+    if (intent === "add_modifier") {
+      const name = String(parsed.params.name ?? "").trim();
+      const impact = Number(parsed.params.price_impact);
+      const category = String(parsed.params.category ?? "").trim();
+      if (!name || !Number.isFinite(impact)) return NextResponse.json({ sentence: "حدّد اسم الإضافة وقيمتها من فضلك.", intent: "off_scope" });
+      return NextResponse.json({
+        sentence: parsed.sentence,
+        preview: { intent, params: { name, price_impact: impact, category }, label: "إضافة خيار", before: "—", after: `${name} · ${signed(impact)} ${cur}` },
+      });
+    }
+    const name = String(parsed.params.modifier ?? "");
+    const { data: mods } = await supabase.from("modifiers").select("id,name,price_impact").eq("restaurant_id", restaurantId).ilike("name", `%${name}%`).limit(1);
+    const mod = mods?.[0] as { id: string; name: string; price_impact: number } | undefined;
+    if (!mod) return NextResponse.json({ sentence: `لم أجد إضافة باسم «${name}».`, intent: "off_scope" });
+    if (intent === "edit_modifier") {
+      const impact = Number(parsed.params.price_impact);
+      if (!Number.isFinite(impact)) return NextResponse.json({ sentence: "حدّد القيمة الجديدة للإضافة.", intent: "off_scope" });
+      return NextResponse.json({
+        sentence: parsed.sentence,
+        preview: { intent, params: { id: mod.id, modifier: mod.name, price_impact: impact }, label: `قيمة «${mod.name}»`, before: `${signed(mod.price_impact)} ${cur}`, after: `${signed(impact)} ${cur}` },
+      });
+    }
+    // remove_modifier
+    return NextResponse.json({
+      sentence: parsed.sentence,
+      preview: { intent, params: { id: mod.id, modifier: mod.name }, label: "حذف خيار", before: mod.name, after: "محذوف" },
     });
   }
 
