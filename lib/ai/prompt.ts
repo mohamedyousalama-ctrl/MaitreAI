@@ -45,8 +45,8 @@ export interface BrainContext {
   personaName?: string;
 }
 
-// Provisional dialect-fitting fallback host names (PENDING owner sign-off — the
-// envelope reserves the final pick). Used only when a tenant hasn't set one.
+// Owner-approved (2026-06-13) dialect-fitting fallback host names. Used only
+// when a tenant hasn't set its own agent_persona_name.
 const DEFAULT_PERSONA_NAME: Record<string, string> = { saudi: "خالد", egyptian: "كريم" };
 
 function emojiRule(usage: AiToneConfig["emojiUsage"]): string {
