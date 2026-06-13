@@ -20,7 +20,7 @@ export function ConversationList({ conversations, activeId, onSelect }: Conversa
           className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-conversations"
         />
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {conversations.map((c) => {
           const active = c.id === activeId;
           return (

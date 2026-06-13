@@ -26,9 +26,27 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
   const [suggestErr, setSuggestErr] = useState<string | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
   const isHuman = conversation.owner === "human";
 
+  // Track whether the operator is parked near the bottom; if they've scrolled up
+  // to read history, don't yank them down on the next realtime message.
+  const onThreadScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
+  // Switching conversations → jump to the latest instantly.
   useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    stickToBottom.current = true;
+  }, [conversation.id]);
+
+  // New message / typing → auto-scroll ONLY if the operator was at the bottom.
+  useEffect(() => {
+    if (!stickToBottom.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [conversation.messages.length, conversation.aiTyping]);
 
@@ -128,7 +146,7 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-[#faf6ef] p-4">
+      <div ref={scrollRef} onScroll={onThreadScroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#faf6ef] p-4">
         {conversation.messages.map((m) => (
           <ChatBubble key={m.id} message={m} />
         ))}

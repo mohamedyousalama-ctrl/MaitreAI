@@ -45,13 +45,14 @@ export default function ConversationsPage() {
 
   return (
     <div className="h-[calc(100vh-9rem)] overflow-hidden rounded-2xl border border-[#ece0d2] bg-white">
-      {/* Desktop: panes */}
-      <div className="hidden h-full lg:grid lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_340px]">
-        <div className="border-l border-[#ece0d2]">
+      {/* Desktop: panes. grid-rows-1 (minmax(0,1fr)) gives the single row the full
+          card height + lets children shrink, so the thread pane can scroll. */}
+      <div className="hidden h-full lg:grid lg:grid-rows-1 lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_340px]">
+        <div className="min-h-0 border-l border-[#ece0d2]">
           <ConversationList conversations={conversations} activeId={selectedId} onSelect={selectConversation} />
         </div>
-        <div className="min-w-0">{chat}</div>
-        <div className="hidden border-r border-[#ece0d2] bg-[#faf6ef] xl:block">{context}</div>
+        <div className="min-h-0 min-w-0">{chat}</div>
+        <div className="hidden min-h-0 border-r border-[#ece0d2] bg-[#faf6ef] xl:block">{context}</div>
       </div>
 
       {/* Mobile: inbox → chat */}
