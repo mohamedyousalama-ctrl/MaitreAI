@@ -12,7 +12,7 @@
 // ============================================================================
 
 const BASE = process.env.BASE || "http://localhost:3000";
-const WEBHOOK = `${BASE}/api/channels/whatsapp/webhook`;
+const WEBHOOK = `${BASE}/api/whatsapp/webhook`;
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || "";
 
 let failures = 0;

@@ -8,7 +8,7 @@ between them is an **environment-variable change only, with zero code changes**.
 
 ```
 Customer WhatsApp message
-  → Meta delivers POST to  /api/channels/whatsapp/webhook
+  → Meta delivers POST to  /api/whatsapp/webhook
   → signature verified (X-Hub-Signature-256 vs WHATSAPP_APP_SECRET)
   → normalized + persisted (idempotent on channel_message_id — redeliveries deduped)
   → phone → customer → conversation → tenant
@@ -46,7 +46,7 @@ test-mode (skips sending) to live the moment `WHATSAPP_ACCESS_TOKEN` +
 
 ## Meta dashboard wiring (one-time, done in the Meta App, not the codebase)
 
-1. **Webhook callback URL:** `https://www.maitre.chat/api/channels/whatsapp/webhook`
+1. **Webhook callback URL:** `https://www.maitre.chat/api/whatsapp/webhook`
    (copyable from الإعدادات → ربط واتساب).
 2. **Verify token:** the value you set in `WHATSAPP_VERIFY_TOKEN`.
 3. **Subscribe** the app to the `messages` webhook field.

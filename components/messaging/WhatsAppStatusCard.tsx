@@ -43,7 +43,7 @@ export function WhatsAppStatusCard() {
   const lastOutbound = useMessageLogStore((s) => s.outbound[0]);
 
   useEffect(() => {
-    setWebhookUrl(`${window.location.origin}/api/channels/whatsapp/webhook`);
+    setWebhookUrl(`${window.location.origin}/api/whatsapp/webhook`);
     fetch("/api/channels/whatsapp/status")
       .then((r) => r.json())
       .then((d: WhatsAppStatus) => setStatus(d))
