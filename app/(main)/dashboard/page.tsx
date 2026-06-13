@@ -215,28 +215,69 @@ export default function MaitreConsole() {
     replyA("جاهز للمراجعة — راجع التفاصيل وانشر العرض:", { promoReview: true });
   }
 
-  // Free text routed into an active promo (amount / caption / scope by name).
+  // Free text routed into an active promo. Operator-appropriate (Layer A) — it
+  // NEVER dead-ends to a canned line; a request for a suggestion gets a grounded
+  // one, anything else a varied re-ask, and «إلغاء» exits the flow.
   function handlePromoText(text: string): boolean {
     const d = promoDraftRef.current;
     if (!d) return false;
-    const step = nextStep(d);
     push({ role: "user", text });
+    if (/إلغاء|الغاء|خروج|بطّل|بطل|كنسل/.test(text)) {
+      cancelPromo();
+      return true;
+    }
+    const items = promoMenuRef.current?.items ?? [];
+    const cats = promoMenuRef.current?.categories ?? [];
+    const wantsSuggestion = /رأي|راي|اقترح|اقتراح|نصيح|توصي|الأفضل|الافضل|إيش الأنسب|ايش الانسب|أنت|انت|إنت/.test(text);
+    const step = nextStep(d);
+
     if (step === "amount") {
       const n = parseFloat(text.replace(/[^\d.]/g, ""));
-      if (!isNaN(n)) { const nd = { ...d, amount: n }; setDraft(nd); askStep(nd); }
-      else replyA("اكتب رقماً من فضلك.");
+      if (!isNaN(n)) {
+        const nd = { ...d, amount: n };
+        setDraft(nd);
+        askStep(nd);
+      } else {
+        replyA("اكتب نسبة أو مبلغاً رقمياً، أو اختر قيمة من الأزرار 👆 (أو «إلغاء» للخروج).");
+      }
       return true;
     }
-    if (step === "review" || d.caption) {
-      const nd = { ...d, caption: text }; setDraft(nd); void showReview(nd); return true;
-    }
+
     if (step === "scope") {
-      const m = promoMenuRef.current?.items.find((i) => text.includes(i.name) || i.name.includes(text.trim()));
-      if (m) { const nd = { ...d, scopeType: "item" as const, scopeRef: m.id, scopeLabel: m.name }; setDraft(nd); askStep(nd); }
-      else replyA("اختر من الأزرار أو اكتب اسم صنف موجود في المنيو.");
+      const item = items.find((i) => text.includes(i.name) || i.name.includes(text.trim()));
+      if (item) {
+        const nd = { ...d, scopeType: "item" as const, scopeRef: item.id, scopeLabel: item.name };
+        setDraft(nd);
+        askStep(nd);
+        return true;
+      }
+      const cat = cats.find((c) => text.includes(c) || c.includes(text.trim()));
+      if (cat) {
+        const nd = { ...d, scopeType: "category" as const, scopeRef: cat, scopeLabel: cat };
+        setDraft(nd);
+        askStep(nd);
+        return true;
+      }
+      if (wantsSuggestion) {
+        const counts = new Map<string, number>();
+        for (const i of items) counts.set(i.category, (counts.get(i.category) ?? 0) + 1);
+        const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+        replyA(
+          top
+            ? `أقترح نبدأ العرض على «${top}» — من أكثر تصنيفاتك تنوّعاً. تحب؟ أو اختر تصنيفاً، أو «كل المنيو».`
+            : "تحب العرض على تصنيف معيّن، ولا على كل المنيو؟",
+          { promoChips: scopeChips() }
+        );
+        return true;
+      }
+      replyA("حدّد نطاق العرض: اختر تصنيفاً من الأزرار، أو «كل المنيو»، أو اكتب «إلغاء» للخروج.", { promoChips: scopeChips() });
       return true;
     }
-    replyA("اختر من الأزرار من فضلك.");
+
+    // caption / review step → treat the text as the caption.
+    const nd = { ...d, caption: text };
+    setDraft(nd);
+    void showReview(nd);
     return true;
   }
 
