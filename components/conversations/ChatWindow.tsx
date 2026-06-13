@@ -87,20 +87,20 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
   return (
     <div className="flex h-full flex-col bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 border-b border-[#ece0d2] bg-white px-4 py-3">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ece0d2] bg-white px-4 py-3">
+        <div className="flex min-w-0 items-center gap-3">
           <span
-            className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
             style={{ backgroundColor: conversation.avatarColor }}
           >
             {conversation.customer.charAt(0)}
           </span>
-          <div>
-            <p className="font-bold text-[#2a211b]">{conversation.customer}</p>
-            <p className="text-xs text-[#9b8b7c]">{conversation.phone}</p>
+          <div className="min-w-0">
+            <p className="truncate font-bold text-[#2a211b]">{conversation.customer}</p>
+            <p className="truncate text-xs text-[#9b8b7c]">{conversation.phone}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <span
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold",

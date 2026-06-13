@@ -50,7 +50,7 @@ export default function ConversationsPage() {
         <div className="border-l border-[#ece0d2]">
           <ConversationList conversations={conversations} activeId={selectedId} onSelect={selectConversation} />
         </div>
-        <div>{chat}</div>
+        <div className="min-w-0">{chat}</div>
         <div className="hidden border-r border-[#ece0d2] bg-[#faf6ef] xl:block">{context}</div>
       </div>
 

@@ -18,7 +18,7 @@ export function SettingsCard({ title, description, icon: Icon, accentBg = "bg-se
             <Icon className="h-5 w-5" />
           </span>
         )}
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <h2 className="font-bold text-slate-900">{title}</h2>
           {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
           <div className="mt-4 space-y-4">{children}</div>
