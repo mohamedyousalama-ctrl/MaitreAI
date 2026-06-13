@@ -10,7 +10,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
-import { sendWhatsAppText } from "./outbound";
+import { sendWhatsAppText, sendWhatsAppInteractive } from "./outbound";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export type RespondAndSendStatus =
@@ -107,8 +107,11 @@ export async function respondAndSendWhatsApp(
     return { status: "agent_error", error: detail };
   }
 
-  // 4. Put the reply on the WhatsApp wire.
-  const send = await sendWhatsAppText({ to: phone, text: outcome.reply, lastInboundAtMs });
+  // 4. Put the reply on the WhatsApp wire — as an interactive message when the
+  //    Brain presented options (degrades to numbered text on failure), else text.
+  const send = outcome.presentation
+    ? await sendWhatsAppInteractive({ to: phone, body: outcome.reply, presentation: outcome.presentation, lastInboundAtMs })
+    : await sendWhatsAppText({ to: phone, text: outcome.reply, lastInboundAtMs });
 
   if (send.status === "sent") {
     if (outcome.replyMessageId) {

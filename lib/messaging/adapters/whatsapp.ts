@@ -42,8 +42,8 @@ interface WaMessage {
   text?: { body?: string };
   button?: { text?: string };
   interactive?: {
-    button_reply?: { title?: string };
-    list_reply?: { title?: string };
+    button_reply?: { id?: string; title?: string };
+    list_reply?: { id?: string; title?: string };
   };
 }
 interface WaChange {
@@ -65,6 +65,11 @@ function extractText(m: WaMessage): string {
   if (m.interactive?.button_reply?.title) return m.interactive.button_reply.title;
   if (m.interactive?.list_reply?.title) return m.interactive.list_reply.title;
   return "";
+}
+
+/** Reply id of a tapped button/list row, if this message is an interactive reply. */
+function extractInteractiveId(m: WaMessage): string | undefined {
+  return m.interactive?.button_reply?.id ?? m.interactive?.list_reply?.id ?? undefined;
 }
 
 export function normalizeWhatsAppInbound(payload: unknown): InboundMessage[] {
@@ -91,6 +96,7 @@ export function normalizeWhatsAppInbound(payload: unknown): InboundMessage[] {
           from: m.from,
           customerName: nameByWaId.get(m.from),
           text,
+          interactiveId: extractInteractiveId(m),
           timestamp: m.timestamp ? Number(m.timestamp) * 1000 : Date.now(),
           raw: m,
         });
@@ -115,59 +121,99 @@ export function buildWhatsAppTextBody(to: string, text: string) {
   };
 }
 
-async function sendWhatsAppMessage(message: OutboundMessage): Promise<SendResult> {
-  const env = readWhatsAppEnv();
+// --- interactive bodies (S9-2) ---------------------------------------------
+const WA_BODY_MAX = 1024;
+const WA_HEADER_MAX = 60;
 
-  // Test mode / not configured → skip gracefully (never crash, never fake-send).
-  if (!isWhatsAppConfigured(env)) {
-    return {
-      ok: false,
-      channel: CHANNEL,
-      to: message.to,
-      status: "skipped",
-      error: "WhatsApp غير مُهيأ (الوضع التجريبي) — لم يتم الإرسال الفعلي.",
-    };
-  }
+/** Reply-buttons interactive message (≤3 buttons). */
+export function buildWhatsAppButtonsBody(
+  to: string,
+  bodyText: string,
+  buttons: { id: string; title: string }[],
+  header?: string
+) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      ...(header ? { header: { type: "text", text: header.slice(0, WA_HEADER_MAX) } } : {}),
+      body: { text: bodyText.slice(0, WA_BODY_MAX) },
+      action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })) },
+    },
+  };
+}
 
+/** List interactive message (sections of tappable rows). */
+export function buildWhatsAppListBody(
+  to: string,
+  bodyText: string,
+  buttonText: string,
+  sections: { title?: string; rows: { id: string; title: string; description?: string }[] }[],
+  header?: string
+) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      ...(header ? { header: { type: "text", text: header.slice(0, WA_HEADER_MAX) } } : {}),
+      body: { text: bodyText.slice(0, WA_BODY_MAX) },
+      action: {
+        button: buttonText,
+        sections: sections.map((s) => ({
+          ...(s.title ? { title: s.title } : {}),
+          rows: s.rows.map((r) => ({ id: r.id, title: r.title, ...(r.description ? { description: r.description } : {}) })),
+        })),
+      },
+    },
+  };
+}
+
+/** POST any pre-built message body to the Graph API and map the response. */
+async function postToGraph(env: ReturnType<typeof readWhatsAppEnv>, body: Record<string, unknown>): Promise<SendResult> {
+  const to = String((body as { to?: string }).to ?? "");
   const url = `https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${env.phoneNumberId}/messages`;
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(buildWhatsAppTextBody(message.to, message.text)),
+      headers: { Authorization: `Bearer ${env.accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
     const json: unknown = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return {
-        ok: false,
-        channel: CHANNEL,
-        to: message.to,
-        status: "failed",
-        error: `WhatsApp API ${res.status}`,
-        raw: json,
-      };
+      return { ok: false, channel: CHANNEL, to, status: "failed", error: `WhatsApp API ${res.status}`, raw: json };
     }
     const externalMessageId = (json as { messages?: { id?: string }[] })?.messages?.[0]?.id;
-    return {
-      ok: true,
-      channel: CHANNEL,
-      to: message.to,
-      status: "sent",
-      externalMessageId,
-      raw: json,
-    };
+    return { ok: true, channel: CHANNEL, to, status: "sent", externalMessageId, raw: json };
   } catch (err) {
-    return {
-      ok: false,
-      channel: CHANNEL,
-      to: message.to,
-      status: "failed",
-      error: err instanceof Error ? err.message : "network error",
-    };
+    return { ok: false, channel: CHANNEL, to, status: "failed", error: err instanceof Error ? err.message : "network error" };
   }
+}
+
+const SKIPPED = (to: string): SendResult => ({
+  ok: false,
+  channel: CHANNEL,
+  to,
+  status: "skipped",
+  error: "WhatsApp غير مُهيأ (الوضع التجريبي) — لم يتم الإرسال الفعلي.",
+});
+
+/** Send a pre-built message body (text or interactive). Skips in test mode. */
+export async function sendWhatsAppBody(body: Record<string, unknown>): Promise<SendResult> {
+  const env = readWhatsAppEnv();
+  if (!isWhatsAppConfigured(env)) return SKIPPED(String((body as { to?: string }).to ?? ""));
+  return postToGraph(env, body);
+}
+
+async function sendWhatsAppMessage(message: OutboundMessage): Promise<SendResult> {
+  const env = readWhatsAppEnv();
+  if (!isWhatsAppConfigured(env)) return SKIPPED(message.to);
+  return postToGraph(env, buildWhatsAppTextBody(message.to, message.text));
 }
 
 // ---------------------------------------------------------------------------

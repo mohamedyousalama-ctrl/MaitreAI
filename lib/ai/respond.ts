@@ -18,6 +18,7 @@ import {
   NON_ORDER_TOOLS,
   ORDER_TOOLS,
   type OrderDraft,
+  type Presentation,
   type ToolContext,
   type ToolSignal,
 } from "./tools";
@@ -35,6 +36,8 @@ export interface RespondResult {
   escalate: boolean;
   escalationReason: string | null;
   signals: ToolSignal[];
+  /** Interactive options the model asked to present (WhatsApp buttons/list), if any. */
+  presentation: Presentation | null;
   usage: LlmUsage;
   toolNames: string[];
   stopReason: string;
@@ -56,6 +59,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     draft: emptyDraft(currency),
     signals: [],
     escalation: null,
+    presentation: null,
   };
 
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
@@ -74,7 +78,10 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     usage.inputTokens += res.usage.inputTokens;
     usage.outputTokens += res.usage.outputTokens;
     usage.cacheReadTokens += res.usage.cacheReadTokens;
-    text = res.text;
+    // Preserve the last NON-EMPTY text: the model often emits its sentence
+    // alongside a tool_use block, then adds nothing after the tool result —
+    // overwriting with that empty turn would leave a blank reply.
+    if (res.text && res.text.trim()) text = res.text;
     stopReason = res.stopReason;
     model = res.model;
 
@@ -95,12 +102,17 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     messages.push({ role: "user", content: results });
   }
 
+  // A presentation needs a non-empty body (WhatsApp rejects empty interactive
+  // bodies); if the model left the text blank, give it a friendly opener.
+  if (!text.trim() && ctx.presentation) text = "تفضّل 👇";
+
   return {
     reply: text,
     draft: ctx.draft,
     escalate: !!ctx.escalation,
     escalationReason: ctx.escalation?.reason ?? null,
     signals: ctx.signals,
+    presentation: ctx.presentation,
     usage,
     toolNames,
     stopReason,

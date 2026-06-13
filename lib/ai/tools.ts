@@ -51,6 +51,43 @@ export interface ToolContext {
   draft: OrderDraft;
   signals: ToolSignal[];
   escalation: { reason: string } | null;
+  /** Last interactive presentation the model asked to show (WhatsApp, S9-2). */
+  presentation: Presentation | null;
+}
+
+// --- interactive presentations (S9-2) ---------------------------------------
+// The model ROUTES (decides to present options); the system COMPUTES the option
+// set — menu rows come from the DB (never the LLM), fixed flows are constants.
+// The channel renders these as WhatsApp reply buttons / lists, degrading to
+// numbered text when interactive send isn't available.
+export interface PresentationButton {
+  id: string;
+  title: string;
+}
+export interface PresentationRow {
+  id: string;
+  title: string;
+  description?: string;
+}
+export interface PresentationSection {
+  title?: string;
+  rows: PresentationRow[];
+}
+export type Presentation =
+  | { kind: "buttons"; buttons: PresentationButton[]; header?: string }
+  | { kind: "list"; button: string; sections: PresentationSection[]; header?: string };
+
+// WhatsApp interactive limits (truncate to stay valid).
+const MAX_BUTTONS = 3;
+const MAX_ROWS = 10;
+const BUTTON_TITLE_MAX = 20;
+const ROW_TITLE_MAX = 24;
+const ROW_DESC_MAX = 72;
+const LIST_BUTTON_MAX = 20;
+const SECTION_TITLE_MAX = 24;
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }
 
 export interface ToolResult {
@@ -137,6 +174,36 @@ export const ORDER_TOOLS: LlmToolDef[] = [
       required: ["reason"],
       additionalProperties: false,
     },
+  },
+  // --- interactive presentations (WhatsApp tap-first UX, S9-2) --------------
+  {
+    name: "present_menu",
+    description:
+      "Show the menu to the customer as a tappable WhatsApp list. With no category, shows the categories to pick from; " +
+      "with a category, shows that category's items. The system builds the rows from the live menu (you never write item names/prices here). " +
+      "Pair it with a short friendly sentence. Use when the customer wants to browse or asks what's available.",
+    input_schema: {
+      type: "object",
+      properties: { category: { type: "string", description: "Optional category name to show its items" } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "present_quantity",
+    description: "Show quick quantity buttons (1 / 2 / 3) for the item being added. Use after the customer picks an item.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "present_order_actions",
+    description:
+      "Show the order-action buttons (تأكيد الطلب / إضافة صنف / إلغاء) so the customer can confirm in one tap. " +
+      "Use right after reading back the order summary and total.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "present_payment_methods",
+    description: "Show the payment-method button(s) — الدفع عند الاستلام (COD). Use when collecting how the customer will pay.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ];
 
@@ -271,6 +338,77 @@ export function executeTool(
       ctx.escalation = { reason };
       ctx.signals.push({ type: "escalation", detail: { reason } });
       return { content: "تم تحويل المحادثة لزميل من الفريق." };
+    }
+    case "present_menu": {
+      const avail = ctx.menuItems.filter((i) => i.available);
+      if (!avail.length) return { content: "لا توجد أصناف متاحة حالياً.", isError: true };
+      const cat = input.category ? String(input.category) : "";
+      const cats = [...new Set(avail.map((i) => i.category).filter(Boolean))];
+
+      // No category + several categories → let the customer pick a category first.
+      if (!cat && cats.length > 1) {
+        const rows: PresentationRow[] = cats.slice(0, MAX_ROWS).map((c) => ({
+          id: `cat:${c}`,
+          title: truncate(c, ROW_TITLE_MAX),
+          description: `${avail.filter((i) => i.category === c).length} صنف`,
+        }));
+        ctx.presentation = { kind: "list", button: truncate("تصفّح المنيو", LIST_BUTTON_MAX), sections: [{ rows }] };
+        return { content: `تم عرض ${rows.length} تصنيف للعميل كقائمة تفاعلية.` };
+      }
+
+      const items = cat
+        ? avail.filter(
+            (i) =>
+              norm(i.category) === norm(cat) ||
+              norm(i.category).includes(norm(cat)) ||
+              norm(cat).includes(norm(i.category))
+          )
+        : avail;
+      if (!items.length) {
+        ctx.signals.push({ type: "off_menu", detail: { category: cat } });
+        return { content: `لا توجد أصناف ضمن «${cat}». اعرض التصنيفات المتاحة أو اسأل العميل.`, isError: true };
+      }
+      const rows: PresentationRow[] = items.slice(0, MAX_ROWS).map((i) => ({
+        id: `item:${i.id}`,
+        title: truncate(i.name, ROW_TITLE_MAX),
+        description: truncate(`${i.price} ${d.currency}${i.description ? ` · ${i.description}` : ""}`, ROW_DESC_MAX),
+      }));
+      ctx.presentation = {
+        kind: "list",
+        button: truncate("اختر صنف", LIST_BUTTON_MAX),
+        sections: [{ title: cat ? truncate(cat, SECTION_TITLE_MAX) : undefined, rows }],
+      };
+      const more = items.length > MAX_ROWS ? ` (عرضت أول ${MAX_ROWS} من ${items.length})` : "";
+      return { content: `تم عرض ${rows.length} صنف للعميل كقائمة تفاعلية${more}.` };
+    }
+    case "present_quantity": {
+      ctx.presentation = {
+        kind: "buttons",
+        buttons: [
+          { id: "qty:1", title: "1" },
+          { id: "qty:2", title: "2" },
+          { id: "qty:3", title: "3" },
+        ].slice(0, MAX_BUTTONS),
+      };
+      return { content: "تم عرض أزرار الكمية (1/2/3) للعميل." };
+    }
+    case "present_order_actions": {
+      ctx.presentation = {
+        kind: "buttons",
+        buttons: [
+          { id: "confirm_order", title: truncate("تأكيد الطلب", BUTTON_TITLE_MAX) },
+          { id: "add_more", title: truncate("إضافة صنف", BUTTON_TITLE_MAX) },
+          { id: "cancel_order", title: truncate("إلغاء", BUTTON_TITLE_MAX) },
+        ],
+      };
+      return { content: "تم عرض أزرار (تأكيد / إضافة / إلغاء) للعميل." };
+    }
+    case "present_payment_methods": {
+      ctx.presentation = {
+        kind: "buttons",
+        buttons: [{ id: "pay_cod", title: truncate("الدفع عند الاستلام", BUTTON_TITLE_MAX) }],
+      };
+      return { content: "تم عرض طريقة الدفع (الدفع عند الاستلام) للعميل." };
     }
     default:
       return { content: `أداة غير معروفة: ${name}`, isError: true };

@@ -39,6 +39,8 @@ export interface InboundMessage {
   customerName?: string;
   text: string;
   timestamp: number;
+  /** Reply id of a tapped button/list row (e.g. "item:123", "confirm_order"), if any. */
+  interactiveId?: string;
   /** Original raw payload fragment, kept for debugging only. */
   raw?: unknown;
 }

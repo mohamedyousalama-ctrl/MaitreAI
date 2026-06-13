@@ -74,6 +74,7 @@ export async function persistInboundMessage(
         text: msg.text,
         channel_message_id: msg.externalMessageId ?? null,
         status: "delivered",
+        ...(msg.interactiveId ? { meta: { interactiveId: msg.interactiveId } } : {}),
       },
       { onConflict: "channel_message_id", ignoreDuplicates: true }
     )

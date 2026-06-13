@@ -8,9 +8,10 @@
 // ============================================================================
 
 import "server-only";
-import { whatsappAdapter } from "./adapters/whatsapp";
+import { whatsappAdapter, buildWhatsAppButtonsBody, buildWhatsAppListBody, sendWhatsAppBody } from "./adapters/whatsapp";
 import { isWhatsAppConfigured } from "./config";
 import type { SendResult } from "./types";
+import type { Presentation } from "@/lib/ai/tools";
 
 /** WhatsApp's free-form customer-service window: 24h since the last inbound. */
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -93,4 +94,88 @@ export async function sendWhatsAppText(args: SendWhatsAppArgs): Promise<Windowed
     await delay(BACKOFF_MS[attempt] ?? 4000);
   }
   return { ...last, windowState: "in_window", attempts: retries + 1 };
+}
+
+export interface SendInteractiveArgs {
+  to: string;
+  /** Conversational reply text — becomes the interactive message body. */
+  body: string;
+  presentation: Presentation;
+  lastInboundAtMs?: number | null;
+  retries?: number;
+}
+
+/** Render a presentation as plain numbered text (the interactive→text fallback). */
+export function presentationToNumberedText(body: string, p: Presentation): string {
+  const lines: string[] = [body.trim(), "", "للاختيار، رد برقم:"];
+  if (p.kind === "buttons") {
+    p.buttons.forEach((b, i) => lines.push(`${i + 1}) ${b.title}`));
+  } else {
+    let n = 1;
+    for (const s of p.sections) {
+      if (s.title) lines.push(`— ${s.title} —`);
+      for (const r of s.rows) {
+        lines.push(`${n}) ${r.title}${r.description ? ` — ${r.description}` : ""}`);
+        n++;
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Send an interactive message (reply buttons / list). Same window + retry rules
+ * as text. Graceful degradation: if the interactive send fails after retries,
+ * the SAME content is re-sent as numbered text so the customer always gets the
+ * choices.
+ */
+export async function sendWhatsAppInteractive(
+  args: SendInteractiveArgs
+): Promise<WindowedSendResult & { fallbackToText?: boolean }> {
+  const base = { channel: "whatsapp" as const, to: args.to };
+
+  if (!isWhatsAppConfigured()) {
+    return {
+      ...base,
+      ok: false,
+      status: "skipped",
+      error: "WhatsApp غير مُهيأ (الوضع التجريبي) — لم يتم الإرسال الفعلي.",
+      windowState: "test_mode",
+      attempts: 0,
+    };
+  }
+  if (args.lastInboundAtMs !== undefined && !within24hWindow(args.lastInboundAtMs)) {
+    return {
+      ...base,
+      ok: false,
+      status: "failed",
+      error: "خارج نافذة الـ24 ساعة — يتطلب الإرسال قالباً معتمداً (template).",
+      windowState: "out_of_window",
+      attempts: 0,
+    };
+  }
+
+  const p = args.presentation;
+  const waBody =
+    p.kind === "buttons"
+      ? buildWhatsAppButtonsBody(args.to, args.body, p.buttons, p.header)
+      : buildWhatsAppListBody(args.to, args.body, p.button, p.sections, p.header);
+
+  const retries = args.retries ?? 2;
+  let last: SendResult = { ...base, ok: false, status: "failed", error: "no attempt" };
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    last = await sendWhatsAppBody(waBody as Record<string, unknown>);
+    if (last.ok) return { ...last, windowState: "in_window", attempts: attempt + 1 };
+    if (!shouldRetry(last) || attempt === retries) break;
+    await delay(BACKOFF_MS[attempt] ?? 4000);
+  }
+
+  // Degrade: interactive failed → re-send as numbered text.
+  const fb = await sendWhatsAppText({
+    to: args.to,
+    text: presentationToNumberedText(args.body, p),
+    lastInboundAtMs: args.lastInboundAtMs,
+    retries,
+  });
+  return { ...fb, fallbackToText: true };
 }

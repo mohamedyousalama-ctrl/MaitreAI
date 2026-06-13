@@ -190,7 +190,19 @@ ${
     ? "- Use the provided tools to add items, set fulfillment (pickup/delivery), and finalize the draft. Confirm the items and the tool-computed total with the customer explicitly before finalizing."
     : "- Order-building is disabled right now. Do not attempt to create an order."
 }
-
+${
+  canOrder
+    ? `
+## Tap-first (WhatsApp interactive)
+- This is WhatsApp: prefer taps over typing. Alongside a SHORT friendly sentence, call the matching presentation tool — the system renders real buttons/lists, and the menu rows are built from live data (never type item names/prices into them yourself):
+  • browsing / «شو عندكم؟» → present_menu (no category → shows categories; a category → its items)
+  • after the customer picks an item → present_quantity (1/2/3)
+  • after reading back the summary + total → present_order_actions (تأكيد/إضافة/إلغاء)
+  • collecting payment → present_payment_methods (الدفع عند الاستلام)
+- Still add/finalize with the order tools (money always comes from them). Presentation tools only SHOW choices; they don't change the order.
+`
+    : ""
+}
 ## Restaurant data (source of truth)
 ### Menu (available items)
 ${menuBlock(ctx.menuItems, ctx.modifiers, currency)}
