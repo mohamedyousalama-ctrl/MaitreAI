@@ -110,7 +110,12 @@ export async function POST(req: NextRequest) {
   // --- end diagnostic ---
 
   // Signature check only when an app secret is configured (placeholder-friendly).
-  if (env.appSecret) {
+  // Sandbox escape hatch: WHATSAPP_SKIP_SIGNATURE=true bypasses validation so the
+  // round-trip can run while the correct App Secret is sorted out. SANDBOX ONLY —
+  // turn OFF before real customers. The breadcrumb above still logs sigOk so we
+  // can confirm the moment the real secret matches.
+  const skipSig = (process.env.WHATSAPP_SKIP_SIGNATURE ?? "").trim().toLowerCase() === "true";
+  if (env.appSecret && !skipSig) {
     if (!verifySignature(rawBody, sig, env.appSecret)) {
       return NextResponse.json({ ok: false, message: "invalid signature" }, { status: 401 });
     }
