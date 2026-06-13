@@ -11,6 +11,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { sendWhatsAppText, sendWhatsAppInteractive } from "./outbound";
+import { persistOrderFromDraft } from "@/lib/db/orders-create";
+import { sendReceiptToCustomer } from "./send-receipt";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export type RespondAndSendStatus =
@@ -53,13 +55,14 @@ export async function respondAndSendWhatsApp(
   restaurantId: string,
   conversationId: string
 ): Promise<RespondAndSendResult> {
-  // 1. Conversation + owner + recipient phone.
+  // 1. Conversation + owner + recipient phone + customer id.
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, owner, channel, customers(phone)")
+    .select("id, owner, channel, customer_id, customers(phone)")
     .eq("id", conversationId)
     .single();
   if (!conv) return { status: "skipped_not_found", error: "conversation_not_found" };
+  const customerId = (conv.customer_id as string | null) ?? null;
 
   // Takeover (Amendment 03 §E): a human owns this thread — the Brain stays out.
   if ((conv.owner as string) === "human") return { status: "skipped_takeover" };
@@ -112,6 +115,18 @@ export async function respondAndSendWhatsApp(
   const send = outcome.presentation
     ? await sendWhatsAppInteractive({ to: phone, body: outcome.reply, presentation: outcome.presentation, lastInboundAtMs })
     : await sendWhatsAppText({ to: phone, text: outcome.reply, lastInboundAtMs });
+
+  // 4.5 (S9-4.5): a finalized draft becomes a real order row (idempotent — one
+  // finalized draft = one row), then the receipt auto-sends (skips in test mode).
+  // Runs regardless of reply-send outcome — the order is placed either way.
+  if (outcome.draft.finalized) {
+    try {
+      const persisted = await persistOrderFromDraft(admin, { restaurantId, conversationId, customerId, draft: outcome.draft });
+      if (persisted.created && persisted.orderId) await sendReceiptToCustomer(admin, persisted.orderId);
+    } catch (e) {
+      console.error("[respond-and-send] order persist/receipt error", e);
+    }
+  }
 
   if (send.status === "sent") {
     if (outcome.replyMessageId) {
