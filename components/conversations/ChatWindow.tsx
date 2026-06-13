@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Conversation } from "@/lib/types";
 import { ChatBubble, TypingIndicator } from "./ChatBubble";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { PromptDialog } from "@/components/ui/PromptDialog";
 import { Send, Sparkles, Hand, Bot, User, Loader2, Check, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,7 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestErr, setSuggestErr] = useState<string | null>(null);
+  const [releaseOpen, setReleaseOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isHuman = conversation.owner === "human";
 
@@ -74,13 +76,9 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
     setSuggestion(null);
   }
 
-  function release() {
-    // §E7: capture a one-line handover summary the assistant must honor on resume.
-    const note = window.prompt(
-      "ملخص التسليم للمساعد (اختياري) — أي وعد أو سياق يجب أن يكمل عليه، مثل «وعدت العميل بخصم ١٠٪»:",
-      ""
-    );
-    if (note === null) return; // cancelled
+  function confirmRelease(note: string) {
+    // §E7: persist the one-line handover summary the assistant must honor on resume.
+    setReleaseOpen(false);
     onReturnToAi(note.trim() || undefined);
   }
 
@@ -113,7 +111,7 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
           <StatusBadge status={conversation.status} />
           {isHuman ? (
             <button
-              onClick={release}
+              onClick={() => setReleaseOpen(true)}
               className="hidden items-center gap-1.5 rounded-xl bg-[#3c7a52] px-3 py-2 text-xs font-semibold text-white hover:opacity-90 sm:inline-flex"
             >
               <Bot className="h-4 w-4" /> إعادة للمساعد
@@ -213,6 +211,17 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
           </button>
         )}
       </div>
+
+      {/* §E7: in-app handover-summary prompt (replaces native window.prompt) */}
+      <PromptDialog
+        open={releaseOpen}
+        title="إعادة المحادثة للمساعد"
+        message="أي وعد أو سياق يجب أن يكمل عليه المساعد؟ (اختياري)"
+        placeholder="مثال: وعدت العميل بخصم ١٠٪"
+        confirmLabel="إعادة للمساعد"
+        onConfirm={confirmRelease}
+        onCancel={() => setReleaseOpen(false)}
+      />
     </div>
   );
 }
