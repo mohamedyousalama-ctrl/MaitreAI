@@ -10,6 +10,7 @@ const nextConfig = {
     // public/ into lambdas by default).
     outputFileTracingIncludes: {
       "/api/orders/**": ["./public/fonts/**"],
+      "/api/agent/promo": ["./public/fonts/**"],
     },
   },
 };
