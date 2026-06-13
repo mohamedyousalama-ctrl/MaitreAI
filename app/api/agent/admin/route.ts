@@ -22,6 +22,7 @@ const MANAGER_ONLY = new Set([
   "set_open", "set_agent", "payments_summary",
   "set_item_availability", "edit_price", "add_item", "remove_item",
   "add_modifier", "edit_modifier", "remove_modifier",
+  "add_zone", "edit_zone", "remove_zone",
 ]);
 
 const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم (لست من يكتب البيانات). صنّف رسالة المدير إلى نية واحدة واستخرج المعاملات.
@@ -37,6 +38,9 @@ const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم
 - add_modifier params:{"name":"اسم الإضافة","price_impact":رقم,"category":"التصنيف (اختياري)"} (إضافة خيار/إضافة جديدة مثل جبنة إضافية +٥)
 - edit_modifier params:{"modifier":"اسم الإضافة","price_impact":رقم} (تغيير سعر إضافة موجودة)
 - remove_modifier params:{"modifier":"اسم الإضافة"} (حذف إضافة)
+- add_zone params:{"name":"اسم المنطقة","fee":رقم,"min_order":رقم,"eta_minutes":رقم اختياري} (إضافة منطقة توصيل — مثل «نوصّل لمدينة نصر رسوم ١٥ الحد الأدنى ٨٠»)
+- edit_zone params:{"zone":"اسم المنطقة","fee":رقم اختياري,"min_order":رقم اختياري,"eta_minutes":رقم اختياري} (تعديل منطقة توصيل)
+- remove_zone params:{"zone":"اسم المنطقة"} (حذف منطقة توصيل)
 - off_scope (إذا كان الطلب خارج تشغيل المطعم: عام/أخبار/غير متعلق) — اجعل sentence سطراً واحداً يعيد التوجيه بأدب لنطاق المطعم.
 لنوايا التغيير (set_*): اجعل الجملة اقتراحاً ينتظر التأكيد (مثل «جاهز لإغلاق المطعم بعد تأكيدك») — لا تقل «تمّ» قبل التنفيذ.
 لا تخترع بيانات. أعِد JSON فقط دون أي نص آخر.`;
@@ -130,6 +134,24 @@ export async function POST(req: Request) {
         if (!id) return NextResponse.json({ error: "bad_params" }, { status: 400 });
         await supabase.from("modifiers").delete().eq("id", id).eq("restaurant_id", restaurantId);
         result = `تم حذف خيار «${confirm.params.modifier}».`;
+      } else if (confirm.intent === "add_zone") {
+        const name = String(confirm.params.name ?? "").trim();
+        const fee = Number(confirm.params.fee);
+        const minOrder = Number(confirm.params.min_order ?? 0);
+        const eta = confirm.params.eta_minutes != null ? Number(confirm.params.eta_minutes) : null;
+        if (!name || !Number.isFinite(fee)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("delivery_zones").insert({ restaurant_id: restaurantId, name, fee, min_order: Number.isFinite(minOrder) ? minOrder : 0, eta_minutes: eta, active: true });
+        result = `تمت إضافة منطقة التوصيل «${name}».`;
+      } else if (confirm.intent === "edit_zone") {
+        const id = String(confirm.params.id ?? "");
+        if (!id) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("delivery_zones").update({ fee: Number(confirm.params.fee), min_order: Number(confirm.params.min_order), eta_minutes: confirm.params.eta_minutes != null ? Number(confirm.params.eta_minutes) : null }).eq("id", id).eq("restaurant_id", restaurantId);
+        result = `تم تحديث منطقة «${confirm.params.zone}».`;
+      } else if (confirm.intent === "remove_zone") {
+        const id = String(confirm.params.id ?? "");
+        if (!id) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("delivery_zones").delete().eq("id", id).eq("restaurant_id", restaurantId);
+        result = `تم حذف منطقة «${confirm.params.zone}».`;
       } else {
         return NextResponse.json({ error: "unknown_action" }, { status: 400 });
       }
@@ -306,6 +328,44 @@ export async function POST(req: Request) {
     return NextResponse.json({
       sentence: parsed.sentence,
       preview: { intent, params: { id: mod.id, modifier: mod.name }, label: "حذف خيار", before: mod.name, after: "محذوف" },
+    });
+  }
+
+  // Delivery-zone write intents → PREVIEW only (§P2). The router LLM is the
+  // sentence parser («نوصّل لـ…، رسوم…، الحد الأدنى…»).
+  if (intent === "add_zone" || intent === "edit_zone" || intent === "remove_zone") {
+    const { data: rr } = await supabase.from("restaurants").select("currency,dialect").eq("id", restaurantId).single();
+    const cur = String(rr?.currency || (rr?.dialect === "saudi" ? "ر.س" : "ج.م"));
+    if (intent === "add_zone") {
+      const name = String(parsed.params.name ?? "").trim();
+      const fee = Number(parsed.params.fee);
+      const minOrder = Number(parsed.params.min_order ?? 0);
+      const eta = parsed.params.eta_minutes != null ? Number(parsed.params.eta_minutes) : null;
+      if (!name || !Number.isFinite(fee)) return NextResponse.json({ sentence: "حدّد اسم المنطقة ورسوم التوصيل من فضلك.", intent: "off_scope" });
+      const etaStr = eta ? ` · ${eta} دقيقة` : "";
+      return NextResponse.json({
+        sentence: parsed.sentence,
+        preview: { intent, params: { name, fee, min_order: Number.isFinite(minOrder) ? minOrder : 0, eta_minutes: eta }, label: "منطقة توصيل", before: "—", after: `${name} · رسوم ${fee} ${cur} · الحد الأدنى ${Number.isFinite(minOrder) ? minOrder : 0} ${cur}${etaStr}` },
+      });
+    }
+    const zname = String(parsed.params.zone ?? "");
+    const { data: zones } = await supabase.from("delivery_zones").select("id,name,fee,min_order,eta_minutes").eq("restaurant_id", restaurantId).ilike("name", `%${zname}%`).limit(1);
+    const zone = zones?.[0] as { id: string; name: string; fee: number; min_order: number; eta_minutes: number | null } | undefined;
+    if (!zone) return NextResponse.json({ sentence: `لم أجد منطقة توصيل باسم «${zname}».`, intent: "off_scope" });
+    if (intent === "edit_zone") {
+      const fee = parsed.params.fee != null ? Number(parsed.params.fee) : zone.fee;
+      const minOrder = parsed.params.min_order != null ? Number(parsed.params.min_order) : zone.min_order;
+      const eta = parsed.params.eta_minutes != null ? Number(parsed.params.eta_minutes) : zone.eta_minutes;
+      const fmt = (f: number, m: number, e: number | null) => `رسوم ${f} ${cur} · الحد الأدنى ${m} ${cur}${e ? ` · ${e} دقيقة` : ""}`;
+      return NextResponse.json({
+        sentence: parsed.sentence,
+        preview: { intent, params: { id: zone.id, zone: zone.name, fee, min_order: minOrder, eta_minutes: eta }, label: `منطقة «${zone.name}»`, before: fmt(zone.fee, zone.min_order, zone.eta_minutes), after: fmt(fee, minOrder, eta) },
+      });
+    }
+    // remove_zone
+    return NextResponse.json({
+      sentence: parsed.sentence,
+      preview: { intent, params: { id: zone.id, zone: zone.name }, label: "حذف منطقة توصيل", before: zone.name, after: "محذوف" },
     });
   }
 
