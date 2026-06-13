@@ -41,6 +41,10 @@ export interface InboundMessage {
   timestamp: number;
   /** Reply id of a tapped button/list row (e.g. "item:123", "confirm_order"), if any. */
   interactiveId?: string;
+  /** WhatsApp media id of a voice note, if this is an audio message (S9-6). */
+  audioId?: string;
+  /** MIME type of the voice note (e.g. audio/ogg). */
+  audioMime?: string;
   /** Original raw payload fragment, kept for debugging only. */
   raw?: unknown;
 }

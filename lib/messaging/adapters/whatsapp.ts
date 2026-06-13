@@ -45,6 +45,8 @@ interface WaMessage {
     button_reply?: { id?: string; title?: string };
     list_reply?: { id?: string; title?: string };
   };
+  audio?: { id?: string; mime_type?: string; voice?: boolean };
+  voice?: { id?: string; mime_type?: string };
 }
 interface WaChange {
   value?: { contacts?: WaContact[]; messages?: WaMessage[] };
@@ -89,7 +91,10 @@ export function normalizeWhatsAppInbound(payload: unknown): InboundMessage[] {
 
       for (const m of value.messages) {
         const text = extractText(m);
-        if (!m.from || !text) continue;
+        const audio = m.audio ?? m.voice;
+        const audioId = audio?.id;
+        // Keep text messages, interactive replies, AND voice notes (no text yet).
+        if (!m.from || (!text && !audioId)) continue;
         out.push({
           channel: CHANNEL,
           externalMessageId: m.id,
@@ -97,6 +102,8 @@ export function normalizeWhatsAppInbound(payload: unknown): InboundMessage[] {
           customerName: nameByWaId.get(m.from),
           text,
           interactiveId: extractInteractiveId(m),
+          audioId,
+          audioMime: audio?.mime_type,
           timestamp: m.timestamp ? Number(m.timestamp) * 1000 : Date.now(),
           raw: m,
         });
@@ -202,6 +209,26 @@ const SKIPPED = (to: string): SendResult => ({
   status: "skipped",
   error: "WhatsApp غير مُهيأ (الوضع التجريبي) — لم يتم الإرسال الفعلي.",
 });
+
+/** Download inbound media (e.g. a voice note) by media id. Two-step per the
+ *  Graph API: resolve the media URL, then fetch the bytes (both authenticated).
+ *  Returns null in test mode / on failure. */
+export async function downloadWhatsAppMedia(mediaId: string): Promise<{ bytes: Buffer; mime: string } | null> {
+  const env = readWhatsAppEnv();
+  if (!isWhatsAppConfigured(env)) return null;
+  try {
+    const metaRes = await fetch(`https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${mediaId}`, {
+      headers: { Authorization: `Bearer ${env.accessToken}` },
+    });
+    const meta = (await metaRes.json().catch(() => ({}))) as { url?: string; mime_type?: string };
+    if (!metaRes.ok || !meta.url) return null;
+    const binRes = await fetch(meta.url, { headers: { Authorization: `Bearer ${env.accessToken}` } });
+    if (!binRes.ok) return null;
+    return { bytes: Buffer.from(await binRes.arrayBuffer()), mime: meta.mime_type || "audio/ogg" };
+  } catch {
+    return null;
+  }
+}
 
 /** Send a pre-built message body (text or interactive). Skips in test mode. */
 export async function sendWhatsAppBody(body: Record<string, unknown>): Promise<SendResult> {

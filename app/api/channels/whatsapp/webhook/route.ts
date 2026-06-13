@@ -19,6 +19,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMessage } from "@/lib/db/messages";
 import { resolveWebhookRestaurantId } from "@/lib/db/restaurants";
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
+import { transcribeWhatsAppVoice } from "@/lib/messaging/voice";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -111,10 +112,33 @@ export async function POST(req: NextRequest) {
       const toAnswer = new Set<string>();
       for (const m of messages) {
         try {
+          // S9-6: a voice note is transcribed BEFORE persisting, so the transcript
+          // IS the stored message text — the operator sees exactly what the AI heard.
+          let stt: { adapter: string; model: string; costUsd: number } | null = null;
+          if (m.audioId && !m.text) {
+            const t = await transcribeWhatsAppVoice(m.audioId, m.audioMime);
+            m.text = t.text || "[رسالة صوتية — تعذّر التفريغ]";
+            stt = { adapter: t.adapter, model: t.model, costUsd: t.costUsd };
+          }
           const r = await persistInboundMessage(admin, restaurantId, m);
           if (r.inserted) {
             persisted++;
-            if (r.conversationId) toAnswer.add(r.conversationId);
+            if (r.conversationId) {
+              toAnswer.add(r.conversationId);
+              // Log transcription cost to agent_runs (like LLM tokens).
+              if (stt) {
+                await admin.from("agent_runs").insert({
+                  restaurant_id: restaurantId,
+                  conversation_id: r.conversationId,
+                  trigger: "voice",
+                  input: "[voice note]",
+                  output: m.text,
+                  model: stt.model,
+                  adapter: stt.adapter,
+                  cost_usd: stt.costUsd,
+                });
+              }
+            }
           } else {
             deduped++;
           }

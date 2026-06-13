@@ -74,7 +74,9 @@ export async function persistInboundMessage(
         text: msg.text,
         channel_message_id: msg.externalMessageId ?? null,
         status: "delivered",
-        ...(msg.interactiveId ? { meta: { interactiveId: msg.interactiveId } } : {}),
+        ...(msg.interactiveId || msg.audioId
+          ? { meta: { ...(msg.interactiveId ? { interactiveId: msg.interactiveId } : {}), ...(msg.audioId ? { voice: true } : {}) } }
+          : {}),
       },
       { onConflict: "channel_message_id", ignoreDuplicates: true }
     )
