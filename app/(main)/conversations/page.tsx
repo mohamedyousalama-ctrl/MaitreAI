@@ -25,7 +25,7 @@ export default function ConversationsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   if (!hydrated) {
-    return <div className="h-[calc(100vh-9rem)] animate-pulse rounded-2xl border border-[#ece0d2] bg-[#faf6ef]" />;
+    return <div className="h-[calc(100vh-9rem)] animate-pulse rounded-3xl border border-[#ece0d2]/60 bg-[#faf6ef] shadow-float" />;
   }
 
   const customer = selected ? customers.find((c) => c.name === selected.customer) : undefined;
