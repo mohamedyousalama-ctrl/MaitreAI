@@ -19,7 +19,7 @@ interface RawItem {
 export async function loadReceiptData(client: SupabaseClient, orderId: string): Promise<ReceiptData | null> {
   const { data: o } = await client
     .from("orders")
-    .select("*, customers(name,phone), branches(name), restaurants(name,currency)")
+    .select("*, customers(name,phone), branches(name), restaurants(name,currency,tax_registration_no)")
     .eq("id", orderId)
     .single();
   if (!o) return null;
@@ -34,7 +34,7 @@ export async function loadReceiptData(client: SupabaseClient, orderId: string): 
     notes: it.notes ? String(it.notes) : undefined,
   }));
 
-  const rest = (row.restaurants as { name?: string; currency?: string } | null) ?? {};
+  const rest = (row.restaurants as { name?: string; currency?: string; tax_registration_no?: string } | null) ?? {};
   const cust = (row.customers as { name?: string; phone?: string } | null) ?? {};
   const branch = (row.branches as { name?: string } | null) ?? {};
   const orderNumber = String(row.order_number ?? "");
@@ -47,6 +47,9 @@ export async function loadReceiptData(client: SupabaseClient, orderId: string): 
     subtotal: Number(row.subtotal ?? 0),
     deliveryFee: Number(row.delivery_fee ?? 0),
     discountTotal: Number(row.discount_total ?? 0),
+    taxAmount: Number(row.tax_amount ?? 0),
+    taxRate: Number(row.tax_rate ?? 0),
+    taxRegNo: rest.tax_registration_no ?? undefined,
     total: Number(row.total ?? 0),
     currency: String(row.currency ?? rest.currency ?? "ر.س"),
     paymentStatus: row.payment_status ? String(row.payment_status) : undefined,

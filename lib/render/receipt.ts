@@ -48,6 +48,9 @@ export interface ReceiptData {
   subtotal: number;
   deliveryFee: number;
   discountTotal?: number;
+  taxAmount?: number; // VAT (0 / undefined when tax-inclusive)
+  taxRate?: number;
+  taxRegNo?: string;
   total: number;
   currency: string;
   paymentStatus?: string;
@@ -152,7 +155,13 @@ export function buildReceiptSvg(d: ReceiptData, width: ReceiptWidth = "standard"
   totalsRow("المجموع الفرعي", money(d.subtotal, d.currency));
   if (d.fulfillment === "delivery") totalsRow("رسوم التوصيل", money(d.deliveryFee, d.currency));
   if (d.discountTotal && d.discountTotal > 0) totalsRow("الخصم", `- ${money(d.discountTotal, d.currency)}`);
+  if (d.taxAmount && d.taxAmount > 0) totalsRow(`ضريبة القيمة المضافة (${d.taxRate}%)`, money(d.taxAmount, d.currency));
   totalsRow("الإجمالي", money(d.total, d.currency), true);
+
+  if (d.taxRegNo) {
+    parts.push(tRight(y, `الرقم الضريبي: ${ltr(d.taxRegNo)}`, 18, "#9b8b7c"));
+    y += s(28);
+  }
 
   if (d.paymentStatus) {
     parts.push(tRight(y, `الدفع: ${PAYMENT_AR[d.paymentStatus] ?? d.paymentStatus}`, 20, "#6a5c4e"));

@@ -28,6 +28,8 @@ export interface OrderDraft {
   deliveryZone: string | null;
   deliveryFee: number;
   subtotal: number;
+  tax: number; // VAT amount (0 when tax-inclusive)
+  taxRate: number; // applied rate (0 when inclusive)
   total: number;
   currency: string;
   finalized: boolean;
@@ -53,6 +55,9 @@ export interface ToolContext {
   escalation: { reason: string } | null;
   /** Last interactive presentation the model asked to show (WhatsApp, S9-2). */
   presentation: Presentation | null;
+  /** Tax mode + rate (Sprint 10). "added" → a VAT line; "inclusive" → no change. */
+  taxMode: string;
+  taxRate: number;
 }
 
 // --- interactive presentations (S9-2) ---------------------------------------
@@ -102,6 +107,8 @@ export function emptyDraft(currency: string): OrderDraft {
     deliveryZone: null,
     deliveryFee: 0,
     subtotal: 0,
+    tax: 0,
+    taxRate: 0,
     total: 0,
     currency,
     finalized: false,
@@ -229,9 +236,19 @@ function findItem(menu: MenuItem[], name: string): MenuItem | undefined {
   );
 }
 
-function recompute(d: OrderDraft): void {
+function recompute(ctx: ToolContext): void {
+  const d = ctx.draft;
   d.subtotal = d.lines.reduce((s, l) => s + l.lineTotal, 0);
-  d.total = d.subtotal + (d.fulfillment === "delivery" ? d.deliveryFee : 0);
+  const deliv = d.fulfillment === "delivery" ? d.deliveryFee : 0;
+  // VAT only when the tenant runs tax-added; otherwise inclusive (no change).
+  if (ctx.taxMode === "added" && ctx.taxRate > 0) {
+    d.taxRate = ctx.taxRate;
+    d.tax = Math.round(d.subtotal * (ctx.taxRate / 100) * 100) / 100;
+  } else {
+    d.taxRate = 0;
+    d.tax = 0;
+  }
+  d.total = Math.round((d.subtotal + deliv + d.tax) * 100) / 100;
 }
 
 function summary(d: OrderDraft): string {
@@ -246,7 +263,8 @@ function summary(d: OrderDraft): string {
     d.fulfillment === "delivery" && d.deliveryFee
       ? `\nرسوم التوصيل: ${d.deliveryFee} ${d.currency}`
       : "";
-  return `${lines}${fee}\nالإجمالي: ${d.total} ${d.currency}`;
+  const tax = d.tax > 0 ? `\nضريبة القيمة المضافة (${d.taxRate}%): ${d.tax} ${d.currency}` : "";
+  return `${lines}${fee}${tax}\nالإجمالي: ${d.total} ${d.currency}`;
 }
 
 // --- executor ---------------------------------------------------------------
@@ -289,7 +307,7 @@ export function executeTool(
         modifiers: mods,
         lineTotal: unitPrice * qty,
       });
-      recompute(d);
+      recompute(ctx);
       return { content: `أضفت ${qty}× ${item.name}.\n${summary(d)}` };
     }
     case "remove_from_order": {
@@ -297,7 +315,7 @@ export function executeTool(
       const idx = d.lines.findIndex((l) => norm(l.name) === norm(itemName) || norm(l.name).includes(norm(itemName)));
       if (idx === -1) return { content: `«${itemName}» غير موجود في السلة.`, isError: true };
       d.lines.splice(idx, 1);
-      recompute(d);
+      recompute(ctx);
       return { content: `تم الحذف.\n${summary(d)}` };
     }
     case "set_fulfillment": {
@@ -311,7 +329,7 @@ export function executeTool(
           ctx.deliveryAreas.find((z) => z.active && (norm(z.name).includes(norm(zoneName)) || norm(zoneName).includes(norm(z.name))));
         if (!zone) {
           ctx.signals.push({ type: "missing_data", detail: { zone: zoneName } });
-          recompute(d);
+          recompute(ctx);
           return {
             content: `منطقة التوصيل «${zoneName}» غير معروفة. اسأل العميل عن منطقته من المناطق المتاحة أو صعّد.`,
             isError: true,
@@ -320,7 +338,7 @@ export function executeTool(
         d.deliveryZone = zone.name;
         d.deliveryFee = zone.deliveryFee;
       }
-      recompute(d);
+      recompute(ctx);
       const label = type === "delivery" ? `توصيل إلى ${d.deliveryZone}` : "استلام من الفرع";
       return { content: `${label}.\n${summary(d)}` };
     }

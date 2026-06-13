@@ -61,6 +61,8 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     signals: [],
     escalation: null,
     presentation: null,
+    taxMode: input.brain.taxMode ?? "inclusive",
+    taxRate: input.brain.taxRate ?? 0,
   };
 
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;

@@ -93,6 +93,8 @@ export async function POST(req: Request) {
     autoAccept: !!row.auto_accept_orders,
     handoverNote,
     personaName: (row.agent_persona_name as string | null) ?? undefined,
+    taxMode: String(row.tax_mode ?? "inclusive"),
+    taxRate: Number(row.tax_rate ?? 0),
   };
 
   try {

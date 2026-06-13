@@ -82,6 +82,8 @@ export async function persistOrderFromDraft(
         items,
         subtotal: draft.subtotal,
         delivery_fee: draft.deliveryFee,
+        tax_amount: draft.tax,
+        tax_rate: draft.taxRate,
         total: draft.total,
         currency: draft.currency,
         order_status: "pending_confirmation",
