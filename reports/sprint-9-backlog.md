@@ -20,6 +20,20 @@ standard width**, so it prints clean on whatever the restaurant owns.
 **Strategy (confirmed):** device-OS print (browser print dialog / phone share
 sheet) + the PNG. **No per-printer driver / ESC-POS code.**
 
+## RE-SECURE the WhatsApp webhook signature (BEFORE real customers) — CRITICAL
+**Status:** open — the live round-trip currently runs with `WHATSAPP_SKIP_SIGNATURE=true`.
+Live diagnosis proved Meta delivers but `sigOk=false`: Vercel's `WHATSAPP_APP_SECRET`
+is not the secret the subscribed Meta app signs with (multiple re-copies, all
+mismatched; not whitespace). To re-secure:
+1. Set `WHATSAPP_APP_SECRET` to the App Secret of the SAME Meta app that owns the
+   webhook subscription (App → Settings → Basic → App Secret → Show, not Reset).
+2. Confirm the `webhook_debug` breadcrumb flips to `sigOk:true`.
+3. Remove `WHATSAPP_SKIP_SIGNATURE` from Vercel → redeploy.
+4. Strip the breadcrumb diagnostic from app/api/whatsapp/webhook/route.ts + drop
+   the `public.webhook_debug` table.
+Until then, the webhook accepts unsigned/forged payloads — acceptable for the
+sandbox pilot only.
+
 ## Pre-pilot hardening — Next.js security bump (BEFORE go-live)
 **Status:** queued — pre-pilot, NOT mid-sprint.
 `npm audit` flags Next.js 14.2.5 middleware authorization-bypass
