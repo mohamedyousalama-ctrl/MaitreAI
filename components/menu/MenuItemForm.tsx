@@ -91,7 +91,7 @@ export function MenuItemForm({ open, initial, categories, modifiers, onClose, on
             onChange={(v) => set("category", v)}
             options={categories.map((c) => ({ value: c, label: c }))}
           />
-          <NumberField label="السعر" value={values.price} onChange={(v) => set("price", v)} suffix="ر.س" />
+          <NumberField label="السعر" value={values.price} onChange={(v) => set("price", v)} suffix="ج.م" />
         </div>
         <TextAreaField label="الوصف" value={values.description} onChange={(v) => set("description", v)} rows={3} />
         <TextField label="رابط الصورة" value={values.imageUrl} onChange={(v) => set("imageUrl", v)} placeholder="https://..." />

@@ -118,7 +118,7 @@ export function ModifierManager({ open, onClose }: ModifierManagerProps) {
                 <div>
                   <p className="text-sm font-semibold text-slate-800">
                     {m.name}
-                    {m.priceImpact > 0 && <span className="text-xs font-normal text-slate-400"> (+{m.priceImpact} ر.س)</span>}
+                    {m.priceImpact > 0 && <span className="text-xs font-normal text-slate-400"> (+{m.priceImpact} ج.م)</span>}
                   </p>
                   <span className="text-xs text-slate-400">{m.category}</span>
                 </div>

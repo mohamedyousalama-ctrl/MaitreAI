@@ -13,6 +13,7 @@ import { getServerTenant } from "@/lib/db/tenant-server";
 import { loadBrain } from "@/lib/db/brain";
 import { respond } from "@/lib/ai/respond";
 import { deriveSystemMode } from "@/lib/ai/modes";
+import { dialectProfile } from "@/lib/ai/dialect";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
 import type { LlmMessage } from "@/lib/ai/llm/types";
@@ -71,14 +72,15 @@ export async function POST(req: Request) {
   const { data: convRow } = await supabase.from("conversations").select("handover_note").eq("id", conversationId).single();
   const handoverNote = (convRow?.handover_note as string | null) ?? undefined;
 
+  const sDialect = String(row.dialect ?? "egyptian");
   const ctx: BrainContext = {
     profile: {
       name: String(row.name ?? ""),
-      currency: String(row.currency ?? "ر.س"),
+      currency: String(row.currency || dialectProfile(sDialect).currencyDefault),
       timezone: String(row.timezone ?? "Asia/Riyadh"),
       businessType: String(row.business_type ?? ""),
     },
-    dialect: String(row.dialect ?? "saudi"),
+    dialect: sDialect,
     menuItems: brain.menuItems,
     modifiers: brain.modifiers,
     branches: brain.branches,

@@ -6,11 +6,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const CURRENCY = "ر.س";
+// Egypt-first default for the (single-tenant) operator UI. The customer-facing,
+// order, and receipt paths derive currency per-tenant from the DB; this static
+// label only affects operator-UI money formatting and accepts an override.
+const CURRENCY = "ج.م";
 
-/** Format a money amount with western digits + Saudi Riyal label. e.g. 85 ر.س */
-export function formatCurrency(amount: number): string {
-  return `${amount.toLocaleString("en-US")} ${CURRENCY}`;
+/** Format a money amount with western digits + a currency label (default ج.م). */
+export function formatCurrency(amount: number, currency: string = CURRENCY): string {
+  return `${amount.toLocaleString("en-US")} ${currency}`;
 }
 
 /** Format an order number with leading hash. e.g. Order #1042 -> طلب #1042 */

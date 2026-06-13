@@ -21,7 +21,7 @@ export const seedProfile: RestaurantProfile = {
   logoUrl: "",
   phone: "+966 50 123 4567",
   email: "info@aldhawaqah.sa",
-  currency: "ر.س",
+  currency: "ج.م",
   defaultLanguage: "العربية",
   timezone: "توقيت الرياض (GMT+3)",
   businessType: "مطعم وجبات سريعة",

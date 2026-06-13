@@ -157,7 +157,7 @@ export const useOrderStore = create<OrderState>()(
           subtotal,
           deliveryFee,
           total,
-          currency: "ر.س",
+          currency: brain.profile?.currency || "ج.م",
           paymentStatus: "unpaid",
           orderStatus: "pending_payment",
           kitchenStatus: "new",

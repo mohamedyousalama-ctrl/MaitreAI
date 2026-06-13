@@ -10,7 +10,7 @@ import type { Conversation, Customer, Kpi, Order, Promotion } from "./types";
 export const RESTAURANT = {
   name: "مطعم الذواقة",
   tagline: "موظف واتساب الذكي للمطاعم",
-  currency: "ر.س",
+  currency: "ج.م",
 };
 
 // ---------------------------------------------------------------------------

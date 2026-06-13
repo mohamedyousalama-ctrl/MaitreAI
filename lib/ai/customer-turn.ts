@@ -19,6 +19,7 @@ import type { BrainContext } from "@/lib/ai/prompt";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import type { OrderDraft, Presentation, ToolSignal } from "@/lib/ai/tools";
 import type { AiToneConfig } from "@/lib/types";
+import { dialectProfile } from "@/lib/ai/dialect";
 
 /** Typed error so callers can map to the right HTTP status / timeline note. */
 export class CustomerTurnError extends Error {
@@ -97,14 +98,15 @@ export async function runCustomerTurn(
     handoverNote = (conv?.handover_note as string | null) ?? undefined;
   }
 
+  const dialect = String(row.dialect ?? "egyptian");
   const ctx: BrainContext = {
     profile: {
       name: String(row.name ?? ""),
-      currency: String(row.currency ?? "ر.س"),
+      currency: String(row.currency || dialectProfile(dialect).currencyDefault),
       timezone: String(row.timezone ?? "Asia/Riyadh"),
       businessType: String(row.business_type ?? ""),
     },
-    dialect: String(row.dialect ?? "saudi"),
+    dialect,
     menuItems: brain.menuItems,
     modifiers: brain.modifiers,
     branches: brain.branches,

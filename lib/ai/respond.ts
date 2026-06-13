@@ -12,6 +12,7 @@ import { getAdapter } from "./llm";
 import type { LlmContentBlock, LlmMessage, LlmUsage } from "./llm/types";
 import { buildCustomerAgentSystemPrompt, type BrainContext } from "./prompt";
 import { modeAllowsOrders } from "./modes";
+import { dialectProfile } from "./dialect";
 import {
   emptyDraft,
   executeTool,
@@ -50,7 +51,7 @@ const MAX_ITERATIONS = 6;
 export async function respond(input: RespondInput): Promise<RespondResult> {
   const adapter = await getAdapter();
   const system = buildCustomerAgentSystemPrompt(input.brain);
-  const currency = input.brain.profile.currency || "ر.س";
+  const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
 
   const ctx: ToolContext = {
     menuItems: input.brain.menuItems,
