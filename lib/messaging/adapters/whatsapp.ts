@@ -243,6 +243,26 @@ export function buildWhatsAppImageBody(to: string, mediaId: string, caption?: st
   };
 }
 
+/** Template message body (the only way to message outside the 24h window). */
+export function buildWhatsAppTemplateBody(
+  to: string,
+  name: string,
+  language: string,
+  components: { type: string; parameters: { type: string; text: string }[] }[]
+) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "template",
+    template: {
+      name,
+      language: { code: language },
+      ...(components.length ? { components } : {}),
+    },
+  };
+}
+
 async function sendWhatsAppMessage(message: OutboundMessage): Promise<SendResult> {
   const env = readWhatsAppEnv();
   if (!isWhatsAppConfigured(env)) return SKIPPED(message.to);

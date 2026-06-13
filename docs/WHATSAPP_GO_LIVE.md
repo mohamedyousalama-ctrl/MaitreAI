@@ -68,3 +68,33 @@ test-mode (skips sending) to live the moment `WHATSAPP_ACCESS_TOKEN` +
 - Until verified, the unverified cap (250 business-initiated conversations/day)
   is acceptable for the pilot. Customer-initiated replies inside the 24h window
   are unaffected.
+
+## Templates (S9-4 — foundation; delivery pending Meta approval)
+
+Free-form text/interactive/image messages only reach the customer **inside the
+24-hour customer-service window**. To message a customer **outside** it (e.g. an
+order-status update hours later), WhatsApp requires a **pre-approved template**.
+
+The plumbing is built and ready (`lib/messaging/templates.ts` registry +
+`sendWhatsAppTemplate` send-path + `sendOrderStatusUpdate` helper). It is **not
+auto-fired anywhere yet** — each template must first be created and **approved in
+Meta** on the verified account.
+
+### Seed template to submit for approval
+
+| Field | Value |
+|---|---|
+| Name | `order_status_update` |
+| Language | `ar` |
+| Category | Utility |
+| Body | `تحديث طلبك {{1}}: الحالة الآن «{{2}}». شكراً لطلبك من لدينا 🙏` |
+| Sample | `{{1}}` = `#1048`, `{{2}}` = `قيد التحضير` |
+
+**Steps (one-time, in Meta, after Business Verification):** WhatsApp Manager →
+Message Templates → Create → paste the body above → submit → wait for approval
+(minutes–hours). Once `APPROVED`, calling `sendOrderStatusUpdate(client, orderId,
+status)` delivers it; before approval Meta returns a 4xx (surfaced as a failed
+send, never a fake success).
+
+**Out of scope here:** the §T promotion engine (Sprint 11) — only the transactional
+template rail is foundationed now.

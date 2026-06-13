@@ -13,12 +13,14 @@ import {
   buildWhatsAppButtonsBody,
   buildWhatsAppListBody,
   buildWhatsAppImageBody,
+  buildWhatsAppTemplateBody,
   sendWhatsAppBody,
   uploadWhatsAppMedia,
 } from "./adapters/whatsapp";
 import { isWhatsAppConfigured } from "./config";
 import type { SendResult } from "./types";
 import type { Presentation } from "@/lib/ai/tools";
+import type { TemplateDef } from "./templates";
 
 /** WhatsApp's free-form customer-service window: 24h since the last inbound. */
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -220,4 +222,31 @@ export async function sendWhatsAppImage(args: SendImageArgs): Promise<WindowedSe
     await delay(BACKOFF_MS[attempt] ?? 4000);
   }
   return { ...last, windowState: "in_window", attempts: retries + 1 };
+}
+
+/**
+ * Send a pre-approved template message (S9-4). UNLIKE text/interactive, templates
+ * are allowed OUTSIDE the 24h window — that is their whole purpose — so there is
+ * no window gate here. Delivery still requires the template to be APPROVED in
+ * Meta on the verified account; until then Meta rejects with a 4xx (surfaced).
+ */
+export async function sendWhatsAppTemplate<P>(
+  to: string,
+  def: TemplateDef<P>,
+  params: P,
+  retries = 2
+): Promise<WindowedSendResult> {
+  const base = { channel: "whatsapp" as const, to };
+  if (!isWhatsAppConfigured()) {
+    return { ...base, ok: false, status: "skipped", error: "WhatsApp غير مُهيأ (الوضع التجريبي).", windowState: "test_mode", attempts: 0 };
+  }
+  const body = buildWhatsAppTemplateBody(to, def.name, def.language, def.build(params));
+  let last: SendResult = { ...base, ok: false, status: "failed", error: "no attempt" };
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    last = await sendWhatsAppBody(body as Record<string, unknown>);
+    if (last.ok) return { ...last, windowState: "out_of_window", attempts: attempt + 1 };
+    if (!shouldRetry(last) || attempt === retries) break;
+    await delay(BACKOFF_MS[attempt] ?? 4000);
+  }
+  return { ...last, windowState: "out_of_window", attempts: retries + 1 };
 }
