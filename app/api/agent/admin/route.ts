@@ -23,6 +23,7 @@ const MANAGER_ONLY = new Set([
   "set_item_availability", "edit_price", "add_item", "remove_item",
   "add_modifier", "edit_modifier", "remove_modifier",
   "add_zone", "edit_zone", "remove_zone",
+  "edit_policy",
 ]);
 
 const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم (لست من يكتب البيانات). صنّف رسالة المدير إلى نية واحدة واستخرج المعاملات.
@@ -41,6 +42,7 @@ const ROUTER_SYSTEM = `أنت موجِّه نوايا لوحة تحكم مطعم
 - add_zone params:{"name":"اسم المنطقة","fee":رقم,"min_order":رقم,"eta_minutes":رقم اختياري} (إضافة منطقة توصيل — مثل «نوصّل لمدينة نصر رسوم ١٥ الحد الأدنى ٨٠»)
 - edit_zone params:{"zone":"اسم المنطقة","fee":رقم اختياري,"min_order":رقم اختياري,"eta_minutes":رقم اختياري} (تعديل منطقة توصيل)
 - remove_zone params:{"zone":"اسم المنطقة"} (حذف منطقة توصيل)
+- edit_policy params:{"key":"refund|cancellation|delivery|replacement|payment","text":"نص السياسة"} (كتابة/إعادة صياغة سياسة — الاسترجاع/الاسترداد=refund، الإلغاء=cancellation، التوصيل=delivery، الاستبدال=replacement، الدفع=payment)
 - off_scope (إذا كان الطلب خارج تشغيل المطعم: عام/أخبار/غير متعلق) — اجعل sentence سطراً واحداً يعيد التوجيه بأدب لنطاق المطعم.
 لنوايا التغيير (set_*): اجعل الجملة اقتراحاً ينتظر التأكيد (مثل «جاهز لإغلاق المطعم بعد تأكيدك») — لا تقل «تمّ» قبل التنفيذ.
 لا تخترع بيانات. أعِد JSON فقط دون أي نص آخر.`;
@@ -152,6 +154,13 @@ export async function POST(req: Request) {
         if (!id) return NextResponse.json({ error: "bad_params" }, { status: 400 });
         await supabase.from("delivery_zones").delete().eq("id", id).eq("restaurant_id", restaurantId);
         result = `تم حذف منطقة «${confirm.params.zone}».`;
+      } else if (confirm.intent === "edit_policy") {
+        const key = String(confirm.params.key ?? "");
+        const text = String(confirm.params.text ?? "").trim();
+        const LABELS: Record<string, string> = { refund: "الاسترجاع", cancellation: "الإلغاء", delivery: "التوصيل", replacement: "الاستبدال", payment: "الدفع" };
+        if (!LABELS[key] || !text) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+        await supabase.from("policies").upsert({ restaurant_id: restaurantId, key, text }, { onConflict: "restaurant_id,key" });
+        result = `تم تحديث سياسة ${LABELS[key]}.`;
       } else {
         return NextResponse.json({ error: "unknown_action" }, { status: 400 });
       }
@@ -366,6 +375,22 @@ export async function POST(req: Request) {
     return NextResponse.json({
       sentence: parsed.sentence,
       preview: { intent, params: { id: zone.id, zone: zone.name }, label: "حذف منطقة توصيل", before: zone.name, after: "محذوف" },
+    });
+  }
+
+  // Policy write intent → PREVIEW only (§P2). The agent quotes/abides by these.
+  if (intent === "edit_policy") {
+    const KEYS = ["refund", "cancellation", "delivery", "replacement", "payment"];
+    const LABELS: Record<string, string> = { refund: "الاسترجاع", cancellation: "الإلغاء", delivery: "التوصيل", replacement: "الاستبدال", payment: "الدفع" };
+    const key = String(parsed.params.key ?? "");
+    const text = String(parsed.params.text ?? "").trim();
+    if (!KEYS.includes(key) || !text) return NextResponse.json({ sentence: "حدّد نوع السياسة ونصّها (مثل: سياسة الاسترجاع: ...).", intent: "off_scope" });
+    const { data: pol } = await supabase.from("policies").select("text").eq("restaurant_id", restaurantId).eq("key", key).maybeSingle();
+    const cur = (pol?.text as string | undefined) ?? "";
+    const trunc = (s: string) => (s.length > 70 ? `${s.slice(0, 69)}…` : s || "—");
+    return NextResponse.json({
+      sentence: parsed.sentence,
+      preview: { intent, params: { key, text }, label: `سياسة ${LABELS[key]}`, before: trunc(cur), after: trunc(text) },
     });
   }
 
