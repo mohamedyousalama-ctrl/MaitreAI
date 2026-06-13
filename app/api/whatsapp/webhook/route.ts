@@ -53,20 +53,18 @@ export function GET(req: NextRequest) {
 
 // --- signature verification (server-only) ----------------------------------
 /** Verify Meta's X-Hub-Signature-256 HMAC over the raw request body. */
-function verifySignature(rawBody: string, signatureHeader: string | null, appSecret: string): boolean {
-  if (!signatureHeader || !appSecret) return false;
-  const expected = "sha256=" + createHmac("sha256", appSecret).update(rawBody).digest("hex");
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signatureHeader);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
 // --- POST: inbound messages ------------------------------------------------
 export async function POST(req: NextRequest) {
   const env = readWhatsAppEnv();
-  const rawBody = await req.text();
+  // Read the RAW bytes — HMAC must be over the exact bytes Meta signed, not a
+  // re-encoded string (the payload contains Arabic; round-tripping via text()
+  // could in principle differ). rawBody (string) is only for JSON parsing.
+  const rawBuf = Buffer.from(await req.arrayBuffer());
+  const rawBody = rawBuf.toString("utf8");
   const sig = req.headers.get("x-hub-signature-256");
+  const hmac = (data: Buffer | string) => (env.appSecret ? "sha256=" + createHmac("sha256", env.appSecret).update(data).digest("hex") : null);
+  const compBytes = hmac(rawBuf); // authoritative
+  const compText = hmac(rawBody); // diagnostic comparison
 
   // --- TEMP inbound diagnostic (S9): log EVERY POST attempt incl. 401s, so we
   // can tell from the DB whether Meta is delivering and whether the signature
@@ -75,7 +73,6 @@ export async function POST(req: NextRequest) {
   try {
     const dbg = createAdminClient();
     if (dbg) {
-      const expected = env.appSecret ? "sha256=" + createHmac("sha256", env.appSecret).update(rawBody).digest("hex") : null;
       let shape: Record<string, unknown> = {};
       try {
         const p = JSON.parse(rawBody) as { object?: string; entry?: { changes?: { value?: { messages?: unknown[]; statuses?: unknown[] } }[] }[] };
@@ -97,9 +94,11 @@ export async function POST(req: NextRequest) {
           appSecretSet: !!env.appSecret,
           sigPresent: !!sig,
           sigReceivedPrefix: sig ? sig.slice(0, 23) : null,
-          sigComputedPrefix: expected ? expected.slice(0, 23) : null,
-          sigOk: !!sig && !!expected && sig === expected,
-          rawLen: rawBody.length,
+          sigComputedPrefix: compBytes ? compBytes.slice(0, 23) : null,
+          sigComputedTextPrefix: compText ? compText.slice(0, 23) : null,
+          sigOk: !!sig && !!compBytes && sig === compBytes,
+          sigOkText: !!sig && !!compText && sig === compText,
+          rawLen: rawBuf.length,
           ...shape,
         },
       });
@@ -116,7 +115,8 @@ export async function POST(req: NextRequest) {
   // can confirm the moment the real secret matches.
   const skipSig = (process.env.WHATSAPP_SKIP_SIGNATURE ?? "").trim().toLowerCase() === "true";
   if (env.appSecret && !skipSig) {
-    if (!verifySignature(rawBody, sig, env.appSecret)) {
+    const okSig = !!sig && !!compBytes && sig.length === compBytes.length && timingSafeEqual(Buffer.from(sig), Buffer.from(compBytes));
+    if (!okSig) {
       return NextResponse.json({ ok: false, message: "invalid signature" }, { status: 401 });
     }
   }
