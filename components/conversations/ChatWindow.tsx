@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Conversation } from "@/lib/types";
-import { ChatBubble, TypingIndicator } from "./ChatBubble";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ChatBubble, TypingIndicator, DaySeparator } from "./ChatBubble";
+import { ConversationStatusChip } from "./ConversationStatusChip";
 import { PromptDialog } from "@/components/ui/PromptDialog";
-import { Send, Sparkles, Hand, Bot, User, Loader2, Check, Pencil, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Send, Sparkles, Hand, Bot, Loader2, Check, Pencil, X, AlertTriangle } from "lucide-react";
+
+/** Day-divider label from epoch ms (today / yesterday / date). */
+function dayLabel(ms: number): string {
+  const d = new Date(ms);
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOf(new Date()) - startOf(d)) / 86400000);
+  if (diff === 0) return "اليوم";
+  if (diff === 1) return "أمس";
+  return d.toLocaleDateString("ar", { day: "numeric", month: "long" });
+}
 
 interface ChatWindowProps {
   conversation: Conversation;
@@ -100,62 +109,73 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
     onReturnToAi(note.trim() || undefined);
   }
 
+  // Build the thread with day separators (uses createdAtMs; demo seed omits it).
+  const threadNodes: ReactNode[] = [];
+  let lastDayKey: number | null = null;
+  for (const m of conversation.messages) {
+    if (m.createdAtMs) {
+      const d = new Date(m.createdAtMs);
+      const key = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      if (key !== lastDayKey) {
+        threadNodes.push(<DaySeparator key={`day-${key}-${m.id}`} label={dayLabel(m.createdAtMs)} />);
+        lastDayKey = key;
+      }
+    }
+    threadNodes.push(<ChatBubble key={m.id} message={m} />);
+  }
+
   return (
-    <div className="flex h-full flex-col bg-white">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ece0d2] bg-white px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
-            style={{ backgroundColor: conversation.avatarColor }}
-          >
-            {conversation.customer.charAt(0)}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate font-bold text-[#2a211b]">{conversation.customer}</p>
-            <p className="truncate text-xs text-[#9b8b7c]">{conversation.phone}</p>
+    <div className="flex h-full flex-col bg-[#faf6ef]">
+      {/* Header — glassy chrome */}
+      <div className="z-10 shrink-0 border-b border-white/50 bg-white/55 px-4 py-3 shadow-glass backdrop-blur-xl">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
+              style={{ backgroundColor: conversation.avatarColor }}
+            >
+              {conversation.customer.charAt(0)}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate font-bold text-[#2a211b]">{conversation.customer}</p>
+              <p dir="ltr" className="truncate text-start text-xs text-[#9b8b7c]">{conversation.phone}</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <ConversationStatusChip conversation={conversation} size="md" />
+            {isHuman ? (
+              <button
+                onClick={() => setReleaseOpen(true)}
+                className="hidden items-center gap-1.5 rounded-xl bg-[#3c7a52] px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:opacity-90 active:scale-95 sm:inline-flex"
+              >
+                <Bot className="h-4 w-4" /> إعادة للمساعد
+              </button>
+            ) : (
+              <button
+                onClick={onTakeover}
+                className="hidden items-center gap-1.5 rounded-xl bg-[#b5502e] px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:opacity-90 active:scale-95 sm:inline-flex"
+              >
+                <Hand className="h-4 w-4" /> تولَّ المحادثة
+              </button>
+            )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold",
-              isHuman ? "bg-[#f7e3df] text-[#a8432a]" : "bg-[#f0e7da] text-[#b5502e]"
-            )}
-          >
-            {isHuman ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
-            {isHuman ? "المساعد متوقف" : "المساعد يرد"}
-          </span>
-          <StatusBadge status={conversation.status} />
-          {isHuman ? (
-            <button
-              onClick={() => setReleaseOpen(true)}
-              className="hidden items-center gap-1.5 rounded-xl bg-[#3c7a52] px-3 py-2 text-xs font-semibold text-white hover:opacity-90 sm:inline-flex"
-            >
-              <Bot className="h-4 w-4" /> إعادة للمساعد
-            </button>
-          ) : (
-            <button
-              onClick={onTakeover}
-              className="hidden items-center gap-1.5 rounded-xl bg-[#b5502e] px-3 py-2 text-xs font-semibold text-white hover:opacity-90 sm:inline-flex"
-            >
-              <Hand className="h-4 w-4" /> تولَّ المحادثة
-            </button>
-          )}
-        </div>
+        {conversation.escalationReason && (
+          <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-[#fbeae5]/70 px-3 py-1.5 text-[11px] font-medium text-[#a8432a]">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> سبب التصعيد: {conversation.escalationReason}
+          </div>
+        )}
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} onScroll={onThreadScroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#faf6ef] p-4">
-        {conversation.messages.map((m) => (
-          <ChatBubble key={m.id} message={m} />
-        ))}
+      {/* Messages — the hero, on the warm base */}
+      <div ref={scrollRef} onScroll={onThreadScroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        {threadNodes}
         {conversation.aiTyping && <TypingIndicator />}
       </div>
 
       {/* Copilot suggestion (E4) */}
       {(suggestion || suggestErr) && (
-        <div className="border-t border-[#ece0d2] bg-[#fbf4ea] px-3 py-2.5">
+        <div className="shrink-0 border-t border-white/50 bg-[#fbf4ea]/80 px-3 py-2.5 backdrop-blur-xl">
           {suggestErr ? (
             <p className="text-xs text-[#9a6c1e]">{suggestErr}</p>
           ) : (
@@ -163,9 +183,9 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
               <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold text-[#b5502e]">
                 <Sparkles className="h-3.5 w-3.5" /> رد مقترح من المساعد
               </p>
-              <p className="rounded-xl bg-white px-3 py-2 text-sm text-[#2a211b] shadow-sm">{suggestion}</p>
+              <p className="rounded-xl bg-white/90 px-3 py-2 text-sm text-[#2a211b] shadow-glass ring-1 ring-[#ece0d2]/60">{suggestion}</p>
               <div className="mt-2 flex items-center gap-2">
-                <button onClick={sendSuggestion} className="flex items-center gap-1 rounded-lg bg-[#b5502e] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-95">
+                <button onClick={sendSuggestion} className="flex items-center gap-1 rounded-lg bg-[#b5502e] px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-95 active:scale-95">
                   <Check className="h-3.5 w-3.5" /> إرسال
                 </button>
                 <button
@@ -186,14 +206,14 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
         </div>
       )}
 
-      {/* Composer */}
-      <div className="border-t border-[#ece0d2] bg-white">
+      {/* Composer — glassy chrome */}
+      <div className="shrink-0 border-t border-white/50 bg-white/60 backdrop-blur-xl">
         <div className="flex items-center gap-2 px-3 py-3">
           <button
             onClick={getSuggestion}
             disabled={suggestLoading}
             title="اقتراح رد من المساعد"
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#e4d8c8] text-[#b5502e] hover:bg-[#faf6ef] disabled:opacity-50"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#e4d8c8] bg-white/70 text-[#b5502e] transition hover:bg-white disabled:opacity-50"
           >
             {suggestLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
           </button>
@@ -208,9 +228,9 @@ export function ChatWindow({ conversation, onSendCustomer, onSendHuman, onTakeov
               }
             }}
             placeholder={isHuman ? "اكتب رد الموظف…" : "اكتب لتتولى المحادثة…"}
-            className="flex-1 rounded-xl border border-[#e4d8c8] bg-[#faf6ef] px-4 py-2.5 text-sm text-[#2a211b] outline-none placeholder:text-[#9b8b7c] focus:border-[#b5502e]"
+            className="min-w-0 flex-1 rounded-xl border border-[#e4d8c8] bg-white/80 px-4 py-2.5 text-sm text-[#2a211b] outline-none placeholder:text-[#9b8b7c] focus:border-[#b5502e] focus:bg-white"
           />
-          <button onClick={submit} className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#b5502e] text-white hover:opacity-90">
+          <button onClick={submit} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#b5502e] text-white shadow-sm transition hover:opacity-90 active:scale-95">
             <Send className="h-5 w-5" />
           </button>
         </div>

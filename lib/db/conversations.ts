@@ -42,10 +42,12 @@ function toMessage(m: MsgRow): ChatMessage {
     sender: m.sender as MessageSender,
     text: m.text,
     time: fmtTime(m.created_at),
+    createdAtMs: m.created_at ? new Date(m.created_at).getTime() : undefined,
     confidence: meta.confidence as number | undefined,
     intent: meta.intent as ChatMessage["intent"],
     sources: meta.sources as ChatMessage["sources"],
     suggestedAction: meta.suggestedAction as string | undefined,
+    metadata: meta,
   };
 }
 

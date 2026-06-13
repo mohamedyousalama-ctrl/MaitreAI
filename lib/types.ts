@@ -274,11 +274,12 @@ export interface ChatMessage {
   sender: MessageSender;
   text: string;
   time: string;
+  createdAtMs?: number; // epoch ms, for day separators
   confidence?: number; // AI confidence 0-100 for ai messages
   intent?: IntentType;
   sources?: KnowledgeSource[];
   suggestedAction?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown>; // passthrough (e.g. WhatsApp interactive presentation)
 }
 
 export interface Conversation {

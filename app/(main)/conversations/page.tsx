@@ -13,7 +13,7 @@ import { useHasHydrated } from "@/lib/store";
 import { ConversationList } from "@/components/conversations/ConversationList";
 import { ChatWindow } from "@/components/conversations/ChatWindow";
 import { CustomerContextPanel } from "@/components/conversations/CustomerContextPanel";
-import { ArrowRight, PanelRightOpen, X } from "lucide-react";
+import { ArrowRight, PanelRightOpen, X, MessageSquare } from "lucide-react";
 
 export default function ConversationsPage() {
   const hydrated = useHasHydrated();
@@ -34,7 +34,13 @@ export default function ConversationsPage() {
   const chat = selected ? (
     <ChatWindow conversation={selected} onSendCustomer={sendCustomer} onSendHuman={sendHuman} onTakeover={takeover} onReturnToAi={returnToAi} />
   ) : (
-    <div className="flex h-full items-center justify-center text-sm text-[#9b8b7c]">اختر محادثة من القائمة</div>
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+      <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-[#b5502e] shadow-glass ring-1 ring-[#ece0d2]/60 backdrop-blur-sm">
+        <MessageSquare className="h-7 w-7" />
+      </span>
+      <p className="text-sm font-semibold text-[#6a5c4e]">اختر محادثة لعرضها</p>
+      <p className="max-w-xs text-xs text-[#9b8b7c]">تظهر هنا محادثات العملاء عبر واتساب — يردّ المساعد تلقائياً، وتستطيع التدخّل في أي لحظة.</p>
+    </div>
   );
   const context = selected ? (
     <CustomerContextPanel
@@ -44,15 +50,16 @@ export default function ConversationsPage() {
   ) : null;
 
   return (
-    <div className="h-[calc(100vh-9rem)] overflow-hidden rounded-2xl border border-[#ece0d2] bg-white">
+    <div className="h-[calc(100vh-9rem)] overflow-hidden rounded-3xl border border-[#ece0d2]/60 bg-[#faf6ef] shadow-float">
       {/* Desktop: panes. grid-rows-1 (minmax(0,1fr)) gives the single row the full
-          card height + lets children shrink, so the thread pane can scroll. */}
-      <div className="hidden h-full lg:grid lg:grid-rows-1 lg:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_340px]">
-        <div className="min-h-0 border-l border-[#ece0d2]">
+          card height + lets children shrink, so the thread pane can scroll.
+          Panes are distinguished by translucency/elevation, not heavy dividers. */}
+      <div className="hidden h-full lg:grid lg:grid-rows-1 lg:grid-cols-[332px_1fr] xl:grid-cols-[332px_1fr_348px]">
+        <div className="min-h-0 border-l border-white/50">
           <ConversationList conversations={conversations} activeId={selectedId} onSelect={selectConversation} />
         </div>
         <div className="min-h-0 min-w-0">{chat}</div>
-        <div className="hidden min-h-0 border-r border-[#ece0d2] bg-[#faf6ef] xl:block">{context}</div>
+        <div className="hidden min-h-0 border-r border-white/50 xl:block">{context}</div>
       </div>
 
       {/* Mobile: inbox → chat */}
@@ -68,11 +75,11 @@ export default function ConversationsPage() {
           />
         ) : (
           <div className="flex h-full flex-col">
-            <div className="flex items-center justify-between border-b border-[#ece0d2] px-3 py-2">
+            <div className="flex shrink-0 items-center justify-between border-b border-white/50 bg-white/55 px-3 py-2 backdrop-blur-xl">
               <button onClick={() => setMobileChat(false)} className="flex items-center gap-1 text-sm font-semibold text-[#6a5c4e]">
                 <ArrowRight className="h-4 w-4" /> الرجوع
               </button>
-              <button onClick={() => setDrawerOpen(true)} className="flex items-center gap-1 rounded-lg border border-[#e4d8c8] px-2.5 py-1.5 text-xs font-semibold text-[#b5502e]">
+              <button onClick={() => setDrawerOpen(true)} className="flex items-center gap-1 rounded-lg border border-[#e4d8c8] bg-white/70 px-2.5 py-1.5 text-xs font-semibold text-[#b5502e]">
                 <PanelRightOpen className="h-4 w-4" /> السياق
               </button>
             </div>
@@ -84,11 +91,11 @@ export default function ConversationsPage() {
       {/* Mobile context drawer (bottom sheet) */}
       {drawerOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setDrawerOpen(false)} />
-          <div className="absolute inset-x-0 bottom-0 max-h-[82vh] overflow-y-auto rounded-t-2xl bg-white">
-            <div className="sticky top-0 flex items-center justify-between border-b border-[#ece0d2] bg-white px-4 py-2">
-              <span className="text-sm font-bold text-[#2a211b]">السياق</span>
-              <button onClick={() => setDrawerOpen(false)} className="text-[#9b8b7c]"><X className="h-5 w-5" /></button>
+          <div className="absolute inset-0 bg-[#2a211b]/30 backdrop-blur-sm" onClick={() => setDrawerOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[82vh] overflow-y-auto rounded-t-3xl bg-[#faf6ef] shadow-float">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/50 bg-white/70 px-4 py-3 backdrop-blur-xl">
+              <span className="text-sm font-bold text-[#2a211b]">سياق العميل</span>
+              <button onClick={() => setDrawerOpen(false)} className="text-[#9b8b7c] hover:text-[#2a211b]"><X className="h-5 w-5" /></button>
             </div>
             {context}
           </div>
