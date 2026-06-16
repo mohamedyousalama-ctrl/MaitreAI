@@ -9,7 +9,8 @@
 
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
+import { runCustomerTurn, CustomerTurnError, type CustomerTurnOutcome } from "@/lib/ai/customer-turn";
+import { runTapTurn } from "@/lib/ai/tap-router";
 import { sendWhatsAppText, sendWhatsAppInteractive } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
 import { finalizeOrderSession } from "@/lib/db/order-session";
@@ -75,11 +76,11 @@ export async function respondAndSendWhatsApp(
   //    (no double-counting of the message into the prompt).
   const { data: msgs } = await admin
     .from("messages")
-    .select("sender,text,created_at")
+    .select("sender,text,created_at,meta")
     .eq("conversation_id", conversationId)
     .order("created_at")
     .limit(40);
-  const rows = (msgs ?? []) as { sender: string; text: string | null; created_at: string }[];
+  const rows = (msgs ?? []) as { sender: string; text: string | null; created_at: string; meta: Record<string, unknown> | null }[];
   const lastCustomerIdx = rows.map((m) => m.sender).lastIndexOf("customer");
   if (lastCustomerIdx < 0) return { status: "skipped_no_customer_msg" };
   const userMessage = (rows[lastCustomerIdx].text ?? "").trim();
@@ -90,11 +91,22 @@ export async function respondAndSendWhatsApp(
     .filter((m) => m.text)
     .map((m) => ({ role: m.sender === "customer" ? "user" : "assistant", content: m.text as string }));
 
-  // 3. Brain turn — persists the AI reply, logs cost to agent_runs, flips to
-  //    human on escalation. Any failure hands the thread to a human + notes it.
-  let outcome;
+  // Step 2: if the last inbound was a TAP (carries a stable interactiveId), the
+  // tap router acts on it deterministically — no LLM call. Free text, or a tap
+  // the router can't resolve, falls through to the Brain unchanged.
+  const lastMeta = rows[lastCustomerIdx].meta;
+  const interactiveId = lastMeta && typeof lastMeta.interactiveId === "string" ? (lastMeta.interactiveId as string) : null;
+
+  // 3. Brain turn (or deterministic tap turn) — persists the AI reply, logs the
+  //    run, flips to human on escalation. Any failure hands to a human + notes it.
+  let outcome: CustomerTurnOutcome | null = null;
   try {
-    outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage });
+    if (interactiveId) {
+      outcome = await runTapTurn(admin, { restaurantId, conversationId, interactiveId, titleText: userMessage });
+    }
+    if (!outcome) {
+      outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage });
+    }
   } catch (e) {
     const detail = e instanceof CustomerTurnError ? e.code : e instanceof Error ? e.message : String(e);
     await admin
@@ -110,6 +122,7 @@ export async function respondAndSendWhatsApp(
     );
     return { status: "agent_error", error: detail };
   }
+  if (!outcome) return { status: "agent_error", error: "no_outcome" };
 
   // 4. Put the reply on the WhatsApp wire — as an interactive message when the
   //    Brain presented options (degrades to numbered text on failure), else text.

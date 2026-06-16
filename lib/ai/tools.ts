@@ -236,7 +236,7 @@ function findItem(menu: MenuItem[], name: string): MenuItem | undefined {
   );
 }
 
-function recompute(ctx: ToolContext): void {
+export function recompute(ctx: ToolContext): void {
   const d = ctx.draft;
   d.subtotal = d.lines.reduce((s, l) => s + l.lineTotal, 0);
   const deliv = d.fulfillment === "delivery" ? d.deliveryFee : 0;
@@ -251,7 +251,7 @@ function recompute(ctx: ToolContext): void {
   d.total = Math.round((d.subtotal + deliv + d.tax) * 100) / 100;
 }
 
-function summary(d: OrderDraft): string {
+export function summary(d: OrderDraft): string {
   if (!d.lines.length) return "السلة فارغة.";
   const lines = d.lines
     .map((l) => {
