@@ -6,6 +6,7 @@ import { navItems } from "@/lib/navigation";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { seedProfile } from "@/lib/seed-data";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { ENABLE_ADMIN_CHAT_CONSOLE } from "@/lib/feature-flags";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +20,9 @@ export function AppSidebar() {
   const restaurantName = hydrated ? name : seedProfile.name;
   const configured = isSupabaseConfigured();
   const role = useRole();
-  const items = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
+  // The admin chat console («الرئيسية») is hidden unless its flag is on.
+  const visible = navItems.filter((i) => i.href !== "/dashboard" || ENABLE_ADMIN_CHAT_CONSOLE);
+  const items = role === "operation" ? visible.filter((i) => OPERATION_HREFS.has(i.href)) : visible;
 
   return (
     <aside className="hidden h-screen w-72 shrink-0 flex-col border-l border-[#ece0d2] bg-white lg:flex">

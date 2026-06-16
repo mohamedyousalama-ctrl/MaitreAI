@@ -10,6 +10,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./env";
+import { HOME_HREF } from "@/lib/feature-flags";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -57,7 +58,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   if (isPublic(pathname)) {
     // Already signed in and hitting /login → send to the app.
-    if (user && pathname === "/login") return redirectTo("/dashboard");
+    if (user && pathname === "/login") return redirectTo(HOME_HREF);
     return response;
   }
 

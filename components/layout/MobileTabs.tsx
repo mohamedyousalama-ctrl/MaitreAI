@@ -5,13 +5,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
+import { ENABLE_ADMIN_CHAT_CONSOLE } from "@/lib/feature-flags";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 export function MobileTabs() {
   const pathname = usePathname();
   const role = useRole();
-  const items = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
+  // The admin chat console («الرئيسية») is hidden unless its flag is on.
+  const visible = navItems.filter((i) => i.href !== "/dashboard" || ENABLE_ADMIN_CHAT_CONSOLE);
+  const items = role === "operation" ? visible.filter((i) => OPERATION_HREFS.has(i.href)) : visible;
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#ece0d2] bg-white lg:hidden">
       {items.map((item) => {

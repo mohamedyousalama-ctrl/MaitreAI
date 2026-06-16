@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { Sparkles, ArrowRight } from "lucide-react";
 import { SiteFooter } from "@/components/SiteFooter";
+import { HOME_HREF } from "@/lib/feature-flags";
 
 export default function OnboardingPage() {
   return (
@@ -27,7 +28,7 @@ export default function OnboardingPage() {
           لإنشاء مطعم تجريبي مربوط بحسابك.
         </p>
         <Link
-          href="/dashboard"
+          href={HOME_HREF}
           className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-conversations px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
         >
           المتابعة <ArrowRight className="h-4 w-4" />

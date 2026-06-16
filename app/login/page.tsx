@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { HOME_HREF } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 import { Phone, Mail, Loader2, ArrowRight } from "lucide-react";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -85,7 +86,7 @@ export default function LoginPage() {
         : await supabase.auth.verifyOtp({ email: value, token: code.trim(), type: "email" });
     setLoading(false);
     if (error) return setError(friendlyAuthError(error.message));
-    router.push("/dashboard");
+    router.push(HOME_HREF);
     router.refresh();
   }
 
@@ -112,7 +113,7 @@ export default function LoginPage() {
                 بالبيانات التجريبية المحلية.
               </p>
               <Link
-                href="/dashboard"
+                href={HOME_HREF}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-95"
                 style={{ backgroundColor: BRAND_CTA }}
               >
