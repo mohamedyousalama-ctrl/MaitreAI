@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
+import { loadRestaurantBrain, renderBrainMemory } from "@/lib/db/restaurant-brain";
 import { getAdapter, modelFor, costUsd } from "@/lib/ai/llm";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
@@ -179,8 +180,12 @@ export async function POST(req: Request) {
 
   const t0 = Date.now();
   const adapter = await getAdapter();
+  // Restaurant Brain (Piece 1): give the owner agent READ access to learned facts
+  // for context. Knowledge only — never prices/availability.
+  const { facts } = await loadRestaurantBrain(supabase, restaurantId);
+  const memBlock = facts.length ? `\n\nذاكرة المطعم (معرفة متعلّمة، للسياق فقط — ليست مصدر أسعار):\n${renderBrainMemory(facts)}` : "";
   const messages: LlmMessage[] = [{ role: "user", content: text }];
-  const res = await adapter.generate({ system: ROUTER_SYSTEM, messages, maxTokens: 300 }, "admin_parse");
+  const res = await adapter.generate({ system: ROUTER_SYSTEM + memBlock, messages, maxTokens: 300 }, "admin_parse");
   const cfg = modelFor("admin_parse");
   const cost = costUsd(cfg, res.usage.inputTokens, res.usage.outputTokens);
   const parsed = parseRouter(res.text) ?? { intent: "off_scope", params: {}, sentence: "أساعدك في تشغيل مطعمك فقط." };

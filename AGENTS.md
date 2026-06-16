@@ -116,6 +116,7 @@ The same Brain path is reachable for tests via `POST /api/agent/respond`
 | Order tools (money is computed here) | `lib/ai/tools.ts` |
 | Deterministic tap router (Step 2) | `lib/ai/tap-router.ts` |
 | Persistent order session (Step 1) | `lib/db/order-session.ts` |
+| Restaurant Brain (shared memory) | `lib/db/restaurant-brain.ts`, `app/api/brain/route.ts` |
 | Order persistence (idempotent) | `lib/db/orders-create.ts` |
 | Brain context loader | `lib/db/brain.ts` |
 | LLM adapter seam | `lib/ai/llm/` (`index.ts`, `claude.ts`, `mock.ts`, `models.ts`) |
@@ -138,9 +139,17 @@ This branch (`upgrade/order-engine`) is the upgrade stack:
   (`order_sessions` / `order_session_lines` / `order_session_events`).
 - **Step 2 — deterministic tap-routing:** WhatsApp button/list taps are acted on
   by stable ID before the LLM; free text still goes to the Brain.
-- **Admin chat console is HIDDEN** behind `ENABLE_ADMIN_CHAT_CONSOLE`
-  (`NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE`, default off). The code lives in
-  `app/(main)/dashboard/MaitreConsole.tsx`; the route guards/redirects when off.
+- **Learning System Piece 1 — the Restaurant Brain:** a shared, tenant-scoped
+  MEMORY of learned KNOWLEDGE facts (`brain_facts` / `brain_insights` /
+  `brain_owner_qa`, `lib/db/restaurant-brain.ts`). Both agents READ it into their
+  context (`loadRestaurantBrain`); the owner agent writes it (`/api/brain`,
+  manager or server-to-server secret). **It is knowledge only — never a source of
+  prices or availability** (those stay in the menu/tools). Pieces 2 (analysis job)
+  and 3 (owner loop) are out of scope / not built yet.
+- **Owner/admin console is shown by default** — `ENABLE_ADMIN_CHAT_CONSOLE`
+  (`NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE`) now defaults ON, still toggleable (set
+  `"false"` to hide). Code in `app/(main)/dashboard/MaitreConsole.tsx`; its agent
+  (`/api/agent/admin`) reads the Restaurant Brain.
 - **Delivery module** (drivers, dispatch, driver/customer tracking pages) is built
   in the **stacked PR (`upgrade/delivery`)** behind `ENABLE_DELIVERY_TRACKING`
   (default off). Not on this branch's code yet — it lands when that PR merges.

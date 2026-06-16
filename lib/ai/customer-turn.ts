@@ -26,6 +26,7 @@ import {
   cancelOrderSession,
   isCancelIntent,
 } from "@/lib/db/order-session";
+import { loadRestaurantBrain } from "@/lib/db/restaurant-brain";
 
 /** Typed error so callers can map to the right HTTP status / timeline note. */
 export class CustomerTurnError extends Error {
@@ -85,6 +86,9 @@ export async function runCustomerTurn(
   const row = r as Record<string, unknown>;
 
   const brain = await loadBrain(admin, restaurantId);
+  // Restaurant Brain (Piece 1): learned KNOWLEDGE facts injected for context.
+  // Never a source of prices/availability (those stay in brain.menuItems/tools).
+  const memory = await loadRestaurantBrain(admin, restaurantId);
 
   const mode = deriveSystemMode({
     supabaseConfigured: true,
@@ -129,6 +133,7 @@ export async function runCustomerTurn(
     personaName: (row.agent_persona_name as string | null) ?? undefined,
     taxMode: String(row.tax_mode ?? "inclusive"),
     taxRate: Number(row.tax_rate ?? 0),
+    memoryFacts: memory.facts.map((f) => ({ category: f.category, fact: f.fact })),
   };
 
   // Step 1: load the persistent order session so the agent resumes the in-progress

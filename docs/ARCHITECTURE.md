@@ -53,10 +53,11 @@ A secret-guarded `POST /api/agent/respond` runs the same Brain path for tests/ev
 - **الطلبات / orders** — order lifecycle, receipts/tickets.
 - **المنيو والذاكرة / menu & memory** — menu, modifiers, restaurant brain, AI review.
 - **الإعدادات / settings** — profile, AI tone, WhatsApp status, print, tax, branches.
-- **الرئيسية / dashboard** — admin chat console (Maître agent + in-chat promo
-  builder), **hidden behind `ENABLE_ADMIN_CHAT_CONSOLE`**; route guards/redirects
-  when off. Free text → `POST /api/agent/admin` (session-auth; manager-only writes;
-  preview→confirm).
+- **الرئيسية / dashboard** — owner/admin chat console (Maître agent + in-chat promo
+  builder), shown by default (`ENABLE_ADMIN_CHAT_CONSOLE` defaults ON, toggleable;
+  route guards/redirects when off). Free text → `POST /api/agent/admin` (session-
+  auth; manager-only writes; preview→confirm). The agent READS the Restaurant Brain
+  (`loadRestaurantBrain`) for context.
 - **Roles:** `manager` (full) vs `operation` (reduced nav: conversations + orders,
   no revenue). Resolved from the `members` row.
 
@@ -82,6 +83,7 @@ A secret-guarded `POST /api/agent/respond` runs the same Brain path for tests/ev
 | `orders`, `order_events` | finalized orders (money copied verbatim from the draft) + timeline |
 | `order_sessions`, `order_session_lines`, `order_session_events` | **Step 1** persistent per-conversation order draft (one active per conversation) + append-only events |
 | `agent_runs` | per-turn observability: model, tokens, `cost_usd`, latency, tools used (taps log `model='deterministic'`, 0 tokens) |
+| `brain_facts`, `brain_insights`, `brain_owner_qa` | **Restaurant Brain** (Learning Piece 1): learned KNOWLEDGE facts both agents read (`lib/db/restaurant-brain.ts`); insights/QA tables ready for Pieces 2–3. Never a price/availability source. |
 | `conversation_signals` | off-menu/missing-data/escalation signals |
 | `payment_sessions` | checkout sessions |
 

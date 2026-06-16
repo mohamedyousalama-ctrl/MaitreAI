@@ -5,12 +5,13 @@
 // ============================================================================
 
 // ENABLE_ADMIN_CHAT_CONSOLE — the operator-side in-app admin chat surface: the
-// «الرئيسية» Maître console (free-text → /api/agent/admin) plus the in-chat
-// promotion builder. HIDDEN by default for the order-engine upgrade. All of its
-// code, routes, and logic remain intact; set the env var below to "true" (and
-// redeploy) to bring it back with a single change.
+// «الرئيسية» Maître console (free-text → /api/agent/admin, with READ access to the
+// Restaurant Brain) plus the in-chat promotion builder. Hidden during the early
+// order-engine upgrade (Step 0); UNHIDDEN now (Learning System Piece 1) since the
+// owner agent is the surface the brain serves. Still flag-controlled: set the env
+// var to "false" (and redeploy) to hide it again. Default ON.
 export const ENABLE_ADMIN_CHAT_CONSOLE =
-  process.env.NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE === "true";
+  process.env.NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE !== "false";
 
 // The operator's landing route after login. When the admin chat console is
 // hidden, «الرئيسية»/dashboard is not a destination, so we land on المحادثات

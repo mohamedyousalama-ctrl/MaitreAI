@@ -46,6 +46,9 @@ export interface BrainContext {
   /** Tax mode + rate (Sprint 10): "added" adds a VAT line; "inclusive" = no change. */
   taxMode?: string;
   taxRate?: number;
+  /** Restaurant Brain — learned KNOWLEDGE facts (preferences/policies/ops). NOT a
+   *  source of prices or availability; those always come from the menu/tools. */
+  memoryFacts?: { category: string; fact: string }[];
 }
 
 // Owner-approved (2026-06-13) dialect-fitting fallback host names. Used only
@@ -117,6 +120,19 @@ function faqBlock(faqs: FaqItem[]): string {
   return active.map((f) => `Q: ${f.question}\nA: ${f.answer}`).join("\n");
 }
 
+// Restaurant Brain memory — learned KNOWLEDGE only. Grouped by category, compact.
+function memoryBlock(facts?: { category: string; fact: string }[]): string {
+  if (!facts || !facts.length) return "";
+  const byCat = new Map<string, string[]>();
+  for (const f of facts) {
+    const list = byCat.get(f.category) ?? [];
+    list.push(f.fact);
+    byCat.set(f.category, list);
+  }
+  const lines = [...byCat.entries()].map(([cat, items]) => `- [${cat}] ${items.join(" · ")}`);
+  return lines.join("\n");
+}
+
 function policiesBlock(p: Policies): string {
   return [
     p.delivery && `Delivery: ${p.delivery}`,
@@ -144,6 +160,18 @@ export function buildCustomerAgentSystemPrompt(ctx: BrainContext): string {
 ## التزام تسليم من الفريق (الأولوية القصوى — يجب احترامه)
 «${ctx.handoverNote}»
 أحد أعضاء الفريق تولّى المحادثة سابقاً والتزم بهذا نيابةً عن المطعم، ثم أعادها إليك. احترم هذا الالتزام تماماً وتابع عليه بثقة — لا تُصعّده، ولا تُنكره، ولا تتصرف وكأنه لم يحدث. (هذا الالتزام معتمد من الفريق؛ ويختلف عن طلب خصم/استرجاع جديد لم يعتمده أحد، فذاك تُصعّده كالمعتاد.)`
+    : "";
+
+  // Restaurant Brain memory (learned knowledge). Injected only when present, and
+  // explicitly NOT a source of prices/availability (those stay in the tools/menu).
+  const mem = memoryBlock(ctx.memoryFacts);
+  const memBlock = mem
+    ? `
+
+## ذاكرة المطعم (معرفة متعلّمة — للسياق فقط)
+هذه حقائق/تفضيلات/سياسات تعلّمناها عن هذا المطعم. استخدمها للسياق والردود فقط.
+⚠️ ليست مصدراً للأسعار أو توفّر الأصناف — الأسعار والتوفّر تأتي دائماً من المنيو/الأدوات أدناه، حتى لو ذكرت الذاكرة رقماً مختلفاً.
+${mem}`
     : "";
 
   const persona = (ctx.personaName && ctx.personaName.trim()) || DEFAULT_PERSONA_NAME[ctx.dialect] || "خالد";
@@ -241,5 +269,5 @@ ${zonesBlock(ctx.deliveryAreas, currency)}
 ${policiesBlock(ctx.policies)}
 
 ### FAQ
-${faqBlock(ctx.faqs)}`;
+${faqBlock(ctx.faqs)}${memBlock}`;
 }
