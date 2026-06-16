@@ -117,6 +117,7 @@ The same Brain path is reachable for tests via `POST /api/agent/respond`
 | Deterministic tap router (Step 2) | `lib/ai/tap-router.ts` |
 | Persistent order session (Step 1) | `lib/db/order-session.ts` |
 | Restaurant Brain (shared memory) | `lib/db/restaurant-brain.ts`, `app/api/brain/route.ts` |
+| Conversation analysis job (Piece 2) | `lib/ai/analysis.ts`, `app/api/brain/analyze/route.ts` |
 | Order persistence (idempotent) | `lib/db/orders-create.ts` |
 | Brain context loader | `lib/db/brain.ts` |
 | LLM adapter seam | `lib/ai/llm/` (`index.ts`, `claude.ts`, `mock.ts`, `models.ts`) |
@@ -144,8 +145,15 @@ This branch (`upgrade/order-engine`) is the upgrade stack:
   `brain_owner_qa`, `lib/db/restaurant-brain.ts`). Both agents READ it into their
   context (`loadRestaurantBrain`); the owner agent writes it (`/api/brain`,
   manager or server-to-server secret). **It is knowledge only — never a source of
-  prices or availability** (those stay in the menu/tools). Pieces 2 (analysis job)
-  and 3 (owner loop) are out of scope / not built yet.
+  prices or availability** (those stay in the menu/tools).
+- **Learning System Piece 2 — the analysis job:** `runConversationAnalysis`
+  (`lib/ai/analysis.ts`, triggered via `POST /api/brain/analyze` with the secret)
+  reads recent customer conversations in a bounded batch and writes GROUNDED
+  insights to `brain_insights` (`status=pending`; evidence = counts + real
+  conversation ids; deduped/merged on re-run; empty when nothing is notable;
+  efficient `conversation_analysis` model). It proposes INSIGHTS only — never
+  writes `brain_facts` (owner answers become facts in Piece 3, the owner loop,
+  which is next / not built yet).
 - **Owner/admin console is shown by default** — `ENABLE_ADMIN_CHAT_CONSOLE`
   (`NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE`) now defaults ON, still toggleable (set
   `"false"` to hide). Code in `app/(main)/dashboard/MaitreConsole.tsx`; its agent

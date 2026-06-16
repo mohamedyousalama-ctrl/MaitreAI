@@ -7,7 +7,7 @@
 
 /** Per-use-case routing key. Lets us run a cheaper/faster model for the
  *  customer agent and a stronger one for admin/promo NL parsing later. */
-export type LlmUseCase = "customer_agent" | "admin_parse";
+export type LlmUseCase = "customer_agent" | "admin_parse" | "conversation_analysis";
 
 export interface LlmUsage {
   inputTokens: number;

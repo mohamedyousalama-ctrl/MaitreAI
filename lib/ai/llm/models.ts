@@ -35,6 +35,16 @@ const REGISTRY: Record<LlmUseCase, ModelConfig> = {
     priceIn: 5,
     priceOut: 25,
   },
+  // Daily batch that distills conversations into grounded insights (Piece 2).
+  // A periodic batch, not per-message — use the efficient Sonnet tier; env-
+  // overridable so it can be re-pointed (e.g. to Haiku) without a redeploy.
+  conversation_analysis: {
+    model: process.env.AI_MODEL_ANALYSIS || "claude-sonnet-4-6",
+    maxTokens: 1500,
+    thinking: "disabled",
+    priceIn: 3,
+    priceOut: 15,
+  },
 };
 
 export function modelFor(useCase: LlmUseCase): ModelConfig {
