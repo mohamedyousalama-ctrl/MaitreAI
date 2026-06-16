@@ -20,6 +20,12 @@ import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import type { OrderDraft, Presentation, ToolSignal } from "@/lib/ai/tools";
 import type { AiToneConfig } from "@/lib/types";
 import { dialectProfile } from "@/lib/ai/dialect";
+import {
+  loadOrCreateOrderSession,
+  persistOrderSession,
+  cancelOrderSession,
+  isCancelIntent,
+} from "@/lib/db/order-session";
 
 /** Typed error so callers can map to the right HTTP status / timeline note. */
 export class CustomerTurnError extends Error {
@@ -58,6 +64,8 @@ export interface CustomerTurnOutcome {
   agentRunId: string | null;
   /** Id of the persisted AI reply message row (null when not persisted). */
   replyMessageId: string | null;
+  /** Id of the persistent order session this turn ran against (Step 1), if any. */
+  orderSessionId: string | null;
 }
 
 /**
@@ -123,10 +131,28 @@ export async function runCustomerTurn(
     taxRate: Number(row.tax_rate ?? 0),
   };
 
+  // Step 1: load the persistent order session so the agent resumes the in-progress
+  // order across turns (instead of an empty draft every time). Stateless callers
+  // (no conversationId) keep the old empty-draft behavior.
+  let orderSessionId: string | null = null;
+  let initialDraft: OrderDraft | undefined;
+  let beforeDraft: OrderDraft | undefined;
+  if (conversationId) {
+    const session = await loadOrCreateOrderSession(admin, {
+      restaurantId,
+      conversationId,
+      currency: ctx.profile.currency,
+    });
+    orderSessionId = session.sessionId;
+    initialDraft = session.draft;
+    // Snapshot the pre-turn state for the event diff (respond mutates the draft).
+    beforeDraft = structuredClone(session.draft);
+  }
+
   const t0 = Date.now();
   let result;
   try {
-    result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage });
+    result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await admin.from("agent_runs").insert({
@@ -139,6 +165,27 @@ export async function runCustomerTurn(
     throw new CustomerTurnError("agent_error", message);
   }
   const latencyMs = Date.now() - t0;
+
+  // Persist the order session (Step 1). An explicit «إلغاء» abandons it so the
+  // next message starts a fresh order; otherwise we write the tool-computed draft
+  // back (lines + money snapshot + state) and append a timeline event.
+  if (orderSessionId && conversationId) {
+    try {
+      if (isCancelIntent(input.userMessage)) {
+        await cancelOrderSession(admin, orderSessionId);
+      } else {
+        await persistOrderSession(admin, {
+          sessionId: orderSessionId,
+          before: beforeDraft ?? result.draft,
+          after: result.draft,
+          presentation: result.presentation,
+        });
+      }
+    } catch (e) {
+      // Session persistence must never break the customer reply.
+      console.error("[customer-turn] order-session persist error", e);
+    }
+  }
 
   const cfg = modelFor("customer_agent");
   const cost = costUsd(cfg, result.usage.inputTokens, result.usage.outputTokens);
@@ -221,5 +268,6 @@ export async function runCustomerTurn(
     latencyMs,
     agentRunId: (run?.id as string) ?? null,
     replyMessageId,
+    orderSessionId,
   };
 }

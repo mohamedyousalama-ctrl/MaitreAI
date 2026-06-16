@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { sendWhatsAppText, sendWhatsAppInteractive } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
+import { finalizeOrderSession } from "@/lib/db/order-session";
 import { sendReceiptToCustomer } from "./send-receipt";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
@@ -122,6 +123,10 @@ export async function respondAndSendWhatsApp(
   if (outcome.draft.finalized) {
     try {
       const persisted = await persistOrderFromDraft(admin, { restaurantId, conversationId, customerId, draft: outcome.draft });
+      // Link the persistent session to the real order it became (§1C).
+      if (outcome.orderSessionId && persisted.orderId) {
+        await finalizeOrderSession(admin, outcome.orderSessionId, persisted.orderId);
+      }
       if (persisted.created && persisted.orderId) await sendReceiptToCustomer(admin, persisted.orderId);
     } catch (e) {
       console.error("[respond-and-send] order persist/receipt error", e);

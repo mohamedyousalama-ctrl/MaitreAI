@@ -29,6 +29,11 @@ export interface RespondInput {
   /** Prior turns (user/assistant), oldest first. */
   history: LlmMessage[];
   userMessage: string;
+  /**
+   * Seed draft for this turn — the loaded persistent order session (Step 1).
+   * When omitted (demo/stateless callers) the turn starts from an empty draft.
+   */
+  initialDraft?: OrderDraft;
 }
 
 export interface RespondResult {
@@ -48,16 +53,34 @@ export interface RespondResult {
 
 const MAX_ITERATIONS = 6;
 
+// When a persistent session is loaded with items, the model must SEE the saved
+// cart — otherwise it reconstructs the order from prose history and re-adds the
+// same items, double-counting the total (a money-integrity break). We ride this
+// truth in the (uncached) user turn, not the cached system prompt.
+function savedOrderNote(d: OrderDraft): string {
+  const lines = d.lines.map((l) => `${l.quantity}× ${l.name} = ${l.lineTotal} ${d.currency}`).join("، ");
+  const parts = [`السلة الحالية: ${lines}`];
+  if (d.fulfillment === "delivery" && d.deliveryZone) parts.push(`التوصيل: ${d.deliveryZone} (${d.deliveryFee} ${d.currency})`);
+  else if (d.fulfillment === "pickup") parts.push("الاستلام من الفرع");
+  parts.push(`الإجمالي: ${d.total} ${d.currency}`);
+  return (
+    `[حالة الطلب المحفوظة من النظام — هذه الأصناف مُضافة بالفعل في السلة. لا تُضِفها من جديد؛ ` +
+    `فقط أكمل الطلب أو عدّله حسب رسالة العميل، واستخدم get_order_summary عند الحاجة. ${parts.join(" — ")}]`
+  );
+}
+
 export async function respond(input: RespondInput): Promise<RespondResult> {
   const adapter = await getAdapter();
   const system = buildCustomerAgentSystemPrompt(input.brain);
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
 
+  // Step 1: resume the persistent order session when one was loaded; otherwise
+  // start empty. The executor mutates this draft in place (money tool-computed).
   const ctx: ToolContext = {
     menuItems: input.brain.menuItems,
     modifiers: input.brain.modifiers,
     deliveryAreas: input.brain.deliveryAreas,
-    draft: emptyDraft(currency),
+    draft: input.initialDraft ?? emptyDraft(currency),
     signals: [],
     escalation: null,
     presentation: null,
@@ -68,7 +91,21 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
   const tools = canOrder ? ORDER_TOOLS : NON_ORDER_TOOLS;
 
-  const messages: LlmMessage[] = [...input.history, { role: "user", content: input.userMessage }];
+  // Seed the turn with the user's message; when resuming a non-empty saved
+  // session, attach the cart snapshot as a second text block so the model
+  // continues the order instead of rebuilding (and double-counting) it. The
+  // real message stays the FIRST block (mock/test adapters read that one).
+  const seeded = input.initialDraft && input.initialDraft.lines.length > 0;
+  const lastUser: LlmMessage = seeded
+    ? {
+        role: "user",
+        content: [
+          { type: "text", text: input.userMessage },
+          { type: "text", text: savedOrderNote(input.initialDraft as OrderDraft) },
+        ],
+      }
+    : { role: "user", content: input.userMessage };
+  const messages: LlmMessage[] = [...input.history, lastUser];
   const usage: LlmUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
   const toolNames: string[] = [];
 
