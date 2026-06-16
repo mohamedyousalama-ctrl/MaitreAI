@@ -1,169 +1,107 @@
 # MaitreAI — موظف واتساب الذكي للمطاعم
 
-WhatsApp-first AI order management system for restaurants.
+**WhatsApp-first AI ordering + operations assistant for restaurants.** Egypt-first
+(Egyptian Arabic primary, Saudi supported per-tenant). A customer chats on WhatsApp
+with a per-tenant host agent that takes the order end-to-end; restaurant staff run
+everything from an Arabic RTL operator web app.
 
-- **Sprint 1** — MVP App Foundation: the approved Claude Design converted into a
-  clean, scalable Next.js app (Arabic RTL, premium SaaS style).
-- **Sprint 2** — Restaurant Brain Setup + Local CRUD: restaurant configuration
-  is now **fully editable and persisted locally** (no backend).
-- **Sprint 3** — Conversation State + AI Intent Mock Engine: the Conversations
-  page is now **interactive and intelligent** using local rule-based logic that
-  reads the editable Restaurant Brain (no real AI / WhatsApp / network).
-- **Sprint 4** — Local Order Engine: conversation draft orders become **real
-  persisted orders** that flow through Orders → Kitchen → tracking.
-- **Sprint 5** — Payment Link Mock + Webhook Simulation: a working local
-  **checkout page** (`/checkout/[sessionId]`) with a simulated provider callback
-  that flips order/payment status and notifies the conversation. No real provider.
+> **AI coding tools:** read [`AGENTS.md`](./AGENTS.md) first — it's the contract
+> (rules, how to run, architecture, file map).
 
-> ⚠️ Still **no real integrations**. WhatsApp, AI, payment, and backend are
-> mocked/placeholders. See _Known Limitations_ below.
+## Stack (real integrations — not mocks)
 
-## Payment simulation (Sprint 5)
+- **Next.js 14** (App Router) + **TypeScript** + **Tailwind** (Arabic RTL).
+- **Supabase** — Postgres + Auth (email/phone OTP) + Row-Level Security; the
+  service-role client is used server-side for the webhook and seeding.
+- **Claude (Anthropic)** — the customer agent (`claude-sonnet-4-6`) runs a
+  tool-calling loop; the operator/admin NL parser uses `claude-opus-4-8`. Both are
+  env-overridable. A deterministic **mock adapter** runs when no key is set.
+- **WhatsApp Cloud API** — real inbound webhook + outbound send (text, interactive
+  buttons/lists, image receipts, templates), 24h-window aware.
+- **Speech-to-text seam** — `mock | openai | groq` adapters for WhatsApp voice notes.
+- **Receipt/ticket PNGs** — `@resvg/resvg-js` over hand-built SVG (correct Arabic shaping).
+- **Zustand** stores back the operator UI; **demo mode** (no keys) uses localStorage.
 
-In **المحادثات**, after confirming an order click **إرسال رابط الدفع** — the chat
-receives a real local link `http://localhost:3000/checkout/{sessionId}`. Open it
-to see a polished RTL checkout (مدى / آبل باي / بطاقة), an expiry countdown, and
-**ادفع الآن** / **محاكاة فشل الدفع** buttons. Paying simulates a provider callback:
-the payment session → `paid`, the order → `paid` (→ Kitchen), and the conversation
-gets a confirmation. Failure and expiry post their own messages and a new link can
-be re-sent. The Orders detail panel shows the payment session, link (copy/open),
-and event timeline; the Dashboard shows links-sent / paid / failed / expired /
-conversion-rate. Manual "تأكيد الدفع يدوياً" remains as an admin override only.
-Sessions persist to `localStorage` and auto-expire after 15 minutes.
+> The app degrades gracefully: with no Supabase/Claude/WhatsApp keys it runs in
+> **demo/mock mode** (localStorage data, deterministic replies, nothing sent over
+> the network) so the UI is fully explorable without secrets.
 
-## Order engine (Sprint 4)
-
-End-to-end local flow: in **المحادثات** type "أبغى برجر كلاسيك وكولا" → AI builds a
-draft → click **تأكيد الطلب** to create a real order (`pending_payment`/`unpaid`).
-Use **إرسال رابط دفع تجريبي** then **تأكيد الدفع** (mock) — the conversation
-receives system messages at each step. The order appears on **الطلبات** and, once
-paid, on **المطبخ**; kitchen actions (بدء التحضير / تجهيز كجاهز / إكمال) advance the
-order status and push updates back to the conversation. Asking "وين طلبي؟" replies
-with the real current status. Orders, items, statuses, payment, kitchen state, and
-events persist to `localStorage` via a dedicated order store.
-
-## Conversation engine (Sprint 3)
-
-Open **المحادثات**, select a customer, and type as the customer (simulation mode):
-the local engine detects intent, extracts entities from the live menu/branches/
-delivery areas, generates an Arabic reply, scores confidence, lists the knowledge
-sources used, updates the conversation status, builds a lightweight **draft order
-preview**, and auto-escalates to a human when needed (complaints, allergen gaps,
-unknown delivery areas, low confidence, or an explicit "أبغى أكلم موظف").
-
-- **Human takeover** — "تحويل لموظف" switches ownership to a human (AI stops),
-  the composer becomes "أنت ترد كموظف"; "إعادة للذكاء الاصطناعي" hands it back.
-- **AI insights panel** (right pane) shows intent, confidence, suggested action,
-  sources, owner, escalation reason, detected entities, the draft order, and a
-  collapsible **AI Debug** JSON view of the raw intent result.
-- Conversations, messages, owner, status, confidence, suggested action, and
-  intent history persist to `localStorage` via a dedicated Zustand store.
-
-## Editable configuration (Sprint 2)
-
-The owner can configure everything below without touching code; changes persist
-to `localStorage` (Zustand `persist`) and survive refresh:
-
-- **Restaurant Profile** (Settings)
-- **Branches** — full CRUD (Branches)
-- **Menu items** — full CRUD (Menu)
-- **Modifiers** — reusable library, attachable to items (Menu → إدارة الإضافات)
-- **Ingredients & Allergens** — per item via tag editors (Menu)
-- **Delivery Areas** — full CRUD (Restaurant Brain)
-- **FAQ** — full CRUD (Restaurant Brain)
-- **Policies** — editable text, 5 policies (Restaurant Brain)
-- **AI Tone** — personality / length / emoji / language / greeting (Settings)
-
-The **Restaurant Brain score** is computed locally (no AI) from how complete each
-area is, and updates live as you edit. "استعادة الافتراضي" in Settings resets all
-local data to the seed.
-
-## Tech Stack
-
-- **Next.js 14** (App Router) + **TypeScript**
-- **Tailwind CSS** (custom module color system)
-- **lucide-react** icons
-- **IBM Plex Sans Arabic** (next/font), fallback Cairo / Tajawal / system
-- Fully **RTL** by default
-
-## Run Locally
+## Quick start
 
 ```bash
 npm install
-npm run dev      # http://localhost:3000  → redirects to /dashboard
-npm run build    # production build
-npm start        # serve production build
+cp .env.example .env.local      # fill in what you need (all optional for demo mode)
+npm run dev                     # http://localhost:3000
 ```
 
-## Project Structure
+Build & checks (must pass before committing):
+
+```bash
+npm run build
+npx tsc --noEmit
+npm run lint
+```
+
+## How it works (customer flow)
+
+```
+WhatsApp message
+  → POST /api/whatsapp/webhook   (signature-verified; normalized; persisted idempotently)
+  → respondAndSendWhatsApp       (skips if a human owns the thread)
+      • TAP (button/list)  → tap router acts on the stable ID — no LLM call
+      • free text          → Claude tool-calling agent
+  → persistent order session     (the order survives across messages)
+  → order tools                  (validate items/zones; COMPUTE all money)
+  → reply sent over WhatsApp; on finalize → real order row + auto receipt
+  → operator sees it live in المحادثات
+```
+
+The operator app (`app/(main)/*`) covers conversations, orders, menu & memory,
+and settings. Roles: **manager** (full) vs **operation** (reduced nav, no revenue).
+
+## Project structure
 
 ```
 app/
-  layout.tsx            # RTL shell (sidebar + topbar), Arabic font
-  page.tsx              # redirects to /dashboard
-  dashboard/            # لوحة التحكم
-  conversations/        # المحادثات (3-pane WhatsApp workspace)
-  orders/               # الطلبات
-  kitchen/              # المطبخ (ticket board)
-  menu/                 # المنيو
-  branches/             # الفروع
-  promotions/           # العروض
-  restaurant-brain/     # عقل المطعم
-  customers/            # العملاء
-  ai-review/            # مركز مراجعة الذكاء (placeholder)
-  settings/             # الإعدادات
-
-components/
-  layout/   AppSidebar, AppTopbar, PageHeader
-  ui/       MetricCard, StatusBadge, ModuleCard, EmptyState, SettingsCard,
-            PaymentStatusBadge, AIConfidenceBadge, HumanTakeoverButton,
-            BranchCard, PromotionCard, CustomerCard
-  conversations/  ConversationList, ChatWindow, ChatBubble,
-                  CustomerContextPanel, CurrentOrderCard
-  orders/         OrderTable, OrderCard
-  kitchen/        KitchenBoard, KitchenTicket
-  menu/           MenuItemCard
-  restaurant-brain/ KnowledgeHealthCard
-
+  (main)/            operator web app: conversations, orders, menu, settings, dashboard
+  api/
+    whatsapp/webhook customer WhatsApp webhook (canonical path)
+    agent/respond    secret-guarded Brain entry (used by the eval harness)
+    agent/admin      operator/admin NL agent (session-auth, manager-gated writes)
+    ...              settings, orders, payments, channels endpoints
+  checkout/          payment checkout pages
+  login/ onboarding/ auth
 lib/
-  types.ts        # all domain TypeScript types
-  mock-data.ts    # centralized mock data (مطعم الذواقة)
-  navigation.ts   # sidebar nav + module accent colors
-  utils.ts        # cn(), formatCurrency(), formatOrderId()
+  ai/                respond loop, tools (money), tap-router, prompt, customer-turn
+    llm/ stt/        LLM + speech adapter seams (claude/mock, openai/groq/mock)
+  db/                brain, order-session, orders, messages, restaurants, tenant
+  messaging/         WhatsApp adapters, outbound send, inbound→Brain bridge, voice, receipts
+  render/            receipt/ticket/promo PNG rendering
+  feature-flags.ts   ENABLE_ADMIN_CHAT_CONSOLE (+ HOME_HREF)
+supabase/migrations/ additive SQL migrations (apply via scripts/db-apply.mjs)
+scripts/             db-apply, eval-scenarios, proof-* and test-* harnesses
+docs/                ARCHITECTURE.md, CONVENTIONS.md, WHATSAPP_GO_LIVE.md
+reports/             eval reports + acceptance notes
 ```
 
-## Module Color System
+## Environment
 
-Dashboard `blue` · Conversations `whatsapp green` · Orders `royal blue` ·
-Kitchen `orange` · Menu `teal` · Branches `indigo` · Promotions `purple` ·
-Restaurant Brain `emerald` · Customers `cyan` · Settings `slate`.
+See [`.env.example`](./.env.example) for every variable the app reads (names +
+one-line descriptions; **no secret values are ever committed**). Key groups:
+Supabase, Claude/`ANTHROPIC_API_KEY`, WhatsApp Cloud API, STT, the
+`AGENT_ROUTE_SECRET`, and feature flags.
 
-## What Works
+## Migrations & eval
 
-- Sidebar navigation across all pages (active state, accent colors)
-- Conversations: live pane switching (list → chat → context), typing indicator,
-  AI confidence badges, status badges, current-order card
-- Orders: status filtering + clickable rows that open a detail side panel
-- Kitchen: 3-column ticket board with timers and payment status
-- Menu: category filtering + item cards with visual toggles
-- Dashboard: AI daily summary, KPI grid, recent activity, system status
-- Branches / Promotions / Customers / Restaurant Brain / Settings render fully
+- **Migrations:** `node scripts/db-apply.mjs supabase/migrations/00NN_name.sql`
+  (Management API; needs `SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_REF`).
+- **Conformance/safety eval:** `BASE_URL=http://127.0.0.1:3000 node scripts/eval-scenarios.mjs`
+  → writes `reports/eval-<date>.md`. The **Egyptian T1 safety scenarios must stay
+  green** before merging changes to prices/money/menu/agent behavior. Restore the
+  pilot `dialect` to `egyptian` after any run.
 
-## Placeholder Only
+## Branch & deploy
 
-- All toggles/buttons are visual (composer, takeover, payment links, AI tone)
-- AI Review Center is a thin placeholder
-- "Add new" buttons are non-functional
-- No persistence — refreshing resets any client state
-
-## Known Limitations
-
-- No real WhatsApp, AI, payment, or database integration (by design)
-- No authentication
-- Data is read-only from `lib/mock-data.ts`
-
-## Recommended Next Sprint
-
-**Sprint 2 — Restaurant data model + local CRUD:** introduce a typed data layer
-(Zustand/Context or a local DB) so menu, orders, and branches become editable,
-preparing for the conversation state engine in Sprint 3.
+`main` is production (**maitre.chat**, on Vercel). Develop on a feature branch and
+open a **draft PR**; never push to `main`. WhatsApp go-live steps are in
+[`docs/WHATSAPP_GO_LIVE.md`](./docs/WHATSAPP_GO_LIVE.md).
