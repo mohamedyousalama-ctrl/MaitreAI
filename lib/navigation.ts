@@ -6,6 +6,7 @@ import {
   Settings,
   Sparkles,
   Megaphone,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 import type { ModuleKey } from "./types";
@@ -33,6 +34,9 @@ export const navItems: NavItem[] = [
   { href: "/maitre", label: "المساعد", en: "Assistant", icon: Sparkles, module: "dashboard", accent: "text-dashboard", accentBg: "bg-dashboard" },
   { href: "/conversations", label: "المحادثات", en: "Conversations", icon: MessageCircle, module: "conversations", accent: "text-conversations", accentBg: "bg-conversations" },
   { href: "/orders", label: "الطلبات", en: "Orders", icon: ShoppingBag, module: "orders", accent: "text-orders", accentBg: "bg-orders" },
+  // Delivery dispatch + live tracking — shown only when ENABLE_DELIVERY_TRACKING
+  // is on (filtered at consumption in AppSidebar/MobileTabs).
+  { href: "/deliveries", label: "التوصيل", en: "Delivery", icon: Truck, module: "orders", accent: "text-orders", accentBg: "bg-orders" },
   {
     href: "/menu",
     label: "المنيو والذاكرة",

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
 import { useConversationStore } from "@/lib/conversation-store";
 import { countEscalations } from "@/lib/escalation";
+import { ENABLE_ADMIN_CHAT_CONSOLE, ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 import { LayoutGrid, Settings } from "lucide-react";
@@ -20,7 +21,14 @@ export function AppSidebar() {
   const conversations = useConversationStore((s) => s.conversations);
   const escalations = countEscalations(conversations);
 
-  const all = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
+  // Flag-gated tabs: «الرئيسية» (admin chat) and «التوصيل» (delivery) appear only
+  // when their flags are on.
+  const visible = navItems.filter(
+    (i) =>
+      (i.href !== "/dashboard" || ENABLE_ADMIN_CHAT_CONSOLE) &&
+      (i.href !== "/deliveries" || ENABLE_DELIVERY_TRACKING)
+  );
+  const all = role === "operation" ? visible.filter((i) => OPERATION_HREFS.has(i.href)) : visible;
   const top = all.filter((i) => i.href !== "/settings" && i.href !== "/dashboard");
   const settings = all.find((i) => i.href === "/settings");
   const homeActive = pathname === "/dashboard";
