@@ -372,6 +372,7 @@ export interface Branch {
   address: string;
   hours: string; // working hours
   whatsappNumber: string;
+  deliveryZones: string[];
   open: boolean; // status: open/closed
   notes: string;
   // derived/legacy: whether a whatsapp number is configured
@@ -458,6 +459,20 @@ export interface Promotion {
   active: boolean;
   aiSuggested: boolean;
   redemptions: number; // performance placeholder
+}
+
+export interface OperatorPromotion {
+  id: string;
+  name: string;
+  type: string;
+  config: Record<string, unknown>;
+  code: string;
+  schedule: Record<string, unknown>;
+  state: string;
+  spent: number;
+  budgetCap: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ---------------------------------------------------------------------------
