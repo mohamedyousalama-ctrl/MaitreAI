@@ -10,9 +10,11 @@ interface MenuItemCardProps {
   modifiers: Modifier[];
   onEdit?: (item: MenuItem) => void;
   onDelete?: (item: MenuItem) => void;
+  /** Real-time 86ing: one-tap toggle out-of-stock / available. */
+  onToggleAvailability?: (item: MenuItem) => void;
 }
 
-export function MenuItemCard({ item, modifiers, onEdit, onDelete }: MenuItemCardProps) {
+export function MenuItemCard({ item, modifiers, onEdit, onDelete, onToggleAvailability }: MenuItemCardProps) {
   const readiness = menuItemReadiness(item);
   const itemModifiers = modifiers.filter((m) => item.modifierIds.includes(m.id));
 
@@ -72,14 +74,33 @@ export function MenuItemCard({ item, modifiers, onEdit, onDelete }: MenuItemCard
           <span className="text-xs font-bold text-promotions">{readiness}%</span>
         </div>
         <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "rounded-full px-2 py-0.5 text-xs font-semibold",
-              item.available ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
-            )}
-          >
-            {item.available ? "متوفر" : "غير متوفر"}
-          </span>
+          {onToggleAvailability ? (
+            // Real-time 86ing: one tap marks the item out-of-stock / back in stock.
+            // «كريم» stops/resumes selling it on the next turn.
+            <button
+              type="button"
+              onClick={() => onToggleAvailability(item)}
+              aria-pressed={item.available}
+              title={item.available ? "اضغط لإيقاف الصنف (نفد)" : "اضغط لإتاحة الصنف"}
+              className={cn(
+                "rounded-full px-2.5 py-0.5 text-xs font-semibold transition ring-1",
+                item.available
+                  ? "bg-emerald-50 text-emerald-600 ring-emerald-100 hover:bg-emerald-100"
+                  : "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100"
+              )}
+            >
+              {item.available ? "متوفر" : "نفد"}
+            </button>
+          ) : (
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-xs font-semibold",
+                item.available ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
+              )}
+            >
+              {item.available ? "متوفر" : "غير متوفر"}
+            </span>
+          )}
           {onEdit && (
             <button
               onClick={() => onEdit(item)}

@@ -88,6 +88,8 @@ interface RestaurantState {
   addMenuItem: (m: Omit<MenuItem, "id">) => void;
   updateMenuItem: (id: string, patch: Partial<MenuItem>) => void;
   deleteMenuItem: (id: string) => void;
+  /** Real-time 86ing: one-tap mark an item out-of-stock / back in stock. */
+  setItemAvailability: (id: string, available: boolean) => void;
 
   addModifier: (m: Omit<Modifier, "id">) => void;
   updateModifier: (id: string, patch: Partial<Modifier>) => void;
@@ -192,6 +194,22 @@ export const useRestaurantStore = create<RestaurantState>()(
         set((s) => ({ menuItems: s.menuItems.filter((m) => m.id !== id) }));
         const { _sb } = get();
         if (_sb) fire(deleteMenuItemDb(_sb, id));
+      },
+      setItemAvailability: (id, available) => {
+        // Optimistic flip so the toggle feels instant; the server route does the
+        // tenant-scoped write + audit and «كريم» picks it up next turn.
+        set((s) => ({ menuItems: s.menuItems.map((m) => (m.id === id ? { ...m, available } : m)) }));
+        const { _sb, _rid } = get();
+        if (!_sb || !_rid) return; // demo mode: local only
+        fire(
+          fetch("/api/menu/availability", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ itemId: id, available }),
+          }).then(async (r) => {
+            if (!r.ok) await get().refreshBrain(); // reconcile from the DB on failure
+          })
+        );
       },
 
       addModifier: (m) => {

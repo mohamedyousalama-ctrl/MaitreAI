@@ -21,6 +21,7 @@ export default function MenuPage() {
   const addMenuItem = useRestaurantStore((s) => s.addMenuItem);
   const updateMenuItem = useRestaurantStore((s) => s.updateMenuItem);
   const deleteMenuItem = useRestaurantStore((s) => s.deleteMenuItem);
+  const setItemAvailability = useRestaurantStore((s) => s.setItemAvailability);
 
   const [category, setCategory] = useState("الكل");
   const [formOpen, setFormOpen] = useState(false);
@@ -106,7 +107,14 @@ export default function MenuPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((item) => (
-            <MenuItemCard key={item.id} item={item} modifiers={modifiers} onEdit={openEdit} onDelete={setToDelete} />
+            <MenuItemCard
+              key={item.id}
+              item={item}
+              modifiers={modifiers}
+              onEdit={openEdit}
+              onDelete={setToDelete}
+              onToggleAvailability={(m) => setItemAvailability(m.id, !m.available)}
+            />
           ))}
         </div>
       )}

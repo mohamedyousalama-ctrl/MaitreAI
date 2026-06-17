@@ -316,6 +316,9 @@ export interface MenuItem {
   category: string;
   price: number;
   available: boolean;
+  /** Optional timed-out-of-stock window ("back at …"). When set in the future the
+   *  item reads as unavailable; `available` already folds this in. ISO string. */
+  unavailableUntil?: string | null;
   description: string;
   imageUrl: string;
   modifierIds: string[]; // references Modifier.id

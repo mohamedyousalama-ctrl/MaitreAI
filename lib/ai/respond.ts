@@ -57,15 +57,28 @@ const MAX_ITERATIONS = 6;
 // cart — otherwise it reconstructs the order from prose history and re-adds the
 // same items, double-counting the total (a money-integrity break). We ride this
 // truth in the (uncached) user turn, not the cached system prompt.
-function savedOrderNote(d: OrderDraft): string {
+function savedOrderNote(d: OrderDraft, menuItems: ToolContext["menuItems"]): string {
   const lines = d.lines.map((l) => `${l.quantity}× ${l.name} = ${l.lineTotal} ${d.currency}`).join("، ");
   const parts = [`السلة الحالية: ${lines}`];
   if (d.fulfillment === "delivery" && d.deliveryZone) parts.push(`التوصيل: ${d.deliveryZone} (${d.deliveryFee} ${d.currency})`);
   else if (d.fulfillment === "pickup") parts.push("الاستلام من الفرع");
   parts.push(`الإجمالي: ${d.total} ${d.currency}`);
-  return (
+  const note =
     `[حالة الطلب المحفوظة من النظام — هذه الأصناف مُضافة بالفعل في السلة. لا تُضِفها من جديد؛ ` +
-    `فقط أكمل الطلب أو عدّله حسب رسالة العميل، واستخدم get_order_summary عند الحاجة. ${parts.join(" — ")}]`
+    `فقط أكمل الطلب أو عدّله حسب رسالة العميل، واستخدم get_order_summary عند الحاجة. ${parts.join(" — ")}]`;
+  // Real-time 86ing: an item already in the saved cart may have been marked
+  // out-of-stock since it was added. Surface it so «كريم» tells the customer and
+  // offers a swap/removal instead of silently keeping (or finalizing) it.
+  const gone = d.lines.filter((l) => {
+    const it = menuItems.find((m) => m.id === l.itemId);
+    return !it || !it.available;
+  });
+  if (!gone.length) return note;
+  const names = gone.map((g) => `«${g.name}»`).join("، ");
+  return (
+    note +
+    `\n[تنبيه توفّر: ${names} لم يعد متاحاً الآن. أخبر العميل بلطف، واعرض إزالته أو بديلاً متاحاً من المنيو. ` +
+    `لا تؤكّد (finalize) الطلب وبه صنف غير متاح.]`
   );
 }
 
@@ -101,7 +114,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         role: "user",
         content: [
           { type: "text", text: input.userMessage },
-          { type: "text", text: savedOrderNote(input.initialDraft as OrderDraft) },
+          { type: "text", text: savedOrderNote(input.initialDraft as OrderDraft, ctx.menuItems) },
         ],
       }
     : { role: "user", content: input.userMessage };
