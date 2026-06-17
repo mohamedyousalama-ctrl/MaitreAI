@@ -19,6 +19,7 @@ import type {
   FaqItem,
   MenuItem,
   Modifier,
+  OperatorPromotion,
   Policies,
   RestaurantProfile,
 } from "./types";
@@ -53,6 +54,8 @@ import {
   updateFaqDb,
   deleteFaqDb,
   updatePoliciesDb,
+  updatePromotionStateDb,
+  deletePromotionDb,
 } from "./db/brain";
 
 // Lightweight unique id generator (no external dep) — demo mode only.
@@ -69,6 +72,7 @@ interface RestaurantState {
   modifiers: Modifier[];
   deliveryAreas: DeliveryArea[];
   faqs: FaqItem[];
+  promotions: OperatorPromotion[];
   policies: Policies;
   aiTone: AiToneConfig;
 
@@ -101,6 +105,10 @@ interface RestaurantState {
   updateFaq: (id: string, patch: Partial<FaqItem>) => void;
   deleteFaq: (id: string) => void;
 
+  loadPromotions: () => Promise<void>;
+  togglePromotionActive: (id: string, active: boolean) => void;
+  deletePromotion: (id: string) => void;
+
   updatePolicies: (patch: Partial<Policies>) => void;
   updateAiTone: (patch: Partial<AiToneConfig>) => void;
 
@@ -116,6 +124,7 @@ export const useRestaurantStore = create<RestaurantState>()(
       modifiers: seedModifiers,
       deliveryAreas: seedDeliveryAreas,
       faqs: seedFaqs,
+      promotions: [],
       policies: seedPolicies,
       aiTone: seedAiTone,
 
@@ -142,6 +151,7 @@ export const useRestaurantStore = create<RestaurantState>()(
           modifiers: data.modifiers,
           deliveryAreas: data.deliveryAreas,
           faqs: data.faqs,
+          promotions: data.promotions,
           policies: data.policies,
         });
       },
@@ -254,6 +264,22 @@ export const useRestaurantStore = create<RestaurantState>()(
         if (_sb) fire(deleteFaqDb(_sb, id));
       },
 
+      loadPromotions: async () => {
+        await get().refreshBrain();
+      },
+      togglePromotionActive: (id, active) => {
+        set((s) => ({
+          promotions: s.promotions.map((p) => (p.id === id ? { ...p, state: active ? "active" : "paused" } : p)),
+        }));
+        const { _sb, _rid } = get();
+        if (_sb && _rid) fire(updatePromotionStateDb(_sb, _rid, id, active).then(() => get().refreshBrain()));
+      },
+      deletePromotion: (id) => {
+        set((s) => ({ promotions: s.promotions.filter((p) => p.id !== id) }));
+        const { _sb, _rid } = get();
+        if (_sb && _rid) fire(deletePromotionDb(_sb, _rid, id));
+      },
+
       updatePolicies: (patch) => {
         set((s) => ({ policies: { ...s.policies, ...patch } }));
         const { _sb, _rid } = get();
@@ -279,6 +305,7 @@ export const useRestaurantStore = create<RestaurantState>()(
           modifiers: seedModifiers,
           deliveryAreas: seedDeliveryAreas,
           faqs: seedFaqs,
+          promotions: [],
           policies: seedPolicies,
           aiTone: seedAiTone,
         });
