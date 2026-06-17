@@ -372,7 +372,6 @@ export interface Branch {
   address: string;
   hours: string; // working hours
   whatsappNumber: string;
-  deliveryZones: string[];
   open: boolean; // status: open/closed
   notes: string;
   // derived/legacy: whether a whatsapp number is configured

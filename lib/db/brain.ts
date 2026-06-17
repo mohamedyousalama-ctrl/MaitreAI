@@ -68,7 +68,6 @@ function toBranch(r: BranchRow): Branch {
     address: r.address ?? "",
     hours: hours?.text ?? "",
     whatsappNumber: r.phone ?? "",
-    deliveryZones: [],
     open: r.active,
     notes: r.notes ?? "",
     whatsappConnected: !!r.phone,
