@@ -15,6 +15,7 @@ import type {
   MenuItemVariant,
   MenuItem,
   Modifier,
+  OperatorPromotion,
   Policies,
   RestaurantProfile,
 } from "@/lib/types";
@@ -30,6 +31,7 @@ import type {
   MenuItemVariantRow,
   ModifierRow,
   PolicyRow,
+  PromotionRow,
   RestaurantRow,
 } from "./types";
 
@@ -40,6 +42,7 @@ export interface BrainData {
   modifiers: Modifier[];
   deliveryAreas: DeliveryArea[];
   faqs: FaqItem[];
+  promotions: OperatorPromotion[];
   policies: Policies;
 }
 
@@ -65,6 +68,7 @@ function toBranch(r: BranchRow): Branch {
     address: r.address ?? "",
     hours: hours?.text ?? "",
     whatsappNumber: r.phone ?? "",
+    deliveryZones: [],
     open: r.active,
     notes: r.notes ?? "",
     whatsappConnected: !!r.phone,
@@ -90,6 +94,22 @@ function toDeliveryArea(r: DeliveryZoneRow): DeliveryArea {
 
 function toFaq(r: FaqRow): FaqItem {
   return { id: r.id, question: r.question, answer: r.answer ?? "", category: r.category ?? "", active: r.active };
+}
+
+function toPromotion(r: PromotionRow): OperatorPromotion {
+  return {
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    config: r.config ?? {},
+    code: r.code ?? "",
+    schedule: r.schedule ?? {},
+    state: r.state,
+    spent: Number(r.spent ?? 0),
+    budgetCap: r.budget_cap === null || r.budget_cap === undefined ? null : Number(r.budget_cap),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
 }
 
 const POLICY_KEYS: (keyof Policies)[] = ["refund", "cancellation", "delivery", "replacement", "payment"];
@@ -154,6 +174,7 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
     zones,
     policies,
     faqs,
+    promotions,
   ] = await Promise.all([
     supabase.from("restaurants").select("*").eq("id", restaurantId).single(),
     supabase.from("branches").select("*").eq("restaurant_id", restaurantId).order("created_at"),
@@ -167,6 +188,7 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
     supabase.from("delivery_zones").select("*").eq("restaurant_id", restaurantId).order("created_at"),
     supabase.from("policies").select("*").eq("restaurant_id", restaurantId),
     supabase.from("faqs").select("*").eq("restaurant_id", restaurantId).order("created_at"),
+    supabase.from("promotions").select("*").eq("restaurant_id", restaurantId).order("created_at", { ascending: false }),
   ]);
 
   if (restaurant.error) throw restaurant.error;
@@ -221,6 +243,7 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
     modifiers: ((modifiers.data ?? []) as ModifierRow[]).map(toModifier),
     deliveryAreas: ((zones.data ?? []) as DeliveryZoneRow[]).map(toDeliveryArea),
     faqs: ((faqs.data ?? []) as FaqRow[]).map(toFaq),
+    promotions: ((promotions.data ?? []) as PromotionRow[]).map(toPromotion),
     policies: toPolicies((policies.data ?? []) as PolicyRow[]),
   };
 }
@@ -407,4 +430,17 @@ export async function updatePoliciesDb(s: SupabaseClient, restaurantId: string, 
     .filter(([, v]) => v !== undefined)
     .map(([key, text]) => ({ restaurant_id: restaurantId, key, text: text as string }));
   if (rows.length) await s.from("policies").upsert(rows, { onConflict: "restaurant_id,key" });
+}
+
+// --- promotions ---
+export async function updatePromotionStateDb(s: SupabaseClient, restaurantId: string, id: string, active: boolean) {
+  await s
+    .from("promotions")
+    .update({ state: active ? "active" : "paused" })
+    .eq("restaurant_id", restaurantId)
+    .eq("id", id);
+}
+
+export async function deletePromotionDb(s: SupabaseClient, restaurantId: string, id: string) {
+  await s.from("promotions").delete().eq("restaurant_id", restaurantId).eq("id", id);
 }
