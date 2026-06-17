@@ -84,10 +84,22 @@ function menuBlock(items: MenuItem[], modifiers: Modifier[], currency: string): 
         .map((id) => modById.get(id))
         .filter((m): m is Modifier => !!m && m.active)
         .map((m) => `${m.name}${m.priceImpact ? ` (+${m.priceImpact})` : ""}`);
+      const variants = (i.variants ?? [])
+        .filter((v) => v.active)
+        .map((v) => `${v.name}: ${v.price} ${currency}`);
+      const groups = (i.choiceGroups ?? []).map((g) => {
+        const options = g.options
+          .filter((o) => o.active)
+          .map((o) => `${o.label}${o.priceDelta ? ` (+${o.priceDelta})` : ""}`)
+          .join(" / ");
+        return `${g.name} (choose ${g.minSelect}-${g.maxSelect}): ${options}`;
+      });
       const parts = [`- ${i.name} — ${i.price} ${currency}`];
       if (i.description) parts.push(`  ${i.description}`);
+      if (variants.length) parts.push(`  sizes: ${variants.join(" / ")}`);
+      if (groups.length) parts.push(`  picks: ${groups.join(" | ")}`);
       if (i.allergens.length) parts.push(`  allergens: ${i.allergens.join("، ")}`);
-      if (mods.length) parts.push(`  options: ${mods.join(" / ")}`);
+      if (mods.length) parts.push(`  add-ons: ${mods.join(" / ")}`);
       return parts.join("\n");
     })
     .join("\n");

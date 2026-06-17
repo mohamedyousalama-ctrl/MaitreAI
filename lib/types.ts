@@ -72,6 +72,8 @@ export interface LocalOrderItem {
   quantity: number;
   unitPrice: number;
   modifiers: string[];
+  variant?: string;
+  choices?: string[];
   notes?: string;
   total: number;
 }
@@ -321,6 +323,33 @@ export interface MenuItem {
   modifierIds: string[]; // references Modifier.id
   ingredients: string[];
   allergens: string[];
+  variants?: MenuItemVariant[];
+  choiceGroups?: MenuItemChoiceGroup[];
+}
+
+export interface MenuItemVariant {
+  id: string;
+  name: string;
+  price: number;
+  sort: number;
+  active: boolean;
+}
+
+export interface MenuItemChoiceOption {
+  id: string;
+  label: string;
+  priceDelta: number;
+  sort: number;
+  active: boolean;
+}
+
+export interface MenuItemChoiceGroup {
+  id: string;
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+  sort: number;
+  options: MenuItemChoiceOption[];
 }
 
 // ---------------------------------------------------------------------------

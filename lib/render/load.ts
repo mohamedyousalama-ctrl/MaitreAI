@@ -12,6 +12,8 @@ interface RawItem {
   name?: unknown;
   quantity?: unknown;
   modifiers?: unknown;
+  variant?: unknown;
+  choices?: unknown;
   total?: unknown;
   notes?: unknown;
 }
@@ -30,6 +32,8 @@ export async function loadReceiptData(client: SupabaseClient, orderId: string): 
     name: String(it.name ?? ""),
     quantity: Number(it.quantity ?? 1),
     modifiers: Array.isArray(it.modifiers) ? (it.modifiers as unknown[]).map(String) : [],
+    variant: it.variant ? String(it.variant) : undefined,
+    choices: Array.isArray(it.choices) ? (it.choices as unknown[]).map(String) : [],
     total: Number(it.total ?? 0),
     notes: it.notes ? String(it.notes) : undefined,
   }));

@@ -37,6 +37,8 @@ export interface ReceiptItem {
   name: string;
   quantity: number;
   modifiers: string[];
+  variant?: string;
+  choices?: string[];
   total: number;
   notes?: string;
 }
@@ -134,8 +136,9 @@ export function buildReceiptSvg(d: ReceiptData, width: ReceiptWidth = "standard"
     parts.push(tRight(y, `${it.quantity}×  ${it.name}`, 26, "#2a211b", 500));
     parts.push(tLeft(y, money(it.total, d.currency), 26, "#2a211b", 500));
     y += s(34);
-    if (it.modifiers?.length) {
-      parts.push(tRight(y, it.modifiers.join("، "), 20, "#9b8b7c"));
+    const opts = [it.variant, ...(it.choices ?? []), ...(it.modifiers ?? [])].filter(Boolean) as string[];
+    if (opts.length) {
+      parts.push(tRight(y, opts.join("، "), 20, "#9b8b7c"));
       y += s(28);
     }
     if (it.notes) {
@@ -204,8 +207,9 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
   for (const it of d.items) {
     parts.push(tRight(y, `${it.quantity}×  ${it.name}`, 34, "#000", 700));
     y += s(38);
-    if (it.modifiers?.length) {
-      parts.push(tRight(y, `+ ${it.modifiers.join("، ")}`, 24, "#333"));
+    const opts = [it.variant, ...(it.choices ?? []), ...(it.modifiers ?? [])].filter(Boolean) as string[];
+    if (opts.length) {
+      parts.push(tRight(y, `+ ${opts.join("، ")}`, 24, "#333"));
       y += s(30);
     }
     if (it.notes) {

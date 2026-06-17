@@ -49,7 +49,13 @@ export async function persistOrderFromDraft(
   // Idempotency key: the finalized draft content within this conversation.
   const fingerprint = JSON.stringify({
     c: conversationId,
-    lines: draft.lines.map((l) => ({ i: l.itemId, q: l.quantity, m: l.modifiers.map((x) => x.name).sort() })),
+    lines: draft.lines.map((l) => ({
+      i: l.itemId,
+      q: l.quantity,
+      v: l.variant?.name ?? "",
+      c: l.choices.map((x) => `${x.groupName}:${x.label}`).sort(),
+      m: l.modifiers.map((x) => x.name).sort(),
+    })),
     f: draft.fulfillment,
     z: draft.deliveryZone,
     t: draft.total,
@@ -63,6 +69,8 @@ export async function persistOrderFromDraft(
     name: l.name,
     quantity: l.quantity,
     unitPrice: l.unitPrice,
+    variant: l.variant?.name,
+    choices: l.choices.map((c) => `${c.groupName}: ${c.label}`),
     modifiers: l.modifiers.map((m) => m.name),
     total: l.lineTotal,
   }));

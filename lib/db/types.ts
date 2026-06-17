@@ -84,6 +84,36 @@ export interface MenuItemModifierRow {
   modifier_id: string;
 }
 
+export interface MenuItemVariantRow {
+  id: string;
+  restaurant_id: string;
+  item_id: string;
+  name: string;
+  price: number;
+  sort: number;
+  active: boolean;
+}
+
+export interface MenuItemChoiceGroupRow {
+  id: string;
+  restaurant_id: string;
+  item_id: string;
+  name: string;
+  min_select: number;
+  max_select: number;
+  sort: number;
+}
+
+export interface MenuItemChoiceOptionRow {
+  id: string;
+  restaurant_id: string;
+  group_id: string;
+  label: string;
+  price_delta: number;
+  sort: number;
+  active: boolean;
+}
+
 export interface DeliveryZoneRow {
   id: string;
   restaurant_id: string;
