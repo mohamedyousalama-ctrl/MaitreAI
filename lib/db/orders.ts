@@ -43,6 +43,7 @@ interface OrderRowJoined extends Record<string, unknown> {
   delivery_fee: number;
   total: number;
   currency: string;
+  source?: string | null;
   order_status: string;
   payment_status: string;
   address: string | null;
@@ -64,7 +65,7 @@ function mapOrder(r: OrderRowJoined): LocalOrder {
     customerId: r.customer_id ?? undefined,
     customerName: r.customers?.name || r.customers?.phone || "عميل",
     customerPhone: r.customers?.phone || "",
-    source: "whatsapp",
+    source: r.source === "web" ? "web" : "whatsapp",
     branchId: r.branch_id ?? undefined,
     branchName: r.branches?.name || "",
     fulfillmentType: r.fulfillment as FulfillmentKey,
@@ -137,6 +138,7 @@ export async function insertOrderDb(
     delivery_fee: order.deliveryFee,
     total: order.total,
     currency: order.currency,
+    source: order.source ?? "whatsapp",
     order_status: order.orderStatus,
     payment_status: order.paymentStatus,
     address: order.deliveryAddress ?? null,

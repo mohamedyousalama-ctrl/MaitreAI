@@ -85,7 +85,7 @@ export interface LocalOrder {
   customerId?: string;
   customerName: string;
   customerPhone: string;
-  source: "whatsapp";
+  source: "whatsapp" | "web";
   branchId?: string;
   branchName: string;
   fulfillmentType: FulfillmentKey;
