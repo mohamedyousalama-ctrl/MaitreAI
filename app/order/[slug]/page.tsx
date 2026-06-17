@@ -1,17 +1,18 @@
 // ============================================================================
-// MaitreAI — Public storefront: menu browse (Phase 3 Step 1, READ-ONLY).
-// A public, no-login page at /order/[slug]. Server component: it resolves the
-// slug → restaurant_id with the SERVICE-ROLE client (server-only; the secret is
-// never shipped to the browser) and loads the priced menu via the existing
-// loadBrain() loader — no new menu query. All prices come straight from the DB;
-// nothing is computed here. No cart / totals yet (that's a later step).
-// Multi-tenant safe: loadBrain scopes every read to the resolved restaurant_id.
+// MaitreAI — Public storefront: menu + customizer + cart (Phase 3 Step 1→2).
+// A public, no-login page at /order/[slug]. Server component: resolves the slug →
+// restaurant_id with the SERVICE-ROLE client (server-only; the secret never
+// reaches the browser) and loads the priced menu via the existing loadBrain()
+// loader — no new menu query. It hands the loaded menu (items + variants + choice
+// groups + modifiers) + tenant currency to the StorefrontMenu CLIENT component,
+// which owns the item customizer and the in-memory cart. All prices come from the
+// loaded DB data; the cart total is a PREVIEW only (authoritative recompute is a
+// later step). Multi-tenant safe: loadBrain scopes every read to this tenant.
 // ============================================================================
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadBrain } from "@/lib/db/brain";
-import { formatCurrency } from "@/lib/utils";
-import type { MenuItem } from "@/lib/types";
+import { StorefrontMenu } from "@/components/storefront/StorefrontMenu";
 import { UtensilsCrossed, Store } from "lucide-react";
 
 // Always render at request time with fresh menu data (availability/prices live).
@@ -36,19 +37,6 @@ export default async function StorefrontMenuPage({ params }: { params: { slug: s
   const currency = brain.profile.currency || "ج.م";
   const availableItems = brain.menuItems.filter((i) => i.available);
 
-  // Group by category, preserving first-appearance order (loadBrain returns items
-  // in category/insertion order).
-  const categoryOrder: string[] = [];
-  const itemsByCategory = new Map<string, MenuItem[]>();
-  for (const item of availableItems) {
-    const cat = item.category || "أخرى";
-    if (!itemsByCategory.has(cat)) {
-      itemsByCategory.set(cat, []);
-      categoryOrder.push(cat);
-    }
-    itemsByCategory.get(cat)!.push(item);
-  }
-
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
@@ -63,71 +51,13 @@ export default async function StorefrontMenuPage({ params }: { params: { slug: s
         </div>
       </header>
 
-      <div className="mx-auto max-w-3xl px-4 py-6">
-        {categoryOrder.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-            <UtensilsCrossed className="mx-auto h-8 w-8 text-slate-300" />
-            <p className="mt-3 text-sm text-slate-500">لا توجد أصناف متاحة حالياً.</p>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {categoryOrder.map((cat) => (
-              <section key={cat}>
-                <h2 className="mb-3 text-lg font-bold text-slate-800">{cat}</h2>
-                <ul className="space-y-3">
-                  {itemsByCategory.get(cat)!.map((item) => (
-                    <MenuItemRow key={item.id} item={item} currency={currency} />
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-        )}
-
-        <p className="mt-10 text-center text-xs text-slate-400">
-          هذه القائمة للعرض فقط — سيتوفّر الطلب قريباً.
-        </p>
-      </div>
+      <StorefrontMenu
+        restaurantName={brain.profile.name}
+        currency={currency}
+        items={availableItems}
+        modifiers={brain.modifiers}
+      />
     </main>
-  );
-}
-
-function MenuItemRow({ item, currency }: { item: MenuItem; currency: string }) {
-  const variants = (item.variants ?? []).filter((v) => v.active);
-  const hasChoices = (item.choiceGroups ?? []).length > 0;
-
-  return (
-    <li className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="font-bold text-slate-900">{item.name}</h3>
-          {item.description && <p className="mt-1 text-sm text-slate-500">{item.description}</p>}
-          {hasChoices && (
-            <p className="mt-1 text-xs font-medium text-amber-700">يحتوي على اختيارات تُحدَّد عند الطلب</p>
-          )}
-        </div>
-        {/* Single base price (items without size variants). */}
-        {variants.length === 0 && (
-          <span className="shrink-0 whitespace-nowrap font-bold text-slate-900">
-            {formatCurrency(item.price, currency)}
-          </span>
-        )}
-      </div>
-
-      {/* Per-size prices (variants) — shown straight from the DB, never computed. */}
-      {variants.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {variants.map((v) => (
-            <span
-              key={v.id}
-              className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700"
-            >
-              {v.name} · {formatCurrency(v.price, currency)}
-            </span>
-          ))}
-        </div>
-      )}
-    </li>
   );
 }
 
