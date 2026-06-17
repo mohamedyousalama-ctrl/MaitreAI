@@ -14,6 +14,7 @@ import { runTapTurn } from "@/lib/ai/tap-router";
 import { sendWhatsAppText, sendWhatsAppInteractive } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
 import { finalizeOrderSession } from "@/lib/db/order-session";
+import { updateCustomerProfileFromOrder } from "@/lib/db/customer-memory";
 import { sendReceiptToCustomer } from "./send-receipt";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
@@ -139,6 +140,11 @@ export async function respondAndSendWhatsApp(
       // Link the persistent session to the real order it became (§1C).
       if (outcome.orderSessionId && persisted.orderId) {
         await finalizeOrderSession(admin, outcome.orderSessionId, persisted.orderId);
+      }
+      // Piece 4: update the customer's memory (counts/usual/preferences) — only on
+      // a NEW order so counts stay truthful (idempotent re-persist is skipped).
+      if (persisted.created) {
+        await updateCustomerProfileFromOrder(admin, { restaurantId, customerId, draft: outcome.draft });
       }
       if (persisted.created && persisted.orderId) await sendReceiptToCustomer(admin, persisted.orderId);
     } catch (e) {

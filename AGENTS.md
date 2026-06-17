@@ -119,6 +119,7 @@ The same Brain path is reachable for tests via `POST /api/agent/respond`
 | Restaurant Brain (shared memory) | `lib/db/restaurant-brain.ts`, `app/api/brain/route.ts` |
 | Conversation analysis job (Piece 2) | `lib/ai/analysis.ts`, `app/api/brain/analyze/route.ts` |
 | Owner insight loop (Piece 3) | `app/api/brain/insights/route.ts`, `app/(main)/dashboard/MaitreConsole.tsx` |
+| Customer memory (Piece 4) | `lib/db/customer-memory.ts` (read in `customer-turn`, written on finalize) |
 | Order persistence (idempotent) | `lib/db/orders-create.ts` |
 | Brain context loader | `lib/db/brain.ts` |
 | LLM adapter seam | `lib/ai/llm/` (`index.ts`, `claude.ts`, `mock.ts`, `models.ts`) |
@@ -162,6 +163,15 @@ This branch (`upgrade/order-engine`) is the upgrade stack:
   **Suggest-only:** it stores KNOWLEDGE — it never changes menu/price/policy (real
   changes still go through the normal confirm-before-write ops path). The loop is
   whole: conversations → analysis → insight → owner asked → answer → fact.
+- **Learning System Piece 4 — customer memory:** per-customer, tenant-scoped recall
+  so the agent recognizes a returning diner (`lib/db/customer-memory.ts`). REUSES
+  the `customers` table (+ `last_order_at`/`usual_address`) and a small
+  `customer_preferences` table; order history derives from `orders` (no
+  duplication). Finalizing an order updates the profile; `loadCustomerProfile`
+  injects a compact recall block into «كريم» **only for returning customers** (new
+  → prompt unchanged). Privacy-first: tenant-isolated, no unprompted PII dumps,
+  allergies respected but **verified from menu data not memory**, money still from
+  tools. (Piece 5 — active recommendations — is next / not built.)
 - **Owner/admin console is shown by default** — `ENABLE_ADMIN_CHAT_CONSOLE`
   (`NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE`) now defaults ON, still toggleable (set
   `"false"` to hide). Code in `app/(main)/dashboard/MaitreConsole.tsx`; its agent

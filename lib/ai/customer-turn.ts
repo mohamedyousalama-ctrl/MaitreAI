@@ -27,6 +27,7 @@ import {
   isCancelIntent,
 } from "@/lib/db/order-session";
 import { loadRestaurantBrain } from "@/lib/db/restaurant-brain";
+import { loadCustomerProfile } from "@/lib/db/customer-memory";
 
 /** Typed error so callers can map to the right HTTP status / timeline note. */
 export class CustomerTurnError extends Error {
@@ -100,15 +101,20 @@ export async function runCustomerTurn(
   const aiTone: AiToneConfig = { ...seedAiTone, ...((row.ai_tone as Partial<AiToneConfig>) ?? {}) };
 
   // §E7 handover note — a human's prior commitment the Brain must honor on resume.
+  // Also resolve the customer to load their memory profile (Piece 4).
   let handoverNote: string | undefined;
+  let customerId: string | null = null;
   if (conversationId) {
     const { data: conv } = await admin
       .from("conversations")
-      .select("handover_note")
+      .select("handover_note,customer_id")
       .eq("id", conversationId)
       .single();
     handoverNote = (conv?.handover_note as string | null) ?? undefined;
+    customerId = (conv?.customer_id as string | null) ?? null;
   }
+  // Returning-customer memory (compact; null for new customers → prompt unchanged).
+  const customerProfile = customerId ? await loadCustomerProfile(admin, { restaurantId, customerId }) : null;
 
   const dialect = String(row.dialect ?? "egyptian");
   const ctx: BrainContext = {
@@ -134,6 +140,15 @@ export async function runCustomerTurn(
     taxMode: String(row.tax_mode ?? "inclusive"),
     taxRate: Number(row.tax_rate ?? 0),
     memoryFacts: memory.facts.map((f) => ({ category: f.category, fact: f.fact })),
+    customerProfile: customerProfile
+      ? {
+          name: customerProfile.name,
+          ordersCount: customerProfile.ordersCount,
+          usualItems: customerProfile.usualItems,
+          preferences: customerProfile.preferences.map((p) => ({ type: p.type, value: p.value })),
+          usualAddress: customerProfile.usualAddress,
+        }
+      : undefined,
   };
 
   // Step 1: load the persistent order session so the agent resumes the in-progress

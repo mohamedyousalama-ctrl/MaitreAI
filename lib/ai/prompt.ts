@@ -49,6 +49,15 @@ export interface BrainContext {
   /** Restaurant Brain — learned KNOWLEDGE facts (preferences/policies/ops). NOT a
    *  source of prices or availability; those always come from the menu/tools. */
   memoryFacts?: { category: string; fact: string }[];
+  /** Customer Memory (Piece 4) — compact profile of a RETURNING diner, for warm
+   *  recall. Present only for returning customers. Not a price/stock source. */
+  customerProfile?: {
+    name?: string;
+    ordersCount: number;
+    usualItems: string[];
+    preferences: { type: string; value: string }[];
+    usualAddress?: string | null;
+  };
 }
 
 // Owner-approved (2026-06-13) dialect-fitting fallback host names. Used only
@@ -133,6 +142,28 @@ function memoryBlock(facts?: { category: string; fact: string }[]): string {
   return lines.join("\n");
 }
 
+// Customer Memory — warm recall for a returning diner, privacy-respecting.
+function customerBlock(cp?: BrainContext["customerProfile"]): string {
+  if (!cp) return "";
+  const lines: string[] = [];
+  if (cp.name) lines.push(`الاسم: ${cp.name}`);
+  lines.push(`طلبات سابقة: ${cp.ordersCount}`);
+  if (cp.usualItems.length) lines.push(`الأصناف المعتادة: ${cp.usualItems.join("، ")}`);
+  const allergies = cp.preferences.filter((p) => p.type === "allergy").map((p) => p.value);
+  const other = cp.preferences.filter((p) => p.type !== "allergy" && p.type !== "favorite_item").map((p) => p.value);
+  if (other.length) lines.push(`تفضيلات ملاحَظة: ${other.join("، ")}`);
+  if (allergies.length) lines.push(`⚠️ حساسية مسجّلة: ${allergies.join("، ")}`);
+  return `
+
+## العميل (زبون عائد — للترحيب الدافئ مع احترام الخصوصية)
+${lines.join("\n")}
+خصوصية وذوق:
+- رحّب به بدفء واذكر طلبه المعتاد عند المناسبة فقط — كمضيفٍ يتذكّر ضيفه، لا كمراقبة.
+- لا تسرد كل ما تعرفه عنه، ولا تذكر معلومات حساسة (كعنوانه الكامل) من تلقاء نفسك أو قبل أن يطلب.
+- الأسعار والتوفّر دائماً من المنيو/الأدوات — لا من هذه الذاكرة.
+- الحساسية الغذائية: خذها بجدّية، لكن تحقّق من مكوّنات الأصناف من بيانات المنيو، لا من الذاكرة أو التخمين.`;
+}
+
 function policiesBlock(p: Policies): string {
   return [
     p.delivery && `Delivery: ${p.delivery}`,
@@ -173,6 +204,8 @@ export function buildCustomerAgentSystemPrompt(ctx: BrainContext): string {
 ⚠️ ليست مصدراً للأسعار أو توفّر الأصناف — الأسعار والتوفّر تأتي دائماً من المنيو/الأدوات أدناه، حتى لو ذكرت الذاكرة رقماً مختلفاً.
 ${mem}`
     : "";
+
+  const custBlock = customerBlock(ctx.customerProfile);
 
   const persona = (ctx.personaName && ctx.personaName.trim()) || DEFAULT_PERSONA_NAME[ctx.dialect] || "خالد";
 
@@ -269,5 +302,5 @@ ${zonesBlock(ctx.deliveryAreas, currency)}
 ${policiesBlock(ctx.policies)}
 
 ### FAQ
-${faqBlock(ctx.faqs)}${memBlock}`;
+${faqBlock(ctx.faqs)}${memBlock}${custBlock}`;
 }

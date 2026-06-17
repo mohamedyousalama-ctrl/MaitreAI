@@ -79,7 +79,7 @@ A secret-guarded `POST /api/agent/respond` runs the same Brain path for tests/ev
 | `menu_categories`, `menu_items`, `modifiers`, `menu_item_modifiers` | the menu + options (prices live here) |
 | `delivery_zones` | zones with `fee`, `min_order`, `eta_minutes` |
 | `policies`, `faqs` | refund/cancellation/delivery text; Q&A grounding |
-| `customers`, `conversations`, `messages` | inbound/outbound timeline (`messages.meta` holds `interactiveId`, draft, presentation) |
+| `customers`, `conversations`, `messages` | inbound/outbound timeline (`messages.meta` holds `interactiveId`, draft, presentation). `customers` doubles as **customer memory** (Piece 4): `orders_count`, `ltv`, `last_order_at`, `usual_address` + `customer_preferences` (observed traits); order history derives from `orders`. |
 | `orders`, `order_events` | finalized orders (money copied verbatim from the draft) + timeline |
 | `order_sessions`, `order_session_lines`, `order_session_events` | **Step 1** persistent per-conversation order draft (one active per conversation) + append-only events |
 | `agent_runs` | per-turn observability: model, tokens, `cost_usd`, latency, tools used (taps log `model='deterministic'`, 0 tokens) |
