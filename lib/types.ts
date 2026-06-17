@@ -372,7 +372,6 @@ export interface Branch {
   address: string;
   hours: string; // working hours
   whatsappNumber: string;
-  deliveryZones: string[];
   open: boolean; // status: open/closed
   notes: string;
   // derived/legacy: whether a whatsapp number is configured
@@ -400,6 +399,8 @@ export interface RestaurantProfile {
 export interface DeliveryArea {
   id: string;
   name: string;
+  /** The branch this zone belongs to. Omitted/empty = restaurant-wide (all branches). */
+  branchId?: string;
   minOrder: number;
   deliveryFee: number;
   estimatedTime: string; // e.g. "30-45 دقيقة"

@@ -5,7 +5,6 @@ import type { Branch } from "@/lib/types";
 import { Drawer, DrawerFooter } from "@/components/ui/Drawer";
 import { TextField, TextAreaField } from "@/components/ui/FormControls";
 import { StatusSelector } from "@/components/ui/StatusSelector";
-import { TagEditor } from "@/components/ui/TagEditor";
 
 export type BranchFormValues = Omit<Branch, "id" | "whatsappConnected">;
 
@@ -14,7 +13,6 @@ const empty: BranchFormValues = {
   address: "",
   hours: "",
   whatsappNumber: "",
-  deliveryZones: [],
   open: true,
   notes: "",
   phone: "",
@@ -39,7 +37,6 @@ export function BranchForm({ open, initial, onClose, onSubmit }: BranchFormProps
               address: initial.address,
               hours: initial.hours,
               whatsappNumber: initial.whatsappNumber,
-              deliveryZones: initial.deliveryZones,
               open: initial.open,
               notes: initial.notes,
               phone: initial.phone,
@@ -83,12 +80,6 @@ export function BranchForm({ open, initial, onClose, onSubmit }: BranchFormProps
             { value: "open", label: "مفتوح" },
             { value: "closed", label: "مغلق" },
           ]}
-        />
-        <TagEditor
-          label="مناطق التوصيل"
-          tags={values.deliveryZones}
-          onChange={(t) => set("deliveryZones", t)}
-          placeholder="أضف منطقة"
         />
         <TextAreaField label="ملاحظات" value={values.notes} onChange={(v) => set("notes", v)} rows={3} />
       </div>

@@ -93,8 +93,23 @@ export default function RestaurantBrainPage() {
   const [editingFaq, setEditingFaq] = useState<FaqItem | null>(null);
   const [faqToDelete, setFaqToDelete] = useState<FaqItem | null>(null);
 
+  const branchNameById = useMemo(
+    () => new Map(store.branches.map((b) => [b.id, b.name])),
+    [store.branches]
+  );
+
   const areaColumns: Column<DeliveryArea>[] = [
     { key: "name", header: "المنطقة", render: (r) => <span className="font-semibold text-slate-800">{r.name}</span> },
+    {
+      key: "branch",
+      header: "الفرع",
+      render: (r) =>
+        r.branchId ? (
+          <span className="text-slate-700">{branchNameById.get(r.branchId) ?? "—"}</span>
+        ) : (
+          <span className="text-slate-400">كل الفروع</span>
+        ),
+    },
     { key: "min", header: "حد أدنى", render: (r) => formatCurrency(r.minOrder) },
     { key: "fee", header: "رسوم التوصيل", render: (r) => formatCurrency(r.deliveryFee) },
     { key: "time", header: "الوقت المتوقع", render: (r) => r.estimatedTime },
@@ -267,6 +282,7 @@ export default function RestaurantBrainPage() {
       <DeliveryAreaForm
         open={areaForm}
         initial={editingArea}
+        branches={store.branches}
         onClose={() => setAreaForm(false)}
         onSubmit={(values: DeliveryAreaFormValues) => {
           if (editingArea) store.updateDeliveryArea(editingArea.id, values);

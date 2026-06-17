@@ -65,7 +65,6 @@ function toBranch(r: BranchRow): Branch {
     address: r.address ?? "",
     hours: hours?.text ?? "",
     whatsappNumber: r.phone ?? "",
-    deliveryZones: [],
     open: r.active,
     notes: r.notes ?? "",
     whatsappConnected: !!r.phone,
@@ -81,6 +80,7 @@ function toDeliveryArea(r: DeliveryZoneRow): DeliveryArea {
   return {
     id: r.id,
     name: r.name,
+    branchId: r.branch_id ?? undefined,
     minOrder: Number(r.min_order),
     deliveryFee: Number(r.fee),
     estimatedTime: r.eta_minutes ? `${r.eta_minutes} دقيقة` : "",
@@ -356,18 +356,23 @@ export async function deleteModifierDb(s: SupabaseClient, id: string) {
 // --- delivery zones ---
 function etaToMinutes(t?: string): number | null {
   if (!t) return null;
-  const m = t.match(/\d+/);
-  return m ? Number(m[0]) : null;
+  const nums = t.match(/\d+/g);
+  if (!nums) return null;
+  // The column stores a single int, so a range like "30-45 دقيقة" keeps its UPPER
+  // bound (the customer-facing SLA figure) instead of silently dropping to the
+  // lower one. Single-value inputs are unaffected (max of one number is itself).
+  return Math.max(...nums.map(Number));
 }
 export async function addDeliveryAreaDb(s: SupabaseClient, restaurantId: string, d: Omit<DeliveryArea, "id">) {
   await s.from("delivery_zones").insert({
-    restaurant_id: restaurantId, name: d.name, fee: d.deliveryFee, min_order: d.minOrder,
+    restaurant_id: restaurantId, branch_id: d.branchId || null, name: d.name, fee: d.deliveryFee, min_order: d.minOrder,
     eta_minutes: etaToMinutes(d.estimatedTime), active: d.active ?? true,
   });
 }
 export async function updateDeliveryAreaDb(s: SupabaseClient, id: string, patch: Partial<DeliveryArea>) {
   const map: Record<string, unknown> = {};
   if (patch.name !== undefined) map.name = patch.name;
+  if (patch.branchId !== undefined) map.branch_id = patch.branchId || null;
   if (patch.deliveryFee !== undefined) map.fee = patch.deliveryFee;
   if (patch.minOrder !== undefined) map.min_order = patch.minOrder;
   if (patch.estimatedTime !== undefined) map.eta_minutes = etaToMinutes(patch.estimatedTime);

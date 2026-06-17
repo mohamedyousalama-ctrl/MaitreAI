@@ -1,15 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { DeliveryArea } from "@/lib/types";
+import type { Branch, DeliveryArea } from "@/lib/types";
 import { Drawer, DrawerFooter } from "@/components/ui/Drawer";
-import { TextField, NumberField } from "@/components/ui/FormControls";
+import { TextField, NumberField, SelectField } from "@/components/ui/FormControls";
 import { StatusSelector } from "@/components/ui/StatusSelector";
 
 export type DeliveryAreaFormValues = Omit<DeliveryArea, "id">;
 
+// "" = restaurant-wide (all branches); any other value is a branch id.
+const ALL_BRANCHES = "";
+
 const empty: DeliveryAreaFormValues = {
   name: "",
+  branchId: ALL_BRANCHES,
   minOrder: 30,
   deliveryFee: 10,
   estimatedTime: "30-45 دقيقة",
@@ -19,11 +23,13 @@ const empty: DeliveryAreaFormValues = {
 interface DeliveryAreaFormProps {
   open: boolean;
   initial?: DeliveryArea | null;
+  /** The tenant's branches, for scoping a zone to a specific branch. */
+  branches: Branch[];
   onClose: () => void;
   onSubmit: (values: DeliveryAreaFormValues) => void;
 }
 
-export function DeliveryAreaForm({ open, initial, onClose, onSubmit }: DeliveryAreaFormProps) {
+export function DeliveryAreaForm({ open, initial, branches, onClose, onSubmit }: DeliveryAreaFormProps) {
   const [values, setValues] = useState<DeliveryAreaFormValues>(empty);
 
   useEffect(() => {
@@ -32,20 +38,31 @@ export function DeliveryAreaForm({ open, initial, onClose, onSubmit }: DeliveryA
         initial
           ? {
               name: initial.name,
+              branchId: initial.branchId ?? ALL_BRANCHES,
               minOrder: initial.minOrder,
               deliveryFee: initial.deliveryFee,
               estimatedTime: initial.estimatedTime,
               active: initial.active,
             }
-          : empty
+          : {
+              ...empty,
+              // Default a new zone to the only branch when there's exactly one;
+              // otherwise leave it restaurant-wide (all branches).
+              branchId: branches.length === 1 ? branches[0].id : ALL_BRANCHES,
+            }
       );
     }
-  }, [open, initial]);
+  }, [open, initial, branches]);
 
   const set = <K extends keyof DeliveryAreaFormValues>(key: K, v: DeliveryAreaFormValues[K]) =>
     setValues((s) => ({ ...s, [key]: v }));
 
   const valid = values.name.trim().length > 0;
+
+  const branchOptions = [
+    { value: ALL_BRANCHES, label: "كل الفروع" },
+    ...branches.map((b) => ({ value: b.id, label: b.name })),
+  ];
 
   return (
     <Drawer
@@ -56,6 +73,13 @@ export function DeliveryAreaForm({ open, initial, onClose, onSubmit }: DeliveryA
     >
       <div className="space-y-4">
         <TextField label="اسم المنطقة" value={values.name} onChange={(v) => set("name", v)} placeholder="مثال: الياسمين" />
+        <SelectField
+          label="الفرع"
+          value={values.branchId ?? ALL_BRANCHES}
+          onChange={(v) => set("branchId", v)}
+          options={branchOptions}
+          hint="اربط المنطقة بفرع معيّن، أو اتركها لكل الفروع."
+        />
         <div className="grid grid-cols-2 gap-3">
           <NumberField label="الحد الأدنى للطلب" value={values.minOrder} onChange={(v) => set("minOrder", v)} suffix="ر.س" />
           <NumberField label="رسوم التوصيل" value={values.deliveryFee} onChange={(v) => set("deliveryFee", v)} suffix="ر.س" />
