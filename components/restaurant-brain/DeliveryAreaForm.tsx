@@ -25,11 +25,13 @@ interface DeliveryAreaFormProps {
   initial?: DeliveryArea | null;
   /** The tenant's branches, for scoping a zone to a specific branch. */
   branches: Branch[];
+  /** The signed-in tenant's currency (profile.currency) — never hardcoded. */
+  currency: string;
   onClose: () => void;
   onSubmit: (values: DeliveryAreaFormValues) => void;
 }
 
-export function DeliveryAreaForm({ open, initial, branches, onClose, onSubmit }: DeliveryAreaFormProps) {
+export function DeliveryAreaForm({ open, initial, branches, currency, onClose, onSubmit }: DeliveryAreaFormProps) {
   const [values, setValues] = useState<DeliveryAreaFormValues>(empty);
 
   useEffect(() => {
@@ -81,8 +83,8 @@ export function DeliveryAreaForm({ open, initial, branches, onClose, onSubmit }:
           hint="اربط المنطقة بفرع معيّن، أو اتركها لكل الفروع."
         />
         <div className="grid grid-cols-2 gap-3">
-          <NumberField label="الحد الأدنى للطلب" value={values.minOrder} onChange={(v) => set("minOrder", v)} suffix="ر.س" />
-          <NumberField label="رسوم التوصيل" value={values.deliveryFee} onChange={(v) => set("deliveryFee", v)} suffix="ر.س" />
+          <NumberField label="الحد الأدنى للطلب" value={values.minOrder} onChange={(v) => set("minOrder", v)} suffix={currency} />
+          <NumberField label="رسوم التوصيل" value={values.deliveryFee} onChange={(v) => set("deliveryFee", v)} suffix={currency} />
         </div>
         <TextField label="الوقت المتوقع" value={values.estimatedTime} onChange={(v) => set("estimatedTime", v)} placeholder="30-45 دقيقة" />
         <StatusSelector

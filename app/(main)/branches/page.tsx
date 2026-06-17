@@ -7,11 +7,13 @@ import { BranchForm, type BranchFormValues } from "@/components/branches/BranchF
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
+import { useRole } from "@/lib/use-role";
 import type { Branch } from "@/lib/types";
 import { Store, Plus } from "lucide-react";
 
 export default function BranchesPage() {
   const hydrated = useHasHydrated();
+  const canManage = useRole() === "manager";
   const branches = useRestaurantStore((s) => s.branches);
   const addBranch = useRestaurantStore((s) => s.addBranch);
   const updateBranch = useRestaurantStore((s) => s.updateBranch);
@@ -44,12 +46,14 @@ export default function BranchesPage() {
         icon={Store}
         accentBg="bg-branches"
         actions={
-          <button
-            onClick={openCreate}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-branches px-4 py-2.5 text-sm font-semibold text-white shadow-card hover:opacity-90"
-          >
-            <Plus className="h-4 w-4" /> فرع جديد
-          </button>
+          canManage ? (
+            <button
+              onClick={openCreate}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-branches px-4 py-2.5 text-sm font-semibold text-white shadow-card hover:opacity-90"
+            >
+              <Plus className="h-4 w-4" /> فرع جديد
+            </button>
+          ) : undefined
         }
       />
 
@@ -62,7 +66,12 @@ export default function BranchesPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {branches.map((b) => (
-            <BranchCard key={b.id} branch={b} onEdit={openEdit} onDelete={setToDelete} />
+            <BranchCard
+              key={b.id}
+              branch={b}
+              onEdit={canManage ? openEdit : undefined}
+              onDelete={canManage ? setToDelete : undefined}
+            />
           ))}
         </div>
       )}
