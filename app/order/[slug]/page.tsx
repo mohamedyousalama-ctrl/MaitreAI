@@ -52,10 +52,13 @@ export default async function StorefrontMenuPage({ params }: { params: { slug: s
       </header>
 
       <StorefrontMenu
+        slug={slug}
         restaurantName={brain.profile.name}
         currency={currency}
         items={availableItems}
         modifiers={brain.modifiers}
+        branches={brain.branches.filter((b) => b.open)}
+        deliveryAreas={brain.deliveryAreas.filter((z) => z.active)}
       />
     </main>
   );

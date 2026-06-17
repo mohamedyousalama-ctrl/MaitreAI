@@ -3,12 +3,12 @@
 // ============================================================================
 // MaitreAI — Storefront menu + in-memory cart (Phase 3 Step 2). Public, no auth.
 // Holds the cart in React state only (no DB, no login, no localStorage — clears
-// on refresh). Cart lines store SELECTIONS BY ID; every total shown is a PREVIEW
-// recomputed from the real loaded prices. No checkout/order placement (Step 3).
+// on refresh). Cart lines store SELECTIONS BY ID; browser totals are a PREVIEW
+// only; checkout submits ids to the server for authoritative recompute.
 // ============================================================================
 
 import { useMemo, useState } from "react";
-import type { MenuItem, Modifier } from "@/lib/types";
+import type { Branch, DeliveryArea, MenuItem, Modifier } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 import { UtensilsCrossed, Plus, X, Minus, Trash2, ShoppingBag } from "lucide-react";
 import { ItemCustomizer } from "./ItemCustomizer";
@@ -21,18 +21,40 @@ import {
 } from "./pricing";
 
 export function StorefrontMenu({
+  slug,
   currency,
   items,
   modifiers,
+  branches,
+  deliveryAreas,
 }: {
+  slug: string;
   restaurantName: string;
   currency: string;
   items: MenuItem[];
   modifiers: Modifier[];
+  branches: Branch[];
+  deliveryAreas: DeliveryArea[];
 }) {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [openItem, setOpenItem] = useState<MenuItem | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [fulfillment, setFulfillment] = useState<"delivery" | "pickup">("delivery");
+  const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
+  const [zoneId, setZoneId] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [confirmation, setConfirmation] = useState<{
+    orderNumber: string;
+    subtotal: number;
+    deliveryFee: number;
+    total: number;
+    currency: string;
+  } | null>(null);
 
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
@@ -52,6 +74,13 @@ export function StorefrontMenu({
   }, [items]);
 
   const subtotal = cartSubtotal(cart, itemById, modifiers);
+  const zonesForBranch = useMemo(
+    () => deliveryAreas.filter((z) => !z.branchId || z.branchId === branchId),
+    [branchId, deliveryAreas]
+  );
+  const selectedZone = zonesForBranch.find((z) => z.id === zoneId) ?? null;
+  const deliveryFee = fulfillment === "delivery" ? selectedZone?.deliveryFee ?? 0 : 0;
+  const previewTotal = subtotal + deliveryFee;
   const count = cart.reduce((n, l) => n + l.quantity, 0);
 
   const addLine = (line: CartLine) => {
@@ -61,6 +90,41 @@ export function StorefrontMenu({
   const setQty = (lineId: string, q: number) =>
     setCart((c) => c.map((l) => (l.lineId === lineId ? { ...l, quantity: Math.max(1, q) } : l)));
   const removeLine = (lineId: string) => setCart((c) => c.filter((l) => l.lineId !== lineId));
+  const submitOrder = async () => {
+    setCheckoutError("");
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/storefront/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug,
+          lines: cart.map(({ itemId, variantId, optionIds, modifierIds, quantity }) => ({
+            itemId,
+            variantId,
+            optionIds,
+            modifierIds,
+            quantity,
+          })),
+          fulfillment,
+          branchId,
+          zoneId: fulfillment === "delivery" ? zoneId : null,
+          customerName,
+          customerPhone,
+          address: fulfillment === "delivery" ? address : "",
+          notes,
+        }),
+      });
+      const data = (await res.json()) as { error?: string } & NonNullable<typeof confirmation>;
+      if (!res.ok) throw new Error(data.error || "تعذر إنشاء الطلب.");
+      setConfirmation(data);
+      setCart([]);
+    } catch (err) {
+      setCheckoutError(err instanceof Error ? err.message : "تعذر إنشاء الطلب.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <>
@@ -142,7 +206,15 @@ export function StorefrontMenu({
             </div>
 
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
-              {cart.length === 0 ? (
+              {confirmation ? (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
+                  <p className="text-sm font-semibold text-emerald-800">تم استلام طلبك</p>
+                  <p className="mt-2 text-2xl font-bold text-emerald-950">#{confirmation.orderNumber}</p>
+                  <p className="mt-2 text-sm text-emerald-800">
+                    الإجمالي {formatCurrency(confirmation.total, confirmation.currency)} · الدفع عند الاستلام
+                  </p>
+                </div>
+              ) : cart.length === 0 ? (
                 <p className="py-10 text-center text-sm text-slate-400">السلة فارغة.</p>
               ) : (
                 cart.map((line) => {
@@ -178,15 +250,128 @@ export function StorefrontMenu({
               )}
             </div>
 
-            {cart.length > 0 && (
-              <div className="space-y-2 border-t border-slate-100 p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-600">المجموع التقديري</span>
-                  <span className="text-lg font-bold text-slate-900">{formatCurrency(subtotal, currency)}</span>
+            {!confirmation && cart.length > 0 && (
+              <div className="space-y-4 border-t border-slate-100 p-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFulfillment("delivery")}
+                    className={`rounded-xl border px-3 py-2 text-sm font-semibold ${fulfillment === "delivery" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700"}`}
+                  >
+                    توصيل
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFulfillment("pickup")}
+                    className={`rounded-xl border px-3 py-2 text-sm font-semibold ${fulfillment === "pickup" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700"}`}
+                  >
+                    استلام من الفرع
+                  </button>
                 </div>
-                <p className="text-center text-xs text-slate-400">
-                  هذا مجموع تقديري للعرض — تُحتسب القيمة النهائية عند الدفع (قريباً).
-                </p>
+
+                {branches.length > 1 && (
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-slate-500">الفرع</span>
+                    <select
+                      value={branchId}
+                      onChange={(e) => {
+                        setBranchId(e.target.value);
+                        setZoneId("");
+                      }}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {fulfillment === "delivery" && (
+                  <>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold text-slate-500">منطقة التوصيل</span>
+                      <select
+                        value={zoneId}
+                        onChange={(e) => setZoneId(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="">اختر منطقة</option>
+                        {zonesForBranch.map((zone) => (
+                          <option key={zone.id} value={zone.id}>
+                            {zone.name} · {formatCurrency(zone.deliveryFee, currency)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {zonesForBranch.length === 0 && (
+                      <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        لا توجد مناطق توصيل متاحة لهذا الفرع حالياً.
+                      </p>
+                    )}
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold text-slate-500">العنوان</span>
+                      <textarea
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        rows={2}
+                        className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                        placeholder="اكتب العنوان بالتفصيل"
+                      />
+                    </label>
+                  </>
+                )}
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-slate-500">الاسم</span>
+                    <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900" />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-slate-500">رقم الهاتف</span>
+                    <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900" inputMode="tel" />
+                  </label>
+                </div>
+
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-500">ملاحظات اختيارية</span>
+                  <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900" />
+                </label>
+
+                <div className="space-y-1 rounded-xl bg-slate-50 p-3">
+                  <div className="flex items-center justify-between text-sm text-slate-600">
+                    <span>المجموع</span>
+                    <span>{formatCurrency(subtotal, currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-slate-600">
+                    <span>التوصيل</span>
+                    <span>{formatCurrency(deliveryFee, currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-2">
+                    <span className="text-sm font-semibold text-slate-700">الإجمالي التقديري</span>
+                    <span className="text-lg font-bold text-slate-900">{formatCurrency(previewTotal, currency)}</span>
+                  </div>
+                  <p className="text-xs text-slate-500">الدفع عند الاستلام · سيتم تأكيد الإجمالي من المطعم.</p>
+                </div>
+
+                {checkoutError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{checkoutError}</p>}
+
+                <button
+                  type="button"
+                  disabled={
+                    submitting ||
+                    !customerName.trim() ||
+                    !customerPhone.trim() ||
+                    !branchId ||
+                    (fulfillment === "delivery" && (!zoneId || !address.trim()))
+                  }
+                  onClick={submitOrder}
+                  className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {submitting ? "جارٍ إرسال الطلب..." : "تأكيد الطلب والدفع عند الاستلام"}
+                </button>
               </div>
             )}
           </div>

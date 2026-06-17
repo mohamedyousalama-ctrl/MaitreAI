@@ -217,6 +217,7 @@ export interface OrderRow {
   delivery_fee: number;
   total: number;
   currency: string;
+  source: string;
   discount_total: number;
   applied_promotions: unknown[];
   order_status: string;

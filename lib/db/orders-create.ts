@@ -17,13 +17,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OrderDraft } from "@/lib/ai/tools";
 
 /** Deterministic UUID from a string (stable id ⇒ idempotent insert). */
-function uuidFromHash(input: string): string {
+export function uuidFromHash(input: string): string {
   const h = createHash("sha256").update(input).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
 
 /** Best-effort next human-friendly order number for the tenant (pilot scale). */
-async function nextOrderNumber(admin: SupabaseClient, restaurantId: string): Promise<string> {
+export async function nextOrderNumber(admin: SupabaseClient, restaurantId: string): Promise<string> {
   const { data } = await admin.from("orders").select("order_number").eq("restaurant_id", restaurantId);
   let max = 1000;
   for (const r of (data ?? []) as { order_number: string }[]) {
