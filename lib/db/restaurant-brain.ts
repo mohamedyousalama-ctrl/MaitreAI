@@ -135,3 +135,91 @@ export async function recordOwnerQA(
   if (error) throw error;
   return { qaId: (data?.id as string) ?? null, factId };
 }
+
+// --- the owner loop (Piece 3): surface insights → ask → answer → fact --------
+export interface BrainInsight {
+  id: string;
+  type: string;
+  summary: string;
+  evidence: Record<string, unknown>;
+  status: string;
+}
+
+/** Map an insight type to the fact category an owner answer should land in. */
+function insightTypeToFactCategory(type: string): BrainCategory {
+  switch (type) {
+    case "menu_gap": return "menu_gap";
+    case "delivery_gap": return "delivery";
+    case "popular_request": return "customer_preference";
+    case "complaint_theme": return "operations";
+    default: return "other";
+  }
+}
+
+/** The grounded question to put to the owner for an insight. */
+export function insightQuestion(ins: BrainInsight): string {
+  const sq = ins.evidence?.suggested_question;
+  return (typeof sq === "string" && sq.trim()) ? sq.trim() : ins.summary;
+}
+
+/** Open (not yet answered/dismissed) insights, strongest evidence first. */
+export async function listOpenInsights(
+  db: SupabaseClient,
+  restaurantId: string,
+  limit = 3
+): Promise<BrainInsight[]> {
+  const { data } = await db
+    .from("brain_insights")
+    .select("id,type,summary,evidence,status")
+    .eq("restaurant_id", restaurantId)
+    .in("status", ["pending", "surfaced"])
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const rows = (data ?? []) as BrainInsight[];
+  // Strongest evidence first (then recency, which the query already ordered).
+  rows.sort((a, b) => Number(b.evidence?.count ?? 0) - Number(a.evidence?.count ?? 0));
+  return rows.slice(0, limit);
+}
+
+/** Mark an insight surfaced (shown to the owner). Idempotent. */
+export async function markInsightSurfaced(db: SupabaseClient, restaurantId: string, insightId: string): Promise<void> {
+  await db
+    .from("brain_insights")
+    .update({ status: "surfaced" })
+    .eq("id", insightId)
+    .eq("restaurant_id", restaurantId)
+    .eq("status", "pending"); // only pending → surfaced; never un-answer
+}
+
+/**
+ * The owner answered a surfaced insight: record the Q&A, store the answer as a
+ * KNOWLEDGE fact (source=owner_answer), and mark the insight answered. Suggest-
+ * only — this stores knowledge; it never changes menu/price/policy.
+ */
+export async function answerInsight(
+  db: SupabaseClient,
+  restaurantId: string,
+  insightId: string,
+  answer: string
+): Promise<{ factId: string | null; qaId: string | null }> {
+  const { data: ins } = await db
+    .from("brain_insights")
+    .select("id,type,summary,evidence,status")
+    .eq("id", insightId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (!ins) return { factId: null, qaId: null };
+  const insight = ins as BrainInsight;
+  const { qaId, factId } = await recordOwnerQA(db, restaurantId, {
+    question: insightQuestion(insight),
+    answer,
+    category: insightTypeToFactCategory(insight.type),
+  });
+  await db.from("brain_insights").update({ status: "answered" }).eq("id", insightId).eq("restaurant_id", restaurantId);
+  return { factId, qaId };
+}
+
+/** The owner dismissed an insight — no fact, never resurfaced. */
+export async function dismissInsight(db: SupabaseClient, restaurantId: string, insightId: string): Promise<void> {
+  await db.from("brain_insights").update({ status: "dismissed" }).eq("id", insightId).eq("restaurant_id", restaurantId);
+}

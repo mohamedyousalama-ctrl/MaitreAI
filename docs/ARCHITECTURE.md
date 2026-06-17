@@ -83,7 +83,7 @@ A secret-guarded `POST /api/agent/respond` runs the same Brain path for tests/ev
 | `orders`, `order_events` | finalized orders (money copied verbatim from the draft) + timeline |
 | `order_sessions`, `order_session_lines`, `order_session_events` | **Step 1** persistent per-conversation order draft (one active per conversation) + append-only events |
 | `agent_runs` | per-turn observability: model, tokens, `cost_usd`, latency, tools used (taps log `model='deterministic'`, 0 tokens) |
-| `brain_facts`, `brain_insights`, `brain_owner_qa` | **Restaurant Brain** (Learning Pieces 1–2): learned KNOWLEDGE facts both agents read (`lib/db/restaurant-brain.ts`); `brain_insights` written by the analysis job (`lib/ai/analysis.ts`, grounded + deduped); `brain_owner_qa` ready for Piece 3. Never a price/availability source. |
+| `brain_facts`, `brain_insights`, `brain_owner_qa` | **Restaurant Brain** (Learning Pieces 1–3): learned KNOWLEDGE facts both agents read (`lib/db/restaurant-brain.ts`); `brain_insights` written by the analysis job (`lib/ai/analysis.ts`, grounded + deduped); the owner loop surfaces insights → records `brain_owner_qa` → stores owner answers as facts. Never a price/availability source. |
 | `conversation_signals` | off-menu/missing-data/escalation signals |
 | `payment_sessions` | checkout sessions |
 

@@ -118,6 +118,7 @@ The same Brain path is reachable for tests via `POST /api/agent/respond`
 | Persistent order session (Step 1) | `lib/db/order-session.ts` |
 | Restaurant Brain (shared memory) | `lib/db/restaurant-brain.ts`, `app/api/brain/route.ts` |
 | Conversation analysis job (Piece 2) | `lib/ai/analysis.ts`, `app/api/brain/analyze/route.ts` |
+| Owner insight loop (Piece 3) | `app/api/brain/insights/route.ts`, `app/(main)/dashboard/MaitreConsole.tsx` |
 | Order persistence (idempotent) | `lib/db/orders-create.ts` |
 | Brain context loader | `lib/db/brain.ts` |
 | LLM adapter seam | `lib/ai/llm/` (`index.ts`, `claude.ts`, `mock.ts`, `models.ts`) |
@@ -152,8 +153,15 @@ This branch (`upgrade/order-engine`) is the upgrade stack:
   insights to `brain_insights` (`status=pending`; evidence = counts + real
   conversation ids; deduped/merged on re-run; empty when nothing is notable;
   efficient `conversation_analysis` model). It proposes INSIGHTS only — never
-  writes `brain_facts` (owner answers become facts in Piece 3, the owner loop,
-  which is next / not built yet).
+  writes `brain_facts` (only the owner makes facts).
+- **Learning System Piece 3 — the owner loop:** the owner console surfaces a
+  pending insight as a grounded question; the owner answers (or dismisses) via
+  `/api/brain/insights`; the answer is recorded in `brain_owner_qa` and stored as
+  a `brain_fact` (`source=owner_answer`), and the insight is marked
+  `answered`/`dismissed` (never re-surfaced). Both agents then read the new fact.
+  **Suggest-only:** it stores KNOWLEDGE — it never changes menu/price/policy (real
+  changes still go through the normal confirm-before-write ops path). The loop is
+  whole: conversations → analysis → insight → owner asked → answer → fact.
 - **Owner/admin console is shown by default** — `ENABLE_ADMIN_CHAT_CONSOLE`
   (`NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE`) now defaults ON, still toggleable (set
   `"false"` to hide). Code in `app/(main)/dashboard/MaitreConsole.tsx`; its agent

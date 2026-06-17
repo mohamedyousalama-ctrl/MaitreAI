@@ -50,6 +50,8 @@ interface Msg {
   promoChips?: PromoChip[];
   promoReview?: boolean; // render the live preview card from the active draft
   promoSuccess?: string;
+  insightChips?: { label: string; insightId: string; kind: "yes" | "no" | "dismiss" }[];
+  insightSummary?: string;
   loading?: boolean;
 }
 
@@ -87,6 +89,9 @@ export function MaitreConsole() {
   const [input, setInput] = useState("");
   const seeded = useRef(false);
   const endRef = useRef<HTMLDivElement>(null);
+  // owner insight loop (Piece 3) state
+  const activeInsightRef = useRef<{ id: string } | null>(null);
+  const insightsSeeded = useRef(false);
 
   // In-chat promo builder state (single active draft).
   const promoMenuRef = useRef<PromoMenu | null>(null);
@@ -125,6 +130,15 @@ export function MaitreConsole() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
+  // After the greeting, surface one pending insight (if any) — the owner loop.
+  useEffect(() => {
+    if (!hydrated || insightsSeeded.current) return;
+    insightsSeeded.current = true;
+    const t = setTimeout(() => void loadAndSurfaceInsight(), 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
+
   const push = (m: Omit<Msg, "id">) => {
     const id = uid();
     setMessages((x) => [...x, { id, ...m }]);
@@ -132,6 +146,67 @@ export function MaitreConsole() {
   };
   const update = (id: string, patch: Partial<Msg>) => setMessages((x) => x.map((m) => (m.id === id ? { ...m, ...patch } : m)));
   const replyA = (text: string, extra?: Partial<Msg>) => push({ role: "assistant", text, ...extra });
+
+  // ---- owner insight loop (Piece 3) -----------------------------------------
+  // Surface a PENDING brain insight as a grounded question; the owner answers
+  // (or dismisses) → the answer becomes a KNOWLEDGE fact. Suggest-only: nothing on
+  // the restaurant (menu/price/policy) changes here — only knowledge is stored.
+  function surfaceInsightMsg(ins: { id: string; question: string; summary: string; evidence?: { count?: number | null } }) {
+    activeInsightRef.current = { id: ins.id };
+    const n = ins.evidence?.count;
+    const lead = n ? `لاحظتُ أمراً قد يهمّك — ${n} من العملاء ${ins.summary}` : `لاحظتُ أمراً قد يهمّك — ${ins.summary}`;
+    push({
+      role: "assistant",
+      text: `${lead}\n${ins.question}`,
+      insightSummary: ins.summary,
+      insightChips: [
+        { label: "نعم", insightId: ins.id, kind: "yes" },
+        { label: "لا", insightId: ins.id, kind: "no" },
+        { label: "تجاهل", insightId: ins.id, kind: "dismiss" },
+      ],
+    });
+  }
+
+  async function loadAndSurfaceInsight() {
+    try {
+      const res = await fetch("/api/brain/insights");
+      if (!res.ok) return;
+      const j = await res.json();
+      const next = (j.insights || []).find((i: { status: string }) => i.status !== "answered" && i.status !== "dismissed");
+      if (!next) return;
+      await fetch("/api/brain/insights", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ insightId: next.id, action: "surface" }) });
+      surfaceInsightMsg(next);
+    } catch {
+      /* truth-driven: if nothing or unreachable, surface nothing */
+    }
+  }
+
+  async function answerActiveInsight(answer: string) {
+    const active = activeInsightRef.current;
+    if (!active) return;
+    activeInsightRef.current = null;
+    try {
+      const res = await fetch("/api/brain/insights", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ insightId: active.id, action: "answer", answer }) });
+      if (res.ok) replyA("تمام، حفظتُها في ذاكرة المطعم ✅ — بهذا يتعلّم مساعدك. (لإجراء أي تغيير فعلي على المنيو نمرّ بخطوة التأكيد المعتادة.)");
+      else replyA("تعذّر حفظ الإجابة، حاول مرة أخرى.");
+    } catch {
+      replyA("تعذّر الاتصال لحفظ الإجابة.");
+    }
+    setTimeout(() => void loadAndSurfaceInsight(), 600);
+  }
+
+  function resolveInsightChip(insightId: string, kind: "yes" | "no" | "dismiss", summary: string) {
+    push({ role: "user", text: kind === "yes" ? "نعم" : kind === "no" ? "لا" : "تجاهل" });
+    if (kind === "dismiss") {
+      activeInsightRef.current = null;
+      void fetch("/api/brain/insights", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ insightId, action: "dismiss" }) });
+      replyA("تمام، لن أعرضها مجدداً.");
+      setTimeout(() => void loadAndSurfaceInsight(), 600);
+      return;
+    }
+    const answer = kind === "yes" ? `نعم، هذا مطلوب: ${summary}` : `لا، هذا غير متاح حالياً — لا تقترحه على العملاء. (${summary})`;
+    void answerActiveInsight(answer);
+  }
 
   // ---- in-chat promo builder ------------------------------------------------
   async function startPromo() {
@@ -344,6 +419,12 @@ export function MaitreConsole() {
     const text = raw.trim();
     if (!text) return;
     setInput("");
+    // A surfaced insight awaiting an answer consumes free text → store as fact.
+    if (activeInsightRef.current) {
+      push({ role: "user", text });
+      void answerActiveInsight(text);
+      return;
+    }
     // Active promo builder consumes free text (amount/caption/scope).
     if (promoDraftRef.current) {
       handlePromoText(text);
@@ -431,6 +512,21 @@ export function MaitreConsole() {
                   <div className="flex flex-wrap gap-2">
                     {m.promoChips.map((c) => (
                       <button key={c.label} onClick={() => applyChip(c)} className="rounded-full border border-[#e0c3b3] bg-[#fbf1ea] px-3 py-1.5 text-xs font-semibold text-[#b5502e] hover:bg-[#f7e3d7]">
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Owner-insight answer chips (Piece 3) — suggest-only */}
+                {m.insightChips && m.insightChips.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {m.insightChips.map((c) => (
+                      <button
+                        key={c.kind}
+                        onClick={() => resolveInsightChip(c.insightId, c.kind, m.insightSummary || "")}
+                        className="rounded-full border border-[#cdbfaf] bg-[#f7efe6] px-3 py-1.5 text-xs font-semibold text-[#6a5c4e] hover:bg-[#efe5d8]"
+                      >
                         {c.label}
                       </button>
                     ))}
