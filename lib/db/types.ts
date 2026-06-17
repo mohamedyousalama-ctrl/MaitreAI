@@ -141,6 +141,28 @@ export interface FaqRow {
   active: boolean;
 }
 
+export interface PromotionRow {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  type: string;
+  created_from_text: string | null;
+  created_at: string;
+  updated_at: string;
+  config: Record<string, unknown>;
+  code: string | null;
+  segment_ids: string[] | null;
+  custom_filter: Record<string, unknown> | null;
+  schedule: Record<string, unknown>;
+  caps: Record<string, unknown> | null;
+  budget_cap: number | null;
+  spent: number | null;
+  eligibility: Record<string, unknown> | null;
+  stacking: string | null;
+  state: string;
+  created_by: string | null;
+}
+
 export interface CustomerRow {
   id: string;
   restaurant_id: string;
