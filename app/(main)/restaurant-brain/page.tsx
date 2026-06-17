@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DeliveryAreaForm, type DeliveryAreaFormValues } from "@/components/restaurant-brain/DeliveryAreaForm";
 import { FaqForm, type FaqFormValues } from "@/components/restaurant-brain/FaqForm";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
+import { useRole } from "@/lib/use-role";
 import { computeKnowledgeAreas, computeOverallScore, computeAlerts } from "@/lib/knowledge";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { DeliveryArea, FaqItem, Policies } from "@/lib/types";
@@ -54,6 +55,8 @@ function ActiveBadge({ active }: { active: boolean }) {
 export default function RestaurantBrainPage() {
   const hydrated = useHasHydrated();
   const store = useRestaurantStore();
+  const canManage = useRole() === "manager";
+  const currency = store.profile.currency;
 
   const areas = useMemo(
     () =>
@@ -110,8 +113,8 @@ export default function RestaurantBrainPage() {
           <span className="text-slate-400">كل الفروع</span>
         ),
     },
-    { key: "min", header: "حد أدنى", render: (r) => formatCurrency(r.minOrder) },
-    { key: "fee", header: "رسوم التوصيل", render: (r) => formatCurrency(r.deliveryFee) },
+    { key: "min", header: "حد أدنى", render: (r) => formatCurrency(r.minOrder, currency) },
+    { key: "fee", header: "رسوم التوصيل", render: (r) => formatCurrency(r.deliveryFee, currency) },
     { key: "time", header: "الوقت المتوقع", render: (r) => r.estimatedTime },
     { key: "status", header: "الحالة", render: (r) => <ActiveBadge active={r.active} /> },
   ];
@@ -189,25 +192,31 @@ export default function RestaurantBrainPage() {
           icon={Truck}
           accentBg="bg-brain"
           action={
-            <button
-              onClick={() => {
-                setEditingArea(null);
-                setAreaForm(true);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-brain px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
-            >
-              <Plus className="h-4 w-4" /> منطقة جديدة
-            </button>
+            canManage ? (
+              <button
+                onClick={() => {
+                  setEditingArea(null);
+                  setAreaForm(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-brain px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
+              >
+                <Plus className="h-4 w-4" /> منطقة جديدة
+              </button>
+            ) : undefined
           }
         >
           <EntityTable
             columns={areaColumns}
             rows={store.deliveryAreas}
-            onEdit={(r) => {
-              setEditingArea(r);
-              setAreaForm(true);
-            }}
-            onDelete={setAreaToDelete}
+            onEdit={
+              canManage
+                ? (r) => {
+                    setEditingArea(r);
+                    setAreaForm(true);
+                  }
+                : undefined
+            }
+            onDelete={canManage ? setAreaToDelete : undefined}
             emptyTitle="لا توجد مناطق توصيل"
           />
         </ModuleCard>
@@ -283,6 +292,7 @@ export default function RestaurantBrainPage() {
         open={areaForm}
         initial={editingArea}
         branches={store.branches}
+        currency={currency}
         onClose={() => setAreaForm(false)}
         onSubmit={(values: DeliveryAreaFormValues) => {
           if (editingArea) store.updateDeliveryArea(editingArea.id, values);

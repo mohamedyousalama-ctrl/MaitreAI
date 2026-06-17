@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { LocalOrder, PaymentSession } from "@/lib/types";
 import { useOrderStore } from "@/lib/order-store";
 import { usePaymentStore, currentOrigin } from "@/lib/payment-store";
+import { useRestaurantStore } from "@/lib/store";
 import { PAYMENT_SESSION_LABELS, PAYMENT_SESSION_STYLES, PAYMENT_METHOD_LABELS, isSessionActive } from "@/lib/payments";
 import { formatCurrency, formatOrderId, formatClock, cn } from "@/lib/utils";
 import { OrderStatusBadge, OrderPaymentBadge } from "./OrderStatusBadges";
@@ -34,6 +35,9 @@ export function OrderCard({ order }: { order: LocalOrder }) {
   const session = usePaymentStore((s) =>
     s.sessions.filter((x) => x.orderId === order.id).sort((a, b) => b.createdAt - a.createdAt)[0]
   );
+  // Per-tenant currency: the order's own currency, falling back to the tenant profile.
+  const profileCurrency = useRestaurantStore((s) => s.profile.currency);
+  const currency = order.currency || profileCurrency;
 
   const lifecycle = lifecycleActions(order, { updateOrderStatus, cancelOrder });
   const showPayment = order.orderStatus === "pending_payment" || !!session;
@@ -76,16 +80,16 @@ export function OrderCard({ order }: { order: LocalOrder }) {
                   </p>
                 )}
               </div>
-              <span className="text-slate-600">{formatCurrency(it.total)}</span>
+              <span className="text-slate-600">{formatCurrency(it.total, currency)}</span>
             </li>
           ))}
         </ul>
         <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
-          <Row label="المجموع الفرعي" value={formatCurrency(order.subtotal)} />
-          {order.deliveryFee > 0 && <Row label="رسوم التوصيل" value={formatCurrency(order.deliveryFee)} />}
+          <Row label="المجموع الفرعي" value={formatCurrency(order.subtotal, currency)} />
+          {order.deliveryFee > 0 && <Row label="رسوم التوصيل" value={formatCurrency(order.deliveryFee, currency)} />}
           <div className="flex items-center justify-between pt-1">
             <span className="font-semibold text-slate-700">الإجمالي</span>
-            <span className="text-lg font-bold text-slate-900">{formatCurrency(order.total)}</span>
+            <span className="text-lg font-bold text-slate-900">{formatCurrency(order.total, currency)}</span>
           </div>
         </div>
       </div>
@@ -161,6 +165,8 @@ function PaymentSection({
   const cancelSession = usePaymentStore((s) => s.cancelSession);
   const refundSession = usePaymentStore((s) => s.refundSession);
   const simulateSuccess = usePaymentStore((s) => s.simulateSuccess);
+  const profileCurrency = useRestaurantStore((s) => s.profile.currency);
+  const currency = order.currency || profileCurrency;
   const [copied, setCopied] = useState(false);
 
   const active = session && isSessionActive(session.status);
@@ -192,7 +198,7 @@ function PaymentSection({
       </div>
 
       <div className="space-y-1.5 text-sm">
-        <Row label="المبلغ" value={formatCurrency(order.total)} />
+        <Row label="المبلغ" value={formatCurrency(order.total, currency)} />
         {session && <Row label="ينتهي في" value={formatClock(session.expiresAt)} />}
         {session?.method && <Row label="طريقة الدفع" value={PAYMENT_METHOD_LABELS[session.method]} />}
       </div>
