@@ -27,11 +27,13 @@ interface DeliveryAreaFormProps {
   branches: Branch[];
   /** The signed-in tenant's currency (profile.currency) — never hardcoded. */
   currency: string;
+  /** Pre-selected branch for a NEW zone (e.g. adding from under a branch card). */
+  defaultBranchId?: string;
   onClose: () => void;
   onSubmit: (values: DeliveryAreaFormValues) => void;
 }
 
-export function DeliveryAreaForm({ open, initial, branches, currency, onClose, onSubmit }: DeliveryAreaFormProps) {
+export function DeliveryAreaForm({ open, initial, branches, currency, defaultBranchId, onClose, onSubmit }: DeliveryAreaFormProps) {
   const [values, setValues] = useState<DeliveryAreaFormValues>(empty);
 
   useEffect(() => {
@@ -48,13 +50,14 @@ export function DeliveryAreaForm({ open, initial, branches, currency, onClose, o
             }
           : {
               ...empty,
-              // Default a new zone to the only branch when there's exactly one;
+              // A pre-selected branch (adding from under a branch card) wins;
+              // else default to the only branch when there's exactly one;
               // otherwise leave it restaurant-wide (all branches).
-              branchId: branches.length === 1 ? branches[0].id : ALL_BRANCHES,
+              branchId: defaultBranchId ?? (branches.length === 1 ? branches[0].id : ALL_BRANCHES),
             }
       );
     }
-  }, [open, initial, branches]);
+  }, [open, initial, branches, defaultBranchId]);
 
   const set = <K extends keyof DeliveryAreaFormValues>(key: K, v: DeliveryAreaFormValues[K]) =>
     setValues((s) => ({ ...s, [key]: v }));

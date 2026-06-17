@@ -60,13 +60,16 @@ export default function SettingsPage() {
 
   return (
     <div>
-      {/* الفروع folded into الإعدادات (Amendment 04 §M2) */}
+      {/* الفروع + مناطق التوصيل folded into الإعدادات (Amendment 04 §M2) */}
       <a
         href="/branches"
         className="mb-4 flex items-center justify-between rounded-xl border border-[#e4d8c8] bg-white px-4 py-3 text-sm font-semibold text-[#2a211b] hover:bg-[#faf6ef]"
       >
-        إدارة الفروع
-        <span className="text-xs text-[#9b8b7c]">الفروع ←</span>
+        <span className="flex flex-col">
+          إدارة الفروع ومناطق التوصيل
+          <span className="text-xs font-normal text-[#9b8b7c]">الفروع وكل منطقة توصيل تابعة لها في مكان واحد</span>
+        </span>
+        <span className="text-xs text-[#9b8b7c]">الفروع ومناطق التوصيل ←</span>
       </a>
       <PageHeader
         title="الإعدادات"
