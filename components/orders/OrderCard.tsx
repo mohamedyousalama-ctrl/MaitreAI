@@ -70,7 +70,11 @@ export function OrderCard({ order }: { order: LocalOrder }) {
                 <span className="font-medium text-slate-700">
                   {it.name} <span className="text-slate-400">×{it.quantity}</span>
                 </span>
-                {it.modifiers.length > 0 && <p className="text-xs text-slate-400">{it.modifiers.join("، ")}</p>}
+                {[it.variant, ...(it.choices ?? []), ...it.modifiers].filter(Boolean).length > 0 && (
+                  <p className="text-xs text-slate-400">
+                    {[it.variant, ...(it.choices ?? []), ...it.modifiers].filter(Boolean).join("، ")}
+                  </p>
+                )}
               </div>
               <span className="text-slate-600">{formatCurrency(it.total)}</span>
             </li>

@@ -38,6 +38,38 @@ export function MenuItemCard({ item, modifiers, onEdit, onDelete }: MenuItemCard
 
       <p className="mt-3 text-sm text-slate-500">{item.description || "—"}</p>
 
+      {!!item.variants?.length && (
+        <div className="mt-3">
+          <p className="mb-1 text-xs font-semibold text-slate-500">الأحجام</p>
+          <div className="flex flex-wrap gap-1.5">
+            {item.variants
+              .filter((v) => v.active)
+              .map((v) => (
+                <span key={v.id} className="rounded-full bg-menu/10 px-2 py-0.5 text-xs text-menu">
+                  {v.name} {formatCurrency(v.price)}
+                </span>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {!!item.choiceGroups?.length && (
+        <div className="mt-3">
+          <p className="mb-1 text-xs font-semibold text-slate-500">الاختيارات</p>
+          <div className="space-y-1">
+            {item.choiceGroups.map((g) => (
+              <p key={g.id} className="text-xs text-slate-500">
+                <span className="font-semibold text-slate-600">{g.name}: </span>
+                {g.options
+                  .filter((o) => o.active)
+                  .map((o) => `${o.label}${o.priceDelta > 0 ? ` +${o.priceDelta}` : ""}`)
+                  .join("، ")}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
       {itemModifiers.length > 0 && (
         <div className="mt-3">
           <p className="mb-1 text-xs font-semibold text-slate-500">الإضافات</p>

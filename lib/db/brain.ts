@@ -10,6 +10,9 @@ import type {
   Branch,
   DeliveryArea,
   FaqItem,
+  MenuItemChoiceGroup,
+  MenuItemChoiceOption,
+  MenuItemVariant,
   MenuItem,
   Modifier,
   Policies,
@@ -19,9 +22,12 @@ import type {
   BranchRow,
   DeliveryZoneRow,
   FaqRow,
+  MenuItemChoiceGroupRow,
+  MenuItemChoiceOptionRow,
   MenuCategoryRow,
   MenuItemModifierRow,
   MenuItemRow,
+  MenuItemVariantRow,
   ModifierRow,
   PolicyRow,
   RestaurantRow,
@@ -95,7 +101,13 @@ function toPolicies(rows: PolicyRow[]): Policies {
   return base;
 }
 
-function toMenuItem(r: MenuItemRow, categoryName: string, modifierIds: string[]): MenuItem {
+function toMenuItem(
+  r: MenuItemRow,
+  categoryName: string,
+  modifierIds: string[],
+  variants: MenuItemVariant[],
+  choiceGroups: MenuItemChoiceGroup[]
+): MenuItem {
   return {
     id: r.id,
     name: r.name,
@@ -107,17 +119,49 @@ function toMenuItem(r: MenuItemRow, categoryName: string, modifierIds: string[])
     modifierIds,
     ingredients: r.ingredients ?? [],
     allergens: r.allergens ?? [],
+    variants,
+    choiceGroups,
+  };
+}
+
+function toVariant(r: MenuItemVariantRow): MenuItemVariant {
+  return { id: r.id, name: r.name, price: Number(r.price), sort: r.sort, active: r.active };
+}
+
+function toChoiceOption(r: MenuItemChoiceOptionRow): MenuItemChoiceOption {
+  return {
+    id: r.id,
+    label: r.label,
+    priceDelta: Number(r.price_delta),
+    sort: r.sort,
+    active: r.active,
   };
 }
 
 // --- loader ----------------------------------------------------------------
 /** Load the full brain config for a restaurant (RLS scopes to the caller). */
 export async function loadBrain(supabase: SupabaseClient, restaurantId: string): Promise<BrainData> {
-  const [restaurant, branches, categories, items, modifiers, itemMods, zones, policies, faqs] = await Promise.all([
+  const [
+    restaurant,
+    branches,
+    categories,
+    items,
+    variants,
+    choiceGroups,
+    choiceOptions,
+    modifiers,
+    itemMods,
+    zones,
+    policies,
+    faqs,
+  ] = await Promise.all([
     supabase.from("restaurants").select("*").eq("id", restaurantId).single(),
     supabase.from("branches").select("*").eq("restaurant_id", restaurantId).order("created_at"),
     supabase.from("menu_categories").select("*").eq("restaurant_id", restaurantId).order("sort"),
     supabase.from("menu_items").select("*").eq("restaurant_id", restaurantId).order("created_at"),
+    supabase.from("menu_item_variants").select("*").eq("restaurant_id", restaurantId).order("sort"),
+    supabase.from("menu_item_choice_groups").select("*").eq("restaurant_id", restaurantId).order("sort"),
+    supabase.from("menu_item_choice_options").select("*").eq("restaurant_id", restaurantId).order("sort"),
     supabase.from("modifiers").select("*").eq("restaurant_id", restaurantId).order("created_at"),
     supabase.from("menu_item_modifiers").select("*").eq("restaurant_id", restaurantId),
     supabase.from("delivery_zones").select("*").eq("restaurant_id", restaurantId).order("created_at"),
@@ -136,12 +180,43 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
     arr.push(link.modifier_id);
     modsByItem.set(link.item_id, arr);
   }
+  const variantsByItem = new Map<string, MenuItemVariant[]>();
+  for (const row of (variants.data ?? []) as MenuItemVariantRow[]) {
+    const arr = variantsByItem.get(row.item_id) ?? [];
+    arr.push(toVariant(row));
+    variantsByItem.set(row.item_id, arr);
+  }
+  const optionsByGroup = new Map<string, MenuItemChoiceOption[]>();
+  for (const row of (choiceOptions.data ?? []) as MenuItemChoiceOptionRow[]) {
+    const arr = optionsByGroup.get(row.group_id) ?? [];
+    arr.push(toChoiceOption(row));
+    optionsByGroup.set(row.group_id, arr);
+  }
+  const groupsByItem = new Map<string, MenuItemChoiceGroup[]>();
+  for (const row of (choiceGroups.data ?? []) as MenuItemChoiceGroupRow[]) {
+    const arr = groupsByItem.get(row.item_id) ?? [];
+    arr.push({
+      id: row.id,
+      name: row.name,
+      minSelect: row.min_select,
+      maxSelect: row.max_select,
+      sort: row.sort,
+      options: optionsByGroup.get(row.id) ?? [],
+    });
+    groupsByItem.set(row.item_id, arr);
+  }
 
   return {
     profile: toProfile(restaurant.data as RestaurantRow),
     branches: ((branches.data ?? []) as BranchRow[]).map(toBranch),
     menuItems: ((items.data ?? []) as MenuItemRow[]).map((it) =>
-      toMenuItem(it, it.category_id ? catById.get(it.category_id) ?? "" : "", modsByItem.get(it.id) ?? [])
+      toMenuItem(
+        it,
+        it.category_id ? catById.get(it.category_id) ?? "" : "",
+        modsByItem.get(it.id) ?? [],
+        variantsByItem.get(it.id) ?? [],
+        groupsByItem.get(it.id) ?? []
+      )
     ),
     modifiers: ((modifiers.data ?? []) as ModifierRow[]).map(toModifier),
     deliveryAreas: ((zones.data ?? []) as DeliveryZoneRow[]).map(toDeliveryArea),

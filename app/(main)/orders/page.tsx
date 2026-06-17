@@ -55,7 +55,13 @@ function OrderDrawer({ o, onClose, onAdvance, onCancel, printWidth }: { o: Local
           <div className="space-y-1 border-t border-[#ece0d2] pt-3">
             {o.items.map((i) => (
               <div key={i.id} className="flex justify-between text-sm">
-                <span>{i.quantity}× {i.name}{i.modifiers.length ? ` (${i.modifiers.join("، ")})` : ""}{i.notes ? ` — ${i.notes}` : ""}</span>
+                <span>
+                  {i.quantity}× {i.name}
+                  {[i.variant, ...(i.choices ?? []), ...i.modifiers].filter(Boolean).length
+                    ? ` (${[i.variant, ...(i.choices ?? []), ...i.modifiers].filter(Boolean).join("، ")})`
+                    : ""}
+                  {i.notes ? ` — ${i.notes}` : ""}
+                </span>
                 <span className="text-[#6a5c4e]">{i.total} {o.currency}</span>
               </div>
             ))}

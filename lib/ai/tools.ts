@@ -14,11 +14,22 @@ export interface DraftModifier {
   name: string;
   priceImpact: number;
 }
+export interface DraftVariant {
+  name: string;
+  price: number;
+}
+export interface DraftChoice {
+  groupName: string;
+  label: string;
+  priceDelta: number;
+}
 export interface DraftLine {
   itemId: string;
   name: string;
   quantity: number;
   unitPrice: number; // base + modifier impacts, from the menu
+  variant?: DraftVariant;
+  choices: DraftChoice[];
   modifiers: DraftModifier[];
   lineTotal: number;
 }
@@ -121,12 +132,15 @@ export const ORDER_TOOLS: LlmToolDef[] = [
     name: "add_to_order",
     description:
       "Add a menu item to the customer's order draft. Use the exact item name from the menu. " +
-      "Modifiers must be options listed for that item. Returns the updated draft and total.",
+      "If the item has sizes, pass the selected size. Options/picks and modifiers must be listed for that item. Returns the updated draft and total.",
     input_schema: {
       type: "object",
       properties: {
         item_name: { type: "string", description: "Exact menu item name" },
         quantity: { type: "integer", minimum: 1 },
+        size: { type: "string", description: "Selected size/variant name when the item requires one" },
+        options: { type: "array", items: { type: "string" }, description: "Selected choice/pick option labels" },
+        picks: { type: "array", items: { type: "string" }, description: "Alias for selected choice/pick option labels" },
         modifiers: { type: "array", items: { type: "string" } },
       },
       required: ["item_name", "quantity"],
@@ -251,12 +265,21 @@ function recompute(ctx: ToolContext): void {
   d.total = Math.round((d.subtotal + deliv + d.tax) * 100) / 100;
 }
 
+function lineOptionText(l: DraftLine): string[] {
+  return [
+    ...(l.variant ? [l.variant.name] : []),
+    ...l.choices.map((c) => `${c.groupName}: ${c.label}`),
+    ...l.modifiers.map((m) => m.name),
+  ];
+}
+
 function summary(d: OrderDraft): string {
   if (!d.lines.length) return "السلة فارغة.";
   const lines = d.lines
     .map((l) => {
-      const mods = l.modifiers.length ? ` (${l.modifiers.map((m) => m.name).join("، ")})` : "";
-      return `${l.quantity}× ${l.name}${mods} — ${l.lineTotal} ${d.currency}`;
+      const options = lineOptionText(l);
+      const optionText = options.length ? ` (${options.join("، ")})` : "";
+      return `${l.quantity}× ${l.name}${optionText} — ${l.lineTotal} ${d.currency}`;
     })
     .join("\n");
   const fee =
@@ -286,24 +309,88 @@ export function executeTool(
           isError: true,
         };
       }
-      const allowed = new Set(
-        item.modifierIds
-          .map((id) => ctx.modifiers.find((m) => m.id === id && m.active))
-          .filter((m): m is Modifier => !!m)
-          .map((m) => norm(m.name))
-      );
+      const allowedMods = item.modifierIds
+        .map((id) => ctx.modifiers.find((m) => m.id === id && m.active))
+        .filter((m): m is Modifier => !!m);
       const reqMods = Array.isArray(input.modifiers) ? (input.modifiers as unknown[]).map(String) : [];
+      const activeVariants = (item.variants ?? []).filter((v) => v.active);
+      let variant: DraftVariant | undefined;
+      let basePrice = item.price;
+      if (activeVariants.length) {
+        const size = String(input.size ?? "");
+        const v = activeVariants.find((x) => norm(x.name) === norm(size));
+        if (!v) {
+          ctx.signals.push({ type: "missing_data", detail: { item: item.name, required: "size", requested: size } });
+          return {
+            content: `«${item.name}» له أحجام وأسعار مختلفة. اسأل العميل يختار حجم من: ${activeVariants.map((x) => x.name).join("، ")}.`,
+            isError: true,
+          };
+        }
+        variant = { name: v.name, price: v.price };
+        basePrice = v.price;
+      }
+
+      const requestedChoices = [
+        ...(Array.isArray(input.options) ? (input.options as unknown[]).map(String) : []),
+        ...(Array.isArray(input.picks) ? (input.picks as unknown[]).map(String) : []),
+      ].filter((x) => x.trim());
+      const remainingChoices = [...requestedChoices];
+      const choices: DraftChoice[] = [];
+      for (const group of (item.choiceGroups ?? []).filter((g) => g.options.some((o) => o.active))) {
+        let selected = 0;
+        while (selected < group.maxSelect) {
+          const idx = remainingChoices.findIndex((label) =>
+            group.options.some((o) => o.active && norm(o.label) === norm(label))
+          );
+          if (idx === -1) break;
+          const label = remainingChoices.splice(idx, 1)[0];
+          const option = group.options.find((o) => o.active && norm(o.label) === norm(label));
+          if (!option) break;
+          choices.push({ groupName: group.name, label: option.label, priceDelta: option.priceDelta });
+          selected++;
+        }
+        if (selected < group.minSelect) {
+          ctx.signals.push({ type: "missing_data", detail: { item: item.name, required: "choice", group: group.name } });
+          return {
+            content: `«${item.name}» يحتاج اختيار «${group.name}». اسأل العميل يختار من: ${group.options
+              .filter((o) => o.active)
+              .map((o) => o.label)
+              .join("، ")}.`,
+            isError: true,
+          };
+        }
+      }
+      if (remainingChoices.length) {
+        ctx.signals.push({ type: "off_menu", detail: { item: item.name, choices: remainingChoices } });
+        return {
+          content: `الاختيار «${remainingChoices[0]}» غير موجود ضمن اختيارات «${item.name}». اسأل العميل يختار من الاختيارات المتاحة أو صعّد.`,
+          isError: true,
+        };
+      }
+
       const mods: DraftModifier[] = [];
       for (const rm of reqMods) {
-        const m = ctx.modifiers.find((x) => norm(x.name) === norm(rm) && allowed.has(norm(x.name)));
+        const m = allowedMods.find((x) => norm(x.name) === norm(rm));
         if (m) mods.push({ name: m.name, priceImpact: m.priceImpact });
+        else {
+          ctx.signals.push({ type: "off_menu", detail: { item: item.name, modifier: rm } });
+          return {
+            content: `الإضافة «${rm}» غير متاحة مع «${item.name}». اسأل العميل أو صعّد.`,
+            isError: true,
+          };
+        }
       }
-      const unitPrice = item.price + mods.reduce((s, m) => s + m.priceImpact, 0);
+      const unitPrice =
+        basePrice +
+        choices.reduce((s, c) => s + c.priceDelta, 0) +
+        mods.reduce((s, m) => s + m.priceImpact, 0);
       d.lines.push({
         itemId: item.id,
         name: item.name,
         quantity: qty,
         unitPrice,
+        variant,
+        choices,
         modifiers: mods,
         lineTotal: unitPrice * qty,
       });
