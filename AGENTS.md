@@ -120,6 +120,7 @@ The same Brain path is reachable for tests via `POST /api/agent/respond`
 | Conversation analysis job (Piece 2) | `lib/ai/analysis.ts`, `app/api/brain/analyze/route.ts` |
 | Owner insight loop (Piece 3) | `app/api/brain/insights/route.ts`, `app/(main)/dashboard/MaitreConsole.tsx` |
 | Customer memory (Piece 4) | `lib/db/customer-memory.ts` (read in `customer-turn`, written on finalize) |
+| Recommendations (Piece 5) | customer = prompt rules (`prompt.ts`); owner = `lib/db/recommendations.ts`, `app/api/brain/recommendations/route.ts` |
 | Order persistence (idempotent) | `lib/db/orders-create.ts` |
 | Brain context loader | `lib/db/brain.ts` |
 | LLM adapter seam | `lib/ai/llm/` (`index.ts`, `claude.ts`, `mock.ts`, `models.ts`) |
@@ -171,7 +172,17 @@ This branch (`upgrade/order-engine`) is the upgrade stack:
   injects a compact recall block into «كريم» **only for returning customers** (new
   → prompt unchanged). Privacy-first: tenant-isolated, no unprompted PII dumps,
   allergies respected but **verified from menu data not memory**, money still from
-  tools. (Piece 5 — active recommendations — is next / not built.)
+  tools.
+- **Learning System Piece 5 — smart recommendations (both sides):** the customer
+  agent makes ONE tasteful, grounded suggestion (usual/liked item from memory, or
+  a real menu pairing) at the natural moment — available items, tool price,
+  preference/allergy-respecting, suggest-only (never auto-added). The owner agent
+  surfaces grounded business advice (`lib/db/recommendations.ts`,
+  `app/api/brain/recommendations`, console «نصايح؟») computed from real signals
+  (insights + order trends) — each citing its signal, suggest-only, empty when no
+  signal. **The learning system is complete:** both agents learn (memory +
+  analysis) and act on it (grounded, suggest-only recommendations) — never
+  auto-acting, never inventing, money/availability always from tools.
 - **Owner/admin console is shown by default** — `ENABLE_ADMIN_CHAT_CONSOLE`
   (`NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE`) now defaults ON, still toggleable (set
   `"false"` to hide). Code in `app/(main)/dashboard/MaitreConsole.tsx`; its agent

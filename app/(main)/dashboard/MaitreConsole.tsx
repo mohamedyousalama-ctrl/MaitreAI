@@ -208,6 +208,24 @@ export function MaitreConsole() {
     void answerActiveInsight(answer);
   }
 
+  // Grounded, suggest-only owner recommendations (Piece 5) — each cites its signal.
+  async function showRecommendations() {
+    const loadingId = push({ role: "assistant", text: "…", loading: true });
+    try {
+      const res = await fetch("/api/brain/recommendations");
+      const j = await res.json();
+      const recs: { text: string; signal: string }[] = j.recommendations ?? [];
+      if (!recs.length) {
+        update(loadingId, { loading: false, text: "لا توجد توصيات الآن — لم تتجمّع إشارات كافية بعد. أعود إليك بمجرد ظهور نمط واضح." });
+        return;
+      }
+      update(loadingId, { loading: false, text: "بناءً على بياناتك، بعض الاقتراحات (قرارك أنت — لن أنفّذ شيئاً دون تأكيدك):" });
+      recs.forEach((r) => replyA(`• ${r.text}\n  ↳ المصدر: ${r.signal}`));
+    } catch {
+      update(loadingId, { loading: false, text: "تعذّر تحميل التوصيات." });
+    }
+  }
+
   // ---- in-chat promo builder ------------------------------------------------
   async function startPromo() {
     if (!promoMenuRef.current) {
@@ -391,6 +409,8 @@ export function MaitreConsole() {
         replyA(escalations > 0 ? `عندك ${escalations} محادثة محوّلة إليك.` : "ما في تصعيدات تحتاج تدخّلك الآن 👌", escalations > 0 ? { card: "escalations" } : undefined);
       } else if (has("أرقام", "طلب")) {
         replyA(`اليوم: ${ordersToday} طلب · ${openConvs} محادثة مفتوحة · ${escalations} تصعيد.`);
+      } else if (has("نصايح", "نصيحة", "توصيات")) {
+        void showRecommendations();
       } else if (has("عرض", "خصم")) {
         void startPromo();
       } else if (has("سكّر", "اقفل")) {
@@ -423,6 +443,12 @@ export function MaitreConsole() {
     if (activeInsightRef.current) {
       push({ role: "user", text });
       void answerActiveInsight(text);
+      return;
+    }
+    // Owner asks for business advice → grounded, suggest-only recommendations.
+    if (/نصايح|نصيحة|توصيات|توصية|اقتراحات للشغل|اقترح علي/.test(text)) {
+      push({ role: "user", text });
+      void showRecommendations();
       return;
     }
     // Active promo builder consumes free text (amount/caption/scope).
@@ -476,7 +502,7 @@ export function MaitreConsole() {
     return "";
   }
 
-  const chips = ["التصعيدات", "أرقام اليوم", "اعمل عرض", isOpen ? "سكّر المطعم" : "افتح المطعم"];
+  const chips = ["التصعيدات", "أرقام اليوم", "نصايح؟", "اعمل عرض", isOpen ? "سكّر المطعم" : "افتح المطعم"];
 
   return (
     <div className="mx-auto flex h-full max-w-2xl flex-col">
