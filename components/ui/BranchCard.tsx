@@ -1,6 +1,6 @@
 import type { Branch } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { MapPin, Clock, Truck, Phone, MessageCircle, Pencil, Trash2 } from "lucide-react";
+import { MapPin, Clock, Phone, MessageCircle, Pencil, Trash2 } from "lucide-react";
 
 interface BranchCardProps {
   branch: Branch;
@@ -61,19 +61,6 @@ export function BranchCard({ branch, onEdit, onDelete }: BranchCardProps) {
         <p className="flex items-center gap-2">
           <Phone className="h-4 w-4 text-slate-400" /> {branch.phone}
         </p>
-      </div>
-
-      <div className="mt-4">
-        <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-          <Truck className="h-3.5 w-3.5" /> مناطق التوصيل
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {branch.deliveryZones.map((z) => (
-            <span key={z} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-              {z}
-            </span>
-          ))}
-        </div>
       </div>
 
       {branch.notes && (

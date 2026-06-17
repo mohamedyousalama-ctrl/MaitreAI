@@ -44,7 +44,6 @@ function branchCompleteness(b: Branch): number {
     b.address.trim().length > 0,
     b.hours.trim().length > 0,
     b.whatsappNumber.trim().length > 0,
-    b.deliveryZones.length > 0,
   ];
   return pct(checks.filter(Boolean).length, checks.length);
 }
