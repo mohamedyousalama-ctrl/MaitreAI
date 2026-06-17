@@ -460,6 +460,20 @@ export interface Promotion {
   redemptions: number; // performance placeholder
 }
 
+export interface OperatorPromotion {
+  id: string;
+  name: string;
+  type: string;
+  config: Record<string, unknown>;
+  code: string;
+  schedule: Record<string, unknown>;
+  state: string;
+  spent: number;
+  budgetCap: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ---------------------------------------------------------------------------
 // Customers
 // ---------------------------------------------------------------------------

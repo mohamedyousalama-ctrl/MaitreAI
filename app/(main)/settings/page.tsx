@@ -71,6 +71,17 @@ export default function SettingsPage() {
         </span>
         <span className="text-xs text-[#9b8b7c]">الفروع ومناطق التوصيل ←</span>
       </a>
+      {/* العروض folded into الإعدادات (Amendment 04 §M2) */}
+      <a
+        href="/promotions"
+        className="mb-4 flex items-center justify-between rounded-xl border border-[#e4d8c8] bg-white px-4 py-3 text-sm font-semibold text-[#2a211b] hover:bg-[#faf6ef]"
+      >
+        <span className="flex flex-col">
+          إدارة العروض
+          <span className="text-xs font-normal text-[#9b8b7c]">إنشاء العروض وإيقافها وحذفها</span>
+        </span>
+        <span className="text-xs text-[#9b8b7c]">العروض ←</span>
+      </a>
       <PageHeader
         title="الإعدادات"
         subtitle="إعداد المطعم والتكاملات وقواعد الموظف الذكي"
