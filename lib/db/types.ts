@@ -24,6 +24,8 @@ export interface RestaurantRow {
   is_open: boolean;
   closed_message: string | null;
   accept_preorders: boolean;
+  tax_mode?: string;
+  tax_rate?: number;
 }
 
 export interface MemberRow {

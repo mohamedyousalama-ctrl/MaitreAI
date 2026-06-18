@@ -44,6 +44,8 @@ export interface BrainData {
   faqs: FaqItem[];
   promotions: OperatorPromotion[];
   policies: Policies;
+  taxMode: string;
+  taxRate: number;
 }
 
 // --- mappers (DB → UI types) -----------------------------------------------
@@ -181,7 +183,7 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
     // for anon/authenticated. Brain only needs the profile fields toProfile reads.
     supabase
       .from("restaurants")
-      .select("name,logo_url,phone,email,currency,default_language,timezone,business_type")
+      .select("name,logo_url,phone,email,currency,default_language,timezone,business_type,tax_mode,tax_rate")
       .eq("id", restaurantId)
       .single(),
     supabase.from("branches").select("*").eq("restaurant_id", restaurantId).order("created_at"),
@@ -237,6 +239,8 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
 
   return {
     profile: toProfile(restaurant.data as RestaurantRow),
+    taxMode: String((restaurant.data as RestaurantRow).tax_mode ?? "inclusive"),
+    taxRate: Number((restaurant.data as RestaurantRow).tax_rate ?? 0),
     branches: ((branches.data ?? []) as BranchRow[]).map(toBranch),
     menuItems: ((items.data ?? []) as MenuItemRow[]).map((it) =>
       toMenuItem(
