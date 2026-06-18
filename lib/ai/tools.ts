@@ -433,6 +433,7 @@ export function executeTool(
       return { content: summary(d) };
     case "finalize_draft": {
       if (!d.lines.length) return { content: "لا يمكن تأكيد طلب فارغ.", isError: true };
+      if (!d.fulfillment) return { content: "لا يمكن تأكيد الطلب قبل اختيار الاستلام أو التوصيل.", isError: true };
       d.finalized = true;
       return {
         content: `تم تسجيل الطلب بانتظار تأكيد المطعم.\n${summary(d)}`,

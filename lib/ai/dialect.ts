@@ -36,7 +36,7 @@ export const DIALECTS: Record<Dialect, DialectProfile> = {
     digitStyle: "western",
     examples: {
       greeting: "هلا فيك، وش تحب تطلب اليوم؟",
-      orderConfirm: "تم، طلبك هو: برجر كلاسيك + بطاطس. الإجمالي ٤٥ ر.س. تؤكد الطلب؟",
+      orderConfirm: "تم، حسبت الطلب من السيستم وراجعت الإجمالي. تؤكد الطلب؟",
       escalation: "أحتاج أتأكد من الفريق عشان أعطيك إجابة دقيقة. بحوّلك لأحد من الفريق الآن.",
       closed: "نعتذر منك 🌙 المطعم مغلق حالياً، نفتح الساعة ١١ صباحاً.",
       voiceNote: "سمعتك 👌 ... صح؟",
@@ -51,7 +51,7 @@ export const DIALECTS: Record<Dialect, DialectProfile> = {
     digitStyle: "arabic-indic",
     examples: {
       greeting: "أهلاً بيك، تحب تطلب إيه النهارده؟",
-      orderConfirm: "تمام، طلبك هو: برجر كلاسيك + بطاطس. الإجمالي ٤٥ ج.م. تأكد الطلب؟",
+      orderConfirm: "تمام، حسبت الطلب من السيستم وراجعت الإجمالي. تأكد الطلب؟",
       escalation: "محتاج أتأكد من الفريق عشان أرد عليك صح. هحوّلك لحد من الفريق دلوقتي.",
       closed: "معلش 🌙 المطعم مقفول دلوقتي، بنفتح الساعة ١١ الصبح.",
       voiceNote: "سمعتك 👌 ... صح كده؟",

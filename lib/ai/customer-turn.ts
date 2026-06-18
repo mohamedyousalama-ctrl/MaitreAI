@@ -60,6 +60,12 @@ export interface CustomerTurnOutcome {
   replyMessageId: string | null;
 }
 
+function isOpenDraft(value: unknown): value is OrderDraft {
+  if (!value || typeof value !== "object") return false;
+  const draft = value as Partial<OrderDraft>;
+  return Array.isArray(draft.lines) && draft.lines.length > 0 && draft.finalized !== true;
+}
+
 /**
  * Run one Brain turn and persist its outcome using the admin (service-role)
  * client. Throws CustomerTurnError("restaurant_not_found") / ("agent_error").
@@ -97,6 +103,7 @@ export async function runCustomerTurn(
 
   // §E7 handover note — a human's prior commitment the Brain must honor on resume.
   let handoverNote: string | undefined;
+  let initialDraft: OrderDraft | null = null;
   if (conversationId) {
     const { data: conv } = await admin
       .from("conversations")
@@ -104,6 +111,18 @@ export async function runCustomerTurn(
       .eq("id", conversationId)
       .single();
     handoverNote = (conv?.handover_note as string | null) ?? undefined;
+
+    const { data: priorDraftRows } = await admin
+      .from("messages")
+      .select("meta")
+      .eq("conversation_id", conversationId)
+      .eq("sender", "ai")
+      .order("created_at", { ascending: false })
+      .limit(8);
+    const row = (priorDraftRows ?? []).find((message) =>
+      isOpenDraft((message.meta as Record<string, unknown> | null)?.draft)
+    );
+    initialDraft = row ? ((row.meta as Record<string, unknown>).draft as OrderDraft) : null;
   }
 
   const dialect = String(row.dialect ?? "egyptian");
@@ -134,7 +153,7 @@ export async function runCustomerTurn(
   const t0 = Date.now();
   let result;
   try {
-    result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage });
+    result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await admin.from("agent_runs").insert({
