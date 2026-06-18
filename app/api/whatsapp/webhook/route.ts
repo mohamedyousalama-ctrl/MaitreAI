@@ -12,11 +12,12 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
-import { normalizeWhatsAppInbound, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
+import { extractInboundPhoneNumberId, normalizeWhatsAppInbound, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
 import { isWhatsAppConfigured, readWhatsAppEnv } from "@/lib/messaging/config";
+import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMessage } from "@/lib/db/messages";
-import { resolveWebhookRestaurantId } from "@/lib/db/restaurants";
+import { resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/restaurants";
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
 import { transcribeWhatsAppVoice } from "@/lib/messaging/voice";
 
@@ -135,10 +136,26 @@ export async function POST(req: NextRequest) {
   let persisted = 0;
   let deduped = 0;
   let responded = 0;
+  let resolvedBy: "phone_number_id" | "env_fallback" = "env_fallback";
   const admin = createAdminClient();
   if (admin && messages.length > 0) {
-    const restaurantId = await resolveWebhookRestaurantId(admin);
+    // Per-tenant routing: resolve the restaurant by the inbound phone_number_id
+    // and use ITS decrypted credentials for both persistence and the outbound
+    // reply (so a tenant answers from its own number). If no tenant matches, or
+    // it isn't fully/decryptably configured, resolveWebhookTenant returns null
+    // and we fall back to the EXISTING env behavior — unchanged for Wesaya.
+    const phoneNumberId = extractInboundPhoneNumberId(payload);
+    const tenant = await resolveWebhookTenant(admin, phoneNumberId);
+    const restaurantId = tenant?.restaurantId ?? (await resolveWebhookRestaurantId(admin));
+    const perTenantEnv = tenant?.env ?? null; // null → readWhatsAppEnv() uses env vars
+    resolvedBy = tenant ? "phone_number_id" : "env_fallback";
+    // Non-secret breadcrumb — never the token/appSecret/decrypted values.
+    console.log("[whatsapp:webhook] resolved", { resolvedBy, restaurantId, hasPhoneNumberId: !!phoneNumberId });
+
     if (restaurantId) {
+      // Bind the resolved creds for the whole persist→Brain→send chain. With a
+      // null override this is a transparent pass-through (env behavior).
+      await runWithWhatsAppCreds(perTenantEnv, async () => {
       // Persist first (dedupe on redelivery), collecting NEW conversations to answer.
       const toAnswer = new Set<string>();
       for (const m of messages) {
@@ -189,6 +206,7 @@ export async function POST(req: NextRequest) {
           console.error("[whatsapp:webhook] respond error", e);
         }
       }
+      }); // end runWithWhatsAppCreds
     } else {
       console.warn("[whatsapp:webhook] no restaurant to attach inbound messages to");
     }
@@ -206,5 +224,6 @@ export async function POST(req: NextRequest) {
     persisted,
     deduped,
     responded,
+    resolvedBy,
   });
 }
