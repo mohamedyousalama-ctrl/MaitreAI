@@ -31,6 +31,12 @@ export interface RespondAndSendResult {
   error?: string;
 }
 
+interface PersistedDraftOrder {
+  created: boolean;
+  orderId: string | null;
+  orderNumber: string | null;
+}
+
 /** Insert a system note into the conversation timeline (operator-visible). */
 async function noteToTimeline(
   admin: SupabaseClient,
@@ -110,21 +116,46 @@ export async function respondAndSendWhatsApp(
     return { status: "agent_error", error: detail };
   }
 
+  // 4.5 (S9-4.5): a finalized draft becomes a real order row BEFORE the
+  // customer-facing confirmation is transmitted. If the server-side DB recompute
+  // rejects the draft, do not send a "confirmed" message.
+  let persistedOrder: PersistedDraftOrder | null = null;
+  if (outcome.draft.finalized) {
+    try {
+      persistedOrder = await persistOrderFromDraft(admin, { restaurantId, conversationId, customerId, draft: outcome.draft });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      console.error("[respond-and-send] order persist error", e);
+      if (outcome.replyMessageId) {
+        await admin.from("messages").update({ status: "failed" }).eq("id", outcome.replyMessageId);
+      }
+      await admin
+        .from("conversations")
+        .update({ owner: "human", status: "يحتاج تدخل موظف", escalation_reason: `order_persist_error: ${detail}` })
+        .eq("id", conversationId);
+      await noteToTimeline(
+        admin,
+        restaurantId,
+        conversationId,
+        "تعذّر تأكيد الطلب تلقائياً لأن مراجعة الأسعار من السيستم فشلت — تم تحويل المحادثة لموظف للمتابعة.",
+        { kind: "order_persist_error", detail }
+      );
+      return { status: "agent_error", reply: outcome.reply, escalate: true, error: detail };
+    }
+  }
+
   // 4. Put the reply on the WhatsApp wire — as an interactive message when the
   //    Brain presented options (degrades to numbered text on failure), else text.
   const send = outcome.presentation
     ? await sendWhatsAppInteractive({ to: phone, body: outcome.reply, presentation: outcome.presentation, lastInboundAtMs })
     : await sendWhatsAppText({ to: phone, text: outcome.reply, lastInboundAtMs });
 
-  // 4.5 (S9-4.5): a finalized draft becomes a real order row (idempotent — one
-  // finalized draft = one row), then the receipt auto-sends (skips in test mode).
-  // Runs regardless of reply-send outcome — the order is placed either way.
-  if (outcome.draft.finalized) {
+  // Receipt auto-sends after the customer confirmation (skips in test mode).
+  if (persistedOrder?.created && persistedOrder.orderId) {
     try {
-      const persisted = await persistOrderFromDraft(admin, { restaurantId, conversationId, customerId, draft: outcome.draft });
-      if (persisted.created && persisted.orderId) await sendReceiptToCustomer(admin, persisted.orderId);
+      await sendReceiptToCustomer(admin, persistedOrder.orderId);
     } catch (e) {
-      console.error("[respond-and-send] order persist/receipt error", e);
+      console.error("[respond-and-send] receipt error", e);
     }
   }
 
