@@ -13,7 +13,7 @@ export function MobileTabs() {
   const role = useRole();
   const items = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#E2E8F0] bg-white lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#EDE5D8] bg-white lg:hidden">
       {items.map((item) => {
         const matches = item.match ?? [item.href];
         const active = matches.some((m) => pathname === m || pathname.startsWith(m + "/"));
@@ -25,7 +25,7 @@ export function MobileTabs() {
             href={item.href}
             className={cn(
               "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors",
-              active ? "text-[#2563EB]" : "text-[#94A3B8]"
+              active ? "text-[#BE5238]" : "text-[#AEA391]"
             )}
           >
             <Icon className="h-5 w-5" />
