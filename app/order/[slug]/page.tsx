@@ -13,7 +13,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadBrain } from "@/lib/db/brain";
 import { StorefrontMenu } from "@/components/storefront/StorefrontMenu";
-import { UtensilsCrossed, Store } from "lucide-react";
+import { UtensilsCrossed, MapPin, Drumstick, Pizza, Beef, Sandwich, Soup } from "lucide-react";
 
 // Always render at request time with fresh data so operator edits (deleted
 // branches, toggled zones, prices, availability) reflect IMMEDIATELY for
@@ -42,18 +42,36 @@ export default async function StorefrontMenuPage({ params }: { params: { slug: s
   const brain = await loadBrain(admin, restaurant.id as string);
   const currency = brain.profile.currency || "ج.م";
   const availableItems = brain.menuItems.filter((i) => i.available);
+  const areaNames = brain.deliveryAreas.filter((z) => z.active).map((z) => z.name);
+  const deliveryChip =
+    areaNames.length > 0
+      ? `التوصيل إلى ${areaNames.slice(0, 2).join("، ")}${areaNames.length > 2 ? " وغيرها" : ""}`
+      : null;
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-5">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white">
-            <Store className="h-6 w-6" />
-          </span>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">{brain.profile.name}</h1>
-            <p className="text-sm text-slate-500">قائمة الطعام · الأسعار بـ {currency}</p>
+    <main className="min-h-screen bg-wesaya-cream">
+      {/* Brand hero */}
+      <header className="bg-wesaya-red text-white">
+        <div className="mx-auto max-w-3xl px-4 pb-5 pt-7 text-center">
+          <h1 className="text-3xl font-extrabold tracking-tight text-wesaya-yellow drop-shadow-sm">
+            {brain.profile.name}
+          </h1>
+          <p className="mt-1 text-sm font-medium text-white/85">دجاج مقلي · ساندوتشات · وجبات سريعة</p>
+
+          {/* Food-icon strip echoing the logo (inline icons, no external images) */}
+          <div className="mt-4 flex items-center justify-center gap-2.5 text-wesaya-yellow">
+            {[Drumstick, Pizza, Beef, Sandwich, Soup].map((Icon, i) => (
+              <span key={i} className="flex h-9 w-9 items-center justify-center rounded-full bg-wesaya-red-dark/60 ring-1 ring-white/15">
+                <Icon className="h-5 w-5" />
+              </span>
+            ))}
           </div>
+
+          {deliveryChip && (
+            <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/20">
+              <MapPin className="h-3.5 w-3.5" /> {deliveryChip}
+            </span>
+          )}
         </div>
       </header>
 
@@ -72,10 +90,10 @@ export default async function StorefrontMenuPage({ params }: { params: { slug: s
 
 function NotFound() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-10 text-center">
-        <UtensilsCrossed className="mx-auto h-9 w-9 text-slate-300" />
-        <h1 className="mt-4 text-lg font-bold text-slate-800">المتجر غير موجود</h1>
+    <main className="flex min-h-screen items-center justify-center bg-wesaya-cream px-4">
+      <div className="w-full max-w-md rounded-2xl border border-black/5 bg-white p-10 text-center shadow-sm">
+        <UtensilsCrossed className="mx-auto h-9 w-9 text-wesaya-red/40" />
+        <h1 className="mt-4 text-lg font-bold text-wesaya-ink">المتجر غير موجود</h1>
         <p className="mt-2 text-sm text-slate-500">تعذّر العثور على هذا المطعم. تأكد من صحة الرابط.</p>
       </div>
     </main>

@@ -23,6 +23,14 @@ const config: Config = {
         brain: "#059669", // emerald
         customers: "#06b6d4", // cyan
         settings: "#475569", // slate
+        // Wesaya storefront brand (public /order/[slug])
+        "wesaya-red": "#D81E1E",
+        "wesaya-red-dark": "#B81818",
+        "wesaya-yellow": "#FFD400",
+        "wesaya-yellow-soft": "#FFF3C4",
+        "wesaya-cream": "#FBF7EF",
+        "wesaya-ink": "#2C2C2A",
+        "wesaya-brand-ink": "#5A1010",
       },
       boxShadow: {
         card: "0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.06)",
