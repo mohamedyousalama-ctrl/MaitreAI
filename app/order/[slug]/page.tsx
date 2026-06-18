@@ -15,8 +15,14 @@ import { loadBrain } from "@/lib/db/brain";
 import { StorefrontMenu } from "@/components/storefront/StorefrontMenu";
 import { UtensilsCrossed, Store } from "lucide-react";
 
-// Always render at request time with fresh menu data (availability/prices live).
+// Always render at request time with fresh data so operator edits (deleted
+// branches, toggled zones, prices, availability) reflect IMMEDIATELY for
+// customers. force-dynamic + revalidate=0 + force-no-store together disable the
+// route cache AND the data cache for the service-role reads in loadBrain — no
+// stale pre-edit render can be served.
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 export default async function StorefrontMenuPage({ params }: { params: { slug: string } }) {
   const slug = decodeURIComponent(params.slug ?? "").trim();
