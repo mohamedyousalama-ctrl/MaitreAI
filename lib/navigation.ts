@@ -4,6 +4,7 @@ import {
   ShoppingBag,
   UtensilsCrossed,
   Settings,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import type { ModuleKey } from "./types";
@@ -26,6 +27,7 @@ export interface NavItem {
 //  • العملاء → conversation context drawer + global search. No top-level tabs.
 export const navItems: NavItem[] = [
   { href: "/dashboard", label: "الرئيسية", en: "Home", icon: LayoutDashboard, module: "dashboard", accent: "text-dashboard", accentBg: "bg-dashboard" },
+  { href: "/maitre", label: "المساعد", en: "Assistant", icon: Sparkles, module: "dashboard", accent: "text-dashboard", accentBg: "bg-dashboard" },
   { href: "/conversations", label: "المحادثات", en: "Conversations", icon: MessageCircle, module: "conversations", accent: "text-conversations", accentBg: "bg-conversations" },
   { href: "/orders", label: "الطلبات", en: "Orders", icon: ShoppingBag, module: "orders", accent: "text-orders", accentBg: "bg-orders" },
   {
