@@ -7,7 +7,7 @@
 // only; checkout submits ids to the server for authoritative recompute.
 // ============================================================================
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Branch, DeliveryArea, MenuItem, Modifier } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 import { UtensilsCrossed, Plus, X, Minus, Trash2, ShoppingBag } from "lucide-react";
@@ -40,7 +40,13 @@ export function StorefrontMenu({
   const [openItem, setOpenItem] = useState<MenuItem | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [fulfillment, setFulfillment] = useState<"delivery" | "pickup">("delivery");
-  const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
+  // Auto-select a branch that actually has usable delivery zones (restaurant-wide
+  // or its own), so a stray/zoneless branch can never be pre-selected and strand
+  // the delivery fee. Falls back to the first branch (e.g. pickup-only setups).
+  const [branchId, setBranchId] = useState(() => {
+    const withZones = branches.find((b) => deliveryAreas.some((z) => !z.branchId || z.branchId === b.id));
+    return (withZones ?? branches[0])?.id ?? "";
+  });
   const [zoneId, setZoneId] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -82,6 +88,14 @@ export function StorefrontMenu({
   const deliveryFee = fulfillment === "delivery" ? selectedZone?.deliveryFee ?? 0 : 0;
   const previewTotal = subtotal + deliveryFee;
   const count = cart.reduce((n, l) => n + l.quantity, 0);
+
+  // Keep the chosen zone valid for the active branch, and auto-select when there's
+  // exactly one — so the (single-zone) delivery fee applies without a stray empty
+  // dropdown. A previously-chosen zone that no longer belongs to the branch resets.
+  useEffect(() => {
+    if (zoneId && zonesForBranch.some((z) => z.id === zoneId)) return;
+    setZoneId(zonesForBranch.length === 1 ? zonesForBranch[0].id : "");
+  }, [zonesForBranch, zoneId]);
 
   const addLine = (line: CartLine) => {
     setCart((c) => [...c, line]);
