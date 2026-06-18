@@ -72,7 +72,15 @@ export async function runCustomerTurn(
   const { restaurantId, conversationId } = input;
   const persistReply = input.persistReply ?? !!conversationId;
 
-  const { data: r } = await admin.from("restaurants").select("*").eq("id", restaurantId).single();
+  // Explicit columns (NOT select("*")) — exclude the secret credential columns
+  // (wa_access_token_enc / wa_app_secret_enc); the Brain never needs raw secrets.
+  const { data: r } = await admin
+    .from("restaurants")
+    .select(
+      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,auto_accept_orders,agent_persona_name,tax_mode,tax_rate"
+    )
+    .eq("id", restaurantId)
+    .single();
   if (!r) throw new CustomerTurnError("restaurant_not_found");
   const row = r as Record<string, unknown>;
 
