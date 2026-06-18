@@ -1,434 +1,449 @@
 "use client";
 
 // ============================================================================
-// MaitreAI — الطلبات / orders pipeline (Amendment 04 §M5)
-// Four glanceable stages (جديدة → قيد التحضير → جاهزة → خرجت للتوصيل) plus a
-// collapsed مكتملة column. Big-button advance, browser-print receipt (F4
-// fallback), COD/paid marker, fulfillment icon, and a late-order highlight that
-// feeds the Pulse strip. Replaces the deleted kitchen board.
+// MaitreAI — الطلبات (Orders) — Terracotta table + detail + order notifications.
+// Reuses the existing DB-backed order store (useOrderStore: orders stream in via
+// realtime; updateOrderStatus writes through to Postgres), the proven
+// accept/advance handler (advance → updateOrderStatus, +send-receipt on confirm),
+// and the existing print flow (printTicket → resvg image, printReceipt → browser).
+// Money/totals come from the order ROW (server-computed) — never recomputed here.
+// FOLD-IN: new-order notifications (chime + toast + live badge) off the same
+// realtime stream, seeded on first load so existing orders never fire.
 // ============================================================================
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useOrderStore } from "@/lib/order-store";
-import { usePaymentStore } from "@/lib/payment-store";
 import { useHasHydrated } from "@/lib/store";
 import type { LocalOrder, OrderStatusKey } from "@/lib/types";
-import { ORDER_STATUS_LABELS } from "@/lib/orders";
-import { Printer, Bike, ShoppingBag, ChevronDown, Clock, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Printer, Search, Plus, X, Clock, MessageCircle, Bell, Volume2, VolumeX, Check } from "lucide-react";
 
-function OrderDrawer({ o, onClose, onAdvance, onCancel, printWidth }: { o: LocalOrder; onClose: () => void; onAdvance: (o: LocalOrder) => void; onCancel: (o: LocalOrder) => void; printWidth: PrintWidth }) {
-  const next = nextStatus(o);
-  const closable = o.orderStatus !== "cancelled" && o.orderStatus !== "delivered";
-  const [sending, setSending] = useState<"idle" | "loading" | "ok" | "err">("idle");
-  const openImage = (kind: "receipt" | "ticket") => window.open(`/api/orders/${o.id}/image?kind=${kind}&w=${printWidth}`, "_blank");
-  async function sendReceipt() {
-    setSending("loading");
-    try {
-      const r = await fetch(`/api/orders/${o.id}/send-receipt`, { method: "POST" });
-      const j = await r.json().catch(() => ({}));
-      setSending(r.ok ? (j.status === "skipped" ? "ok" : "ok") : "err");
-    } catch {
-      setSending("err");
-    }
-    setTimeout(() => setSending("idle"), 2500);
-  }
-  return (
-    <div className="fixed inset-0 z-40">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl bg-white lg:inset-y-0 lg:left-auto lg:right-0 lg:max-h-none lg:w-[420px] lg:rounded-none">
-        <div className="sticky top-0 flex items-center justify-between border-b border-[#ece0d2] bg-white px-4 py-3">
-          <div>
-            <p className="font-bold text-[#2a211b]">طلب #{o.orderNumber}</p>
-            <p className="text-xs text-[#9b8b7c]">{ORDER_STATUS_LABELS[o.orderStatus]}</p>
-          </div>
-          <button onClick={onClose} className="text-[#9b8b7c]"><X className="h-5 w-5" /></button>
-        </div>
-        <div className="space-y-4 p-4 text-[#2a211b]">
-          <div className="text-sm">
-            <p className="font-semibold">{o.customerName}</p>
-            <p className="text-xs text-[#9b8b7c]">{o.customerPhone}</p>
-            <p className="mt-1 text-xs text-[#6a5c4e]">
-              {o.fulfillmentType === "delivery" ? `توصيل: ${o.deliveryAddress || "—"}` : "استلام من الفرع"}
-            </p>
-          </div>
-          <div className="space-y-1 border-t border-[#ece0d2] pt-3">
-            {o.items.map((i) => (
-              <div key={i.id} className="flex justify-between text-sm">
-                <span>
-                  {i.quantity}× {i.name}
-                  {[i.variant, ...(i.choices ?? []), ...i.modifiers].filter(Boolean).length
-                    ? ` (${[i.variant, ...(i.choices ?? []), ...i.modifiers].filter(Boolean).join("، ")})`
-                    : ""}
-                  {i.notes ? ` — ${i.notes}` : ""}
-                </span>
-                <span className="text-[#6a5c4e]">{i.total} {o.currency}</span>
-              </div>
-            ))}
-          </div>
-          <div className="border-t border-[#ece0d2] pt-2 text-sm">
-            <div className="flex justify-between text-[#6a5c4e]"><span>المجموع الفرعي</span><span>{o.subtotal} {o.currency}</span></div>
-            {o.deliveryFee > 0 && <div className="flex justify-between text-[#6a5c4e]"><span>التوصيل</span><span>{o.deliveryFee} {o.currency}</span></div>}
-            <div className="mt-1 flex justify-between font-bold"><span>الإجمالي</span><span>{o.total} {o.currency}</span></div>
-            <div className="mt-1 text-xs text-[#9b8b7c]">الدفع: {o.paymentStatus === "paid" ? "مدفوع" : o.paymentStatus === "refunded" ? "مُسترجع" : "غير مدفوع"}</div>
-          </div>
-          <div className="border-t border-[#ece0d2] pt-3">
-            <p className="mb-1 text-xs font-semibold text-[#9b8b7c]">مسار الطلب</p>
-            <div className="space-y-1">
-              {o.events.map((e) => (
-                <p key={e.id} className="flex items-center gap-1.5 text-xs text-[#6a5c4e]">
-                  <Clock className="h-3 w-3" /> {e.label} · {new Date(e.timestamp).toLocaleTimeString("ar")}
-                </p>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 border-t border-[#ece0d2] pt-3">
-            {next && (
-              <button onClick={() => onAdvance(o)} className="rounded-lg bg-[#b5502e] px-3 py-2 text-xs font-semibold text-white hover:opacity-95">
-                {ADVANCE_LABEL[next] ?? "التالي"}
-              </button>
-            )}
-            <button onClick={() => printTicket(o.id, printWidth)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">
-              <Printer className="h-3.5 w-3.5" /> تذكرة المطبخ
-            </button>
-            <button onClick={() => openImage("receipt")} className="rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">إيصال العميل</button>
-            <button
-              onClick={sendReceipt}
-              disabled={sending === "loading"}
-              className="rounded-lg border border-[#cde3d4] bg-[#f0f7f2] px-3 py-2 text-xs font-semibold text-[#3c7a52] hover:bg-[#e6f1ea] disabled:opacity-60"
-            >
-              {sending === "loading" ? "جارٍ الإرسال…" : sending === "ok" ? "تم الإرسال ✓" : sending === "err" ? "تعذّر الإرسال" : "إرسال الإيصال للعميل"}
-            </button>
-            <button onClick={() => printReceipt(o)} className="rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#6a5c4e] hover:bg-[#faf6ef]">طباعة سريعة</button>
-            {closable && (
-              <button onClick={() => onCancel(o)} className="rounded-lg border border-[#e7c9bf] px-3 py-2 text-xs font-semibold text-[#cc3a33] hover:bg-[#fbeee9]">إلغاء الطلب</button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+// ---- helpers (Arabic digits + money; money is display-only, value from the row)
+const AR = "٠١٢٣٤٥٦٧٨٩";
+const toAr = (n: number | string) => String(n).replace(/[0-9]/g, (d) => AR[+d]);
+const grp = (n: number) => { const s = String(Math.round(n)); let o = ""; for (let i = 0; i < s.length; i++) { if (i > 0 && (s.length - i) % 3 === 0) o += "٬"; o += s[i]; } return o; };
+const money = (n: number) => toAr(grp(Number(n || 0)));
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const LATE_MS = 30 * 60 * 1000;
+const DONE: OrderStatusKey[] = ["delivered", "cancelled"];
+const ACTIVE: OrderStatusKey[] = ["pending_confirmation", "pending_payment", "paid", "preparing", "ready", "out_for_delivery"];
+
+function minutesAgo(ms: number): string {
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 1) return "الآن";
+  if (m < 60) return `${toAr(m)} د`;
+  const d = new Date(ms);
+  return `${toAr(d.getHours() % 12 || 12)}:${toAr(String(d.getMinutes()).padStart(2, "0"))}`;
 }
 
-const LATE_MS = 30 * 60 * 1000;
+// per-status pill (label + Terracotta colors + the row's right-border accent)
+type Meta = { label: string; dot: string; bg: string; border: string; fg: string; rail: string };
+function statusMeta(o: LocalOrder): Meta {
+  switch (o.orderStatus) {
+    case "pending_payment": return { label: "بانتظار الدفع", dot: "#BE5238", bg: "#FBEAE5", border: "#F1D2C8", fg: "#A8472F", rail: "#BE5238" };
+    case "preparing": return { label: "قيد التحضير", dot: "#C5871F", bg: "#FBF1DD", border: "#EFDDB6", fg: "#946312", rail: "#C5871F" };
+    case "ready": return { label: "جاهز", dot: "#3E807A", bg: "#E1EEEC", border: "#C5E0DC", fg: "#2C625D", rail: "#3E807A" };
+    case "out_for_delivery": return { label: "خرج للتوصيل", dot: "#5E6FA0", bg: "#E7EAF2", border: "#D2D8E8", fg: "#475584", rail: "#5E6FA0" };
+    case "delivered": return { label: "✓ مكتمل", dot: "#9A8E7E", bg: "#EFEAE0", border: "#E2D8C7", fg: "#7C7163", rail: "#C9BFAE" };
+    case "cancelled": return { label: "✕ ملغي", dot: "#9A8E7E", bg: "#F4EEE9", border: "#E4D9CD", fg: "#9A8E7E", rail: "#C9BFAE" };
+    default: return { label: "جديد", dot: "#5C8A6B", bg: "#EAF1E9", border: "#CFE2D3", fg: "#436B50", rail: "#5C8A6B" }; // pending_confirmation / paid
+  }
+}
 
-type Stage = { key: string; label: string; statuses: OrderStatusKey[]; tint: string };
-const STAGES: Stage[] = [
-  { key: "new", label: "جديدة", statuses: ["pending_confirmation", "pending_payment", "paid"], tint: "#b5502e" },
-  { key: "preparing", label: "قيد التحضير", statuses: ["preparing"], tint: "#e0912e" },
-  { key: "ready", label: "جاهزة", statuses: ["ready"], tint: "#3c7a52" },
-  { key: "out", label: "خرجت للتوصيل", statuses: ["out_for_delivery"], tint: "#4e9466" },
+// filter buckets → status sets (reuses the home/kanban mapping; no new statuses)
+const FILTERS: { k: string; label: string; statuses: OrderStatusKey[] | null }[] = [
+  { k: "all", label: "الكل", statuses: null },
+  { k: "new", label: "جديد", statuses: ["pending_confirmation", "pending_payment", "paid"] },
+  { k: "preparing", label: "قيد التحضير", statuses: ["preparing"] },
+  { k: "ready", label: "جاهز", statuses: ["ready"] },
+  { k: "out", label: "خرج للتوصيل", statuses: ["out_for_delivery"] },
+  { k: "done", label: "مكتمل", statuses: ["delivered"] },
+  { k: "cancelled", label: "ملغي", statuses: ["cancelled"] },
 ];
-const DONE: OrderStatusKey[] = ["delivered", "cancelled"];
 
 function nextStatus(o: LocalOrder): OrderStatusKey | null {
   switch (o.orderStatus) {
     case "pending_confirmation":
     case "pending_payment":
-    case "paid":
-      return "preparing";
-    case "preparing":
-      return "ready";
-    case "ready":
-      return o.fulfillmentType === "delivery" ? "out_for_delivery" : "delivered";
-    case "out_for_delivery":
-      return "delivered";
-    default:
-      return null;
+    case "paid": return "preparing";
+    case "preparing": return "ready";
+    case "ready": return o.fulfillmentType === "delivery" ? "out_for_delivery" : "delivered";
+    case "out_for_delivery": return "delivered";
+    default: return null;
   }
 }
 const ADVANCE_LABEL: Record<string, string> = {
-  preparing: "ابدأ التحضير",
-  ready: "جاهز",
-  out_for_delivery: "خرج للتوصيل",
-  delivered: "تم التسليم",
+  preparing: "ابدأ التحضير", ready: "تجهيز كجاهز", out_for_delivery: "خرج للتوصيل", delivered: "تم التسليم",
 };
 
-function printReceipt(o: LocalOrder) {
-  const w = window.open("", "_blank", "width=380,height=640");
-  if (!w) return;
-  const rows = o.items
-    .map((i) => `<tr><td>${i.quantity}× ${i.name}</td><td style="text-align:left">${i.total} ${o.currency}</td></tr>`)
-    .join("");
-  w.document.write(
-    `<html dir="rtl"><head><meta charset="utf-8"><title>طلب #${o.orderNumber}</title></head>
-     <body style="font-family:Tahoma,Arial,sans-serif;padding:14px;color:#2a211b">
-       <h2 style="margin:0">${o.branchName || "المطعم"}</h2>
-       <p style="margin:4px 0">طلب #${o.orderNumber} — ${o.customerName}</p>
-       <hr><table style="width:100%;border-collapse:collapse">${rows}</table><hr>
-       <p style="font-weight:bold">الإجمالي: ${o.total} ${o.currency}</p>
-       <p>${o.fulfillmentType === "delivery" ? "توصيل: " + (o.deliveryAddress || "") : "استلام من الفرع"}</p>
-     </body></html>`
-  );
-  w.document.close();
-  w.focus();
-  w.print();
-}
-
 type PrintWidth = "58mm" | "80mm" | "standard";
-
-/** Open the server-rendered kitchen-ticket PNG and trigger the device-OS print
- *  dialog (no driver code — browser/share-sheet handles the actual printer). */
 function printTicket(orderId: string, width: PrintWidth) {
   const w = window.open("", "_blank", "width=420,height=720");
   if (!w) return;
   const url = `/api/orders/${orderId}/image?kind=ticket&w=${width}`;
-  w.document.write(
-    `<html dir="rtl"><head><meta charset="utf-8"><title>تذكرة المطبخ</title>
-     <style>@page{margin:6mm}body{margin:0}img{width:100%;display:block}</style></head>
-     <body><img src="${url}" onload="window.focus();window.print();"></body></html>`
-  );
+  w.document.write(`<html dir="rtl"><head><meta charset="utf-8"><title>تذكرة المطبخ</title><style>@page{margin:6mm}body{margin:0}img{width:100%;display:block}</style></head><body><img src="${url}" onload="window.focus();window.print();"></body></html>`);
   w.document.close();
 }
 
-function OrderCard({ o, onAdvance, onSelect }: { o: LocalOrder; onAdvance: (o: LocalOrder) => void; onSelect: (o: LocalOrder) => void }) {
-  const next = nextStatus(o);
-  const paid = o.paymentStatus === "paid";
-  const late = o.createdAt < Date.now() - LATE_MS && !DONE.includes(o.orderStatus);
-  const mins = Math.max(0, Math.round((Date.now() - o.createdAt) / 60000));
-  return (
-    <div onClick={() => onSelect(o)} className={cn("cursor-pointer rounded-xl border bg-white p-3", late ? "border-[#cc3a33]" : "border-[#ece0d2]")}>
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-bold text-[#2a211b]">#{o.orderNumber}</span>
-        <span className="flex items-center gap-1 text-[11px] text-[#9b8b7c]">
-          {o.fulfillmentType === "delivery" ? <Bike className="h-3.5 w-3.5" /> : <ShoppingBag className="h-3.5 w-3.5" />}
-          <Clock className="h-3 w-3" /> {mins}د
-        </span>
-      </div>
-      <p className="mt-0.5 truncate text-sm text-[#4a3f36]">{o.customerName}</p>
-      <p className="mt-1 truncate text-xs text-[#9b8b7c]">
-        {o.items.reduce((s, i) => s + i.quantity, 0)} صنف · {o.total} {o.currency}
-      </p>
-      <div className="mt-2 flex items-center gap-1.5">
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-            paid ? "bg-[#e7f1ea] text-[#3c7a52]" : "bg-[#fbefd9] text-[#9a6c1e]"
-          )}
-        >
-          {paid ? "مدفوع" : "دفع عند الاستلام"}
-        </span>
-        {late && <span className="rounded-full bg-[#f7e3df] px-2 py-0.5 text-[10px] font-semibold text-[#cc3a33]">متأخر</span>}
-      </div>
-      <div className="mt-2.5 flex items-center gap-2">
-        {next && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onAdvance(o);
-            }}
-            className="flex-1 rounded-lg bg-[#b5502e] px-2 py-1.5 text-xs font-semibold text-white hover:opacity-95"
-          >
-            {ADVANCE_LABEL[next] ?? "التالي"}
-          </button>
-        )}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            printReceipt(o);
-          }}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e4d8c8] text-[#6a5c4e] hover:bg-[#faf6ef]"
-          aria-label="طباعة"
-          title="طباعة (متصفح)"
-        >
-          <Printer className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
+const AVATAR = ["#2563eb", "#f97316", "#059669", "#9333ea", "#06b6d4", "#BE5238", "#C5871F"];
+const avatarColor = (s: string) => AVATAR[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR.length];
+
+// short two-tone chime via Web Audio (no asset / no dependency)
+function playChime() {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    [[880, 0], [1320, 0.12]].forEach(([f, t]) => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.frequency.value = f as number; osc.type = "sine";
+      gain.gain.setValueAtTime(0.0001, now + (t as number));
+      gain.gain.exponentialRampToValueAtTime(0.16, now + (t as number) + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + (t as number) + 0.18);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now + (t as number)); osc.stop(now + (t as number) + 0.2);
+    });
+    setTimeout(() => ctx.close().catch(() => {}), 600);
+  } catch { /* autoplay blocked until a gesture — silent */ }
 }
 
-export default function OrdersPipeline() {
+export default function OrdersPage() {
   const hydrated = useHasHydrated();
   const orders = useOrderStore((s) => s.orders);
   const updateOrderStatus = useOrderStore((s) => s.updateOrderStatus);
-  const cancelOrder = useOrderStore((s) => s.cancelOrder);
-  const sweepExpired = usePaymentStore((s) => s.sweepExpired);
-  const [showDone, setShowDone] = useState(false);
-  const [filter, setFilter] = useState<"all" | "delivery" | "pickup" | "late" | "unpaid">("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selectedOrder = selectedId ? orders.find((o) => o.id === selectedId) : null;
 
-  // S9-5 printing: per-tenant auto-print + paper width, device-level printer flag.
-  const [autoPrint, setAutoPrint] = useState(false);
+  const [filter, setFilter] = useState("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [muted, setMuted] = useState(false);
+  const [toasts, setToasts] = useState<{ id: string; orderNumber: string }[]>([]);
+  const [unseen, setUnseen] = useState(0);
   const [printWidth, setPrintWidth] = useState<PrintWidth>("standard");
   const [printerOnline, setPrinterOnline] = useState(true);
+  const [autoPrint, setAutoPrint] = useState(false);
+
   const seenRef = useRef<Set<string>>(new Set());
   const seededRef = useRef(false);
+  const lastChimeRef = useRef(0);
+  const mutedRef = useRef(false);
 
   useEffect(() => {
-    sweepExpired();
-  }, [sweepExpired]);
-
-  useEffect(() => {
+    const m = localStorage.getItem("maitreai-order-sound") === "off"; setMuted(m); mutedRef.current = m;
     setPrinterOnline(localStorage.getItem("maitreai-printer-offline") !== "1");
-    fetch("/api/settings/print")
-      .then((r) => r.json())
-      .then((d) => {
-        if (typeof d.autoPrint === "boolean") setAutoPrint(d.autoPrint);
-        if (d.printWidth) setPrintWidth(d.printWidth as PrintWidth);
-      })
-      .catch(() => {});
+    fetch("/api/settings/print").then((r) => r.json()).then((d) => {
+      if (typeof d.autoPrint === "boolean") setAutoPrint(d.autoPrint);
+      if (d.printWidth) setPrintWidth(d.printWidth as PrintWidth);
+    }).catch(() => {});
   }, []);
+  const toggleMute = () => { setMuted((v) => { const n = !v; mutedRef.current = n; localStorage.setItem("maitreai-order-sound", n ? "off" : "on"); return n; }); };
 
-  function togglePrinter() {
-    setPrinterOnline((v) => {
-      const next = !v;
-      localStorage.setItem("maitreai-printer-offline", next ? "0" : "1");
-      return next;
-    });
-  }
-
-  // Auto-print newly-arrived orders once (seed seen-set on first load so existing
-  // orders don't print). Suppressed when the printer is marked offline.
+  // New-order detection off the existing realtime stream. Seed the seen-set on
+  // first load so pre-existing orders never fire; afterwards, a genuinely new
+  // inbound order (agent/web, just created) → chime + toast + badge. Status
+  // changes the operator makes don't fire (the id is already seen).
   useEffect(() => {
     if (!hydrated) return;
-    if (!seededRef.current) {
-      orders.forEach((o) => seenRef.current.add(o.id));
-      seededRef.current = true;
-      return;
-    }
+    if (!seededRef.current) { orders.forEach((o) => seenRef.current.add(o.id)); seededRef.current = true; return; }
+    let fired = false;
     for (const o of orders) {
       if (seenRef.current.has(o.id)) continue;
       seenRef.current.add(o.id);
-      if (autoPrint && printerOnline && o.orderStatus === "pending_confirmation") {
-        printTicket(o.id, printWidth);
-      }
+      const fresh = Date.now() - o.createdAt < 3 * 60 * 1000; // ignore backfill/reorders
+      const inbound = o.source === "whatsapp" || o.source === "web";
+      if (!fresh || !inbound) continue;
+      setToasts((t) => [...t, { id: o.id, orderNumber: o.orderNumber }].slice(-4));
+      setUnseen((n) => n + 1);
+      setTimeout(() => setToasts((t) => t.filter((x) => x.id !== o.id)), 6000);
+      if (!fired && !mutedRef.current && Date.now() - lastChimeRef.current > 2000) { playChime(); lastChimeRef.current = Date.now(); fired = true; }
+      if (autoPrint && printerOnline && o.orderStatus === "pending_confirmation") printTicket(o.id, printWidth);
     }
   }, [orders, hydrated, autoPrint, printerOnline, printWidth]);
+
+  // ---- real derived data ----------------------------------------------------
+  const sorted = useMemo(() => (hydrated ? [...orders].sort((a, b) => b.createdAt - a.createdAt) : []), [orders, hydrated]);
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: sorted.length };
+    for (const f of FILTERS) if (f.statuses) c[f.k] = sorted.filter((o) => f.statuses!.includes(o.orderStatus)).length;
+    return c;
+  }, [sorted]);
+  const since = startOfToday();
+  const todayCount = sorted.filter((o) => o.createdAt >= since).length;
+  const activeCount = sorted.filter((o) => ACTIVE.includes(o.orderStatus)).length;
+
+  const list = useMemo(() => {
+    const f = FILTERS.find((x) => x.k === filter);
+    const q = search.trim();
+    return sorted.filter((o) => {
+      if (f?.statuses && !f.statuses.includes(o.orderStatus)) return false;
+      if (q && !(`${o.orderNumber}`.includes(q) || o.customerName.includes(q))) return false;
+      return true;
+    });
+  }, [sorted, filter, search]);
+
+  const selected = sorted.find((o) => o.id === selectedId) ?? null;
 
   const advance = (o: LocalOrder) => {
     const n = nextStatus(o);
     if (!n) return;
-    // Accepting a new order (→ قيد التحضير) = confirm → send the receipt to the
-    // customer over WhatsApp (S9-3). No-ops gracefully in test mode / no phone.
     const isConfirm = ["pending_confirmation", "pending_payment", "paid"].includes(o.orderStatus) && n === "preparing";
-    updateOrderStatus(o.id, n, "human");
+    updateOrderStatus(o.id, n, "human"); // DB write-through (existing handler)
     if (isConfirm) void fetch(`/api/orders/${o.id}/send-receipt`, { method: "POST" }).catch(() => {});
   };
+  const openOrder = (o: LocalOrder) => { setSelectedId(o.id); setUnseen(0); };
 
-  const matchesFilter = (o: LocalOrder) => {
-    if (filter === "delivery") return o.fulfillmentType === "delivery";
-    if (filter === "pickup") return o.fulfillmentType === "pickup";
-    if (filter === "late") return o.createdAt < Date.now() - LATE_MS && !DONE.includes(o.orderStatus);
-    if (filter === "unpaid") return o.paymentStatus !== "paid";
-    return true;
-  };
-  const FILTERS: { k: typeof filter; label: string }[] = [
-    { k: "all", label: "الكل" },
-    { k: "delivery", label: "توصيل" },
-    { k: "pickup", label: "استلام" },
-    { k: "late", label: "متأخرة" },
-    { k: "unpaid", label: "غير مدفوعة" },
-  ];
-
-  const inStage = (s: Stage) => (hydrated ? orders.filter((o) => s.statuses.includes(o.orderStatus) && matchesFilter(o)) : []);
-  const done = hydrated ? orders.filter((o) => DONE.includes(o.orderStatus)) : [];
+  const GRID = "grid grid-cols-[68px_1.4fr_1fr_1.1fr_0.8fr_0.7fr] gap-3 items-center";
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-[#2a211b]">الطلبات</h1>
-        <span className="text-sm text-[#9b8b7c]">{hydrated ? orders.length : 0} طلب</span>
-      </div>
-
-      {/* Printing status (S9-5 / §O #5): auto-print info, or printer-offline
-          degraded banner with a manual-print reminder + a re-enable control. */}
-      {autoPrint && !printerOnline ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e7c9bf] bg-[#fbeee9] px-4 py-2.5 text-sm">
-          <span className="font-semibold text-[#cc3a33]">⚠ الطابعة غير متصلة — اطبع الطلبات يدوياً من زر «تذكرة المطبخ».</span>
-          <button onClick={togglePrinter} className="rounded-lg border border-[#cc3a33] px-3 py-1.5 text-xs font-semibold text-[#cc3a33] hover:bg-white">
-            الطابعة متصلة الآن
-          </button>
-        </div>
-      ) : autoPrint ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#cde3d4] bg-[#f0f7f2] px-4 py-2.5 text-sm">
-          <span className="font-semibold text-[#3c7a52]">🖨️ الطباعة التلقائية مفعّلة · الطابعة متصلة</span>
-          <button onClick={togglePrinter} className="rounded-lg border border-[#cde3d4] px-3 py-1.5 text-xs font-semibold text-[#3c7a52] hover:bg-white">
-            تعطيل (الطابعة غير متصلة)
-          </button>
-        </div>
-      ) : null}
-
-      {/* Filters (§R3) */}
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((f) => (
-          <button
-            key={f.k}
-            onClick={() => setFilter(f.k)}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
-              filter === f.k ? "border-[#b5502e] bg-[#b5502e] text-white" : "border-[#e4d8c8] bg-white text-[#6a5c4e] hover:bg-[#faf6ef]"
+    <div dir="rtl" className="mx-auto max-w-[1320px]">
+      {/* header */}
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-[22px] font-bold tracking-tight text-[#2A2019]">الطلبات</h1>
+            {unseen > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#BE5238] px-2 py-0.5 text-[11px] font-bold text-white"><Bell className="h-3 w-3" />{toAr(unseen)} جديد</span>
             )}
-          >
-            {f.label}
+          </div>
+          <p className="mt-1 text-[12.5px] text-[#9A8E7E]">{toAr(todayCount)} طلب اليوم · {toAr(activeCount)} قيد التنفيذ</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={toggleMute} title={muted ? "تشغيل صوت الطلبات" : "كتم صوت الطلبات"} className="flex h-9 w-9 items-center justify-center rounded-[11px] border border-[#EBE2D3] bg-white text-[#7C7163]">
+            {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </button>
-        ))}
+          <div className="flex items-center gap-2 rounded-[11px] border border-[#EBE2D3] bg-white px-3 py-2">
+            <Search className="h-4 w-4 text-[#A99D8D]" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="بحث برقم الطلب أو العميل" className="w-36 bg-transparent text-[12.5px] text-[#2A2019] outline-none placeholder:text-[#AEA391] md:w-48" />
+          </div>
+          <span title="إنشاء طلب يدوي قريبًا" className="flex cursor-not-allowed items-center gap-1.5 rounded-[11px] bg-[#BE5238]/55 px-4 py-2 text-[12.5px] font-bold text-white"><Plus className="h-4 w-4" /> طلب جديد <span className="rounded bg-white/25 px-1 text-[10px]">قريبًا</span></span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {STAGES.map((s) => {
-          const list = inStage(s);
-          return (
-            <div key={s.key} className="rounded-2xl bg-[#faf6ef] p-2.5">
-              <div className="mb-2 flex items-center justify-between px-1">
-                <span className="flex items-center gap-2 text-sm font-bold text-[#2a211b]">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.tint }} />
-                  {s.label}
-                </span>
-                <span className="text-xs font-semibold text-[#9b8b7c]">{list.length}</span>
-              </div>
-              <div className="space-y-2">
-                {list.map((o) => (
-                  <OrderCard key={o.id} o={o} onAdvance={advance} onSelect={(x) => setSelectedId(x.id)} />
-                ))}
-                {list.length === 0 && <p className="px-1 py-6 text-center text-xs text-[#c2a98f]">لا توجد طلبات</p>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <div className="flex gap-4">
+        {/* list */}
+        <div className="min-w-0 flex-1 overflow-hidden rounded-[18px] border border-[#ECE3D5] bg-white" style={{ boxShadow: "0 14px 30px -22px rgba(50,32,20,.25)" }}>
+          {/* filter chips */}
+          <div className="flex flex-wrap gap-1.5 border-b border-[#ECE3D5] p-3.5">
+            {FILTERS.map((f) => {
+              const active = filter === f.k;
+              const n = f.k === "all" ? counts.all : counts[f.k] ?? 0;
+              return (
+                <button key={f.k} onClick={() => setFilter(f.k)}
+                  className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition"
+                  style={active ? { background: "#BE5238", color: "#fff" } : { background: "#fff", border: "1px solid #EBE2D3", color: "#514538" }}>
+                  {f.label}<span className="text-[10.5px]" style={{ color: active ? "rgba(255,255,255,.85)" : "#9A8E7E" }}>{toAr(n)}</span>
+                </button>
+              );
+            })}
+          </div>
 
-      {/* مكتملة (collapsed) */}
-      <div className="rounded-2xl border border-[#ece0d2] bg-white">
-        <button
-          onClick={() => setShowDone((v) => !v)}
-          className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold text-[#4a3f36]"
-        >
-          <span>مكتملة ({done.length})</span>
-          <ChevronDown className={cn("h-4 w-4 transition-transform", showDone && "rotate-180")} />
-        </button>
-        {showDone && (
-          <div className="grid grid-cols-1 gap-2 border-t border-[#ece0d2] p-3 sm:grid-cols-2 lg:grid-cols-4">
-            {done.map((o) => (
-              <div key={o.id} className="rounded-xl border border-[#ece0d2] bg-[#faf6ef] p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-[#2a211b]">#{o.orderNumber}</span>
-                  <span className="text-[11px] text-[#9b8b7c]">
-                    {o.orderStatus === "cancelled" ? "ملغي" : "تم التسليم"}
+          {/* table head (lg+) */}
+          <div className={`${GRID} hidden border-b border-[#ECE3D5] px-5 py-2.5 text-[11px] font-semibold text-[#9A8E7E] lg:grid`}>
+            <span>الطلب</span><span>العميل</span><span>الحالة</span><span>التفاصيل</span><span>الإجمالي</span><span>الوقت</span>
+          </div>
+
+          {/* rows / cards */}
+          <div className="max-h-[68vh] overflow-y-auto">
+            {list.length === 0 && <div className="px-5 py-16 text-center text-[13px] text-[#A99D8D]">لا طلبات في هذا الفلتر.</div>}
+
+            {/* lg+ table rows */}
+            {list.map((o) => {
+              const m = statusMeta(o);
+              const sel = o.id === selectedId;
+              const done = DONE.includes(o.orderStatus);
+              return (
+                <button key={o.id} onClick={() => openOrder(o)}
+                  className={`${GRID} hidden w-full border-b border-[#F2EBE0] px-5 py-3 text-right transition hover:bg-[#FBF8F3] lg:grid`}
+                  style={sel ? { background: "#FBF1ED", borderRight: "3px solid #BE5238" } : done ? { opacity: 0.72 } : {}}>
+                  <span className="text-[13.5px] font-bold" style={{ color: sel ? "#BE5238" : done ? "#7C7163" : "#2A2019" }}>#{toAr(o.orderNumber)}</span>
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <span className="flex h-8 w-8 flex-none items-center justify-center rounded-[9px] text-[13px] font-bold text-white" style={{ background: avatarColor(o.customerName) }}>{o.customerName.trim().charAt(0) || "ع"}</span>
+                    <span className="min-w-0 leading-tight"><span className="block truncate text-[13px] font-semibold text-[#2A2019]">{o.customerName}</span><span className="block text-[10.5px] text-[#9A8E7E]">{o.fulfillmentType === "delivery" ? "توصيل" : "استلام"}</span></span>
                   </span>
-                </div>
-                <p className="truncate text-xs text-[#9b8b7c]">
-                  {o.customerName} · {o.total} {o.currency}
-                </p>
-              </div>
-            ))}
-            {done.length === 0 && <p className="col-span-full py-4 text-center text-xs text-[#c2a98f]">لا شيء بعد</p>}
+                  <span><StatusPill m={m} /></span>
+                  <span className="truncate text-[12px] text-[#6B6055]">{toAr(o.items.length)} أصناف</span>
+                  <span className="text-[13.5px] font-bold text-[#2A2019]">{money(o.total)} <span className="text-[10px] font-medium text-[#A99D8D]">{o.currency}</span></span>
+                  <Timecell o={o} />
+                </button>
+              );
+            })}
+
+            {/* mobile cards */}
+            {list.map((o) => {
+              const m = statusMeta(o);
+              return (
+                <button key={`m-${o.id}`} onClick={() => openOrder(o)} className="block w-full border-b border-[#F2EBE0] px-3.5 py-3 text-right lg:hidden" style={{ borderRight: `3px solid ${m.rail}` }}>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <span className="flex h-9 w-9 flex-none items-center justify-center rounded-[10px] text-[14px] font-bold text-white" style={{ background: avatarColor(o.customerName) }}>{o.customerName.trim().charAt(0) || "ع"}</span>
+                      <span className="min-w-0 leading-tight"><span className="block truncate text-[14px] font-bold text-[#2A2019]">{o.customerName}</span><span className="block text-[11px] text-[#9A8E7E]">#{toAr(o.orderNumber)} · {o.fulfillmentType === "delivery" ? "توصيل" : "استلام"}</span></span>
+                    </span>
+                    <StatusPill m={m} />
+                  </div>
+                  <div className="flex items-center justify-between border-t border-dashed border-[#EBE2D3] pt-2">
+                    <span className="text-[12px] text-[#6B6055]">{toAr(o.items.length)} أصناف · {minutesAgo(o.createdAt)}</span>
+                    <span className="text-[15px] font-bold text-[#BE5238]">{money(o.total)} {o.currency}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* detail panel (xl side column) */}
+        {selected && (
+          <div className="hidden w-[332px] flex-none overflow-hidden rounded-[18px] border border-[#ECE3D5] bg-white xl:block" style={{ boxShadow: "0 14px 30px -22px rgba(50,32,20,.25)" }}>
+            <OrderDetail o={selected} onClose={() => setSelectedId(null)} onAdvance={advance} printWidth={printWidth} />
           </div>
         )}
       </div>
 
-      {selectedOrder && (
-        <OrderDrawer
-          o={selectedOrder}
-          printWidth={printWidth}
-          onClose={() => setSelectedId(null)}
-          onAdvance={(o) => advance(o)}
-          onCancel={(o) => {
-            if (window.confirm(`إلغاء الطلب #${o.orderNumber}؟`)) cancelOrder(o.id, "human");
-          }}
-        />
+      {/* detail overlay (< xl) */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center xl:hidden">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setSelectedId(null)} />
+          <div className="relative max-h-[88vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white sm:rounded-2xl">
+            <OrderDetail o={selected} onClose={() => setSelectedId(null)} onAdvance={advance} printWidth={printWidth} />
+          </div>
+        </div>
       )}
+
+      {/* new-order toasts */}
+      <div className="fixed bottom-5 left-5 z-[60] flex flex-col gap-2">
+        {toasts.map((t) => (
+          <div key={t.id} className="flex items-center gap-3 rounded-[14px] border border-[#EFDDB6] bg-white px-4 py-3 shadow-[0_18px_40px_-18px_rgba(50,32,20,.5)]">
+            <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#BE5238] text-white"><Bell className="h-4 w-4" /></span>
+            <span className="text-[13px] font-bold text-[#2A2019]">طلب جديد · #{toAr(t.orderNumber)}</span>
+            <button onClick={() => setToasts((x) => x.filter((y) => y.id !== t.id))} className="mr-1 text-[#A99D8D] hover:text-[#BE5238]"><X className="h-4 w-4" /></button>
+          </div>
+        ))}
+      </div>
     </div>
+  );
+}
+
+// ---- pieces ----------------------------------------------------------------
+function StatusPill({ m }: { m: Meta }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-[7px] px-2.5 py-1 text-[11px] font-bold" style={{ background: m.bg, border: `1px solid ${m.border}`, color: m.fg }}>
+      {!m.label.startsWith("✓") && !m.label.startsWith("✕") && <span className="h-1.5 w-1.5 rounded-full" style={{ background: m.dot }} />}
+      {m.label}
+    </span>
+  );
+}
+function Timecell({ o }: { o: LocalOrder }) {
+  const late = o.createdAt < Date.now() - LATE_MS && !DONE.includes(o.orderStatus);
+  const active = ACTIVE.includes(o.orderStatus);
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: late ? "#BE5238" : active ? "#946312" : "#A99D8D" }}>
+      {active && <Clock className="h-3 w-3" />}{minutesAgo(o.createdAt)}
+    </span>
+  );
+}
+
+const RANK: Record<string, number> = { pending_confirmation: 0, pending_payment: 0, paid: 1, preparing: 2, ready: 3, out_for_delivery: 4, delivered: 5 };
+function OrderDetail({ o, onClose, onAdvance, printWidth }: { o: LocalOrder; onClose: () => void; onAdvance: (o: LocalOrder) => void; printWidth: PrintWidth }) {
+  const m = statusMeta(o);
+  const n = nextStatus(o);
+  const rank = RANK[o.orderStatus] ?? 0;
+  const cancelled = o.orderStatus === "cancelled";
+  // truthful flow: received time = createdAt; current step shows live elapsed;
+  // done/future steps carry no fabricated timestamp (truth rule).
+  const steps: { key: string; label: string; rank: number }[] = [
+    { key: "received", label: "تم استلام الطلب", rank: 0 },
+    { key: "paid", label: "تم الدفع", rank: 1 },
+    { key: "preparing", label: "قيد التحضير", rank: 2 },
+    { key: "ready", label: "جاهز", rank: 3 },
+    ...(o.fulfillmentType === "delivery" ? [{ key: "out", label: "خرج للتوصيل", rank: 4 }] : []),
+    { key: "delivered", label: "تم التسليم", rank: 5 },
+  ];
+
+  return (
+    <>
+      <div className="flex items-start justify-between border-b border-[#F0E9DD] p-4">
+        <div>
+          <div className="flex items-center gap-2.5"><span className="text-[19px] font-bold text-[#2A2019]">#{toAr(o.orderNumber)}</span><StatusPill m={m} /></div>
+          <p className="mt-1 text-[12px] text-[#9A8E7E]">{o.source === "whatsapp" ? "واتساب" : "ويب"} · {o.fulfillmentType === "delivery" ? "توصيل" : "استلام"}{o.branchName ? ` · ${o.branchName}` : ""} · {minutesAgo(o.createdAt)}</p>
+        </div>
+        <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#EBE2D3] text-[#9A8E7E]"><X className="h-4 w-4" /></button>
+      </div>
+
+      {/* status flow */}
+      <div className="border-b border-[#F0E9DD] p-4">
+        <div className="mb-3 text-[11.5px] font-bold text-[#2A2019]">مسار الطلب</div>
+        {cancelled ? (
+          <div className="rounded-[11px] bg-[#F4EEE9] px-3 py-2 text-[12px] font-semibold text-[#9A8E7E]">✕ تم إلغاء الطلب</div>
+        ) : (
+          <div className="flex flex-col">
+            {steps.map((s, i) => {
+              const done = rank > s.rank;
+              const current = rank === s.rank;
+              const paidOk = s.key === "paid" ? (o.paymentStatus === "paid" || rank > 1) : done;
+              const isDone = s.key === "paid" ? paidOk : done;
+              return (
+                <div key={s.key}>
+                  <div className="flex items-center gap-2.5" style={current ? {} : isDone ? {} : { opacity: 0.5 }}>
+                    <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full" style={isDone ? { background: "#5C8A6B" } : current ? { background: "#C5871F", boxShadow: "0 0 0 4px #FBF1DD" } : { border: "2px solid #D8CDBC" }}>
+                      {(isDone || current) && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+                    </span>
+                    <span className="text-[12.5px]" style={{ fontWeight: current || isDone ? 700 : 500, color: current ? "#946312" : isDone ? "#2A2019" : "#9A8E7E" }}>{current ? `${s.label} الآن` : s.label}</span>
+                    <span className="mr-auto text-[10.5px] text-[#A99D8D]">{s.key === "received" ? minutesAgo(o.createdAt) : current ? minutesAgo(o.createdAt) : ""}</span>
+                  </div>
+                  {i < steps.length - 1 && <div className="my-0.5 mr-[11px] h-3 w-0.5" style={{ background: rank > s.rank ? "#5C8A6B" : current ? "#C5871F" : "#ECE3D5" }} />}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* items — money from the order row, never recomputed */}
+      <div className="border-b border-[#F0E9DD] p-4">
+        <div className="mb-2.5 text-[11.5px] font-bold text-[#2A2019]">الأصناف</div>
+        <div className="flex flex-col gap-2">
+          {o.items.map((it, i) => (
+            <div key={i} className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[12.5px] font-semibold text-[#2A2019]">{it.name} ×{toAr(it.quantity)}</div>
+                {(it.variant || (it.choices?.length ?? 0) > 0 || (it.modifiers?.length ?? 0) > 0) && (
+                  <div className="mt-0.5 text-[10.5px] text-[#946312]">{[it.variant, ...(it.choices ?? []), ...(it.modifiers ?? [])].filter(Boolean).join(" · ")}</div>
+                )}
+              </div>
+              <span className="text-[12.5px] font-semibold text-[#2A2019]">{money(it.total)}</span>
+            </div>
+          ))}
+          <div className="mt-1 flex justify-between border-t border-dashed border-[#EBE2D3] pt-2.5">
+            <span className="text-[13px] font-bold text-[#2A2019]">الإجمالي</span>
+            <span className="text-[13px] font-bold text-[#BE5238]">{money(o.total)} {o.currency}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* customer note */}
+      {o.notes && (
+        <div className="border-b border-[#F0E9DD] p-4">
+          <div className="rounded-[11px] border border-[#EFDDB6] bg-[#FBF1DD] px-3 py-2.5">
+            <div className="mb-1 text-[10.5px] font-bold text-[#946312]">ملاحظة العميل</div>
+            <span className="text-[11.5px] text-[#6B5A33]">{o.notes}</span>
+          </div>
+        </div>
+      )}
+
+      {/* actions */}
+      <div className="p-4">
+        {n ? (
+          <button onClick={() => onAdvance(o)} className="mb-2.5 w-full rounded-[11px] bg-[#BE5238] py-2.5 text-[13px] font-bold text-white shadow-[0_8px_18px_-8px_rgba(190,82,56,.5)] transition hover:bg-[#A8472F]">{ADVANCE_LABEL[n] ?? "تقدّم"}</button>
+        ) : (
+          <div className="mb-2.5 w-full rounded-[11px] bg-[#EFEAE0] py-2.5 text-center text-[13px] font-semibold text-[#9A8E7E]">{o.orderStatus === "cancelled" ? "ملغي" : "مكتمل"}</div>
+        )}
+        <div className="flex gap-2.5">
+          <button onClick={() => printTicket(o.id, printWidth)} className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-white py-2.5 text-[12.5px] font-semibold text-[#514538] transition hover:border-[#E0C4B6]"><Printer className="h-4 w-4" /> طباعة</button>
+          {o.conversationId ? (
+            <Link href="/conversations" className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-white py-2.5 text-[12.5px] font-semibold text-[#514538] transition hover:border-[#E0C4B6]"><MessageCircle className="h-4 w-4" /> فتح المحادثة</Link>
+          ) : (
+            <span className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-[#F7F2EA] py-2.5 text-[12.5px] font-semibold text-[#A99D8D]">فتح المحادثة <span className="rounded bg-white px-1 text-[9px]">قريبًا</span></span>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
