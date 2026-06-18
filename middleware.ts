@@ -6,10 +6,14 @@
 // Phase 6: host-aware subdomain split (lib/domains.ts). On a tenant STOREFRONT
 // host (e.g. order.wesayachicken.com) the root "/" is internally rewritten to
 // the EXISTING public /order/[slug] page for that tenant — the customer never
-// sees /order/wesaya, the hostname maps to the tenant. The OPERATOR host
-// (app.wesayachicken.com) and every other host (maitre.chat, *.vercel.app) fall
-// through to the normal auth flow UNCHANGED — path-based /order/[slug] and the
-// operator app keep working exactly as today.
+// sees /order/wesaya, the hostname maps to the tenant. Every other host
+// (maitre.chat, *.vercel.app) falls through to the normal auth flow UNCHANGED.
+//
+// Operator host "/" (e.g. app.wesayachicken.com): the root marketing landing is
+// MaitreAI's OWN company site (logo, City Baker legal footer) and must not show
+// on a client's operator domain. There, "/" redirects to /login; the auth helper
+// then bounces an already-signed-in operator from /login to /dashboard (existing
+// behavior), so authed staff still reach their app. maitre.chat keeps the landing.
 // ============================================================================
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -30,7 +34,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
-  // Everything else (operator host + all current hosts): unchanged behavior.
+  // Operator host root: skip MaitreAI's marketing landing — send staff to login.
+  // (An authed operator hitting /login is redirected to /dashboard by the auth
+  // helper, so this never strands a logged-in user.) Applies even in demo mode so
+  // the company landing never leaks onto the client's operator domain.
+  if (mapping?.kind === "operator" && request.nextUrl.pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  // Everything else (all current hosts): unchanged behavior.
   if (!isSupabaseConfigured()) return NextResponse.next();
   return updateSession(request);
 }
