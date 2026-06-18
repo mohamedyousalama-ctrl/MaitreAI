@@ -177,9 +177,9 @@ export default function OperatorHomePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_248px]">
+      <div className="flex flex-col gap-4 lg:flex-row">
         {/* ============ CENTER ============ */}
-        <div className="order-2 min-w-0 xl:order-1">
+        <div className="order-1 min-w-0 flex-1 lg:order-2">
 
           {/* CONTROL STRIP */}
           <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-[13px] border border-[#E2E8F0] bg-white px-3 py-2">
@@ -301,7 +301,7 @@ export default function OperatorHomePage() {
         </div>
 
         {/* ============ RIGHT RAIL ============ */}
-        <aside className="order-1 space-y-3 rounded-2xl border border-[#E2E8F0] bg-white p-3.5 xl:order-2">
+        <aside className="order-2 space-y-3 rounded-2xl border border-[#E2E8F0] bg-white p-3.5 lg:order-1 lg:w-[248px] lg:flex-none">
           {/* live indicator */}
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-[11px] text-[#64748B]">
