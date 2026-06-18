@@ -10,6 +10,9 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ["var(--font-arabic)", "Cairo", "Tajawal", "system-ui", "sans-serif"],
+        // Wesaya storefront type (loaded via Google Fonts <link> on /order/[slug])
+        cairo: ['"Cairo"', "var(--font-arabic)", "sans-serif"],
+        baloo: ['"Baloo Bhaijaan 2"', '"Cairo"', "sans-serif"],
       },
       colors: {
         // Module accent colors
@@ -23,13 +26,19 @@ const config: Config = {
         brain: "#059669", // emerald
         customers: "#06b6d4", // cyan
         settings: "#475569", // slate
-        // Wesaya storefront brand (public /order/[slug])
-        "wesaya-red": "#D81E1E",
-        "wesaya-red-dark": "#B81818",
+        // Wesaya storefront brand (public /order/[slug]) — Claude-Design mockup palette
+        "wesaya-red": "#D62300",
+        "wesaya-red-dark": "#9E1B0E",
+        "wesaya-gold": "#F0A81E",
+        "wesaya-cream": "#FBF3E7",
+        "wesaya-tint": "#FFF2EC",
+        "wesaya-line": "#ECE0CE",
+        "wesaya-ink": "#26190F",
+        "wesaya-green": "#1E8A52",
+        "wesaya-muted": "#8C7B71",
+        // kept for the checkout/customizer (PR-B will retoken those)
         "wesaya-yellow": "#FFD400",
         "wesaya-yellow-soft": "#FFF3C4",
-        "wesaya-cream": "#FBF7EF",
-        "wesaya-ink": "#2C2C2A",
         "wesaya-brand-ink": "#5A1010",
       },
       boxShadow: {
