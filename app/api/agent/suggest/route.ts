@@ -34,7 +34,17 @@ export async function POST(req: Request) {
   const override = body.text ? String(body.text) : "";
   if (!conversationId) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
-  const { data: r } = await supabase.from("restaurants").select("*").eq("id", restaurantId).single();
+  // Explicit columns (NOT select("*")): this runs under the user-session client,
+  // for which the secret credential columns (wa_access_token_enc /
+  // wa_app_secret_enc) are grant-revoked — select("*") would fail. List only the
+  // restaurant fields this draft path reads below.
+  const { data: r } = await supabase
+    .from("restaurants")
+    .select(
+      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,auto_accept_orders,agent_persona_name,tax_mode,tax_rate"
+    )
+    .eq("id", restaurantId)
+    .single();
   if (!r) return NextResponse.json({ error: "restaurant_not_found" }, { status: 404 });
   const row = r as Record<string, unknown>;
 

@@ -175,7 +175,15 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
     faqs,
     promotions,
   ] = await Promise.all([
-    supabase.from("restaurants").select("*").eq("id", restaurantId).single(),
+    // Explicit columns (NOT select("*")): loadBrain runs under both service-role
+    // (the WhatsApp webhook) and user-session clients, and the secret credential
+    // columns (wa_access_token_enc / wa_app_secret_enc) are column-grant-revoked
+    // for anon/authenticated. Brain only needs the profile fields toProfile reads.
+    supabase
+      .from("restaurants")
+      .select("name,logo_url,phone,email,currency,default_language,timezone,business_type")
+      .eq("id", restaurantId)
+      .single(),
     supabase.from("branches").select("*").eq("restaurant_id", restaurantId).order("created_at"),
     supabase.from("menu_categories").select("*").eq("restaurant_id", restaurantId).order("sort"),
     supabase.from("menu_items").select("*").eq("restaurant_id", restaurantId).order("created_at"),
