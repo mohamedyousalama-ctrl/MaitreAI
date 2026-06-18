@@ -11,7 +11,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
-import { sendWhatsAppText, sendWhatsAppInteractive } from "./outbound";
+import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
 import { sendReceiptToCustomer } from "./send-receipt";
 import type { LlmMessage } from "@/lib/ai/llm/types";
@@ -56,6 +56,33 @@ async function noteToTimeline(
     status: "sent",
     meta,
   });
+}
+
+async function sendRequestedPhotos(
+  admin: SupabaseClient,
+  restaurantId: string,
+  conversationId: string,
+  phone: string,
+  photoRequests: { imageUrl: string; caption: string; name: string }[],
+  lastInboundAtMs: number
+): Promise<void> {
+  for (const photo of photoRequests.slice(0, 4)) {
+    const send = await sendWhatsAppImageLink({
+      to: phone,
+      imageUrl: photo.imageUrl,
+      caption: photo.caption,
+      lastInboundAtMs,
+    });
+    if (send.status === "failed") {
+      await noteToTimeline(
+        admin,
+        restaurantId,
+        conversationId,
+        `تعذّر إرسال صورة ${photo.name} عبر واتساب: ${send.error ?? "خطأ غير معروف"}.`,
+        { kind: "photo_send_error", itemName: photo.name, imageUrl: photo.imageUrl, attempts: send.attempts }
+      );
+    }
+  }
 }
 
 export async function respondAndSendWhatsApp(
@@ -176,6 +203,9 @@ export async function respondAndSendWhatsApp(
   }
 
   if (send.status === "sent") {
+    if (outcome.photoRequests.length) {
+      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs);
+    }
     if (outcome.replyMessageId) {
       await admin
         .from("messages")
@@ -187,6 +217,9 @@ export async function respondAndSendWhatsApp(
 
   if (send.status === "skipped") {
     // Test mode (no credentials): the reply is persisted, just not transmitted.
+    if (outcome.photoRequests.length) {
+      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs);
+    }
     return { status: "responded", reply: outcome.reply, escalate: outcome.escalate, sendStatus: "skipped" };
   }
 

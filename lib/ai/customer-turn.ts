@@ -17,7 +17,7 @@ import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
-import type { OrderDraft, Presentation, ToolSignal } from "@/lib/ai/tools";
+import type { OrderDraft, PhotoRequest, Presentation, ToolSignal } from "@/lib/ai/tools";
 import type { AiToneConfig } from "@/lib/types";
 import { dialectProfile } from "@/lib/ai/dialect";
 
@@ -48,6 +48,7 @@ export interface CustomerTurnOutcome {
   draft: OrderDraft;
   signals: ToolSignal[];
   presentation: Presentation | null;
+  photoRequests: PhotoRequest[];
   toolNames: string[];
   model: string;
   adapter: "claude" | "mock";
@@ -183,7 +184,13 @@ export async function runCustomerTurn(
         sender: "ai",
         text: result.reply,
         status: "sent",
-        meta: { model: result.model, escalate: result.escalate, draft: result.draft, presentation: result.presentation },
+        meta: {
+          model: result.model,
+          escalate: result.escalate,
+          draft: result.draft,
+          presentation: result.presentation,
+          photoRequests: result.photoRequests,
+        },
       })
       .select("id")
       .single();
@@ -239,6 +246,7 @@ export async function runCustomerTurn(
     draft: result.draft,
     signals: result.signals,
     presentation: result.presentation,
+    photoRequests: result.photoRequests,
     toolNames: result.toolNames,
     model: result.model,
     adapter: result.adapter,

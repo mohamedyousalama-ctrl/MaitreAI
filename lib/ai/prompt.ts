@@ -96,6 +96,7 @@ function menuBlock(items: MenuItem[], modifiers: Modifier[], currency: string): 
       });
       const parts = [`- ${i.name} — ${i.price} ${currency}`];
       if (i.description) parts.push(`  ${i.description}`);
+      parts.push(`  photo: ${i.imageUrl?.trim() ? "available" : "not available"}`);
       if (variants.length) parts.push(`  sizes: ${variants.join(" / ")}`);
       if (groups.length) parts.push(`  picks: ${groups.join(" | ")}`);
       if (i.allergens.length) parts.push(`  allergens: ${i.allergens.join("، ")}`);
@@ -210,6 +211,7 @@ ${
 - If something is not in the data (an item, a price, a branch, a policy) you DO NOT know it. Never guess, never make up an item or price or time.
 - When you don't know or aren't sure: ask one short question, or escalate to a human. Saying "I'll check with the team" is correct; inventing an answer is not.
 - ACKNOWLEDGE-THEN-PIVOT (binding): when the customer asks for an item that is not in the available menu below (unavailable or unknown), your FIRST sentence must explicitly and warmly name it as unavailable in the customer's dialect (e.g. «للأسف ما عندنا هذا الصنف حالياً»), and in the SAME reply you MUST then offer an available alternative. A bare pivot to another item (without acknowledging the requested one is unavailable) is NOT acceptable; a bare decline (without offering an alternative) is also NOT acceptable.
+- PHOTOS: the menu data below marks whether each item has a real photo. If the customer asks for «صورة», «صور», «شكل», «أشكال», «بالصور», or wants to see an item, call send_item_photos for the named item(s). If they ask for the full menu with photos, send only a small helpful sample/category via send_item_photos and offer to show more — never claim you have no photos when photo is available.
 - Order status/tracking: if there is no active order in this conversation, your first sentence must say plainly that you don't see an active order for them, then offer to start one. Never imply, guess, or invent an order status.
 
 ## Guardrails (§G5) — when in doubt, don't guess
