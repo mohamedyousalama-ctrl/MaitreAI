@@ -3,82 +3,54 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
-import { useRestaurantStore, useHasHydrated } from "@/lib/store";
-import { seedProfile } from "@/lib/seed-data";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
+import { Settings } from "lucide-react";
 
-// Warm-hospitality palette (Amendment 04 §M1): cream surfaces, charcoal ink,
-// terracotta accent. Header app name = «مساعد المطعم». Terminology per the
-// Arabic guide (no «عقل المطعم»/«المطبخ»/«مركز مراجعة الذكاء»).
+// Bright-Corporate operator rail (mockup): a thin 64px icon-only column on the
+// right (RTL start). Blue «م» logo tile on top, icon-only nav (active = blue
+// tint #EEF3FF + blue icon; idle = gray, hover #F1F4F9), الإعدادات pinned at the
+// bottom. Real navigation targets unchanged — restyle only. Tooltips via title.
 export function AppSidebar() {
   const pathname = usePathname();
-  const hydrated = useHasHydrated();
-  const name = useRestaurantStore((s) => s.profile.name);
-  const restaurantName = hydrated ? name : seedProfile.name;
-  const configured = isSupabaseConfigured();
   const role = useRole();
-  const items = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
+  const all = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
+  const top = all.filter((i) => i.href !== "/settings");
+  const settings = all.find((i) => i.href === "/settings");
+
+  const isActive = (href: string, match?: string[]) =>
+    (match ?? [href]).some((m) => pathname === m || pathname.startsWith(m + "/"));
+
+  const Item = ({ href, label, Icon, active }: { href: string; label: string; Icon: typeof Settings; active: boolean }) => (
+    <Link
+      href={href}
+      title={label}
+      className={cn(
+        "flex h-11 w-11 items-center justify-center rounded-[13px] transition-colors",
+        active ? "bg-[#EEF3FF] text-[#2563EB]" : "text-[#94A3B8] hover:bg-[#F1F4F9] hover:text-[#475569]"
+      )}
+    >
+      <Icon className="h-[22px] w-[22px]" strokeWidth={1.9} />
+    </Link>
+  );
 
   return (
-    <aside className="hidden h-screen w-72 shrink-0 flex-col border-l border-[#ece0d2] bg-white lg:flex">
-      {/* Brand */}
-      <div className="flex items-center gap-3 px-6 py-5">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-mark.svg" alt="MaitreAI" width={44} height={44} className="h-11 w-11" />
-        <div>
-          <h1 className="text-lg font-bold leading-tight text-[#2a211b]">مساعد المطعم</h1>
-          <p className="text-xs text-[#9b8b7c]">{restaurantName}</p>
-        </div>
+    <aside className="hidden h-screen w-16 shrink-0 flex-col items-center border-l border-[#E2E8F0] bg-white py-3.5 lg:flex">
+      {/* Logo tile */}
+      <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-[#2563EB] text-[20px] font-bold text-white shadow-[0_6px_14px_rgba(37,99,235,.4)]">
+        م
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
-        {items.map((item) => {
-          const matches = item.match ?? [item.href];
-          const active = matches.some((m) => pathname === m || pathname.startsWith(m + "/"));
+      {/* Nav (icon-only) */}
+      <nav className="flex flex-1 flex-col items-center gap-1.5">
+        {top.map((item) => {
           const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                active
-                  ? "bg-[#f7efe6] text-[#2a211b]"
-                  : "text-[#6a5c4e] hover:bg-[#faf6ef] hover:text-[#2a211b]"
-              )}
-            >
-              <span
-                className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-lg transition-colors",
-                  active
-                    ? "bg-[#b5502e] text-white shadow-sm"
-                    : "bg-[#efe5d8] text-[#9b8b7c] group-hover:bg-[#e4d8c8]"
-                )}
-              >
-                <Icon className="h-[18px] w-[18px]" />
-              </span>
-              <span className="flex-1">{item.label}</span>
-              {active && <span className="h-2 w-2 rounded-full bg-[#b5502e]" />}
-            </Link>
-          );
+          return <Item key={item.href} href={item.href} label={item.label} Icon={Icon} active={isActive(item.href, item.match)} />;
         })}
       </nav>
 
-      {/* Footer status — truthful (no false connection claims, PRD Amendment 03 F3) */}
-      <div className="border-t border-[#ece0d2] p-4">
-        <div className="flex items-center gap-3 rounded-xl bg-[#faf6ef] px-3 py-3">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#c2a98f]" />
-          </span>
-          <div className="text-xs">
-            <p className="font-semibold text-[#2a211b]">{restaurantName}</p>
-            {!configured && <p className="text-[#9b8b7c]">الوضع التجريبي</p>}
-          </div>
-        </div>
-      </div>
+      {/* Settings pinned bottom */}
+      {settings && <Item href={settings.href} label={settings.label} Icon={settings.icon} active={isActive(settings.href, settings.match)} />}
     </aside>
   );
 }
