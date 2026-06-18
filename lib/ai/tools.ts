@@ -533,7 +533,7 @@ export function executeTool(
       const reason = String(input.reason ?? "");
       ctx.escalation = { reason };
       ctx.signals.push({ type: "escalation", detail: { reason } });
-      return { content: "تم تحويل المحادثة لزميل من الفريق." };
+      return { content: "حوّلت محادثتك لفريق المطعم، وهيردّوا عليك في أقرب وقت 🙏" };
     }
     case "present_menu": {
       const avail = ctx.menuItems.filter((i) => i.available);
