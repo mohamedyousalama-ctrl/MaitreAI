@@ -20,6 +20,7 @@ import {
   ORDER_TOOLS,
   type OrderDraft,
   type Presentation,
+  type PhotoRequest,
   type ToolContext,
   type ToolSignal,
 } from "./tools";
@@ -41,6 +42,8 @@ export interface RespondResult {
   signals: ToolSignal[];
   /** Interactive options the model asked to present (WhatsApp buttons/list), if any. */
   presentation: Presentation | null;
+  /** Real menu photos requested by the model tool. */
+  photoRequests: PhotoRequest[];
   usage: LlmUsage;
   toolNames: string[];
   stopReason: string;
@@ -93,6 +96,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     signals: [],
     escalation: null,
     presentation: null,
+    photoRequests: [],
     taxMode: input.brain.taxMode ?? "inclusive",
     taxRate: input.brain.taxRate ?? 0,
   };
@@ -115,6 +119,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       escalationReason: null,
       signals: ctx.signals,
       presentation: null,
+      photoRequests: ctx.photoRequests,
       usage,
       toolNames,
       stopReason: "tool_finalized",
@@ -177,6 +182,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     escalationReason: ctx.escalation?.reason ?? null,
     signals: ctx.signals,
     presentation: ctx.presentation,
+    photoRequests: ctx.photoRequests,
     usage,
     toolNames,
     stopReason,

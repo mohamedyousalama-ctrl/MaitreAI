@@ -58,6 +58,13 @@ export interface ToolSignal {
   detail: Record<string, unknown>;
 }
 
+export interface PhotoRequest {
+  itemId: string;
+  name: string;
+  imageUrl: string;
+  caption: string;
+}
+
 export interface ToolContext {
   menuItems: MenuItem[];
   modifiers: Modifier[];
@@ -67,6 +74,8 @@ export interface ToolContext {
   escalation: { reason: string } | null;
   /** Last interactive presentation the model asked to show (WhatsApp, S9-2). */
   presentation: Presentation | null;
+  /** Image messages to send after the text/interactive reply. */
+  photoRequests: PhotoRequest[];
   /** Tax mode + rate (Sprint 10). "added" → a VAT line; "inclusive" → no change. */
   taxMode: string;
   taxRate: number;
@@ -129,6 +138,22 @@ export function emptyDraft(currency: string): OrderDraft {
 
 // --- tool definitions (sent to the model) ----------------------------------
 export const ORDER_TOOLS: LlmToolDef[] = [
+  {
+    name: "send_item_photos",
+    description:
+      "Send real dish photos from the menu when the customer asks for a photo, شكل, صورة, images, or menu with photos. " +
+      "Pass exact menu item names when the customer names items. For a broad photo/menu request, omit item_names or pass a category; the system caps images to avoid spam. " +
+      "Only real menu image_url photos are sent; if none exist, explain briefly and offer the menu.",
+    input_schema: {
+      type: "object",
+      properties: {
+        item_names: { type: "array", items: { type: "string" }, description: "Exact menu item names to send photos for" },
+        category: { type: "string", description: "Optional category to sample photos from" },
+        max_count: { type: "integer", minimum: 1, maximum: 5, description: "Maximum photos to send; system caps at 4" },
+      },
+      additionalProperties: false,
+    },
+  },
   {
     name: "add_to_order",
     description:
@@ -231,7 +256,7 @@ export const ORDER_TOOLS: LlmToolDef[] = [
 
 /** Subset available when order-building is disabled (closed / non-order modes). */
 export const NON_ORDER_TOOLS: LlmToolDef[] = ORDER_TOOLS.filter(
-  (t) => t.name === "escalate_to_human"
+  (t) => t.name === "escalate_to_human" || t.name === "send_item_photos"
 );
 
 // --- helpers ----------------------------------------------------------------
@@ -249,6 +274,14 @@ function findItem(menu: MenuItem[], name: string): MenuItem | undefined {
     menu.find((i) => norm(i.name) === n) ||
     menu.find((i) => norm(i.name).includes(n) || n.includes(norm(i.name)))
   );
+}
+
+function hasPhoto(item: MenuItem): boolean {
+  return typeof item.imageUrl === "string" && item.imageUrl.trim().length > 0;
+}
+
+function photoCaption(item: MenuItem, currency: string): string {
+  return `${item.name} — ${item.price} ${currency}`;
 }
 
 function recompute(ctx: ToolContext): void {
@@ -322,6 +355,37 @@ export function executeTool(
 ): ToolResult {
   const d = ctx.draft;
   switch (name) {
+    case "send_item_photos": {
+      const requestedNames = Array.isArray(input.item_names) ? (input.item_names as unknown[]).map(String).filter((x) => x.trim()) : [];
+      const category = String(input.category ?? "").trim();
+      const maxCount = Math.min(4, Math.max(1, Math.floor(Number(input.max_count ?? 3)) || 3));
+      const available = ctx.menuItems.filter((item) => item.available);
+      const selected = requestedNames.length
+        ? requestedNames.map((itemName) => findItem(available, itemName)).filter((item): item is MenuItem => !!item)
+        : available.filter((item) => !category || norm(item.category) === norm(category) || norm(item.category).includes(norm(category)));
+      const unique = [...new Map(selected.map((item) => [item.id, item])).values()];
+      const withPhotos = unique.filter(hasPhoto).slice(0, maxCount);
+
+      if (!withPhotos.length) {
+        const missing = requestedNames.length ? ` لـ«${requestedNames[0]}»` : "";
+        ctx.signals.push({ type: "missing_data", detail: { reason: "photo_missing", requested: requestedNames, category } });
+        return {
+          content: `للأسف مش لاقي صورة${missing} دلوقتي. أقدر أعرضلك المنيو أو أرشحلك أقرب صنف متاح.`,
+          isError: true,
+        };
+      }
+
+      ctx.photoRequests.push(
+        ...withPhotos.map((item) => ({
+          itemId: item.id,
+          name: item.name,
+          imageUrl: item.imageUrl.trim(),
+          caption: photoCaption(item, d.currency),
+        }))
+      );
+      const suffix = unique.length > withPhotos.length || selected.length > withPhotos.length ? " وبعتلك كام صورة بدل ما أزحم الشات." : ".";
+      return { content: `تمام، هبعتلك ${withPhotos.length === 1 ? "الصورة" : `${withPhotos.length} صور`}${suffix}` };
+    }
     case "add_to_order": {
       const itemName = String(input.item_name ?? "");
       const qty = Math.max(1, Math.floor(Number(input.quantity ?? 1)) || 1);

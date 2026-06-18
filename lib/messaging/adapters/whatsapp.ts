@@ -288,6 +288,17 @@ export function buildWhatsAppImageBody(to: string, mediaId: string, caption?: st
   };
 }
 
+/** Image message body referencing a public image URL. */
+export function buildWhatsAppImageLinkBody(to: string, link: string, caption?: string) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "image",
+    image: { link, ...(caption ? { caption } : {}) },
+  };
+}
+
 /** Template message body (the only way to message outside the 24h window). */
 export function buildWhatsAppTemplateBody(
   to: string,
