@@ -10,6 +10,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
+import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
 import { sendReceiptToCustomer } from "./send-receipt";
@@ -18,6 +19,7 @@ import type { LlmMessage } from "@/lib/ai/llm/types";
 export type RespondAndSendStatus =
   | "responded"
   | "skipped_takeover"
+  | "skipped_mode"
   | "skipped_no_customer_msg"
   | "skipped_not_found"
   | "send_failed"
@@ -73,6 +75,15 @@ export async function respondAndSendWhatsApp(
   // Takeover (Amendment 03 §E): a human owns this thread — the Brain stays out.
   if ((conv.owner as string) === "human") return { status: "skipped_takeover" };
 
+  // Mode gate (incident control, §F): only auto-reply in modes that allow it.
+  // A tenant flipped to setup/paused leaves the inbound for human handling — no
+  // auto-reply — while test/live (and closed) reply normally. The stored
+  // agent_mode (setup|test|live|paused) maps onto SystemMode; a missing value
+  // defaults to live so the existing reply path is unchanged.
+  const { data: rest } = await admin.from("restaurants").select("agent_mode").eq("id", restaurantId).single();
+  const agentMode = ((rest?.agent_mode as string) || "live") as SystemMode;
+  if (!modeAllowsAgentReply(agentMode)) return { status: "skipped_mode" };
+
   const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
 
   // 2. History + the customer message to answer (last inbound), from the DB —
@@ -82,9 +93,14 @@ export async function respondAndSendWhatsApp(
     .from("messages")
     .select("sender,text,created_at")
     .eq("conversation_id", conversationId)
-    .order("created_at")
+    .order("created_at", { ascending: false })
     .limit(40);
-  const rows = (msgs ?? []) as { sender: string; text: string | null; created_at: string }[];
+  // Fetch the NEWEST 40 (descending) then reverse to chronological (oldest→
+  // newest). The previous ascending+limit(40) returned the OLDEST 40, so in a
+  // long thread lastIndexOf("customer") resolved to message ~#40 — the agent
+  // kept answering a stale message and looped. Reversing makes the window the
+  // last 40 in order, so the final "customer" row IS the latest inbound.
+  const rows = ([...(msgs ?? [])] as { sender: string; text: string | null; created_at: string }[]).reverse();
   const lastCustomerIdx = rows.map((m) => m.sender).lastIndexOf("customer");
   if (lastCustomerIdx < 0) return { status: "skipped_no_customer_msg" };
   const userMessage = (rows[lastCustomerIdx].text ?? "").trim();
