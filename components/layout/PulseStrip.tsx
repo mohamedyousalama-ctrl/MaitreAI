@@ -2,11 +2,11 @@
 
 // ============================================================================
 // MaitreAI — Pulse strip (Amendment 04 §M2): the always-visible truth bar.
-// Bright-Corporate blue reskin. Pinned on every main screen EXCEPT /dashboard
-// (the redesigned Home has its own control strip + KPI row, so the strip would
-// be redundant there). Every value is truth-driven (F3): open/agent are the
-// operator's own toggles; escalations / today's orders / revenue are read from
-// live store state; channel dots show a known or honest-unknown state.
+// Terracotta reskin. Pinned on every main screen EXCEPT /dashboard (the
+// redesigned Home owns the open/assistant controls + KPIs there). Every value is
+// truth-driven (F3): open/agent are the operator's own toggles; escalations /
+// today's orders / revenue are read from live store state; channel dots show a
+// known or honest-unknown state.
 // ============================================================================
 
 import { useOpsStore } from "@/lib/ops-store";
@@ -27,9 +27,9 @@ function startOfToday(): number {
 }
 
 function Dot({ label, state }: { label: string; state: "ok" | "warn" | "off" }) {
-  const color = state === "ok" ? "#16A34A" : state === "warn" ? "#F59E0B" : "#CBD5E1";
+  const color = state === "ok" ? "#5C8A6B" : state === "warn" ? "#C5871F" : "#C9BFAE";
   return (
-    <span className="flex items-center gap-1.5 text-xs text-[#64748B]" title={label}>
+    <span className="flex items-center gap-1.5 text-xs text-[#7C7163]" title={label}>
       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
       {label}
     </span>
@@ -57,18 +57,18 @@ export function PulseStrip() {
   const whatsappLive = branches.some((b) => b.whatsappConnected);
 
   const banner = !configured
-    ? { text: "الوضع التجريبي — بيانات محلية", bg: "#EEF3FF", fg: "#1D4ED8" }
+    ? { text: "الوضع التجريبي — بيانات محلية", bg: "#F7F2EA", fg: "#7C7163" }
     : !agentEnabled
-    ? { text: "المساعد متوقف — لا يرد على العملاء", bg: "#FEF2F2", fg: "#BE123C" }
+    ? { text: "المساعد متوقف — لا يرد على العملاء", bg: "#FBEAE5", fg: "#BE5238" }
     : !isOpen
-    ? { text: "المطعم مغلق حالياً — لا تُستقبل الطلبات", bg: "#FEF2F2", fg: "#BE123C" }
+    ? { text: "المطعم مغلق حالياً — لا تُستقبل الطلبات", bg: "#FBEAE5", fg: "#BE5238" }
     : null;
 
   // The Home (/dashboard) owns these controls — don't duplicate the strip there.
   if (pathname === "/dashboard" || !hydrated) return null;
 
   return (
-    <div className="border-b border-[#E2E8F0] bg-white">
+    <div className="border-b border-[#F0E9DD] bg-white">
       {banner && (
         <div className="px-4 py-1.5 text-center text-xs font-semibold" style={{ backgroundColor: banner.bg, color: banner.fg }}>
           {banner.text}
@@ -79,7 +79,7 @@ export function PulseStrip() {
           onClick={() => setOpen(!isOpen)}
           className={cn(
             "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors",
-            isOpen ? "bg-[#ECFDF3] text-[#15803D]" : "bg-[#FEF2F2] text-[#BE123C]"
+            isOpen ? "bg-[#EAF1E9] text-[#436B50]" : "bg-[#FBEAE5] text-[#BE5238]"
           )}
         >
           <Power className="h-3.5 w-3.5" />
@@ -90,20 +90,20 @@ export function PulseStrip() {
           onClick={() => setAgentEnabled(!agentEnabled)}
           className={cn(
             "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors",
-            agentEnabled ? "bg-[#EEF3FF] text-[#1D4ED8]" : "bg-[#F1F5F9] text-[#64748B]"
+            agentEnabled ? "bg-[#F7EBD2] text-[#946312]" : "bg-[#F7F2EA] text-[#7C7163]"
           )}
         >
           <Bot className="h-3.5 w-3.5" />
           {agentEnabled ? "المساعد يعمل" : "المساعد متوقف"}
         </button>
 
-        <span className="mx-1 h-5 w-px shrink-0 bg-[#E2E8F0]" />
+        <span className="mx-1 h-5 w-px shrink-0 bg-[#F0E9DD]" />
 
         <Link
           href="/conversations"
           className={cn(
             "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold",
-            escalations > 0 ? "bg-[#FEF2F2] text-[#E11D48]" : "bg-[#F1F4F9] text-[#64748B]"
+            escalations > 0 ? "bg-[#FBEAE5] text-[#BE5238]" : "bg-[#F7F2EA] text-[#7C7163]"
           )}
           title="محادثات تحتاج تدخل بشري"
         >
@@ -111,27 +111,27 @@ export function PulseStrip() {
           تصعيدات: {escalations}
         </Link>
 
-        <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#F1F4F9] px-2.5 py-1.5 text-xs font-semibold text-[#64748B]" title="طلبات اليوم">
+        <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#F7F2EA] px-2.5 py-1.5 text-xs font-semibold text-[#7C7163]" title="طلبات اليوم">
           <ShoppingBag className="h-3.5 w-3.5" />
           طلبات اليوم: {ordersCount}
         </span>
 
         {role !== "operation" && (
-          <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#F1F4F9] px-2.5 py-1.5 text-xs font-semibold text-[#64748B]" title="إيرادات اليوم">
+          <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#F7F2EA] px-2.5 py-1.5 text-xs font-semibold text-[#7C7163]" title="إيرادات اليوم">
             <Banknote className="h-3.5 w-3.5" />
             {revenue} {currency}
           </span>
         )}
 
-        <span className="mx-1 h-5 w-px shrink-0 bg-[#E2E8F0]" />
+        <span className="mx-1 h-5 w-px shrink-0 bg-[#F0E9DD]" />
 
         <Link href="/settings" className="flex shrink-0 items-center gap-3 pl-1">
           <Dot label={whatsappLive ? "واتساب متصل" : "واتساب غير متصل"} state={whatsappLive ? "ok" : "off"} />
-          <span className="flex items-center gap-1.5 text-xs text-[#64748B]" title="الطابعة غير مهيأة بعد">
-            <Printer className="h-3.5 w-3.5 text-[#CBD5E1]" />
+          <span className="flex items-center gap-1.5 text-xs text-[#7C7163]" title="الطابعة غير مهيأة بعد">
+            <Printer className="h-3.5 w-3.5 text-[#C9BFAE]" />
           </span>
-          <span className="flex items-center gap-1.5 text-xs text-[#64748B]" title="الدفع في الوضع التجريبي">
-            <CreditCard className="h-3.5 w-3.5 text-[#F59E0B]" />
+          <span className="flex items-center gap-1.5 text-xs text-[#7C7163]" title="الدفع في الوضع التجريبي">
+            <CreditCard className="h-3.5 w-3.5 text-[#C5871F]" />
           </span>
         </Link>
       </div>
