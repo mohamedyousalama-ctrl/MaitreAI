@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Branch, DeliveryArea, MenuItem, Modifier } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
-import { UtensilsCrossed, Plus, X, Minus, Trash2, ShoppingBag, MapPin } from "lucide-react";
+import { UtensilsCrossed, X, ShoppingBag, MapPin, ChevronLeft } from "lucide-react";
 import { ItemCustomizer } from "./ItemCustomizer";
 import {
   activeVariants,
@@ -23,6 +23,17 @@ import {
 
 // Client-only: react-leaflet breaks on the server, so the map is never SSR'd.
 const LocationPicker = dynamic(() => import("./LocationPicker"), { ssr: false });
+
+// Per-tenant desktop hero headline override (a dedicated domain shows its own
+// line; everyone else falls back to the restaurant name). Easily replaceable by
+// a future per-restaurant "hero tagline" field. "\n" splits the headline lines.
+const HERO_TAGLINES: Record<string, string> = {
+  wesaya: "ألذّ دجاج مقلي\nوبيتزا في الهرم",
+};
+
+// Shared checkout field styling (brand: white, soft line border, red focus).
+const inputCls =
+  "w-full rounded-[13px] border-[1.5px] border-wesaya-line bg-white px-3.5 py-3 text-sm text-wesaya-ink outline-none transition focus:border-wesaya-red/50";
 
 export function StorefrontMenu({
   slug,
@@ -44,6 +55,7 @@ export function StorefrontMenu({
   const [cart, setCart] = useState<CartLine[]>([]);
   const [openItem, setOpenItem] = useState<MenuItem | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState<"cart" | "checkout">("cart"); // presentational step within the drawer
   const [branchOpen, setBranchOpen] = useState(false);
   const [activeCat, setActiveCat] = useState("all"); // category-pill filter (presentational)
   const [fulfillment, setFulfillment] = useState<"delivery" | "pickup">("delivery");
@@ -104,6 +116,17 @@ export function StorefrontMenu({
     [branches, branchId]
   );
 
+  // Desktop hero headline. Per-tenant override map so a dedicated domain can show
+  // its own line; other tenants fall back to their name. A future per-restaurant
+  // "hero tagline" field can replace this map. Wesaya (order.wesayachicken.com).
+  const heroHeadline = HERO_TAGLINES[slug.toLowerCase()] ?? restaurantName;
+
+  // A line whose price is "حسب الاختيار" (no variants, base 0) → checkout note.
+  const hasNoBaseItem = useMemo(
+    () => cart.some((l) => { const it = itemById.get(l.itemId); return it ? activeVariants(it).length === 0 && it.price === 0 : false; }),
+    [cart, itemById]
+  );
+
   const subtotal = cartSubtotal(cart, itemById, modifiers);
   const zonesForBranch = useMemo(
     () => deliveryAreas.filter((z) => !z.branchId || z.branchId === branchId),
@@ -135,6 +158,16 @@ export function StorefrontMenu({
   const setQty = (lineId: string, q: number) =>
     setCart((c) => c.map((l) => (l.lineId === lineId ? { ...l, quantity: Math.max(1, q) } : l)));
   const removeLine = (lineId: string) => setCart((c) => c.filter((l) => l.lineId !== lineId));
+  const openCart = () => { setCheckoutStep("cart"); setCartOpen(true); };
+  const closeCart = () => { setCartOpen(false); setCheckoutStep("cart"); if (confirmation) setConfirmation(null); };
+  const orderAgain = () => { setConfirmation(null); setCheckoutStep("cart"); setCartOpen(false); };
+  const canConfirm =
+    !submitting &&
+    !!customerName.trim() &&
+    !!customerPhone.trim() &&
+    !!branchId &&
+    !(fulfillment === "delivery" && (!zoneId || !address.trim())) &&
+    cart.length > 0;
   const submitOrder = async () => {
     setCheckoutError("");
     setSubmitting(true);
@@ -208,7 +241,7 @@ export function StorefrontMenu({
               <FulfillmentToggle fulfillment={fulfillment} setFulfillment={setFulfillment} />
             </div>
             <button
-              onClick={() => count > 0 && setCartOpen(true)}
+              onClick={() => count > 0 && openCart()}
               className="relative hidden h-11 w-11 items-center justify-center rounded-[13px] bg-wesaya-ink text-lg text-white lg:flex"
               aria-label="السلة"
             >
@@ -244,7 +277,7 @@ export function StorefrontMenu({
             <span className="mb-4 inline-flex items-center gap-1.5 rounded-[10px] bg-white/[0.18] px-3.5 py-1.5 text-[12.5px] font-bold">
               ⭐ الأكثر طلبًا — الوجبات العائلية
             </span>
-            <h1 className="font-baloo text-[42px] font-extrabold leading-[1.15]">{restaurantName}</h1>
+            <h1 className="whitespace-pre-line font-baloo text-[42px] font-extrabold leading-[1.15]">{heroHeadline}</h1>
             <p className="mt-3 max-w-[420px] text-[15px] leading-relaxed opacity-90">
               عائلتك تستاهل الأحسن — عروض وصناديق عائلية مميّزة، توصيل سريع أو استلام من الفرع.
             </p>
@@ -430,26 +463,19 @@ export function StorefrontMenu({
         </div>
       )}
 
-      {/* Sticky brand cart bar */}
-      {count > 0 && !cartOpen && (
-        <div className="fixed inset-x-0 bottom-0 z-40 bg-wesaya-red px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-6px_20px_-8px_rgba(0,0,0,0.35)]">
-          <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-            <span className="flex items-center gap-2 text-sm font-bold text-white">
-              <ShoppingBag className="h-5 w-5" />
-              {count} في السلة
-              <span className="text-white/80">·</span>
-              <span className="flex items-baseline gap-1">
-                {formatCurrency(subtotal, currency)}
-                <span className="text-[10px] font-normal text-white/70">تقديري</span>
-              </span>
+      {/* Sticky brand cart bar (mockup: ink button · red count · gold subtotal) */}
+      {count > 0 && !cartOpen && !openItem && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-wesaya-line bg-wesaya-cream px-4 pb-[max(0.9rem,env(safe-area-inset-bottom))] pt-3">
+          <button
+            onClick={openCart}
+            className="mx-auto flex w-full max-w-3xl items-center justify-between rounded-2xl bg-wesaya-ink px-5 py-4 font-baloo text-base font-bold text-white shadow-[0_10px_24px_-8px_rgba(38,25,15,0.5)]"
+          >
+            <span className="flex items-center gap-2.5">
+              <span className="rounded-[9px] bg-wesaya-red px-2.5 py-0.5 text-sm font-extrabold tabular-nums">{count}</span>
+              <span>عرض السلة</span>
             </span>
-            <button
-              onClick={() => setCartOpen(true)}
-              className="shrink-0 rounded-xl bg-wesaya-yellow px-4 py-2.5 text-sm font-extrabold text-wesaya-brand-ink shadow-sm transition hover:brightness-95"
-            >
-              عرض السلة
-            </button>
-          </div>
+            <span className="flex items-center gap-1 text-wesaya-gold">{formatCurrency(subtotal, currency)} ‹</span>
+          </button>
         </div>
       )}
 
@@ -458,208 +484,230 @@ export function StorefrontMenu({
         <ItemCustomizer item={openItem} modifiers={modifiers} currency={currency} onClose={() => setOpenItem(null)} onAdd={addLine} />
       )}
 
-      {/* Cart drawer */}
+      {/* Cart / Checkout / Confirmation drawer (mockup ~278 / ~352 / ~427) */}
       {cartOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
-          <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-wesaya-cream sm:rounded-2xl">
-            <div className="flex items-center justify-between bg-wesaya-red p-4 text-white">
-              <h2 className="flex items-center gap-2 text-lg font-extrabold">
-                <ShoppingBag className="h-5 w-5 text-wesaya-yellow" /> سلة الطلب
-              </h2>
-              <button onClick={() => setCartOpen(false)} aria-label="إغلاق" className="flex h-9 w-9 items-center justify-center rounded-lg text-white/80 hover:bg-white/15">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Single scrollable region: cart lines + the full checkout form, so
-                everything (name/phone/notes/place-order) is reachable on small
-                screens — header stays fixed, body scrolls. */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="space-y-3 p-4">
-              {confirmation ? (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
-                  <p className="text-sm font-semibold text-emerald-800">تم استلام طلبك</p>
-                  <p className="mt-2 text-2xl font-bold text-emerald-950">#{confirmation.orderNumber}</p>
-                  <p className="mt-2 text-sm text-emerald-800">
-                    الإجمالي {formatCurrency(confirmation.total, confirmation.currency)} · الدفع عند الاستلام
-                  </p>
-                </div>
-              ) : cart.length === 0 ? (
-                <p className="py-10 text-center text-sm text-slate-400">السلة فارغة.</p>
-              ) : (
-                cart.map((line) => {
-                  const item = itemById.get(line.itemId);
-                  if (!item) return null;
-                  const opts = selectionSummary(item, line, modifiers);
-                  return (
-                    <div key={line.lineId} className="rounded-xl border border-slate-200 bg-white p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-slate-800">{item.name}</p>
-                          {opts.length > 0 && <p className="mt-0.5 text-xs text-slate-500">{opts.join("، ")}</p>}
-                        </div>
-                        <button onClick={() => removeLine(line.lineId)} aria-label="حذف" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => setQty(line.lineId, line.quantity - 1)} aria-label="إنقاص" className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
-                            <Minus className="h-3.5 w-3.5" />
-                          </button>
-                          <span className="w-5 text-center text-sm font-bold tabular-nums">{line.quantity}</span>
-                          <button onClick={() => setQty(line.lineId, line.quantity + 1)} aria-label="زيادة" className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
-                            <Plus className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                        <span className="text-sm font-bold text-slate-800">{formatCurrency(lineTotal(item, line, modifiers), currency)}</span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {!confirmation && cart.length > 0 && (
-              <div className="space-y-4 border-t border-black/5 bg-white p-4">
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFulfillment("delivery")}
-                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition ${fulfillment === "delivery" ? "border-wesaya-red bg-wesaya-red text-white" : "border-black/10 bg-white text-wesaya-ink hover:bg-wesaya-yellow-soft"}`}
-                  >
-                    توصيل
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFulfillment("pickup")}
-                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition ${fulfillment === "pickup" ? "border-wesaya-red bg-wesaya-red text-white" : "border-black/10 bg-white text-wesaya-ink hover:bg-wesaya-yellow-soft"}`}
-                  >
-                    استلام من الفرع
-                  </button>
-                </div>
-
-                {branches.length > 1 && (
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-500">الفرع</span>
-                    <select
-                      value={branchId}
-                      onChange={(e) => {
-                        setBranchId(e.target.value);
-                        setZoneId("");
-                      }}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                    >
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-
-                {fulfillment === "delivery" && (
-                  <>
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-semibold text-slate-500">منطقة التوصيل</span>
-                      <select
-                        value={zoneId}
-                        onChange={(e) => setZoneId(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                      >
-                        <option value="">اختر منطقة</option>
-                        {zonesForBranch.map((zone) => (
-                          <option key={zone.id} value={zone.id}>
-                            {zone.name} · {formatCurrency(zone.deliveryFee, currency)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {zonesForBranch.length === 0 && (
-                      <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                        لا توجد مناطق توصيل متاحة لهذا الفرع حالياً.
-                      </p>
-                    )}
-                    <div className="space-y-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setMapOpen(true)}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-wesaya-yellow px-3 py-2.5 text-sm font-extrabold text-wesaya-brand-ink shadow-sm transition hover:brightness-95"
-                      >
-                        <MapPin className="h-4 w-4" /> اختر موقعك على الخريطة
-                      </button>
-                      {coords && (
-                        <p className="flex items-center gap-1 text-xs font-semibold text-wesaya-red">
-                          <MapPin className="h-3.5 w-3.5" /> تم تحديد موقعك على الخريطة — يمكنك تعديل العنوان أدناه.
-                        </p>
-                      )}
-                    </div>
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-semibold text-slate-500">العنوان</span>
-                      <textarea
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
-                        rows={3}
-                        className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
-                        placeholder="اكتب العنوان بالتفصيل أو حدّده من الخريطة"
-                      />
-                    </label>
-                  </>
-                )}
-
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-500">الاسم</span>
-                    <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900" />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-500">رقم الهاتف</span>
-                    <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900" inputMode="tel" />
-                  </label>
-                </div>
-
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-500">ملاحظات اختيارية</span>
-                  <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900" />
-                </label>
-
-                <div className="space-y-1 rounded-xl bg-wesaya-yellow-soft/60 p-3">
-                  <div className="flex items-center justify-between text-sm text-wesaya-ink/80">
-                    <span>المجموع</span>
-                    <span>{formatCurrency(subtotal, currency)}</span>
+          <div className="absolute inset-0 bg-black/40" onClick={closeCart} />
+          <div className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-wesaya-cream sm:rounded-2xl">
+            {confirmation ? (
+              /* ===== CONFIRMATION ===== */
+              <div className="flex flex-col gap-[18px] overflow-y-auto px-[18px] pb-8 pt-2">
+                <div className="flex flex-col items-center gap-3.5 px-2.5 pb-2 pt-10 text-center">
+                  <div className="flex h-[84px] w-[84px] items-center justify-center rounded-full bg-wesaya-green text-white shadow-[0_12px_28px_rgba(30,138,82,0.32)] [animation:checkPop_.45s_ease_both]">
+                    <span className="text-[42px] font-extrabold leading-none">✓</span>
                   </div>
-                  <div className="flex items-center justify-between text-sm text-wesaya-ink/80">
-                    <span>التوصيل</span>
-                    <span>{formatCurrency(deliveryFee, currency)}</span>
-                  </div>
-                  <div className="flex items-center justify-between border-t border-wesaya-red/15 pt-2">
-                    <span className="text-sm font-bold text-wesaya-ink">الإجمالي التقديري</span>
-                    <span className="text-xl font-extrabold text-wesaya-red">{formatCurrency(previewTotal, currency)}</span>
-                  </div>
-                  <p className="text-xs text-wesaya-ink/60">الدفع عند الاستلام · سيتم تأكيد الإجمالي من المطعم.</p>
+                  <div className="font-baloo text-[23px] font-extrabold text-wesaya-ink">تم استلام طلبك!</div>
+                  <div className="text-[13.5px] leading-relaxed text-wesaya-muted">شكرًا لطلبك من {restaurantName}. رقم طلبك</div>
+                  <div className="font-baloo text-[26px] font-extrabold tracking-wide text-wesaya-red">#{confirmation.orderNumber}</div>
                 </div>
 
-                {checkoutError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{checkoutError}</p>}
+                <div className="flex flex-col gap-2.5 rounded-[18px] border border-wesaya-line bg-white p-4">
+                  <div className="font-baloo text-[15px] font-bold text-wesaya-ink">ملخّص الطلب</div>
+                  <Row label="المجموع الفرعي" value={formatCurrency(confirmation.subtotal, confirmation.currency)} />
+                  {confirmation.deliveryFee > 0 && (
+                    <Row label="رسوم التوصيل" value={formatCurrency(confirmation.deliveryFee, confirmation.currency)} />
+                  )}
+                  <div className="h-px bg-wesaya-line" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-wesaya-ink">الإجمالي</span>
+                    <span className="font-baloo text-base font-extrabold text-wesaya-red">{formatCurrency(confirmation.total, confirmation.currency)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-[10px] bg-wesaya-cream px-3 py-2.5 text-xs text-wesaya-muted">
+                    <span>🕒</span>
+                    <span>{fulfillment === "delivery" ? "توصيل" : "استلام من الفرع"} · الدفع عند الاستلام — يُؤكَّد طلبك قريبًا على واتساب.</span>
+                  </div>
+                </div>
 
-                <button
-                  type="button"
-                  disabled={
-                    submitting ||
-                    !customerName.trim() ||
-                    !customerPhone.trim() ||
-                    !branchId ||
-                    (fulfillment === "delivery" && (!zoneId || !address.trim()))
-                  }
-                  onClick={submitOrder}
-                  className="w-full rounded-xl bg-wesaya-red px-4 py-3.5 text-base font-extrabold text-white shadow-sm transition hover:bg-wesaya-red-dark disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {submitting ? "جارٍ إرسال الطلب..." : "تأكيد الطلب · الدفع عند الاستلام"}
+                <button onClick={orderAgain} className="rounded-2xl border-[1.5px] border-wesaya-line bg-white px-4 py-3.5 font-baloo text-[15px] font-bold text-wesaya-ink transition hover:border-wesaya-red/40">
+                  اطلب مرة أخرى
                 </button>
               </div>
+            ) : checkoutStep === "cart" ? (
+              /* ===== CART ===== */
+              <>
+                <DrawerHeader title="سلّتك" onBack={closeCart} />
+                <div className="flex-1 overflow-y-auto px-[18px] pb-4">
+                  {cart.length === 0 ? (
+                    <div className="flex flex-col items-center gap-3.5 px-8 py-20 text-center">
+                      <div className="text-5xl">🛒</div>
+                      <div className="font-baloo text-lg font-bold text-wesaya-ink">سلّتك فارغة</div>
+                      <div className="text-[13px] leading-relaxed text-wesaya-muted">ابدأ بأحد عروضنا العائلية المميّزة</div>
+                      <button onClick={closeCart} className="rounded-[14px] bg-wesaya-red px-6 py-3 font-baloo text-[15px] font-bold text-white">تصفّح القائمة</button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3 pt-3">
+                      {cart.map((line) => {
+                        const item = itemById.get(line.itemId);
+                        if (!item) return null;
+                        const opts = selectionSummary(item, line, modifiers);
+                        return (
+                          <div key={line.lineId} className="flex gap-3 rounded-[18px] border border-wesaya-line bg-white p-2.5 shadow-[0_3px_10px_rgba(38,25,15,0.05)]">
+                            <div className="h-[74px] w-[74px] flex-none overflow-hidden rounded-[13px] bg-wesaya-line">
+                              <Photo src={item.imageUrl} alt={item.name} category={item.category} className="h-full w-full" />
+                            </div>
+                            <div className="flex min-w-0 flex-1 flex-col gap-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="font-baloo text-[15px] font-bold text-wesaya-ink">{item.name}</div>
+                                <button onClick={() => removeLine(line.lineId)} aria-label="حذف" className="flex-none text-wesaya-muted transition hover:text-wesaya-red">
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                              {opts.length > 0 && <div className="truncate text-[11.5px] leading-relaxed text-wesaya-muted">{opts.join("، ")}</div>}
+                              <div className="mt-1 flex items-center justify-between">
+                                <div className="flex items-center overflow-hidden rounded-[11px] border border-wesaya-line bg-wesaya-cream">
+                                  <button onClick={() => setQty(line.lineId, line.quantity - 1)} aria-label="إنقاص" className="flex h-8 w-8 items-center justify-center text-[18px] leading-none text-wesaya-red">−</button>
+                                  <span className="min-w-[26px] text-center text-sm font-extrabold tabular-nums text-wesaya-ink">{line.quantity}</span>
+                                  <button onClick={() => setQty(line.lineId, line.quantity + 1)} aria-label="زيادة" className="flex h-8 w-8 items-center justify-center text-[18px] leading-none text-wesaya-red">＋</button>
+                                </div>
+                                <span className="font-baloo text-[15px] font-extrabold text-wesaya-red">{formatCurrency(lineTotal(item, line, modifiers), currency)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* summary */}
+                      <div className="mt-0.5 flex flex-col gap-2.5 rounded-[18px] border border-wesaya-line bg-white px-4 py-3.5">
+                        <Row label="المجموع الفرعي" value={formatCurrency(subtotal, currency)} />
+                        <div className="flex items-center justify-between text-[13.5px]">
+                          <span className="text-wesaya-muted">رسوم التوصيل</span>
+                          <span className="text-[12.5px] text-wesaya-muted">تُحسب حسب المنطقة</span>
+                        </div>
+                        {hasNoBaseItem && (
+                          <div className="rounded-[9px] bg-[#FFF7E8] px-2.5 py-2 text-[11px] leading-relaxed text-[#8a6a16]">
+                            بعض الأصناف يُؤكَّد سعرها الأساسي عند الطلب.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {cart.length > 0 && (
+                  <div className="flex-none border-t border-wesaya-line bg-wesaya-cream px-[18px] py-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                    <button
+                      onClick={() => setCheckoutStep("checkout")}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-wesaya-red px-4 py-4 font-baloo text-base font-bold text-white shadow-[0_8px_20px_rgba(214,35,0,0.3)] transition hover:bg-wesaya-red-dark"
+                    >
+                      <span>متابعة الدفع</span><span>·</span><span>{formatCurrency(subtotal, currency)}</span>
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              /* ===== CHECKOUT ===== */
+              <>
+                <DrawerHeader title="إتمام الطلب" onBack={() => setCheckoutStep("cart")} />
+                <div className="flex-1 overflow-y-auto px-[18px] pb-4">
+                  <div className="flex flex-col gap-4 pt-3">
+                    {/* fulfillment recap */}
+                    <div className="flex flex-col gap-3 rounded-[18px] border border-wesaya-line bg-white p-3.5">
+                      <FulfillmentToggle fulfillment={fulfillment} setFulfillment={setFulfillment} />
+                      <button onClick={() => branches.length > 1 && setBranchOpen(true)} className="flex items-center gap-2 text-[13px] text-wesaya-ink">
+                        <MapPin className="h-4 w-4 text-wesaya-red" />
+                        <span className="font-bold">{branchName}</span>
+                        <span className="text-wesaya-muted">· ٢٤ ساعة</span>
+                      </button>
+                    </div>
+
+                    {/* contact + fulfillment fields */}
+                    <div className="flex flex-col gap-2.5">
+                      <div className="font-baloo text-base font-bold text-wesaya-ink">بياناتك</div>
+                      <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="الاسم" className={inputCls} />
+                      <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="رقم الموبايل (واتساب)" inputMode="tel" className={inputCls} />
+
+                      {fulfillment === "delivery" && (
+                        <>
+                          <select value={zoneId} onChange={(e) => setZoneId(e.target.value)} className={inputCls}>
+                            <option value="">اختر منطقة التوصيل</option>
+                            {zonesForBranch.map((zone) => (
+                              <option key={zone.id} value={zone.id}>
+                                {zone.name} · {formatCurrency(zone.deliveryFee, currency)}
+                              </option>
+                            ))}
+                          </select>
+                          {zonesForBranch.length === 0 && (
+                            <p className="rounded-[13px] bg-[#FFF7E8] px-3 py-2 text-xs text-[#8a6a16]">لا توجد مناطق توصيل متاحة لهذا الفرع حالياً.</p>
+                          )}
+                          <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="العنوان بالتفصيل" className={inputCls} />
+                          <button
+                            type="button"
+                            onClick={() => setMapOpen(true)}
+                            className="flex items-center justify-center gap-2 rounded-[13px] border-[1.5px] border-wesaya-line bg-white px-3 py-3 text-sm font-bold text-wesaya-ink transition hover:border-wesaya-red/40"
+                          >
+                            <MapPin className="h-4 w-4 text-wesaya-red" /> {coords ? "تم تحديد موقعك — اضغط للتعديل" : "اختر موقعك على الخريطة"}
+                          </button>
+                        </>
+                      )}
+
+                      {fulfillment === "pickup" && branches.length > 1 && (
+                        <div className="flex flex-col gap-2">
+                          <span className="text-[12.5px] font-semibold text-wesaya-muted">اختر الفرع للاستلام</span>
+                          {branches.map((b) => (
+                            <button
+                              key={b.id}
+                              onClick={() => { setBranchId(b.id); setZoneId(""); }}
+                              className={"flex items-center justify-between rounded-[13px] border-[1.5px] px-3.5 py-3 text-start transition " + (b.id === branchId ? "border-wesaya-red bg-wesaya-tint" : "border-wesaya-line bg-white hover:border-wesaya-red/40")}
+                            >
+                              <span className="flex flex-col gap-0.5">
+                                <span className="text-sm font-bold text-wesaya-ink">{b.name}</span>
+                                <span className="text-[11.5px] text-wesaya-muted">٢٤ ساعة</span>
+                              </span>
+                              {b.id === branchId && <span className="font-bold text-wesaya-red">✓</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="ملاحظات الطلب (اختياري)" rows={2} className={inputCls + " resize-none"} />
+                    </div>
+
+                    {/* payment method */}
+                    <div className="flex flex-col gap-2.5">
+                      <div className="font-baloo text-base font-bold text-wesaya-ink">طريقة الدفع</div>
+                      <div className="flex items-center gap-3 rounded-[14px] border-2 border-wesaya-red bg-white p-3.5">
+                        <span className="h-[22px] w-[22px] flex-none rounded-full border-[6px] border-wesaya-red bg-white" />
+                        <div className="flex-1">
+                          <div className="text-sm font-bold text-wesaya-ink">الدفع عند الاستلام</div>
+                          <div className="text-[11.5px] text-wesaya-muted">كاش عند استلام طلبك</div>
+                        </div>
+                        <span className="text-xl">💵</span>
+                      </div>
+                      <div className="flex items-center gap-3 rounded-[14px] border-[1.5px] border-dashed border-wesaya-line bg-[#F6F0E6] p-3.5 opacity-70">
+                        <span className="h-[22px] w-[22px] flex-none rounded-full border-2 border-wesaya-line bg-white" />
+                        <div className="flex-1">
+                          <div className="text-sm font-bold text-wesaya-muted">الدفع الإلكتروني</div>
+                          <div className="text-[11.5px] text-wesaya-muted">بطاقة / محفظة</div>
+                        </div>
+                        <span className="rounded-lg bg-[#E9DECB] px-2.5 py-1 text-[11px] font-bold text-[#8a6a16]">قريبًا</span>
+                      </div>
+                    </div>
+
+                    {/* totals (server recomputes the authoritative total at checkout) */}
+                    <div className="flex flex-col gap-1.5 rounded-[18px] border border-wesaya-line bg-white px-4 py-3.5">
+                      <Row label="المجموع الفرعي" value={formatCurrency(subtotal, currency)} />
+                      <Row label="رسوم التوصيل" value={formatCurrency(deliveryFee, currency)} />
+                      <div className="flex items-center justify-between border-t border-wesaya-line pt-2">
+                        <span className="text-sm font-bold text-wesaya-ink">الإجمالي التقديري</span>
+                        <span className="font-baloo text-xl font-extrabold text-wesaya-red">{formatCurrency(previewTotal, currency)}</span>
+                      </div>
+                      <p className="text-[11px] text-wesaya-muted">الدفع عند الاستلام · يُؤكَّد الإجمالي من المطعم.</p>
+                    </div>
+
+                    {checkoutError && <p className="rounded-[13px] bg-red-50 px-3 py-2 text-sm text-red-700">{checkoutError}</p>}
+                  </div>
+                </div>
+                <div className="flex-none border-t border-wesaya-line bg-wesaya-cream px-[18px] py-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                  <button
+                    type="button"
+                    disabled={!canConfirm}
+                    onClick={submitOrder}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-wesaya-red px-4 py-4 font-baloo text-base font-bold text-white shadow-[0_8px_20px_rgba(214,35,0,0.3)] transition hover:bg-wesaya-red-dark disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {submitting ? "جارٍ إرسال الطلب..." : (<><span>تأكيد الطلب</span><span>·</span><span>{formatCurrency(previewTotal, currency)}</span></>)}
+                  </button>
+                </div>
+              </>
             )}
-            </div>
           </div>
         </div>
       )}
@@ -692,6 +740,29 @@ function priceLabel(item: MenuItem, currency: string): string {
   const hasChoices = (item.choiceGroups?.length ?? 0) > 0;
   if (item.price > 0) return hasChoices ? `من ${formatCurrency(item.price, currency)}` : formatCurrency(item.price, currency);
   return "حسب الاختيار";
+}
+
+/** Cart/checkout drawer header: back chevron (RTL) + centered title. */
+function DrawerHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <div className="flex flex-none items-center justify-between border-b border-wesaya-line bg-wesaya-cream px-[18px] py-3">
+      <button onClick={onBack} aria-label="رجوع" className="flex h-9 w-9 items-center justify-center rounded-xl border border-wesaya-line bg-white text-wesaya-ink">
+        <ChevronLeft className="h-5 w-5 -scale-x-100" />
+      </button>
+      <div className="font-baloo text-[19px] font-extrabold text-wesaya-ink">{title}</div>
+      <div className="w-9" />
+    </div>
+  );
+}
+
+/** Summary line: muted label · bold value. */
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between text-[13.5px]">
+      <span className="text-wesaya-muted">{label}</span>
+      <span className="font-bold text-wesaya-ink">{value}</span>
+    </div>
+  );
 }
 
 function catEmoji(category: string): string {

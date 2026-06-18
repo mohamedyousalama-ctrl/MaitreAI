@@ -157,7 +157,7 @@ export default function LocationPicker({
             type="button"
             onClick={useMyLocation}
             disabled={locating}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-wesaya-red/30 bg-white px-3 py-2.5 text-sm font-bold text-wesaya-red hover:bg-wesaya-yellow-soft disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-wesaya-red/30 bg-white px-3 py-2.5 text-sm font-bold text-wesaya-red hover:bg-wesaya-tint disabled:opacity-50"
           >
             {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
             استخدم موقعي الحالي

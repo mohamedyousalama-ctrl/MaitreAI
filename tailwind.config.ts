@@ -36,10 +36,6 @@ const config: Config = {
         "wesaya-ink": "#26190F",
         "wesaya-green": "#1E8A52",
         "wesaya-muted": "#8C7B71",
-        // kept for the checkout/customizer (PR-B will retoken those)
-        "wesaya-yellow": "#FFD400",
-        "wesaya-yellow-soft": "#FFF3C4",
-        "wesaya-brand-ink": "#5A1010",
       },
       boxShadow: {
         card: "0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.06)",
