@@ -73,3 +73,15 @@ body {
 .animate-overlay { animation: overlay-in 0.2s ease-out; }
 .animate-drawer { animation: drawer-in 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
 .animate-modal { animation: modal-in 0.2s ease-out; }
+
+/* Wesaya storefront (public /order/[slug]) — live-total pop + confirm check */
+@keyframes popT {
+  0% { transform: scale(0.82); opacity: 0.4; }
+  60% { transform: scale(1.06); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes checkPop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
