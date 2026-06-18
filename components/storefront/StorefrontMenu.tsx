@@ -11,7 +11,24 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Branch, DeliveryArea, MenuItem, Modifier } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
-import { UtensilsCrossed, Plus, X, Minus, Trash2, ShoppingBag, MapPin } from "lucide-react";
+import {
+  UtensilsCrossed,
+  Plus,
+  X,
+  Minus,
+  Trash2,
+  ShoppingBag,
+  MapPin,
+  Drumstick,
+  Pizza,
+  Beef,
+  Sandwich,
+  Soup,
+  CupSoda,
+  Utensils,
+  Tag,
+  type LucideIcon,
+} from "lucide-react";
 import { ItemCustomizer } from "./ItemCustomizer";
 import {
   activeVariants,
@@ -43,6 +60,7 @@ export function StorefrontMenu({
   const [cart, setCart] = useState<CartLine[]>([]);
   const [openItem, setOpenItem] = useState<MenuItem | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [activeCat, setActiveCat] = useState("all"); // category-pill filter (presentational)
   const [fulfillment, setFulfillment] = useState<"delivery" | "pickup">("delivery");
   // Auto-select a branch that actually has usable delivery zones (restaurant-wide
   // or its own), so a stray/zoneless branch can never be pre-selected and strand
@@ -148,35 +166,70 @@ export function StorefrontMenu({
 
   return (
     <>
+      {/* Category pills — horizontal scroll, active = red filled */}
+      {categories.length > 0 && (
+        <div className="sticky top-0 z-20 border-b border-black/5 bg-wesaya-cream/95 backdrop-blur">
+          <div className="mx-auto flex max-w-3xl gap-2 overflow-x-auto px-4 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {[{ name: "all", label: "الكل" }, ...categories.map((c) => ({ name: c.name, label: c.name }))].map((c) => {
+              const active = activeCat === c.name;
+              return (
+                <button
+                  key={c.name}
+                  onClick={() => setActiveCat(c.name)}
+                  className={
+                    "shrink-0 rounded-full px-4 py-1.5 text-sm font-bold transition " +
+                    (active
+                      ? "bg-wesaya-red text-white shadow-sm"
+                      : "border border-wesaya-red/30 bg-white text-wesaya-red hover:bg-wesaya-yellow-soft")
+                  }
+                >
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto max-w-3xl px-4 py-6 pb-28">
         {categories.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-            <UtensilsCrossed className="mx-auto h-8 w-8 text-slate-300" />
+          <div className="rounded-2xl border border-black/5 bg-white p-10 text-center shadow-sm">
+            <UtensilsCrossed className="mx-auto h-8 w-8 text-wesaya-red/40" />
             <p className="mt-3 text-sm text-slate-500">لا توجد أصناف متاحة حالياً.</p>
           </div>
         ) : (
           <div className="space-y-8">
-            {categories.map((cat) => (
+            {(activeCat === "all" ? categories : categories.filter((c) => c.name === activeCat)).map((cat) => (
               <section key={cat.name}>
-                <h2 className="mb-3 text-lg font-bold text-slate-800">{cat.name}</h2>
+                <h2 className="mb-3 flex items-center gap-2 text-lg font-extrabold text-wesaya-brand-ink">
+                  <span className="h-5 w-1.5 rounded-full bg-wesaya-red" />
+                  {cat.name}
+                </h2>
                 <ul className="space-y-3">
-                  {cat.items.map((item) => (
-                    <li key={item.id}>
-                      <button
-                        onClick={() => setOpenItem(item)}
-                        className="flex w-full items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-start transition hover:border-slate-300 hover:shadow-sm"
-                      >
-                        <div className="min-w-0">
-                          <h3 className="font-bold text-slate-900">{item.name}</h3>
-                          {item.description && <p className="mt-1 text-sm text-slate-500">{item.description}</p>}
-                          <p className="mt-1.5 text-sm font-semibold text-slate-700">{priceLabel(item, currency)}</p>
-                        </div>
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white">
-                          <Plus className="h-4 w-4" />
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                  {cat.items.map((item) => {
+                    const Icon = categoryIcon(cat.name);
+                    return (
+                      <li key={item.id}>
+                        <button
+                          onClick={() => setOpenItem(item)}
+                          className="flex w-full items-center gap-3 rounded-lg border border-black/5 bg-white p-3 text-start shadow-sm transition hover:border-wesaya-red/30 hover:shadow-md"
+                        >
+                          {/* Pale-yellow thumbnail with a category icon (no external images) */}
+                          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-wesaya-yellow-soft text-wesaya-red">
+                            <Icon className="h-7 w-7" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-bold text-wesaya-ink">{item.name}</h3>
+                            {item.description && <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{item.description}</p>}
+                            <p className="mt-1 text-sm font-extrabold text-wesaya-red">{priceLabel(item, currency)}</p>
+                          </div>
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-wesaya-red text-white shadow-sm transition group-hover:bg-wesaya-red-dark">
+                            <Plus className="h-5 w-5" />
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             ))}
@@ -188,21 +241,24 @@ export function StorefrontMenu({
         </p>
       </div>
 
-      {/* Floating cart bar */}
+      {/* Sticky brand cart bar */}
       {count > 0 && !cartOpen && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white p-3">
-          <div className="mx-auto max-w-3xl">
-            <button
-              onClick={() => setCartOpen(true)}
-              className="flex w-full items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
-            >
-              <span className="flex items-center gap-2">
-                <ShoppingBag className="h-4 w-4" /> السلة ({count})
-              </span>
+        <div className="fixed inset-x-0 bottom-0 z-40 bg-wesaya-red px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-6px_20px_-8px_rgba(0,0,0,0.35)]">
+          <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-sm font-bold text-white">
+              <ShoppingBag className="h-5 w-5" />
+              {count} في السلة
+              <span className="text-white/80">·</span>
               <span className="flex items-baseline gap-1">
                 {formatCurrency(subtotal, currency)}
-                <span className="text-[10px] font-normal opacity-70">تقديري</span>
+                <span className="text-[10px] font-normal text-white/70">تقديري</span>
               </span>
+            </span>
+            <button
+              onClick={() => setCartOpen(true)}
+              className="shrink-0 rounded-xl bg-wesaya-yellow px-4 py-2.5 text-sm font-extrabold text-wesaya-brand-ink shadow-sm transition hover:brightness-95"
+            >
+              عرض السلة
             </button>
           </div>
         </div>
@@ -217,10 +273,12 @@ export function StorefrontMenu({
       {cartOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
-          <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-2xl bg-white sm:rounded-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 p-4">
-              <h2 className="text-lg font-bold text-slate-900">سلة الطلب</h2>
-              <button onClick={() => setCartOpen(false)} aria-label="إغلاق" className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-wesaya-cream sm:rounded-2xl">
+            <div className="flex items-center justify-between bg-wesaya-red p-4 text-white">
+              <h2 className="flex items-center gap-2 text-lg font-extrabold">
+                <ShoppingBag className="h-5 w-5 text-wesaya-yellow" /> سلة الطلب
+              </h2>
+              <button onClick={() => setCartOpen(false)} aria-label="إغلاق" className="flex h-9 w-9 items-center justify-center rounded-lg text-white/80 hover:bg-white/15">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -275,19 +333,19 @@ export function StorefrontMenu({
             </div>
 
             {!confirmation && cart.length > 0 && (
-              <div className="space-y-4 border-t border-slate-100 p-4">
+              <div className="space-y-4 border-t border-black/5 bg-white p-4">
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setFulfillment("delivery")}
-                    className={`rounded-xl border px-3 py-2 text-sm font-semibold ${fulfillment === "delivery" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700"}`}
+                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition ${fulfillment === "delivery" ? "border-wesaya-red bg-wesaya-red text-white" : "border-black/10 bg-white text-wesaya-ink hover:bg-wesaya-yellow-soft"}`}
                   >
                     توصيل
                   </button>
                   <button
                     type="button"
                     onClick={() => setFulfillment("pickup")}
-                    className={`rounded-xl border px-3 py-2 text-sm font-semibold ${fulfillment === "pickup" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700"}`}
+                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition ${fulfillment === "pickup" ? "border-wesaya-red bg-wesaya-red text-white" : "border-black/10 bg-white text-wesaya-ink hover:bg-wesaya-yellow-soft"}`}
                   >
                     استلام من الفرع
                   </button>
@@ -339,12 +397,12 @@ export function StorefrontMenu({
                       <button
                         type="button"
                         onClick={() => setMapOpen(true)}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-wesaya-yellow px-3 py-2.5 text-sm font-extrabold text-wesaya-brand-ink shadow-sm transition hover:brightness-95"
                       >
                         <MapPin className="h-4 w-4" /> اختر موقعك على الخريطة
                       </button>
                       {coords && (
-                        <p className="flex items-center gap-1 text-xs font-medium text-emerald-700">
+                        <p className="flex items-center gap-1 text-xs font-semibold text-wesaya-red">
                           <MapPin className="h-3.5 w-3.5" /> تم تحديد موقعك على الخريطة — يمكنك تعديل العنوان أدناه.
                         </p>
                       )}
@@ -378,20 +436,20 @@ export function StorefrontMenu({
                   <input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900" />
                 </label>
 
-                <div className="space-y-1 rounded-xl bg-slate-50 p-3">
-                  <div className="flex items-center justify-between text-sm text-slate-600">
+                <div className="space-y-1 rounded-xl bg-wesaya-yellow-soft/60 p-3">
+                  <div className="flex items-center justify-between text-sm text-wesaya-ink/80">
                     <span>المجموع</span>
                     <span>{formatCurrency(subtotal, currency)}</span>
                   </div>
-                  <div className="flex items-center justify-between text-sm text-slate-600">
+                  <div className="flex items-center justify-between text-sm text-wesaya-ink/80">
                     <span>التوصيل</span>
                     <span>{formatCurrency(deliveryFee, currency)}</span>
                   </div>
-                  <div className="flex items-center justify-between border-t border-slate-200 pt-2">
-                    <span className="text-sm font-semibold text-slate-700">الإجمالي التقديري</span>
-                    <span className="text-lg font-bold text-slate-900">{formatCurrency(previewTotal, currency)}</span>
+                  <div className="flex items-center justify-between border-t border-wesaya-red/15 pt-2">
+                    <span className="text-sm font-bold text-wesaya-ink">الإجمالي التقديري</span>
+                    <span className="text-xl font-extrabold text-wesaya-red">{formatCurrency(previewTotal, currency)}</span>
                   </div>
-                  <p className="text-xs text-slate-500">الدفع عند الاستلام · سيتم تأكيد الإجمالي من المطعم.</p>
+                  <p className="text-xs text-wesaya-ink/60">الدفع عند الاستلام · سيتم تأكيد الإجمالي من المطعم.</p>
                 </div>
 
                 {checkoutError && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{checkoutError}</p>}
@@ -406,9 +464,9 @@ export function StorefrontMenu({
                     (fulfillment === "delivery" && (!zoneId || !address.trim()))
                   }
                   onClick={submitOrder}
-                  className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  className="w-full rounded-xl bg-wesaya-red px-4 py-3.5 text-base font-extrabold text-white shadow-sm transition hover:bg-wesaya-red-dark disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {submitting ? "جارٍ إرسال الطلب..." : "تأكيد الطلب والدفع عند الاستلام"}
+                  {submitting ? "جارٍ إرسال الطلب..." : "تأكيد الطلب · الدفع عند الاستلام"}
                 </button>
               </div>
             )}
@@ -443,4 +501,17 @@ function priceLabel(item: MenuItem, currency: string): string {
     return min === max ? formatCurrency(min, currency) : `${formatCurrency(min, currency)} – ${formatCurrency(max, currency)}`;
   }
   return formatCurrency(item.price, currency);
+}
+
+/** A category-appropriate icon for the menu-card thumbnail (no external images). */
+function categoryIcon(category: string): LucideIcon {
+  const c = category;
+  if (/بيتزا/.test(c)) return Pizza;
+  if (/برجر/.test(c)) return Beef;
+  if (/دجاج|بروست/.test(c)) return Drumstick;
+  if (/سندوي|ساندوي/.test(c)) return Sandwich;
+  if (/مشروب/.test(c)) return CupSoda;
+  if (/عرض|عروض/.test(c)) return Tag;
+  if (/جانبي/.test(c)) return Soup;
+  return Utensils;
 }

@@ -92,14 +92,14 @@ export function ItemCustomizer({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col rounded-t-2xl bg-white sm:rounded-2xl">
+      <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-wesaya-cream sm:rounded-2xl">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
+        <div className="flex items-start justify-between gap-3 bg-wesaya-red p-4 text-white">
           <div className="min-w-0">
-            <h2 className="text-lg font-bold text-slate-900">{item.name}</h2>
-            {item.description && <p className="mt-1 text-sm text-slate-500">{item.description}</p>}
+            <h2 className="text-lg font-extrabold">{item.name}</h2>
+            {item.description && <p className="mt-1 text-sm text-white/85">{item.description}</p>}
           </div>
-          <button onClick={onClose} aria-label="إغلاق" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <button onClick={onClose} aria-label="إغلاق" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/80 hover:bg-white/15">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -114,10 +114,10 @@ export function ItemCustomizer({
                 {variants.map((v) => (
                   <label key={v.id} className={rowCls(sel.variantId === v.id)}>
                     <span className="flex items-center gap-2">
-                      <input type="radio" name="variant" checked={sel.variantId === v.id} onChange={() => setVariant(v.id)} />
+                      <input type="radio" className="accent-wesaya-red" name="variant" checked={sel.variantId === v.id} onChange={() => setVariant(v.id)} />
                       <span className="font-medium text-slate-800">{v.name}</span>
                     </span>
-                    <span className="text-sm font-semibold text-slate-700">{formatCurrency(v.price, currency)}</span>
+                    <span className="text-sm font-bold text-wesaya-red">{formatCurrency(v.price, currency)}</span>
                   </label>
                 ))}
               </div>
@@ -140,6 +140,7 @@ export function ItemCustomizer({
                         <span className="flex items-center gap-2">
                           <input
                             type={g.maxSelect === 1 ? "radio" : "checkbox"}
+                            className="accent-wesaya-red"
                             name={`g_${g.id}`}
                             checked={checked}
                             disabled={disabled}
@@ -148,7 +149,7 @@ export function ItemCustomizer({
                           <span className="font-medium text-slate-800">{o.label}</span>
                         </span>
                         {o.priceDelta > 0 && (
-                          <span className="text-sm font-semibold text-slate-600">+{formatCurrency(o.priceDelta, currency)}</span>
+                          <span className="text-sm font-bold text-wesaya-red">+{formatCurrency(o.priceDelta, currency)}</span>
                         )}
                       </label>
                     );
@@ -166,11 +167,11 @@ export function ItemCustomizer({
                 {mods.map((m) => (
                   <label key={m.id} className={rowCls(sel.modifierIds.includes(m.id))}>
                     <span className="flex items-center gap-2">
-                      <input type="checkbox" checked={sel.modifierIds.includes(m.id)} onChange={() => toggleModifier(m.id)} />
+                      <input type="checkbox" className="accent-wesaya-red" checked={sel.modifierIds.includes(m.id)} onChange={() => toggleModifier(m.id)} />
                       <span className="font-medium text-slate-800">{m.name}</span>
                     </span>
                     {m.priceImpact > 0 && (
-                      <span className="text-sm font-semibold text-slate-600">+{formatCurrency(m.priceImpact, currency)}</span>
+                      <span className="text-sm font-bold text-wesaya-red">+{formatCurrency(m.priceImpact, currency)}</span>
                     )}
                   </label>
                 ))}
@@ -182,11 +183,11 @@ export function ItemCustomizer({
           <section className="flex items-center justify-between">
             <SectionLabel title="الكمية" />
             <div className="flex items-center gap-3">
-              <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="إنقاص" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+              <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="إنقاص" className="flex h-9 w-9 items-center justify-center rounded-lg border border-wesaya-red/30 bg-white text-wesaya-red hover:bg-wesaya-yellow-soft">
                 <Minus className="h-4 w-4" />
               </button>
-              <span className="w-6 text-center font-bold tabular-nums text-slate-900">{qty}</span>
-              <button onClick={() => setQty((q) => q + 1)} aria-label="زيادة" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+              <span className="w-6 text-center font-extrabold tabular-nums text-wesaya-ink">{qty}</span>
+              <button onClick={() => setQty((q) => q + 1)} aria-label="زيادة" className="flex h-9 w-9 items-center justify-center rounded-lg border border-wesaya-red/30 bg-white text-wesaya-red hover:bg-wesaya-yellow-soft">
                 <Plus className="h-4 w-4" />
               </button>
             </div>
@@ -194,19 +195,19 @@ export function ItemCustomizer({
         </div>
 
         {/* Footer — preview total + add */}
-        <div className="border-t border-slate-100 p-4">
+        <div className="border-t border-black/5 bg-white p-4">
           <button
             onClick={add}
             disabled={!valid}
-            className="flex w-full items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex w-full items-center justify-between rounded-xl bg-wesaya-red px-4 py-3.5 text-base font-extrabold text-white shadow-sm transition hover:bg-wesaya-red-dark disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span>أضِف إلى السلة</span>
-            <span className="flex items-baseline gap-1">
+            <span className="flex items-baseline gap-1 text-wesaya-yellow">
               {formatCurrency(preview, currency)}
-              <span className="text-[10px] font-normal opacity-70">تقديري</span>
+              <span className="text-[10px] font-normal text-wesaya-yellow/80">تقديري</span>
             </span>
           </button>
-          {!valid && <p className="mt-2 text-center text-xs text-amber-700">اختر الخيارات المطلوبة للمتابعة.</p>}
+          {!valid && <p className="mt-2 text-center text-xs font-semibold text-wesaya-red">اختر الخيارات المطلوبة للمتابعة.</p>}
         </div>
       </div>
     </div>
@@ -215,9 +216,9 @@ export function ItemCustomizer({
 
 function SectionLabel({ title, hint }: { title: string; hint?: string }) {
   return (
-    <p className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-700">
+    <p className="mb-2 flex items-center gap-2 text-sm font-extrabold text-wesaya-brand-ink">
       {title}
-      {hint && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">{hint}</span>}
+      {hint && <span className="rounded-full bg-wesaya-yellow-soft px-2 py-0.5 text-[11px] font-bold text-wesaya-brand-ink">{hint}</span>}
     </p>
   );
 }
@@ -231,8 +232,8 @@ function groupHint(g: MenuItemChoiceGroup): string {
 
 function rowCls(active: boolean, disabled = false): string {
   return [
-    "flex cursor-pointer items-center justify-between rounded-xl border px-3 py-2.5",
-    active ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:bg-slate-50",
+    "flex cursor-pointer items-center justify-between rounded-xl border px-3 py-2.5 transition",
+    active ? "border-wesaya-red bg-wesaya-yellow-soft" : "border-black/10 bg-white hover:bg-wesaya-yellow-soft/50",
     disabled ? "cursor-not-allowed opacity-50" : "",
   ].join(" ");
 }

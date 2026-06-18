@@ -23,7 +23,7 @@ const DEFAULT_CENTER = { lat: 29.9911, lng: 31.1313 };
 const pinIcon = L.divIcon({
   className: "",
   html: `<svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg">
-    <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 27 15 27s15-16.5 15-27C30 6.7 23.3 0 15 0z" fill="#0f172a"/>
+    <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 27 15 27s15-16.5 15-27C30 6.7 23.3 0 15 0z" fill="#D81E1E"/>
     <circle cx="15" cy="15" r="6" fill="#ffffff"/>
   </svg>`,
   iconSize: [30, 42],
@@ -117,13 +117,13 @@ export default function LocationPicker({
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white sm:rounded-2xl">
+      <div className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden overflow-hidden rounded-t-2xl bg-wesaya-cream sm:rounded-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 p-4">
-          <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+        <div className="flex items-center justify-between bg-wesaya-red p-4 text-white">
+          <h2 className="flex items-center gap-2 text-lg font-extrabold">
             <MapPin className="h-5 w-5" /> اختر موقعك على الخريطة
           </h2>
-          <button onClick={onClose} aria-label="إغلاق" className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <button onClick={onClose} aria-label="إغلاق" className="flex h-9 w-9 items-center justify-center rounded-lg text-white/80 hover:bg-white/15">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -157,7 +157,7 @@ export default function LocationPicker({
             type="button"
             onClick={useMyLocation}
             disabled={locating}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-wesaya-red/30 bg-white px-3 py-2.5 text-sm font-bold text-wesaya-red hover:bg-wesaya-yellow-soft disabled:opacity-50"
           >
             {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
             استخدم موقعي الحالي
@@ -176,7 +176,7 @@ export default function LocationPicker({
           <button
             type="button"
             onClick={confirm}
-            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:opacity-90"
+            className="w-full rounded-xl bg-wesaya-red px-4 py-3.5 text-base font-extrabold text-white shadow-sm transition hover:bg-wesaya-red-dark"
           >
             تأكيد الموقع
           </button>
