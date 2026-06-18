@@ -49,7 +49,11 @@ interface WaMessage {
   voice?: { id?: string; mime_type?: string };
 }
 interface WaChange {
-  value?: { contacts?: WaContact[]; messages?: WaMessage[] };
+  value?: {
+    contacts?: WaContact[];
+    messages?: WaMessage[];
+    metadata?: { display_phone_number?: string; phone_number_id?: string };
+  };
   field?: string;
 }
 interface WaEntry {
@@ -72,6 +76,20 @@ function extractText(m: WaMessage): string {
 /** Reply id of a tapped button/list row, if this message is an interactive reply. */
 function extractInteractiveId(m: WaMessage): string | undefined {
   return m.interactive?.button_reply?.id ?? m.interactive?.list_reply?.id ?? undefined;
+}
+
+/** The Meta `phone_number_id` this delivery was sent to (identifies the tenant's
+ *  WhatsApp number), from the first change's metadata. Null if absent. Pure parse
+ *  — no node-only deps, safe alongside the rest of this adapter. */
+export function extractInboundPhoneNumberId(payload: unknown): string | null {
+  const data = (payload ?? {}) as WaWebhookPayload;
+  for (const entry of data.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const id = change.value?.metadata?.phone_number_id;
+      if (id) return String(id).trim();
+    }
+  }
+  return null;
 }
 
 export function normalizeWhatsAppInbound(payload: unknown): InboundMessage[] {
