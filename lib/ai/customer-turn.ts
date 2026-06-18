@@ -233,10 +233,26 @@ export async function runCustomerTurn(
 
   // On escalation the AI stops owning the conversation (Amendment 03 §E).
   if (result.escalate && conversationId) {
+    // Stamp updated_at at the flip so the needs-attention age == the wait time:
+    // once owner=human the AI no longer touches the row, so (now − updated_at) is
+    // the operator wait-time/SLA — derivable with NO new column.
+    const escalatedAt = new Date().toISOString();
     await admin
       .from("conversations")
-      .update({ owner: "human", status: "يحتاج تدخل موظف", escalation_reason: result.escalationReason })
+      .update({ owner: "human", status: "يحتاج تدخل موظف", escalation_reason: result.escalationReason, updated_at: escalatedAt })
       .eq("id", conversationId);
+    // Operator-facing timeline note — reuses the existing system-message timeline
+    // (same mechanism as send-error notes); NOT transmitted to the customer.
+    // Makes "needs human + reason + waiting" explicit so a single operator sees it.
+    await admin.from("messages").insert({
+      restaurant_id: restaurantId,
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender: "system",
+      text: `🔔 تحتاج تدخّل موظف${result.escalationReason ? ` — السبب: ${result.escalationReason}` : ""}. العميل بانتظار رد الفريق.`,
+      status: "sent",
+      meta: { kind: "escalation", reason: result.escalationReason, escalatedAt },
+    });
   }
 
   return {
