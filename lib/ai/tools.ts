@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type { DeliveryArea, MenuItem, Modifier } from "../types";
+import { recomputeOrderPricing } from "@/lib/order-pricing";
 import type { LlmToolDef } from "./llm/types";
 
 export interface DraftModifier {
@@ -27,7 +28,7 @@ export interface DraftLine {
   itemId: string;
   name: string;
   quantity: number;
-  unitPrice: number; // base + modifier impacts, from the menu
+  unitPrice: number; // variant/base + choice deltas + modifier impacts, from the menu
   variant?: DraftVariant;
   choices: DraftChoice[];
   modifiers: DraftModifier[];
@@ -252,17 +253,40 @@ function findItem(menu: MenuItem[], name: string): MenuItem | undefined {
 
 function recompute(ctx: ToolContext): void {
   const d = ctx.draft;
-  d.subtotal = d.lines.reduce((s, l) => s + l.lineTotal, 0);
-  const deliv = d.fulfillment === "delivery" ? d.deliveryFee : 0;
-  // VAT only when the tenant runs tax-added; otherwise inclusive (no change).
-  if (ctx.taxMode === "added" && ctx.taxRate > 0) {
-    d.taxRate = ctx.taxRate;
-    d.tax = Math.round(d.subtotal * (ctx.taxRate / 100) * 100) / 100;
-  } else {
-    d.taxRate = 0;
-    d.tax = 0;
-  }
-  d.total = Math.round((d.subtotal + deliv + d.tax) * 100) / 100;
+  const priced = recomputeOrderPricing({
+    menuItems: ctx.menuItems,
+    modifiers: ctx.modifiers,
+    deliveryAreas: ctx.deliveryAreas,
+    lines: d.lines.map((l) => ({
+      itemId: l.itemId,
+      quantity: l.quantity,
+      variantName: l.variant?.name ?? null,
+      choices: l.choices.map((c) => ({ groupName: c.groupName, label: c.label })),
+      modifierNames: l.modifiers.map((m) => m.name),
+    })),
+    fulfillment: d.fulfillment ?? "pickup",
+    deliveryZoneName: d.deliveryZone,
+    taxMode: ctx.taxMode,
+    taxRate: ctx.taxRate,
+    currency: d.currency,
+  });
+  d.lines = priced.lines.map((l) => ({
+    itemId: l.itemId,
+    name: l.name,
+    quantity: l.quantity,
+    unitPrice: l.unitPrice,
+    variant: l.variant,
+    choices: l.choices,
+    modifiers: l.modifiers,
+    lineTotal: l.lineTotal,
+  }));
+  d.deliveryZone = priced.deliveryZone?.name ?? null;
+  d.deliveryFee = priced.deliveryFee;
+  d.subtotal = priced.subtotal;
+  d.tax = priced.taxAmount;
+  d.taxRate = priced.taxRate;
+  d.total = priced.total;
+  d.currency = priced.currency;
 }
 
 function lineOptionText(l: DraftLine): string[] {
@@ -430,10 +454,12 @@ export function executeTool(
       return { content: `${label}.\n${summary(d)}` };
     }
     case "get_order_summary":
+      recompute(ctx);
       return { content: summary(d) };
     case "finalize_draft": {
       if (!d.lines.length) return { content: "لا يمكن تأكيد طلب فارغ.", isError: true };
       if (!d.fulfillment) return { content: "لا يمكن تأكيد الطلب قبل اختيار الاستلام أو التوصيل.", isError: true };
+      recompute(ctx);
       d.finalized = true;
       return {
         content: `تم تسجيل الطلب بانتظار تأكيد المطعم.\n${summary(d)}`,

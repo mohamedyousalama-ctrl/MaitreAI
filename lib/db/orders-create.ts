@@ -15,9 +15,9 @@
 import "server-only";
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { DraftChoice, DraftLine, DraftModifier, DraftVariant, OrderDraft } from "@/lib/ai/tools";
+import type { OrderDraft } from "@/lib/ai/tools";
 import { loadBrain } from "@/lib/db/brain";
-import type { MenuItem, Modifier } from "@/lib/types";
+import { recomputeOrderPricing } from "@/lib/order-pricing";
 
 /** Deterministic UUID from a string (stable id ⇒ idempotent insert). */
 export function uuidFromHash(input: string): string {
@@ -42,116 +42,47 @@ export interface PersistOrderResult {
   orderNumber: string | null;
 }
 
-function norm(s: string): string {
-  return s
-    .replace(/[ً-ْـ]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function money(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-function findActiveModifier(modifiers: Modifier[], allowedIds: string[], name: string): Modifier | null {
-  const allowed = new Set(allowedIds);
-  return modifiers.find((m) => m.active && allowed.has(m.id) && norm(m.name) === norm(name)) ?? null;
-}
-
-function recomputeLineFromMenu(item: MenuItem, modifiers: Modifier[], line: DraftLine): DraftLine {
-  if (!item.available) throw new Error(`menu_item_unavailable:${item.name}`);
-  const qty = Math.max(1, Math.floor(Number(line.quantity)) || 1);
-
-  const activeVariants = (item.variants ?? []).filter((v) => v.active);
-  let variant: DraftVariant | undefined;
-  let basePrice = item.price;
-  if (activeVariants.length) {
-    const selectedVariant = line.variant?.name ?? "";
-    const row = activeVariants.find((v) => norm(v.name) === norm(selectedVariant));
-    if (!row) throw new Error(`variant_required:${item.name}`);
-    variant = { name: row.name, price: Number(row.price) };
-    basePrice = Number(row.price);
-  }
-
-  const requestedChoices = [...(line.choices ?? [])];
-  const choices: DraftChoice[] = [];
-  for (const group of (item.choiceGroups ?? []).filter((g) => g.options.some((o) => o.active))) {
-    const selectedForGroup = requestedChoices.filter((choice) => norm(choice.groupName) === norm(group.name));
-    if (selectedForGroup.length < group.minSelect || selectedForGroup.length > group.maxSelect) {
-      throw new Error(`choice_count_invalid:${item.name}:${group.name}`);
-    }
-    for (const selected of selectedForGroup) {
-      const option = group.options.find((o) => o.active && norm(o.label) === norm(selected.label));
-      if (!option) throw new Error(`choice_invalid:${item.name}:${group.name}:${selected.label}`);
-      choices.push({ groupName: group.name, label: option.label, priceDelta: Number(option.priceDelta) });
-    }
-  }
-  for (const selected of requestedChoices) {
-    const group = item.choiceGroups?.find((g) => norm(g.name) === norm(selected.groupName));
-    if (!group) throw new Error(`choice_group_invalid:${item.name}:${selected.groupName}`);
-  }
-
-  const lineModifiers: DraftModifier[] = [];
-  for (const selected of line.modifiers ?? []) {
-    const modifier = findActiveModifier(modifiers, item.modifierIds, selected.name);
-    if (!modifier) throw new Error(`modifier_invalid:${item.name}:${selected.name}`);
-    lineModifiers.push({ name: modifier.name, priceImpact: Number(modifier.priceImpact) });
-  }
-
-  const unitPrice = money(
-    Number(basePrice) +
-      choices.reduce((sum, choice) => sum + Number(choice.priceDelta), 0) +
-      lineModifiers.reduce((sum, modifier) => sum + Number(modifier.priceImpact), 0)
-  );
-  return {
-    itemId: item.id,
-    name: item.name,
-    quantity: qty,
-    unitPrice,
-    variant,
-    choices,
-    modifiers: lineModifiers,
-    lineTotal: money(unitPrice * qty),
-  };
-}
-
 async function recomputeDraftFromDb(
   admin: SupabaseClient,
   args: { restaurantId: string; draft: OrderDraft }
 ): Promise<OrderDraft> {
   const brain = await loadBrain(admin, args.restaurantId);
-  const verifiedLines = args.draft.lines.map((line) => {
-    const item = brain.menuItems.find((row) => row.id === line.itemId);
-    if (!item) throw new Error(`menu_item_missing:${line.itemId}`);
-    return recomputeLineFromMenu(item, brain.modifiers, line);
+  const priced = recomputeOrderPricing({
+    menuItems: brain.menuItems,
+    modifiers: brain.modifiers,
+    deliveryAreas: brain.deliveryAreas,
+    lines: args.draft.lines.map((line) => ({
+      itemId: line.itemId,
+      quantity: line.quantity,
+      variantName: line.variant?.name ?? null,
+      choices: line.choices.map((choice) => ({ groupName: choice.groupName, label: choice.label })),
+      modifierNames: line.modifiers.map((modifier) => modifier.name),
+    })),
+    fulfillment: args.draft.fulfillment ?? "pickup",
+    deliveryZoneName: args.draft.deliveryZone,
+    taxMode: brain.taxMode,
+    taxRate: brain.taxRate,
+    currency: brain.profile.currency || args.draft.currency,
   });
-
-  const subtotal = money(verifiedLines.reduce((sum, line) => sum + line.lineTotal, 0));
-  let deliveryZone: string | null = null;
-  let deliveryFee = 0;
-  if (args.draft.fulfillment === "delivery") {
-    const zone = brain.deliveryAreas.find(
-      (row) => row.active && row.name && norm(row.name) === norm(args.draft.deliveryZone ?? "")
-    );
-    if (!zone) throw new Error(`delivery_zone_invalid:${args.draft.deliveryZone ?? ""}`);
-    if (subtotal < Number(zone.minOrder)) throw new Error(`delivery_min_order:${zone.name}`);
-    deliveryZone = zone.name;
-    deliveryFee = money(Number(zone.deliveryFee));
-  }
-
-  const taxRate = Number(args.draft.taxRate) || 0;
-  const tax = args.draft.tax > 0 && taxRate > 0 ? money(subtotal * (taxRate / 100)) : 0;
   return {
     ...args.draft,
-    lines: verifiedLines,
-    deliveryZone,
-    deliveryFee,
-    subtotal,
-    tax,
-    taxRate: tax > 0 ? taxRate : 0,
-    total: money(subtotal + deliveryFee + tax),
-    currency: brain.profile.currency || args.draft.currency,
+    lines: priced.lines.map((line) => ({
+      itemId: line.itemId,
+      name: line.name,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      variant: line.variant,
+      choices: line.choices,
+      modifiers: line.modifiers,
+      lineTotal: line.lineTotal,
+    })),
+    deliveryZone: priced.deliveryZone?.name ?? null,
+    deliveryFee: priced.deliveryFee,
+    subtotal: priced.subtotal,
+    tax: priced.taxAmount,
+    taxRate: priced.taxRate,
+    total: priced.total,
+    currency: priced.currency,
     finalized: args.draft.finalized,
   };
 }
