@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // react-leaflet + @react-leaflet/core are ESM-only; transpile them so the
+  // storefront map (client-only, dynamically imported) bundles cleanly.
+  transpilePackages: ["react-leaflet", "@react-leaflet/core"],
   experimental: {
     // @resvg/resvg-js ships a native .node addon webpack can't bundle — require
     // it at runtime instead (the receipt/kitchen-ticket PNG renderer).
