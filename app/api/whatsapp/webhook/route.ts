@@ -52,8 +52,6 @@ export function GET(req: NextRequest) {
   return NextResponse.json({ ok: false, message: "verify token mismatch" }, { status: 403 });
 }
 
-// --- signature verification (server-only) ----------------------------------
-/** Verify Meta's X-Hub-Signature-256 HMAC over the raw request body. */
 // --- POST: inbound messages ------------------------------------------------
 export async function POST(req: NextRequest) {
   const env = readWhatsAppEnv();
@@ -65,56 +63,15 @@ export async function POST(req: NextRequest) {
   const sig = req.headers.get("x-hub-signature-256");
   const hmac = (data: Buffer | string) => (env.appSecret ? "sha256=" + createHmac("sha256", env.appSecret).update(data).digest("hex") : null);
   const compBytes = hmac(rawBuf); // authoritative
-  const compText = hmac(rawBody); // diagnostic comparison
-
-  // --- TEMP inbound diagnostic (S9): log EVERY POST attempt incl. 401s, so we
-  // can tell from the DB whether Meta is delivering and whether the signature
-  // matches. No message content — only shape + signature prefixes. Remove once
-  // the live round-trip is confirmed. ---
-  try {
-    const dbg = createAdminClient();
-    if (dbg) {
-      let shape: Record<string, unknown> = {};
-      try {
-        const p = JSON.parse(rawBody) as { object?: string; entry?: { changes?: { value?: { messages?: unknown[]; statuses?: unknown[] } }[] }[] };
-        const v = p?.entry?.[0]?.changes?.[0]?.value;
-        const msgs = (v?.messages ?? []) as { type?: string; from?: string }[];
-        shape = {
-          object: p?.object ?? null,
-          hasMessages: msgs.length > 0,
-          msgCount: msgs.length,
-          hasStatuses: ((v?.statuses ?? []) as unknown[]).length > 0,
-          firstType: msgs[0]?.type ?? null,
-          fromPresent: !!msgs[0]?.from,
-        };
-      } catch {
-        shape = { parseError: true };
-      }
-      await dbg.from("webhook_debug").insert({
-        detail: {
-          appSecretSet: !!env.appSecret,
-          sigPresent: !!sig,
-          sigReceivedPrefix: sig ? sig.slice(0, 23) : null,
-          sigComputedPrefix: compBytes ? compBytes.slice(0, 23) : null,
-          sigComputedTextPrefix: compText ? compText.slice(0, 23) : null,
-          sigOk: !!sig && !!compBytes && sig === compBytes,
-          sigOkText: !!sig && !!compText && sig === compText,
-          rawLen: rawBuf.length,
-          ...shape,
-        },
-      });
-    }
-  } catch {
-    /* never let diagnostics break the webhook */
-  }
-  // --- end diagnostic ---
 
   // Signature check only when an app secret is configured (placeholder-friendly).
-  // Sandbox escape hatch: WHATSAPP_SKIP_SIGNATURE=true bypasses validation so the
-  // round-trip can run while the correct App Secret is sorted out. SANDBOX ONLY —
-  // turn OFF before real customers. The breadcrumb above still logs sigOk so we
-  // can confirm the moment the real secret matches.
-  const skipSig = (process.env.WHATSAPP_SKIP_SIGNATURE ?? "").trim().toLowerCase() === "true";
+  // When configured we ALWAYS verify Meta's X-Hub-Signature-256 HMAC and reject
+  // (401) on mismatch. A local-dev escape hatch (WHATSAPP_SKIP_SIGNATURE=true) is
+  // honored ONLY outside production — in production the signature is enforced no
+  // matter what that env var says, so a stale "true" can never weaken live traffic.
+  const skipSig =
+    process.env.NODE_ENV !== "production" &&
+    (process.env.WHATSAPP_SKIP_SIGNATURE ?? "").trim().toLowerCase() === "true";
   if (env.appSecret && !skipSig) {
     const okSig = !!sig && !!compBytes && sig.length === compBytes.length && timingSafeEqual(Buffer.from(sig), Buffer.from(compBytes));
     if (!okSig) {
@@ -149,8 +106,6 @@ export async function POST(req: NextRequest) {
     const restaurantId = tenant?.restaurantId ?? (await resolveWebhookRestaurantId(admin));
     const perTenantEnv = tenant?.env ?? null; // null → readWhatsAppEnv() uses env vars
     resolvedBy = tenant ? "phone_number_id" : "env_fallback";
-    // Non-secret breadcrumb — never the token/appSecret/decrypted values.
-    console.log("[whatsapp:webhook] resolved", { resolvedBy, restaurantId, hasPhoneNumberId: !!phoneNumberId });
 
     if (restaurantId) {
       // Bind the resolved creds for the whole persist→Brain→send chain. With a
