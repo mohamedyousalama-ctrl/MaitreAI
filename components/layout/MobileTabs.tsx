@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 export function MobileTabs() {
   const pathname = usePathname();
   const role = useRole();
-  const items = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
+  const items = (role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems).filter((i) => !i.railOnly);
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#EDE5D8] bg-white lg:hidden">
       {items.map((item) => {
