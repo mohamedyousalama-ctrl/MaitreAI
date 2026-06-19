@@ -26,6 +26,9 @@ const money = (n: number) => toAr(grp(Number(n || 0)));
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const LATE_MS = 30 * 60 * 1000;
 const DONE: OrderStatusKey[] = ["delivered", "cancelled"];
+// Statuses an operator may cancel/reject (mirrors OrderCard lifecycleActions):
+// NOT ready / out_for_delivery / delivered / already-cancelled.
+const CANCELABLE: OrderStatusKey[] = ["pending_payment", "pending_confirmation", "paid", "preparing"];
 const ACTIVE: OrderStatusKey[] = ["pending_confirmation", "pending_payment", "paid", "preparing", "ready", "out_for_delivery"];
 
 function minutesAgo(ms: number): string {
@@ -111,6 +114,7 @@ export default function OrdersPage() {
   const hydrated = useHasHydrated();
   const orders = useOrderStore((s) => s.orders);
   const updateOrderStatus = useOrderStore((s) => s.updateOrderStatus);
+  const cancelOrder = useOrderStore((s) => s.cancelOrder);
 
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -190,6 +194,9 @@ export default function OrdersPage() {
     if (isConfirm) void fetch(`/api/orders/${o.id}/send-receipt`, { method: "POST" }).catch(() => {});
   };
   const openOrder = (o: LocalOrder) => { setSelectedId(o.id); setUnseen(0); };
+  // Explicit operator cancel/reject → existing DB-backed store action (status →
+  // "cancelled", refunds if paid, adds a timeline event). Confirmed in OrderDetail.
+  const cancel = (o: LocalOrder) => cancelOrder(o.id, "human");
 
   const GRID = "grid grid-cols-[68px_1.4fr_1fr_1.1fr_0.8fr_0.7fr] gap-3 items-center";
 
@@ -292,7 +299,7 @@ export default function OrdersPage() {
         {/* detail panel (xl side column) */}
         {selected && (
           <div className="hidden w-[332px] flex-none overflow-hidden rounded-[18px] border border-[#ECE3D5] bg-white xl:block" style={{ boxShadow: "0 14px 30px -22px rgba(50,32,20,.25)" }}>
-            <OrderDetail o={selected} onClose={() => setSelectedId(null)} onAdvance={advance} printWidth={printWidth} />
+            <OrderDetail key={selected.id} o={selected} onClose={() => setSelectedId(null)} onAdvance={advance} onCancel={cancel} printWidth={printWidth} />
           </div>
         )}
       </div>
@@ -302,7 +309,7 @@ export default function OrdersPage() {
         <div className="fixed inset-0 z-50 flex items-end justify-center xl:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSelectedId(null)} />
           <div className="relative max-h-[88vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white sm:rounded-2xl">
-            <OrderDetail o={selected} onClose={() => setSelectedId(null)} onAdvance={advance} printWidth={printWidth} />
+            <OrderDetail key={selected.id} o={selected} onClose={() => setSelectedId(null)} onAdvance={advance} onCancel={cancel} printWidth={printWidth} />
           </div>
         </div>
       )}
@@ -341,7 +348,8 @@ function Timecell({ o }: { o: LocalOrder }) {
 }
 
 const RANK: Record<string, number> = { pending_confirmation: 0, pending_payment: 0, paid: 1, preparing: 2, ready: 3, out_for_delivery: 4, delivered: 5 };
-function OrderDetail({ o, onClose, onAdvance, printWidth }: { o: LocalOrder; onClose: () => void; onAdvance: (o: LocalOrder) => void; printWidth: PrintWidth }) {
+function OrderDetail({ o, onClose, onAdvance, onCancel, printWidth }: { o: LocalOrder; onClose: () => void; onAdvance: (o: LocalOrder) => void; onCancel: (o: LocalOrder) => void; printWidth: PrintWidth }) {
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const m = statusMeta(o);
   const n = nextStatus(o);
   const rank = RANK[o.orderStatus] ?? 0;
@@ -443,6 +451,21 @@ function OrderDetail({ o, onClose, onAdvance, printWidth }: { o: LocalOrder; onC
             <span className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-[#F7F2EA] py-2.5 text-[12.5px] font-semibold text-[#A99D8D]">فتح المحادثة <span className="rounded bg-white px-1 text-[9px]">قريبًا</span></span>
           )}
         </div>
+
+        {/* cancel/reject — operator-only, confirmed (no single-tap void). Calls the
+            existing DB-backed cancelOrder; panel flips to «✕ تم إلغاء الطلب» via the
+            realtime store. Hidden once delivered/cancelled. */}
+        {CANCELABLE.includes(o.orderStatus) && (
+          confirmCancel ? (
+            <div className="mt-2.5 flex items-center gap-2 rounded-[11px] border border-[#E4D9CD] bg-[#F7F2EA] p-2.5">
+              <span className="flex-1 text-[12px] font-semibold text-[#8A6A2E]">إلغاء الطلب؟ لا يمكن التراجع.</span>
+              <button onClick={() => { onCancel(o); setConfirmCancel(false); }} className="rounded-[9px] bg-[#BE5238] px-3 py-1.5 text-[12px] font-bold text-white transition hover:bg-[#A8472F]">تأكيد الإلغاء</button>
+              <button onClick={() => setConfirmCancel(false)} className="rounded-[9px] border border-[#EBE2D3] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#7C7163]">تراجع</button>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmCancel(true)} className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[11px] border border-[#E6CFC8] bg-white py-2.5 text-[12.5px] font-semibold text-[#A8472F] transition hover:bg-[#FBEAE5]"><X className="h-4 w-4" /> إلغاء الطلب</button>
+          )
+        )}
       </div>
     </>
   );
