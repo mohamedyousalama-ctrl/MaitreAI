@@ -455,3 +455,20 @@ export async function updatePromotionStateDb(s: SupabaseClient, restaurantId: st
 export async function deletePromotionDb(s: SupabaseClient, restaurantId: string, id: string) {
   await s.from("promotions").delete().eq("restaurant_id", restaurantId).eq("id", id);
 }
+
+/** Operator-created promo: insert into the EXISTING promotions table (no migration).
+ *  Mirrors the agent promo route's insert shape; returns the persisted row. */
+export async function createPromotionDb(
+  s: SupabaseClient,
+  restaurantId: string,
+  row: { name: string; type: string; config: Record<string, unknown>; schedule: Record<string, unknown> },
+  state: "active" | "paused" = "active"
+): Promise<OperatorPromotion | null> {
+  const { data, error } = await s
+    .from("promotions")
+    .insert({ restaurant_id: restaurantId, name: row.name, type: row.type, config: row.config, schedule: row.schedule, state })
+    .select("*")
+    .single();
+  if (error || !data) return null;
+  return toPromotion(data as PromotionRow);
+}

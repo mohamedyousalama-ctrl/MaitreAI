@@ -56,6 +56,7 @@ import {
   updatePoliciesDb,
   updatePromotionStateDb,
   deletePromotionDb,
+  createPromotionDb,
 } from "./db/brain";
 
 // Lightweight unique id generator (no external dep) — demo mode only.
@@ -108,6 +109,10 @@ interface RestaurantState {
   loadPromotions: () => Promise<void>;
   togglePromotionActive: (id: string, active: boolean) => void;
   deletePromotion: (id: string) => void;
+  addPromotion: (
+    row: { name: string; type: string; config: Record<string, unknown>; schedule: Record<string, unknown> },
+    state?: "active" | "paused"
+  ) => void;
 
   updatePolicies: (patch: Partial<Policies>) => void;
   updateAiTone: (patch: Partial<AiToneConfig>) => void;
@@ -278,6 +283,17 @@ export const useRestaurantStore = create<RestaurantState>()(
         set((s) => ({ promotions: s.promotions.filter((p) => p.id !== id) }));
         const { _sb, _rid } = get();
         if (_sb && _rid) fire(deletePromotionDb(_sb, _rid, id));
+      },
+      addPromotion: (row, state = "active") => {
+        const { _sb, _rid } = get();
+        if (_sb && _rid) {
+          fire(
+            createPromotionDb(_sb, _rid, row, state).then((p) => {
+              if (p) set((s) => ({ promotions: [p, ...s.promotions] }));
+              return get().refreshBrain();
+            })
+          );
+        }
       },
 
       updatePolicies: (patch) => {
