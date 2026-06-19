@@ -5,6 +5,7 @@ import {
   UtensilsCrossed,
   Settings,
   Sparkles,
+  Megaphone,
   type LucideIcon,
 } from "lucide-react";
 import type { ModuleKey } from "./types";
@@ -19,6 +20,8 @@ export interface NavItem {
   accentBg: string;
   /** Extra path prefixes that keep this tab active (folded sections, §M2/K1). */
   match?: string[];
+  /** Show in the desktop rail only — kept out of the mobile bottom bar (§M2). */
+  railOnly?: boolean;
 }
 
 // The K1 five-tab shell (Amendment 04 §M2). Folded:
@@ -40,5 +43,6 @@ export const navItems: NavItem[] = [
     accentBg: "bg-menu",
     match: ["/menu", "/restaurant-brain", "/ai-review"],
   },
+  { href: "/promotions", label: "العروض", en: "Promotions", icon: Megaphone, module: "promotions", accent: "text-promotions", accentBg: "bg-promotions", railOnly: true },
   { href: "/settings", label: "الإعدادات", en: "Settings", icon: Settings, module: "settings", accent: "text-settings", accentBg: "bg-settings", match: ["/settings", "/branches"] },
 ];
