@@ -201,6 +201,9 @@ export function analyzeMessage(raw: string, brain: Brain, ctx: AnalyzeContext = 
   const intent = detectIntent(text, entities);
   const tone = brain.aiTone;
   const name = brain.profile.name;
+  // S4: use the tenant's own currency in sim replies (Egypt = ج.م), not a
+  // hardcoded «ر.س». (Sim path only — the live agent uses respond.ts.)
+  const currency = brain.profile.currency || "ر.س";
 
   let reply = "";
   let confidence = 70;
@@ -225,7 +228,7 @@ export function analyzeMessage(raw: string, brain: Brain, ctx: AnalyzeContext = 
         const item = brain.menuItems.find((m) => m.name === entities.items[0].name)!;
         confidence = 95;
         reply = item.available
-          ? `نعم، ${item.name} متوفر بسعر ${item.price} ر.س.`
+          ? `نعم، ${item.name} متوفر بسعر ${item.price} ${currency}.`
           : `${item.name} غير متوفر حالياً، لكن لدينا أصناف أخرى رائعة أقدر أرشحها لك.`;
       } else {
         const available = brain.menuItems.filter((m) => m.available);
@@ -265,7 +268,7 @@ export function analyzeMessage(raw: string, brain: Brain, ctx: AnalyzeContext = 
       const area = entities.deliveryArea ? brain.deliveryAreas.find((a) => a.name === entities.deliveryArea) : undefined;
       if (area && area.active) {
         confidence = 95;
-        reply = `نعم نوصل إلى ${area.name}. رسوم التوصيل ${area.deliveryFee} ر.س والوقت المتوقع ${area.estimatedTime}.`;
+        reply = `نعم نوصل إلى ${area.name}. رسوم التوصيل ${area.deliveryFee} ${currency} والوقت المتوقع ${area.estimatedTime}.`;
       } else if (area && !area.active) {
         confidence = 70;
         reply = `${area.name} خارج نطاق التوصيل حالياً. تقدر تختار الاستلام من أقرب فرع.`;

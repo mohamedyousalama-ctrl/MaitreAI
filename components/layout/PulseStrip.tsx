@@ -13,6 +13,7 @@ import { useOpsStore } from "@/lib/ops-store";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useConversationStore } from "@/lib/conversation-store";
+import { countEscalations } from "@/lib/escalation";
 import { useOrderStore } from "@/lib/order-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -47,9 +48,7 @@ export function PulseStrip() {
   const currency = useRestaurantStore((s) => s.profile.currency);
   const branches = useRestaurantStore((s) => s.branches);
 
-  const escalations = conversations.filter(
-    (c) => c.status === "يحتاج تدخل موظف" || c.status === "تم التحويل لموظف" || c.owner === "human"
-  ).length;
+  const escalations = countEscalations(conversations);
   const since = startOfToday();
   const todayOrders = orders.filter((o) => o.createdAt >= since);
   const ordersCount = todayOrders.length;
