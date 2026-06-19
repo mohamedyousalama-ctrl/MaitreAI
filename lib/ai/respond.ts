@@ -13,6 +13,7 @@ import type { LlmContentBlock, LlmMessage, LlmUsage } from "./llm/types";
 import { buildCustomerAgentSystemPrompt, type BrainContext } from "./prompt";
 import { modeAllowsOrders } from "./modes";
 import { dialectProfile } from "./dialect";
+import { fabricatesMoney, knownMenuPrices } from "./money-guard";
 import {
   emptyDraft,
   executeTool,
@@ -54,14 +55,6 @@ export interface RespondResult {
 const MAX_ITERATIONS = 6;
 const MONEY_TOOL_NAMES = new Set(["add_to_order", "remove_from_order", "set_fulfillment", "get_order_summary", "finalize_draft"]);
 
-function mentionsMoney(text: string, currency: string): boolean {
-  const escapedCurrency = currency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(
-    `(${escapedCurrency}|ج\\.م|ر\\.س|ريال|جنيه|الإجمالي|الاجمالي|المجموع|total|subtotal|\\d+[\\d,.]*\\s*(?:${escapedCurrency}|ج\\.م|ر\\.س))`,
-    "iu"
-  ).test(text);
-}
-
 function claimsOrderConfirmed(text: string): boolean {
   return /(تم\s+(?:تأكيد|تسجيل|استلام)\s+الطلب|طلبك\s+(?:اتأكد|تأكد|تسجل|تم)|order\s+(?:confirmed|placed))/iu.test(text);
 }
@@ -87,6 +80,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const adapter = await getAdapter();
   const system = buildCustomerAgentSystemPrompt(input.brain);
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
+  const knownPrices = knownMenuPrices(input.brain);
 
   const ctx: ToolContext = {
     menuItems: input.brain.menuItems,
@@ -165,8 +159,12 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // bodies); if the model left the text blank, give it a friendly opener.
   if (!text.trim() && ctx.presentation) text = "تفضّل 👇";
 
+  // Money-truth guard: when no pricing tool ran this turn, allow the model to
+  // QUOTE real menu prices while describing the menu (Type 1), but still block a
+  // fabricated/computed order total or any non-menu amount (Type 2). Order totals
+  // in the actual order flow come from the tools (which set usedMoneyTool).
   const usedMoneyTool = toolNames.some((name) => MONEY_TOOL_NAMES.has(name));
-  if (text.trim() && !usedMoneyTool && mentionsMoney(text, currency)) {
+  if (text.trim() && !usedMoneyTool && fabricatesMoney(text, currency, knownPrices)) {
     ctx.signals.push({ type: "money_mismatch", detail: { reason: "money_without_tool", reply: text } });
     text = safeMoneyReply(input.brain.dialect);
   }
