@@ -13,7 +13,7 @@ import type { LlmContentBlock, LlmMessage, LlmUsage } from "./llm/types";
 import { buildCustomerAgentSystemPrompt, type BrainContext } from "./prompt";
 import { modeAllowsOrders } from "./modes";
 import { dialectProfile } from "./dialect";
-import { fabricatesMoney, knownMenuPrices } from "./money-guard";
+import { fabricatesMoney, knownMenuPrices, offersNonMenuProduct } from "./money-guard";
 import {
   emptyDraft,
   executeTool,
@@ -68,6 +68,12 @@ function safeMoneyReply(dialect: string): string {
   return dialect === "egyptian"
     ? "أقدر أحسبهولك بدقة من السيستم، بس لازم أبني الطلب الأول. تحب أضيف إيه؟"
     : "أقدر أحسبه لك بدقة من السيستم، بس لازم أبني الطلب أول. وش تحب أضيف؟";
+}
+
+function safeNonMenuReply(dialect: string): string {
+  return dialect === "egyptian"
+    ? "تحب أضيفلك حاجة من المنيو؟ 😊"
+    : "تحب أضيف لك شي من المنيو؟ 😊";
 }
 
 function safeConfirmReply(dialect: string): string {
@@ -171,6 +177,15 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   if (text.trim() && !ctx.draft.finalized && claimsOrderConfirmed(text)) {
     ctx.signals.push({ type: "money_mismatch", detail: { reason: "confirmation_without_finalized_draft", reply: text } });
     text = safeConfirmReply(input.brain.dialect);
+  }
+  // Non-menu product guard: never PROACTIVELY upsell a product (e.g. a soft drink)
+  // that isn't on the menu. Declining one the customer asked for is unaffected.
+  if (text.trim()) {
+    const offending = offersNonMenuProduct(text, input.brain.menuItems.map((i) => i.name));
+    if (offending) {
+      ctx.signals.push({ type: "off_menu", detail: { reason: "non_menu_upsell", term: offending, reply: text } });
+      text = safeNonMenuReply(input.brain.dialect);
+    }
   }
 
   return {

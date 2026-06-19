@@ -60,6 +60,42 @@ export function isKnownPrice(amount: number, known: Set<number>): boolean {
   return false;
 }
 
+// --- non-menu product guard -------------------------------------------------
+// PROACTIVELY offering a product that isn't on the menu (e.g. upselling a cola
+// when the menu lists no soft drinks) is a fabrication the price guard can't
+// catch (no number). We block ONLY a proactive upsell ("تحب أضيف…") of a known
+// drink term that does NOT appear in any menu item name. Declining a non-menu
+// item the customer ASKED for is unaffected (no upsell phrasing).
+const UPSELL_CONTEXT =
+  /(تحب\s+(?:أضيف|اضيف|تضيف|نضيف|تزود|نزود)|[أا]ضيف?لك|نضيف?لك|تحب\s+معاه|نزوّد|أزوّدك|ضيف\s+علي|تكمّلها\s+بـ|تحب\s+تضيف|عايز\s+تضيف|أضيف\s+معاه)/u;
+// Common upsellable drinks frequently absent from a menu. Catching these (not an
+// open-ended product list) keeps the guard conservative and false-positive-safe.
+const NON_MENU_DRINK_TERMS = [
+  "كوكاكولا", "كوكا كولا", "كوكا", "كولا", "بيبسي", "سفن اب", "سفن أب", "سفن", "سبرايت",
+  "صودا", "سودا", "مشروب غازي", "مشروبات غازية", "فانتا", "ميرندا", "شويبس", "عصير",
+  "ميلك شيك", "ميلكشيك", "موهيتو", "ايس تي", "آيس تي",
+];
+
+function stripDiacritics(s: string): string {
+  return s.replace(/[ًٌٍَُِّْـ]/g, "");
+}
+
+/**
+ * Returns the offending term when the reply PROACTIVELY offers/upsells a drink
+ * that is not present in any menu item name; null otherwise. The caller replaces
+ * such a reply with a safe pivot so the agent never invents a product.
+ */
+export function offersNonMenuProduct(text: string, menuItemNames: string[]): string | null {
+  if (!UPSELL_CONTEXT.test(text)) return null;
+  const t = stripDiacritics(text);
+  const names = stripDiacritics(menuItemNames.join(" | "));
+  for (const term of NON_MENU_DRINK_TERMS) {
+    const bare = stripDiacritics(term);
+    if (t.includes(bare) && !names.includes(bare)) return term;
+  }
+  return null;
+}
+
 /**
  * Money-truth guard. Returns true when the reply asserts money it shouldn't:
  *  - Type 2 (BLOCK): an order-total claim (sum/total phrasing) without the
