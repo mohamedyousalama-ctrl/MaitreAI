@@ -288,6 +288,17 @@ function photoCaption(item: MenuItem, currency: string): string {
   return `${item.name} — ${item.price} ${currency}`;
 }
 
+/** Canonical identity of a draft line (item + variant + ALL choices + ALL
+ *  modifiers) so add_to_order can MERGE an identical line by bumping quantity
+ *  instead of pushing a duplicate. Different variant/choices/modifiers → a
+ *  different key → a separate line. */
+function lineKey(l: { itemId: string; variant?: DraftVariant; choices: DraftChoice[]; modifiers: DraftModifier[] }): string {
+  const v = l.variant?.name ?? "";
+  const ch = l.choices.map((c) => `${c.groupName}=${c.label}`).sort().join("|");
+  const md = l.modifiers.map((m) => m.name).sort().join("|");
+  return `${l.itemId}§${v}§${ch}§${md}`;
+}
+
 function recompute(ctx: ToolContext): void {
   const d = ctx.draft;
   const priced = recomputeOrderPricing({
@@ -476,7 +487,7 @@ export function executeTool(
         basePrice +
         choices.reduce((s, c) => s + c.priceDelta, 0) +
         mods.reduce((s, m) => s + m.priceImpact, 0);
-      d.lines.push({
+      const newLine = {
         itemId: item.id,
         name: item.name,
         quantity: qty,
@@ -485,7 +496,14 @@ export function executeTool(
         choices,
         modifiers: mods,
         lineTotal: unitPrice * qty,
-      });
+      };
+      // Idempotent: if an identical line already exists (same item + variant +
+      // choices + modifiers), bump its quantity instead of appending a duplicate —
+      // so re-calling add_to_order on a readback/payment/confirm turn never
+      // inflates the draft. A different variant/choice/modifier stays separate.
+      const match = d.lines.find((l) => lineKey(l) === lineKey(newLine));
+      if (match) match.quantity += qty;
+      else d.lines.push(newLine);
       recompute(ctx);
       return { content: `أضفت ${qty}× ${item.name}.\n${summary(d)}` };
     }
