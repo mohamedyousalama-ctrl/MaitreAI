@@ -438,7 +438,7 @@ function OrderDetail({ o, onClose, onAdvance, printWidth }: { o: LocalOrder; onC
         <div className="flex gap-2.5">
           <button onClick={() => printTicket(o.id, printWidth)} className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-white py-2.5 text-[12.5px] font-semibold text-[#514538] transition hover:border-[#E0C4B6]"><Printer className="h-4 w-4" /> طباعة</button>
           {o.conversationId ? (
-            <Link href="/conversations" className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-white py-2.5 text-[12.5px] font-semibold text-[#514538] transition hover:border-[#E0C4B6]"><MessageCircle className="h-4 w-4" /> فتح المحادثة</Link>
+            <Link href={`/conversations?c=${o.conversationId}`} className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-white py-2.5 text-[12.5px] font-semibold text-[#514538] transition hover:border-[#E0C4B6]"><MessageCircle className="h-4 w-4" /> فتح المحادثة</Link>
           ) : (
             <span className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-[#F7F2EA] py-2.5 text-[12.5px] font-semibold text-[#A99D8D]">فتح المحادثة <span className="rounded bg-white px-1 text-[9px]">قريبًا</span></span>
           )}
