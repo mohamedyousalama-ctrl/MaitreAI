@@ -157,13 +157,16 @@ export const ORDER_TOOLS: LlmToolDef[] = [
   {
     name: "add_to_order",
     description:
-      "Add a menu item to the customer's order draft. Use the exact item name from the menu. " +
-      "If the item has sizes, pass the selected size. Options/picks and modifiers must be listed for that item. Returns the updated draft and total.",
+      "Add a menu item to the customer's order draft, OR set its exact quantity. Use the exact item name from the menu. " +
+      "If the item has sizes, pass the selected size. Options/picks and modifiers must be listed for that item. " +
+      "mode: \"add\" (default) increases the quantity by `quantity`; \"set\" makes the matching line's quantity EXACTLY `quantity`. " +
+      "When the customer states the TOTAL they want («سندوتشين» = 2، «خليها ٣») use mode=\"set\"; only «زود واحد كمان» (one more) uses \"add\". Returns the updated draft and total.",
     input_schema: {
       type: "object",
       properties: {
         item_name: { type: "string", description: "Exact menu item name" },
         quantity: { type: "integer", minimum: 1 },
+        mode: { type: "string", enum: ["add", "set"], description: "\"add\" (default) adds to the current quantity; \"set\" makes the quantity exactly this" },
         size: { type: "string", description: "Selected size/variant name when the item requires one" },
         options: { type: "array", items: { type: "string" }, description: "Selected choice/pick option labels" },
         picks: { type: "array", items: { type: "string" }, description: "Alias for selected choice/pick option labels" },
@@ -208,6 +211,14 @@ export const ORDER_TOOLS: LlmToolDef[] = [
     name: "finalize_draft",
     description:
       "Place the order for the restaurant to confirm. Only after the customer has explicitly confirmed the items and total.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "clear_order",
+    description:
+      "Empty the current order DRAFT and start fresh. Use when the customer wants to start over / clear the basket " +
+      "(«ابدأ من جديد»، «امسح الطلب»، «الغِ كل ده»، «من الأول»). This only resets the in-progress draft — it never " +
+      "touches an already-placed order. After clearing, build the new order from scratch. NEVER say the items can't be cleared.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -404,6 +415,7 @@ export function executeTool(
     case "add_to_order": {
       const itemName = String(input.item_name ?? "");
       const qty = Math.max(1, Math.floor(Number(input.quantity ?? 1)) || 1);
+      const mode = input.mode === "set" ? "set" : "add";
       const item = findItem(ctx.menuItems, itemName);
       if (!item || !item.available) {
         ctx.signals.push({ type: "off_menu", detail: { requested: itemName } });
@@ -498,14 +510,22 @@ export function executeTool(
         lineTotal: unitPrice * qty,
       };
       // Idempotent: if an identical line already exists (same item + variant +
-      // choices + modifiers), bump its quantity instead of appending a duplicate —
-      // so re-calling add_to_order on a readback/payment/confirm turn never
-      // inflates the draft. A different variant/choice/modifier stays separate.
+      // choices + modifiers), update it instead of appending a duplicate. mode="set"
+      // makes its quantity EXACTLY qty (restated total «سندوتشين»/«خليها ٣» — no
+      // inflation); mode="add" bumps it (genuine «زود واحد كمان»). A different
+      // variant/choice/modifier stays a separate line.
       const match = d.lines.find((l) => lineKey(l) === lineKey(newLine));
-      if (match) match.quantity += qty;
+      if (match) match.quantity = mode === "set" ? qty : match.quantity + qty;
       else d.lines.push(newLine);
       recompute(ctx);
-      return { content: `أضفت ${qty}× ${item.name}.\n${summary(d)}` };
+      const verb = mode === "set" ? "ضبطت الكمية على" : "أضفت";
+      return { content: `${verb} ${match ? match.quantity : qty}× ${item.name}.\n${summary(d)}` };
+    }
+    case "clear_order": {
+      // Reset the in-progress draft to empty (items + fulfillment) — a true "start
+      // over". Re-ask fulfillment later as needed. Never touches a finalized order.
+      ctx.draft = emptyDraft(d.currency);
+      return { content: "تمام، مسحت الطلب ونبدأ من جديد. تحب تطلب إيه؟" };
     }
     case "remove_from_order": {
       const itemName = String(input.item_name ?? "");
