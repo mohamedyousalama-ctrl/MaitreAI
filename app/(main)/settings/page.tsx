@@ -1,52 +1,39 @@
 "use client";
 
-import { useState } from "react";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { SettingsCard, SettingsRow, Toggle } from "@/components/ui/SettingsCard";
-import { TextField, SelectField, TextAreaField } from "@/components/ui/FormControls";
-import { StatusSelector } from "@/components/ui/StatusSelector";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { WhatsAppStatusCard } from "@/components/messaging/WhatsAppStatusCard";
-import { WhatsAppCredentialsCard } from "@/components/settings/WhatsAppCredentialsCard";
-import { PrintSettingsCard } from "@/components/settings/PrintSettingsCard";
-import { TaxSettingsCard } from "@/components/settings/TaxSettingsCard";
-import { OutboundLogList } from "@/components/messaging/MessageLogList";
-import { useMessageLogStore } from "@/lib/messaging/message-log-store";
-import { useRestaurantStore, useHasHydrated } from "@/lib/store";
-import type { AiEmojiUsage, AiLanguage, AiPersonality, AiResponseLength } from "@/lib/types";
-import {
-  Settings as SettingsIcon,
-  Store,
-  MessageCircle,
-  CreditCard,
-  Bot,
-  Hand,
-  Languages,
-  RotateCcw,
-} from "lucide-react";
+// ============================================================================
+// MaitreAI — الإعدادات (Settings) — Terracotta redesign.
+// REUSES the existing DB-backed config: useRestaurantStore.profile / updateProfile
+// and .aiTone / updateAiTone (persist), the real branches list, and the existing
+// WhatsAppCredentialsCard + TaxSettingsCard (write-only / persisting). HONEST
+// STATUS: WhatsApp «متصل/مباشر» derives ONLY from the real /api/channels/whatsapp/
+// status signal; the AI-engine badge from /api/settings/ops; payment shows
+// not-connected «قريبًا» (no real gateway). No secrets/tokens are shown.
+// ============================================================================
 
-const PERSONALITY_OPTS: { value: AiPersonality; label: string }[] = [
-  { value: "formal", label: "رسمي" },
-  { value: "friendly", label: "ودود" },
-  { value: "premium", label: "راقٍ" },
-  { value: "fastfood", label: "وجبات سريعة" },
-  { value: "luxury", label: "فاخر" },
+import { useEffect, useState } from "react";
+import { useRestaurantStore, useHasHydrated } from "@/lib/store";
+import { WhatsAppCredentialsCard } from "@/components/settings/WhatsAppCredentialsCard";
+import { TaxSettingsCard } from "@/components/settings/TaxSettingsCard";
+import { SignOutButton } from "@/components/layout/SignOutButton";
+import type { AiEmojiUsage, AiLanguage, AiPersonality } from "@/lib/types";
+import { Store, Sparkles, Wifi, CreditCard, MapPin, MessageCircle, ChevronLeft } from "lucide-react";
+
+type WaStatus = { configured: boolean; mode: string } | null;
+type Ops = { isOpen: boolean; assistantOn: boolean } | null;
+
+const PERSONA: { v: AiPersonality; label: string }[] = [
+  { v: "friendly", label: "ودود ومرحّب" }, { v: "formal", label: "رسمي ومحترف" }, { v: "fastfood", label: "سريع ومختصر" }, { v: "premium", label: "راقٍ" }, { v: "luxury", label: "فاخر" },
 ];
-const LENGTH_OPTS: { value: AiResponseLength; label: string }[] = [
-  { value: "short", label: "قصيرة" },
-  { value: "medium", label: "متوسطة" },
-  { value: "detailed", label: "مفصلة" },
-];
-const EMOJI_OPTS: { value: AiEmojiUsage; label: string }[] = [
-  { value: "none", label: "بدون" },
-  { value: "minimal", label: "قليل" },
-  { value: "normal", label: "عادي" },
-];
-const LANG_OPTS: { value: AiLanguage; label: string }[] = [
-  { value: "ar", label: "العربية" },
-  { value: "en", label: "الإنجليزية" },
-  { value: "bilingual", label: "ثنائي اللغة" },
-];
+const LANGS: { v: AiLanguage; label: string }[] = [{ v: "ar", label: "العربية" }, { v: "en", label: "الإنجليزية" }, { v: "bilingual", label: "ثنائي اللغة" }];
+const EMOJI: { v: AiEmojiUsage; label: string }[] = [{ v: "none", label: "بدون" }, { v: "minimal", label: "قليل" }, { v: "normal", label: "عادي" }];
+
+const SECTIONS = [
+  { k: "profile", label: "ملف المطعم", Icon: Store },
+  { k: "tone", label: "نبرة المساعد", Icon: Sparkles },
+  { k: "channels", label: "القنوات والاتصال", Icon: Wifi },
+  { k: "payment", label: "الدفع والفواتير", Icon: CreditCard },
+  { k: "branches", label: "الفروع", Icon: MapPin },
+] as const;
 
 export default function SettingsPage() {
   const hydrated = useHasHydrated();
@@ -54,162 +41,194 @@ export default function SettingsPage() {
   const updateProfile = useRestaurantStore((s) => s.updateProfile);
   const aiTone = useRestaurantStore((s) => s.aiTone);
   const updateAiTone = useRestaurantStore((s) => s.updateAiTone);
-  const resetAll = useRestaurantStore((s) => s.resetAll);
-  const outbound = useMessageLogStore((s) => s.outbound);
+  const branches = useRestaurantStore((s) => s.branches);
 
-  const [resetOpen, setResetOpen] = useState(false);
+  const [section, setSection] = useState<(typeof SECTIONS)[number]["k"]>("profile");
+  const [wa, setWa] = useState<WaStatus>(null);
+  const [ops, setOps] = useState<Ops>(null);
+
+  useEffect(() => {
+    fetch("/api/channels/whatsapp/status").then((r) => (r.ok ? r.json() : null)).then((d) => setWa(d ? { configured: !!d.configured, mode: d.mode } : null)).catch(() => setWa(null));
+    fetch("/api/settings/ops").then((r) => (r.ok ? r.json() : null)).then((d) => setOps(d ? { isOpen: d.isOpen !== false, assistantOn: d.assistantOn !== false } : null)).catch(() => setOps(null));
+  }, []);
+
+  if (!hydrated) return <div className="h-[calc(100vh-8rem)] animate-pulse rounded-2xl border border-[#ECE3D5] bg-white/60" />;
+
+  // honest connection state
+  const waConnected = wa?.configured === true;
+  const waBadge = wa == null ? { label: "…", bg: "#F7F2EA", fg: "#9A8E7E", dot: "#C9BFAE" }
+    : waConnected ? { label: "متصل", bg: "#EAF1E9", fg: "#436B50", dot: "#5C8A6B" }
+    : { label: "غير مُهيأ", bg: "#FBF1DD", fg: "#946312", dot: "#C5871F" };
+  const engineBadge = ops == null ? { label: "…", bg: "#F7F2EA", fg: "#9A8E7E", dot: "#C9BFAE" }
+    : !ops.assistantOn ? { label: "متوقف", bg: "#F4EEE9", fg: "#9A8E7E", dot: "#C9BFAE" }
+    : waConnected ? { label: "مباشر", bg: "#EAF1E9", fg: "#436B50", dot: "#5C8A6B" }
+    : { label: "وضع تجريبي", bg: "#FBF1DD", fg: "#946312", dot: "#C5871F" };
 
   return (
-    <div>
-      {/* الفروع + مناطق التوصيل folded into الإعدادات (Amendment 04 §M2) */}
-      <a
-        href="/branches"
-        className="mb-4 flex items-center justify-between rounded-xl border border-[#e4d8c8] bg-white px-4 py-3 text-sm font-semibold text-[#2a211b] hover:bg-[#faf6ef]"
-      >
-        <span className="flex flex-col">
-          إدارة الفروع ومناطق التوصيل
-          <span className="text-xs font-normal text-[#9b8b7c]">الفروع وكل منطقة توصيل تابعة لها في مكان واحد</span>
-        </span>
-        <span className="text-xs text-[#9b8b7c]">الفروع ومناطق التوصيل ←</span>
-      </a>
-      {/* العروض folded into الإعدادات (Amendment 04 §M2) */}
-      <a
-        href="/promotions"
-        className="mb-4 flex items-center justify-between rounded-xl border border-[#e4d8c8] bg-white px-4 py-3 text-sm font-semibold text-[#2a211b] hover:bg-[#faf6ef]"
-      >
-        <span className="flex flex-col">
-          إدارة العروض
-          <span className="text-xs font-normal text-[#9b8b7c]">إنشاء العروض وإيقافها وحذفها</span>
-        </span>
-        <span className="text-xs text-[#9b8b7c]">العروض ←</span>
-      </a>
-      <PageHeader
-        title="الإعدادات"
-        subtitle="إعداد المطعم والتكاملات وقواعد الموظف الذكي"
-        icon={SettingsIcon}
-        accentBg="bg-settings"
-        actions={
-          <button
-            onClick={() => setResetOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            <RotateCcw className="h-4 w-4" /> استعادة الافتراضي
-          </button>
-        }
-      />
-
-      {!hydrated ? (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="card h-64 animate-pulse bg-slate-50" />
+    <div dir="rtl" className="flex gap-4">
+      {/* section nav */}
+      <aside className="hidden w-[224px] flex-none rounded-2xl border border-[#ECE3D5] bg-white p-3.5 lg:block" style={{ alignSelf: "flex-start" }}>
+        <div className="mb-3 px-1 text-[17px] font-bold text-[#2A2019]">الإعدادات</div>
+        <div className="flex flex-col gap-1">
+          {SECTIONS.map(({ k, label, Icon }) => (
+            <button key={k} onClick={() => setSection(k)} className="flex items-center gap-3 rounded-[11px] px-3 py-2.5 text-right transition"
+              style={section === k ? { background: "#FBF1ED", color: "#BE5238" } : { color: "#6B6055" }}>
+              <Icon className="h-[18px] w-[18px]" strokeWidth={2} /><span className="text-[13.5px] font-semibold">{label}</span>
+            </button>
           ))}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {/* Restaurant profile — editable */}
-          <SettingsCard title="ملف المطعم" description="المعلومات الأساسية للمطعم (تُحفظ تلقائياً)" icon={Store} accentBg="bg-branches">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <TextField label="اسم المطعم" value={profile.name} onChange={(v) => updateProfile({ name: v })} />
-              <TextField label="رابط الشعار" value={profile.logoUrl} onChange={(v) => updateProfile({ logoUrl: v })} placeholder="https://..." />
-              <TextField label="الهاتف" value={profile.phone} onChange={(v) => updateProfile({ phone: v })} />
-              <TextField label="البريد الإلكتروني" value={profile.email} onChange={(v) => updateProfile({ email: v })} />
-              <TextField label="العملة" value={profile.currency} onChange={(v) => updateProfile({ currency: v })} />
-              <TextField label="اللغة الافتراضية" value={profile.defaultLanguage} onChange={(v) => updateProfile({ defaultLanguage: v })} />
-              <TextField label="المنطقة الزمنية" value={profile.timezone} onChange={(v) => updateProfile({ timezone: v })} />
-              <TextField label="نوع النشاط" value={profile.businessType} onChange={(v) => updateProfile({ businessType: v })} />
+        <div className="mt-3 border-t border-[#F2EBE0] pt-3"><SignOutButton /></div>
+      </aside>
+
+      {/* mobile section chips */}
+      <div className="mb-1 flex w-full gap-2 overflow-x-auto lg:hidden">
+        {SECTIONS.map(({ k, label }) => (
+          <button key={k} onClick={() => setSection(k)} className="whitespace-nowrap rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition"
+            style={section === k ? { background: "#BE5238", color: "#fff" } : { background: "#fff", border: "1px solid #EBE2D3", color: "#514538" }}>{label}</button>
+        ))}
+      </div>
+
+      <div className="min-w-0 flex-1 space-y-4">
+        {/* ===== ملف المطعم ===== */}
+        {section === "profile" && (
+          <Card title="ملف المطعم" subtitle="البيانات الأساسية اللي يعرفها المساعد ويقدّمها للعملاء.">
+            <div className="mb-4 flex items-center gap-4 border-b border-[#F2EBE0] pb-4">
+              <span className="flex h-16 w-16 flex-none items-center justify-center rounded-[16px] text-[26px] font-bold text-white" style={{ background: "linear-gradient(150deg,#C25A3E,#8A3621)" }}>{profile.name.trim().charAt(0) || "م"}</span>
+              <div className="text-[12px] text-[#9A8E7E]">الشعار يُدار من رابط الشعار أدناه · PNG/SVG</div>
             </div>
-          </SettingsCard>
-
-          {/* AI tone — editable */}
-          <SettingsCard title="إعدادات نبرة الذكاء" description="كيف يتحدث الموظف الذكي مع العملاء" icon={Bot} accentBg="bg-brain">
-            <div className="space-y-4">
-              <SelectField
-                label="الشخصية"
-                value={aiTone.personality}
-                onChange={(v) => updateAiTone({ personality: v })}
-                options={PERSONALITY_OPTS}
-              />
-              <StatusSelector
-                label="طول الرد"
-                value={aiTone.responseLength}
-                onChange={(v) => updateAiTone({ responseLength: v as AiResponseLength })}
-                options={LENGTH_OPTS}
-              />
-              <StatusSelector
-                label="استخدام الإيموجي"
-                value={aiTone.emojiUsage}
-                onChange={(v) => updateAiTone({ emojiUsage: v as AiEmojiUsage })}
-                options={EMOJI_OPTS}
-              />
-              <StatusSelector
-                label="اللغة"
-                value={aiTone.language}
-                onChange={(v) => updateAiTone({ language: v as AiLanguage })}
-                options={LANG_OPTS}
-              />
-              <TextAreaField label="رسالة الترحيب" value={aiTone.greeting} onChange={(v) => updateAiTone({ greeting: v })} rows={2} />
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+              <Field label="اسم المطعم" value={profile.name} onSave={(v) => updateProfile({ name: v })} />
+              <Field label="العملة" value={profile.currency} onSave={(v) => updateProfile({ currency: v })} />
+              <Field label="رقم التواصل" value={profile.phone} onSave={(v) => updateProfile({ phone: v })} ltr />
+              <Field label="البريد الإلكتروني" value={profile.email} onSave={(v) => updateProfile({ email: v })} ltr />
+              <Field label="رابط الشعار" value={profile.logoUrl} onSave={(v) => updateProfile({ logoUrl: v })} ltr placeholder="https://…" />
+              <Field label="نوع النشاط" value={profile.businessType} onSave={(v) => updateProfile({ businessType: v })} />
+              <Field label="المنطقة الزمنية" value={profile.timezone} onSave={(v) => updateProfile({ timezone: v })} />
+              <div className="rounded-[11px] border border-[#EBE2D3] bg-[#F7F2EA] px-3.5 py-3">
+                <div className="mb-1 text-[12px] font-semibold text-[#514538]">مواعيد العمل</div>
+                <div className="text-[12.5px] text-[#A99D8D]">تُدار من الفروع <span className="text-[#C5871F]">· قريبًا في هذه الصفحة</span></div>
+              </div>
             </div>
-          </SettingsCard>
+          </Card>
+        )}
 
-          {/* WhatsApp connection — live status (Sprint 6) */}
-          <WhatsAppStatusCard />
+        {/* ===== نبرة المساعد ===== */}
+        {section === "tone" && (
+          <Card title="نبرة المساعد" subtitle="كيف يكلّم المساعد عملاءك على واتساب." icon={<Sparkles className="h-4 w-4 text-white" />} iconGrad>
+            <div className="flex flex-col gap-5">
+              <div>
+                <Label>الشخصية</Label>
+                <div className="flex flex-wrap gap-2">{PERSONA.map((p) => <Chip key={p.v} active={aiTone.personality === p.v} onClick={() => updateAiTone({ personality: p.v })}>{p.label}</Chip>)}</div>
+              </div>
+              <div>
+                <Label>اللغة</Label>
+                <div className="flex flex-wrap gap-2">{LANGS.map((l) => <Chip key={l.v} active={aiTone.language === l.v} onClick={() => updateAiTone({ language: l.v })}>{l.label}</Chip>)}</div>
+                <p className="mt-2 text-[11px] text-[#A99D8D]">اللهجة (مصري/سعودي) تُضبط مع إعداد المساعد <span className="text-[#C5871F]">· قريبًا هنا</span>.</p>
+              </div>
+              <div>
+                <Label>استخدام الإيموجي</Label>
+                <div className="flex flex-wrap gap-2">{EMOJI.map((e) => <Chip key={e.v} active={aiTone.emojiUsage === e.v} onClick={() => updateAiTone({ emojiUsage: e.v })}>{e.label}</Chip>)}</div>
+              </div>
+              <div>
+                <Label>رسالة الترحيب</Label>
+                <textarea defaultValue={aiTone.greeting} onBlur={(e) => updateAiTone({ greeting: e.target.value })} rows={2}
+                  className="w-full rounded-[11px] border border-[#EBE2D3] bg-[#F7F2EA] px-3.5 py-3 text-[13px] text-[#2A2019] outline-none focus:border-[#BE5238]" placeholder="أهلاً بيك 🌟 تحب تطلب إيه النهارده؟" />
+              </div>
+            </div>
+          </Card>
+        )}
 
-          {/* WhatsApp credentials — bring-your-own-number (Piece 3) */}
-          <WhatsAppCredentialsCard />
+        {/* ===== القنوات والاتصال (HONEST status) ===== */}
+        {section === "channels" && (
+          <>
+            <Card title="القنوات والاتصال" subtitle="الحالة بتظهر بصدق — بتتأكد من الاتصال الفعلي.">
+              <div className="flex flex-col gap-2.5">
+                <StatusRow iconBg="#25D366" icon={<MessageCircle className="h-5 w-5 text-white" />} title="واتساب للأعمال" sub={waConnected ? "متصل عبر WhatsApp Cloud API" : "لم تُضبط بيانات الاعتماد بعد"} badge={waBadge} />
+                <StatusRow iconBg="#FBF1ED" icon={<Sparkles className="h-5 w-5 text-[#C5871F]" />} title="محرك المساعد الذكي" sub="يرد ويرشّح خطوات تلقائياً" badge={engineBadge} />
+              </div>
+            </Card>
+            {/* real bring-your-own-number config (write-only, no secrets shown) */}
+            <WhatsAppCredentialsCard />
+          </>
+        )}
 
-          {/* Print settings — auto-print + paper width (S9-5 / §O #5) */}
-          <PrintSettingsCard />
+        {/* ===== الدفع والفواتير ===== */}
+        {section === "payment" && (
+          <>
+            <Card title="الدفع والفواتير" subtitle="بوابة الدفع والضريبة. الحالة تعكس الاتصال الفعلي.">
+              <StatusRow iconBg="#E7EAF2" icon={<CreditCard className="h-5 w-5 text-[#5E6FA0]" />} title="بوابة الدفع" sub="روابط دفع · مدى · آبل باي · بطاقة"
+                badge={{ label: "غير متصلة · قريبًا", bg: "#F4EEE9", fg: "#9A8E7E", dot: "#C9BFAE" }} />
+              <p className="mt-3 text-[11.5px] text-[#A99D8D]">لا توجد بوابة دفع مُفعّلة بعد — يظهر هنا الاتصال الحقيقي عند ربطها.</p>
+            </Card>
+            {/* real tax config (persists) */}
+            <TaxSettingsCard />
+          </>
+        )}
 
-          {/* Tax / VAT — inclusive (default) vs added (Sprint 10) */}
-          <TaxSettingsCard />
+        {/* ===== الفروع ===== */}
+        {section === "branches" && (
+          <Card title="الفروع" subtitle="فروع مطعمك ومناطق توصيلها.">
+            {branches.length === 0 ? (
+              <div className="rounded-[11px] border border-[#EFE7DA] bg-[#F7F2EA] p-4 text-center text-[12.5px] text-[#A99D8D]">لا فروع بعد.</div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {branches.map((b) => (
+                  <div key={b.id} className="flex items-center gap-3 rounded-[12px] border border-[#EBE2D3] bg-[#F7F2EA] p-3">
+                    <span className="flex h-9 w-9 flex-none items-center justify-center rounded-[10px] bg-[#E7EAF2] text-[#5E6FA0]"><MapPin className="h-4 w-4" /></span>
+                    <div className="min-w-0 flex-1"><div className="truncate text-[13.5px] font-bold text-[#2A2019]">{b.name}</div><div className="truncate text-[11.5px] text-[#9A8E7E]" dir="ltr">{b.phone || "—"}</div></div>
+                    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold" style={b.open ? { background: "#EAF1E9", color: "#436B50" } : { background: "#F4EEE9", color: "#9A8E7E" }}>
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: b.open ? "#5C8A6B" : "#C9BFAE" }} />{b.open ? "مفتوح" : "مغلق"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <a href="/branches" className="mt-3 flex items-center justify-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-white py-2.5 text-[12.5px] font-semibold text-[#BE5238] hover:border-[#E0C4B6]">
+              إدارة الفروع ومناطق التوصيل <ChevronLeft className="h-4 w-4" />
+            </a>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
 
-          {/* Payment provider — placeholder */}
-          <SettingsCard title="بوابة الدفع" description="مزود خدمة الدفع وروابط الدفع" icon={CreditCard} accentBg="bg-promotions">
-            <SettingsRow label="المزود" value="غير مفعّل (تجريبي)" />
-            <SettingsRow label="مدى" value={<Toggle checked />} />
-            <SettingsRow label="آبل باي" value={<Toggle checked />} />
-            <SettingsRow label="البطاقات الائتمانية" value={<Toggle checked={false} />} />
-            <p className="text-xs text-slate-400">* تكامل الدفع الفعلي سيتم في مرحلة لاحقة.</p>
-          </SettingsCard>
-
-          {/* Human takeover rules — placeholder */}
-          <SettingsCard title="قواعد التدخل البشري" description="متى يتم تحويل المحادثة لموظف" icon={Hand} accentBg="bg-kitchen">
-            <SettingsRow label="تحويل عند الشكاوى" value={<Toggle checked />} />
-            <SettingsRow label="تحويل عند انخفاض الثقة (<50%)" value={<Toggle checked />} />
-            <SettingsRow label="تحويل عند طلب العميل" value={<Toggle checked />} />
-            <SettingsRow label="تحويل خارج أوقات العمل" value={<Toggle checked={false} />} />
-          </SettingsCard>
-
-          {/* Language settings — placeholder */}
-          <SettingsCard title="إعدادات اللغة" description="لغة الواجهة والردود" icon={Languages} accentBg="bg-settings">
-            <SettingsRow label="لغة الواجهة" value="العربية (RTL)" />
-            <SettingsRow label="لغة الردود الافتراضية" value={profile.defaultLanguage} />
-            <SettingsRow label="الرد بلغة العميل تلقائياً" value={<Toggle checked />} />
-          </SettingsCard>
-
-          {/* Outbound message log (Sprint 6) */}
-          <SettingsCard
-            title="سجل الرسائل الصادرة"
-            description="آخر الرسائل المرسلة عبر القنوات (محاكاة محلية)"
-            icon={MessageCircle}
-            accentBg="bg-orders"
-          >
-            <OutboundLogList entries={outbound.slice(0, 6)} />
-          </SettingsCard>
-        </div>
-      )}
-
-      <ConfirmDialog
-        open={resetOpen}
-        title="استعادة الإعدادات الافتراضية"
-        message="سيتم مسح كل تعديلاتك المحلية والعودة لبيانات المطعم الافتراضية."
-        confirmLabel="استعادة"
-        onConfirm={() => {
-          resetAll();
-          setResetOpen(false);
-        }}
-        onCancel={() => setResetOpen(false)}
-      />
+// ---- pieces ----------------------------------------------------------------
+function Card({ title, subtitle, icon, iconGrad, children }: { title: string; subtitle?: string; icon?: React.ReactNode; iconGrad?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="rounded-[18px] border border-[#ECE3D5] bg-white p-5">
+      <div className="mb-1 flex items-center gap-2.5">
+        {icon && <span className="flex h-7 w-7 items-center justify-center rounded-[8px]" style={iconGrad ? { background: "linear-gradient(150deg,#C25A3E,#8A3621)" } : {}}>{icon}</span>}
+        <span className="text-[16px] font-bold text-[#2A2019]">{title}</span>
+      </div>
+      {subtitle && <p className="mb-4 text-[12.5px] text-[#9A8E7E]">{subtitle}</p>}
+      {children}
+    </div>
+  );
+}
+function Label({ children }: { children: React.ReactNode }) {
+  return <label className="mb-2 block text-[12px] font-semibold text-[#514538]">{children}</label>;
+}
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button onClick={onClick} className="rounded-[10px] px-4 py-2 text-[12.5px] font-semibold transition" style={active ? { background: "#BE5238", color: "#fff" } : { background: "#fff", border: "1px solid #EBE2D3", color: "#514538" }}>{children}</button>;
+}
+function Field({ label, value, onSave, ltr, placeholder }: { label: string; value: string; onSave: (v: string) => void; ltr?: boolean; placeholder?: string }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-[12px] font-semibold text-[#514538]">{label}</span>
+      <input defaultValue={value} placeholder={placeholder} dir={ltr ? "ltr" : undefined} onBlur={(e) => { if (e.target.value !== value) onSave(e.target.value); }}
+        className="w-full rounded-[11px] border border-[#EBE2D3] bg-[#F7F2EA] px-3.5 py-3 text-[13.5px] text-[#2A2019] outline-none focus:border-[#BE5238]" />
+    </label>
+  );
+}
+function StatusRow({ iconBg, icon, title, sub, badge }: { iconBg: string; icon: React.ReactNode; title: string; sub: string; badge: { label: string; bg: string; fg: string; dot: string } }) {
+  return (
+    <div className="flex items-center gap-3.5 rounded-[13px] border border-[#EBE2D3] bg-[#F7F2EA] p-3.5">
+      <span className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[11px]" style={{ background: iconBg }}>{icon}</span>
+      <div className="min-w-0 flex-1"><div className="text-[13.5px] font-bold text-[#2A2019]">{title}</div><div className="truncate text-[11.5px] text-[#9A8E7E]">{sub}</div></div>
+      <span className="inline-flex flex-none items-center gap-1.5 rounded-full px-3 py-1.5 text-[11.5px] font-bold" style={{ background: badge.bg, color: badge.fg }}>
+        <span className="h-[7px] w-[7px] rounded-full" style={{ background: badge.dot }} />{badge.label}
+      </span>
     </div>
   );
 }
