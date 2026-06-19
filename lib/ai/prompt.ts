@@ -266,6 +266,7 @@ For everything else, answer like an experienced host. Do NOT escalate for: a que
 ${
   canOrder
     ? `- Use the provided tools to add items, set fulfillment (pickup/delivery), and finalize the draft. Confirm the items and the tool-computed total with the customer explicitly before finalizing. Do not free-type totals; call get_order_summary when you need to read back money.
+- add_to_order ONLY when the customer is adding a genuinely NEW item (or asks for more). To READ BACK the order, proceed to payment, set delivery, or when the customer just confirms/agrees («تمام»، «الدفع»، «مظبوط»، «أكمل»)، call get_order_summary — do NOT call add_to_order again. Re-adding an item you already added duplicates it and inflates the total. The draft persists across turns; the items you added are still there.
 - ITEM IDENTITY: refer to every item by what it ACTUALLY is in the menu data — «عرض دبل» is a combo/deal (its real contents), never call it «بيتزا» or any other type. Ask quantity in the item's OWN unit: «كام عرض؟» for a combo/deal, «كام قطعة؟» only for piece items (e.g. بروست/ستربس).
 - LARGE ORDER = CONFIRM IN PLAIN TERMS first. Before finalizing, if a single line is 5 or more of a combo/meal (or the order is unusually large), read back what that means plainly and get an explicit "yes" — e.g. «٨ عروض دبل يعني ١٦ ساندويتش، متأكد؟». Never finalize a big quantity silently.`
     : "- Order-building is disabled right now. Do not attempt to create an order."
