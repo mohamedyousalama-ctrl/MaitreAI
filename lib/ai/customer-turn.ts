@@ -116,7 +116,7 @@ export async function runCustomerTurn(
 
     const { data: priorDraftRows } = await admin
       .from("messages")
-      .select("meta")
+      .select("meta, created_at")
       .eq("conversation_id", conversationId)
       .eq("sender", "ai")
       .order("created_at", { ascending: false })
@@ -124,7 +124,15 @@ export async function runCustomerTurn(
     const row = (priorDraftRows ?? []).find((message) =>
       isOpenDraft((message.meta as Record<string, unknown> | null)?.draft)
     );
-    initialDraft = row ? ((row.meta as Record<string, unknown>).draft as OrderDraft) : null;
+    // Fix A — expire stale drafts. An abandoned basket must NOT resurface as the
+    // active order hours later (#1017: a 14:23 draft reloaded at 17:58). Only reload
+    // a draft whose message is within the freshness window; otherwise start fresh.
+    // 45 min comfortably covers a genuine mid-order pause while expiring abandoned baskets.
+    const DRAFT_FRESHNESS_MS = 45 * 60 * 1000;
+    if (row) {
+      const ageMs = Date.now() - new Date(row.created_at as string).getTime();
+      initialDraft = ageMs <= DRAFT_FRESHNESS_MS ? ((row.meta as Record<string, unknown>).draft as OrderDraft) : null;
+    }
   }
 
   const dialect = String(row.dialect ?? "egyptian");

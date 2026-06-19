@@ -64,6 +64,32 @@ function isExplicitOrderConfirmation(text: string): boolean {
   return /(?:أكد|تأكيد|ابعته|ابعت|ارسله|رسل|كمّل|كمل|تمام|أيوه|ايوه|yes|confirm|send it)/iu.test(text);
 }
 
+// Fix D — the «تمام» fast-path may auto-finalize ONLY when the conversation is
+// genuinely at an order-confirmation point. If the last thing كريم said was a
+// reset / transfer / escalation / "can't clear the old items" message, a «تمام» is
+// agreement to THAT — not an order confirm — so we must NOT blind-finalize the
+// (possibly stale) basket (#1017). The model loop then handles it instead.
+const RESET_ESCALATION_RE = /(أحوّل|أحول|نحوّل|نحول|حوّلت|حولت|الفريق|موظف|مش بتتمسح|ما بتتمسح|ماتتمسح|بتتمسح|نبدأ من الأول|نبدا من الأول|من الأول|نمسح|أمسح|امسح|تتمسح)/u;
+// Positive signal that كريم just read the order back / asked to confirm it.
+const ORDER_READBACK_RE = /(الإجمالي|الاجمالي|المجموع|تأكيد الطلب|تأكد الطلب|تؤكد الطلب|أأكد|نأكد|أكدّ|تأكيد|أرسل الطلب|نكمل للدفع)/u;
+
+function lastAssistantText(history: LlmMessage[]): string {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.role === "assistant" && typeof m.content === "string") return m.content;
+  }
+  return "";
+}
+
+/** True only when the last assistant turn looks like a real order readback/confirm
+ *  prompt and is NOT a reset/escalation/transfer message. */
+function atConfirmationPoint(history: LlmMessage[]): boolean {
+  const t = lastAssistantText(history);
+  if (!t.trim()) return false;
+  if (RESET_ESCALATION_RE.test(t)) return false;
+  return ORDER_READBACK_RE.test(t);
+}
+
 function safeMoneyReply(dialect: string): string {
   return dialect === "egyptian"
     ? "أقدر أحسبهولك بدقة من السيستم، بس لازم أبني الطلب الأول. تحب أضيف إيه؟"
@@ -108,7 +134,12 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const usage: LlmUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
   const toolNames: string[] = [];
 
-  if (canOrder && input.initialDraft?.lines.length && isExplicitOrderConfirmation(input.userMessage)) {
+  if (
+    canOrder &&
+    input.initialDraft?.lines.length &&
+    isExplicitOrderConfirmation(input.userMessage) &&
+    atConfirmationPoint(input.history)
+  ) {
     toolNames.push("finalize_draft");
     const out = executeTool("finalize_draft", {}, ctx);
     const reply = out.isError ? safeConfirmReply(input.brain.dialect) : out.content;
