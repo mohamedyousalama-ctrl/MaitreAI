@@ -11,6 +11,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadBrain } from "@/lib/db/brain";
+import { isPromoActiveNow } from "@/lib/promo";
 import { respond } from "@/lib/ai/respond";
 import { deriveSystemMode } from "@/lib/ai/modes";
 import { costUsd, modelFor } from "@/lib/ai/llm";
@@ -141,6 +142,7 @@ export async function runCustomerTurn(
     deliveryAreas: brain.deliveryAreas,
     policies: brain.policies,
     faqs: brain.faqs,
+    activePromotions: brain.promotions.filter((p) => isPromoActiveNow(p)),
     aiTone,
     mode,
     isOpen: !!row.is_open,
