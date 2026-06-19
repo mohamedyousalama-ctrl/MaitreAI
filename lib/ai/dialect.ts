@@ -24,6 +24,8 @@ export interface DialectProfile {
     voiceNote: string;
     /** Acknowledge-then-pivot anchor for an unavailable/unknown item (§G). */
     unavailable: string;
+    /** Warm "no current offers" decline + pivot (answer like an employee, never escalate). */
+    noOffers: string;
   };
 }
 
@@ -41,6 +43,7 @@ export const DIALECTS: Record<Dialect, DialectProfile> = {
       closed: "نعتذر منك 🌙 المطعم مغلق حالياً، نفتح الساعة ١١ صباحاً.",
       voiceNote: "سمعتك 👌 ... صح؟",
       unavailable: "للأسف هذا الصنف غير متوفر حالياً، بس أقدر أرشّح لك بديل من المتوفر إذا تحب 👌",
+      noOffers: "للأسف ما في عروض متاحة حالياً 🙏، بس تحب أرشّح لك الأكثر طلباً عندنا؟",
     },
   },
   egyptian: {
@@ -56,6 +59,7 @@ export const DIALECTS: Record<Dialect, DialectProfile> = {
       closed: "معلش 🌙 المطعم مقفول دلوقتي، بنفتح الساعة ١١ الصبح.",
       voiceNote: "سمعتك 👌 ... صح كده؟",
       unavailable: "للأسف الصنف ده مش متوفر دلوقتي، بس أقدر أرشّحلك بديل من المتوفر لو تحب 👌",
+      noOffers: "للأسف مفيش عروض متاحة دلوقتي 🙏، بس تحب أرشّحلك الأكثر مبيعاً عندنا؟",
     },
   },
 };
