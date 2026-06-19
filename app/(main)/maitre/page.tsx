@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useConversationStore } from "@/lib/conversation-store";
+import { countEscalations } from "@/lib/escalation";
 import { useOrderStore } from "@/lib/order-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { useOpsStore } from "@/lib/ops-store";
@@ -99,9 +100,7 @@ export default function MaitreConsole() {
     setPromoDraft(d);
   };
 
-  const escalations = conversations.filter(
-    (c) => c.status === "يحتاج تدخل موظف" || c.status === "تم التحويل لموظف" || c.owner === "human"
-  ).length;
+  const escalations = countEscalations(conversations);
   const openConvs = conversations.filter((c) => c.status !== "طلب مكتمل").length;
   const ordersToday = orders.filter((o) => o.createdAt >= startOfToday()).length;
 

@@ -60,7 +60,9 @@ function ConversationsInner() {
 
   if (!hydrated) return <div className="h-[calc(100vh-8rem)] animate-pulse rounded-2xl border border-[#ECE3D5] bg-white/60" />;
 
-  const openCount = conversations.length;
+  // «مفتوحة» = genuinely OPEN conversations: everything except a completed order
+  // («طلب مكتمل», the only terminal status). S3: was counting ALL conversations.
+  const openCount = conversations.filter((c) => c.status !== "طلب مكتمل").length;
   const list = conversations.filter((c) => {
     if (filter === "needs" && !isEscalated(c)) return false;
     if (filter === "unread" && !(c.unread > 0)) return false;

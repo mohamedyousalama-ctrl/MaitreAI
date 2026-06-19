@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Bell, Search, ChevronDown } from "lucide-react";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { useConversationStore } from "@/lib/conversation-store";
+import { countEscalations } from "@/lib/escalation";
 import { useOpsStore } from "@/lib/ops-store";
 import { seedProfile } from "@/lib/seed-data";
 import { SignOutButton } from "./SignOutButton";
@@ -20,9 +21,7 @@ export function AppTopbar() {
   const isOpen = useOpsStore((s) => s.isOpen);
   const restaurantName = hydrated ? name : seedProfile.name;
   const branchName = hydrated && branches[0]?.name ? branches[0].name : "كل الفروع";
-  const escalations = hydrated
-    ? conversations.filter((c) => c.status === "يحتاج تدخل موظف" || c.status === "تم التحويل لموظف" || c.owner === "human").length
-    : 0;
+  const escalations = hydrated ? countEscalations(conversations) : 0;
   const open = hydrated ? isOpen : true;
 
   return (

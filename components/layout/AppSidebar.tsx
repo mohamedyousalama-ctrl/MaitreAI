@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
 import { useConversationStore } from "@/lib/conversation-store";
+import { countEscalations } from "@/lib/escalation";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 import { LayoutGrid, Settings } from "lucide-react";
@@ -17,9 +18,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const role = useRole();
   const conversations = useConversationStore((s) => s.conversations);
-  const escalations = conversations.filter(
-    (c) => c.status === "يحتاج تدخل موظف" || c.status === "تم التحويل لموظف" || c.owner === "human"
-  ).length;
+  const escalations = countEscalations(conversations);
 
   const all = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
   const top = all.filter((i) => i.href !== "/settings" && i.href !== "/dashboard");

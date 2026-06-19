@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOrderStore } from "@/lib/order-store";
 import { useConversationStore } from "@/lib/conversation-store";
+import { isEscalated } from "@/lib/escalation";
 import { useRestaurantStore } from "@/lib/store";
 import { useOpsStore } from "@/lib/ops-store";
 import { useRole } from "@/lib/use-role";
@@ -88,7 +89,9 @@ export default function OperatorHomePage() {
     const paid = today.filter((o) => o.paymentStatus === "paid");
     const revenue = paid.reduce((s, o) => s + Number(o.total || 0), 0);
     const count = today.length;
-    const aov = count ? revenue / count : 0;
+    // AOV = average paid invoice: paid revenue ÷ PAID order count (consistent
+    // base). Dividing paid revenue by all orders understated it (S1).
+    const aov = paid.length ? revenue / paid.length : 0;
     const completedToday = today.filter((o) => o.orderStatus === "delivered").length;
     const completion = count ? Math.round((completedToday / count) * 100) : 0;
     const active = orders.filter((o) => ACTIVE.includes(o.orderStatus));
@@ -103,10 +106,7 @@ export default function OperatorHomePage() {
     return { revenue, count, aov, completion, completedToday, active, late, kitchen, out, today, topItems };
   }, [orders]);
 
-  const escalations = useMemo(
-    () => conversations.filter((c) => c.owner === "human" || c.status === "يحتاج تدخل موظف" || c.status === "تم التحويل لموظف"),
-    [conversations]
-  );
+  const escalations = useMemo(() => conversations.filter(isEscalated), [conversations]);
 
   const byCol = useMemo(() => {
     const since = startOfToday();
