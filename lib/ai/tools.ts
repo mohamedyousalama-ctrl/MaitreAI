@@ -213,8 +213,12 @@ export const ORDER_TOOLS: LlmToolDef[] = [
   {
     name: "escalate_to_human",
     description:
-      "Hand the conversation to a human. Use for anything off-menu, ambiguous after one clarifying question, " +
-      "a money mismatch, complaints, refunds, discounts/promotions, or an upset customer.",
+      "Hand the conversation to a human — a LAST resort, used sparingly, ONLY for a genuine human-need: " +
+      "the customer explicitly asks for a human; a real complaint / anger / refund request / billing dispute; " +
+      "allergy or medical uncertainty you can't resolve from the menu data; the customer has restated the same " +
+      "need ~twice with no resolution; or a blocking tool/system failure you can't work around. " +
+      "Do NOT use it for a question you can answer honestly (including 'no offers today'), an unavailable or " +
+      "off-menu item (acknowledge and pivot instead), or a fact you simply don't have (say so and offer the menu).",
     input_schema: {
       type: "object",
       properties: { reason: { type: "string" } },
