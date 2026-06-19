@@ -141,8 +141,8 @@ export const ORDER_TOOLS: LlmToolDef[] = [
   {
     name: "send_item_photos",
     description:
-      "Send real dish photos from the menu when the customer asks for a photo, شكل, صورة, images, or menu with photos. " +
-      "Pass exact menu item names when the customer names items. For a broad photo/menu request, omit item_names or pass a category; the system caps images to avoid spam. " +
+      "Send real dish photos from the menu — when the customer asks (صورة/شكل/صور/images), AND PROACTIVELY when you recommend a dish, show a category's standout items, or confirm a notable item (a picture sells). " +
+      "Pass exact menu item names when items are named; for a broad photo/menu or category sample, omit item_names or pass a category; the system caps images (max 4) to avoid spam. " +
       "Only real menu image_url photos are sent; if none exist, explain briefly and offer the menu.",
     input_schema: {
       type: "object",
