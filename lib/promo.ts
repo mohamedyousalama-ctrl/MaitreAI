@@ -6,7 +6,7 @@
 // are always recomputed from the live menu. Client-safe (no server-only).
 // ============================================================================
 
-import type { MenuItem } from "@/lib/types";
+import type { MenuItem, OperatorPromotion } from "@/lib/types";
 
 export type PromoOfferType = "percent_off" | "amount_off" | "fixed_price" | "bogo";
 export type PromoScopeType = "item" | "category" | "all";
@@ -108,4 +108,45 @@ export function draftToRow(d: PromoDraft): { type: string; config: Record<string
     config: { scopeType: d.scopeType, scopeRef: d.scopeRef, scopeLabel: d.scopeLabel, amount: d.amount, caption: d.caption },
     schedule: { start: start.toISOString(), end: end.toISOString(), durationDays: d.durationDays },
   };
+}
+
+// --- live (customer-agent) helpers ------------------------------------------
+/** A promo is shown to customers only when it is state='active' AND the current
+ *  time is inside its schedule window. Paused/expired/scheduled promos never
+ *  reach كريم. */
+export function isPromoActiveNow(p: OperatorPromotion, now: number = Date.now()): boolean {
+  if (p.state !== "active") return false;
+  const s = (p.schedule ?? {}) as { start?: string; end?: string };
+  const start = s.start ? Date.parse(s.start) : NaN;
+  const end = s.end ? Date.parse(s.end) : NaN;
+  if (!Number.isNaN(start) && now < start) return false;
+  if (!Number.isNaN(end) && now > end) return false;
+  return true;
+}
+
+/** Plain-Arabic one-line description of a promo's discount, from REAL row fields
+ *  only (config.amount / scopeLabel / type) — never invented. */
+export function promoDescription(p: OperatorPromotion, currency: string): string {
+  const c = (p.config ?? {}) as { amount?: number; scopeLabel?: string };
+  const scope = c.scopeLabel?.trim() ? ` على ${c.scopeLabel.trim()}` : "";
+  const a = c.amount;
+  if (p.type === "percent_off" && a != null) return `خصم ${a}%${scope}`;
+  if (p.type === "amount_off" && a != null) return `خصم ${a} ${currency}${scope}`;
+  if ((p.type === "combo" || p.type === "fixed_price") && a != null) return `${c.scopeLabel ?? ""} بسعر ${a} ${currency}`.trim();
+  if (p.type === "bogo") return `اشترِ ١ واحصل على ١${scope}`;
+  return p.name;
+}
+
+/** Real numeric amounts a promo introduces (its discount amount + every affected
+ *  before/after price), so the money-truth guard recognizes them as legitimate
+ *  data and never blocks كريم for quoting a real promo figure. */
+export function promoKnownAmounts(p: OperatorPromotion): number[] {
+  const c = (p.config ?? {}) as { amount?: number; affected?: { before?: number; after?: number }[] };
+  const out: number[] = [];
+  if (typeof c.amount === "number") out.push(c.amount);
+  for (const a of c.affected ?? []) {
+    if (typeof a.after === "number") out.push(a.after);
+    if (typeof a.before === "number") out.push(a.before);
+  }
+  return out;
 }

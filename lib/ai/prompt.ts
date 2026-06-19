@@ -19,9 +19,11 @@ import type {
   FaqItem,
   MenuItem,
   Modifier,
+  OperatorPromotion,
   Policies,
   RestaurantProfile,
 } from "../types";
+import { promoDescription } from "../promo";
 import { dialectProfile } from "./dialect";
 import { MODE_LABELS_AR, modeAllowsOrders, type SystemMode } from "./modes";
 
@@ -35,6 +37,10 @@ export interface BrainContext {
   policies: Policies;
   faqs: FaqItem[];
   aiTone: AiToneConfig;
+  /** Promo CAMPAIGNS that are REALLY active right now (state=active + in window).
+   *  Filtered by the caller; empty/absent = no active offers. Distinct from the
+   *  menu's «العروض» combo items (those are MenuItems). */
+  activePromotions?: OperatorPromotion[];
   // runtime state
   mode: SystemMode;
   isOpen: boolean;
@@ -113,6 +119,12 @@ function menuBlock(items: MenuItem[], modifiers: Modifier[], currency: string): 
   }
   const blocks = cats.map((c) => `### التصنيف: ${c}\n${byCat.get(c)!.map(renderItem).join("\n")}`);
   return blocks.join("\n\n");
+}
+
+function promosBlock(promos: OperatorPromotion[] | undefined, currency: string): string {
+  const list = promos ?? [];
+  if (!list.length) return "(no active promotions right now)";
+  return list.map((p) => `- «${p.name}» — ${promoDescription(p, currency)}`).join("\n");
 }
 
 function branchBlock(branches: Branch[]): string {
@@ -228,7 +240,7 @@ ${
 - Off-menu or ambiguous item: do NOT escalate — acknowledge it's unavailable and pivot to a real alternative (ACKNOWLEDGE-THEN-PIVOT above). Only a genuine money mismatch the customer insists on (a stated total that contradicts the tool) needs: ask ONE clarifying question, and only if it's still unresolved THEN escalate.
 - TRUTH RULE FOR MONEY: NEVER state or accept a price, subtotal, delivery fee, tax, or total from your own head or from the customer's prose. Money comes ONLY from an order tool result in THIS turn. To mention money, first call the relevant order tool, then quote its returned amount verbatim.
 - Never say an order is confirmed, placed, registered, or received unless the finalize_draft tool succeeded in this turn. If you have not finalized a tool-built draft, say you still need to build/review it from the system first.
-- OFFERS / DISCOUNTS — ANSWER, don't escalate. You have NO promotions data, so when a customer simply ASKS whether there are offers/discounts («عندكم عروض؟»، «في خصم؟»), the truthful employee answer is that there are none right now — say it warmly and pivot, e.g. «${dp.examples.noOffers}». When you pivot, recommend your popular MENU items/meals («أشهر أصنافنا»، «أكثر الوجبات طلباً») — do NOT call them «عروض» or «خصومات» or imply a discount exists. NEVER invent an offer, NEVER promise a discount, and do NOT escalate a plain "do you have offers?" question. Escalate ONLY if the customer is genuinely DISPUTING or DEMANDING a specific discount/refund they believe they're owed (a billing/refund dispute) — not for merely asking.
+- OFFERS / DISCOUNTS — ANSWER from the «العروض الفعّالة» block below (real data), don't escalate. When the customer asks «عندكم عروض؟»/«في خصم؟»: IF that block lists active offers, TELL them the real offer(s) by name with their EXACT discount as written there (e.g. «آه، عندنا خصم ٢٠٪ على سندويتشات الدجاج 🌟») — never invent an offer, never change a discount amount, never quote a paused/expired one. IF the block says there are no active promotions, the truthful answer is «${dp.examples.noOffers}» and you pivot to popular MENU items/meals — call those «أصناف/وجبات», NOT «عروض» or «خصومات» (a real promo campaign is a «عرض/خصم»; a menu combo like «عرض كاديا/عرض دبل» is a وجبة, not a discount). Do NOT escalate a plain "do you have offers?" question; escalate ONLY a genuine dispute/demand for a specific discount/refund the customer believes they're owed.
 - OPEN BROWSE = SHOW, never deflect (when NO specific item is named — if one is named, rule 1 wins). When the customer asks open-endedly what you have / to see the menu or a category / «إيه عندكم»، «شو عندكم»، «المنيو»، «القائمة»، «العروض»، «الوجبات»، «قولي»، «وروّيني»: SHOW it in the SAME reply — call present_menu (the named category like «العروض» when given, else the categories), or list the actual items with their EXACT prices (e.g. «البروست بـ ٤٥ ${currency}»). Never answer an open browse request with only a question or a content-free deflection («لو حابب قولي»، «لو حابب تشوف صور قولي»). Describing the menu with real prices is your core job, expected and safe.
 - NEVER state or compute an ORDER TOTAL/sum in prose («الإجمالي»، «طلبك بـ…») — totals come ONLY from the order tools. Per-item menu prices = fine to say; combined order totals = tool only.
 - Applying a NEW discount, editing the menu, or issuing a refund is still a human's job — never invent or apply one yourself. (A discount a teammate ALREADY promised in THIS chat still stands — §E7 below.)
@@ -274,6 +286,9 @@ ${
     : ""
 }
 ## Restaurant data (source of truth)
+### العروض الفعّالة (active promo campaigns — real, time-bound discounts; distinct from menu «العروض» combos)
+${promosBlock(ctx.activePromotions, currency)}
+
 ### Menu (available items)
 ${menuBlock(ctx.menuItems, ctx.modifiers, currency)}
 

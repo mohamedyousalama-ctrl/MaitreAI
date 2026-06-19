@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { BrainContext } from "./prompt";
+import { promoKnownAmounts } from "../promo";
 
 // Order-TOTAL phrasing: a claim about the order's combined/sum amount. Stating
 // one of these without the pricing tool is the real danger (a fabricated or
@@ -41,7 +42,7 @@ export function currencyAdjacentAmounts(text: string, currency: string): number[
  *  variant prices, choice deltas, modifier impacts, delivery fees/minimums.
  *  Quoting one of these while DESCRIBING the menu is legitimate (Type 1). */
 export function knownMenuPrices(
-  brain: Pick<BrainContext, "menuItems" | "modifiers" | "deliveryAreas">
+  brain: Pick<BrainContext, "menuItems" | "modifiers" | "deliveryAreas" | "activePromotions">
 ): Set<number> {
   const s = new Set<number>();
   const add = (n: number) => { if (Number.isFinite(n) && n > 0) s.add(Math.round(n * 100) / 100); };
@@ -52,6 +53,9 @@ export function knownMenuPrices(
   }
   for (const m of brain.modifiers) add(m.priceImpact);
   for (const z of brain.deliveryAreas) { add(z.deliveryFee); add(z.minOrder); }
+  // Real promo figures (discount amount + affected before/after prices) are
+  // legitimate data — let كريم quote them without the guard flagging fabrication.
+  for (const p of brain.activePromotions ?? []) for (const n of promoKnownAmounts(p)) add(n);
   return s;
 }
 
