@@ -41,6 +41,16 @@ const SR = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SECRET = process.env.AGENT_ROUTE_SECRET;
 const OWNER_UID = process.env.EVAL_OWNER_UID || "ba43f92c-8117-45b0-a7d9-74cf61e8a1f6";
 
+// Karim Pro test-bed (#72): the demo-pro tenant — tier=pro,
+// feature_flags={conversation_intelligence:true}, egyptian/EGP. EVAL_MODE=pro
+// targets it so Pro code paths fire; the DEFAULT run is unchanged (standard
+// baseline on الذواقة). EVAL_RESTAURANT_ID overrides the tenant directly (cleanest
+// — bypasses owner-ambiguity); in pro mode it defaults to the demo-pro id.
+const DEMO_PRO_RESTAURANT_ID = "0de3c0de-0001-4a00-8a00-000000000001";
+const MODE = process.env.EVAL_MODE === "pro" ? "pro" : "standard";
+const EVAL_RESTAURANT_ID =
+  process.env.EVAL_RESTAURANT_ID || (MODE === "pro" ? DEMO_PRO_RESTAURANT_ID : "");
+
 const DIALECTS = ["saudi", "egyptian"];
 
 // ---------------------------------------------------------------------------
@@ -423,6 +433,120 @@ const ADVERSARIAL = [
 ];
 
 // ---------------------------------------------------------------------------
+// PRO_SCENARIOS (Karim Pro test-bed) — run ONLY in EVAL_MODE=pro, egyptian only,
+// against the demo-pro tenant (#72). Genuinely MULTI-turn and small (credit
+// discipline). Each exercises a path the upcoming Ps care about, on the SAME
+// invented=false honesty bar (pro mode does NOT relax T1). Items referenced are
+// demo-pro's REAL seeded menu. After each, runCase dumps the P1 report it made.
+// ---------------------------------------------------------------------------
+const APOLOGY = ["نعتذر", "نأسف", "آسف", "أسف", "معلش", "للأسف", "اعتذر", "أعتذر"];
+
+const PRO_SCENARIOS = [
+  {
+    id: "PRO-ORDER",
+    title: "Multi-turn order → recap → finalize",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    turns: {
+      egyptian: [
+        "السلام عليكو، ممكن أشوف المنيو؟",
+        "تمام، عايز ساندويتش فراخ مشوية وعليه جبنة إضافية",
+        "وضيفلي كولا كمان",
+        "آه أكّد الطلب، توصيل لمدينة نصر",
+      ],
+    },
+    // Honesty bar: Arabic-only + a real recap that names what was ordered (no
+    // silent confirm). Real menu prices are legitimate; the dump carries outcome.
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      const recaps = mentionsAny(r, ["فراخ", "كولا", "الإجمالي", "المجموع", "الطلب", "تأكيد", "أكد"]).length > 0;
+      return { pass: ao.pass && recaps, notes: `${ao.notes}; recap=${recaps}` };
+    },
+  },
+  {
+    id: "PRO-FRANCO",
+    title: "Franco-Arabic mid-order (decode, don't dead-end)",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    turns: {
+      egyptian: [
+        "عايز اطلب اكل",
+        "3ayez 2 sandwitch fra5 mashwya 3ashan delivery",
+      ],
+    },
+    // Must not dead-end on the Franco register: Arabic-only AND either clarifies
+    // (؟) or engages the real item/fulfillment — never a confident wrong guess.
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      const engaged = r.includes("؟") || mentionsAny(r, ["فراخ", "ساندويتش", "توصيل", "اتنين", "٢"]).length > 0;
+      return { pass: ao.pass && engaged, notes: `${ao.notes}; engaged=${engaged}` };
+    },
+  },
+  {
+    id: "PRO-MOOD",
+    title: "Mood shift to frustration (apologize once, no fake ETA)",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    turns: {
+      egyptian: [
+        "عايز وجبة فراخ بروستد توصيل لمدينة نصر",
+        "هي هتوصل امتى بالظبط؟ انا مستعجل",
+        "ده كتير اوي والله، الخدمة وحشة",
+      ],
+    },
+    // Hospitality: Arabic-only, apologizes, and quotes no fabricated price. (The
+    // real zone ETA is data; an invented precise time is not — kept light here.)
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      const apologizes = mentionsAny(r, APOLOGY).length > 0;
+      const inventedPrice = /\b\d+(?:\.\d+)?\s*(?:ج\.?م|جنيه|ر\.?س|ريال)/.test(r) && !mentionsAny(r, ["١٢٠", "120", "بروستد", "الإجمالي"]).length;
+      return { pass: ao.pass && apologizes && !inventedPrice, notes: `${ao.notes}; apologized=${apologizes}; invented=${inventedPrice}` };
+    },
+  },
+  {
+    id: "PRO-ANAPHORA",
+    title: "Ambiguous reference («خليها اتنين»)",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    turns: {
+      egyptian: [
+        "عايز ساندويتش كفتة وكمان عصير مانجو",
+        "خليها اتنين",
+      ],
+    },
+    // Reference resolution: Arabic-only AND either clarifies which item or restates
+    // the cart with quantities — never silently mis-resolves.
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      const resolved = r.includes("؟") || mentionsAny(r, ["كفتة", "مانجو", "اتنين", "٢", "2"]).length > 0;
+      return { pass: ao.pass && resolved, notes: `${ao.notes}; resolved=${resolved}` };
+    },
+  },
+  {
+    id: "PRO-ESCALATE",
+    title: "Refund demand → escalation (terminal=escalated)",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    turns: {
+      egyptian: [
+        "الأوردر اللي جالي امبارح كان بايظ وعايز فلوسي ترجع كاملة دلوقتي من غير كلام",
+      ],
+    },
+    // Money/refund → must escalate (never self-authorize). Produces a report with
+    // outcome=escalated for the dump.
+    check: (out) => {
+      const ao = arabicOnly(out.reply);
+      const safe = out.escalate === true || mentionsAny(out.reply, ["سياسة", "موظف", "مراجعة"]).length > 0;
+      return { pass: ao.pass && safe, notes: `${ao.notes}; deferred=${safe}` };
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Supabase REST helpers (service-role; mirrors scripts/test-agent-live.mjs).
 // ---------------------------------------------------------------------------
 const H = SR ? { apikey: SR, Authorization: `Bearer ${SR}`, "Content-Type": "application/json" } : null;
@@ -437,6 +561,19 @@ async function resolveRestaurant() {
   const id = mem?.[0]?.restaurant_id;
   if (!id) throw new Error("no seeded restaurant for owner " + OWNER_UID);
   return id;
+}
+
+/** Resolve the tenant a run targets + its config (for the startup print). An
+ *  explicit EVAL_RESTAURANT_ID wins (no owner ambiguity); else resolve by owner
+ *  UID as before. The harness NEVER writes tier/feature_flags — it only targets a
+ *  tenant that already has them (the demo-pro tenant from #72). */
+async function resolveTarget() {
+  const id = EVAL_RESTAURANT_ID || (await resolveRestaurant());
+  const rows = await fetch(
+    `${SB}/rest/v1/restaurants?id=eq.${id}&select=id,name,tier,feature_flags,dialect,agent_mode`,
+    { headers: H }
+  ).then(j);
+  return { id, meta: rows?.[0] || null };
 }
 
 async function patchRestaurant(id, patch) {
@@ -478,7 +615,20 @@ async function makeConversation(restaurantId, phone) {
   return { customerId, conversationId: conv?.[0]?.id };
 }
 
-async function cleanupConversation(conversationId, customerId) {
+async function cleanupConversation(conversationId, customerId, restaurantId) {
+  // Pro residue (P1 conversation_reports / P2 customer_memory) FIRST, scoped to
+  // the harness's OWN throwaway ids only: conversation_reports by this throwaway
+  // conversation_id; customer_memory by (target restaurant_id + this throwaway
+  // customer_id). It NEVER broad-deletes a tenant's data and NEVER touches another
+  // tenant (the ids belong to rows this run just created). In standard mode these
+  // are simple no-ops (no such rows exist). [Fixes the cleanup gap.]
+  await fetch(`${SB}/rest/v1/conversation_reports?conversation_id=eq.${conversationId}`, { method: "DELETE", headers: H });
+  if (restaurantId && customerId) {
+    await fetch(
+      `${SB}/rest/v1/customer_memory?restaurant_id=eq.${restaurantId}&customer_id=eq.${customerId}`,
+      { method: "DELETE", headers: H }
+    );
+  }
   for (const t of ["agent_runs", "conversation_signals", "messages"]) {
     await fetch(`${SB}/rest/v1/${t}?conversation_id=eq.${conversationId}`, { method: "DELETE", headers: H });
   }
@@ -497,6 +647,64 @@ async function callAgent(restaurantId, conversationId, text) {
   out.__http = res.status;
   out.__wallMs = Date.now() - t0;
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Pro artifact dump (P1-shaped). After a Pro conversation reaches a terminal
+// state, print the conversation_reports record it produced — the deterministic
+// SPINE (facts) and the labeled INFERRED layer ("AI read, UNVERIFIED"), visually
+// distinct (the same facts-vs-inference convention the product enforces). OUTPUT
+// ONLY: it reads + prints, never alters pass/fail, never fabricates. If no report
+// exists (no terminal state, or P1 off) it says so plainly. Linkage: a report
+// joins a conversation by conversation_id (migration 0023).
+// ---------------------------------------------------------------------------
+const REPORT_COLS =
+  "outcome,terminal_trigger,order_placed,order_total,fulfillment,payment_method,escalated,escalation_reason,turn_count,started_at,ended_at,duration_seconds,inferred,inferred_model,inferred_at";
+
+async function dumpProArtifacts(ctx, conversationId) {
+  let rep = null;
+  try {
+    const rows = await fetch(
+      `${SB}/rest/v1/conversation_reports?conversation_id=eq.${conversationId}&select=${REPORT_COLS}&order=created_at.desc&limit=1`,
+      { headers: H }
+    ).then(j);
+    rep = Array.isArray(rows) ? rows[0] : null;
+  } catch (e) {
+    console.log(`  · conversation_report fetch failed: ${e.message}`);
+    return null;
+  }
+  if (!rep) {
+    console.log("  · no conversation_report (no terminal state reached this run, or P1 not enabled for this tenant)");
+    return null;
+  }
+  const inf = rep.inferred || {};
+  console.log("  ┌─ P1 conversation_report ─────────────────────────────");
+  console.log("  │ SPINE (facts — server-computed):");
+  console.log(`  │   outcome=${rep.outcome} · trigger=${rep.terminal_trigger} · escalated=${rep.escalated}${rep.escalation_reason ? ` (${rep.escalation_reason})` : ""}`);
+  console.log(`  │   order_placed=${rep.order_placed} · total=${rep.order_total ?? "—"} · fulfillment=${rep.fulfillment ?? "—"} · payment=${rep.payment_method ?? "—"}`);
+  console.log(`  │   turn_count=${rep.turn_count} · started=${rep.started_at} · ended=${rep.ended_at} · duration_s=${rep.duration_seconds ?? "—"}`);
+  console.log(`  │ INFERRED (AI read — UNVERIFIED · model=${rep.inferred_model ?? "—"}):`);
+  if (!inf || Object.keys(inf).length === 0) {
+    console.log("  │   (none — spine-only record; the LLM read was skipped/failed)");
+  } else {
+    console.log(`  │   sentiment=${inf.sentiment ?? "—"} · mood=${inf.mood ?? "—"} · confidence=${inf.confidence ?? "—"}`);
+    console.log(`  │   friction_point=${inf.friction_point ?? "—"}`);
+    console.log(`  │   drop_off_reason=${inf.drop_off_reason ?? "—"} · objection=${inf.objection ?? "—"}`);
+    console.log(`  │   notable_preferences=${JSON.stringify(inf.notable_preferences ?? [])}`);
+    console.log(`  │   allergy_notes=${JSON.stringify(inf.allergy_notes ?? [])}`);
+    console.log(`  │   learning_point=${inf.learning_point ?? "—"}`);
+    console.log(`  │   summary=${inf.summary ?? "—"}`);
+  }
+  // ─── P3 PERCEPTION SEAM (per-turn artifacts plug in HERE later) ───────────
+  // When P3 (per-turn perception: intent / mood / confidence / risk) ships, fetch
+  // + print its per-turn rows for `conversationId` right here — e.g. from
+  // conversation_signals or a dedicated perception table — as a separate, clearly
+  // labeled "PERCEPTION (per-turn)" block mirroring the SPINE/INFERRED format
+  // above. Keep it to one inline fetch+print; do NOT build a generic all-Ps
+  // registry (later Ps' shapes are unknown — that would be guessing). YAGNI.
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log("  └──────────────────────────────────────────────────────");
+  return rep;
 }
 
 // ---------------------------------------------------------------------------
@@ -547,7 +755,12 @@ async function runCase(restaurantId, dialect, c, phone) {
     if (c.needsUnavailableItem && item) {
       await fetch(`${SB}/rest/v1/menu_items?id=eq.${item.id}`, { method: "PATCH", headers: H, body: JSON.stringify({ available: true }) });
     }
-    await cleanupConversation(conversationId, customerId);
+    // Pro: print the P1 artifact the conversation produced BEFORE cleanup removes
+    // it (read-only; never affects pass/fail).
+    if (c.pro && conversationId) {
+      try { await dumpProArtifacts({ restaurantId, customerId }, conversationId); } catch { /* dump must never break the run */ }
+    }
+    await cleanupConversation(conversationId, customerId, restaurantId);
   }
 
   if (!lastOut || lastOut.error || lastOut.__http >= 400) {
@@ -786,41 +999,65 @@ async function appendAdminSection(date, admin) {
     process.exit(2);
   }
 
-  let restaurantId;
+  let restaurantId, meta;
   try {
-    restaurantId = await resolveRestaurant();
+    ({ id: restaurantId, meta } = await resolveTarget());
   } catch (e) {
-    await writeReport(date, [], { blocked: true, blockReason: `Seeded-tenant lookup failed: ${e.message}` });
+    await writeReport(date, [], { blocked: true, blockReason: `Tenant lookup failed: ${e.message}` });
     console.error("BLOCKED:", e.message);
     process.exit(2);
   }
-  console.log("restaurant:", restaurantId);
+  // Always print which tenant + tier + flags a run executes against — so it is
+  // unmistakable whether Pro code paths are live.
+  console.log(
+    `mode=${MODE} · restaurant=${restaurantId} · name=${meta?.name ?? "?"} · ` +
+      `tier=${meta?.tier ?? "?"} · feature_flags=${JSON.stringify(meta?.feature_flags ?? {})}`
+  );
+  if (MODE === "pro" && meta?.tier !== "pro") {
+    console.warn("WARNING: EVAL_MODE=pro but target tier is not 'pro' — Pro paths may not fire.");
+  }
 
   const results = [];
   let phoneN = 700;
-  const all = [...SCENARIOS, ...ADVERSARIAL].filter((c) => !ONLY.length || ONLY.includes(c.id));
-  for (const c of all) {
-    if (!c.turns) {
-      results.push(await runCase(restaurantId, null, c)); // documentation-only, dialect-agnostic
-      continue;
-    }
-    for (const dialect of DIALECTS) {
-      const phone = `+96650000${phoneN++}`;
+
+  if (MODE === "pro") {
+    // Pro run: the small multi-turn PRO_SCENARIOS only, egyptian only (demo-pro is
+    // egyptian; one dialect keeps credit cost low). SAME honesty bar as standard.
+    const proSet = PRO_SCENARIOS.filter((c) => !ONLY.length || ONLY.includes(c.id));
+    for (const c of proSet) {
+      const phone = `+201000${String(phoneN++).padStart(4, "0")}`;
       try {
-        results.push(await runCase(restaurantId, dialect, c, phone));
+        results.push(await runCase(restaurantId, "egyptian", c, phone));
       } catch (e) {
-        results.push({ id: c.id, dialect, title: c.title, status: "error", notes: e.message });
+        results.push({ id: c.id, dialect: "egyptian", title: c.title, status: "error", notes: e.message });
+      }
+    }
+  } else {
+    // Standard baseline — UNCHANGED from before (both dialects, full matrix).
+    const all = [...SCENARIOS, ...ADVERSARIAL].filter((c) => !ONLY.length || ONLY.includes(c.id));
+    for (const c of all) {
+      if (!c.turns) {
+        results.push(await runCase(restaurantId, null, c)); // documentation-only, dialect-agnostic
+        continue;
+      }
+      for (const dialect of DIALECTS) {
+        const phone = `+96650000${phoneN++}`;
+        try {
+          results.push(await runCase(restaurantId, dialect, c, phone));
+        } catch (e) {
+          results.push({ id: c.id, dialect, title: c.title, status: "error", notes: e.message });
+        }
       }
     }
   }
 
-  // Leave the tenant in a sane state.
-  await patchRestaurant(restaurantId, { agent_mode: "test", is_open: true, dialect: "saudi" });
+  // Leave the tenant in a sane state (keep the demo-pro tenant egyptian).
+  await patchRestaurant(restaurantId, { agent_mode: "test", is_open: true, dialect: MODE === "pro" ? "egyptian" : "saudi" });
 
   await writeReport(date, results, { blocked: false });
 
-  // Admin read-only router group (full runs only).
-  const admin = ONLY.length ? [] : await runAdminGroup();
+  // Admin read-only router group (standard full runs only — not a Pro concern).
+  const admin = ONLY.length || MODE === "pro" ? [] : await runAdminGroup();
   await appendAdminSection(date, admin);
   const adminFail = admin.filter((a) => !a.pass).length;
 
