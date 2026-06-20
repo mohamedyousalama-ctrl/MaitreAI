@@ -146,10 +146,12 @@ async function inferSoftLayer(
 }
 
 /**
- * Emit a conversation-intelligence record for a terminal state. Pro-gated,
- * idempotent (one row per conversation+trigger), and fully self-contained: it
- * NEVER throws — any failure is swallowed so the customer-facing turn is never
- * affected by intelligence emission.
+ * Emit a conversation-intelligence record for a terminal state. Pro-gated and
+ * fully self-contained: it NEVER throws — any failure is swallowed so the
+ * customer-facing turn is never affected by intelligence emission. Keeps exactly
+ * ONE current record per conversation: re-reaching a terminal state SUPERSEDES
+ * the earlier record (upsert on conversation_id), never a duplicate, so the
+ * conversion funnel never double-counts a thread.
  */
 export async function emitConversationReport(
   admin: SupabaseClient,
@@ -208,6 +210,7 @@ export async function emitConversationReport(
       started_at: startedAt,
       ended_at: endedAt,
       duration_seconds: durationSeconds,
+      updated_at: endedAt,
 
       // inferred (labeled)
       inferred: inferred ?? null,
@@ -215,11 +218,15 @@ export async function emitConversationReport(
       inferred_at: inferred ? endedAt : null,
     };
 
-    // Idempotent: one record per (conversation_id, terminal_trigger). A repeat
-    // terminal of the same kind is a no-op, never a duplicate.
+    // ONE CURRENT record per conversation (supersede). A thread can re-reach a
+    // terminal state (abandon → resume → escalate); the LATEST terminal is the
+    // truth, so upserting on conversation_id REPLACES the prior record rather
+    // than inserting a sibling. This keeps downstream aggregates — especially the
+    // conversion funnel — from double-counting a single thread. The DB default
+    // keeps created_at as the first-seen time; updated_at/ended_at advance here.
     await admin
       .from("conversation_reports")
-      .upsert(record, { onConflict: "conversation_id,terminal_trigger", ignoreDuplicates: true });
+      .upsert(record, { onConflict: "conversation_id" });
   } catch {
     // Intelligence emission must NEVER break the conversation. Swallow silently.
   }
