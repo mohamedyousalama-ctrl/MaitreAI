@@ -26,6 +26,8 @@ export interface RestaurantRow {
   accept_preorders: boolean;
   tax_mode?: string;
   tax_rate?: number;
+  /** Manual-wallet payment configuration (migration 0021). See lib/payments/config. */
+  payment_config?: import("@/lib/payments/config").PaymentConfig;
 }
 
 export interface MemberRow {
