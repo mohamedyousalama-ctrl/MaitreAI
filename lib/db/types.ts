@@ -28,6 +28,8 @@ export interface RestaurantRow {
   tax_rate?: number;
   /** Karim Pro P0: per-tenant tier flag (migration 0022). Default 'standard'. */
   tier?: import("@/lib/tenant/tier").Tier;
+  /** Karim Pro: narrow per-feature opt-in flags (migration 0024). Default {}. */
+  feature_flags?: Record<string, unknown>;
   /** Manual-wallet payment configuration (migration 0021). See lib/payments/config. */
   payment_config?: import("@/lib/payments/config").PaymentConfig;
 }

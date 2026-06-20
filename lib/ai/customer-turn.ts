@@ -62,8 +62,9 @@ export interface CustomerTurnOutcome {
   agentRunId: string | null;
   /** Id of the persisted AI reply message row (null when not persisted). */
   replyMessageId: string | null;
-  /** Karim Pro P1: tenant tier — lets the send path gate the finalize-report emit. */
+  /** Karim Pro P1: tier + feature flags — let the send path gate the finalize-report emit. */
   tier: Tier | "standard";
+  features: Record<string, unknown> | null;
 }
 
 function isOpenDraft(value: unknown): value is OrderDraft {
@@ -89,14 +90,17 @@ export async function runCustomerTurn(
   const { data: r } = await admin
     .from("restaurants")
     .select(
-      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,tier,auto_accept_orders,agent_persona_name,tax_mode,tax_rate"
+      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,tier,feature_flags,auto_accept_orders,agent_persona_name,tax_mode,tax_rate"
     )
     .eq("id", restaurantId)
     .single();
   if (!r) throw new CustomerTurnError("restaurant_not_found");
   const row = r as Record<string, unknown>;
-  // Karim Pro P1: tenant tier gates conversation-intelligence emission below.
+  // Karim Pro P1: tier + narrow feature flags gate conversation-intelligence
+  // emission below. A standard tenant with the feature flag emits; nothing else
+  // about its agent behavior changes.
   const tenantTier = (row.tier as Tier | null) ?? "standard";
+  const tenantFeatures = (row.feature_flags as Record<string, unknown> | null) ?? null;
 
   const brain = await loadBrain(admin, restaurantId);
 
@@ -147,6 +151,7 @@ export async function runCustomerTurn(
         await emitConversationReport(admin, {
           restaurantId,
           tier: tenantTier,
+          features: tenantFeatures,
           conversationId,
           terminalTrigger: "abandoned",
           transcript: input.history,
@@ -291,6 +296,7 @@ export async function runCustomerTurn(
     await emitConversationReport(admin, {
       restaurantId,
       tier: tenantTier,
+      features: tenantFeatures,
       conversationId,
       terminalTrigger: "escalated",
       escalationReason: result.escalationReason,
@@ -320,5 +326,6 @@ export async function runCustomerTurn(
     agentRunId: (run?.id as string) ?? null,
     replyMessageId,
     tier: tenantTier,
+    features: tenantFeatures,
   };
 }
