@@ -17,6 +17,7 @@ import { deriveSystemMode } from "@/lib/ai/modes";
 import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
+import type { Tier } from "@/lib/tenant/tier";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import type { OrderDraft, PhotoRequest, Presentation, ToolSignal } from "@/lib/ai/tools";
 import type { AiToneConfig } from "@/lib/types";
@@ -85,7 +86,7 @@ export async function runCustomerTurn(
   const { data: r } = await admin
     .from("restaurants")
     .select(
-      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,auto_accept_orders,agent_persona_name,tax_mode,tax_rate"
+      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,tier,auto_accept_orders,agent_persona_name,tax_mode,tax_rate"
     )
     .eq("id", restaurantId)
     .single();
@@ -159,6 +160,7 @@ export async function runCustomerTurn(
     personaName: (row.agent_persona_name as string | null) ?? undefined,
     taxMode: String(row.tax_mode ?? "inclusive"),
     taxRate: Number(row.tax_rate ?? 0),
+    tier: (row.tier as Tier | null) ?? "standard",
   };
 
   const t0 = Date.now();
