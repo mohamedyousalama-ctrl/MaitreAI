@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { WhatsAppCredentialsCard } from "@/components/settings/WhatsAppCredentialsCard";
 import { TaxSettingsCard } from "@/components/settings/TaxSettingsCard";
+import { PaymentConfigCard } from "@/components/settings/PaymentConfigCard";
 import { SignOutButton } from "@/components/layout/SignOutButton";
 import type { AiEmojiUsage, AiLanguage, AiPersonality } from "@/lib/types";
 import { Store, Sparkles, Wifi, CreditCard, MapPin, MessageCircle, ChevronLeft } from "lucide-react";
@@ -160,6 +161,8 @@ export default function SettingsPage() {
                 badge={{ label: "غير متصلة · قريبًا", bg: "#F4EEE9", fg: "#9A8E7E", dot: "#C9BFAE" }} />
               <p className="mt-3 text-[11.5px] text-[#A99D8D]">لا توجد بوابة دفع مُفعّلة بعد — يظهر هنا الاتصال الحقيقي عند ربطها.</p>
             </Card>
+            {/* real manual-wallet payment config (persists) */}
+            <PaymentConfigCard />
             {/* real tax config (persists) */}
             <TaxSettingsCard />
           </>
