@@ -19,6 +19,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAdapter, modelFor } from "@/lib/ai/llm";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 import { isFeatureEnabled, type Tier } from "@/lib/tenant/tier";
+import { updateCustomerMemory } from "./customer-memory";
 
 export type TerminalTrigger = "finalized" | "escalated" | "abandoned";
 type Outcome = "order_placed" | "escalated" | "abandoned" | "answered" | "no_outcome";
@@ -55,7 +56,7 @@ const OUTCOME_BY_TRIGGER: Record<TerminalTrigger, Outcome> = {
 };
 
 /** The labeled inference object. Every field is a READ, not a fact. */
-interface InferredSoftLayer {
+export interface InferredSoftLayer {
   sentiment: string | null;
   mood: string | null;
   friction_point: string | null;
@@ -227,6 +228,19 @@ export async function emitConversationReport(
     await admin
       .from("conversation_reports")
       .upsert(record, { onConflict: "conversation_id" });
+
+    // Karim Pro P2 — customer memory. Rebuild this customer's durable memory from
+    // the orders facts + this report's labeled inference. Gated INDEPENDENTLY on
+    // the narrow `customer_memory` flag (NOT implied by conversation_intelligence):
+    // a tenant with P1 on but P2 off gets nothing here. Self-gated + never throws.
+    await updateCustomerMemory(admin, {
+      restaurantId,
+      customerId: (conv?.customer_id as string | null) ?? null,
+      conversationId,
+      tier: args.tier,
+      features: args.features,
+      inferred,
+    });
   } catch {
     // Intelligence emission must NEVER break the conversation. Swallow silently.
   }

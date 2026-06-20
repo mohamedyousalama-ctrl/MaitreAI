@@ -16,6 +16,7 @@ import { useSearchParams } from "next/navigation";
 import { useConversationEngine } from "@/lib/ai/useConversationEngine";
 import { useHasHydrated } from "@/lib/store";
 import type { ChatMessage, Conversation } from "@/lib/types";
+import { CustomerMemoryCard } from "@/components/conversations/CustomerMemoryCard";
 import { Search, Send, User, AlertTriangle, Sparkles, ArrowRight, X, MessageSquare, Bot } from "lucide-react";
 
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -278,6 +279,10 @@ function InsightsPanel({ c, order }: { c: Conversation; order: ReturnType<typeof
           <div className="mt-1 rounded-[9px] border border-[#EFE7DA] bg-[#F7F2EA] px-2.5 py-2 text-[11px] text-[#9A8E7E]">تصنيف العميل · عدد الطلبات · الإنفاق · المفضّل — <span className="font-semibold text-[#C5871F]">قريبًا</span> (تحليلات العملاء قيد الإعداد).</div>
         </div>
       </div>
+
+      {/* Karim Pro P2 — operator customer-memory card. Renders ONLY when P2 is
+          enabled for the tenant AND a memory record exists; otherwise nothing. */}
+      <CustomerMemoryCard customerId={c.customerId} />
     </>
   );
 }
