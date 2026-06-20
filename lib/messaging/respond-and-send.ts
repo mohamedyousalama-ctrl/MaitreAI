@@ -195,6 +195,7 @@ export async function respondAndSendWhatsApp(
       await emitConversationReport(admin, {
         restaurantId,
         tier: outcome.tier,
+        features: outcome.features,
         conversationId,
         terminalTrigger: "finalized",
         order: {

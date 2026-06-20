@@ -18,7 +18,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAdapter, modelFor } from "@/lib/ai/llm";
 import type { LlmMessage } from "@/lib/ai/llm/types";
-import { isProTenant, type Tier } from "@/lib/tenant/tier";
+import { isFeatureEnabled, type Tier } from "@/lib/tenant/tier";
 
 export type TerminalTrigger = "finalized" | "escalated" | "abandoned";
 type Outcome = "order_placed" | "escalated" | "abandoned" | "answered" | "no_outcome";
@@ -35,8 +35,11 @@ export interface ReportOrderFacts {
 
 export interface EmitReportArgs {
   restaurantId: string;
-  /** The tenant's tier — the Pro gate. Standard ⇒ nothing is emitted. */
+  /** The tenant's tier (full 'pro' enables everything). */
   tier: Tier | string | null | undefined;
+  /** Narrow per-feature flags — a standard tenant with conversation_intelligence
+   *  on emits these records WITHOUT being flipped to 'pro'. */
+  features?: Record<string, unknown> | null;
   conversationId: string;
   terminalTrigger: TerminalTrigger;
   order?: ReportOrderFacts | null;
@@ -152,9 +155,10 @@ export async function emitConversationReport(
   admin: SupabaseClient,
   args: EmitReportArgs
 ): Promise<void> {
-  // GATE — the isolation guarantee. Standard tenants emit nothing; we return
-  // before ANY DB read or LLM call, so there is zero added cost/latency.
-  if (!isProTenant(args.tier)) return;
+  // GATE — the isolation guarantee. Emit only when this tenant has the
+  // conversation_intelligence feature (explicit narrow flag, or full 'pro').
+  // Otherwise return before ANY DB read or LLM call — zero added cost/latency.
+  if (!isFeatureEnabled("conversation_intelligence", { tier: args.tier, features: args.features })) return;
 
   try {
     const { restaurantId, conversationId, terminalTrigger } = args;
