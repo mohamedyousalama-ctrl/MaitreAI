@@ -144,7 +144,8 @@ export async function respondAndSendWhatsApp(
   try {
     outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage });
   } catch (e) {
-    const detail = e instanceof CustomerTurnError ? e.code : e instanceof Error ? e.message : String(e);
+    // Fix B: surface the REAL message (was discarding it → «agent_error: agent_error»).
+    const detail = e instanceof CustomerTurnError ? (e.message || e.code) : e instanceof Error ? e.message : String(e);
     await admin
       .from("conversations")
       .update({ owner: "human", status: "يحتاج تدخل موظف", escalation_reason: `agent_error: ${detail}` })

@@ -310,25 +310,60 @@ function lineKey(l: { itemId: string; variant?: DraftVariant; choices: DraftChoi
   return `${l.itemId}§${v}§${ch}§${md}`;
 }
 
-function recompute(ctx: ToolContext): void {
+/** Convert a KNOWN delivery-pricing throw into a graceful, data-sourced customer
+ *  message (so كريم relays it instead of crashing to agent_error). Returns null
+ *  for any unrecognized error so the caller re-throws (still surfaced, via Fix B).
+ *  The min-order value + zone facts come from the real zone data — never invented. */
+function deliveryNotice(err: unknown, ctx: ToolContext): string | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  const cur = ctx.draft.currency;
+  if (msg.startsWith("delivery_min_order:")) {
+    const zoneName = msg.slice("delivery_min_order:".length);
+    const zone = ctx.deliveryAreas.find((z) => z.name === zoneName);
+    const min = zone ? Number(zone.minOrder) : 0;
+    return `الحد الأدنى لطلب التوصيل لـ${zoneName} هو ${min} ${cur}. تحب تزوّد الطلب شوية ونكمّل؟`;
+  }
+  if (msg.startsWith("delivery_zone_invalid:")) {
+    const z = msg.slice("delivery_zone_invalid:".length);
+    return `للأسف ${z} مش ضمن مناطق التوصيل المتاحة دلوقتي 🙏 تحب استلام من الفرع، ولا أقولك المناطق اللي بنوصّلها؟`;
+  }
+  if (msg.startsWith("delivery_zone_branch_mismatch:")) {
+    const z = msg.slice("delivery_zone_branch_mismatch:".length);
+    return `منطقة ${z} بتتبع فرع تاني 🙏 نظبط الفرع المناسب، ولا تحب استلام من الفرع؟`;
+  }
+  return null;
+}
+
+/** Re-price the draft. Returns null on success, or a graceful customer-facing
+ *  notice when a KNOWN delivery signal (min-order / invalid zone / branch
+ *  mismatch) is hit — in which case the draft is left UNCHANGED (basket intact)
+ *  and the caller relays the notice instead of crashing. */
+function recompute(ctx: ToolContext): string | null {
   const d = ctx.draft;
-  const priced = recomputeOrderPricing({
-    menuItems: ctx.menuItems,
-    modifiers: ctx.modifiers,
-    deliveryAreas: ctx.deliveryAreas,
-    lines: d.lines.map((l) => ({
-      itemId: l.itemId,
-      quantity: l.quantity,
-      variantName: l.variant?.name ?? null,
-      choices: l.choices.map((c) => ({ groupName: c.groupName, label: c.label })),
-      modifierNames: l.modifiers.map((m) => m.name),
-    })),
-    fulfillment: d.fulfillment ?? "pickup",
-    deliveryZoneName: d.deliveryZone,
-    taxMode: ctx.taxMode,
-    taxRate: ctx.taxRate,
-    currency: d.currency,
-  });
+  let priced;
+  try {
+    priced = recomputeOrderPricing({
+      menuItems: ctx.menuItems,
+      modifiers: ctx.modifiers,
+      deliveryAreas: ctx.deliveryAreas,
+      lines: d.lines.map((l) => ({
+        itemId: l.itemId,
+        quantity: l.quantity,
+        variantName: l.variant?.name ?? null,
+        choices: l.choices.map((c) => ({ groupName: c.groupName, label: c.label })),
+        modifierNames: l.modifiers.map((m) => m.name),
+      })),
+      fulfillment: d.fulfillment ?? "pickup",
+      deliveryZoneName: d.deliveryZone,
+      taxMode: ctx.taxMode,
+      taxRate: ctx.taxRate,
+      currency: d.currency,
+    });
+  } catch (e) {
+    const notice = deliveryNotice(e, ctx);
+    if (notice) return notice; // known delivery signal → graceful, draft unchanged
+    throw e; // unknown → still surfaces (now visibly, via Fix B)
+  }
   d.lines = priced.lines.map((l) => ({
     itemId: l.itemId,
     name: l.name,
@@ -346,6 +381,7 @@ function recompute(ctx: ToolContext): void {
   d.taxRate = priced.taxRate;
   d.total = priced.total;
   d.currency = priced.currency;
+  return null;
 }
 
 function lineOptionText(l: DraftLine): string[] {
@@ -517,7 +553,10 @@ export function executeTool(
       const match = d.lines.find((l) => lineKey(l) === lineKey(newLine));
       if (match) match.quantity = mode === "set" ? qty : match.quantity + qty;
       else d.lines.push(newLine);
-      recompute(ctx);
+      {
+        const notice = recompute(ctx);
+        if (notice) return { content: notice };
+      }
       const verb = mode === "set" ? "ضبطت الكمية على" : "أضفت";
       return { content: `${verb} ${match ? match.quantity : qty}× ${item.name}.\n${summary(d)}` };
     }
@@ -532,7 +571,10 @@ export function executeTool(
       const idx = d.lines.findIndex((l) => norm(l.name) === norm(itemName) || norm(l.name).includes(norm(itemName)));
       if (idx === -1) return { content: `«${itemName}» غير موجود في السلة.`, isError: true };
       d.lines.splice(idx, 1);
-      recompute(ctx);
+      {
+        const notice = recompute(ctx);
+        if (notice) return { content: notice };
+      }
       return { content: `تم الحذف.\n${summary(d)}` };
     }
     case "set_fulfillment": {
@@ -555,17 +597,28 @@ export function executeTool(
         d.deliveryZone = zone.name;
         d.deliveryFee = zone.deliveryFee;
       }
-      recompute(ctx);
+      {
+        // Bug A: below-minimum / invalid-zone now reply gracefully (real min-order
+        // value from zone data) instead of crashing to agent_error. Basket intact.
+        const notice = recompute(ctx);
+        if (notice) return { content: notice };
+      }
       const label = type === "delivery" ? `توصيل إلى ${d.deliveryZone}` : "استلام من الفرع";
       return { content: `${label}.\n${summary(d)}` };
     }
-    case "get_order_summary":
-      recompute(ctx);
+    case "get_order_summary": {
+      const notice = recompute(ctx);
+      if (notice) return { content: notice };
       return { content: summary(d) };
+    }
     case "finalize_draft": {
       if (!d.lines.length) return { content: "لا يمكن تأكيد طلب فارغ.", isError: true };
       if (!d.fulfillment) return { content: "لا يمكن تأكيد الطلب قبل اختيار الاستلام أو التوصيل.", isError: true };
-      recompute(ctx);
+      {
+        // Don't finalize a below-minimum / invalid-zone delivery — relay the notice.
+        const notice = recompute(ctx);
+        if (notice) return { content: notice, isError: true };
+      }
       d.finalized = true;
       return {
         content: `تم تسجيل الطلب بانتظار تأكيد المطعم.\n${summary(d)}`,
