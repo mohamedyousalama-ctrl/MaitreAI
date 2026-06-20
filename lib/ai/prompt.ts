@@ -52,6 +52,9 @@ export interface BrainContext {
   /** Tax mode + rate (Sprint 10): "added" adds a VAT line; "inclusive" = no change. */
   taxMode?: string;
   taxRate?: number;
+  /** Karim Pro P0: tenant tier ('standard' | 'pro'). Available to the brain but
+   *  NOT read yet — later Pro features gate on it via isProTenant(). */
+  tier?: import("@/lib/tenant/tier").Tier;
 }
 
 // Owner-approved (2026-06-13) dialect-fitting fallback host names. Used only
