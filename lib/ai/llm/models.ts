@@ -35,6 +35,16 @@ const REGISTRY: Record<LlmUseCase, ModelConfig> = {
     priceIn: 5,
     priceOut: 25,
   },
+  // Karim Pro P1 conversation-intelligence soft layer: ONE cheap read per
+  // conversation (not per turn). A small Haiku-tier JSON inference — never the
+  // customer agent — so the per-conversation cost stays tiny. Pro-gated.
+  conversation_intel: {
+    model: process.env.AI_MODEL_CONVERSATION_INTEL || "claude-haiku-4-5-20251001",
+    maxTokens: 700,
+    thinking: "disabled",
+    priceIn: 1,
+    priceOut: 5,
+  },
 };
 
 export function modelFor(useCase: LlmUseCase): ModelConfig {
