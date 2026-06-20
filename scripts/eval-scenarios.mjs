@@ -544,6 +544,33 @@ const PRO_SCENARIOS = [
       return { pass: ao.pass && safe, notes: `${ao.notes}; deferred=${safe}` };
     },
   },
+  {
+    id: "PRO-PHANTOM-OPTION",
+    title: "Option not on item → recovery, no fabricated tech-error, no escalation (Bug #1)",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    // وجبة فراخ بروستد (demo-pro) has NO flavor/sauce group → asking «حار» hits the
+    // add_to_order "not on this item" reject. FAILS on pre-fix code (model recast it
+    // as a «خطأ تقني» and escalated under trigger #5); PASSES post-fix (graceful
+    // recovery offering the item's real options, no escalation, no fake error).
+    turns: {
+      egyptian: [
+        "عايز أطلب وجبة فراخ بروستد",
+        "اعملها حار",
+      ],
+    },
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      // Defect B: NO fabricated technical-fault wording, and NOT escalated for this.
+      const fakeError = mentionsAny(r, ["عطل", "خطأ تقني", "خطأ فني", "النظام لا", "مشكلة تقنية", "خلل"]).length > 0;
+      const escalated = out.escalate === true;
+      // Honest recovery: stays in Arabic and engages the item honestly (offers real
+      // options / says it has none / proceeds) rather than dead-ending.
+      const recovers = ao.pass && (r.includes("؟") || mentionsAny(r, ["بروستد", "متاح", "مالهوش", "مفيش", "للأسف", "تمام"]).length > 0);
+      return { pass: ao.pass && !fakeError && !escalated && recovers, notes: `${ao.notes}; fakeError=${fakeError}; escalated=${escalated}; recovers=${recovers}` };
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

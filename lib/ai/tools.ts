@@ -53,10 +53,18 @@ export interface ToolSignal {
     | "missing_data"
     | "money_mismatch"
     | "escalation"
+    | "blocked_escalation"
     | "low_confidence"
     | "unknown_question";
   detail: Record<string, unknown>;
 }
+
+// Bug #1 Defect B — wording that signals a (fabricated) technical/system fault.
+// The tools NEVER produce such a fault (real exceptions are handled upstream as
+// agent_error, not via the model's escalate_to_human tool), so an escalation
+// reason matching this is always model-fabricated → blocked + routed to recovery.
+const FABRICATED_TECH_ERROR_RE =
+  /تقني|تقنية|عطل|خلل|بايظ|باظ|(النظام|السيستم)\s*(لا|مش|رفض|ما)|technical|glitch|\bbug\b|system\s*(error|fault|issue|down)/i;
 
 export interface PhotoRequest {
   itemId: string;
@@ -513,8 +521,23 @@ export function executeTool(
       }
       if (remainingChoices.length) {
         ctx.signals.push({ type: "off_menu", detail: { item: item.name, choices: remainingChoices } });
+        // RECOVERY CONTRACT (Bug #1 Defect B): hand the model THIS item's REAL
+        // options so it offers them, and make explicit this is a normal "not on
+        // this item" — NOT a technical fault and NOT a reason to escalate. (The old
+        // "أو صعّد" wording let the model recast a benign mismatch as a system error
+        // and hand off.)
+        const realOpts = [
+          ...(item.choiceGroups ?? [])
+            .filter((g) => g.options.some((o) => o.active))
+            .map((g) => `«${g.name}»: ${g.options.filter((o) => o.active).map((o) => o.label).join("، ")}`),
+          ...(activeVariants.length ? [`الأحجام: ${activeVariants.map((v) => v.name).join("، ")}`] : []),
+          ...(allowedMods.length ? [`إضافات: ${allowedMods.map((m) => m.name).join("، ")}`] : []),
+        ];
+        const realLine = realOpts.length
+          ? `اختيارات «${item.name}» الحقيقية: ${realOpts.join(" — ")}.`
+          : `«${item.name}» مالهوش اختيارات مذاق أو صوص — يتسجّل كما هو.`;
         return {
-          content: `الاختيار «${remainingChoices[0]}» غير موجود ضمن اختيارات «${item.name}». اسأل العميل يختار من الاختيارات المتاحة أو صعّد.`,
+          content: `«${remainingChoices[0]}» مش من اختيارات «${item.name}» (ده طبيعي، مش عطل تقني). ${realLine} اعرض على العميل اختياراته الحقيقية وكمّل الطلب — متصعّدش لهذا السبب.`,
           isError: true,
         };
       }
@@ -626,6 +649,20 @@ export function executeTool(
     }
     case "escalate_to_human": {
       const reason = String(input.reason ?? "");
+      // HONESTY GUARD (Bug #1 Defect B): the tools NEVER surface a technical/system
+      // fault — a real tool exception is handled upstream (customer-turn →
+      // agent_error), not via this tool. So an escalation blaming a «عطل/خطأ تقني/
+      // النظام لا يقبل» is FABRICATED: block it and route to recovery instead of a
+      // false handoff. Genuine human-need escalations (complaint/refund/allergy/
+      // human request) don't use this wording and pass through unchanged.
+      if (FABRICATED_TECH_ERROR_RE.test(reason)) {
+        ctx.signals.push({ type: "blocked_escalation", detail: { reason } });
+        return {
+          content:
+            "مفيش أي عطل تقني. لو العميل طلب اختيار مش متاح لصنف، اعرض اختيارات الصنف الحقيقية وكمّل الطلب. التصعيد للشكاوى أو طلب المبالغ أو طلب موظف بشري أو الشك في الحساسية — مش لهذا.",
+          isError: true,
+        };
+      }
       ctx.escalation = { reason };
       ctx.signals.push({ type: "escalation", detail: { reason } });
       return { content: "حوّلت محادثتك لفريق المطعم، وهيردّوا عليك في أقرب وقت 🙏" };
