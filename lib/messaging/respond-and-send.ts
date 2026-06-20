@@ -13,6 +13,7 @@ import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
+import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import { sendReceiptToCustomer } from "./send-receipt";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
@@ -185,6 +186,30 @@ export async function respondAndSendWhatsApp(
         { kind: "order_persist_error", detail }
       );
       return { status: "agent_error", reply: outcome.reply, escalate: true, error: detail };
+    }
+
+    // Karim Pro P1 terminal hook — ORDER FINALIZED. Emit ONLY after the order is
+    // actually committed (so order_placed/order_total/order_id are TRUE, never
+    // narrated). Pro-gated; standard tenants emit nothing.
+    if (persistedOrder?.created && persistedOrder.orderId) {
+      await emitConversationReport(admin, {
+        restaurantId,
+        tier: outcome.tier,
+        conversationId,
+        terminalTrigger: "finalized",
+        order: {
+          id: persistedOrder.orderId,
+          total: outcome.draft.total,
+          fulfillment: outcome.draft.fulfillment,
+          paymentStatus: "unpaid",
+          branchId: null,
+        },
+        transcript: [
+          ...history,
+          { role: "user", content: userMessage },
+          { role: "assistant", content: outcome.reply },
+        ],
+      });
     }
   }
 

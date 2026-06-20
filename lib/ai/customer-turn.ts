@@ -18,6 +18,7 @@ import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
 import type { Tier } from "@/lib/tenant/tier";
+import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import type { OrderDraft, PhotoRequest, Presentation, ToolSignal } from "@/lib/ai/tools";
 import type { AiToneConfig } from "@/lib/types";
@@ -61,6 +62,8 @@ export interface CustomerTurnOutcome {
   agentRunId: string | null;
   /** Id of the persisted AI reply message row (null when not persisted). */
   replyMessageId: string | null;
+  /** Karim Pro P1: tenant tier — lets the send path gate the finalize-report emit. */
+  tier: Tier | "standard";
 }
 
 function isOpenDraft(value: unknown): value is OrderDraft {
@@ -92,6 +95,8 @@ export async function runCustomerTurn(
     .single();
   if (!r) throw new CustomerTurnError("restaurant_not_found");
   const row = r as Record<string, unknown>;
+  // Karim Pro P1: tenant tier gates conversation-intelligence emission below.
+  const tenantTier = (row.tier as Tier | null) ?? "standard";
 
   const brain = await loadBrain(admin, restaurantId);
 
@@ -132,7 +137,21 @@ export async function runCustomerTurn(
     const DRAFT_FRESHNESS_MS = 45 * 60 * 1000;
     if (row) {
       const ageMs = Date.now() - new Date(row.created_at as string).getTime();
-      initialDraft = ageMs <= DRAFT_FRESHNESS_MS ? ((row.meta as Record<string, unknown>).draft as OrderDraft) : null;
+      const fresh = ageMs <= DRAFT_FRESHNESS_MS;
+      initialDraft = fresh ? ((row.meta as Record<string, unknown>).draft as OrderDraft) : null;
+      // Karim Pro P1 terminal hook — ABANDONMENT. A stale open basket (>45 min)
+      // means the prior order attempt was abandoned; emit one record for it
+      // (Pro-gated; standard tenants do nothing). The transcript is the prior
+      // conversation up to this returning turn.
+      if (!fresh) {
+        await emitConversationReport(admin, {
+          restaurantId,
+          tier: tenantTier,
+          conversationId,
+          terminalTrigger: "abandoned",
+          transcript: input.history,
+        });
+      }
     }
   }
 
@@ -265,6 +284,22 @@ export async function runCustomerTurn(
       status: "sent",
       meta: { kind: "escalation", reason: result.escalationReason, escalatedAt },
     });
+
+    // Karim Pro P1 terminal hook — ESCALATION. Emit one record (Pro-gated;
+    // standard tenants do nothing). Real reason from the escalation, transcript
+    // includes this turn's exchange.
+    await emitConversationReport(admin, {
+      restaurantId,
+      tier: tenantTier,
+      conversationId,
+      terminalTrigger: "escalated",
+      escalationReason: result.escalationReason,
+      transcript: [
+        ...input.history,
+        { role: "user", content: input.userMessage },
+        { role: "assistant", content: result.reply },
+      ],
+    });
   }
 
   return {
@@ -284,5 +319,6 @@ export async function runCustomerTurn(
     latencyMs,
     agentRunId: (run?.id as string) ?? null,
     replyMessageId,
+    tier: tenantTier,
   };
 }
