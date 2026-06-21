@@ -450,7 +450,7 @@ const PRO_SCENARIOS = [
     turns: {
       egyptian: [
         "السلام عليكو، ممكن أشوف المنيو؟",
-        "تمام، عايز ساندويتش فراخ مشوية وعليه جبنة إضافية",
+        "تمام، عايز ساندويتش فراخ مشوية واحد",
         "وضيفلي كولا كمان",
         "آه أكّد الطلب، توصيل لمدينة نصر",
       ],
@@ -660,6 +660,36 @@ const PRO_SCENARIOS = [
       return { pass: ao.pass && handoff && !guardBlocked, notes: `${ao.notes}; handoff=${handoff}; guardBlocked=${guardBlocked}` };
     },
   },
+  {
+    id: "PRO-CONFUSION",
+    title: "P3 — unknown/garbled message → Karim RECOVERS (clarify/offer real options), never dead-ends",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    // The P3 headline: a message with a made-up/unknown word + a vague request.
+    // WITHOUT perception Karim tends to dead-end («مش فاهم») or guess; WITH
+    // perception (low-confidence read → recovery directive) he recovers — clarifies
+    // once / offers the real menu — in warm Arabic, no escalation, no invention.
+    turns: {
+      egyptian: [
+        "عايز الحاجة الفشخليلية اللي بتعملوها، هاتلي منها",
+      ],
+    },
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      // GENUINE recovery = a clarifying question with options/likeliest reads, OR
+      // explicitly offering real items/recommendations — not a bare deflection.
+      const asksChoice = r.includes("؟") && mentionsAny(r, ["ولا", "تقصد", "نوع", "مشوي", "مقرمش", "ساندويتش", "حاجة", "أي"]).length > 0;
+      const offersReal = mentionsAny(r, ["تقصد", "نرشّح", "أرشّح", "أقترح", "أعرضلك", "تحب تشوف المنيو"]).length > 0;
+      const recovers = asksChoice || offersReal;
+      // Dead-end = «مش فاهم» with no recovery, OR the catch-all «اختر من القائمة»
+      // deflection (A2: a content-free non-answer) without a real clarification.
+      const catchAll = /اخت(ر|ار)\s+من\s+(القائمة|القايمة|المنيو|التصنيفات|القايمه)/.test(r) && !r.includes("؟");
+      const deadEnd = (mentionsAny(r, ["مش فاهم", "مفهمتش", "مش فاهمك", "مش قادر أفهم"]).length > 0 || catchAll) && !recovers;
+      const escalated = out.escalate === true; // confusion is Tier 0, never escalation
+      return { pass: ao.pass && recovers && !deadEnd && !escalated, notes: `${ao.notes}; recovers=${recovers}; deadEnd=${deadEnd}; escalated=${escalated}` };
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -778,6 +808,11 @@ const REPORT_COLS =
   "outcome,terminal_trigger,order_placed,order_total,fulfillment,payment_method,escalated,escalation_reason,turn_count,started_at,ended_at,duration_seconds,inferred,inferred_model,inferred_at";
 
 async function dumpProArtifacts(ctx, conversationId) {
+  // P3 PERCEPTION (per-turn, labeled AI read) — printed FIRST + UNCONDITIONALLY
+  // (it exists even when no terminal state / no P1 report was produced).
+  // agent_runs.perception (0027) is null for every turn when perception is off.
+  await dumpPerception(conversationId);
+
   let rep = null;
   try {
     const rows = await fetch(
@@ -811,16 +846,31 @@ async function dumpProArtifacts(ctx, conversationId) {
     console.log(`  │   learning_point=${inf.learning_point ?? "—"}`);
     console.log(`  │   summary=${inf.summary ?? "—"}`);
   }
-  // ─── P3 PERCEPTION SEAM (per-turn artifacts plug in HERE later) ───────────
-  // When P3 (per-turn perception: intent / mood / confidence / risk) ships, fetch
-  // + print its per-turn rows for `conversationId` right here — e.g. from
-  // conversation_signals or a dedicated perception table — as a separate, clearly
-  // labeled "PERCEPTION (per-turn)" block mirroring the SPINE/INFERRED format
-  // above. Keep it to one inline fetch+print; do NOT build a generic all-Ps
-  // registry (later Ps' shapes are unknown — that would be guessing). YAGNI.
-  // ─────────────────────────────────────────────────────────────────────────
   console.log("  └──────────────────────────────────────────────────────");
   return rep;
+}
+
+/** P3: print the per-turn perception reads for a conversation (read-only).
+ *  Migration 0027: agent_runs.perception is null when perception is off. */
+async function dumpPerception(conversationId) {
+  try {
+    const runs = await fetch(
+      `${SB}/rest/v1/agent_runs?conversation_id=eq.${conversationId}&select=input,perception,created_at&order=created_at.asc`,
+      { headers: H }
+    ).then(j);
+    const withP = (Array.isArray(runs) ? runs : []).filter((r) => r.perception);
+    if (!withP.length) {
+      console.log("  · no perception (perception flag off for this tenant, or no read logged)");
+      return;
+    }
+    console.log("  ┌─ P3 PERCEPTION (per-turn — AI read, labeled inference) ─");
+    for (const r of withP) {
+      const p = r.perception;
+      console.log(`  │ «${String(r.input ?? "").slice(0, 44)}»`);
+      console.log(`  │   intent=${p.intent} · confidence=${p.confidence} · understood=${p.understood} · sentiment=${p.sentiment} · risk=${p.risk}`);
+    }
+    console.log("  └──────────────────────────────────────────────────────");
+  } catch { /* dump must never break the run */ }
 }
 
 // ---------------------------------------------------------------------------

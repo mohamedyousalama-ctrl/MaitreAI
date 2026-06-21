@@ -45,6 +45,16 @@ const REGISTRY: Record<LlmUseCase, ModelConfig> = {
     priceIn: 1,
     priceOut: 5,
   },
+  // Karim Pro P3 per-turn perception: ONE tiny Haiku read per turn (intent +
+  // confidence/confusion + risk). Small output, cheap, fast — Pro-gated on the
+  // narrow `perception` flag so it only ever runs on a perception test-bed.
+  perception: {
+    model: process.env.AI_MODEL_PERCEPTION || "claude-haiku-4-5-20251001",
+    maxTokens: 200,
+    thinking: "disabled",
+    priceIn: 1,
+    priceOut: 5,
+  },
 };
 
 export function modelFor(useCase: LlmUseCase): ModelConfig {
