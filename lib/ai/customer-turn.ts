@@ -18,7 +18,7 @@ import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
 import { type Tier, isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
-import { perceiveTurn, recoveryDirective, type PerceptionRead } from "@/lib/ai/perception";
+import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import type { OrderDraft, PhotoRequest, Presentation, ToolSignal } from "@/lib/ai/tools";
@@ -189,6 +189,10 @@ export async function runCustomerTurn(
     taxMode: String(row.tax_mode ?? "inclusive"),
     taxRate: Number(row.tax_rate ?? 0),
     tier: (row.tier as Tier | null) ?? "standard",
+    // Karim Pro P4 (cadence): the prompt's §CAD section is included only when the
+    // narrow `cadence` flag is on; default off → no cadence section, no change.
+    cadence: isFeatureExplicitlyEnabled("cadence", tenantFeatures),
+    cadenceLevel: typeof tenantFeatures?.cadence_level === "string" ? (tenantFeatures.cadence_level as string) : "balanced",
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
@@ -199,11 +203,13 @@ export async function runCustomerTurn(
   const perceptionOn = isFeatureExplicitlyEnabled("perception", tenantFeatures);
   const perception = perceptionOn ? await perceiveTurn(input.userMessage, input.history) : null;
   const perceptionDirective = perceptionOn ? recoveryDirective(perception) : null;
+  // P4 cadence cue (consumes the P3 read; fires only on a non-default mood signal).
+  const cadenceDirective = ctx.cadence ? cadenceCue(perception) : null;
 
   const t0 = Date.now();
   let result;
   try {
-    result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective });
+    result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await admin.from("agent_runs").insert({

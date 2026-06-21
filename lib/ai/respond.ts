@@ -37,6 +37,9 @@ export interface RespondInput {
    *  to the system prompt for THIS turn only when perception flags low confidence
    *  / unknown input / a safety cue. Absent on clear turns → identical behavior. */
   perceptionDirective?: string | null;
+  /** Karim Pro P4: a per-turn cadence cue (e.g. frustration → short apology+action),
+   *  derived from the P3 read; appended only when it carries a non-default signal. */
+  cadenceDirective?: string | null;
 }
 
 export interface RespondResult {
@@ -116,7 +119,8 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const adapter = await getAdapter();
   const system =
     buildCustomerAgentSystemPrompt(input.brain) +
-    (input.perceptionDirective ? `\n\n${input.perceptionDirective}` : "");
+    (input.perceptionDirective ? `\n\n${input.perceptionDirective}` : "") +
+    (input.cadenceDirective ? `\n\n${input.cadenceDirective}` : "");
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
   const knownPrices = knownMenuPrices(input.brain);
 
