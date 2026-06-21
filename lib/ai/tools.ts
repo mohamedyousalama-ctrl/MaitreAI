@@ -59,12 +59,18 @@ export interface ToolSignal {
   detail: Record<string, unknown>;
 }
 
-// Bug #1 Defect B — wording that signals a (fabricated) technical/system fault.
-// The tools NEVER produce such a fault (real exceptions are handled upstream as
-// agent_error, not via the model's escalate_to_human tool), so an escalation
-// reason matching this is always model-fabricated → blocked + routed to recovery.
+// Bug #1 Defect B — blocks ONLY an INVENTED technical/system fault used as an
+// escalation reason. The tools NEVER produce such a fault (real exceptions are
+// handled upstream as agent_error, not via escalate_to_human), so a reason
+// claiming one is always model-fabricated → blocked + routed to recovery.
+// It keys STRICTLY on the FABRICATION framing — a claimed technical error, or
+// "the system rejected / won't accept the (valid) choices" — and MUST NEVER
+// match a bare complaint / quality / refund / allergy word (بايظ/باظ/سيء/وحش/
+// حساسية…). Those are genuine human-needs that escalate normally: when unsure,
+// the guard errs toward LETTING the escalation through (a missed block is just a
+// slightly-odd handoff reason; a wrong block would swallow a real complaint).
 const FABRICATED_TECH_ERROR_RE =
-  /تقني|تقنية|عطل|خلل|بايظ|باظ|(النظام|السيستم)\s*(لا|مش|رفض|ما)|technical|glitch|\bbug\b|system\s*(error|fault|issue|down)/i;
+  /خطأ\s*تقني|مشكلة\s*تقني|عطل(?!ة)|خلل|(?:النظام|السيستم)\s*(?:لا|لم|ما|مش|رفض)|technical\s*(?:error|issue|fault|problem)|system\s*(?:error|fault|issue|down)|won'?t\s*accept|reject(?:ed|s)?\s*(?:the\s+|valid\s+|correct\s+)*choices|\bglitch\b|\bbug\b/i;
 
 export interface PhotoRequest {
   itemId: string;
