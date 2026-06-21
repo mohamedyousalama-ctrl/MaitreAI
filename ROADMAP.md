@@ -26,12 +26,15 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
 - P3 perception (#80) · P4 cadence (#81) · Quick-wins (#82: «دبل» ambiguity gate · «هات» affirmation · «تاكيد» · deflection)
 - B1 surface order-state (#83) — confirmed live on Wesaya
 - Handoff-hardening (#84) — silent-death closed · safety carve-out · barge race closed — enabled both tenants
+- Per-tenant WhatsApp webhook (#86) — GET verify token + POST X-Hub-Signature resolve per-tenant (global path
+  unchanged for Wesaya); early arrival of the V2-A/E "each restaurant brings its own Meta app" model
 - BLaban onboarding-readiness — validated loads-as-data (product thesis proven)
 - Brand: Kivo locked (teal/emerald · motion-✓ logo · "Keep Every Order Moving") · UI design brief issued
 
 ## 🔵 IN FLIGHT (≤2 parallel tracks)
 - Kivo UI — Claude Design building 7 purpose-built pages (Insights · Conversations · Orders · Customers · Settings · Login · Landing)
-- BLaban go-live — BLOCKED on real prod domain (webhook) · seed work-order ready · creds to wire · then live test
+- BLaban go-live — seeded (data-only) · prod domain confirmed (`maitre-ai.vercel.app`) · webhook now per-tenant (#86) ·
+  remaining: store BLaban app secret via dashboard (`POST /api/settings/whatsapp`) + complete Meta verify/subscribe · then live test
 
 ---
 
