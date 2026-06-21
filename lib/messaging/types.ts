@@ -74,6 +74,10 @@ export interface SendResult {
   status: SendStatus;
   externalMessageId?: string;
   error?: string;
+  /** Provider error code when the response carried one (e.g. Meta Graph API
+   *  `error.code`) — lets the retry policy tell a transient rate-limit 4xx from
+   *  a structural 4xx, and makes an otherwise-opaque «API 400» diagnosable. */
+  errorCode?: number;
   /** Raw provider response, debugging only. */
   raw?: unknown;
 }
