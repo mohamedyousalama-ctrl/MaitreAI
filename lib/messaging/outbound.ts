@@ -19,6 +19,7 @@ import {
   uploadWhatsAppMedia,
 } from "./adapters/whatsapp";
 import { isWhatsAppConfigured } from "./config";
+import { retrySend } from "./retry-policy";
 import type { SendResult } from "./types";
 import type { Presentation } from "@/lib/ai/tools";
 import type { TemplateDef } from "./templates";
@@ -36,22 +37,6 @@ export type WindowState = "in_window" | "out_of_window" | "test_mode";
 export interface WindowedSendResult extends SendResult {
   windowState: WindowState;
   attempts: number;
-}
-
-const BACKOFF_MS = [500, 1500, 4000];
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Retry only transient failures (429 / 5xx / network); 4xx won't self-heal and
- *  retrying an ambiguous timeout risks a double-send, so we keep it tight. */
-function shouldRetry(res: SendResult): boolean {
-  if (res.ok) return false;
-  const m = /API (\d{3})/.exec(res.error ?? "");
-  if (m) {
-    const code = Number(m[1]);
-    return code === 429 || code >= 500;
-  }
-  // No HTTP code parsed → the fetch threw (network) → worth one more try.
-  return res.status === "failed";
 }
 
 export interface SendWhatsAppArgs {
@@ -95,15 +80,11 @@ export async function sendWhatsAppText(args: SendWhatsAppArgs): Promise<Windowed
     };
   }
 
-  const retries = args.retries ?? 2;
-  let last: SendResult = { ...base, ok: false, status: "failed", error: "no attempt" };
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    last = await whatsappAdapter.sendMessage({ channel: "whatsapp", to: args.to, text: args.text });
-    if (last.ok) return { ...last, windowState: "in_window", attempts: attempt + 1 };
-    if (!shouldRetry(last) || attempt === retries) break;
-    await delay(BACKOFF_MS[attempt] ?? 4000);
-  }
-  return { ...last, windowState: "in_window", attempts: retries + 1 };
+  const { result, attempts } = await retrySend(
+    () => whatsappAdapter.sendMessage({ channel: "whatsapp", to: args.to, text: args.text }),
+    args.retries ?? 2
+  );
+  return { ...result, windowState: "in_window", attempts };
 }
 
 export interface SendInteractiveArgs {
@@ -172,13 +153,8 @@ export async function sendWhatsAppInteractive(
       : buildWhatsAppListBody(args.to, args.body, p.button, p.sections, p.header);
 
   const retries = args.retries ?? 2;
-  let last: SendResult = { ...base, ok: false, status: "failed", error: "no attempt" };
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    last = await sendWhatsAppBody(waBody as Record<string, unknown>);
-    if (last.ok) return { ...last, windowState: "in_window", attempts: attempt + 1 };
-    if (!shouldRetry(last) || attempt === retries) break;
-    await delay(BACKOFF_MS[attempt] ?? 4000);
-  }
+  const { result, attempts } = await retrySend(() => sendWhatsAppBody(waBody as Record<string, unknown>), retries);
+  if (result.ok) return { ...result, windowState: "in_window", attempts };
 
   // Degrade: interactive failed → re-send as numbered text.
   const fb = await sendWhatsAppText({
@@ -217,15 +193,8 @@ export async function sendWhatsAppImageLink(args: SendImageLinkArgs): Promise<Wi
   }
 
   const body = buildWhatsAppImageLinkBody(args.to, args.imageUrl, args.caption);
-  const retries = args.retries ?? 2;
-  let last: SendResult = { ...base, ok: false, status: "failed", error: "no attempt" };
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    last = await sendWhatsAppBody(body as Record<string, unknown>);
-    if (last.ok) return { ...last, windowState: "in_window", attempts: attempt + 1 };
-    if (!shouldRetry(last) || attempt === retries) break;
-    await delay(BACKOFF_MS[attempt] ?? 4000);
-  }
-  return { ...last, windowState: "in_window", attempts: retries + 1 };
+  const { result, attempts } = await retrySend(() => sendWhatsAppBody(body as Record<string, unknown>), args.retries ?? 2);
+  return { ...result, windowState: "in_window", attempts };
 }
 
 /** Upload a PNG and send it as a WhatsApp image (e.g. a receipt). */
@@ -244,15 +213,8 @@ export async function sendWhatsAppImage(args: SendImageArgs): Promise<WindowedSe
   }
 
   const body = buildWhatsAppImageBody(args.to, upload.mediaId, args.caption);
-  const retries = args.retries ?? 2;
-  let last: SendResult = { ...base, ok: false, status: "failed", error: "no attempt" };
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    last = await sendWhatsAppBody(body as Record<string, unknown>);
-    if (last.ok) return { ...last, windowState: "in_window", attempts: attempt + 1 };
-    if (!shouldRetry(last) || attempt === retries) break;
-    await delay(BACKOFF_MS[attempt] ?? 4000);
-  }
-  return { ...last, windowState: "in_window", attempts: retries + 1 };
+  const { result, attempts } = await retrySend(() => sendWhatsAppBody(body as Record<string, unknown>), args.retries ?? 2);
+  return { ...result, windowState: "in_window", attempts };
 }
 
 /**
@@ -272,12 +234,6 @@ export async function sendWhatsAppTemplate<P>(
     return { ...base, ok: false, status: "skipped", error: "WhatsApp غير مُهيأ (الوضع التجريبي).", windowState: "test_mode", attempts: 0 };
   }
   const body = buildWhatsAppTemplateBody(to, def.name, def.language, def.build(params));
-  let last: SendResult = { ...base, ok: false, status: "failed", error: "no attempt" };
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    last = await sendWhatsAppBody(body as Record<string, unknown>);
-    if (last.ok) return { ...last, windowState: "out_of_window", attempts: attempt + 1 };
-    if (!shouldRetry(last) || attempt === retries) break;
-    await delay(BACKOFF_MS[attempt] ?? 4000);
-  }
-  return { ...last, windowState: "out_of_window", attempts: retries + 1 };
+  const { result, attempts } = await retrySend(() => sendWhatsAppBody(body as Record<string, unknown>), retries);
+  return { ...result, windowState: "out_of_window", attempts };
 }

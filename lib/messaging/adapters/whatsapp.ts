@@ -199,6 +199,20 @@ export function buildWhatsAppListBody(
   };
 }
 
+/** Turn a non-2xx Graph API response into a diagnosable error: surface Meta's
+ *  real error code + message (the response body), not just the bare HTTP status.
+ *  An opaque «WhatsApp API 400» becomes «WhatsApp API 400 (#131047): Message
+ *  failed to send because more than 24 hours have passed…», and `errorCode` lets
+ *  the retry policy tell a transient rate-limit 4xx from a structural one. */
+function waApiError(status: number, json: unknown): { ok: false; error: string; errorCode?: number; raw: unknown } {
+  const err = (json as { error?: { message?: string; code?: number; error_subcode?: number } })?.error;
+  const code = typeof err?.code === "number" ? err.code : undefined;
+  const sub = typeof err?.error_subcode === "number" ? err.error_subcode : undefined;
+  const tag = code != null ? ` (#${code}${sub ? `/${sub}` : ""})` : "";
+  const detail = err?.message ? `: ${err.message}` : "";
+  return { ok: false, error: `WhatsApp API ${status}${tag}${detail}`, errorCode: code, raw: json };
+}
+
 /** POST any pre-built message body to the Graph API and map the response. */
 async function postToGraph(env: ReturnType<typeof readWhatsAppEnv>, body: Record<string, unknown>): Promise<SendResult> {
   const to = String((body as { to?: string }).to ?? "");
@@ -211,7 +225,7 @@ async function postToGraph(env: ReturnType<typeof readWhatsAppEnv>, body: Record
     });
     const json: unknown = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return { ok: false, channel: CHANNEL, to, status: "failed", error: `WhatsApp API ${res.status}`, raw: json };
+      return { ...waApiError(res.status, json), channel: CHANNEL, to, status: "failed" };
     }
     const externalMessageId = (json as { messages?: { id?: string }[] })?.messages?.[0]?.id;
     return { ok: true, channel: CHANNEL, to, status: "sent", externalMessageId, raw: json };
@@ -270,7 +284,7 @@ export async function uploadWhatsAppMedia(
     fd.append("file", new Blob([new Uint8Array(bytes)], { type: mime }), filename);
     const res = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${env.accessToken}` }, body: fd });
     const json: unknown = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, channel: CHANNEL, to: "media", status: "failed", error: `WhatsApp media ${res.status}`, raw: json };
+    if (!res.ok) return { ...waApiError(res.status, json), channel: CHANNEL, to: "media", status: "failed" };
     return { ok: true, channel: CHANNEL, to: "media", status: "sent", mediaId: (json as { id?: string })?.id, raw: json };
   } catch (err) {
     return { ok: false, channel: CHANNEL, to: "media", status: "failed", error: err instanceof Error ? err.message : "network error" };
