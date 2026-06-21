@@ -26,14 +26,45 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // --- GET: verification handshake -------------------------------------------
-export function GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
   const env = readWhatsAppEnv();
   const sp = req.nextUrl.searchParams;
   const mode = sp.get("hub.mode");
   const token = sp.get("hub.verify_token");
   const challenge = sp.get("hub.challenge");
 
-  // No verify token configured → helpful dev response instead of a crash.
+  // 1. GLOBAL verify token (unchanged Wesaya path — synchronous, no DB). If the
+  //    global token matches, echo the challenge exactly as before.
+  if (env.verifyToken) {
+    const result = verifyWhatsAppWebhook({ mode, token, challenge, verifyToken: env.verifyToken });
+    if (result !== null) {
+      // Meta expects the raw challenge string echoed back as text/plain.
+      return new NextResponse(result, { status: 200, headers: { "Content-Type": "text/plain" } });
+    }
+  }
+
+  // 2. PER-TENANT verify token (multi-app, additive). Meta's verify handshake
+  //    carries NO phone_number_id, so we accept the challenge when the token
+  //    matches ANY active tenant's wa_verify_token (e.g. BLaban/Kivo's
+  //    'kivo-blaban-1988'). Verification only proves we control the endpoint; the
+  //    real per-tenant security is the POST signature + phone_number_id routing.
+  if (mode === "subscribe" && token) {
+    const admin = createAdminClient();
+    if (admin) {
+      const { data } = await admin
+        .from("restaurants")
+        .select("id")
+        .eq("wa_verify_token", token)
+        .eq("active", true)
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        return new NextResponse(challenge ?? "", { status: 200, headers: { "Content-Type": "text/plain" } });
+      }
+    }
+  }
+
+  // 3. Nothing configured at all → keep the helpful dev response; otherwise 403.
   if (!env.verifyToken) {
     return NextResponse.json(
       {
@@ -43,12 +74,6 @@ export function GET(req: NextRequest) {
       },
       { status: 200 }
     );
-  }
-
-  const result = verifyWhatsAppWebhook({ mode, token, challenge, verifyToken: env.verifyToken });
-  if (result !== null) {
-    // Meta expects the raw challenge string echoed back as text/plain.
-    return new NextResponse(result, { status: 200, headers: { "Content-Type": "text/plain" } });
   }
   return NextResponse.json({ ok: false, message: "verify token mismatch" }, { status: 403 });
 }
@@ -62,29 +87,42 @@ export async function POST(req: NextRequest) {
   const rawBuf = Buffer.from(await req.arrayBuffer());
   const rawBody = rawBuf.toString("utf8");
   const sig = req.headers.get("x-hub-signature-256");
-  const hmac = (data: Buffer | string) => (env.appSecret ? "sha256=" + createHmac("sha256", env.appSecret).update(data).digest("hex") : null);
-  const compBytes = hmac(rawBuf); // authoritative
 
-  // Signature check only when an app secret is configured (placeholder-friendly).
-  // When configured we ALWAYS verify Meta's X-Hub-Signature-256 HMAC and reject
-  // (401) on mismatch. A local-dev escape hatch (WHATSAPP_SKIP_SIGNATURE=true) is
-  // honored ONLY outside production — in production the signature is enforced no
-  // matter what that env var says, so a stale "true" can never weaken live traffic.
-  const skipSig =
-    process.env.NODE_ENV !== "production" &&
-    (process.env.WHATSAPP_SKIP_SIGNATURE ?? "").trim().toLowerCase() === "true";
-  if (env.appSecret && !skipSig) {
-    const okSig = !!sig && !!compBytes && sig.length === compBytes.length && timingSafeEqual(Buffer.from(sig), Buffer.from(compBytes));
-    if (!okSig) {
-      return NextResponse.json({ ok: false, message: "invalid signature" }, { status: 401 });
-    }
-  }
-
+  // Parse the payload up front: we need the inbound phone_number_id to choose the
+  // RIGHT signing secret — a per-tenant Meta app (e.g. BLaban/Kivo) signs with its
+  // OWN app secret, distinct from the global one (Wesaya/MaitreAI).
   let payload: unknown = {};
   try {
     payload = rawBody ? JSON.parse(rawBody) : {};
   } catch {
     return NextResponse.json({ ok: false, message: "invalid json" }, { status: 400 });
+  }
+
+  const admin = createAdminClient();
+  const phoneNumberId = extractInboundPhoneNumberId(payload);
+  // Resolve the tenant ONCE here (reused for routing below). Null when this number
+  // isn't stored per-tenant → the global env path applies (Wesaya, unchanged).
+  const tenant = admin ? await resolveWebhookTenant(admin, phoneNumberId) : null;
+
+  // Signature: accept if X-Hub-Signature-256 matches EITHER the global app secret
+  // (unchanged Wesaya path, tried first) OR the resolving tenant's OWN app secret
+  // (per-tenant Meta app). Reject 401 only if a secret applies and none match. The
+  // local-dev escape hatch (WHATSAPP_SKIP_SIGNATURE=true) is honored ONLY outside
+  // production — in prod the signature is enforced no matter what that var says.
+  const skipSig =
+    process.env.NODE_ENV !== "production" &&
+    (process.env.WHATSAPP_SKIP_SIGNATURE ?? "").trim().toLowerCase() === "true";
+  const sigSecrets = [env.appSecret, tenant?.env.appSecret].filter((s): s is string => !!s && s.length > 0);
+  if (sigSecrets.length && !skipSig) {
+    const okSig =
+      !!sig &&
+      sigSecrets.some((secret) => {
+        const comp = "sha256=" + createHmac("sha256", secret).update(rawBuf).digest("hex");
+        return sig.length === comp.length && timingSafeEqual(Buffer.from(sig), Buffer.from(comp));
+      });
+    if (!okSig) {
+      return NextResponse.json({ ok: false, message: "invalid signature" }, { status: 401 });
+    }
   }
 
   const messages = normalizeWhatsAppInbound(payload);
@@ -95,15 +133,12 @@ export async function POST(req: NextRequest) {
   let deduped = 0;
   let responded = 0;
   let resolvedBy: "phone_number_id" | "env_fallback" = "env_fallback";
-  const admin = createAdminClient();
   if (admin && messages.length > 0) {
     // Per-tenant routing: resolve the restaurant by the inbound phone_number_id
     // and use ITS decrypted credentials for both persistence and the outbound
     // reply (so a tenant answers from its own number). If no tenant matches, or
     // it isn't fully/decryptably configured, resolveWebhookTenant returns null
     // and we fall back to the EXISTING env behavior — unchanged for Wesaya.
-    const phoneNumberId = extractInboundPhoneNumberId(payload);
-    const tenant = await resolveWebhookTenant(admin, phoneNumberId);
     const restaurantId = tenant?.restaurantId ?? (await resolveWebhookRestaurantId(admin));
     const perTenantEnv = tenant?.env ?? null; // null → readWhatsAppEnv() uses env vars
     resolvedBy = tenant ? "phone_number_id" : "env_fallback";
