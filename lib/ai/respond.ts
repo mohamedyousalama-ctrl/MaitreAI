@@ -33,6 +33,10 @@ export interface RespondInput {
   userMessage: string;
   /** Open order draft from the previous WhatsApp turn, if one exists. */
   initialDraft?: OrderDraft | null;
+  /** Karim Pro P3 (Layer B): a per-turn perception recovery directive, appended
+   *  to the system prompt for THIS turn only when perception flags low confidence
+   *  / unknown input / a safety cue. Absent on clear turns → identical behavior. */
+  perceptionDirective?: string | null;
 }
 
 export interface RespondResult {
@@ -110,7 +114,9 @@ function safeConfirmReply(dialect: string): string {
 
 export async function respond(input: RespondInput): Promise<RespondResult> {
   const adapter = await getAdapter();
-  const system = buildCustomerAgentSystemPrompt(input.brain);
+  const system =
+    buildCustomerAgentSystemPrompt(input.brain) +
+    (input.perceptionDirective ? `\n\n${input.perceptionDirective}` : "");
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
   const knownPrices = knownMenuPrices(input.brain);
 

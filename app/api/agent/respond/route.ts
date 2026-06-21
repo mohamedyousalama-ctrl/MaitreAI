@@ -61,6 +61,7 @@ export async function POST(req: Request) {
       costUsd: outcome.costUsd,
       latencyMs: outcome.latencyMs,
       agentRunId: outcome.agentRunId,
+      perception: outcome.perception,
     });
   } catch (e) {
     if (e instanceof CustomerTurnError && e.code === "restaurant_not_found") {
