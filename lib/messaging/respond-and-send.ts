@@ -13,6 +13,7 @@ import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
+import { readHandoffConfig, isSafetyHold, isIdleBeyond } from "@/lib/tenant/handoff";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import { sendReceiptToCustomer } from "./send-receipt";
 import type { LlmMessage } from "@/lib/ai/llm/types";
@@ -59,6 +60,36 @@ async function noteToTimeline(
   });
 }
 
+/** HANDOFF-HARDENING (Fix 1) — nudge the team that a human-owned conversation has
+ *  gone idle while the customer is still messaging. Operator-facing only (never
+ *  sent to the customer). Deduped to at most one alert per idle window so a
+ *  customer pinging repeatedly doesn't spam the timeline. Safety holds get a
+ *  louder, "do not auto-return" alert. Does NOT touch updated_at (the wait/SLA
+ *  clock stays truthful about how long the customer has actually waited). */
+async function realertOperator(
+  admin: SupabaseClient,
+  restaurantId: string,
+  conversationId: string,
+  idleMinutes: number,
+  safety: boolean
+): Promise<void> {
+  const sinceIso = new Date(Date.now() - idleMinutes * 60 * 1000).toISOString();
+  const { data: recent } = await admin
+    .from("messages")
+    .select("meta")
+    .eq("conversation_id", conversationId)
+    .eq("sender", "system")
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  const alreadyAlerted = (recent ?? []).some((m) => (m.meta as Record<string, unknown> | null)?.kind === "handoff_idle_alert");
+  if (alreadyAlerted) return;
+  const text = safety
+    ? "⏰🔒 العميل لسه مستني — دي محادثة سلامة/حساسية محوّلة لموظف ومحتاجة متابعة بشرية. (لا تُعاد للمساعد تلقائياً.)"
+    : "⏰ العميل لسه مستني ردك — برجاء المتابعة.";
+  await noteToTimeline(admin, restaurantId, conversationId, text, { kind: "handoff_idle_alert", safety });
+}
+
 async function sendRequestedPhotos(
   admin: SupabaseClient,
   restaurantId: string,
@@ -91,17 +122,57 @@ export async function respondAndSendWhatsApp(
   restaurantId: string,
   conversationId: string
 ): Promise<RespondAndSendResult> {
-  // 1. Conversation + owner + recipient phone + customer id.
+  // 1. Conversation + owner + recipient phone + customer id (+ the handoff clock
+  //    and reason for the idle policy below).
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, owner, channel, customer_id, customers(phone)")
+    .select("id, owner, channel, customer_id, escalation_reason, updated_at, customers(phone)")
     .eq("id", conversationId)
     .single();
   if (!conv) return { status: "skipped_not_found", error: "conversation_not_found" };
   const customerId = (conv.customer_id as string | null) ?? null;
 
-  // Takeover (Amendment 03 §E): a human owns this thread — the Brain stays out.
-  if ((conv.owner as string) === "human") return { status: "skipped_takeover" };
+  // Takeover (Amendment 03 §E): a human owns this thread — the Brain normally
+  // stays out. HANDOFF-HARDENING (Fix 1 — stop "silent death"): a human-owned
+  // thread must never answer the customer with nobody, forever. When the customer
+  // messages and no operator has tended the thread for the tenant's idle window,
+  // apply the per-tenant idle policy. SAFETY holds (allergy/medical escalation
+  // reason) NEVER auto-return — re-alert the team and stay silent. Flag-gated
+  // (handoff_timeout); default off → the existing skipped_takeover behavior.
+  let resumedAfterTimeout = false;
+  if ((conv.owner as string) === "human") {
+    const { data: rFlags } = await admin.from("restaurants").select("feature_flags").eq("id", restaurantId).single();
+    const features = (rFlags?.feature_flags as Record<string, unknown> | null) ?? null;
+    const cfg = readHandoffConfig(features);
+    const idle = cfg.enabled && isIdleBeyond(conv.updated_at as string | null, cfg.idleMinutes);
+    if (!idle) return { status: "skipped_takeover" };
+
+    const safety = isSafetyHold(conv.escalation_reason as string | null);
+    if (safety || cfg.action === "realert_only") {
+      // Keep the human in the loop; nudge staff (deduped to ≤ once per idle window).
+      // Safety holds are released only by a deliberate human action — never here.
+      await realertOperator(admin, restaurantId, conversationId, cfg.idleMinutes, safety);
+      return { status: "skipped_takeover" };
+    }
+
+    // Non-safety + auto_return: return ownership to the AI through the SAME fields
+    // returnToAi writes (owner/status reset, escalation_reason + handover_note
+    // cleared — no human commitment to honor) and reset the wait clock. Then fall
+    // through so the Brain answers the waiting customer; an honest resume line is
+    // sent first (below, once recipient + 24h window are resolved).
+    await admin
+      .from("conversations")
+      .update({ owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: null, updated_at: new Date().toISOString() })
+      .eq("id", conversationId);
+    await noteToTimeline(
+      admin,
+      restaurantId,
+      conversationId,
+      "المحادثة رجعت للمساعد تلقائياً بعد انتظار العميل بدون رد من الفريق.",
+      { kind: "handoff_auto_return", idleMinutes: cfg.idleMinutes }
+    );
+    resumedAfterTimeout = true;
+  }
 
   // Mode gate (incident control, §F): only auto-reply in modes that allow it.
   // A tenant flipped to setup/paused leaves the inbound for human handling — no
@@ -138,6 +209,32 @@ export async function respondAndSendWhatsApp(
     .slice(0, lastCustomerIdx)
     .filter((m) => m.text)
     .map((m) => ({ role: m.sender === "customer" ? "user" : "assistant", content: m.text as string }));
+
+  // HANDOFF-HARDENING (Fix 1): after a timeout auto-return, open with an honest
+  // resume line that acknowledges the wait BEFORE the Brain answers the message.
+  if (resumedAfterTimeout) {
+    const resumeText = "معلش اتأخرنا عليك 🙏 أنا معاك دلوقتي ونكمّل على طول.";
+    const { data: rmsg } = await admin
+      .from("messages")
+      .insert({
+        restaurant_id: restaurantId,
+        conversation_id: conversationId,
+        direction: "outbound",
+        sender: "ai",
+        text: resumeText,
+        status: "sent",
+        meta: { kind: "handoff_resume" },
+      })
+      .select("id")
+      .single();
+    const rsend = await sendWhatsAppText({ to: phone, text: resumeText, lastInboundAtMs });
+    if (rmsg?.id) {
+      await admin
+        .from("messages")
+        .update(rsend.status === "sent" ? { status: "sent", channel_message_id: rsend.externalMessageId ?? null } : { status: "failed" })
+        .eq("id", rmsg.id);
+    }
+  }
 
   // 3. Brain turn — persists the AI reply, logs cost to agent_runs, flips to
   //    human on escalation. Any failure hands the thread to a human + notes it.

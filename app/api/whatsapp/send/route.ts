@@ -35,6 +35,21 @@ export async function POST(req: Request) {
     .eq("id", conversationId)
     .single();
   if (!conv) return NextResponse.json({ error: "conversation_not_found" }, { status: 404 });
+
+  // HANDOFF-HARDENING (Fix 2): the operator replying IS the takeover. Claim
+  // ownership server-side (the source of truth) and reset the wait/idle clock,
+  // so the AI silence-lock never depends on a slow/fire-and-forget client
+  // takeover write — an inbound arriving between the operator's reply and that
+  // client write can no longer see owner='ai' and let the Brain barge in. The AI
+  // bridge re-reads owner on each inbound, so this flip is immediately honored.
+  // Idempotent (owner is set to 'human' regardless); updated_at advances on every
+  // operator reply so the idle timer restarts on real human activity. RLS scopes
+  // this to the operator's tenant.
+  await supabase
+    .from("conversations")
+    .update({ owner: "human", updated_at: new Date().toISOString() })
+    .eq("id", conversationId);
+
   if ((conv.channel as string) !== "whatsapp") {
     return NextResponse.json({ ok: true, skipped: "non_whatsapp_channel" });
   }
