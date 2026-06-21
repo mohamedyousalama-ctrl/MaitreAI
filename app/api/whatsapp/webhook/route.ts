@@ -12,7 +12,8 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
-import { extractInboundPhoneNumberId, normalizeWhatsAppInbound, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
+import { extractInboundPhoneNumberId, markWhatsAppRead, normalizeWhatsAppInbound, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
+import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { isWhatsAppConfigured, readWhatsAppEnv } from "@/lib/messaging/config";
 import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -111,6 +112,26 @@ export async function POST(req: NextRequest) {
       // Bind the resolved creds for the whole persist→Brain→send chain. With a
       // null override this is a transparent pass-through (env behavior).
       await runWithWhatsAppCreds(perTenantEnv, async () => {
+      // Karim Pro P4 (cadence) — HONEST read-receipt + typing, fired IMMEDIATELY
+      // (before the heavy persist/Brain work) keyed on each inbound message.id.
+      // Gated on the narrow `cadence` flag; default off → nothing changes for
+      // other tenants. The typing indicator reflects the REAL processing that
+      // follows (every agent turn is >1.5s) and auto-dismisses on send — there is
+      // NO artificial delay. Dial: cadence_level="fast" → read-only (no typing).
+      // Best-effort, non-blocking: a failed read/typing NEVER blocks the reply.
+      try {
+        const { data: rRow } = await admin.from("restaurants").select("feature_flags").eq("id", restaurantId).single();
+        const flags = (rRow?.feature_flags as Record<string, unknown> | null) ?? null;
+        if (isFeatureExplicitlyEnabled("cadence", flags)) {
+          const typing = String(flags?.cadence_level ?? "balanced") !== "fast";
+          await Promise.all(
+            messages.filter((m) => m.externalMessageId).map((m) => markWhatsAppRead(m.externalMessageId as string, { typing }))
+          );
+        }
+      } catch (e) {
+        console.error("[whatsapp:webhook] cadence read/typing error (non-blocking)", e);
+      }
+
       // Persist first (dedupe on redelivery), collecting NEW conversations to answer.
       const toAnswer = new Set<string>();
       for (const m of messages) {

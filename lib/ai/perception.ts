@@ -141,3 +141,23 @@ export function recoveryDirective(read: PerceptionRead | null): string | null {
 
   return null;
 }
+
+/**
+ * Karim Pro P4 (cadence): a per-turn cadence cue derived from the P3 read, or
+ * null when none is needed (so the static §CAD rules + the model's read of the
+ * message govern). Fires only on a NON-DEFAULT signal — frustration — where the
+ * structured mood read most sharpens the shape (short ownership + action). Low
+ * confidence is already P3's domain (recoveryDirective keeps the clarify tight),
+ * and simple/clear turns are the static default, so they need no cue here. Never
+ * touches facts — it only shapes presentation.
+ */
+export function cadenceCue(read: PerceptionRead | null): string | null {
+  if (!read) return null;
+  if (read.sentiment === "negative" || read.risk === "frustration") {
+    return [
+      "## نبرة هذه اللفة (CADENCE — تشكيل العرض فقط، لا يمسّ الحقائق)",
+      "العميل متضايق: اعتذار قصير + تملّك + فعل فوري («حقك عليا، هظبطها»)، من غير إطالة ولا اعتذار مكرر، ومن غير ما تأجّل أو تخبّي الحقيقة. الإيصالات/الأسعار/الحساسية/الدفع تفضل رسالة كاملة واحدة كما هي.",
+    ].join("\n");
+  }
+  return null;
+}

@@ -262,6 +262,33 @@ export async function downloadWhatsAppMedia(mediaId: string): Promise<{ bytes: B
   }
 }
 
+/** Karim Pro P4 (cadence): mark an inbound message READ, and optionally show the
+ *  typing indicator — the honest "we saw you / we're on it" signal, keyed on the
+ *  inbound message.id. The typing indicator (when shown) auto-dismisses when the
+ *  real reply sends or after ~25s; there is NO artificial delay here — it reflects
+ *  the real processing that genuinely follows (every agent turn is >1.5s).
+ *  Best-effort + non-blocking: returns false on any failure / test mode, and the
+ *  caller never blocks the reply on it.
+ *  Graph API: POST /{phone_number_id}/messages with status:"read" (+ an optional
+ *  typing_indicator:{type:"text"} block to also show typing). */
+export async function markWhatsAppRead(messageId: string, opts?: { typing?: boolean }): Promise<boolean> {
+  if (!messageId) return false;
+  const env = readWhatsAppEnv();
+  if (!isWhatsAppConfigured(env)) return false;
+  const body: Record<string, unknown> = { messaging_product: "whatsapp", status: "read", message_id: messageId };
+  if (opts?.typing) body.typing_indicator = { type: "text" };
+  try {
+    const res = await fetch(`https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${env.phoneNumberId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Send a pre-built message body (text or interactive). Skips in test mode. */
 export async function sendWhatsAppBody(body: Record<string, unknown>): Promise<SendResult> {
   const env = readWhatsAppEnv();
