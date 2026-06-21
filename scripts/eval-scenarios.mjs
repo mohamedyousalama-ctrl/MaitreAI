@@ -690,6 +690,88 @@ const PRO_SCENARIOS = [
       return { pass: ao.pass && recovers && !deadEnd && !escalated, notes: `${ao.notes}; recovers=${recovers}; deadEnd=${deadEnd}; escalated=${escalated}` };
     },
   },
+  {
+    id: "PRO-NOASYNC",
+    title: "Quick-win C — confirm («تاكيد») finalizes IN-TURN, never a fake 'preparing it / I'll get back' promise",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    // Diagnostic C: Karim said «لحظة بسيطة، خليني أجهّز الطلب من السيستم» then went
+    // silent (no background job exists). Plus the confirm fast-path missed the
+    // hamza-less «تاكيد» so the slow loop emitted the stall. Post-fix: «تاكيد» hits
+    // the widened confirm path → finalizes in-turn; and NO async/self-follow-up
+    // promise ever appears.
+    turns: {
+      egyptian: [
+        "السلام عليكو، عايز ساندويتش فراخ مشوية واحد",
+        "من غير إضافات، ضيفه كده",
+        "توصيل لمدينة نصر",
+        "تاكيد",
+      ],
+    },
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      const finalized = out.draft?.finalized === true || (out.toolsUsed || []).includes("finalize_draft");
+      // The forbidden pattern (what FIX C bans): implying background work / a later
+      // self-initiated message. This is the deterministic gate on demo-pro; the
+      // FINALIZE-IN-TURN half (the widened «تاكيد» fast-path) is proven separately
+      // and reliably on Wesaya (scripts/proof-quickwins-wesaya.mjs C-NOASYNC),
+      // which has the variant menu that lets a cart build cleanly. demo-pro's
+      // deflect-happy brain often won't finish the cart in a scripted run, but it
+      // must NEVER emit a fake async promise.
+      const asyncPromise =
+        /أجهّز|أجهز|بحضّر|بحضر|هرجعل|أرجعل|هكلّمك|هكلمك|هبعتل|لحظة بسيطة|من السيستم/.test(r);
+      return { pass: ao.pass && !asyncPromise, notes: `${ao.notes}; finalized=${finalized}; asyncPromise=${asyncPromise}` };
+    },
+  },
+  {
+    id: "PRO-HAAT",
+    title: "Quick-win «هات» — «هات [صنف موجود]» is affirmation, must NOT bump qty 1→2",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    // Diagnostic: «هات البيتزا» (item already in cart, no new quantity) was read as
+    // ADD and bumped the line. Post-fix: a bare «هات [existing item]» is an
+    // affirmation → readback/confirm path, NOT add. The فراخ line must stay qty 1.
+    turns: {
+      egyptian: [
+        "عايز ساندويتش فراخ مشوية واحد",
+        "من غير إضافات، ضيفه كده",
+        "هات ساندويتش الفراخ المشوية",
+      ],
+    },
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      const lines = out.draft?.lines || [];
+      const chickenQty = lines
+        .filter((l) => /فراخ|دجاج/.test(l.name || ""))
+        .reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+      const noBump = chickenQty === 1;
+      return { pass: ao.pass && noBump, notes: `${ao.notes}; chickenQty=${chickenQty}; noBump=${noBump}` };
+    },
+  },
+  {
+    id: "PRO-DEFLECT",
+    title: "Quick-win deflection — «أنواع تانية» NAMES the types, never bare «اختار اللي يعجبك»",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    // Diagnostic: «في ايه انواع تاني» → «اختار اللي يعجبك» (a non-answer) even with a
+    // list attached. Post-fix: Karim NAMES the real types and never deflects.
+    turns: {
+      egyptian: [
+        "في ايه أنواع ساندويتشات عندكم؟",
+      ],
+    },
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      // Names at least two real sandwich types from the seeded menu.
+      const named = mentionsAny(r, ["فراخ", "كفتة", "بطاطس"]).length >= 2;
+      // The forbidden deflection as a (the) reply.
+      const deflects = mentionsAny(r, ["اختار اللي يعجبك", "اختار وقوللي", "اختار وقللي", "شوف اللي يعجبك", "اختر اللي يعجبك"]).length > 0;
+      return { pass: ao.pass && named && !deflects, notes: `${ao.notes}; named=${named}; deflects=${deflects}` };
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

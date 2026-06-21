@@ -67,8 +67,8 @@ function claimsOrderConfirmed(text: string): boolean {
 }
 
 function isExplicitOrderConfirmation(text: string): boolean {
-  if (/(?:لا|لأ|مش|ما)\s*(?:تأكد|تكمل|تبعت|ترسل)|(?:الغ|إلغاء|cancel)/iu.test(text)) return false;
-  return /(?:أكد|تأكيد|ابعته|ابعت|ارسله|رسل|كمّل|كمل|تمام|أيوه|ايوه|yes|confirm|send it)/iu.test(text);
+  if (/(?:لا|لأ|مش|ما)\s*(?:تأكد|تاكد|تأكيد|تاكيد|تكمل|تبعت|ترسل)|(?:الغ|إلغاء|cancel)/iu.test(text)) return false;
+  return /(?:أكد|اكد|تأكيد|تاكيد|ابعته|ابعت|ارسله|رسل|كمّل|كمل|تمام|أيوه|ايوه|yes|confirm|send it)/iu.test(text);
 }
 
 // Fix D — the «تمام» fast-path may auto-finalize ONLY when the conversation is
