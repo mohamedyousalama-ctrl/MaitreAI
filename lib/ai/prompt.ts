@@ -26,6 +26,7 @@ import type {
 import { promoDescription } from "../promo";
 import { dialectProfile } from "./dialect";
 import { MODE_LABELS_AR, modeAllowsOrders, type SystemMode } from "./modes";
+import type { OrderDraft } from "./tools";
 
 export interface BrainContext {
   profile: Pick<RestaurantProfile, "name" | "currency" | "timezone" | "businessType">;
@@ -60,6 +61,51 @@ export interface BrainContext {
   cadence?: boolean;
   /** Karim Pro P4 dial: 'fast' | 'balanced' | 'warm' (default 'balanced'). */
   cadenceLevel?: string;
+  /** Issue-B B1 (stateful_orders flag): when true, render the authoritative
+   *  «الطلب الحالي» block from currentDraft so the model READS state instead of
+   *  rebuilding it from chat. Default off → no block, prompt byte-identical. */
+  statefulOrders?: boolean;
+  /** Issue-B B1: the authoritative reloaded draft for THIS turn (same object the
+   *  executor seeds ctx.draft from). Rendered into the prompt only when
+   *  statefulOrders is on. Null/empty → an explicit "no order being built" note. */
+  currentDraft?: OrderDraft | null;
+}
+
+// --- Issue-B B1: authoritative «current order» block --------------------------
+const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
+/** Render digits as Arabic-Indic so the block matches Karim's own writing. */
+function toAr(n: number | string): string {
+  return String(n).replace(/[0-9]/g, (d) => AR_DIGITS[Number(d)]);
+}
+
+/** Compact, authoritative current-order block built ENTIRELY from the stored
+ *  draft (never the chat). Sent every turn when stateful_orders is on, so it is
+ *  kept short. An empty draft renders an explicit "nothing being built" note so
+ *  the model never infers a phantom cart from the conversation. B1 surfaces the
+ *  BUILDING draft only (committed-order surfacing is B2). */
+function currentOrderBlock(draft: OrderDraft | null | undefined, currency: string): string {
+  const header = "## الطلب الحالي (المصدر الموثوق — اقرأه، متعيدش بناءه من المحادثة)";
+  if (!draft || !draft.lines.length) {
+    return `\n\n${header}\nلا يوجد طلب تحت التجهيز حالياً — السلة فاضية. أول ما العميل يضيف صنف هيظهر هنا.`;
+  }
+  const lines = draft.lines
+    .map((l) => {
+      const opts = [
+        ...(l.variant ? [l.variant.name] : []),
+        ...l.choices.map((c) => c.label),
+        ...l.modifiers.map((m) => m.name),
+      ];
+      const optTxt = opts.length ? ` (${opts.join("، ")})` : "";
+      return `- ${toAr(l.quantity)}× ${l.name}${optTxt} — ${toAr(l.lineTotal)} ${currency}`;
+    })
+    .join("\n");
+  const ful =
+    draft.fulfillment === "delivery"
+      ? `الاستلام: توصيل${draft.deliveryZone ? `/${draft.deliveryZone}` : ""}${draft.deliveryFee ? ` (رسوم ${toAr(draft.deliveryFee)} ${currency})` : ""}`
+      : draft.fulfillment === "pickup"
+        ? "الاستلام: من الفرع"
+        : "الاستلام: لسه ماتحددش";
+  return `\n\n${header}\n${lines}\n${ful}\nالإجمالي حتى الآن: ${toAr(draft.total)} ${currency}`;
 }
 
 // Owner-approved (2026-06-13) dialect-fitting fallback host names. Used only
@@ -311,10 +357,11 @@ Don't reply in one uniform shape. Let LENGTH + TONE track the turn — and NEVER
 - FACTS STAY ATOMIC — recap, any price/total/delivery-fee, the allergy note, payment instructions, and the final confirmation are ONE clean COMPLETE message each. Cadence NEVER shortens, warms-up, splits, or alters them. This is the hard line; the truth/recap/allergy rules above always win over brevity.
 
 ## Building orders` : `
-## Building orders`}
+## Building orders`}${ctx.statefulOrders && canOrder ? currentOrderBlock(ctx.currentDraft, currency) : ""}
 ${
   canOrder
-    ? `- Use the provided tools to add items, set fulfillment (pickup/delivery), and finalize the draft. Confirm the items and the tool-computed total with the customer explicitly before finalizing — the recap is a CONFIRMATION QUESTION, never an assertion of fact; any variant/size you INFERRED from a terse token must be surfaced visibly in the recap so a misread is catchable, not buried. Do not free-type totals; call get_order_summary when you need to read back money.
+    ? `${ctx.statefulOrders ? `- STATE IS GROUND TRUTH: the «الطلب الحالي» block above is the authoritative current order — READ it. To change the order, use the tools to ADD / REMOVE / SET only the DELTA the customer just asked for. NEVER reconstruct the whole order from the conversation, and NEVER call clear_order to "rebuild" it (clear_order is ONLY for an explicit «ابدأ من جديد / الغِ كل ده»). The items shown in the block are already in the cart — don't re-add them.
+` : ""}- Use the provided tools to add items, set fulfillment (pickup/delivery), and finalize the draft. Confirm the items and the tool-computed total with the customer explicitly before finalizing — the recap is a CONFIRMATION QUESTION, never an assertion of fact; any variant/size you INFERRED from a terse token must be surfaced visibly in the recap so a misread is catchable, not buried. Do not free-type totals; call get_order_summary when you need to read back money.
 - WALK EACH ITEM'S REAL OPTIONS. When the customer picks an item, before moving on, offer the options THAT ITEM actually lists in the menu data below — its «picks» (e.g. «اختر المذاق: عادي/حار» where present), its «sizes» (عادي/دوبل، صغير/وسط/كبير)، and its «add-ons» (شريحة شيدر، هالبينو…). TRUTH RULE — offer ONLY the options that item carries in the data: if an item lists just a size and no مذاق pick and no add-ons (e.g. برجر لحم = sizes عادي/دوبل only), ask ONLY the size — do NOT ask spicy/normal or invent extras; if it lists عادي/حار + add-ons (e.g. فيليه سوبريم)، offer those. NEVER fabricate an option an item doesn't have. (A size named «عادي/دوبل» is a PORTION size, not spicy/normal.) If an item shows NO «picks» line, it simply HAS NO مذاق/صوص choices — do NOT ask عادي/حار/مكس or any مذاق/صوص for it; offer only its «sizes»/«add-ons» if any, otherwise add it as-is. If the customer asks for an option the item doesn't list, say so honestly and offer the item's REAL options — never a «خطأ تقني»، never an escalation.
 - UPSELL A REAL SIDE/DRINK ONCE. After the main item(s) are set and before finalizing, warmly suggest ONE real complementary item from the menu — a side (بطاطس/كول سلو/ريزو) or the drink (مياه) — tied to the order. Only items that EXIST in the menu (never a soft drink/cola if the menu lists none). Take a "no" gracefully and move on — NEVER nag or re-pitch an upsell the customer already declined.
 - Keep options + upsell WARM and BRIEF, not a checklist interrogation — offer the meaningful ones naturally in one smooth pass («عادي ولا حار؟ وتحب تزوّد شريحة شيدر؟» … «تكمّلها ببطاطس ومشروب؟»), not a form.

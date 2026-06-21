@@ -193,6 +193,12 @@ export async function runCustomerTurn(
     // narrow `cadence` flag is on; default off → no cadence section, no change.
     cadence: isFeatureExplicitlyEnabled("cadence", tenantFeatures),
     cadenceLevel: typeof tenantFeatures?.cadence_level === "string" ? (tenantFeatures.cadence_level as string) : "balanced",
+    // Issue-B B1 (stateful_orders): surface the authoritative reloaded draft into
+    // the system prompt so the model READS state instead of rebuilding from chat.
+    // Gated + default off → no block, no behavior change. currentDraft is the SAME
+    // object the executor seeds ctx.draft from (respond.ts), so they never drift.
+    statefulOrders: isFeatureExplicitlyEnabled("stateful_orders", tenantFeatures),
+    currentDraft: initialDraft,
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
