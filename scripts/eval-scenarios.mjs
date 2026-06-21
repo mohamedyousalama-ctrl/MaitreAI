@@ -571,6 +571,31 @@ const PRO_SCENARIOS = [
       return { pass: ao.pass && !fakeError && !escalated && recovers, notes: `${ao.notes}; fakeError=${fakeError}; escalated=${escalated}; recovers=${recovers}` };
     },
   },
+  {
+    id: "PRO-COMPLAINT-NOT-BLOCKED",
+    title: "Spoiled-food («بايظ») refund + human request → escalates (tech-error guard must NOT block)",
+    pro: true,
+    setup: { agent_mode: "test", is_open: true },
+    // Guard-safety: «بايظ» (spoiled) is a real complaint word. The tightened
+    // FABRICATED_TECH_ERROR_RE must NOT match it, so a genuine spoiled-food refund
+    // + explicit human request escalates normally. With the broad #75 regex this
+    // class of escalation was AT RISK of being swallowed if the model's reason
+    // echoed «بايظ»; with the tightened regex it can't be.
+    turns: {
+      egyptian: [
+        "الأكل اللي جالي امبارح كان بايظ ووحش، عايز أكلم موظف وأرجّع فلوسي",
+      ],
+    },
+    check: (out) => {
+      const r = out.reply || "";
+      const ao = arabicOnly(r);
+      // The complaint must reach a human handoff …
+      const handoff = out.escalate === true || mentionsAny(r, ["فريق المطعم", "موظف", "مراجعة", "هحوّل", "بحوّل", "حوّلت", "الفريق"]).length > 0;
+      // … and must NOT have been deflected by the guard's "no technical fault" recovery.
+      const guardBlocked = r.includes("مفيش أي عطل تقني") || mentionsAny(r, ["اعرض اختيارات الصنف"]).length > 0;
+      return { pass: ao.pass && handoff && !guardBlocked, notes: `${ao.notes}; handoff=${handoff}; guardBlocked=${guardBlocked}` };
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
