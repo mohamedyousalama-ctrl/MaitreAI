@@ -2,6 +2,10 @@
 
 WhatsApp-first AI order management system for restaurants.
 
+> **Roadmap convention:** [`ROADMAP.md`](./ROADMAP.md) is the single source of truth for product direction.
+> Every change that ships a roadmap item MUST, as its final step, update `ROADMAP.md` (move the item to
+> DONE / adjust status / bump "Last updated") in the same PR. Do not keep a parallel roadmap copy elsewhere.
+
 - **Sprint 1** — MVP App Foundation: the approved Claude Design converted into a
   clean, scalable Next.js app (Arabic RTL, premium SaaS style).
 - **Sprint 2** — Restaurant Brain Setup + Local CRUD: restaurant configuration
