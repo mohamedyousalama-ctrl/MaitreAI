@@ -14,6 +14,7 @@ import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
 import { readHandoffConfig, isSafetyHold, isIdleBeyond } from "@/lib/tenant/handoff";
+import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import { sendReceiptToCustomer } from "./send-receipt";
 import type { LlmMessage } from "@/lib/ai/llm/types";
@@ -147,7 +148,18 @@ export async function respondAndSendWhatsApp(
     const idle = cfg.enabled && isIdleBeyond(conv.updated_at as string | null, cfg.idleMinutes);
     if (!idle) return { status: "skipped_takeover" };
 
-    const safety = isSafetyHold(conv.escalation_reason as string | null);
+    // Safety carve-out source of truth: the STRUCTURED is_safety_hold flag (Fix 2),
+    // read only when the allergen-safety feature is on — so Wesaya (flag off) never
+    // references the new column (deploy-safe before the migration) and stays
+    // byte-identical (falls back to the legacy reason-text classifier). When on, the
+    // structured flag means a safety hold can NEVER wrongly auto-return regardless
+    // of how the model phrased its escalation reason.
+    let structuredSafety = false;
+    if (isFeatureExplicitlyEnabled("deterministic_allergen_safety", features)) {
+      const { data: sh } = await admin.from("conversations").select("is_safety_hold").eq("id", conversationId).single();
+      structuredSafety = (sh as { is_safety_hold?: boolean } | null)?.is_safety_hold === true;
+    }
+    const safety = structuredSafety || isSafetyHold(conv.escalation_reason as string | null);
     if (safety || cfg.action === "realert_only") {
       // Keep the human in the loop; nudge staff (deduped to ≤ once per idle window).
       // Safety holds are released only by a deliberate human action — never here.

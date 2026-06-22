@@ -69,6 +69,10 @@ export interface BrainContext {
    *  executor seeds ctx.draft from). Rendered into the prompt only when
    *  statefulOrders is on. Null/empty → an explicit "no order being built" note. */
   currentDraft?: OrderDraft | null;
+  /** Allergen-safety (flag `deterministic_allergen_safety`): when on, respond.ts
+   *  runs the never-say-safe OUTPUT GUARD (Fix 3) — an allergen-safety assertion on
+   *  unknown data is replaced with an escalate-safe reply. Default off → no guard. */
+  deterministicAllergenSafety?: boolean;
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------
