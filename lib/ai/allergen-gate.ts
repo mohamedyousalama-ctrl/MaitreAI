@@ -35,7 +35,33 @@ const ALLERGEN_TERMS = [
   "بندق", "فستق", "لوز", "كاجو", "عين جمل", "جوز", "مكسرات", "فول سوداني", "سوداني",
   "لبن", "البان", "حليب", "جلوتين", "قمح", "بيض", "سمسم", "صويا", "ماكولات بحريه", "بحريات", "سمك", "جمبري", "قشريات",
 ];
-const ALLERGEN_RE = new RegExp(`(?:${ALLERGEN_TERMS.map((t) => normalizeAr(t)).join("|")})`);
+const ALLERGEN_TERMS_NORM = ALLERGEN_TERMS.map((t) => normalizeAr(t));
+const ALLERGEN_RE = new RegExp(`(?:${ALLERGEN_TERMS_NORM.join("|")})`);
+
+/** Escape a normalized term for use inside a RegExp. */
+function escapeReg(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Boundary-aware matcher for a single allergen term. Tolerates the «ال» article
+ *  (on the term AND on later words of a multi-word term) and Arabic word
+ *  boundaries — so «البندق» matches «بندق», but «لبن» does NOT match the «لبن»
+ *  that merely spans «ا‌لبن‌دق» (mid-word, preceded by a letter). */
+function termRegex(t: string): RegExp {
+  const flexible = t.split(" ").map(escapeReg).join(" (?:ال)?");
+  return new RegExp(`(?<![ء-ي])(?:ال)?${flexible}(?![ء-ي])`);
+}
+
+/** Pick the MOST SPECIFIC allergen actually named: among boundary-aware matches,
+ *  the LONGEST (so «البندق» → «بندق» not «لبن»; «الفول السوداني»/«فول سوداني» →
+ *  «فول سوداني» not «سوداني»). Returns null when no clean boundary match exists —
+ *  the caller then uses safe generic phrasing, never a wrong specific allergen. */
+function pickAllergenTerm(n: string): string | null {
+  const matched = ALLERGEN_TERMS_NORM.filter((t) => termRegex(t).test(n));
+  if (!matched.length) return null;
+  matched.sort((a, b) => b.length - a.length);
+  return matched[0];
+}
 
 /** Explicit allergy word — fires on its own (escalate to identify the allergen). */
 const EXPLICIT_ALLERGY_RE = /حساسي/; // covers حساسية/حساسيه/حساسيت/حساسي
@@ -86,10 +112,14 @@ export function detectAllergenAvoidance(text: string): AllergenAvoidanceHit {
   const n = normalizeAr(text);
   if (!n) return { fired: false, term: null };
   const explicit = EXPLICIT_ALLERGY_RE.test(n);
-  const allergen = n.match(ALLERGEN_RE);
+  const hasAllergen = ALLERGEN_RE.test(n); // FIRING recall (broad) — unchanged
   const intent = AVOIDANCE_INTENT_RE.test(n);
-  const fired = explicit || (intent && !!allergen);
-  return { fired, term: allergen ? allergen[0] : explicit ? "الحساسية" : null };
+  const fired = explicit || (intent && hasAllergen);
+  if (!fired) return { fired: false, term: null };
+  // NAMING (boundary-aware, most-specific): never name a wrong allergen. If no
+  // clean term is found, fall back to generic «الحساسية» (still escalates).
+  const picked = pickAllergenTerm(n);
+  return { fired: true, term: picked ?? (explicit ? "الحساسية" : null) };
 }
 
 /** OUTPUT GUARD (Fix 3). True when the reply asserts allergen-safety AND references

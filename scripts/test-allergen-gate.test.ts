@@ -14,6 +14,15 @@ ok("مينفعش اكل بيض", detectAllergenAvoidance("مينفعش اكل ب
 ok("بتعبني الألبان", detectAllergenAvoidance("بتعبني الألبان").fired);
 ok("explicit: عندي حساسية", detectAllergenAvoidance("عندي حساسية").fired);
 ok("حساسية من الفول السوداني", detectAllergenAvoidance("حساسية من الفول السوداني").fired);
+// TERM NAMING — the substring/boundary fix (must NAME the real allergen)
+const term = (s: string) => detectAllergenAvoidance(s).term;
+ok("name: البندق → بندق (NOT لبن)", term("عندي حساسية من البندق") === "بندق");
+ok("name: فول سوداني (NOT سوداني)", term("حساسية من فول سوداني") === "فول سوداني");
+ok("name: الفول السوداني → فول سوداني", term("عندي حساسية من الفول السوداني") === "فول سوداني");
+ok("name: فستق", term("بموت لو كلت فستق") === "فستق");
+ok("name: اللوز → لوز", term("عندي مشكلة مع اللوز") === "لوز");
+ok("name: اللبن → لبن (real milk kept)", term("عندي حساسية من اللبن") === "لبن");
+ok("name: مكسرات", term("ممنوع عليا مكسرات") === "مكسرات");
 // MUST NOT fire
 ok("neg: بحب البندق", !detectAllergenAvoidance("بحب البندق").fired);
 ok("neg: عايز اللوز", !detectAllergenAvoidance("عايز اللوز").fired);
