@@ -22,5 +22,6 @@ export function useRole(): AppRole {
   return role;
 }
 
-/** Tabs an operation-role member may use (A5/K2): conversations + orders only. */
-export const OPERATION_HREFS = new Set(["/conversations", "/orders"]);
+/** Tabs an operation-role member may use (A5/K2): conversations, orders, and
+ * delivery dispatch (when the delivery flag is on). */
+export const OPERATION_HREFS = new Set(["/conversations", "/orders", "/deliveries"]);

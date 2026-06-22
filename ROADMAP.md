@@ -2,7 +2,7 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-22 (real-time 86ing re-port).
+> Last updated: 2026-06-22 (delivery dispatch + driver flow re-port, flag-off/inert).
 
 ## North Star
 Not "launch restaurants," not unbounded "best agent." **The agent («كريم») that is unbeatable on 4 pillars,
@@ -47,6 +47,15 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
   still containing an unavailable item — #90 fulfillment gate + #87–89 allergen + money guards untouched.
   Migration `0030` (renumbered from 0019; schema already in prod = parity no-op). Proof 9/9 incl. LIVE BLaban
   (86 → agent refuses the real item; re-enable → confirms). Second of the 4-PR re-port effort (next: #6 delivery).
+- Delivery dispatch + driver flow + live tracking (#6) — re-ported from stale PR #6 onto current main.
+  Flag-gated (`ENABLE_DELIVERY_TRACKING`, default OFF): every surface + the finalize→deliveries hook check the
+  flag, so with it off the module is fully inert and existing flows are unchanged. Migration `0031_delivery`
+  (additive: drivers, deliveries, delivery_locations, delivery_events; parity no-op — tables already in prod).
+  Finalize→delivery hook re-pointed to `persistOrderFromDraft`'s `orderId` (current draft model, not #5's
+  order_sessions). COD capture-on-delivered wired: the `delivered` transition calls `captureCodOnDelivered`
+  (closes the #91 ledger loop). Agent path (#87–90 + #92) untouched. `tsc` + `next build` clean flag-off and
+  flag-on. Flag-ON delivery happy-path deferred to post-merge live test on BLaban. Third of the 4-PR re-port
+  effort.
 
 ## 🔵 IN FLIGHT (≤2 parallel tracks)
 - Kivo UI — Claude Design building 7 purpose-built pages (Insights · Conversations · Orders · Customers · Settings · Login · Landing)

@@ -5,13 +5,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
+import { ENABLE_ADMIN_CHAT_CONSOLE, ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 export function MobileTabs() {
   const pathname = usePathname();
   const role = useRole();
-  const items = (role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems).filter((i) => !i.railOnly);
+  // Flag-gated tabs appear only when their flags are on.
+  const visible = navItems.filter(
+    (i) =>
+      (i.href !== "/dashboard" || ENABLE_ADMIN_CHAT_CONSOLE) &&
+      (i.href !== "/deliveries" || ENABLE_DELIVERY_TRACKING)
+  );
+  const items = (role === "operation" ? visible.filter((i) => OPERATION_HREFS.has(i.href)) : visible).filter((i) => !i.railOnly);
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#EDE5D8] bg-white lg:hidden">
       {items.map((item) => {
