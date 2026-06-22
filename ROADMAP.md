@@ -2,7 +2,7 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-22.
+> Last updated: 2026-06-22 (real-time 86ing re-port).
 
 ## North Star
 Not "launch restaurants," not unbounded "best agent." **The agent («كريم») that is unbeatable on 4 pillars,
@@ -38,6 +38,15 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
   per-driver expected-vs-collected · settle · daily summary · append-only audit · money from `orders.total`.
   Migration renumbered `0029` (schema already in prod = parity no-op). Auto capture-on-delivered hook deferred
   until #6 (delivery) re-ports. First of the 4-PR re-port effort (audit order: #8 → #7 → #6 → reconcile #5).
+- Real-time 86ing (#92) — re-ported from stale PR #7 onto current main; agent edits re-applied MANUALLY onto
+  the #87–90 respond.ts/tools.ts (not pasted). Operator one-tap toggle (`/api/menu/availability`, membership-
+  gated, tenant-scoped) + `setItemAvailabilityDb` shared flip+audit (also audits the admin-agent path) +
+  `menu_availability_events` audit trail + optional timed window (`unavailable_until`, auto-returns, no cron).
+  «كريم» honors it live: 86'd items aren't offered (present_menu/add_to_order already gate on `available`), a
+  saved-cart item 86'd mid-order is surfaced per turn (inform+swap), and finalize_draft HARD-BLOCKS any order
+  still containing an unavailable item — #90 fulfillment gate + #87–89 allergen + money guards untouched.
+  Migration `0030` (renumbered from 0019; schema already in prod = parity no-op). Proof 9/9 incl. LIVE BLaban
+  (86 → agent refuses the real item; re-enable → confirms). Second of the 4-PR re-port effort (next: #6 delivery).
 
 ## 🔵 IN FLIGHT (≤2 parallel tracks)
 - Kivo UI — Claude Design building 7 purpose-built pages (Insights · Conversations · Orders · Customers · Settings · Login · Landing)
