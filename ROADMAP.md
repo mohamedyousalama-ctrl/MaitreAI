@@ -34,6 +34,10 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
   (`deterministic_allergen_safety`), Wesaya byte-identical when off. Data+code-backed, not prompt-alone.
 - BLaban onboarding-readiness — validated loads-as-data (product thesis proven)
 - Brand: Kivo locked (teal/emerald · motion-✓ logo · "Keep Every Order Moving") · UI design brief issued
+- COD cash ledger (#91) — re-ported from stale PR #8 onto current main (operator-only; agent byte-identical) ·
+  per-driver expected-vs-collected · settle · daily summary · append-only audit · money from `orders.total`.
+  Migration renumbered `0029` (schema already in prod = parity no-op). Auto capture-on-delivered hook deferred
+  until #6 (delivery) re-ports. First of the 4-PR re-port effort (audit order: #8 → #7 → #6 → reconcile #5).
 
 ## 🔵 IN FLIGHT (≤2 parallel tracks)
 - Kivo UI — Claude Design building 7 purpose-built pages (Insights · Conversations · Orders · Customers · Settings · Login · Landing)
