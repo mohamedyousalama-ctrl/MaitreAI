@@ -14,7 +14,7 @@ import { buildCustomerAgentSystemPrompt, type BrainContext } from "./prompt";
 import { modeAllowsOrders } from "./modes";
 import { dialectProfile } from "./dialect";
 import { fabricatesMoney, knownMenuPrices, offersNonMenuProduct } from "./money-guard";
-import { assertsAllergenSafety } from "./allergen-gate";
+import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-gate";
 import {
   emptyDraft,
   executeTool,
@@ -41,6 +41,10 @@ export interface RespondInput {
   /** Karim Pro P4: a per-turn cadence cue (e.g. frustration → short apology+action),
    *  derived from the P3 read; appended only when it carries a non-default signal. */
   cadenceDirective?: string | null;
+  /** Allergen-safety: is this conversation already a safety hold? Used by the Fix-3
+   *  output guard to decide whether a blocked allergen-safety claim also escalates
+   *  to a human (only on a genuine avoidance signal — never on a benign filter). */
+  safetyHoldActive?: boolean;
 }
 
 export interface RespondResult {
@@ -116,12 +120,21 @@ function safeConfirmReply(dialect: string): string {
     : "لسه ما أكدت الطلب؛ لازم أبنيه وأحسب الإجمالي من السيستم أول. تحب أراجعه معك؟";
 }
 
-// Allergen-safety guard reply (Fix 3): the agent must NEVER certify allergen safety;
-// it acknowledges the health stakes and hands to the kitchen/team to verify.
+// Allergen-safety guard reply (Fix 3) — ESCALATING variant: a genuine allergy/
+// avoidance is in play; never certify safety, hand to the kitchen/team to verify.
 function safeAllergenReply(dialect: string): string {
   return dialect === "egyptian"
     ? "صحتك أهم حاجة عندنا 🙏 مش هقدر أأكد إن الصنف ده آمن من ناحية الحساسية من غير ما المطبخ يتأكد — هحوّلك لفريق المطعم يساعدوك تختار بأمان."
     : "صحتك أهم شي عندنا 🙏 ما أقدر أأكد إن الصنف هذا آمن من ناحية الحساسية بدون ما المطبخ يتأكد — بحوّلك لفريق المطعم يساعدونك تختار بأمان.";
+}
+
+// Allergen-safety guard reply (Fix 3) — NON-escalating variant: a benign "without
+// X" filter, no allergy/avoidance stated. Still NEVER certify safety, but keep
+// serving — no human handoff.
+function safeAllergenNoEscalateReply(dialect: string): string {
+  return dialect === "egyptian"
+    ? "ما اقدرش أأكد إن أي صنف خالي تماماً من مسببات الحساسية 🙏 بس أقدر أرشّحلك حسب المكوّنات المذكورة، وأأكدلك من المطبخ لو حابب."
+    : "ما أقدر أأكد إن أي صنف خالٍ تماماً من مسببات الحساسية 🙏 بس أقدر أرشّح لك حسب المكوّنات المذكورة، وأتأكد لك من المطبخ لو تحب.";
 }
 
 export async function respond(input: RespondInput): Promise<RespondResult> {
@@ -242,9 +255,17 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // verified allergen data, so any such claim is unsafe. Replace it with an escalate-
   // safe reply and hand to a human. Safety beats the sale, always. Off → no-op.
   if (text.trim() && input.brain.deterministicAllergenSafety && assertsAllergenSafety(text)) {
-    ctx.signals.push({ type: "escalation", detail: { reason: "allergen_safety_claim", reply: text } });
-    ctx.escalation = ctx.escalation ?? { reason: "سلامة الحساسية: المساعد حاول تأكيد سلامة صنف بدون بيانات مؤكدة — يحتاج تأكيد المطبخ" };
-    text = safeAllergenReply(input.brain.dialect);
+    // ALWAYS block the unverifiable allergen-safety claim. ESCALATE to a human only
+    // on a genuine avoidance/allergy signal (stated this turn OR an active safety
+    // hold) — a benign "without X" filter is answered honestly, no handoff.
+    const escalate = shouldEscalateOnSafetyClaim(input.userMessage, input.safetyHoldActive === true);
+    ctx.signals.push({ type: escalate ? "escalation" : "missing_data", detail: { reason: "allergen_safety_claim", escalated: escalate, reply: text } });
+    if (escalate) {
+      ctx.escalation = ctx.escalation ?? { reason: "سلامة الحساسية: المساعد حاول تأكيد سلامة صنف بدون بيانات مؤكدة — يحتاج تأكيد المطبخ" };
+      text = safeAllergenReply(input.brain.dialect);
+    } else {
+      text = safeAllergenNoEscalateReply(input.brain.dialect);
+    }
   }
 
   return {

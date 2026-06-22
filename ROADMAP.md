@@ -46,8 +46,10 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
 
 ### Pillar 2 — Honesty / Safety
 - ✅ Deterministic allergen escalation + never-say-safe (#87) — euphemism-aware code gate (not keyword «حساسية»
-  only) · structured `is_safety_hold` (no wrong auto-return) · never-say-safe output guard. Flag-gated; enable
-  on BLaban + demo-pro after merge.
+  only) · structured `is_safety_hold` (no wrong auto-return) · never-say-safe output guard. Flag-gated; live on
+  BLaban + demo-pro. Refinements: boundary-aware allergen naming (#88, «البندق»→«بندق» not «لبن»); output guard
+  decoupled block-vs-escalate (#89 — a benign «من غير بندق» filter is answered honestly, no false handoff;
+  claim still always blocked; escalates only on a real avoidance signal / active safety hold).
 - ⬜ Remaining allergen-posture polish (→ folds into V2-C structured allergen layer): "contains"-only phrasing ·
   coverage-honesty (operator-verified vs unknown) · one-time nut notice (dessert). Needs the structured
   allergen profile (V2-C), not just prompt/gate.

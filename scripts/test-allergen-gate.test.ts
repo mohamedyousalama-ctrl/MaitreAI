@@ -1,6 +1,6 @@
 // Unit tests for the deterministic allergen-safety detectors (pure, no LLM).
 // Run: node --experimental-strip-types scripts/test-allergen-gate.ts
-import { detectAllergenAvoidance, assertsAllergenSafety } from "../lib/ai/allergen-gate.ts";
+import { detectAllergenAvoidance, assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "../lib/ai/allergen-gate.ts";
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.log("  ❌", n); } };
 // MUST fire — euphemisms + explicit, with/without «حساسية»
@@ -36,5 +36,12 @@ ok("guard: خالي من المكسرات", assertsAllergenSafety("ده خالي
 ok("guard: nut-free", assertsAllergenSafety("this one is nut-free, safe to eat"));
 ok("guard neg: دفع آمن", !assertsAllergenSafety("الدفع آمن عند الاستلام"));
 ok("guard neg: normal recap", !assertsAllergenSafety("طلبك: ١× برجر لحم — الإجمالي ١٤٥"));
+// OUTPUT GUARD decouple — block always; escalate only on a real avoidance signal
+ok("block-but-NOT-escalate: «عندكم ايه من غير بندق» (no hold)", shouldEscalateOnSafetyClaim("عندكم ايه من غير بندق", false) === false);
+ok("the LLM «دي خالية من البندق» IS a claim (so it gets blocked)", assertsAllergenSafety("دي خالية من البندق") === true);
+ok("block-AND-escalate: same turn but «عندي حساسية من البندق»", shouldEscalateOnSafetyClaim("عندي حساسية من البندق", false) === true);
+ok("block-AND-escalate: benign msg but convo already is_safety_hold", shouldEscalateOnSafetyClaim("عندكم ايه من غير بندق", true) === true);
+ok("escalate: euphemism «اتعب لو اكلت بندق»", shouldEscalateOnSafetyClaim("اتعب لو اكلت بندق", false) === true);
+ok("no-escalate: «عايز صنف فيه بندق» (positive, no hold)", shouldEscalateOnSafetyClaim("عايز صنف فيه بندق", false) === false);
 console.log(`\nALLERGEN-GATE UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
