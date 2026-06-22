@@ -727,6 +727,19 @@ export function executeTool(
       return { content: "تم عرض أزرار الكمية (1/2/3) للعميل." };
     }
     case "present_order_actions": {
+      // FULFILLMENT BEFORE CONFIRM: never offer «تأكيد» while pickup/delivery isn't
+      // chosen — otherwise the customer taps confirm, finalize refuses, and the flow
+      // loops. Present the pickup/delivery choice first instead.
+      if (!d.fulfillment) {
+        ctx.presentation = {
+          kind: "buttons",
+          buttons: [
+            { id: "set_pickup", title: truncate("استلام من الفرع", BUTTON_TITLE_MAX) },
+            { id: "set_delivery", title: truncate("توصيل", BUTTON_TITLE_MAX) },
+          ],
+        };
+        return { content: "قبل التأكيد لازم العميل يختار الاستلام أو التوصيل — اعرض الخيارين (مش أزرار التأكيد)." };
+      }
       ctx.presentation = {
         kind: "buttons",
         buttons: [

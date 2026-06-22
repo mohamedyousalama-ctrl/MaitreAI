@@ -55,6 +55,9 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
   allergen profile (V2-C), not just prompt/gate.
 
 ### Pillar 1 — Order Accuracy (main strength push)
+- ✅ Order-confirm loop fixed (#90) — confirm with no fulfillment surfaced the ACTIONABLE «استلام ولا توصيل؟»
+  (was masked by a generic deferral → verbatim loop) · present_order_actions gated on fulfillment · fulfillment-
+  before-confirm prompt rule · loop-breaker. Shared path → both tenants. Happy path completes (finalize→orders).
 - ⬜ B2 — `order_drafts` table · committed-vs-draft separation · serial multi-order (kills «أمسحه» contradiction)
 - ⬜ B3 — deterministic qty-collision confirm guard (code backstop to «هات»)
 - ⬜ Deterministic allergy-gate (code-enforced hard-fire vs prompt-stochastic 7/8) · tighten allergy-refusal phrasing · single-item «عادي دبل» gate
