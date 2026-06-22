@@ -131,3 +131,14 @@ export function assertsAllergenSafety(reply: string): boolean {
   if (SAFETY_ASSERT_STANDALONE_RE.test(n)) return true;
   return SAFETY_ASSERT_RE.test(n) && (ALLERGEN_RE.test(n) || /حساسي|allerg/.test(n));
 }
+
+/** Decide whether an allergen-safety claim caught by the OUTPUT guard should also
+ *  ESCALATE to a human (vs just be blocked/replaced with an honest non-certifying
+ *  reply). Escalate ONLY on a GENUINE avoidance/allergy signal — the customer
+ *  stated avoidance/allergy THIS turn, OR the conversation is already a safety
+ *  hold. A benign "without X" filter («عندكم ايه من غير بندق») where the agent
+ *  merely echoed a "free-of" answer must NOT trigger a human handoff — the unsafe
+ *  claim is still blocked, but the conversation keeps serving. */
+export function shouldEscalateOnSafetyClaim(userMessage: string, safetyHoldActive: boolean): boolean {
+  return safetyHoldActive === true || detectAllergenAvoidance(userMessage).fired;
+}

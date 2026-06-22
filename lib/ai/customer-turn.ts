@@ -153,14 +153,18 @@ export async function runCustomerTurn(
 
   // §E7 handover note — a human's prior commitment the Brain must honor on resume.
   let handoverNote: string | undefined;
+  let safetyHoldActive = false;
   let initialDraft: OrderDraft | null = null;
   if (conversationId) {
     const { data: conv } = await admin
       .from("conversations")
-      .select("handover_note")
+      .select("handover_note, is_safety_hold")
       .eq("id", conversationId)
       .single();
     handoverNote = (conv?.handover_note as string | null) ?? undefined;
+    // Allergen-safety: an active safety hold lets the Fix-3 output guard escalate a
+    // repeated unsafe claim (vs only blocking it). Column exists (migration 0028).
+    safetyHoldActive = (conv as { is_safety_hold?: boolean } | null)?.is_safety_hold === true;
 
     const { data: priorDraftRows } = await admin
       .from("messages")
@@ -264,7 +268,7 @@ export async function runCustomerTurn(
     result = forcedAllergenSafetyResult(allergenHit.term, dialect, initialDraft, ctx.profile.currency);
   } else {
     try {
-      result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective });
+      result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await admin.from("agent_runs").insert({
