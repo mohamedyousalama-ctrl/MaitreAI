@@ -16,6 +16,8 @@ import { persistOrderFromDraft } from "@/lib/db/orders-create";
 import { readHandoffConfig, isSafetyHold, isIdleBeyond } from "@/lib/tenant/handoff";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
+import { createDeliveryForOrder } from "@/lib/db/delivery";
+import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { sendReceiptToCustomer } from "./send-receipt";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
@@ -332,6 +334,15 @@ export async function respondAndSendWhatsApp(
   // Receipt auto-sends after the customer confirmation (skips in test mode).
   if (persistedOrder?.created && persistedOrder.orderId) {
     try {
+      // Delivery dispatch (flag-gated): a finalized DELIVERY order opens a pending
+      // delivery for the operator to assign. Fully inert when the flag is off.
+      if (ENABLE_DELIVERY_TRACKING && persistedOrder.orderId && outcome.draft.fulfillment === "delivery") {
+        try {
+          await createDeliveryForOrder(admin, { restaurantId, orderId: persistedOrder.orderId });
+        } catch (e) {
+          console.error("[respond-and-send] delivery create error", e);
+        }
+      }
       await sendReceiptToCustomer(admin, persistedOrder.orderId);
     } catch (e) {
       console.error("[respond-and-send] receipt error", e);
