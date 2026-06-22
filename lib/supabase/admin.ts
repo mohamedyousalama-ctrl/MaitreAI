@@ -20,5 +20,10 @@ export function createAdminClient() {
   if (!isAdminConfigured()) return null;
   return createSupabaseClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // Service-role DB reads must always be fresh: Next.js patches global fetch and
+    // caches GET requests by default, which would freeze polled GET routes (e.g.
+    // the live delivery tracker). no-store keeps every query current. POST flows
+    // (webhook/agent) are already dynamic, so this is behavior-neutral for them.
+    global: { fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, { ...init, cache: "no-store" }) },
   });
 }

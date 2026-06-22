@@ -13,6 +13,8 @@ import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
+import { createDeliveryForOrder } from "@/lib/db/delivery";
+import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { readHandoffConfig, isSafetyHold, isIdleBeyond } from "@/lib/tenant/handoff";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
@@ -320,6 +322,23 @@ export async function respondAndSendWhatsApp(
           { role: "assistant", content: outcome.reply },
         ],
       });
+    }
+
+    // Delivery dispatch (flag-gated): a finalized DELIVERY order opens a pending
+    // delivery for the operator to assign. Fully inert when the flag is off, and
+    // keyed off the persisted order (persistOrderFromDraft) — the draft model, not
+    // order_sessions. Runs after the reply path; a failure never blocks the order.
+    if (
+      ENABLE_DELIVERY_TRACKING &&
+      persistedOrder?.created &&
+      persistedOrder.orderId &&
+      outcome.draft.fulfillment === "delivery"
+    ) {
+      try {
+        await createDeliveryForOrder(admin, { restaurantId, orderId: persistedOrder.orderId });
+      } catch (e) {
+        console.error("[respond-and-send] delivery create error", e);
+      }
     }
   }
 

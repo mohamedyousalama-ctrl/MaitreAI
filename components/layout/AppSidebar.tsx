@@ -6,6 +6,7 @@ import { navItems } from "@/lib/navigation";
 import { useConversationStore } from "@/lib/conversation-store";
 import { countEscalations } from "@/lib/escalation";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
+import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 import { LayoutGrid, Settings } from "lucide-react";
 
@@ -20,7 +21,9 @@ export function AppSidebar() {
   const conversations = useConversationStore((s) => s.conversations);
   const escalations = countEscalations(conversations);
 
-  const all = role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems;
+  // «التوصيل» (delivery) appears only when its flag is on; otherwise inert.
+  const gated = navItems.filter((i) => i.href !== "/deliveries" || ENABLE_DELIVERY_TRACKING);
+  const all = role === "operation" ? gated.filter((i) => OPERATION_HREFS.has(i.href)) : gated;
   const top = all.filter((i) => i.href !== "/settings" && i.href !== "/dashboard");
   const settings = all.find((i) => i.href === "/settings");
   const homeActive = pathname === "/dashboard";

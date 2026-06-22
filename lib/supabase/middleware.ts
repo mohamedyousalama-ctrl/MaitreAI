@@ -15,8 +15,10 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
 // Routes that must stay reachable without a session. "/" and "/contact" are the
 // public landing/legal pages (no login wall — platform reviewers must see them).
-// "/order" is the public customer storefront (/order/[slug]).
-const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/auth", "/checkout", "/order", "/api"];
+// "/order" is the public customer storefront (/order/[slug]). "/d" (driver page)
+// and "/t" (customer tracking) are token-scoped public pages — the one-time token
+// IS the auth, so they must be reachable without a session.
+const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/auth", "/checkout", "/order", "/api", "/d", "/t"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));

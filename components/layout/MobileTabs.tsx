@@ -6,12 +6,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navItems } from "@/lib/navigation";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
+import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 
 export function MobileTabs() {
   const pathname = usePathname();
   const role = useRole();
-  const items = (role === "operation" ? navItems.filter((i) => OPERATION_HREFS.has(i.href)) : navItems).filter((i) => !i.railOnly);
+  // «التوصيل» (delivery) appears only when its flag is on; otherwise inert.
+  const gated = navItems.filter((i) => i.href !== "/deliveries" || ENABLE_DELIVERY_TRACKING);
+  const items = (role === "operation" ? gated.filter((i) => OPERATION_HREFS.has(i.href)) : gated).filter((i) => !i.railOnly);
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#EDE5D8] bg-white lg:hidden">
       {items.map((item) => {
