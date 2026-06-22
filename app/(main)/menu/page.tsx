@@ -69,7 +69,10 @@ export default function MenuMemoryPage() {
   ];
   const lowest = [...HEALTH].sort((a, b) => a.score - b.score)[0];
 
-  const toggleAvail = (it: MenuItem) => s.updateMenuItem(it.id, { available: !it.available });
+  // Real-time 86ing: route the one-tap toggle through the audited, tenant-scoped
+  // availability path (writes a menu_availability_events row); «كريم» honors it
+  // on the next turn. Optimistic flip + DB reconcile lives in the store action.
+  const toggleAvail = (it: MenuItem) => s.setItemAvailability(it.id, !it.available);
 
   if (!hydrated) return <div className="h-[calc(100vh-8rem)] animate-pulse rounded-2xl border border-[#ECE3D5] bg-white/60" />;
 

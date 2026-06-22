@@ -129,12 +129,17 @@ function toMenuItem(
   variants: MenuItemVariant[],
   choiceGroups: MenuItemChoiceGroup[]
 ): MenuItem {
+  // Effective availability folds in the timed "back tomorrow" window: an item is
+  // sellable only when its flag is on AND no future unavailable_until is set.
+  // Once the window passes the item auto-returns (no cron) — every read recomputes.
+  const timedOut = !!r.unavailable_until && new Date(r.unavailable_until).getTime() > Date.now();
   return {
     id: r.id,
     name: r.name,
     category: categoryName,
     price: Number(r.price),
-    available: r.available,
+    available: r.available && !timedOut,
+    unavailableUntil: r.unavailable_until ?? null,
     description: r.description ?? "",
     imageUrl: r.image_url ?? "",
     modifierIds,
@@ -367,6 +372,65 @@ export async function updateMenuItemDb(s: SupabaseClient, restaurantId: string, 
 }
 export async function deleteMenuItemDb(s: SupabaseClient, id: string) {
   await s.from("menu_items").delete().eq("id", id);
+}
+
+// --- real-time 86ing --------------------------------------------------------
+export interface SetAvailabilityArgs {
+  itemId: string;
+  available: boolean;
+  /** Optional timed window when 86ing ("back at …"). Ignored when re-enabling. */
+  unavailableUntil?: string | null;
+  source?: "operator" | "admin_agent" | "kitchen" | "system";
+  actorUserId?: string | null;
+  actorRole?: string | null;
+  reason?: string | null;
+}
+export interface SetAvailabilityResult {
+  ok: boolean;
+  name?: string;
+  error?: "item_not_found";
+}
+
+/**
+ * Flip a menu item's availability ("86" it or bring it back) and write an audit
+ * row in one place — shared by the operator one-tap toggle (/api/menu/availability)
+ * and the admin agent (set_item_availability). Tenant-scoped: the update is keyed
+ * by both id AND restaurant_id so a toggle can never reach another tenant's item.
+ * Re-enabling always clears any timed window so a stale "back tomorrow" can't keep
+ * the item dark. The flag is the single source of truth the customer tools read.
+ */
+export async function setItemAvailabilityDb(
+  s: SupabaseClient,
+  restaurantId: string,
+  a: SetAvailabilityArgs
+): Promise<SetAvailabilityResult> {
+  const { data: item } = await s
+    .from("menu_items")
+    .select("name")
+    .eq("id", a.itemId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (!item) return { ok: false, error: "item_not_found" };
+
+  const unavailableUntil = a.available ? null : a.unavailableUntil ?? null;
+  await s
+    .from("menu_items")
+    .update({ available: a.available, unavailable_until: unavailableUntil })
+    .eq("id", a.itemId)
+    .eq("restaurant_id", restaurantId);
+
+  await s.from("menu_availability_events").insert({
+    restaurant_id: restaurantId,
+    menu_item_id: a.itemId,
+    item_name: (item as { name: string }).name,
+    available: a.available,
+    unavailable_until: unavailableUntil,
+    source: a.source ?? "operator",
+    actor_user_id: a.actorUserId ?? null,
+    actor_role: a.actorRole ?? null,
+    reason: a.reason ?? null,
+  });
+  return { ok: true, name: (item as { name: string }).name };
 }
 
 // --- modifiers ---

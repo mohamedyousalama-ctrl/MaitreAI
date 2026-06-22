@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
+import { setItemAvailabilityDb } from "@/lib/db/brain";
 import { getAdapter, modelFor, costUsd } from "@/lib/ai/llm";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
@@ -98,7 +99,15 @@ export async function POST(req: Request) {
           .limit(1);
         const item = items?.[0];
         if (!item) return NextResponse.json({ error: "item_not_found", message: `لم أجد صنف «${name}».` }, { status: 404 });
-        await supabase.from("menu_items").update({ available: !!confirm.params.available }).eq("id", item.id);
+        // Flip + write the availability audit row in one place (shared with the
+        // operator one-tap toggle). source=admin_agent records the NL kitchen path.
+        await setItemAvailabilityDb(supabase, restaurantId, {
+          itemId: item.id as string,
+          available: !!confirm.params.available,
+          source: "admin_agent",
+          actorUserId: tenant.userId,
+          actorRole: role,
+        });
         result = `${confirm.params.available ? "تم تفعيل" : "تم إيقاف"} «${item.name}».`;
       } else if (confirm.intent === "edit_price") {
         const id = String(confirm.params.id ?? "");
