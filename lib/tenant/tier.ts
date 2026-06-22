@@ -20,7 +20,7 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
  *  - customer_memory (P2): build per-customer memory + operator card from those
  *    reports. Operator-read DATA only; customer-facing surfacing is a later,
  *    separately-gated step. NOT implied by tier='pro' or by P1. */
-export type ProFeature = "conversation_intelligence" | "customer_memory" | "perception" | "cadence" | "stateful_orders";
+export type ProFeature = "conversation_intelligence" | "customer_memory" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety";
 
 /** A feature is ON when the tenant explicitly enabled THAT feature (narrow,
  *  default-off opt-in) OR the tenant is full 'pro' (gets everything). Keeping a

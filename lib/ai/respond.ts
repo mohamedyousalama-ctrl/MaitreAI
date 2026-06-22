@@ -14,6 +14,7 @@ import { buildCustomerAgentSystemPrompt, type BrainContext } from "./prompt";
 import { modeAllowsOrders } from "./modes";
 import { dialectProfile } from "./dialect";
 import { fabricatesMoney, knownMenuPrices, offersNonMenuProduct } from "./money-guard";
+import { assertsAllergenSafety } from "./allergen-gate";
 import {
   emptyDraft,
   executeTool,
@@ -113,6 +114,14 @@ function safeConfirmReply(dialect: string): string {
   return dialect === "egyptian"
     ? "لسه ما أكدتش الطلب؛ لازم أبنيه وأحسب الإجمالي من السيستم الأول. تحب أراجعه معاك؟"
     : "لسه ما أكدت الطلب؛ لازم أبنيه وأحسب الإجمالي من السيستم أول. تحب أراجعه معك؟";
+}
+
+// Allergen-safety guard reply (Fix 3): the agent must NEVER certify allergen safety;
+// it acknowledges the health stakes and hands to the kitchen/team to verify.
+function safeAllergenReply(dialect: string): string {
+  return dialect === "egyptian"
+    ? "صحتك أهم حاجة عندنا 🙏 مش هقدر أأكد إن الصنف ده آمن من ناحية الحساسية من غير ما المطبخ يتأكد — هحوّلك لفريق المطعم يساعدوك تختار بأمان."
+    : "صحتك أهم شي عندنا 🙏 ما أقدر أأكد إن الصنف هذا آمن من ناحية الحساسية بدون ما المطبخ يتأكد — بحوّلك لفريق المطعم يساعدونك تختار بأمان.";
 }
 
 export async function respond(input: RespondInput): Promise<RespondResult> {
@@ -227,6 +236,15 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       ctx.signals.push({ type: "off_menu", detail: { reason: "non_menu_upsell", term: offending, reply: text } });
       text = safeNonMenuReply(input.brain.dialect);
     }
+  }
+  // Allergen-safety OUTPUT GUARD (Fix 3, flag-gated): NEVER let the agent certify an
+  // item is allergen-safe («مفيهوش بندق» / «آمن» / nut-free) — there is no operator-
+  // verified allergen data, so any such claim is unsafe. Replace it with an escalate-
+  // safe reply and hand to a human. Safety beats the sale, always. Off → no-op.
+  if (text.trim() && input.brain.deterministicAllergenSafety && assertsAllergenSafety(text)) {
+    ctx.signals.push({ type: "escalation", detail: { reason: "allergen_safety_claim", reply: text } });
+    ctx.escalation = ctx.escalation ?? { reason: "سلامة الحساسية: المساعد حاول تأكيد سلامة صنف بدون بيانات مؤكدة — يحتاج تأكيد المطبخ" };
+    text = safeAllergenReply(input.brain.dialect);
   }
 
   return {

@@ -12,16 +12,18 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadBrain } from "@/lib/db/brain";
 import { isPromoActiveNow } from "@/lib/promo";
-import { respond } from "@/lib/ai/respond";
+import { respond, type RespondResult } from "@/lib/ai/respond";
 import { deriveSystemMode } from "@/lib/ai/modes";
 import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
 import { type Tier, isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
+import { isSafetyHold } from "@/lib/tenant/handoff";
+import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
-import type { OrderDraft, PhotoRequest, Presentation, ToolSignal } from "@/lib/ai/tools";
+import { emptyDraft, type OrderDraft, type PhotoRequest, type Presentation, type ToolSignal } from "@/lib/ai/tools";
 import type { AiToneConfig } from "@/lib/types";
 import { dialectProfile } from "@/lib/ai/dialect";
 
@@ -75,6 +77,38 @@ function isOpenDraft(value: unknown): value is OrderDraft {
   if (!value || typeof value !== "object") return false;
   const draft = value as Partial<OrderDraft>;
   return Array.isArray(draft.lines) && draft.lines.length > 0 && draft.finalized !== true;
+}
+
+/** Allergen-safety INPUT GATE (Fix 1) — the deterministic forced outcome when the
+ *  gate fires. NO LLM call: acknowledge the allergen honestly, escalate to the
+ *  team, preserve the in-progress draft. Mirrors a RespondResult so the downstream
+ *  persist/escalation path is unchanged. */
+function forcedAllergenSafetyResult(
+  term: string | null,
+  dialect: string,
+  initialDraft: OrderDraft | null,
+  currency: string
+): RespondResult {
+  const t = term && term !== "الحساسية" ? `«${term}»` : "الحساسية";
+  const reply =
+    dialect === "egyptian"
+      ? `خدت بالي إنك ذكرت ${t} 🙏 صحتك أهم حاجة عندنا — مش هقدر أأكد سلامة الأصناف من غير ما المطبخ يتأكد، فهحوّلك لفريق المطعم يساعدوك تختار بأمان.`
+      : `خذت بالي إنك ذكرت ${t} 🙏 صحتك أهم شي عندنا — ما أقدر أأكد سلامة الأصناف بدون ما المطبخ يتأكد، فبحوّلك لفريق المطعم يساعدونك تختار بأمان.`;
+  const reason = `سلامة الحساسية (بوابة حتمية): العميل ذكر تجنّب/مشكلة مع ${term ?? "الطعام"} — يحتاج تأكيد المطبخ على الأصناف الآمنة قبل الطلب`;
+  return {
+    reply,
+    draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
+    escalate: true,
+    escalationReason: reason,
+    signals: [{ type: "escalation", detail: { reason, source: "allergen_gate", term } }],
+    presentation: null,
+    photoRequests: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
+    toolNames: ["escalate_to_human"],
+    stopReason: "allergen_gate",
+    model: "deterministic_allergen_gate",
+    adapter: "mock",
+  };
 }
 
 /**
@@ -199,6 +233,8 @@ export async function runCustomerTurn(
     // object the executor seeds ctx.draft from (respond.ts), so they never drift.
     statefulOrders: isFeatureExplicitlyEnabled("stateful_orders", tenantFeatures),
     currentDraft: initialDraft,
+    // Allergen-safety (flag-gated): enables the never-say-safe OUTPUT GUARD in respond.ts.
+    deterministicAllergenSafety: isFeatureExplicitlyEnabled("deterministic_allergen_safety", tenantFeatures),
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
@@ -206,27 +242,41 @@ export async function runCustomerTurn(
   // log. Layer B: a low-confidence/unknown/safety read produces a recovery
   // directive injected for THIS turn so Karim recovers instead of dead-ending.
   // perceiveTurn never throws (null on failure → no log, no directive).
-  const perceptionOn = isFeatureExplicitlyEnabled("perception", tenantFeatures);
+  // Allergen-safety INPUT GATE (Fix 1, flag-gated): a deterministic floor evaluated
+  // BEFORE the model — a customer avoidance/medical intent toward a food/allergen
+  // term (incl. euphemisms like «اتعب لو اكلت بندق», NOT only «حساسية») FORCES a
+  // safety escalation, so safety never depends on a lucky LLM read. Off → never fires.
+  const allergenSafetyOn = ctx.deterministicAllergenSafety === true;
+  const allergenHit = allergenSafetyOn ? detectAllergenAvoidance(input.userMessage) : { fired: false, term: null };
+
+  // P3 perception — skip the Haiku read entirely when the deterministic gate already
+  // fired (the decision is made; no LLM needed). Otherwise unchanged.
+  const perceptionOn = isFeatureExplicitlyEnabled("perception", tenantFeatures) && !allergenHit.fired;
   const perception = perceptionOn ? await perceiveTurn(input.userMessage, input.history) : null;
   const perceptionDirective = perceptionOn ? recoveryDirective(perception) : null;
   // P4 cadence cue (consumes the P3 read; fires only on a non-default mood signal).
   const cadenceDirective = ctx.cadence ? cadenceCue(perception) : null;
 
   const t0 = Date.now();
-  let result;
-  try {
-    result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    await admin.from("agent_runs").insert({
-      restaurant_id: restaurantId,
-      conversation_id: conversationId,
-      trigger: "customer",
-      input: input.userMessage,
-      error: message,
-      perception,
-    });
-    throw new CustomerTurnError("agent_error", message);
+  let result: RespondResult;
+  if (allergenHit.fired) {
+    // Deterministic safety escalation — no LLM call, draft preserved.
+    result = forcedAllergenSafetyResult(allergenHit.term, dialect, initialDraft, ctx.profile.currency);
+  } else {
+    try {
+      result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await admin.from("agent_runs").insert({
+        restaurant_id: restaurantId,
+        conversation_id: conversationId,
+        trigger: "customer",
+        input: input.userMessage,
+        error: message,
+        perception,
+      });
+      throw new CustomerTurnError("agent_error", message);
+    }
   }
   const latencyMs = Date.now() - t0;
 
@@ -300,10 +350,25 @@ export async function runCustomerTurn(
     // once owner=human the AI no longer touches the row, so (now − updated_at) is
     // the operator wait-time/SLA — derivable with NO new column.
     const escalatedAt = new Date().toISOString();
-    await admin
-      .from("conversations")
-      .update({ owner: "human", status: "يحتاج تدخل موظف", escalation_reason: result.escalationReason, updated_at: escalatedAt })
-      .eq("id", conversationId);
+    const flipPatch: Record<string, unknown> = {
+      owner: "human",
+      status: "يحتاج تدخل موظف",
+      escalation_reason: result.escalationReason,
+      updated_at: escalatedAt,
+    };
+    // Fix 2 (flag-gated): set a STRUCTURED is_safety_hold at escalation time — the
+    // deterministic source of truth for the #84 carve-out, so "is this a safety
+    // hold?" is never re-derived from the model's free-text reason. Only written
+    // when the flag is on → Wesaya (flag off) never references the new column, so
+    // this is safe even before the additive migration is applied.
+    if (allergenSafetyOn) {
+      flipPatch.is_safety_hold =
+        allergenHit.fired ||
+        isSafetyHold(result.escalationReason) ||
+        perception?.risk === "allergy" ||
+        perception?.risk === "safety";
+    }
+    await admin.from("conversations").update(flipPatch).eq("id", conversationId);
     // Operator-facing timeline note — reuses the existing system-message timeline
     // (same mechanism as send-error notes); NOT transmitted to the customer.
     // Makes "needs human + reason + waiting" explicit so a single operator sees it.

@@ -2,7 +2,7 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-21.
+> Last updated: 2026-06-22.
 
 ## North Star
 Not "launch restaurants," not unbounded "best agent." **The agent («كريم») that is unbeatable on 4 pillars,
@@ -28,6 +28,10 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
 - Handoff-hardening (#84) — silent-death closed · safety carve-out · barge race closed — enabled both tenants
 - Per-tenant WhatsApp webhook (#86) — GET verify token + POST X-Hub-Signature resolve per-tenant (global path
   unchanged for Wesaya); early arrival of the V2-A/E "each restaurant brings its own Meta app" model
+- Deterministic allergen safety (#87) — euphemism→escalation is now a CODE gate, not model-luck (live case
+  10/10 vs prior 7/8 stochastic; «بيتعب من البندق» fires WITHOUT «حساسية») · structured `is_safety_hold` flag
+  → a safety hold never wrongly auto-returns · never-say-safe OUTPUT guard. Flag-gated
+  (`deterministic_allergen_safety`), Wesaya byte-identical when off. Data+code-backed, not prompt-alone.
 - BLaban onboarding-readiness — validated loads-as-data (product thesis proven)
 - Brand: Kivo locked (teal/emerald · motion-✓ logo · "Keep Every Order Moving") · UI design brief issued
 
@@ -40,10 +44,13 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
 
 ## V1 — STRONGEST AGENT (4 pillars to market-beating)
 
-### Pillar 2 — Honesty / Safety (NEXT; ship before BLaban live)
-- ⬜ Allergen posture + euphemism escalation (prompt): never-say-"safe" · "contains" only · coverage-honesty ·
-  one-time nut notice (dessert) · euphemism-aware escalation («بيتعبني»/«بموت لو كلت فستق» → hard escalate,
-  not only keyword «حساسية»). NOTE: euphemism gap is a live hole on Wesaya too.
+### Pillar 2 — Honesty / Safety
+- ✅ Deterministic allergen escalation + never-say-safe (#87) — euphemism-aware code gate (not keyword «حساسية»
+  only) · structured `is_safety_hold` (no wrong auto-return) · never-say-safe output guard. Flag-gated; enable
+  on BLaban + demo-pro after merge.
+- ⬜ Remaining allergen-posture polish (→ folds into V2-C structured allergen layer): "contains"-only phrasing ·
+  coverage-honesty (operator-verified vs unknown) · one-time nut notice (dessert). Needs the structured
+  allergen profile (V2-C), not just prompt/gate.
 
 ### Pillar 1 — Order Accuracy (main strength push)
 - ⬜ B2 — `order_drafts` table · committed-vs-draft separation · serial multi-order (kills «أمسحه» contradiction)
