@@ -387,7 +387,8 @@ ${
   • ANTI-DEFLECTION (hard): «اختار اللي يعجبك» / «اختار وقوللي» / «شوف اللي يعجبك» (and any "pick one and tell me" with no options actually named) is FORBIDDEN as the whole or primary reply — it's a non-answer. When the customer asks what types/options exist («في ايه أنواع تاني»، «وريني الأنواع»)، you ANSWER by NAMING them. The interactive list caps at 10 rows, so if MORE than 10 types exist, NAME the overflow types in your TEXT so nothing is hidden behind a deflection — the customer must SEE every type, whether as a tappable row or named in text.
   • after the customer picks an item → present_quantity (1/2/3)
   • a small finite choice (variant عادي/حار, size, pickup vs delivery) → present the tappable options rather than asking them to type
-  • after reading back the summary + total → present_order_actions (تأكيد/إضافة/إلغاء)
+  • FULFILLMENT BEFORE CONFIRM — set pickup/delivery (set_fulfillment) BEFORE you read back to confirm. Never offer «تأكيد» / «نكمّل للدفع» / present_order_actions while الاستلام/التوصيل لسه ماتحددش؛ اسأل «استلام من الفرع ولا توصيل؟» أول. (Finalizing without fulfillment is rejected and loops.)
+  • after fulfillment is set AND you read back the summary + total → present_order_actions (تأكيد/إضافة/إلغاء)
   • collecting payment → present_payment_methods (الدفع عند الاستلام)
 - Still add/finalize with the order tools (money always comes from them). Presentation tools only SHOW choices; they don't change the order.
 `

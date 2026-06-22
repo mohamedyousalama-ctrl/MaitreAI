@@ -174,9 +174,57 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   ) {
     toolNames.push("finalize_draft");
     const out = executeTool("finalize_draft", {}, ctx);
-    const reply = out.isError ? safeConfirmReply(input.brain.dialect) : out.content;
+    if (!out.isError) {
+      return {
+        reply: out.content,
+        draft: ctx.draft,
+        escalate: false,
+        escalationReason: null,
+        signals: ctx.signals,
+        presentation: null,
+        photoRequests: ctx.photoRequests,
+        usage,
+        toolNames,
+        stopReason: "tool_finalized",
+        model: adapter.name,
+        adapter: adapter.name,
+      };
+    }
+    // Finalize refused — surface the ACTIONABLE blocker, NEVER the generic deferral
+    // (which masked it and caused the verbatim confirm loop). The #1 cause is a
+    // missing fulfillment choice: ask pickup-or-delivery and present both as a
+    // one-tap choice so the customer resolves it immediately (loop-breaker) instead
+    // of re-confirming into a dead end.
+    if (!ctx.draft.fulfillment) {
+      return {
+        reply:
+          input.brain.dialect === "saudi"
+            ? "تمام! قبل لا أأكد الطلب — تبي استلام من الفرع ولا توصيل؟ 😊"
+            : "تمام! قبل ما أأكد الطلب — تحب استلام من الفرع ولا توصيل؟ 😊",
+        draft: ctx.draft,
+        escalate: false,
+        escalationReason: null,
+        signals: ctx.signals,
+        presentation: {
+          kind: "buttons",
+          buttons: [
+            { id: "set_pickup", title: "استلام من الفرع" },
+            { id: "set_delivery", title: "توصيل" },
+          ],
+        },
+        photoRequests: ctx.photoRequests,
+        usage,
+        toolNames,
+        stopReason: "needs_fulfillment",
+        model: adapter.name,
+        adapter: adapter.name,
+      };
+    }
+    // Any OTHER finalize precondition (e.g. below-minimum / invalid-zone delivery):
+    // relay the SPECIFIC reason, not the generic deferral. safeConfirmReply stays
+    // only as a last resort for a truly unknown/empty failure.
     return {
-      reply,
+      reply: out.content || safeConfirmReply(input.brain.dialect),
       draft: ctx.draft,
       escalate: false,
       escalationReason: null,
