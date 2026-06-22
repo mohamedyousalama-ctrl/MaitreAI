@@ -70,6 +70,7 @@ export interface MenuItemRow {
   price: number;
   image_url: string;
   available: boolean;
+  unavailable_until: string | null;
   ingredients: string[];
   allergens: string[];
   image_kind: "real" | "illustrative" | "card";

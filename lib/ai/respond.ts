@@ -67,6 +67,24 @@ export interface RespondResult {
 const MAX_ITERATIONS = 6;
 const MONEY_TOOL_NAMES = new Set(["add_to_order", "remove_from_order", "set_fulfillment", "get_order_summary", "finalize_draft"]);
 
+// Real-time 86ing: an item already in the saved cart may have been marked
+// out-of-stock since it was added. Surface it (per turn, on the uncached user
+// message) so «كريم» tells the customer and offers a swap/removal instead of
+// silently keeping (or finalizing) it. Deterministic — not the model's read.
+// finalize_draft (tools.ts) is the hard backstop; this is the proactive layer.
+function eightySixAlert(draft: OrderDraft, menuItems: ToolContext["menuItems"]): string | null {
+  const gone = draft.lines.filter((l) => {
+    const it = menuItems.find((m) => m.id === l.itemId);
+    return !it || !it.available;
+  });
+  if (!gone.length) return null;
+  const names = gone.map((g) => `«${g.name}»`).join("، ");
+  return (
+    `[تنبيه توفّر: ${names} لم يعد متاحاً الآن. أخبر العميل بلطف، واعرض إزالته أو بديلاً متاحاً من المنيو. ` +
+    `لا تؤكّد (finalize) الطلب وبه صنف غير متاح.]`
+  );
+}
+
 function claimsOrderConfirmed(text: string): boolean {
   return /(تم\s+(?:تأكيد|تسجيل|استلام)\s+الطلب|طلبك\s+(?:اتأكد|تأكد|تسجل|تم)|order\s+(?:confirmed|placed))/iu.test(text);
 }
@@ -162,7 +180,21 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
   const tools = canOrder ? ORDER_TOOLS : NON_ORDER_TOOLS;
 
-  const messages: LlmMessage[] = [...input.history, { role: "user", content: input.userMessage }];
+  // Real-time 86ing: if a saved-cart item went out-of-stock since it was added,
+  // append a per-turn availability alert to the (uncached) user message so «كريم»
+  // surfaces it proactively. Tool guards (finalize_draft) still enforce it hard.
+  const availabilityAlert =
+    canOrder && input.initialDraft?.lines.length ? eightySixAlert(input.initialDraft, ctx.menuItems) : null;
+  const userTurn: LlmMessage = availabilityAlert
+    ? {
+        role: "user",
+        content: [
+          { type: "text", text: input.userMessage },
+          { type: "text", text: availabilityAlert },
+        ],
+      }
+    : { role: "user", content: input.userMessage };
+  const messages: LlmMessage[] = [...input.history, userTurn];
   const usage: LlmUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
   const toolNames: string[] = [];
 

@@ -644,6 +644,24 @@ export function executeTool(
       if (!d.lines.length) return { content: "لا يمكن تأكيد طلب فارغ.", isError: true };
       if (!d.fulfillment) return { content: "لا يمكن تأكيد الطلب قبل اختيار الاستلام أو التوصيل.", isError: true };
       {
+        // Real-time 86ing guard: never finalize an order containing an item that has
+        // been marked out-of-stock since it was added. Availability is the tool's
+        // call, not the model's — block + name the item so the agent informs/swaps.
+        const gone = d.lines.filter((l) => {
+          const it = ctx.menuItems.find((i) => i.id === l.itemId);
+          return !it || !it.available;
+        });
+        if (gone.length) {
+          ctx.signals.push({ type: "off_menu", detail: { unavailable: gone.map((g) => g.name) } });
+          return {
+            content:
+              `لا يمكن تأكيد الطلب: ${gone.map((g) => `«${g.name}»`).join("، ")} لم يعد متاحاً. ` +
+              `أخبر العميل واعرض إزالته (remove_from_order) أو بديلاً متاحاً، ثم أكمل.`,
+            isError: true,
+          };
+        }
+      }
+      {
         // Don't finalize a below-minimum / invalid-zone delivery — relay the notice.
         const notice = recompute(ctx);
         if (notice) return { content: notice, isError: true };
