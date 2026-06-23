@@ -2,12 +2,11 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-23 (#97/#98/#100 merged; spine Step 3 — wire stuck detection live + enforce transitions — pending merge).
+> Last updated: 2026-06-23 (#102–#106 merged; goal reframed from proving-grounds to sellable plug-and-play product).
 
 ## North Star
-Not "launch restaurants," not unbounded "best agent." **The agent («كريم») that is unbeatable on 4 pillars,
-proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) human warmth. Restaurants
-(Wesaya, BLaban) are real-traffic proving grounds, not business goals. Kivo = the platform; كريم = the agent.
+
+V1 = a sellable, plug-and-play product. A new restaurant can self-onboard — connect its OWN WhatsApp number, load its menu, set hours/zones/delivery — and Karim works, with NO manual database or Meta setup by us. The agent core (order accuracy, honesty, never-stuck, warmth) is proven; V1 ships the product shell that makes it sellable to many clients without us in the loop. BLaban/Wesaya are test tenants, not the goal.
 
 ## Sovereign principles (never violated)
 - Menu/promos = external source-of-truth DATA; code follows the menu, never the reverse.
@@ -17,6 +16,7 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
 - Truth-driven UI: no invented metrics (live / gathering-data / coming-soon states only).
 - One central code-writer (one Claude Code window); other windows read-only.
 - Run live proof BEFORE merge on customer-facing changes.
+- Onboarding model = each client connects their OWN WhatsApp number via Meta Embedded Signup (no manual provisioning).
 
 ---
 
@@ -106,124 +106,94 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
     `respond-and-send.ts` (queries latest order in conversation, calls `sendReceiptToCustomer`).
     Prompt rule in §G5: receipt requests call `resend_receipt` immediately — NEVER `escalate_to_human`.
     `tsc` + `next build` clean.
-
-## 🔵 IN FLIGHT (≤2 parallel tracks)
-- Kivo UI — Claude Design building 7 purpose-built pages (Insights · Conversations · Orders · Customers · Settings · Login · Landing)
-- BLaban go-live — seeded (data-only) · prod domain confirmed (`maitre-ai.vercel.app`) · webhook now per-tenant (#86) ·
-  remaining: store BLaban app secret via dashboard (`POST /api/settings/whatsapp`) + complete Meta verify/subscribe · then live test
-
----
-
-## V1 — STRONGEST AGENT (4 pillars to market-beating)
-
-### Pillar 2 — Honesty / Safety
-- ✅ Deterministic allergen escalation + never-say-safe (#87) — euphemism-aware code gate (not keyword «حساسية»
-  only) · structured `is_safety_hold` (no wrong auto-return) · never-say-safe output guard. Flag-gated; live on
-  BLaban + demo-pro. Refinements: boundary-aware allergen naming (#88, «البندق»→«بندق» not «لبن»); output guard
-  decoupled block-vs-escalate (#89 — a benign «من غير بندق» filter is answered honestly, no false handoff;
-  claim still always blocked; escalates only on a real avoidance signal / active safety hold).
-- ⬜ Remaining allergen-posture polish (→ folds into V2-C structured allergen layer): "contains"-only phrasing ·
-  coverage-honesty (operator-verified vs unknown) · one-time nut notice (dessert). Needs the structured
-  allergen profile (V2-C), not just prompt/gate.
-
-### Pillar 1 — Order Accuracy (main strength push)
-- ✅ Order-confirm loop fixed (#90) — confirm with no fulfillment surfaced the ACTIONABLE «استلام ولا توصيل؟»
-  (was masked by a generic deferral → verbatim loop) · present_order_actions gated on fulfillment · fulfillment-
-  before-confirm prompt rule · loop-breaker. Shared path → both tenants. Happy path completes (finalize→orders).
-- ⬜ B2 — `order_drafts` table · committed-vs-draft separation · serial multi-order (kills «أمسحه» contradiction)
-- ⬜ B3 — deterministic qty-collision confirm guard (code backstop to «هات»)
-- ⬜ Deterministic allergy-gate (code-enforced hard-fire vs prompt-stochastic 7/8) · tighten allergy-refusal phrasing · single-item «عادي دبل» gate
-
-### Pillar 3 — Never Stuck (conversation spine)
-- ✅ Conversation spine — **ownership axis (Step 1, #97):** explicit `conversations.ownership_state`
+- **Conversation spine — ownership axis (Step 1, #97):** explicit `conversations.ownership_state`
   (AI_ACTIVE/HUMAN_ACTIVE/HUMAN_IDLE/SYSTEM_HOLD/CLOSED) replaces scattered `owner`/free-text `status`/
   `is_safety_hold` as the source of truth, with a legal-transition map enforced in one helper
-  (`lib/db/ownership.ts` · `setOwnershipState`). Additive migration `0032` (applied to shared Supabase;
-  backfilled: safety-hold→SYSTEM_HOLD, owner=human→HUMAN_ACTIVE, completed→CLOSED, else AI_ACTIVE).
-  DUAL-WRITES the legacy fields so existing readers are unaffected → behavior byte-identical for the
-  customer (escalation→HUMAN_ACTIVE/SYSTEM_HOLD · takeover→HUMAN_ACTIVE · auto-return→HUMAN_IDLE→AI_ACTIVE ·
-  SYSTEM_HOLD never auto-returns, #87 preserved). Step 1 is non-enforcing (logs illegal transitions, still
-  writes). 24/24 transition-map unit tests.
-- ✅ Conversation spine — **stuck detection + operator notify (Step 2, #100):** detector fires
-  when a conversation has no path forward for a customer. Three conditions, tunable thresholds in one
-  `STUCK_THRESHOLDS` block: (A) `SYSTEM_HOLD` idle ≥ 30 min · (B) confirmed+unpaid order stale ≥ 30 min ·
-  (C) `HUMAN_ACTIVE`/`HUMAN_IDLE` with no staff reply ≥ 10 min. Pure `detectStuck` (no DB, 20/20 unit
-  tests). `checkAndNotifyStuck` REUSES the existing operator-timeline channel (same system-message insert
-  as `realertOperator`), deduped to ≤1 alert per 30-min window. Persists `stuck_reason` on the conversation
-  (migration `0033`) for the future escalations console. Built but dormant until Step 3 wires it in.
-- 🔵 Conversation spine — **make the spine live (Step 3 — done-on-merge):** the dormant Step 1/2 machinery
-  now fires in production. (A) `checkAndNotifyStuck` is called on every human-owned inbound turn (in
-  `respondAndSendWhatsApp`, at the top of the `owner==='human'` branch, before the idle/realert policy) —
-  healthy AI_ACTIVE flows never enter that branch, so normal replies get no check and no alert spam; the
-  internal dedup prevents repeats. (B) `setOwnershipState` flipped from log-only to ENFORCING (illegal
-  transition throws, row not written). Three live call-sites audited + fixed to take a legal route: CLOSED
-  conversations are reopened to AI_ACTIVE before any escalation (inbound bridge) or operator takeover
-  (`/api/whatsapp/send`); SYSTEM_HOLD is treated as a structural safety hold so it bails to realert and is
-  never auto-returned (the would-be illegal SYSTEM_HOLD→HUMAN_IDLE), hardening the #87 guarantee. Proof
-  (`scripts/proof-spine-live.mjs` + MCP): HUMAN_IDLE→alert-once-then-deduped · healthy AI_ACTIVE→no alert ·
-  SYSTEM_HOLD→alert but ownership UNCHANGED (no release) · illegal transitions throw + don't write · all
-  legal transitions succeed. 27/27 ownership unit tests. Zero changes to agent reply, allergen, confirm,
-  order, receipt. Remaining axes: order-lifecycle (consumes B2) + guarded send-gateway · risk-flags
-- ⬜ "Suggest a reply" operator copilot (human-in-the-loop; distinct from a supervisor agent)
-
-### Pillar 4 — Human Warmth (human P-series)
-- ⬜ P6 initiative (repair: acknowledge→correct→show-state · active in-order memory · state-visibility · micro-contracts)
-- ⬜ P5 texture (tone/warmth depth)
-- ⬜ P7 learning loop
-- ⬜ P8 agent console UI (manager cockpit · Bug #3 order-status interleaving · allergy-hold release via verified console action)
-
-### V1 proving + housekeeping
-- ⬜ Every pillar proven on Wesaya AND BLaban (different menu/dialect/shape)
-- ⬜ Confirm real prod URL / Vercel domain (currently blocking BLaban webhook)
+  (`lib/db/ownership.ts` · `setOwnershipState`). Additive migration `0032`. DUAL-WRITES legacy fields.
+  24/24 transition-map unit tests.
+- **Conversation spine — stuck detection + operator notify (Step 2, #100):** detector fires
+  when a conversation has no path forward. Three conditions (SYSTEM_HOLD idle ≥ 30 min · confirmed+unpaid
+  order stale ≥ 30 min · HUMAN_ACTIVE/IDLE with no reply ≥ 10 min). Pure `detectStuck` (20/20 unit tests).
+  `checkAndNotifyStuck` deduped to ≤1 alert per 30-min window. Migration `0033` (`stuck_reason` column).
+- **Conversation spine — enforcement + stuck live (Step 3, #101):** `setOwnershipState` now throws
+  on illegal transitions (row not written). Three live call-sites audited and fixed. `checkAndNotifyStuck`
+  wired on every human-owned inbound turn. SYSTEM_HOLD structurally bails to realert (never auto-returns).
+  27/27 ownership unit tests. `scripts/proof-spine-live.mjs` passing.
+- **SYSTEM_HOLD+owner=ai canonicalization (#102):** `respondAndSendWhatsApp` detects the mismatch
+  (browser `fire()` updated `owner` but `setOwnershipState` failed silently) and corrects to AI_ACTIVE
+  before the Brain turn — prevents the enforcement throw on finalize. #87 preserved: only fires when
+  owner is already 'ai' (operator already released); never auto-releases a live human-held hold.
+- **`is_safety_hold` reset on Return-to-AI (#103):** `returnToAi()` in `conversation-store.ts` now
+  resets `is_safety_hold=false` in the same write that flips ownership to AI_ACTIVE. Prevents stale
+  `is_safety_hold=true` after deliberate operator clearance. #87 intact: only on deliberate operator
+  action, never automatically.
+- **Per-conversation Brain-turn serialization / Pillar 3 (#104):** `withConversationLock` distributed
+  mutex via `INSERT ON CONFLICT DO NOTHING` on `conversation_locks` table (pgBouncer-safe; 60 s TTL
+  stale-lock expiry; 8 retries; graceful fallthrough). Wraps `respondAndSendWhatsApp` in the webhook.
+  Same-conversation rapid messages process strictly one-after-another; different conversations fully
+  parallel. Migration `0034`. `scripts/proof-conversation-lock.mjs`.
+- **Idempotent returnToAi + takeoverToHuman (#105):** `returnToAi()` and `takeoverToHuman()` in
+  `conversation-store.ts` now read current local store state via `get()` before any mutation; if the
+  conversation is already in the target owner state (e.g. operator double-click), they return early —
+  no duplicate "تمت إعادة"/"تم تحويل" system message, no second DB write. Gate/escalation/output guard
+  byte-identical.
+- **CI eval gate (#106):** `.github/workflows/agent-eval.yml` — triggers on PRs touching `lib/ai/**`,
+  `lib/messaging/**`, `lib/db/**`, `app/api/whatsapp/**`, `app/api/agent/**`, and proof/test scripts.
+  Blocking: `tsc --noEmit`, `next build`, 101 pure unit-test cases (allergen gate 34 · ownership
+  transitions 27 · phone normalise 20 · stuck detection 20 · retry policy). DB-backed integration
+  proofs documented as required manual pre-merge steps in `docs/MANUAL_EVAL_CHECKLIST.md`.
 
 ---
 
-## V2 — "CONVERSATIONAL OPERATIONS CONTROL" (captured; nothing built yet)
-Reframe: customers' chat → orders; operators' chat → configuration; all compiled into safe, versioned,
-audited operational truth. The governed-knowledge-system moat.
+## 🟦 V1 — SELLABLE PLUG-AND-PLAY PRODUCT (release goal)
 
-### V2-A — Customization layer (product-defining)
-- ⬜ Tenant data model + knowledge/persona packs + reusable integration adapters (never per-client code)
-- ⬜ Self-serve onboarding (fill structured data, no code — the "client #10" test)
-- ⬜ Per-branch availability model (`branch_id` on menu_items — the BLaban 14-branch gap)
+**Agent core — DONE (see DONE log):** order loop, deterministic allergen safety, COD ledger+capture,
+86ing, delivery dispatch, reorder/double-tap integrity, Karim comprehension (draft-clear/reorder/receipt);
+never-stuck spine (ownership state machine, stuck detection, enforcement, conversation-lock serialization,
+handoff de-dup); CI eval gate on agent-path PRs.
 
-### V2-B — Configure-by-chat (operator change-compiler)
-- ⬜ Operator chat = parser, never DB writer · propose → confirm → apply pipeline
-- ⬜ Change-proposal object · deterministic tenant-scoped writer (tenant_id from auth, never message)
-- ⬜ Risk tiers: price/availability/photo (confirm+apply) · new-item/promo (preview) · allergens/deletions = dashboard-only, never chat
-- ⬜ Menu versioning (draft/published/archived) · Karim reads published snapshot only
-- ⬜ Audit log + rollback (undo last change) · in-order price-snapshot (no mid-order price break)
-- ⬜ Risky-change re-verification (OTP / elevated role)
+### Operator console (front-end, in progress)
+- [ ] Design tokens (emerald system) formalized
+- [ ] Login · Orders · Conversations · Insights · Customers · Settings · Home/Control
+- [ ] COD · Escalations · Deliveries surfaced per IA
+- [ ] All wired to real per-tenant data; truth-states (live/gathering/coming) enforced
+- [ ] No page shows data the backend can't truthfully produce
 
-### V2-C — Structured allergen intelligence layer
-- ⬜ Allergen profile per item: `coverage_status` (unknown/parsed/operator-verified) + evidence + confidence
-- ⬜ Onboarding allergen-review queue (human-verified, never auto-trust) · Karim wording gated by coverage
-- ⬜ Cross-contact policy field · runtime contract (Karim's allowed claims set by data, not prompt)
+### Self-serve onboarding (own WhatsApp number — the plug-and-play core)
+- [ ] WhatsApp Embedded Signup: client connects own WABA + number via Meta in-app flow → credentials stored per-tenant
+- [ ] Webhook auto-subscribes the new number; per-tenant routing (extends #86)
+- [ ] Menu ingestion: structured entry → review → publish (photo/PDF/URL later)
+- [ ] Config: hours, delivery zones, fulfillment, persona/tone, COD — per-tenant, no SQL
+- [ ] Tenant provisioning by the flow, not by hand
+- [ ] "Go live" gate: onboarding checklist complete → agent active for that tenant
+- [ ] Test: brand-new tenant onboarded end-to-end with zero manual DB/Meta work ("client #N" test)
 
-### V2-D — Menu ingestion (uploads → structured data)
-- ⬜ Photo/PDF/URL ingestion via multimodal LLM (Gemini/Mistral/Qari-OCR for Arabic menus)
-- ⬜ Ingestion confidence pipeline → diff/preview → human review → publish (never auto-publish)
-- ⬜ (Later) Qari-OCR fine-tune on Egyptian dessert menus + synthetic-data pipeline
-
-### V2-E — Commerce & channels
-- ⬜ Multi-order/multi-address (parallel) · WhatsApp Catalog · POS→catalog sync · Foodics integration
-- ⬜ Fawry + Paymob/mada · WALLET/INSTAPAY/card in agent flow · e-invoicing (ZATCA/ETA)
-- ⬜ Out-of-window message templates (24h-window-aware) · COD ledger · KDS-lite · CRM
-- ⬜ Web-chat channel (no-Meta plug-and-play) · white-label web ordering
-- ⬜ Customer-facing memory ("the usual?", own gate) · multi-tenant hardening
-
-### V2-F — Production hardening (at paying volume)
-- ⬜ Webhook X-Hub-Signature validation · rate-limits / anomaly detection · capability-based RBAC per role
-- ⬜ Menu integrity tests (publish = deploy) · race-condition price locking · escalation tier system (restaurant → Kivo support SLA)
+### Per-tenant integrity (must clear before selling)
+- [ ] R1 — reconcile `0024_restaurant_feature_flags.sql` vs reality (flags live on `restaurants.feature_flags` jsonb). MUST fix before onboarding ships, or new tenants break.
+- [ ] Per-tenant isolation audit: every Karim read (menu/hours/zones/persona/flags) is tenant-scoped
+- [ ] Billing/plan model for Kivo itself (how clients pay us) — define (may be V1.5)
 
 ---
 
-## Milestones
-- M1 (now): BLaban live on real traffic + allergen-safety active → Pillar 2 proven
-- M2: B2 + B3 + spine → Pillars 1 + 3 proven on both restaurants
-- M3: P5–P8 → Pillar 4 + operator console → V1 = market-beating agent
-- M4: V2-A/B/C → self-serve onboarding + configure-by-chat → product, not project
-- M5: V2-D/E/F → scale toward ~100 restaurants
+## 🟩 V2 — DEPTH (after V1 sells)
+Configure-by-chat (one menu engine, two doors) · duration/auto-revert 86ing reminders · promotion engine
+(deterministic eligibility) · menu ingestion via photo/PDF/URL (multimodal) · structured allergens
+(coverage/evidence/confidence) · Insights leakage→action depth · Paymob/mada payments · e-invoicing
+(ZATCA/ETA) · Foodics POS · web-chat channel · customer timeline/depth · capability-based RBAC ·
+production hardening (rate limits, X-Hub-Sig).
+
+## 🟪 V3 — OPERATING-SYSTEM VISION
+Interactive campaigns/quizzes (promo-engine-backed) · cockpit UI rebuild (object drawers) · CRM
+segments/LTV/predictive · multi-agent orchestration · prompt versioning + A/B · simulation/QA suite ·
+multi-restaurant console · white-label.
+
+## ❌ REJECTED (don't re-propose)
+- pgvector/hybrid search · ingredient_manifest middleware · temperature-0 agent rewrite
+- Negation-guard on allergen gate (would create allergy bypass — a child-safety failure mode)
+- Time-window allergy suppression (same risk: swallows genuinely new allergen within the window)
+- Merging #5 wholesale (competing order engine)
+
+---
 
 ## Key identifiers
 - Repo `mohamedyousalama-ctrl/MaitreAI` · Supabase ref `zlighrbsjexrozrmuwpw` · Vercel `maitre-ai`
