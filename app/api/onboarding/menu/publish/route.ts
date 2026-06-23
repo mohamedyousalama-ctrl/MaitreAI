@@ -13,13 +13,27 @@
 // After this call, loadBrain() (which the agent calls on every turn) will read
 // the new menu immediately — no further action needed.
 //
+// AVAILABILITY RESET WARNING (required, not optional):
+//   Publishing replaces the entire live menu. All new items start as
+//   available=true regardless of the prior state. Items that were 86'd —
+//   including for SAFETY reasons (contamination, allergen batch issue) — will
+//   come back as available. The response always includes:
+//     availabilityReset: true (always, if there was an existing live menu)
+//     itemsPreviouslyUnavailable: N (count of items that were available=false)
+//   The UI MUST surface a warning when itemsPreviouslyUnavailable > 0 so the
+//   operator is making an informed choice, not silently re-enabling held items.
+//
+//   // TODO: V2 — preserve 86 state across re-publish (menu versioning).
+//   //   Match items by name/id and carry over available + unavailable_until
+//   //   so safety-holds survive a menu update. Tracked in roadmap.
+//
 // Allergen data on items is informational operator-entered content. The
 // deterministic allergen gate (#87) operates independently on customer message
 // text and is not affected by this endpoint.
 //
 // Auth: manager of the target restaurant.
 // Body: { restaurantId: string, draftId: string }
-// Response: { ok: true }
+// Response: { ok: true, availabilityReset: true, itemsPreviouslyUnavailable: number }
 // ============================================================================
 
 import { NextResponse } from "next/server";
@@ -79,6 +93,16 @@ export async function POST(req: Request) {
     );
   }
 
+  // Count currently-unavailable items BEFORE the publish so the UI can warn
+  // the operator that publishing will reset them to available=true. This is a
+  // REQUIRED safety signal — items 86'd for contamination/allergen batch issues
+  // must not be silently re-enabled without an explicit operator acknowledgement.
+  const { count: unavailableCount } = await admin
+    .from("menu_items")
+    .select("id", { count: "exact", head: true })
+    .eq("restaurant_id", restaurantId)
+    .eq("available", false);
+
   // Atomic publish via SQL function (single transaction).
   const { error: rpcErr } = await admin.rpc("publish_menu_draft", {
     p_restaurant_id: restaurantId,
@@ -89,5 +113,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "publish_failed", detail: rpcErr.message }, { status: 502 });
   }
 
-  return NextResponse.json({ ok: true });
+  // Always return availabilityReset: true — publish replaces the full live menu
+  // and all items return as available=true. The UI must show a warning when
+  // itemsPreviouslyUnavailable > 0 (safety-held items are coming back).
+  return NextResponse.json({
+    ok: true,
+    availabilityReset: true,
+    itemsPreviouslyUnavailable: unavailableCount ?? 0,
+  });
 }
