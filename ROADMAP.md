@@ -2,7 +2,7 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-22 (delivery dispatch + driver flow re-port, flag-off/inert).
+> Last updated: 2026-06-23 (#94/#95 merged — reorder fingerprint + double-tap guard + COD-on-order-status + COD hook; Karim comprehension fixes pending merge).
 
 ## North Star
 Not "launch restaurants," not unbounded "best agent." **The agent («كريم») that is unbeatable on 4 pillars,
