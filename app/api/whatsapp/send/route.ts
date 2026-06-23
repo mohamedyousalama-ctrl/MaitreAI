@@ -32,10 +32,18 @@ export async function POST(req: Request) {
   // Resolve recipient + channel (RLS scopes this to the operator's tenant).
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, channel, customers(phone)")
+    .select("id, channel, ownership_state, customers(phone)")
     .eq("id", conversationId)
     .single();
   if (!conv) return NextResponse.json({ error: "conversation_not_found" }, { status: 404 });
+
+  // Spine Step 3 (enforcement-safe reopen): an operator replying on a CLOSED
+  // conversation reopens it. CLOSED→HUMAN_ACTIVE is not a legal transition, but
+  // CLOSED→AI_ACTIVE→HUMAN_ACTIVE is — reopen to AI_ACTIVE first so the takeover flip
+  // below is legal under the now-enforced map.
+  if ((conv.ownership_state as string | null) === "CLOSED") {
+    await setOwnershipState(supabase, conversationId, "AI_ACTIVE", { extra: { owner: "ai" } });
+  }
 
   // HANDOFF-HARDENING (Fix 2): the operator replying IS the takeover. Claim
   // ownership server-side (the source of truth) and reset the wait/idle clock,

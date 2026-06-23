@@ -20,6 +20,7 @@ import { createDeliveryForOrder } from "@/lib/db/delivery";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { sendReceiptToCustomer } from "./send-receipt";
 import { setOwnershipState } from "@/lib/db/ownership";
+import { checkAndNotifyStuck } from "@/lib/intelligence/stuck-detection";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export type RespondAndSendStatus =
@@ -131,11 +132,23 @@ export async function respondAndSendWhatsApp(
   //    and reason for the idle policy below).
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, owner, channel, customer_id, escalation_reason, updated_at, customers(phone)")
+    .select("id, owner, channel, customer_id, escalation_reason, updated_at, ownership_state, customers(phone)")
     .eq("id", conversationId)
     .single();
   if (!conv) return { status: "skipped_not_found", error: "conversation_not_found" };
   const customerId = (conv.customer_id as string | null) ?? null;
+  const ownershipState = (conv.ownership_state as string | null) ?? null;
+
+  // Spine Step 3 (enforcement-safe reopen): a CLOSED conversation receiving a new
+  // inbound is reopened to AI_ACTIVE — the ONE legal transition out of CLOSED — before
+  // the Brain turn. Without this, a downstream escalation flip (AI_ACTIVE→HUMAN_ACTIVE/
+  // SYSTEM_HOLD) would start from CLOSED and the now-enforced map would throw. This is
+  // exactly the documented "customer messages again, reopen" transition.
+  if (ownershipState === "CLOSED") {
+    await setOwnershipState(admin, conversationId, "AI_ACTIVE", {
+      extra: { owner: "ai", status: "AI نشط" },
+    });
+  }
 
   // Takeover (Amendment 03 §E): a human owns this thread — the Brain normally
   // stays out. HANDOFF-HARDENING (Fix 1 — stop "silent death"): a human-owned
@@ -146,6 +159,16 @@ export async function respondAndSendWhatsApp(
   // (handoff_timeout); default off → the existing skipped_takeover behavior.
   let resumedAfterTimeout = false;
   if ((conv.owner as string) === "human") {
+    // Spine Step 3 (Part A — stuck detection live): a human-owned thread is exactly the
+    // "customer waiting on a person" posture where stuck-ness matters. Detect + alert
+    // (deduped internally to ≤1 per window) BEFORE the idle/realert policy, so a stuck
+    // thread is surfaced even when handoff_timeout is off. Healthy AI_ACTIVE flows never
+    // enter this block, so normal replies get no stuck check and no alert spam. A failure
+    // here never breaks the turn.
+    await checkAndNotifyStuck({ admin, restaurantId, conversationId }).catch((e) =>
+      console.error("[respond-and-send] stuck check error", e)
+    );
+
     const { data: rFlags } = await admin.from("restaurants").select("feature_flags").eq("id", restaurantId).single();
     const features = (rFlags?.feature_flags as Record<string, unknown> | null) ?? null;
     const cfg = readHandoffConfig(features);
@@ -163,7 +186,13 @@ export async function respondAndSendWhatsApp(
       const { data: sh } = await admin.from("conversations").select("is_safety_hold").eq("id", conversationId).single();
       structuredSafety = (sh as { is_safety_hold?: boolean } | null)?.is_safety_hold === true;
     }
-    const safety = structuredSafety || isSafetyHold(conv.escalation_reason as string | null);
+    // Spine Step 3 (enforcement-safe + #87 hardening): treat an explicit SYSTEM_HOLD
+    // ownership state as a safety hold UNCONDITIONALLY — independent of the feature flag
+    // or the model's free-text reason. This makes the "a safety hold never auto-returns"
+    // guarantee STRUCTURAL, and guarantees the auto-return path below (SYSTEM_HOLD would
+    // be an illegal → HUMAN_IDLE transition under enforcement) is never reached.
+    const isSystemHold = ownershipState === "SYSTEM_HOLD";
+    const safety = isSystemHold || structuredSafety || isSafetyHold(conv.escalation_reason as string | null);
     if (safety || cfg.action === "realert_only") {
       // Keep the human in the loop; nudge staff (deduped to ≤ once per idle window).
       // Safety holds are released only by a deliberate human action — never here.

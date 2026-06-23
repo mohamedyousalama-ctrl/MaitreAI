@@ -30,7 +30,18 @@ ok("reject CLOSED → SYSTEM_HOLD", !isLegalTransition("CLOSED", "SYSTEM_HOLD"))
 ok("reject HUMAN_IDLE → SYSTEM_HOLD", !isLegalTransition("HUMAN_IDLE", "SYSTEM_HOLD"));
 ok("reject HUMAN_ACTIVE → SYSTEM_HOLD", !isLegalTransition("HUMAN_ACTIVE", "SYSTEM_HOLD"));
 
-// --- assertLegalTransition throws on illegal, passes on legal ---
+// --- Step 3 enforcement: the specific call-site risks that were fixed must stay illegal ---
+// SYSTEM_HOLD→HUMAN_IDLE is the transition the auto-return guard now avoids (SYSTEM_HOLD
+// bails to realert before the auto-return). #87: a safety hold never auto-returns.
+ok("reject SYSTEM_HOLD → HUMAN_IDLE (auto-return guard)", !isLegalTransition("SYSTEM_HOLD", "HUMAN_IDLE"));
+// CLOSED→HUMAN_ACTIVE / →SYSTEM_HOLD are what the inbound + operator-send reopen avoids
+// (reopen via AI_ACTIVE first), and CLOSED→AI_ACTIVE is the legal reopen they rely on.
+ok("allow CLOSED → AI_ACTIVE (legal reopen the fixes use)", isLegalTransition("CLOSED", "AI_ACTIVE"));
+// The deliberate-release exception (#87) must remain legal — operator return only.
+ok("allow SYSTEM_HOLD → AI_ACTIVE (deliberate operator release)", isLegalTransition("SYSTEM_HOLD", "AI_ACTIVE"));
+
+// --- assertLegalTransition throws on illegal, passes on legal (Step 3: setOwnershipState
+//     shares this exact contract — illegal throws, legal/self/null-from pass) ---
 let threw = false;
 try { assertLegalTransition("CLOSED", "HUMAN_ACTIVE"); } catch { threw = true; }
 ok("assert throws on illegal CLOSED → HUMAN_ACTIVE", threw);
