@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
+import { setOwnershipState } from "@/lib/db/ownership";
 
 export const runtime = "nodejs";
 
@@ -45,10 +46,11 @@ export async function POST(req: Request) {
   // Idempotent (owner is set to 'human' regardless); updated_at advances on every
   // operator reply so the idle timer restarts on real human activity. RLS scopes
   // this to the operator's tenant.
-  await supabase
-    .from("conversations")
-    .update({ owner: "human", updated_at: new Date().toISOString() })
-    .eq("id", conversationId);
+  // Ownership axis (spine Step 1): the takeover is a transition to HUMAN_ACTIVE.
+  // Dual-writes the legacy owner field + advances the idle clock via `extra`.
+  await setOwnershipState(supabase, conversationId, "HUMAN_ACTIVE", {
+    extra: { owner: "human", updated_at: new Date().toISOString() },
+  });
 
   if ((conv.channel as string) !== "whatsapp") {
     return NextResponse.json({ ok: true, skipped: "non_whatsapp_channel" });

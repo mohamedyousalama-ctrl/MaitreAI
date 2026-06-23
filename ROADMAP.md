@@ -2,7 +2,7 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-23 (#94/#95 merged — reorder fingerprint + double-tap guard + COD-on-order-status + COD hook; Karim comprehension fixes pending merge).
+> Last updated: 2026-06-23 (#96 Karim comprehension merged; ownership-axis spine Step 1 pending merge).
 
 ## North Star
 Not "launch restaurants," not unbounded "best agent." **The agent («كريم») that is unbeatable on 4 pillars,
@@ -135,8 +135,16 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
 - ⬜ Deterministic allergy-gate (code-enforced hard-fire vs prompt-stochastic 7/8) · tighten allergy-refusal phrasing · single-item «عادي دبل» gate
 
 ### Pillar 3 — Never Stuck (conversation spine)
-- ⬜ Conversation spine — ownership axis (AI_ACTIVE/HUMAN_ACTIVE/HUMAN_IDLE/SYSTEM_HOLD/CLOSED) + order-lifecycle
-  axis (consumes B2) + guarded send-gateway + explicit human-return + timeout→idle · risk-flags + missing-fields as data
+- 🔵 Conversation spine — **ownership axis (Step 1 — done-on-merge):** explicit `conversations.ownership_state`
+  (AI_ACTIVE/HUMAN_ACTIVE/HUMAN_IDLE/SYSTEM_HOLD/CLOSED) replaces scattered `owner`/free-text `status`/
+  `is_safety_hold` as the source of truth, with a legal-transition map enforced in one helper
+  (`lib/db/ownership.ts` · `setOwnershipState`). Additive migration `0032` (applied to shared Supabase;
+  backfilled: safety-hold→SYSTEM_HOLD, owner=human→HUMAN_ACTIVE, completed→CLOSED, else AI_ACTIVE).
+  DUAL-WRITES the legacy fields so existing readers are unaffected → behavior byte-identical for the
+  customer (escalation→HUMAN_ACTIVE/SYSTEM_HOLD · takeover→HUMAN_ACTIVE · auto-return→HUMAN_IDLE→AI_ACTIVE ·
+  SYSTEM_HOLD never auto-returns, #87 preserved). Step 1 is non-enforcing (logs illegal transitions, still
+  writes); Step 2 flips enforcement on + adds stuck detection. 24/24 transition-map unit tests.
+  Remaining axes: order-lifecycle (consumes B2) + guarded send-gateway · risk-flags + missing-fields as data
 - ⬜ "Suggest a reply" operator copilot (human-in-the-loop; distinct from a supervisor agent)
 
 ### Pillar 4 — Human Warmth (human P-series)

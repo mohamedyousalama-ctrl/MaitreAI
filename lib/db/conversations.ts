@@ -116,6 +116,7 @@ export async function ensureConversationDb(
       channel: args.channel,
       status: "AI نشط",
       owner: "ai",
+      ownership_state: "AI_ACTIVE",
     },
     { onConflict: "id" }
   );
