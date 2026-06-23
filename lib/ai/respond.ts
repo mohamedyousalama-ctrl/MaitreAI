@@ -62,6 +62,7 @@ export interface RespondResult {
   stopReason: string;
   model: string;
   adapter: "claude" | "mock";
+  resendReceipt: boolean;
 }
 
 const MAX_ITERATIONS = 6;
@@ -175,6 +176,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     photoRequests: [],
     taxMode: input.brain.taxMode ?? "inclusive",
     taxRate: input.brain.taxRate ?? 0,
+    resendReceipt: false,
   };
 
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
@@ -220,6 +222,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         stopReason: "tool_finalized",
         model: adapter.name,
         adapter: adapter.name,
+        resendReceipt: false,
       };
     }
     // Finalize refused — surface the ACTIONABLE blocker, NEVER the generic deferral
@@ -250,6 +253,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         stopReason: "needs_fulfillment",
         model: adapter.name,
         adapter: adapter.name,
+        resendReceipt: false,
       };
     }
     // Any OTHER finalize precondition (e.g. below-minimum / invalid-zone delivery):
@@ -268,6 +272,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       stopReason: "tool_finalized",
       model: adapter.name,
       adapter: adapter.name,
+      resendReceipt: false,
     };
   }
 
@@ -361,5 +366,6 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     stopReason,
     model,
     adapter: adapter.name,
+    resendReceipt: ctx.resendReceipt,
   };
 }

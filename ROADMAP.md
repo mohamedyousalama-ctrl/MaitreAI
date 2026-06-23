@@ -2,7 +2,7 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-22 (delivery dispatch + driver flow re-port, flag-off/inert).
+> Last updated: 2026-06-23 (#94/#95 merged — reorder fingerprint + double-tap guard + COD-on-order-status + COD hook; Karim comprehension fixes pending merge).
 
 ## North Star
 Not "launch restaurants," not unbounded "best agent." **The agent («كريم») that is unbeatable on 4 pillars,
@@ -89,6 +89,23 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
   inserts could both pass). Make it airtight with a partial-unique index on
   `(conversation_id, content_hash, floor(epoch/120))` — store the content-only hash + coarse time
   bucket as columns so the DB enforces single-row-per-basket-per-window the way the old PK used to.
+- **Fix 3 Karim comprehension bugs (WO-7):**
+  - **Bug A — stale cart after finalize:** `customer-turn.ts` draft scan now stops at the most
+    recent message that has ANY draft data; if that draft is `finalized: true`, `initialDraft` is
+    set to `null` (fresh empty slate). Previously `isOpenDraft` skipped the finalized message and
+    matched an earlier build-phase message, so Karim opened the next turn with the old items already
+    in his "cart." Mid-build drafts (finalized: false, lines > 0) are still loaded with the 45-min
+    freshness window unchanged (#90 guard intact).
+  - **Bug B — new-order / reorder intent:** Two prompt rules added in the Building orders section
+    (after START OVER): NEW-ORDER INTENT («عاوز اعمل اوردر جديد» etc.) → `clear_order` immediately,
+    never «بالفعل عندك X في السلة». REORDER / «نفس الطلب» → `clear_order` + re-add items from most
+    recently confirmed order in chat history, then confirm before finalizing.
+  - **Bug C — receipt escalation hallucination:** New `resend_receipt` tool wired end-to-end:
+    `tools.ts` (tool def + `ToolContext.resendReceipt` flag + `executeTool` case) → `respond.ts`
+    (`RespondResult.resendReceipt`) → `customer-turn.ts` (`CustomerTurnOutcome.resendReceipt`) →
+    `respond-and-send.ts` (queries latest order in conversation, calls `sendReceiptToCustomer`).
+    Prompt rule in §G5: receipt requests call `resend_receipt` immediately — NEVER `escalate_to_human`.
+    `tsc` + `next build` clean.
 
 ## 🔵 IN FLIGHT (≤2 parallel tracks)
 - Kivo UI — Claude Design building 7 purpose-built pages (Insights · Conversations · Orders · Customers · Settings · Login · Landing)
