@@ -8,6 +8,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChannelKey, ChatMessage, Conversation, MessageSender } from "@/lib/types";
+import { normalizePhone } from "@/lib/messaging/phone";
 
 const PALETTE = ["#2563eb", "#9333ea", "#059669", "#f97316", "#06b6d4", "#db2777"];
 function colorFor(id: string): string {
@@ -100,10 +101,17 @@ export async function ensureConversationDb(
   conversationId: string,
   args: { phone: string; name?: string; channel: ChannelKey }
 ): Promise<void> {
+  // Canonical phone (Step 2): an operator may type a local number (01030036000)
+  // or paste one with +/spaces — WhatsApp wants international, trunk-less digits
+  // (201030036000) or it rejects the recipient with #131030. Normalize on the
+  // tenant's country so the stored row is wire-ready and the customers
+  // (restaurant_id, phone) unique key dedups against the canonical form.
+  const { data: rc } = await s.from("restaurants").select("country").eq("id", restaurantId).maybeSingle();
+  const phone = normalizePhone(args.phone, (rc?.country as string | null) ?? null);
   const { data: cust } = await s
     .from("customers")
     .upsert(
-      { restaurant_id: restaurantId, phone: args.phone, ...(args.name ? { name: args.name } : {}), last_seen_at: new Date().toISOString() },
+      { restaurant_id: restaurantId, phone, ...(args.name ? { name: args.name } : {}), last_seen_at: new Date().toISOString() },
       { onConflict: "restaurant_id,phone" }
     )
     .select("id")

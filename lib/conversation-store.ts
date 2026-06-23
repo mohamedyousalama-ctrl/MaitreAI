@@ -22,6 +22,7 @@ import {
   updateConversationDb,
 } from "./db/conversations";
 import { setOwnershipState } from "./db/ownership";
+import { normalizePhone } from "./messaging/phone";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Local time string with western digits, e.g. "3:05 م". */
@@ -128,8 +129,11 @@ export const useConversationStore = create<ConversationState>()(
         selectConversation: (id) => set({ selectedId: id }),
 
         findOrCreateByPhone: ({ phone, name, channel = "whatsapp", branch }) => {
-          const target = digits(phone);
-          const existing = get().conversations.find((c) => digits(c.phone) === target);
+          // Match on the canonical (normalized) form so a re-typed local number
+          // (01030036000) finds the existing conversation stored canonically
+          // (201030036000) instead of forking a duplicate thread.
+          const target = normalizePhone(phone) || digits(phone);
+          const existing = get().conversations.find((c) => (normalizePhone(c.phone) || digits(c.phone)) === target);
           if (existing) {
             set({ selectedId: existing.id });
             return existing.id;

@@ -21,6 +21,7 @@ import {
   isWhatsAppConfigured,
   readWhatsAppEnv,
 } from "../config";
+import { normalizePhone } from "../phone";
 
 const CHANNEL = "whatsapp" as const;
 
@@ -215,13 +216,20 @@ function waApiError(status: number, json: unknown): { ok: false; error: string; 
 
 /** POST any pre-built message body to the Graph API and map the response. */
 async function postToGraph(env: ReturnType<typeof readWhatsAppEnv>, body: Record<string, unknown>): Promise<SendResult> {
-  const to = String((body as { to?: string }).to ?? "");
+  const rawTo = String((body as { to?: string }).to ?? "");
+  // Send-time safety net (Step 3): repair a mis-stored recipient (local trunk-0,
+  // missing country code, "+"/spaces) on the way out so a legacy row still
+  // delivers without a data migration. Country-agnostic — the unambiguous
+  // pattern match (EG 11-digit 01…, SA 10-digit 05…) wins; canonical numbers
+  // pass through untouched. Avoids #131030 from a stale local-format number.
+  const to = normalizePhone(rawTo) || rawTo;
+  const outBody = to !== rawTo ? { ...body, to } : body;
   const url = `https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${env.phoneNumberId}/messages`;
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${env.accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(outBody),
     });
     const json: unknown = await res.json().catch(() => ({}));
     if (!res.ok) {
