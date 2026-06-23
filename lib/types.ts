@@ -307,6 +307,12 @@ export interface Conversation {
   entities?: ExtractedEntities;
   escalationReason?: string;
   draftOrder?: DraftOrder;
+  // Authoritative ownership columns (read-only on the client — written only by
+  // the spine via setOwnershipState / the allergen gate). Exposed here so the
+  // Conversations UI can read the real safety flag instead of inferring it from
+  // escalationReason text.
+  ownershipState?: "AI_ACTIVE" | "HUMAN_ACTIVE" | "HUMAN_IDLE" | "SYSTEM_HOLD" | "CLOSED";
+  isSafetyHold?: boolean;
 }
 
 // ---------------------------------------------------------------------------
