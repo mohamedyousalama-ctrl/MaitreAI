@@ -6,14 +6,11 @@
 // دخول → /login, اللوحة/شوف لوحة الرؤى → /insights (middleware bounces an
 // unauthenticated visitor from /insights to /login).
 //
-// SiteFooter (City Baker LLC legal entity) is kept BELOW the Kivo brand footer —
-// Meta verification depends on that legal block, so it isn't dropped. See PR note.
 // Kivo design system: emerald, RTL, IBM Plex Sans Arabic (.kv-console font base).
 // ============================================================================
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SiteFooter } from "@/components/SiteFooter";
 
 export const metadata: Metadata = {
   title: "Kivo — خلّي طلباتك ماشية",
@@ -217,9 +214,6 @@ export default function Home() {
         </div>
         <div style={{ borderTop: "1px solid rgba(255,255,255,.1)", padding: "14px 32px", textAlign: "center", fontSize: 10.5, color: "rgba(255,255,255,.45)" }}>© ٢٠٢٦ Kivo · كل الطلبات على واتساب، من غير عمولة وسطاء</div>
       </footer>
-
-      {/* Legal entity (City Baker LLC) — kept for Meta verification; see PR note. */}
-      <SiteFooter />
     </div>
   );
 }
