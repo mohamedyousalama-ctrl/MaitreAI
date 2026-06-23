@@ -9,9 +9,13 @@
 // Isomorphic (NOT server-only): both the server bridge (service-role client) and the
 // operator UI store (browser client) flip ownership, so both must be able to call this.
 //
-// Step 1 is NON-ENFORCING: an illegal transition is logged loudly but the write still
-// happens, guaranteeing byte-identical behavior while we gather evidence that no real
-// flow trips the map. Step 2 flips enforcement on (throw) once the logs are clean.
+// Step 3 is ENFORCING: an illegal transition now THROWS instead of writing — the map
+// is the law. Before flipping enforcement on, every live call-site was audited and the
+// three that could pass an illegal transition were fixed to take a legal path (CLOSED
+// is reopened to AI_ACTIVE before any escalation/takeover; SYSTEM_HOLD is never
+// auto-returned — it bails to realert structurally). The hard #87 guarantee stands:
+// SYSTEM_HOLD → AI_ACTIVE is legal ONLY as a deliberate operator release, never
+// automatic (the auto-return path bails before it).
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -69,7 +73,10 @@ export interface SetOwnershipResult {
  * legacy fields the caller still maintains (`extra` — owner/status/escalation_reason/
  * handover_note/is_safety_hold/updated_at), in ONE update so the row stays consistent.
  *
- * NON-ENFORCING in Step 1: an illegal transition is logged but still written.
+ * ENFORCING in Step 3: an illegal transition THROWS — the row is not written. A null
+ * `from` (unknown/legacy row) and self-transitions remain permitted. Callers in the
+ * live path are responsible for taking a legal route (reopen CLOSED first, never
+ * auto-return SYSTEM_HOLD).
  */
 export async function setOwnershipState(
   client: SupabaseClient,
@@ -87,10 +94,10 @@ export async function setOwnershipState(
   const from = ((current?.ownership_state as OwnershipState | null) ?? null) as OwnershipState | null;
 
   if (!isLegalTransition(from, next)) {
-    // Step 1 is non-enforcing: record the violation but do not break the existing
-    // flow (the legacy write must still land). Step 2 turns this into a hard reject.
-    console.error(
-      `[ownership] ILLEGAL transition ${from} → ${next} (conversation ${conversationId}); writing anyway (Step 1 non-enforcing)`
+    // Step 3 enforcing: reject the illegal transition — do NOT write. The map is the
+    // law; a caller that needs to reach `next` must take a legal route first.
+    throw new Error(
+      `[ownership] illegal transition ${from} → ${next} (conversation ${conversationId})`
     );
   }
 
