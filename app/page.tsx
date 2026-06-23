@@ -11,24 +11,13 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { KivoMark, KivoWordmark } from "@/components/brand/KivoLogo";
 
 export const metadata: Metadata = {
   title: "Kivo — خلّي طلباتك ماشية",
   description:
     "كريم بيرد على عملاءك على واتساب باللهجة المصرية، بياخد الطلب ويقفله — وإنت بتوصّل وتحتفظ بالعمولة اللي كانت بتروح للوسطاء.",
 };
-
-// motion-✓ logo mark (reused at several sizes)
-function Mark({ w = 23, h = 19, sw = 10, op = true }: { w?: number; h?: number; sw?: number; op?: boolean }) {
-  return (
-    <svg width={w} height={h} viewBox="0 0 80 64" fill="none" aria-hidden>
-      <path d="M12 34 L27 50 L52 14" stroke="#fff" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M50 12 H68" stroke="#fff" strokeWidth={sw * 0.7} strokeLinecap="round" />
-      {op && <path d="M55 21 H70" stroke="#fff" strokeWidth={sw * 0.7} strokeLinecap="round" opacity=".6" />}
-      {op && <path d="M60 30 H71" stroke="#fff" strokeWidth={sw * 0.7} strokeLinecap="round" opacity=".35" />}
-    </svg>
-  );
-}
 
 const Arrow = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden><path d="M5 12h13M11 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -41,17 +30,36 @@ const featChip: React.CSSProperties = { width: 42, height: 42, borderRadius: 12,
 const pill = (light?: boolean): React.CSSProperties => ({ display: "inline-flex", alignItems: "center", gap: 8, height: 26, padding: "0 13px", borderRadius: 99, background: light ? "rgba(255,255,255,.12)" : "rgba(14,159,110,.1)", color: light ? "#34c79c" : "#0a8a5f", fontSize: 11.5, fontWeight: 800 });
 const navLink: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,.82)", textDecoration: "none" };
 
+// @import must lead the stylesheet. Sora powers the "Kivo" wordmark (mark-as-v);
+// it degrades to the Arabic/system face if the font can't load.
 const SCOPED_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&display=swap');
 .kv-land h1,.kv-land h2,.kv-land h3{margin:0}
 @keyframes kvFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
 @keyframes kvPulseL{0%,100%{box-shadow:0 0 0 0 rgba(52,199,156,.5)}50%{box-shadow:0 0 0 8px rgba(52,199,156,0)}}
 @keyframes kvRise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+/* Hero demo — ported from "Kivo Hero - Karim" (CSS-only; transforms+opacity). */
+@keyframes kvType{0%,80%,100%{transform:translateY(0);opacity:.35}40%{transform:translateY(-4px);opacity:1}}
+@keyframes kvPan{0%,6%{transform:translateY(0)}80%,100%{transform:translateY(var(--kv-pan,-480px))}}
+@keyframes kvChatFade{0%{opacity:0}5%,82%{opacity:1}88%,100%{opacity:0}}
+@keyframes kvLogoIn{0%,85%{opacity:0;transform:translate(-50%,-50%) translateY(10px) scale(.97)}89%,96%{opacity:1;transform:translate(-50%,-50%) translateY(0) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) translateY(-6px) scale(1)}}
 .kv-land .kvFloat{animation:kvFloat 6s ease-in-out infinite}
 .kv-land .kvDot{animation:kvPulseL 1.9s infinite}
 .kv-land [data-rise]{animation:kvRise .7s cubic-bezier(.2,.8,.2,1) backwards}
+.kv-land .kvChat{animation:kvChatFade 26s ease-in-out infinite}
+.kv-land .kvTrack{animation:kvPan 26s linear infinite}
+.kv-land .kvLogoFrame{animation:kvLogoIn 26s ease-in-out infinite}
+.kv-land .kvType i{display:inline-block;width:7px;height:7px;border-radius:50%;background:#0e9f6e;animation:kvType 1.2s ease-in-out infinite}
+.kv-land .kvType i:nth-child(2){animation-delay:.18s}
+.kv-land .kvType i:nth-child(3){animation-delay:.36s}
 .kv-land .cta:hover{filter:brightness(.96);transform:translateY(-1px)}
 .kv-land a.nl:hover{color:#fff}
-@media (prefers-reduced-motion: reduce){.kv-land .kvFloat,.kv-land .kvDot,.kv-land [data-rise]{animation:none}}
+@media (prefers-reduced-motion: reduce){
+  .kv-land .kvFloat,.kv-land .kvDot,.kv-land [data-rise],.kv-land .kvChat,.kv-land .kvTrack,.kv-land .kvType i{animation:none}
+  .kv-land .kvTrack{transform:translateY(0)}
+  .kv-land .kvChat{opacity:1}
+  .kv-land .kvLogoFrame{display:none}
+}
 @media (max-width:880px){.kv-land .heroGrid,.kv-land .valGrid{grid-template-columns:1fr !important}.kv-land .trio,.kv-land .proofGrid{grid-template-columns:1fr 1fr !important}}
 `;
 
@@ -66,10 +74,9 @@ export default function Home() {
 
         {/* nav */}
         <nav style={{ position: "relative", maxWidth: 1180, margin: "0 auto", padding: "22px 32px", display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 13, display: "grid", placeItems: "center", background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.22)" }}><Mark /></div>
-            <div style={{ fontSize: 23, fontWeight: 800 }}>Kivo</div>
-          </div>
+          <Link href="/" aria-label="Kivo" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
+            <KivoWordmark size={28} ink="#fff" />
+          </Link>
           <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 26 }}>
             <a className="nl" href="#how" style={navLink}>إزاي بيشتغل</a>
             <a className="nl" href="#value" style={navLink}>القيمة</a>
@@ -100,29 +107,9 @@ export default function Home() {
             </div>
           </div>
 
-          {/* WhatsApp demo phone */}
+          {/* WhatsApp demo phone — animated (ported from "Kivo Hero - Karim") */}
           <div data-rise style={{ display: "flex", justifyContent: "center" }}>
-            <div className="kvFloat" style={{ width: 308, borderRadius: 40, background: "#0b1f18", padding: 11, boxShadow: "0 50px 100px -40px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.08)" }}>
-              <div style={{ borderRadius: 31, overflow: "hidden", background: "#e7ded5" }}>
-                <div style={{ background: "#0a8a5f", padding: "13px 14px", display: "flex", alignItems: "center", gap: 11, color: "#fff" }}>
-                  <div style={{ width: 13 }} />
-                  <div style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,.18)", display: "grid", placeItems: "center" }}><Mark w={19} h={15} sw={11} op={false} /></div>
-                  <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 800 }}>كريم · سمَّاش هاوس</div><div style={{ fontSize: 9.5, opacity: .85, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "#7ef0c4" }} />بيكتب…</div></div>
-                </div>
-                <div style={{ padding: "14px 12px", display: "flex", flexDirection: "column", gap: 9, background: "linear-gradient(180deg,#ece5db,#e3dacd)", minHeight: 420 }}>
-                  <div style={{ alignSelf: "center", fontSize: 8.5, fontWeight: 700, color: "#7a8378", background: "rgba(255,255,255,.6)", padding: "3px 10px", borderRadius: 8 }}>النهارده ٨:٠٤ م</div>
-                  <Bubble side="out">مساء الخير، عايز أطلب أكل لـ٤ أفراد</Bubble>
-                  <Bubble side="in">مساء النور 🌙 كومبو العيلة بيكفي ٤، فيه ٤ ساندويتشات + بطاطس كبير + ٤ مشروبات بـ٢٢٠ ج.م. أجهّزهولك؟</Bubble>
-                  <Bubble side="out">تمام، بس واحد منهم مايعرفش يأكل مكسرات</Bubble>
-                  <Bubble side="in">حاضر، هكتب على الطلب «بدون مكسرات» وهبلّغ المطبخ. العنوان نفس آخر مرة في المهندسين؟</Bubble>
-                  <Bubble side="out">أيوة نفس العنوان 👍</Bubble>
-                  <Bubble side="in" wide>
-                    <div style={{ fontWeight: 800, color: "#0a8a5f", marginBottom: 4 }}>طلبك اتأكّد ✓</div>
-                    كومبو العيلة · بدون مكسرات<br />٢٢٠ ج.م + توصيل ٢٠ = <b>٢٤٠ ج.م</b><br />دفع عند الاستلام · هيوصلك خلال ٣٥ دقيقة 🛵
-                  </Bubble>
-                </div>
-              </div>
-            </div>
+            <HeroDemo />
           </div>
         </div>
         <svg viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden style={{ display: "block", width: "100%", height: 64 }}><path d="M0 80 L0 38 C 240 4 480 4 720 36 C 960 68 1200 68 1440 30 L1440 80 Z" fill="#eef5f1" /></svg>
@@ -191,7 +178,7 @@ export default function Home() {
       {/* ===== CTA ===== */}
       <section style={{ maxWidth: 1180, margin: "0 auto", padding: "20px 32px 60px" }}>
         <div data-rise style={{ position: "relative", overflow: "hidden", borderRadius: 26, background: "radial-gradient(700px 400px at 85% 0%,rgba(52,199,156,.3),transparent 60%),linear-gradient(150deg,#0c9468,#0a7a55 60%,#0a5f44)", color: "#fff", padding: "48px 44px", textAlign: "center", boxShadow: "0 40px 90px -50px rgba(10,138,95,.8)" }}>
-          <div style={{ display: "grid", placeItems: "center" }}><Mark w={44} h={35} /></div>
+          <div style={{ display: "grid", placeItems: "center" }}><KivoMark size={50} tone="white" title="Kivo" /></div>
           <h2 style={{ fontSize: 34, fontWeight: 800, margin: "18px 0 0" }}>خلّي كريم يرد على عميلك الجاي</h2>
           <p style={{ fontSize: 15, color: "rgba(255,255,255,.85)", fontWeight: 600, margin: "12px auto 0", maxWidth: 440, lineHeight: 1.7 }}>اربط واتساب، اسحب المنيو، وكريم يبدأ يشتغل. من غير عمولة وسطاء، ومن غير أرقام وهمية.</p>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 28 }}>
@@ -204,7 +191,7 @@ export default function Home() {
       {/* ===== KIVO FOOTER ===== */}
       <footer style={{ background: "#072a1e", color: "rgba(255,255,255,.7)" }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 32px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 34, height: 34, borderRadius: 11, background: "rgba(255,255,255,.12)", display: "grid", placeItems: "center" }}><Mark w={18} h={15} sw={11} op={false} /></div><div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>Kivo</div></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 34, height: 34, borderRadius: 11, background: "rgba(255,255,255,.12)", display: "grid", placeItems: "center" }}><KivoMark size={20} tone="white" sheen={false} title="Kivo" /></div><KivoWordmark size={18} ink="#fff" /></div>
           <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.55)" }}>خلّي طلباتك ماشية</span>
           <div style={{ marginInlineStart: "auto", display: "flex", gap: 22, fontSize: 12, fontWeight: 700 }}>
             <a href="#how" style={{ color: "rgba(255,255,255,.7)", textDecoration: "none" }}>إزاي بيشتغل</a>
@@ -224,11 +211,136 @@ function Stat({ big, label }: { big: string; label: string }) {
 }
 const Sep = () => <div style={{ width: 1, height: 34, background: "rgba(255,255,255,.18)" }} />;
 
-function Bubble({ side, wide, children }: { side: "in" | "out"; wide?: boolean; children: React.ReactNode }) {
-  const out = side === "out";
+// ── animated hero demo (ported from "Kivo Hero - Karim") ──────────────────
+// A self-playing WhatsApp conversation with Karim: greeting → order → recap →
+// an honest "delivery not available" decline → a safety hand-off on a hinted
+// allergy → close, resolving to the Kivo wordmark. Pure CSS (transforms +
+// opacity only): the message track auto-pans, edge masks hide the scroll seam,
+// and the loop closes on the brand wordmark. No JS timers — see SCOPED_CSS.
+// prefers-reduced-motion freezes it to a static, fully-visible frame.
+function HeroDemo() {
   return (
-    <div style={{ alignSelf: out ? "flex-end" : "flex-start", maxWidth: wide ? "86%" : out ? "80%" : "82%" }}>
-      <div style={{ background: out ? "#d6fdd0" : "#fff", borderRadius: out ? "11px 11px 4px 11px" : "11px 11px 11px 4px", padding: "8px 11px", fontSize: 11.5, fontWeight: 600, lineHeight: 1.5, boxShadow: "0 1px 1px rgba(0,0,0,.08)" }}>{children}</div>
+    <div className="kvFloat" style={{ width: 312, borderRadius: 40, background: "#0b1f18", padding: 11, boxShadow: "0 50px 100px -40px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.08)" }}>
+      <div style={{ borderRadius: 31, overflow: "hidden", background: "#f6faf8" }}>
+        {/* header */}
+        <div style={{ background: "#0a8a5f", padding: "13px 14px", display: "flex", alignItems: "center", gap: 11, color: "#fff", direction: "rtl" }}>
+          <div style={{ width: 38, height: 38, borderRadius: 12, background: "rgba(255,255,255,.18)", display: "grid", placeItems: "center", flex: "none" }}>
+            <KivoMark size={20} tone="white" sheen={false} title="" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800 }}>كريم · حلواني الدار</div>
+            <div style={{ fontSize: 10, opacity: .9, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "#7ef0c4" }} />متّصل</div>
+          </div>
+        </div>
+
+        {/* body — fixed window, masked edges, auto-panning track */}
+        <div
+          style={{
+            position: "relative",
+            height: 430,
+            overflow: "hidden",
+            background: "linear-gradient(180deg,#f1f6f3,#e8efea)",
+            WebkitMaskImage: "linear-gradient(to bottom, transparent 0, #000 9%, #000 90%, transparent 100%)",
+            maskImage: "linear-gradient(to bottom, transparent 0, #000 9%, #000 90%, transparent 100%)",
+          }}
+        >
+          <div className="kvChat" style={{ position: "absolute", inset: 0 }}>
+            <div className="kvTrack" style={{ position: "absolute", insetInlineStart: 0, insetInlineEnd: 0, top: 0, padding: "16px 13px 22px", display: "flex", flexDirection: "column", "--kv-pan": "-470px" } as React.CSSProperties}>
+              <DStamp>النهارده ٨:٠٤ م</DStamp>
+              <DOut>السلام عليكم</DOut>
+              <DIn name>وعليكم السلام ومرحباً! 😊 معاك كريم من حلواني الدار. تحب تطلب إيه النهارده؟</DIn>
+              <DOut>عايز اتنين كيكة شوكولاتة وعصير برتقان</DOut>
+              <DIn>تمام! اتنين كيكة الشوكولاتة الغنية وعصير برتقان طازة 🍫🍊</DIn>
+              <DRecap />
+              <DIn>ده طلبك لحد دلوقتي — تحب نكمّل؟</DIn>
+              <DOut>توصلوا لـ مدينة النصر؟</DOut>
+              <DIn>للأسف التوصيل لسه مش متاح لمدينة النصر دلوقتي 🙏 بس تقدر تستلم من الفرع، أو نشوفلك أقرب منطقة نوصّلها.</DIn>
+              <DChip>التوصيل غير متاح لمدينة النصر</DChip>
+              <DOut>تمام هستلم. بس أنا بتعب لو اكلت بندق</DOut>
+              <DIn>حفاظاً على سلامتك، هوصّلك بزميل من الفريق يساعدك تختار الأصناف الآمنة ليك 🙏</DIn>
+              <DChip solid>بنوصّلك بزميل من الفريق</DChip>
+            </div>
+            {/* pinned typing indicator */}
+            <div style={{ position: "absolute", insetInlineEnd: 14, bottom: 14, direction: "rtl" }}>
+              <div className="kvType" style={{ display: "flex", alignItems: "center", gap: 5, padding: "11px 14px", borderRadius: "7px 18px 18px 18px", background: "#fff", border: "1px solid #ebf2ee", boxShadow: "0 2px 7px rgba(13,42,32,.05)" }}>
+                <i /><i /><i />
+              </div>
+            </div>
+          </div>
+          {/* closing brand frame */}
+          <div className="kvLogoFrame" style={{ position: "absolute", left: "50%", top: "50%", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, pointerEvents: "none" }}>
+            <KivoWordmark size={46} ink="#0e1f18" />
+            <span style={{ fontFamily: "'Sora', var(--font-arabic), system-ui, sans-serif", fontSize: 12, fontWeight: 600, letterSpacing: ".04em", color: "#0a8a5f" }}>Keep Every Order Moving</span>
+          </div>
+        </div>
+
+        {/* input bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", background: "#fff", borderTop: "1px solid #eef3f0", direction: "rtl" }}>
+          <div style={{ flex: 1, height: 36, borderRadius: 18, background: "#f1f5f3", display: "flex", alignItems: "center", padding: "0 15px" }}><span style={{ fontSize: 12.5, color: "#9bafa5" }}>اكتب رسالة…</span></div>
+          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(150deg,#13b07a,#0a8a5f)", display: "grid", placeItems: "center", flex: "none" }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M11 13 21 3M21 3l-6.5 18-3.5-8-8-3.5L21 3z" /></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DStamp({ children }: { children: React.ReactNode }) {
+  return <div style={{ alignSelf: "center", fontSize: 9.5, fontWeight: 700, color: "#7a8378", background: "rgba(255,255,255,.7)", padding: "3px 10px", borderRadius: 8, marginBottom: 13 }}>{children}</div>;
+}
+function DOut({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 13, direction: "rtl" }}>
+      <div style={{ maxWidth: "80%", padding: "9px 13px", borderRadius: "18px 7px 18px 18px", background: "#dcf1e7", color: "#0a3a29", fontSize: 13.5, lineHeight: 1.55, textAlign: "right" }}>{children}</div>
+    </div>
+  );
+}
+function DIn({ children, name }: { children: React.ReactNode; name?: boolean }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginBottom: 13, direction: "rtl" }}>
+      {name && <span style={{ fontSize: 10, color: "#0a8a5f", fontWeight: 700, margin: "0 6px 4px 0" }}>كريم</span>}
+      <div style={{ maxWidth: "84%", padding: "9px 13px", borderRadius: "7px 18px 18px 18px", background: "#fff", color: "#10231b", fontSize: 13.5, lineHeight: 1.6, border: "1px solid #ebf2ee", boxShadow: "0 2px 7px rgba(13,42,32,.05)", textAlign: "right" }}>{children}</div>
+    </div>
+  );
+}
+function DChip({ children, solid }: { children: React.ReactNode; solid?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 13, direction: "rtl" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 13px", borderRadius: 11, background: solid ? "#e4f4ec" : "#eef4f1", border: solid ? "1px solid #cfe6d9" : "1px dashed #bcdccd" }}>
+        {solid ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0a8a5f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="8" r="3.4" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></svg>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5b8a76" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" /><circle cx="12" cy="10" r="2.4" /></svg>
+        )}
+        <span style={{ fontSize: 12, color: solid ? "#0a8a5f" : "#5b7568", fontWeight: solid ? 700 : 600 }}>{children}</span>
+      </div>
+    </div>
+  );
+}
+function DRecap() {
+  const row = (label: string, qty: string, price: string, top?: boolean) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderTop: top ? "1px solid #f1f5f3" : undefined }}>
+      <span style={{ fontSize: 12.5, color: "#2c4339" }}>{label} <span style={{ color: "#7c9088" }}>{qty}</span></span>
+      <span style={{ fontSize: 12.5, color: "#10231b", fontWeight: 600 }}>{price}</span>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 13, direction: "rtl" }}>
+      <div style={{ width: "86%", background: "#fff", border: "1px solid #e4efe9", borderRadius: 16, boxShadow: "0 8px 22px rgba(13,42,32,.07)", overflow: "hidden" }}>
+        <div style={{ padding: "11px 15px", borderBottom: "1px solid #eef3f0", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 6, height: 6, borderRadius: 2, background: "#0e9f6e" }} />
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: "#10231b" }}>طلبك</span>
+        </div>
+        <div style={{ padding: "4px 15px 11px" }}>
+          {row("كيكة الشوكولاتة الغنية", "×٢", "١٧٠ ج.م")}
+          {row("عصير برتقان طازة", "×١", "٤٠ ج.م", true)}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 2px", borderTop: "1px solid #e4efe9", marginTop: 2 }}>
+            <span style={{ fontSize: 13, color: "#0a8a5f", fontWeight: 800 }}>الإجمالي</span>
+            <span style={{ fontSize: 14, color: "#0a8a5f", fontWeight: 800 }}>٢١٠ ج.م</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
