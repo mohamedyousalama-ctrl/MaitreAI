@@ -19,6 +19,7 @@ import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
 import { type Tier, isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { isSafetyHold } from "@/lib/tenant/handoff";
+import { setOwnershipState } from "@/lib/db/ownership";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
@@ -385,7 +386,11 @@ export async function runCustomerTurn(
         perception?.risk === "allergy" ||
         perception?.risk === "safety";
     }
-    await admin.from("conversations").update(flipPatch).eq("id", conversationId);
+    // Ownership axis (spine Step 1): a safety hold lands in SYSTEM_HOLD (never
+    // auto-returns), every other escalation in HUMAN_ACTIVE. Dual-writes the legacy
+    // owner/status/reason fields via `extra` so existing readers are unaffected.
+    const nextOwnership = flipPatch.is_safety_hold === true ? "SYSTEM_HOLD" : "HUMAN_ACTIVE";
+    await setOwnershipState(admin, conversationId, nextOwnership, { extra: flipPatch });
     // Operator-facing timeline note — reuses the existing system-message timeline
     // (same mechanism as send-error notes); NOT transmitted to the customer.
     // Makes "needs human + reason + waiting" explicit so a single operator sees it.

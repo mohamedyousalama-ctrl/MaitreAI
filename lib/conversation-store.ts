@@ -21,6 +21,7 @@ import {
   subscribeConversations,
   updateConversationDb,
 } from "./db/conversations";
+import { setOwnershipState } from "./db/ownership";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Local time string with western digits, e.g. "3:05 م". */
@@ -269,7 +270,9 @@ export const useConversationStore = create<ConversationState>()(
           }));
           const { _sb, _rid } = get();
           if (_sb && _rid) {
-            fire(updateConversationDb(_sb, convId, { owner: "human", status: "تم التحويل لموظف" }));
+            // Ownership axis (spine Step 1): UI takeover → HUMAN_ACTIVE, dual-writing
+            // the legacy owner/status via `extra`.
+            fire(setOwnershipState(_sb, convId, "HUMAN_ACTIVE", { extra: { owner: "human", status: "تم التحويل لموظف" } }));
             fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف" }));
           }
         },
@@ -290,7 +293,9 @@ export const useConversationStore = create<ConversationState>()(
           const { _sb, _rid } = get();
           if (_sb && _rid) {
             // §E7: persist the handover summary so the Brain honors it on resume.
-            fire(updateConversationDb(_sb, convId, { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null }));
+            // Ownership axis (spine Step 1): a deliberate human release → AI_ACTIVE
+            // (the ONLY way SYSTEM_HOLD legally returns to the AI).
+            fire(setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null } }));
             fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: sysText }));
           }
         },

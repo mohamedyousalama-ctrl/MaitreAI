@@ -19,6 +19,7 @@ import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import { createDeliveryForOrder } from "@/lib/db/delivery";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { sendReceiptToCustomer } from "./send-receipt";
+import { setOwnershipState } from "@/lib/db/ownership";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export type RespondAndSendStatus =
@@ -175,10 +176,14 @@ export async function respondAndSendWhatsApp(
     // cleared — no human commitment to honor) and reset the wait clock. Then fall
     // through so the Brain answers the waiting customer; an honest resume line is
     // sent first (below, once recipient + 24h window are resolved).
-    await admin
-      .from("conversations")
-      .update({ owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: null, updated_at: new Date().toISOString() })
-      .eq("id", conversationId);
+    // Ownership axis (spine Step 1): the timeout path is HUMAN_IDLE → AI_ACTIVE. Mark
+    // the idle hand-off explicitly, then return to the AI, dual-writing the legacy
+    // owner/status/reason resets via `extra`. (Safety holds never reach here — they
+    // bail above with realert_only — so SYSTEM_HOLD can never auto-return.)
+    await setOwnershipState(admin, conversationId, "HUMAN_IDLE");
+    await setOwnershipState(admin, conversationId, "AI_ACTIVE", {
+      extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: null, updated_at: new Date().toISOString() },
+    });
     await noteToTimeline(
       admin,
       restaurantId,
@@ -259,10 +264,10 @@ export async function respondAndSendWhatsApp(
   } catch (e) {
     // Fix B: surface the REAL message (was discarding it → «agent_error: agent_error»).
     const detail = e instanceof CustomerTurnError ? (e.message || e.code) : e instanceof Error ? e.message : String(e);
-    await admin
-      .from("conversations")
-      .update({ owner: "human", status: "يحتاج تدخل موظف", escalation_reason: `agent_error: ${detail}` })
-      .eq("id", conversationId);
+    // Ownership axis (spine Step 1): an agent error hands the thread to a human.
+    await setOwnershipState(admin, conversationId, "HUMAN_ACTIVE", {
+      extra: { owner: "human", status: "يحتاج تدخل موظف", escalation_reason: `agent_error: ${detail}` },
+    });
     await noteToTimeline(
       admin,
       restaurantId,
@@ -286,10 +291,10 @@ export async function respondAndSendWhatsApp(
       if (outcome.replyMessageId) {
         await admin.from("messages").update({ status: "failed" }).eq("id", outcome.replyMessageId);
       }
-      await admin
-        .from("conversations")
-        .update({ owner: "human", status: "يحتاج تدخل موظف", escalation_reason: `order_persist_error: ${detail}` })
-        .eq("id", conversationId);
+      // Ownership axis (spine Step 1): a persist failure hands the thread to a human.
+      await setOwnershipState(admin, conversationId, "HUMAN_ACTIVE", {
+        extra: { owner: "human", status: "يحتاج تدخل موظف", escalation_reason: `order_persist_error: ${detail}` },
+      });
       await noteToTimeline(
         admin,
         restaurantId,
