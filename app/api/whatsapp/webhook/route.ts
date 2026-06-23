@@ -20,6 +20,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMessage } from "@/lib/db/messages";
 import { resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/restaurants";
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
+import { withConversationLock } from "@/lib/db/conversation-lock";
 import { transcribeWhatsAppVoice } from "@/lib/messaging/voice";
 
 export const runtime = "nodejs";
@@ -209,9 +210,17 @@ export async function POST(req: NextRequest) {
       // Run the Brain once per touched conversation and send the reply over
       // WhatsApp. Synchronous (well within Meta's webhook timeout); failures are
       // caught so we always return 200 and Meta never re-queues our LLM errors.
+      //
+      // Pillar 3 (conversation serialization): wrap each Brain turn in a
+      // per-conversation advisory lock so rapid successive messages from the same
+      // customer are processed strictly one-after-another, not concurrently.
+      // Messages for different conversations still run in parallel (no global
+      // serialization). The lock degrades gracefully (never drops a message).
       for (const conversationId of toAnswer) {
         try {
-          const res = await respondAndSendWhatsApp(admin, restaurantId, conversationId);
+          const res = await withConversationLock(admin, conversationId, async () =>
+            respondAndSendWhatsApp(admin, restaurantId, conversationId)
+          );
           if (res.status === "responded") responded++;
         } catch (e) {
           console.error("[whatsapp:webhook] respond error", e);
