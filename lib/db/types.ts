@@ -24,6 +24,8 @@ export interface RestaurantRow {
   is_open: boolean;
   closed_message: string | null;
   accept_preorders: boolean;
+  hours: Record<string, unknown>;
+  agent_persona_name: string | null;
   tax_mode?: string;
   tax_rate?: number;
   /** Karim Pro P0: per-tenant tier flag (migration 0022). Default 'standard'. */
