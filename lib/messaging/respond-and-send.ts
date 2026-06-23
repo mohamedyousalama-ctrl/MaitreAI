@@ -28,7 +28,8 @@ export type RespondAndSendStatus =
   | "skipped_no_customer_msg"
   | "skipped_not_found"
   | "send_failed"
-  | "agent_error";
+  | "agent_error"
+  | "deduped";
 
 export interface RespondAndSendResult {
   status: RespondAndSendStatus;
@@ -278,7 +279,7 @@ export async function respondAndSendWhatsApp(
   let persistedOrder: PersistedDraftOrder | null = null;
   if (outcome.draft.finalized) {
     try {
-      persistedOrder = await persistOrderFromDraft(admin, { restaurantId, conversationId, customerId, draft: outcome.draft });
+      persistedOrder = await persistOrderFromDraft(admin, { restaurantId, conversationId, customerId, draft: outcome.draft, agentRunId: outcome.agentRunId });
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       console.error("[respond-and-send] order persist error", e);
@@ -323,6 +324,22 @@ export async function respondAndSendWhatsApp(
         ],
       });
     }
+  }
+
+  // If the draft was finalized but the persist was an idempotent no-op, the same
+  // order content was already placed in a prior turn (reorder of identical items in
+  // the same conversation). Skip the customer-facing send — never tell the customer
+  // "your order is placed" when we did not create a new order row.
+  if (outcome.draft.finalized && persistedOrder?.created === false) {
+    console.warn("[respond-and-send] idempotent no-op — skipping duplicate confirmation", {
+      conversationId,
+      orderId: persistedOrder.orderId,
+      agentRunId: outcome.agentRunId,
+    });
+    if (outcome.replyMessageId) {
+      await admin.from("messages").update({ status: "failed" }).eq("id", outcome.replyMessageId);
+    }
+    return { status: "deduped", reply: outcome.reply };
   }
 
   // 4. Put the reply on the WhatsApp wire — as an interactive message when the

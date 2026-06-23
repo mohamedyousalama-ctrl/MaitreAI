@@ -89,15 +89,20 @@ async function recomputeDraftFromDb(
 
 export async function persistOrderFromDraft(
   admin: SupabaseClient,
-  args: { restaurantId: string; conversationId: string; customerId: string | null; draft: OrderDraft }
+  args: { restaurantId: string; conversationId: string; customerId: string | null; draft: OrderDraft; agentRunId?: string | null }
 ): Promise<PersistOrderResult> {
-  const { restaurantId, conversationId, customerId, draft } = args;
+  const { restaurantId, conversationId, customerId, draft, agentRunId } = args;
   if (!draft.finalized || !draft.lines.length) return { created: false, orderId: null, orderNumber: null };
   const verifiedDraft = await recomputeDraftFromDb(admin, { restaurantId, draft });
 
-  // Idempotency key: the finalized draft content within this conversation.
+  // Idempotency key: the finalized draft content + the agent-run that produced it.
+  // agentRunId is unique per customer message (deduplicated at the webhook level on
+  // channel_message_id), so same-conversation reorders of identical items now get
+  // distinct fingerprints and land as separate orders. A same-turn retry still
+  // produces the same agentRunId → same UUID → safe idempotent no-op.
   const fingerprint = JSON.stringify({
     c: conversationId,
+    r: agentRunId ?? null,
     lines: verifiedDraft.lines.map((l) => ({
       i: l.itemId,
       q: l.quantity,

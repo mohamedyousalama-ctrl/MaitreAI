@@ -68,6 +68,14 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
   `cod_collections` row. Proof: DB-level idempotency asserted (seed → capture × 2 → 1 row → cleanup).
   `tsc` + `next build` clean. `ENABLE_DELIVERY_TRACKING` not required for COD capture (flag gates
   the dispatch UI only).
+- **Fix silent order-drop on same-content reorder (WO-6)**: `persistOrderFromDraft` fingerprint
+  now includes `agentRunId` (the `agent_runs` row for the turn). Two turns → two distinct UUIDs →
+  two order rows; same-turn retry → same `agentRunId` → same UUID → safe no-op (unchanged).
+  Webhook deduplicates on `channel_message_id` before `respondAndSendWhatsApp`, so each new
+  customer message gets exactly one `agentRunId`. Gate added in `respond-and-send.ts`: if the
+  draft was finalized but the persist returned `created=false`, the customer-facing "order placed"
+  WhatsApp send is skipped — never tells the customer an order was placed when no row was created.
+  Proof: `scripts/proof-reorder-fingerprint.mjs`. `tsc` + `next build` clean.
 
 ## 🔵 IN FLIGHT (≤2 parallel tracks)
 - Kivo UI — Claude Design building 7 purpose-built pages (Insights · Conversations · Orders · Customers · Settings · Login · Landing)
