@@ -2,7 +2,7 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-23 (#96 Karim comprehension merged; ownership-axis spine Step 1 pending merge).
+> Last updated: 2026-06-23 (#97 ownership-axis Step 1 merged; #98 phone normalization pending merge; #99 stuck detection pending merge).
 
 ## North Star
 Not "launch restaurants," not unbounded "best agent." **The agent («كريم») that is unbeatable on 4 pillars,
@@ -135,15 +135,22 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
 - ⬜ Deterministic allergy-gate (code-enforced hard-fire vs prompt-stochastic 7/8) · tighten allergy-refusal phrasing · single-item «عادي دبل» gate
 
 ### Pillar 3 — Never Stuck (conversation spine)
-- 🔵 Conversation spine — **ownership axis (Step 1 — done-on-merge):** explicit `conversations.ownership_state`
+- ✅ **Spine Step 1 (done-on-merge, #97):** explicit `conversations.ownership_state`
   (AI_ACTIVE/HUMAN_ACTIVE/HUMAN_IDLE/SYSTEM_HOLD/CLOSED) replaces scattered `owner`/free-text `status`/
-  `is_safety_hold` as the source of truth, with a legal-transition map enforced in one helper
-  (`lib/db/ownership.ts` · `setOwnershipState`). Additive migration `0032` (applied to shared Supabase;
-  backfilled: safety-hold→SYSTEM_HOLD, owner=human→HUMAN_ACTIVE, completed→CLOSED, else AI_ACTIVE).
-  DUAL-WRITES the legacy fields so existing readers are unaffected → behavior byte-identical for the
-  customer (escalation→HUMAN_ACTIVE/SYSTEM_HOLD · takeover→HUMAN_ACTIVE · auto-return→HUMAN_IDLE→AI_ACTIVE ·
-  SYSTEM_HOLD never auto-returns, #87 preserved). Step 1 is non-enforcing (logs illegal transitions, still
-  writes); Step 2 flips enforcement on + adds stuck detection. 24/24 transition-map unit tests.
+  `is_safety_hold` as source of truth · `setOwnershipState` helper with legal-transition map · migration
+  `0032` applied (safety-hold→SYSTEM_HOLD, owner=human→HUMAN_ACTIVE, completed→CLOSED, else AI_ACTIVE) ·
+  DUAL-WRITES legacy fields (behavior byte-identical) · SYSTEM_HOLD never auto-returns (#87 preserved) ·
+  Step 1 non-enforcing (logs illegal transitions, still writes). 24/24 transition-map unit tests.
+- 🔵 **Spine Step 2 — Stuck detection + operator notify (done-on-merge, #99):** detector fires when a
+  conversation has no path forward for a customer. Three conditions with tunable thresholds (one
+  `STUCK_THRESHOLDS` constant block): (A) `SYSTEM_HOLD` idle ≥ 30 min, (B) confirmed+unpaid order stale
+  ≥ 30 min, (C) `HUMAN_ACTIVE`/`HUMAN_IDLE` with no staff reply ≥ 10 min. Pure `detectStuck` (no DB,
+  20/20 unit tests). `checkAndNotifyStuck` reuses the existing operator-timeline channel (same system
+  message insert as `realertOperator`), deduped to ≤ 1 alert per 30-min window. Persists `stuck_reason`
+  on the conversation row (migration `0033`) for the future escalations console. Proof: 4-scenario +
+  dedup verified on live Supabase. Zero changes to agent reply, allergen, confirm, or order logic.
+  Step 3 (enforcement): flip `setOwnershipState` to throw on illegal + wire `checkAndNotifyStuck`
+  into the inbound bridge on each turn. Step 2 is detection+notify only; the call-site wiring is Step 3.
   Remaining axes: order-lifecycle (consumes B2) + guarded send-gateway · risk-flags + missing-fields as data
 - ⬜ "Suggest a reply" operator copilot (human-in-the-loop; distinct from a supervisor agent)
 
