@@ -299,7 +299,14 @@ export const useConversationStore = create<ConversationState>()(
             // §E7: persist the handover summary so the Brain honors it on resume.
             // Ownership axis (spine Step 1): a deliberate human release → AI_ACTIVE
             // (the ONLY way SYSTEM_HOLD legally returns to the AI).
-            fire(setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null } }));
+            // Safety-hold clearance: a deliberate Return-to-AI is the human's explicit
+            // release of a safety hold, so reset is_safety_hold=false in the SAME write
+            // that flips ownership — otherwise the flag stays stale (the server-side
+            // canonicalization guard only resets it on the owner='ai'+SYSTEM_HOLD mismatch
+            // path, which never fires when this browser write succeeds). #87 holds: this
+            // ONLY runs on the deliberate operator action, never automatically and never on
+            // a live hold where owner is still 'human'.
+            fire(setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null, is_safety_hold: false } }));
             fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: sysText }));
           }
         },
