@@ -88,6 +88,9 @@ export async function loadConversations(s: SupabaseClient, restaurantId: string)
       aiConfidence: (c.confidence as number | null) ?? undefined,
       currentIntent: (c.last_intent as ChatMessage["intent"]) ?? undefined,
       escalationReason: (c.escalation_reason as string | null) ?? undefined,
+      // Authoritative ownership fields — read-only surfacing, no write path here.
+      ownershipState: (c.ownership_state as Conversation["ownershipState"]) ?? undefined,
+      isSafetyHold: (c.is_safety_hold as boolean | null) ?? false,
     } as Conversation;
   });
 }
