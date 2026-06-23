@@ -150,6 +150,24 @@ export async function respondAndSendWhatsApp(
     });
   }
 
+  // Spine Step 3 (enforcement-safe hold-clearance canonicalization): when the operator
+  // clears an allergy/safety hold via the UI (returnToAi in conversation-store.ts), it
+  // updates `owner='ai'` AND calls setOwnershipState(SYSTEM_HOLD→AI_ACTIVE). That write
+  // goes through the browser client with fire-and-forget (fire() swallows errors), so if
+  // RLS or a network error silently rejects it, `owner` becomes 'ai' while
+  // `ownership_state` stays 'SYSTEM_HOLD'. On the next inbound the human branch is
+  // bypassed (owner='ai'), but the enforced map then throws on any transition out of
+  // SYSTEM_HOLD that the Brain or error-handler tries to make. Fix: detect the mismatch
+  // here and canonicalize — SYSTEM_HOLD→AI_ACTIVE is the deliberate operator release and
+  // IS legal. #87 guarantee is preserved: we only do this when owner is already 'ai'
+  // (meaning a human already pressed "return to AI"); we never auto-release a hold where
+  // owner is still 'human'.
+  if ((conv.owner as string) === "ai" && ownershipState === "SYSTEM_HOLD") {
+    await setOwnershipState(admin, conversationId, "AI_ACTIVE", {
+      extra: { owner: "ai", status: "AI نشط", is_safety_hold: false },
+    });
+  }
+
   // Takeover (Amendment 03 §E): a human owns this thread — the Brain normally
   // stays out. HANDOFF-HARDENING (Fix 1 — stop "silent death"): a human-owned
   // thread must never answer the customer with nobody, forever. When the customer

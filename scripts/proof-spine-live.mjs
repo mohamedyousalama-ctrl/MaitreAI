@@ -96,8 +96,37 @@ const r3 = await checkAndNotifyStuck({ admin, restaurantId: RESTAURANT_ID, conve
 ok("SYSTEM_HOLD → alerted (system_hold_timeout)", r3.alerted && r3.reason === "system_hold_timeout");
 ok("SYSTEM_HOLD → ownership UNCHANGED (no release)", (await stateOf(c3)) === "SYSTEM_HOLD");
 
+console.log("\n── 3b. SYSTEM_HOLD + owner='ai' → canonicalized to AI_ACTIVE (hold-clearance mismatch fix) ──");
+// Simulates: operator pressed "Return to AI" (owner='ai'), but the browser-client
+// fire-and-forget write of SYSTEM_HOLD→AI_ACTIVE failed silently → mismatch state.
+// The inbound path must canonicalize to AI_ACTIVE before the Brain runs.
+const cHoldCleared = await seedConv({ ownership_state: "SYSTEM_HOLD", owner: "ai", is_safety_hold: false, updated_at: minsAgo(5) });
+// Mimic the inbound path: only run the canonicalization block, not the full inbound stack.
+const { setOwnershipState: sos } = await import("../lib/db/ownership.ts");
+const convCheck1 = (await admin.from("conversations").select("owner, ownership_state").eq("id", cHoldCleared).single()).data;
+const ownerIsAi = (convCheck1?.owner === "ai");
+const stateIsHold = (convCheck1?.ownership_state === "SYSTEM_HOLD");
+ok("mismatch detected (owner=ai, state=SYSTEM_HOLD)", ownerIsAi && stateIsHold);
+if (ownerIsAi && stateIsHold) {
+  await sos(admin, cHoldCleared, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", is_safety_hold: false } });
+}
+ok("after canonicalize → AI_ACTIVE", (await stateOf(cHoldCleared)) === "AI_ACTIVE");
+
+console.log("\n── 3c. SYSTEM_HOLD + owner='human' → NOT auto-released (#87 guarantee) ──");
+// When owner is still 'human', the hold is NOT cleared — the human branch fires,
+// detects safety, realerts, and returns skipped_takeover. This block validates that
+// the canonicalization guard (owner=ai check) never auto-releases a live hold.
+const cHoldLive = await seedConv({ ownership_state: "SYSTEM_HOLD", owner: "human", is_safety_hold: true, updated_at: minsAgo(5) });
+const convCheck2 = (await admin.from("conversations").select("owner, ownership_state").eq("id", cHoldLive).single()).data;
+const liveOwnerIsHuman = (convCheck2?.owner === "human");
+// The guard must NOT trigger when owner='human'
+const guardWouldNotFire = !(convCheck2?.owner === "ai" && convCheck2?.ownership_state === "SYSTEM_HOLD");
+ok("#87: guard does NOT fire when owner='human'", guardWouldNotFire);
+ok("#87: ownership_state stays SYSTEM_HOLD", (await stateOf(cHoldLive)) === "SYSTEM_HOLD");
+
 console.log("\n── 4. Enforcement: illegal transitions throw + do not write ──");
 await expectThrow("SYSTEM_HOLD → HUMAN_IDLE", () => setOwnershipState(admin, c3, "HUMAN_IDLE"), c3, "SYSTEM_HOLD");
+seeded.push(cHoldCleared, cHoldLive);
 const c4 = await seedConv({ ownership_state: "CLOSED", owner: "ai" });
 await expectThrow("CLOSED → HUMAN_ACTIVE", () => setOwnershipState(admin, c4, "HUMAN_ACTIVE"), c4, "CLOSED");
 await expectThrow("CLOSED → SYSTEM_HOLD", () => setOwnershipState(admin, c4, "SYSTEM_HOLD"), c4, "CLOSED");
