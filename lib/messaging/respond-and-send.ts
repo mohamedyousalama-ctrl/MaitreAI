@@ -348,6 +348,22 @@ export async function respondAndSendWhatsApp(
     ? await sendWhatsAppInteractive({ to: phone, body: outcome.reply, presentation: outcome.presentation, lastInboundAtMs })
     : await sendWhatsAppText({ to: phone, text: outcome.reply, lastInboundAtMs });
 
+  // Receipt resend — customer asked «فين الايصال؟» and the model called resend_receipt.
+  if (outcome.resendReceipt && conversationId) {
+    const { data: latestOrd } = await admin
+      .from("orders")
+      .select("id")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestOrd?.id) {
+      sendReceiptToCustomer(admin, latestOrd.id as string).catch((e) =>
+        console.error("[respond-and-send] receipt resend error", e)
+      );
+    }
+  }
+
   // Receipt auto-sends after the customer confirmation (skips in test mode).
   if (persistedOrder?.created && persistedOrder.orderId) {
     try {

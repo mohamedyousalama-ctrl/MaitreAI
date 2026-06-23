@@ -71,6 +71,8 @@ export interface CustomerTurnOutcome {
   /** Karim Pro P3: the per-turn perception read (labeled inference), or null when
    *  perception is off / the read failed. For the harness dump + observability. */
   perception: PerceptionRead | null;
+  /** True when the model called resend_receipt; triggers receipt re-send downstream. */
+  resendReceipt: boolean;
 }
 
 function isOpenDraft(value: unknown): value is OrderDraft {
@@ -108,6 +110,7 @@ function forcedAllergenSafetyResult(
     stopReason: "allergen_gate",
     model: "deterministic_allergen_gate",
     adapter: "mock",
+    resendReceipt: false,
   };
 }
 
@@ -173,31 +176,41 @@ export async function runCustomerTurn(
       .eq("sender", "ai")
       .order("created_at", { ascending: false })
       .limit(8);
-    const row = (priorDraftRows ?? []).find((message) =>
-      isOpenDraft((message.meta as Record<string, unknown> | null)?.draft)
-    );
-    // Fix A — expire stale drafts. An abandoned basket must NOT resurface as the
-    // active order hours later (#1017: a 14:23 draft reloaded at 17:58). Only reload
-    // a draft whose message is within the freshness window; otherwise start fresh.
-    // 45 min comfortably covers a genuine mid-order pause while expiring abandoned baskets.
+    // Draft reload: find the MOST RECENT AI message that carries any draft data.
+    // Rules (applied in order):
+    // 1. If that message's draft is FINALIZED (completed order), the basket is
+    //    closed — start clean. This prevents stale-cart bleed-through where the
+    //    build-phase messages (recap, add_to_order) are picked up instead of the
+    //    confirmation reply, tricking the agent into thinking items are still live.
+    // 2. If the draft is open (not finalized, has lines) and within the freshness
+    //    window, resume it (mid-order pause). Outside the window: abandonment.
+    const firstWithDraft = (priorDraftRows ?? []).find((message) => {
+      const d = (message.meta as Record<string, unknown> | null)?.draft;
+      return d && typeof d === "object" && Array.isArray((d as Partial<OrderDraft>).lines);
+    });
     const DRAFT_FRESHNESS_MS = 45 * 60 * 1000;
-    if (row) {
-      const ageMs = Date.now() - new Date(row.created_at as string).getTime();
-      const fresh = ageMs <= DRAFT_FRESHNESS_MS;
-      initialDraft = fresh ? ((row.meta as Record<string, unknown>).draft as OrderDraft) : null;
-      // Karim Pro P1 terminal hook — ABANDONMENT. A stale open basket (>45 min)
-      // means the prior order attempt was abandoned; emit one record for it
-      // (Pro-gated; standard tenants do nothing). The transcript is the prior
-      // conversation up to this returning turn.
-      if (!fresh) {
-        await emitConversationReport(admin, {
-          restaurantId,
-          tier: tenantTier,
-          features: tenantFeatures,
-          conversationId,
-          terminalTrigger: "abandoned",
-          transcript: input.history,
-        });
+    if (firstWithDraft) {
+      const d = (firstWithDraft.meta as Record<string, unknown>).draft as OrderDraft;
+      if (d.finalized) {
+        // Most recent draft is from a completed order — basket is closed.
+        initialDraft = null;
+      } else if (d.lines.length > 0) {
+        const ageMs = Date.now() - new Date(firstWithDraft.created_at as string).getTime();
+        const fresh = ageMs <= DRAFT_FRESHNESS_MS;
+        initialDraft = fresh ? d : null;
+        // Karim Pro P1 terminal hook — ABANDONMENT. A stale open basket (>45 min)
+        // means the prior order attempt was abandoned; emit one record for it
+        // (Pro-gated; standard tenants do nothing).
+        if (!fresh) {
+          await emitConversationReport(admin, {
+            restaurantId,
+            tier: tenantTier,
+            features: tenantFeatures,
+            conversationId,
+            terminalTrigger: "abandoned",
+            transcript: input.history,
+          });
+        }
       }
     }
   }
@@ -424,5 +437,6 @@ export async function runCustomerTurn(
     tier: tenantTier,
     features: tenantFeatures,
     perception,
+    resendReceipt: result.resendReceipt,
   };
 }

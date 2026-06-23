@@ -93,6 +93,8 @@ export interface ToolContext {
   /** Tax mode + rate (Sprint 10). "added" → a VAT line; "inclusive" → no change. */
   taxMode: string;
   taxRate: number;
+  /** Set to true by resend_receipt tool; triggers receipt re-send in respond-and-send. */
+  resendReceipt: boolean;
 }
 
 // --- interactive presentations (S9-2) ---------------------------------------
@@ -281,11 +283,19 @@ export const ORDER_TOOLS: LlmToolDef[] = [
     description: "Show the payment-method button(s) — الدفع عند الاستلام (COD). Use when collecting how the customer will pay.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
+  {
+    name: "resend_receipt",
+    description:
+      "Re-send the receipt for the most recently confirmed order in this conversation. " +
+      "Use ONLY when the customer asks where their receipt is («فين الايصال»، «ابعتلي الإيصال»، «الفاتورة»، «ما جاش الإيصال»). " +
+      "NEVER use escalate_to_human for receipt requests — call this tool instead.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
 ];
 
 /** Subset available when order-building is disabled (closed / non-order modes). */
 export const NON_ORDER_TOOLS: LlmToolDef[] = ORDER_TOOLS.filter(
-  (t) => t.name === "escalate_to_human" || t.name === "send_item_photos"
+  (t) => t.name === "escalate_to_human" || t.name === "send_item_photos" || t.name === "resend_receipt"
 );
 
 // --- helpers ----------------------------------------------------------------
@@ -594,6 +604,10 @@ export function executeTool(
       // over". Re-ask fulfillment later as needed. Never touches a finalized order.
       ctx.draft = emptyDraft(d.currency);
       return { content: "تمام، مسحت الطلب ونبدأ من جديد. تحب تطلب إيه؟" };
+    }
+    case "resend_receipt": {
+      ctx.resendReceipt = true;
+      return { content: "طلبت إعادة إرسال إيصال آخر طلب." };
     }
     case "remove_from_order": {
       const itemName = String(input.item_name ?? "");
