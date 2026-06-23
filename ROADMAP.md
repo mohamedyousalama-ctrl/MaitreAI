@@ -55,7 +55,19 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
   order_sessions). COD capture-on-delivered wired: the `delivered` transition calls `captureCodOnDelivered`
   (closes the #91 ledger loop). Agent path (#87–90 + #92) untouched. `tsc` + `next build` clean flag-off and
   flag-on. Flag-ON delivery happy-path deferred to post-merge live test on BLaban. Third of the 4-PR re-port
-  effort.
+  effort. **⁠Follow-up fix:** the `captureCodOnDelivered` call was missing from the original #93 merge;
+  added in delivery.ts `updateDeliveryStatusByToken` on the `delivered` transition, guarded by
+  `payment_status != "paid"` (COD/unpaid orders only; idempotent; errors logged, never block the transition).
+  `tsc` and `next build` clean.
+- **COD capture — order-status path** (follow-up to #91/#93): operator marking a delivery order
+  delivered via the order screen now also fires COD capture. New API route
+  `POST /api/cod/capture-delivered` (server-only, session-auth) — guards `fulfillment=delivery` +
+  `payment_status!=paid`, calls `captureCodOnDelivered`. Client wired in `order-store.ts`
+  `updateOrderStatus` (fetch on `status=delivered + fulfillmentType=delivery + paymentStatus!=paid`).
+  Idempotency keyed on `order_id` — both the dispatch path and order-screen path converge to one
+  `cod_collections` row. Proof: DB-level idempotency asserted (seed → capture × 2 → 1 row → cleanup).
+  `tsc` + `next build` clean. `ENABLE_DELIVERY_TRACKING` not required for COD capture (flag gates
+  the dispatch UI only).
 
 ## 🔵 IN FLIGHT (≤2 parallel tracks)
 - Kivo UI — Claude Design building 7 purpose-built pages (Insights · Conversations · Orders · Customers · Settings · Login · Landing)

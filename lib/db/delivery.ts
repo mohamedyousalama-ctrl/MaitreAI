@@ -11,6 +11,7 @@ import "server-only";
 import { randomBytes } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
+import { captureCodOnDelivered } from "@/lib/db/cod";
 
 export const DELIVERY_STATUSES = [
   "pending",
@@ -263,6 +264,30 @@ export async function updateDeliveryStatusByToken(
   }
   await admin.from("deliveries").update(patch).eq("id", d.id);
   await admin.from("delivery_events").insert({ delivery_id: d.id, type: `status:${target}`, payload: {} });
+
+  // COD capture: fire when the driver marks the delivery delivered and the order
+  // was not pre-paid (payment_status != "paid"). captureCodOnDelivered is
+  // idempotent; wrap in try/catch so a capture failure never blocks the status
+  // transition (the driver's link must close regardless).
+  if (target === "delivered") {
+    try {
+      const { data: ord } = await admin
+        .from("orders")
+        .select("payment_status")
+        .eq("id", d.order_id as string)
+        .maybeSingle();
+      if (ord && (ord as { payment_status: string }).payment_status !== "paid") {
+        await captureCodOnDelivered(admin, {
+          restaurantId: d.restaurant_id as string,
+          orderId: d.order_id as string,
+          deliveryId: d.id,
+          actorRole: "driver",
+        });
+      }
+    } catch (e) {
+      console.error("[delivery] captureCodOnDelivered error", e);
+    }
+  }
 
   // When the order goes out, send the customer their live tracking link.
   if (target === "on_the_way" && d.customer_token) {
