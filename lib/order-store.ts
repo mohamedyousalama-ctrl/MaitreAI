@@ -191,8 +191,23 @@ export const useOrderStore = create<OrderState>()(
         const { _sb } = get();
         if (_sb) fire(updateOrderDb(_sb, id, { order_status: status }));
         notifyConversation(order, orderStatusMessage(order, status));
-        if (status === "delivered" && order.conversationId) {
-          useConversationStore.getState().setStatus(order.conversationId, "طلب مكتمل");
+        if (status === "delivered") {
+          if (order.conversationId) {
+            useConversationStore.getState().setStatus(order.conversationId, "طلب مكتمل");
+          }
+          // COD capture: fire for unpaid delivery orders completed via the order screen.
+          // The server route double-guards (fulfillment=delivery, payment_status!=paid).
+          // captureCodOnDelivered is idempotent on order_id — safe if the driver dispatch
+          // path already fired it (no double-capture).
+          if (order.fulfillmentType === "delivery" && order.paymentStatus !== "paid") {
+            fire(
+              fetch("/api/cod/capture-delivered", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ orderId: id }),
+              }).catch((e) => console.error("[order] COD capture error", e))
+            );
+          }
         }
       },
 
