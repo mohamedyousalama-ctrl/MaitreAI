@@ -23,6 +23,7 @@ import { countEscalations } from "@/lib/escalation";
 import { useOpsStore } from "@/lib/ops-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { StatePill } from "@/components/kivo";
+import { KivoMark } from "@/components/brand/KivoLogo";
 import type { OrderStatusKey } from "@/lib/types";
 
 const ACTIVE: OrderStatusKey[] = [
@@ -153,12 +154,7 @@ export function ConsoleSidebar() {
       {/* Brand + real tenant */}
       <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "0 4px" }}>
         <div style={{ width: 42, height: 42, borderRadius: 14, background: "var(--kv-grad-brand)", display: "grid", placeItems: "center", flex: "none", boxShadow: "0 12px 22px -14px rgba(10,138,95,.8)" }}>
-          <svg width="23" height="18" viewBox="0 0 80 64" fill="none" aria-hidden>
-            <path d="M12 34 L27 50 L52 14" stroke="#fff" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M50 12 H68" stroke="#fff" strokeWidth="7" strokeLinecap="round" />
-            <path d="M55 21 H70" stroke="#fff" strokeWidth="7" strokeLinecap="round" opacity=".6" />
-            <path d="M60 30 H71" stroke="#fff" strokeWidth="7" strokeLinecap="round" opacity=".35" />
-          </svg>
+          <KivoMark size={24} tone="white" title="Kivo" />
         </div>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 19, fontWeight: 800, color: "var(--kv-text)", lineHeight: 1.1 }}>Kivo</div>
