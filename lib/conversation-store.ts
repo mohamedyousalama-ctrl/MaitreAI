@@ -262,6 +262,11 @@ export const useConversationStore = create<ConversationState>()(
         },
 
         takeoverToHuman: (convId) => {
+          // Idempotent: if already human-owned in local state (e.g. operator double-click
+          // while the Brain's automatic escalation already flipped ownership), skip the
+          // duplicate "تم تحويل" message and DB write. A genuinely new takeover on an
+          // AI-owned conversation still goes through normally.
+          if (get().conversations.find((c) => c.id === convId)?.owner === "human") return;
           const id = msgId();
           set((s) => ({
             conversations: patchConv(s.conversations, convId, (c) => ({
@@ -282,6 +287,13 @@ export const useConversationStore = create<ConversationState>()(
         },
 
         returnToAi: (convId, note) => {
+          // Idempotent: if already AI-owned in local state (e.g. operator double-click
+          // on "Return to AI"), skip the duplicate "تمت إعادة" message and DB write.
+          // A new/different allergen escalation still fires normally — the guard only
+          // fires when owner is already 'ai', which is only possible after a prior
+          // returnToAi() call updated local state. #87 is unaffected: the gate,
+          // setOwnershipState, and is_safety_hold reset paths are unchanged.
+          if (get().conversations.find((c) => c.id === convId)?.owner === "ai") return;
           const id = msgId();
           const summary = note?.trim();
           const sysText = summary ? `تمت إعادة المحادثة إلى المساعد · ملخص: ${summary}` : "تمت إعادة المحادثة إلى المساعد";
