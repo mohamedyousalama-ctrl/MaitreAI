@@ -22,11 +22,34 @@ export async function GET() {
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
-  const { data } = await admin
-    .from("restaurants")
-    .select("wa_phone_number_id, wa_waba_id, wa_verify_token, wa_configured_at, wa_access_token_enc, wa_app_secret_enc")
-    .eq("id", tenant.restaurantId)
-    .maybeSingle();
+  // Fetch credentials + last-activity timestamps in parallel. Timestamps are
+  // read-only from the messages table — no columns added, no send/receive logic
+  // touched. A single DESC+LIMIT-1 query per direction is cheap and correct.
+  const [credsRes, lastInRes, lastOutRes] = await Promise.all([
+    admin
+      .from("restaurants")
+      .select("wa_phone_number_id, wa_waba_id, wa_verify_token, wa_configured_at, wa_access_token_enc, wa_app_secret_enc")
+      .eq("id", tenant.restaurantId)
+      .maybeSingle(),
+    admin
+      .from("messages")
+      .select("created_at")
+      .eq("restaurant_id", tenant.restaurantId)
+      .eq("direction", "inbound")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from("messages")
+      .select("created_at")
+      .eq("restaurant_id", tenant.restaurantId)
+      .eq("direction", "outbound")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const data = credsRes.data;
 
   // Non-secret fields are returned; the encrypted secrets are reduced to a mere
   // boolean "exists" — their values NEVER leave the server.
@@ -37,6 +60,9 @@ export async function GET() {
     hasAccessToken: !!data?.wa_access_token_enc,
     hasAppSecret: !!data?.wa_app_secret_enc,
     configured: !!data?.wa_configured_at,
+    // Read-only activity timestamps. Null when no messages exist yet.
+    lastInboundAt: (lastInRes.data?.created_at as string | null) ?? null,
+    lastOutboundAt: (lastOutRes.data?.created_at as string | null) ?? null,
   });
 }
 

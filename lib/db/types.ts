@@ -34,6 +34,8 @@ export interface RestaurantRow {
   feature_flags?: Record<string, unknown>;
   /** Manual-wallet payment configuration (migration 0021). See lib/payments/config. */
   payment_config?: import("@/lib/payments/config").PaymentConfig;
+  /** Per-tenant escalation alert threshold (migration 0037). Default 10 minutes. */
+  escalation_timeout_minutes?: number;
 }
 
 export interface MemberRow {
