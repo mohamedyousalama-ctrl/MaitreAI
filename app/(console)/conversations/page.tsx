@@ -19,9 +19,11 @@
 // «متوسط زمن الرد» isn't reliably derivable client-side → gathering skeleton.
 // Triage + nav counts are live (countEscalations) — no hardcoded ٤/٣٦.
 //
-// NOTE: the client Conversation exposes owner (ai|human)+status+escalationReason,
-// not the raw ownership_state/is_safety_hold columns (server-side, out of scope).
-// The UI derives its ownership/safety view from those exposed fields.
+// NOTE: reads the REAL spine flags exposed in #116 — Conversation.ownershipState
+// (AI_ACTIVE/HUMAN_ACTIVE/HUMAN_IDLE/SYSTEM_HOLD/CLOSED) and Conversation.isSafetyHold
+// (loader-mapped). The UI derives ownership/safety from these; keyword-guessing on
+// escalationReason/order-notes survives ONLY as a null-fallback for older rows that
+// predate the flags. owner/status remain as legacy fallbacks.
 // ============================================================================
 
 import { useEffect, useMemo, useState } from "react";
