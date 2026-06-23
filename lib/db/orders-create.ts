@@ -25,6 +25,24 @@ export function uuidFromHash(input: string): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
 
+/** Content-only basket fingerprint (NO conversation / run id) — used by the
+ *  double-tap window guard. Derived from the STORED `items` shape so the current
+ *  order and any candidate row hash identically (same builder on both sides). */
+type FingerprintItem = { menuItemId?: string; quantity?: number; variant?: string | null; choices?: string[]; modifiers?: string[] };
+export function basketContentKey(args: { items: FingerprintItem[]; fulfillment: string; total: number }): string {
+  const lines = args.items
+    .map((it) => ({
+      i: it.menuItemId ?? "",
+      q: Number(it.quantity ?? 0),
+      v: it.variant ?? "",
+      c: [...(it.choices ?? [])].sort(),
+      m: [...(it.modifiers ?? [])].sort(),
+    }))
+    .sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
+  const norm = JSON.stringify({ lines, f: args.fulfillment, t: Number(args.total).toFixed(2) });
+  return createHash("sha256").update(norm).digest("hex");
+}
+
 /** Best-effort next human-friendly order number for the tenant (pilot scale). */
 export async function nextOrderNumber(admin: SupabaseClient, restaurantId: string): Promise<string> {
   const { data } = await admin.from("orders").select("order_number").eq("restaurant_id", restaurantId);
@@ -128,6 +146,39 @@ export async function persistOrderFromDraft(
     modifiers: l.modifiers.map((m) => m.name),
     total: l.lineTotal,
   }));
+
+  // Double-tap window guard. The agentRunId in `id` lets a genuine reorder of the
+  // same basket save as a NEW row — but it also means two confirm messages with
+  // different channel_message_ids (separate, concurrently-processed webhook POSTs)
+  // would mint two distinct ids for the SAME basket. Before inserting, look for an
+  // order in this conversation with an identical content-only fingerprint created
+  // in the last ~120s; if found, treat this as the same order (no new row, no
+  // duplicate customer confirmation). A real reorder happens outside this window
+  // (it requires a multi-message basket rebuild) so it is unaffected.
+  // NOTE: a SELECT→INSERT guard is not fully atomic; two truly simultaneous inserts
+  // could still both pass. Future hardening: a partial-unique index makes it atomic.
+  const DOUBLE_TAP_WINDOW_MS = 120_000;
+  const contentKey = basketContentKey({ items, fulfillment: verifiedDraft.fulfillment ?? "pickup", total: verifiedDraft.total });
+  const sinceIso = new Date(Date.now() - DOUBLE_TAP_WINDOW_MS).toISOString();
+  const { data: recent } = await admin
+    .from("orders")
+    .select("id, order_number, items, fulfillment, total")
+    .eq("restaurant_id", restaurantId)
+    .eq("conversation_id", conversationId)
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  const dup = (recent ?? []).find(
+    (o) =>
+      basketContentKey({
+        items: (o.items as FingerprintItem[]) ?? [],
+        fulfillment: (o.fulfillment as string) ?? "pickup",
+        total: Number(o.total),
+      }) === contentKey
+  );
+  if (dup) {
+    return { created: false, orderId: dup.id as string, orderNumber: (dup.order_number as string) ?? null };
+  }
 
   const orderNumber = await nextOrderNumber(admin, restaurantId);
 

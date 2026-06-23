@@ -64,15 +64,31 @@ function fingerprintId(conversationId, agentRunId, lines, fulfillment, deliveryZ
   return uuidFromHash(fingerprint);
 }
 
+const ITEMS = [{ id: "item-1", menuItemId: "menu-1", name: "Burger", quantity: 2, unitPrice: 50, variant: undefined, choices: [], modifiers: [], total: 100 }];
+
+/** Mirror of basketContentKey from lib/db/orders-create.ts (content-only, no run id). */
+function basketContentKey(items, fulfillment, total) {
+  const lines = items
+    .map((it) => ({
+      i: it.menuItemId ?? "",
+      q: Number(it.quantity ?? 0),
+      v: it.variant ?? "",
+      c: [...(it.choices ?? [])].sort(),
+      m: [...(it.modifiers ?? [])].sort(),
+    }))
+    .sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
+  return createHash("sha256").update(JSON.stringify({ lines, f: fulfillment, t: Number(total).toFixed(2) })).digest("hex");
+}
+
 const seeded = [];
-async function insertOrder(id, orderNumber, conversationId) {
+async function insertOrder(id, orderNumber, conversationId, createdAt) {
   const rows = await ins("orders", {
     id,
     restaurant_id: RID,
     order_number: orderNumber,
     conversation_id: conversationId,
     fulfillment: "delivery",
-    items: [{ id: "item-1", menuItemId: "menu-1", name: "Burger", quantity: 2, unitPrice: 50, total: 100 }],
+    items: ITEMS,
     subtotal: 100,
     delivery_fee: 10,
     tax_amount: 0,
@@ -82,16 +98,31 @@ async function insertOrder(id, orderNumber, conversationId) {
     source: "whatsapp",
     order_status: "pending_confirmation",
     payment_status: "unpaid",
+    ...(createdAt ? { created_at: createdAt } : {}),
   });
   if (rows?.[0]?.id) seeded.push(rows[0].id);
   return rows?.[0];
 }
 
-// Simulate the upsert behavior with ignoreDuplicates: true — try to insert, check if it existed.
-async function simulatePersist(id, orderNumber, conversationId) {
+// Mirror persistOrderFromDraft's two guards, in order:
+//   1. Double-tap window guard — same-conversation order with matching content-only
+//      fingerprint created in the last 120s → no-op (created:false).
+//   2. id upsert (ignoreDuplicates:true) — same agentRunId fingerprint → no-op.
+const WINDOW_MS = 120_000;
+async function simulatePersist(id, orderNumber, conversationId, createdAt) {
+  const contentKey = basketContentKey(ITEMS, "delivery", 110);
+  const sinceIso = new Date(Date.now() - WINDOW_MS).toISOString();
+  const recent = await rest(
+    `orders?conversation_id=eq.${conversationId}&created_at=gte.${sinceIso}&select=id,order_number,items,fulfillment,total&order=created_at.desc&limit=10`
+  );
+  const dup = (Array.isArray(recent) ? recent : []).find(
+    (o) => basketContentKey(o.items ?? [], o.fulfillment ?? "pickup", Number(o.total)) === contentKey
+  );
+  if (dup) return { created: false, orderId: dup.id, orderNumber: dup.order_number, viaWindow: true };
+
   const existing = await get1(`orders?id=eq.${id}&select=id,order_number`);
   if (existing) return { created: false, orderId: id, orderNumber: existing.order_number };
-  const row = await insertOrder(id, orderNumber, conversationId);
+  const row = await insertOrder(id, orderNumber, conversationId, createdAt);
   return { created: !!row, orderId: id, orderNumber };
 }
 
@@ -99,50 +130,59 @@ async function simulatePersist(id, orderNumber, conversationId) {
 console.log("\n=== proof-reorder-fingerprint ===\n");
 
 // Shared fixture
-const CONV_ID = `${TAG}-conv`;
 const LINES = [{ itemId: "menu-1", quantity: 2, variant: null, choices: [], modifiers: [] }];
 const FULFILLMENT = "delivery";
 const ZONE = "الزمالك";
 const TOTAL = 110;
 
-// Two distinct agent-run ids simulating two separate WhatsApp turns
+// Two distinct agent-run ids simulating two separate WhatsApp turns/POSTs
 const RUN_1 = `run-${TAG}-1`;
 const RUN_2 = `run-${TAG}-2`;
 
-const id1 = fingerprintId(CONV_ID, RUN_1, LINES, FULFILLMENT, ZONE, TOTAL);
-const id2 = fingerprintId(CONV_ID, RUN_2, LINES, FULFILLMENT, ZONE, TOTAL);
-const idOld = fingerprintId(CONV_ID, null, LINES, FULFILLMENT, ZONE, TOTAL);
-
 console.log("0. Fingerprint sanity checks (no DB)");
-check("T1 and T2 fingerprints differ (distinct agentRunIds)", id1 !== id2, `id1=${id1.slice(0,8)}… id2=${id2.slice(0,8)}…`);
-check("T1-retry matches T1 (same agentRunId)", fingerprintId(CONV_ID, RUN_1, LINES, FULFILLMENT, ZONE, TOTAL) === id1);
-check("null-run id differs from run-1 (backward-compat slot)", idOld !== id1, `null=${idOld.slice(0,8)}… run1=${id1.slice(0,8)}…`);
+const sanityConv = `${TAG}-sanity`;
+const sId1 = fingerprintId(sanityConv, RUN_1, LINES, FULFILLMENT, ZONE, TOTAL);
+const sId2 = fingerprintId(sanityConv, RUN_2, LINES, FULFILLMENT, ZONE, TOTAL);
+check("distinct agentRunIds → distinct ids", sId1 !== sId2, `${sId1.slice(0,8)}… vs ${sId2.slice(0,8)}…`);
+check("same agentRunId → same id (same-turn retry collapses)", fingerprintId(sanityConv, RUN_1, LINES, FULFILLMENT, ZONE, TOTAL) === sId1);
 
-// TEST 1: first order creation
+// TEST 1: first finalize → creates order
 console.log("\n1. T1 — first finalize turn → creates order row");
-const r1 = await simulatePersist(id1, `${TAG}-001`, CONV_ID);
+const CONV_A = `${TAG}-convA`;
+const idA1 = fingerprintId(CONV_A, RUN_1, LINES, FULFILLMENT, ZONE, TOTAL);
+const r1 = await simulatePersist(idA1, `${TAG}-A1`, CONV_A);
 check("T1 created=true", r1.created === true, `orderId=${r1.orderId?.slice(0,8)}…`);
-const row1 = await get1(`orders?id=eq.${id1}&select=id,order_number`);
-check("order row exists in DB", !!row1, row1?.order_number);
 
-// TEST 2: same-turn retry (same agentRunId → same UUID → idempotent no-op)
-console.log("\n2. T1-retry — same turn repeated → idempotent no-op (no duplicate)");
-const r1b = await simulatePersist(id1, `${TAG}-002`, CONV_ID);
-const count1 = await rest(`orders?id=eq.${id1}&select=id`);
-check("T1-retry created=false (no-op)", r1b.created === false);
-check("exactly one row for id1 after retry", Array.isArray(count1) && count1.length === 1, `rows=${count1?.length}`);
+// TEST 2: DOUBLE-TAP within window — second confirm, new agentRunId, SAME basket,
+// arrives within 120s → window guard returns the existing order → ONE order only.
+console.log("\n2. Double-tap within 120s (new agentRunId, same basket) → ONE order");
+const idA2 = fingerprintId(CONV_A, RUN_2, LINES, FULFILLMENT, ZONE, TOTAL);
+check("the two ids would differ (no id-level dedup)", idA1 !== idA2);
+const r2 = await simulatePersist(idA2, `${TAG}-A2`, CONV_A);
+check("double-tap created=false (caught by window guard)", r2.created === false, `via=${r2.viaWindow ? "window" : "id"}`);
+check("double-tap resolves to the first order", r2.orderId === idA1);
+const countA = await rest(`orders?conversation_id=eq.${CONV_A}&select=id`);
+check("exactly one order in conversation A", Array.isArray(countA) && countA.length === 1, `rows=${countA?.length}`);
 
-// TEST 3: reorder in same conversation (new agentRunId → new UUID → new row)
-console.log("\n3. T2 — same content, new agent-run (reorder) → creates second order");
-const r2 = await simulatePersist(id2, `${TAG}-003`, CONV_ID);
-check("T2 created=true (new order)", r2.created === true, `orderId=${r2.orderId?.slice(0,8)}…`);
-const row2 = await get1(`orders?id=eq.${id2}&select=id,order_number`);
-check("second order row exists in DB", !!row2, row2?.order_number);
+// TEST 3: REORDER outside window — same basket, but the prior order is older than
+// 120s → window guard finds nothing → new agentRunId mints a SECOND order.
+console.log("\n3. Reorder outside 120s window (same basket) → TWO orders");
+const CONV_B = `${TAG}-convB`;
+const idB1 = fingerprintId(CONV_B, RUN_1, LINES, FULFILLMENT, ZONE, TOTAL);
+const oldIso = new Date(Date.now() - 130_000).toISOString(); // 130s ago = outside window
+await insertOrder(idB1, `${TAG}-B1`, CONV_B, oldIso);
+const idB2 = fingerprintId(CONV_B, RUN_2, LINES, FULFILLMENT, ZONE, TOTAL);
+const r3 = await simulatePersist(idB2, `${TAG}-B2`, CONV_B);
+check("reorder created=true (window guard does not block)", r3.created === true, `orderId=${r3.orderId?.slice(0,8)}…`);
+const countB = await rest(`orders?conversation_id=eq.${CONV_B}&select=id`);
+check("exactly two orders in conversation B", Array.isArray(countB) && countB.length === 2, `rows=${countB?.length}`);
 
-// TEST 4: both rows are distinct
-console.log("\n4. Two orders, not one — no silent drop");
-check("T1 and T2 order ids differ", id1 !== id2);
-check("both rows present", !!row1 && !!row2);
+// TEST 4: same-turn retry (same agentRunId) → id-level idempotent no-op
+console.log("\n4. Same-turn retry (same agentRunId) → idempotent no-op");
+const r4 = await simulatePersist(idB2, `${TAG}-B2r`, CONV_B);
+check("retry created=false", r4.created === false);
+const countB2 = await rest(`orders?conversation_id=eq.${CONV_B}&select=id`);
+check("still exactly two orders in conversation B", Array.isArray(countB2) && countB2.length === 2, `rows=${countB2?.length}`);
 
 // ============================================================================
 console.log("\n--- cleanup ---");

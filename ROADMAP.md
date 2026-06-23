@@ -76,6 +76,19 @@ proven on real traffic:** (1) order accuracy, (2) honesty, (3) never stuck, (4) 
   draft was finalized but the persist returned `created=false`, the customer-facing "order placed"
   WhatsApp send is skipped — never tells the customer an order was placed when no row was created.
   Proof: `scripts/proof-reorder-fingerprint.mjs`. `tsc` + `next build` clean.
+  **Double-tap window guard (follow-up, Codex PR #95):** the `agentRunId` key reopened a narrow
+  hole — two confirm messages with different `channel_message_id`s in separate, concurrently-processed
+  webhook POSTs would mint two ids for the SAME basket (the old content-only key deduped these at the
+  DB PK; the run id removed that net). `persistOrderFromDraft` now runs a pre-insert guard: a
+  same-conversation order with a matching content-only fingerprint (`basketContentKey`: lines +
+  fulfillment + total, no conv/run id) created in the last 120s → returns `created:false` with the
+  existing orderId (no new row, no duplicate confirmation). Real reorders happen outside the window
+  (they need a multi-message basket rebuild) so they still save. Proof covers double-tap-within-window
+  (one order) and reorder-outside-window (two orders).
+  **Future hardening:** the SELECT→INSERT guard is not fully atomic (two sub-second-simultaneous
+  inserts could both pass). Make it airtight with a partial-unique index on
+  `(conversation_id, content_hash, floor(epoch/120))` — store the content-only hash + coarse time
+  bucket as columns so the DB enforces single-row-per-basket-per-window the way the old PK used to.
 
 ## 🔵 IN FLIGHT (≤2 parallel tracks)
 - Kivo UI — Claude Design building 7 purpose-built pages (Insights · Conversations · Orders · Customers · Settings · Login · Landing)
