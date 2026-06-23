@@ -1,0 +1,146 @@
+# ============================================================================
+# MaitreAI — Agent-path CI eval gate
+#
+# Triggers on PRs that touch the agent path (lib/ai, lib/messaging, lib/db,
+# the WhatsApp webhook, and allergen/gate files). Front-end-only PRs (CSS,
+# UI components, etc.) skip this workflow entirely via the path filter.
+#
+# HONEST COVERAGE ASSESSMENT
+# ───────────────────────────
+# BLOCKING in this workflow (pure — no live DB or server required):
+#   • tsc --noEmit         — type safety across the whole codebase
+#   • next build           — bundler + static analysis (catches import errors)
+#   • test-allergen-gate   — 34 cases: deterministic gate, euphemisms, term
+#                            naming, output-guard assertsAllergenSafety,
+#                            shouldEscalateOnSafetyClaim. Pure TS, no LLM.
+#   • test-ownership-transitions — 27 cases: full legal-transition map,
+#                            illegal-path enforcement, self-loops. Pure.
+#   • test-phone-normalize — 20 cases: phone normalisation across regions.
+#   • test-stuck-detection — 20 cases: detectStuck thresholds. Pure.
+#   • retry-policy         — node:test suite for the messaging retry logic.
+#
+# NOT RUNNABLE IN CI (require live Supabase + running Next.js server):
+#   • proof-allergen.mjs       — needs BASE_URL + SB + AGENT_ROUTE_SECRET
+#   • proof-confirm-flow.mjs   — needs running /api/agent/respond + SB
+#   • proof-reorder-fingerprint.mjs — needs SB service-role key
+#   • proof-conversation-lock.mjs   — needs SB (exits 0 w/o creds, so
+#                                     effectively skipped in CI; real coverage
+#                                     was done via MCP execute_sql in PR #104)
+#   • proof-spine-live.mjs / proof-safety-hold-release.mjs / proof-stuck-detection.mjs
+#                              — same: exit 0 w/o creds (informational only)
+#   • All other proof-*.mjs scripts — full-stack integration proofs that exit
+#                                     non-zero w/o creds (exit 2 = hard fail).
+#
+# REQUIRED MANUAL PRE-MERGE STEP (documented, not gated here):
+#   Run the full proof suite locally against a staging DB + running server
+#   before merging any PR that touches the Brain, allergen gate, confirm/order
+#   flow, or safety-hold ownership logic. See docs/MANUAL_EVAL_CHECKLIST.md.
+#
+# WHY NOT FAKE-GATE THE INTEGRATION PROOFS:
+#   proof-allergen, proof-confirm-flow, etc. exit 2 when creds are absent.
+#   Including them here without real creds would make the job always fail
+#   (useless) OR require us to skip them (false confidence). Neither is
+#   acceptable. The pure unit tests above cover the deterministic, code-level
+#   safety properties; the integration proofs remain a documented manual gate.
+# ============================================================================
+
+name: Agent eval gate
+
+on:
+  pull_request:
+    paths:
+      # Agent brain + tools
+      - "lib/ai/**"
+      # Messaging + WhatsApp adapter
+      - "lib/messaging/**"
+      # DB layer (ownership, orders, conversation lock)
+      - "lib/db/**"
+      # WhatsApp inbound webhook
+      - "app/api/whatsapp/**"
+      # Legacy channel re-export
+      - "app/api/channels/whatsapp/**"
+      # Agent respond route
+      - "app/api/agent/**"
+      # Proof + unit test scripts (changes to test harness itself trigger re-run)
+      - "scripts/test-*.test.ts"
+      - "scripts/proof-*.mjs"
+
+jobs:
+  agent-eval:
+    name: "Type-check + build + pure safety evals"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Blocking gate 1: TypeScript ──────────────────────────────────────
+      - name: tsc --noEmit
+        run: npx tsc --noEmit
+
+      # ── Blocking gate 2: Next.js build ───────────────────────────────────
+      - name: next build
+        run: npx next build
+        env:
+          # Build-time stubs so Next doesn't abort on missing Supabase keys.
+          # These are public/build-time values — not service-role credentials.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+
+      # ── Blocking gate 3: Pure allergen-safety unit tests ─────────────────
+      # 34 cases: deterministic input gate, euphemisms, Arabic boundary
+      # matching, term naming, assertsAllergenSafety output guard,
+      # shouldEscalateOnSafetyClaim. No LLM, no DB, no network.
+      - name: Allergen gate unit tests
+        run: node --experimental-strip-types scripts/test-allergen-gate.test.ts
+
+      # ── Blocking gate 4: Ownership-state transition map ───────────────────
+      # 27 cases: legal transitions, #87 SYSTEM_HOLD enforcement, self-loops,
+      # illegal-path throws. No DB.
+      - name: Ownership transition unit tests
+        run: node --experimental-strip-types scripts/test-ownership-transitions.test.ts
+
+      # ── Blocking gate 5: Phone normalisation ─────────────────────────────
+      - name: Phone normalise unit tests
+        run: node --experimental-strip-types scripts/test-phone-normalize.test.ts
+
+      # ── Blocking gate 6: Stuck-detection thresholds ───────────────────────
+      - name: Stuck-detection unit tests
+        run: node --experimental-strip-types scripts/test-stuck-detection.test.ts
+
+      # ── Blocking gate 7: Messaging retry policy ───────────────────────────
+      - name: Retry-policy unit tests
+        run: node --experimental-strip-types --test lib/messaging/retry-policy.test.ts
+
+      # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
+      # These self-exit with 0 when no Supabase creds are present. They are
+      # included here so that IF a CI Supabase secret is ever wired up, they
+      # run automatically. Without creds they print a skip notice and succeed.
+      # They are NOT the safety gate — the unit tests above are.
+      - name: "Proof: conversation lock (informational — skips w/o DB creds)"
+        run: node --experimental-strip-types scripts/proof-conversation-lock.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
+
+      - name: "Proof: safety-hold release (informational — skips w/o DB creds)"
+        run: node --experimental-strip-types scripts/proof-safety-hold-release.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
+
+      - name: "Proof: spine live (informational — skips w/o DB creds)"
+        run: node --experimental-strip-types scripts/proof-spine-live.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
