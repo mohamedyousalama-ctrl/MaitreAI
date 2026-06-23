@@ -11,6 +11,10 @@ const readex = Readex_Pro({
   display: "swap",
 });
 
+// IBM Plex Sans Arabic is the single Kivo console family (SPEC 00 §1). NOTE:
+// this family's heaviest Google-Fonts weight is 700 — there is no Arabic 800,
+// so `font-weight:800` in the tokens resolves to 700 (as the mockups already
+// rendered). Weight 300 is retained for pre-Kivo pages that use it.
 const arabic = IBM_Plex_Sans_Arabic({
   subsets: ["arabic", "latin"],
   weight: ["300", "400", "500", "600", "700"],

@@ -96,3 +96,108 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .hm-live-dot, .hm-breach, .t-live, .t-mic { animation: none !important; }
 }
+
+/* ===================================================================== *
+ * KIVO DESIGN TOKENS (SPEC 00) — emerald system, NO lime.               *
+ * Additive layer. Console pages opt in via .kv-console / font-kivo.     *
+ * Source of truth: "Kivo - Brand & Tokens.dc.html".                     *
+ * ===================================================================== */
+:root {
+  /* §1 Font — single family, IBM Plex Sans Arabic (loaded in app/layout). */
+  --kv-font: var(--font-arabic), "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --kv-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* §2 Color tokens (exact). */
+  --kv-primary: #0E9F6E;
+  --kv-deep: #0A8A5F;
+  --kv-ink: #0a3a2a;
+  --kv-mint: #34C79C;
+  --kv-primary-tint: rgba(14,159,110,.12);
+  --kv-canvas: #EEF4F1;
+  --kv-canvas-2: #E3EDE8;
+  --kv-card: #FFFFFF;
+  --kv-card-soft: #F6FAF8;
+  --kv-text: #0F2A20;
+  --kv-muted: #5B6B64;
+  --kv-faint: #8A988F;
+  --kv-slate: #64748B;
+  --kv-border: #E7EFEB;
+  --kv-amber: #D8972B;
+  --kv-red: #C0492F;
+  --kv-delivery: #7C5CD0;
+  --kv-ready: #2B8FB5;
+
+  /* §3 Gradients. */
+  --kv-grad-brand: linear-gradient(150deg,#12b07a,#0a8a5f);
+  --kv-grad-brand-deep: linear-gradient(155deg,#0c9468,#0a7a55 55%,#0a5f44);
+  --kv-bg-console:
+    radial-gradient(1000px 620px at 14% -4%, rgba(14,159,110,.16), transparent 58%),
+    radial-gradient(900px 600px at 100% 0%, rgba(31,181,133,.12), transparent 60%),
+    linear-gradient(160deg,#eef4f1,#e3ede8);
+  --kv-bg-login:
+    radial-gradient(1100px 700px at 12% 4%, rgba(14,159,110,.22), transparent 56%),
+    radial-gradient(1000px 700px at 92% 96%, rgba(10,138,95,.18), transparent 58%),
+    radial-gradient(800px 600px at 80% 8%, rgba(31,181,133,.14), transparent 60%),
+    linear-gradient(160deg,#eef5f1,#dfeae5);
+
+  /* §4 Radius. */
+  --kv-r-lg: 20px;
+  --kv-r-lg-xl: 24px;
+  --kv-r-md: 14px;
+  --kv-r-md-sm: 13px;
+  --kv-r-md-lg: 16px;
+  --kv-r-pill: 99px;
+
+  /* §5 Shadow. */
+  --kv-shadow-card: 0 22px 50px -38px rgba(16,60,44,.36);
+  --kv-shadow-panel: 0 16px 40px -34px rgba(16,60,44,.34);
+  --kv-shadow-login: 0 60px 130px -50px rgba(13,52,38,.5), 0 10px 30px -18px rgba(13,52,38,.3);
+  --kv-shadow-btn: 0 18px 32px -16px rgba(14,159,110,.7);
+  --kv-shadow-btn-sm: 0 14px 26px -16px rgba(14,159,110,.7);
+  --kv-shadow-frame: 0 50px 120px -50px rgba(13,52,38,.55), 0 8px 24px -16px rgba(13,52,38,.3);
+}
+
+/* §1/§9 Console shell base — opt-in wrapper so pre-Kivo pages are untouched.
+   Apply to a console page's root (or the future <ConsoleLayout>). */
+.kv-console {
+  font-family: var(--kv-font);
+  color: var(--kv-text);
+  background: var(--kv-bg-console);
+  -webkit-font-smoothing: antialiased;
+}
+/* NEVER apply letter-spacing to Arabic text (breaks letter-joining). §1 */
+.kv-console,
+.kv-console * { letter-spacing: normal; }
+
+/* §7 Motion — live + urgent pulses (steady-state, infinite). */
+@keyframes kv-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(14,159,110,.42); }
+  50%      { box-shadow: 0 0 0 6px rgba(14,159,110,0); }
+}
+@keyframes kv-urgent {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(192,73,47,.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(192,73,47,0); }
+}
+.kv-pulse  { animation: kv-pulse 2s cubic-bezier(.2,.8,.2,1) infinite; }
+.kv-urgent { animation: kv-urgent 2s cubic-bezier(.2,.8,.2,1) infinite; }
+
+/* §8 "gathering" skeleton shimmer (no numbers). */
+@keyframes kv-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.kv-skeleton {
+  background: linear-gradient(90deg, #fbfdfc 25%, #f2f7f4 37%, #fbfdfc 63%);
+  background-size: 200% 100%;
+  animation: kv-shimmer 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kv-pulse, .kv-urgent, .kv-skeleton { animation: none !important; }
+}
+
+/* §10 Thin emerald scrollbar for console scroll regions. */
+.kv-scroll { scrollbar-width: thin; scrollbar-color: rgba(14,159,110,.3) transparent; }
+.kv-scroll::-webkit-scrollbar { width: 7px; height: 7px; }
+.kv-scroll::-webkit-scrollbar-thumb { background-color: rgba(14,159,110,.3); border-radius: 99px; }
+.kv-scroll::-webkit-scrollbar-track { background: transparent; }
