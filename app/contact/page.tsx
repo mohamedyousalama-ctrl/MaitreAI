@@ -8,8 +8,8 @@ import Link from "next/link";
 import { SiteFooter } from "@/components/SiteFooter";
 
 export const metadata: Metadata = {
-  title: "اتصل بنا — MaitreAI",
-  description: "تواصل مع فريق MaitreAI وبيانات الشركة.",
+  title: "اتصل بنا — Kivo",
+  description: "تواصل مع فريق Kivo وبيانات الشركة.",
 };
 
 export default function ContactPage() {
@@ -36,11 +36,11 @@ export default function ContactPage() {
           <h2 dir="rtl" className="text-sm font-semibold text-slate-700">بيانات الشركة — Company Details</h2>
           <div className="mt-3 space-y-2 text-sm leading-relaxed text-slate-600">
             <p dir="rtl">
-              MaitreAI هو منتج من شركة سيتي بيكر (ش.ذ.م.م) — سجل تجاري رقم ٢١٦٥٦٥ — ١٤٩ شارع النصر،
+              Kivo هو منتج من شركة سيتي بيكر (ش.ذ.م.م) — سجل تجاري رقم ٢١٦٥٦٥ — ١٤٩ شارع النصر،
               المعادي، القاهرة، مصر
             </p>
             <p dir="ltr">
-              MaitreAI is a product of City Baker LLC — Commercial Register No. 216565 — 149 El-Nasr
+              Kivo is a product of City Baker LLC — Commercial Register No. 216565 — 149 El-Nasr
               St., Maadi, Cairo, Egypt
             </p>
           </div>

@@ -60,12 +60,15 @@ const CSS = `
 .lsc-collapse50{animation:lscCollapse50 ${TOTAL} linear infinite;overflow:hidden}
 .lsc-expand50{animation:lscExpand50 ${TOTAL} linear infinite;overflow:hidden}
 @media (prefers-reduced-motion: reduce){
-  .lsc-scene,.lsc-track,.lsc-cap,.lsc-type i,.lsc-out50,.lsc-in50,.lsc-collapse50,.lsc-expand50{animation:none!important}
-  .lsc-scene.a,.lsc-cap.a{opacity:1}
-  .lsc-scene.b,.lsc-scene.c,.lsc-cap.b,.lsc-cap.c{display:none}
-  .lsc-track.a{transform:translateY(0)}
-  .lsc-out50{opacity:1}.lsc-in50{opacity:0}
-  .lsc-collapse50{max-height:46px;opacity:1}.lsc-expand50{max-height:0;opacity:0}
+  /* Keep the gentle 3-scene cross-fade (opacity rotation is low-motion, not
+     translation/parallax) so all three scenes still play and loop. Disable the
+     heavy motion only: the track pan, the typing bounce, and the recap's
+     slide/collapse — the recap shows its FINAL state (juice gone, brownie in,
+     total 130) without movement. */
+  .lsc-track,.lsc-type i,.lsc-out50,.lsc-in50,.lsc-collapse50,.lsc-expand50{animation:none!important}
+  .lsc-track.a,.lsc-track.b,.lsc-track.c{transform:translateY(0)}
+  .lsc-out50{opacity:0}.lsc-in50{opacity:1}
+  .lsc-collapse50{max-height:0;opacity:0}.lsc-expand50{max-height:46px;opacity:1}
 }
 `;
 

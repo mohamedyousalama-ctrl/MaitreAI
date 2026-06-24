@@ -4,6 +4,22 @@ const nextConfig = {
   // react-leaflet + @react-leaflet/core are ESM-only; transpile them so the
   // storefront map (client-only, dynamically imported) bundles cleanly.
   transpilePackages: ["react-leaflet", "@react-leaflet/core"],
+  // Kivo migration: the leftover (main) terracotta pages must never be reached by
+  // normal navigation (they render the old shell with a sidebar that links into
+  // the Kivo console). Redirect each to its Kivo equivalent, else to the Kivo
+  // Home (/dashboard). /dashboard itself is now the Kivo Home in (console).
+  async redirects() {
+    return [
+      { source: "/deliveries", destination: "/orders", permanent: false },
+      { source: "/cod", destination: "/settings", permanent: false },
+      { source: "/menu", destination: "/dashboard", permanent: false },
+      { source: "/maitre", destination: "/dashboard", permanent: false },
+      { source: "/promotions", destination: "/dashboard", permanent: false },
+      { source: "/branches", destination: "/dashboard", permanent: false },
+      { source: "/ai-review", destination: "/dashboard", permanent: false },
+      { source: "/restaurant-brain", destination: "/dashboard", permanent: false },
+    ];
+  },
   experimental: {
     // @resvg/resvg-js ships a native .node addon webpack can't bundle — require
     // it at runtime instead (the receipt/kitchen-ticket PNG renderer).
