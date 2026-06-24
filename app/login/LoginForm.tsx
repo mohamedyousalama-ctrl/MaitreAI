@@ -23,6 +23,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { useRiseIn } from "@/components/kivo";
+import { KivoMark } from "@/components/brand/KivoLogo";
 import { LoginScenes } from "./LoginScenes";
 
 type Step = "request" | "verify";
@@ -199,12 +200,8 @@ export function LoginForm() {
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,.3)",
               }}
             >
-              <svg width="27" height="22" viewBox="0 0 80 64" fill="none">
-                <path d="M12 34 L27 50 L52 14" stroke="#fff" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M50 12 H68" stroke="#fff" strokeWidth="7" strokeLinecap="round" />
-                <path d="M55 21 H70" stroke="#fff" strokeWidth="7" strokeLinecap="round" opacity=".6" />
-                <path d="M60 30 H71" stroke="#fff" strokeWidth="7" strokeLinecap="round" opacity=".35" />
-              </svg>
+              {/* animated mark: draws once on load, then rests as the static mark */}
+              <KivoMark size={28} tone="white" animated title="Kivo" />
             </div>
             <div>
               <div style={{ fontSize: 26, fontWeight: 800 }}>Kivo</div>

@@ -38,6 +38,9 @@ export function KivoMark({
   weight = 13,
   sheen = true,
   title = "Kivo",
+  animated = false,
+  drawDurationMs = 900,
+  drawDelayMs = 120,
   className,
   style,
 }: {
@@ -50,6 +53,11 @@ export function KivoMark({
   weight?: number;
   sheen?: boolean;
   title?: string;
+  /** when true, the check-arrow draws itself once (stroke-dash), then rests as
+   *  the static mark. CSS-only; prefers-reduced-motion shows the final mark. */
+  animated?: boolean;
+  drawDurationMs?: number;
+  drawDelayMs?: number;
   className?: string;
   style?: React.CSSProperties;
 }) {
@@ -60,6 +68,19 @@ export function KivoMark({
   const t = TONES[tone];
   const sheenWeight = Math.max(2, weight * 0.32);
   const specR = Math.max(2, weight * 0.5);
+
+  // animated variant: the three stroke paths draw via stroke-dashoffset 100→0,
+  // the specular hot-spot fades in at the end. Scoped + unique per instance.
+  const drawCls = `kvd-${uid}`;
+  const specCls = `kvsp-${uid}`;
+  const animCss = animated
+    ? `@keyframes kvDraw-${uid}{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}`
+      + `@keyframes kvSpec-${uid}{0%,55%{opacity:0}100%{opacity:1}}`
+      + `.${drawCls}{stroke-dasharray:100;stroke-dashoffset:0;animation:kvDraw-${uid} ${drawDurationMs}ms cubic-bezier(.65,0,.3,1) ${drawDelayMs}ms both}`
+      + `.${specCls}{animation:kvSpec-${uid} ${drawDurationMs}ms ease ${drawDelayMs}ms both}`
+      + `@media (prefers-reduced-motion:reduce){.${drawCls}{animation:none!important;stroke-dashoffset:0}.${specCls}{animation:none!important;opacity:1}}`
+    : null;
+  const strokeAnim = animated ? { className: drawCls, pathLength: 100 } : {};
 
   return (
     <svg
@@ -74,6 +95,7 @@ export function KivoMark({
       aria-label={title || undefined}
       aria-hidden={title ? undefined : true}
     >
+      {animCss && <style dangerouslySetInnerHTML={{ __html: animCss }} />}
       <defs>
         <linearGradient id={bodyId} x1="0.1" y1="0.96" x2="0.86" y2="0.04">
           <stop offset="0" stopColor={t.stops[0]} />
@@ -92,14 +114,14 @@ export function KivoMark({
         </radialGradient>
       </defs>
       {/* under-rim: gives the stroke physical thickness */}
-      <path d={CHECK_PATH} stroke={t.rim} strokeWidth={weight} strokeLinecap="round" strokeLinejoin="round" transform="translate(0 1.1)" />
+      <path d={CHECK_PATH} stroke={t.rim} strokeWidth={weight} strokeLinecap="round" strokeLinejoin="round" transform="translate(0 1.1)" {...strokeAnim} />
       {/* body */}
-      <path d={CHECK_PATH} stroke={`url(#${bodyId})`} strokeWidth={weight} strokeLinecap="round" strokeLinejoin="round" />
+      <path d={CHECK_PATH} stroke={`url(#${bodyId})`} strokeWidth={weight} strokeLinecap="round" strokeLinejoin="round" {...strokeAnim} />
       {/* top bevel sheen + specular hot-spot */}
       {sheen && (
-        <path d={CHECK_PATH} stroke={`url(#${sheenId})`} strokeWidth={sheenWeight} strokeLinecap="round" strokeLinejoin="round" transform="translate(0 -2.6)" style={{ mixBlendMode: "screen" }} />
+        <path d={CHECK_PATH} stroke={`url(#${sheenId})`} strokeWidth={sheenWeight} strokeLinecap="round" strokeLinejoin="round" transform="translate(0 -2.6)" style={{ mixBlendMode: "screen" }} {...strokeAnim} />
       )}
-      {sheen && <circle cx="84" cy="22" r={specR} fill={`url(#${specId})`} style={{ mixBlendMode: "screen" }} />}
+      {sheen && <circle cx="84" cy="22" r={specR} fill={`url(#${specId})`} className={animated ? specCls : undefined} style={{ mixBlendMode: "screen" }} />}
     </svg>
   );
 }
