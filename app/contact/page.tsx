@@ -25,11 +25,11 @@ export default function ContactPage() {
           للاستفسارات والدعم والمبيعات، يسعدنا تواصلك معنا عبر البريد الإلكتروني:
         </p>
         <a
-          href="mailto:info@maitre.chat"
+          href="mailto:info@getkivo.io"
           className="mt-3 inline-block text-lg font-semibold text-emerald-700 transition hover:text-emerald-800"
           dir="ltr"
         >
-          info@maitre.chat
+          info@getkivo.io
         </a>
 
         <section className="mt-10 rounded-2xl border border-slate-200 bg-slate-50 p-6">

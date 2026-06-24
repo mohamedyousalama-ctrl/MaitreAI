@@ -26,7 +26,7 @@
 // predate the flags. owner/status remain as legacy fallbacks.
 // ============================================================================
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Search, ArrowLeft, Send, AlertTriangle, Lock, Sparkles, UserPlus, CornerUpLeft } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
@@ -119,8 +119,25 @@ export default function ConversationsPage() {
   const selectedId = localSel ?? storeSelected;
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
+  // deeplink: /conversations?c=<conversationId> pre-opens that thread (from
+  // Orders / Customers). Applied once; `selected` searches the full list so a
+  // filtered-out conversation still opens.
+  const deepRef = useRef(false);
+  const deepConv = useRef<string | null>(null);
   useEffect(() => {
-    if (!selected && list.length) setLocalSel(list[0].id);
+    if (deepRef.current || !hydrated) return;
+    const id = new URLSearchParams(window.location.search).get("c");
+    if (id && conversations.some((c) => c.id === id)) {
+      deepConv.current = id;
+      setLocalSel(id);
+      selectConversation(id);
+    }
+    deepRef.current = true;
+  }, [hydrated, conversations, selectConversation]);
+
+  useEffect(() => {
+    // don't auto-pick the first thread while a deeplink owns the selection.
+    if (!selected && !deepConv.current && list.length) setLocalSel(list[0].id);
   }, [list, selected]);
 
   const open = (id: string) => { setLocalSel(id); selectConversation(id); };

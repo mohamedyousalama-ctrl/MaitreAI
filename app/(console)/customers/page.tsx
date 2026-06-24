@@ -14,7 +14,7 @@
 // «ده تلميح تشغيلي مش ضمان سلامة …». Never presented as "safe".
 // ============================================================================
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { MessageCircle, AlertTriangle } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
@@ -130,9 +130,30 @@ export default function CustomersPage() {
     });
   }, [customers, filter, query]);
 
+  // deeplink: /customers?c=<customerId> pre-selects that customer (from Orders).
+  // Matched on the real customerId; applied once. `selected` searches the full
+  // set so a filtered-out customer still opens.
+  const deepKey = useRef<string | null>(null);
+  const deepRef = useRef(false);
   useEffect(() => {
-    if (!selKey && list.length) setSelKey(list[0].key);
-    if (selKey && !list.some((c) => c.key === selKey)) setSelKey(list[0]?.key ?? null);
+    if (deepRef.current || !hydrated) return;
+    const id = new URLSearchParams(window.location.search).get("c");
+    if (id) {
+      const match = customers.find((c) => c.customerId === id || c.key === id);
+      if (match) {
+        deepKey.current = match.key;
+        setSelKey(match.key);
+      }
+    }
+    deepRef.current = true;
+  }, [hydrated, customers]);
+
+  useEffect(() => {
+    // don't auto-pick the first customer while a deeplink owns the selection.
+    if (!selKey && !deepKey.current && list.length) setSelKey(list[0].key);
+    if (selKey && !list.some((c) => c.key === selKey) && selKey !== deepKey.current) {
+      setSelKey(list[0]?.key ?? null);
+    }
   }, [list, selKey]);
 
   const selected = customers.find((c) => c.key === selKey) ?? null;

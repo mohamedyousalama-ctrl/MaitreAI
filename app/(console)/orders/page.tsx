@@ -17,7 +17,7 @@
 // notes re: the earlier "no preparing/ready" guidance, which the repo contradicts.
 // ============================================================================
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Printer, MessageCircle, X } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
@@ -118,6 +118,9 @@ export default function OrdersPage() {
 
   const [tab, setTab] = useState<"all" | "active" | "late">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // deeplink: /orders?o=<id> pre-selects that order (from Conversations/Customers)
+  const deepRef = useRef(false);
+  const deepId = useRef<string | null>(null);
 
   const head = useRiseIn(0);
   const pipe = useRiseIn(1);
@@ -165,13 +168,31 @@ export default function OrdersPage() {
     });
   }, [scoped, tab, query]);
 
-  // auto-select first row so the drawer always has context
+  // deeplink: apply ?o=<id> once (overrides the auto-first selection below).
   useEffect(() => {
-    if (!selectedId && list.length) setSelectedId(list[0].id);
-    if (selectedId && !list.some((o) => o.id === selectedId)) setSelectedId(list[0]?.id ?? null);
+    if (deepRef.current || !hydrated) return;
+    const id = new URLSearchParams(window.location.search).get("o");
+    if (id && orders.some((o) => o.id === id)) {
+      deepId.current = id;
+      setSelectedId(id);
+    }
+    deepRef.current = true;
+  }, [hydrated, orders]);
+
+  // auto-select first row so the drawer always has context (but never clobber a
+  // valid deeplinked order that's merely filtered out of the current view).
+  useEffect(() => {
+    // don't auto-pick the first row while a deeplink owns the selection (else the
+    // race between this and the deeplink effect clobbers ?o=).
+    if (!selectedId && !deepId.current && list.length) setSelectedId(list[0].id);
+    if (selectedId && !list.some((o) => o.id === selectedId) && selectedId !== deepId.current) {
+      setSelectedId(list[0]?.id ?? null);
+    }
   }, [list, selectedId]);
 
-  const selected = scoped.find((o) => o.id === selectedId) ?? null;
+  // fall back to the full order set so a deeplinked order opens in the drawer
+  // even when it's outside the current date scope / tab filter.
+  const selected = scoped.find((o) => o.id === selectedId) ?? orders.find((o) => o.id === selectedId) ?? null;
   const advance = (o: LocalOrder) => {
     const n = nextStatus(o);
     if (!n) return;

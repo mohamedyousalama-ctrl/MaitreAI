@@ -19,8 +19,8 @@ export function SiteFooter() {
           <Link href="/contact" className="transition hover:text-slate-900">
             اتصل بنا
           </Link>
-          <a href="mailto:info@maitre.chat" className="transition hover:text-slate-900" dir="ltr">
-            info@maitre.chat
+          <a href="mailto:info@getkivo.io" className="transition hover:text-slate-900" dir="ltr">
+            info@getkivo.io
           </a>
         </nav>
 

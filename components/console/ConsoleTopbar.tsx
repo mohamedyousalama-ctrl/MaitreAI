@@ -4,6 +4,7 @@
 // page's loaded data via the console-ui store), a notifications bell that shows a
 // red dot ONLY on a live intervention signal, and the real signed-in user avatar.
 
+import Link from "next/link";
 import { Search, Bell } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
 import { countEscalations } from "@/lib/escalation";
@@ -56,13 +57,14 @@ export function ConsoleTopbar() {
           {dateScope === "today" ? "النهارده" : "كل الفترات"}
         </button>
 
-        {/* Notifications bell — red dot only on a live intervention signal. */}
-        <div style={{ position: "relative", width: 36, height: 36, borderRadius: 11, border: "1px solid var(--kv-border)", background: "var(--kv-card)", display: "grid", placeItems: "center" }}>
+        {/* Notifications bell → the intervention queue (Conversations). Red dot
+            only on a live intervention signal. */}
+        <Link href="/conversations" aria-label="التنبيهات" title="التنبيهات" style={{ position: "relative", width: 36, height: 36, borderRadius: 11, border: "1px solid var(--kv-border)", background: "var(--kv-card)", display: "grid", placeItems: "center", textDecoration: "none" }}>
           <Bell size={17} color="var(--kv-muted)" />
           {escalations > 0 && (
             <span style={{ position: "absolute", top: 8, insetInlineEnd: 8, width: 7, height: 7, borderRadius: "50%", background: "var(--kv-red)" }} />
           )}
-        </div>
+        </Link>
 
         {/* Signed-in user avatar → profile menu + logout */}
         <ProfileMenu />
