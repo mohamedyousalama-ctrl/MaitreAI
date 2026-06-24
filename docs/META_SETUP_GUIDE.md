@@ -18,7 +18,7 @@ Go through this checklist before touching the Meta dashboard. Starting without t
 - [ ] **A personal Facebook account** that has admin access to (or will create) a Meta Business Portfolio.
 - [ ] **A Meta Business Portfolio** with Business Verification completed (or in progress). This is slow — *start it first*. See Step 3a below.
 - [ ] **A privacy-policy URL** that is publicly accessible. Meta will reject the app without one. A simple hosted page listing how we handle customer data is enough.
-- [ ] **Our production domain** — the `https://` URL where the app is deployed (e.g. `https://maitreai.vercel.app`). You need this to whitelist it in Meta.
+- [ ] **Our production domain** — the `https://` URL where the app is deployed (`https://getkivo.io`). You need this to whitelist it in Meta.
 - [ ] **Access to our Vercel project** — specifically the *Environment Variables* section in Vercel's project settings, so you can paste secrets. You need at least *Editor* access.
 - [ ] **Ability to record two short screen videos** (no audio needed; your screen only). These are submitted during App Review. See Step 3h.
 
@@ -100,9 +100,9 @@ This step connects Meta to our code. Without it, the WhatsApp onboarding step fa
 5. Give it a name (e.g. "MaitreAI Production Signup") and save it.
 6. You will see a **Configuration ID** (a number). You will need to pass this ID to whoever implements the frontend Embedded Signup button — it tells the Meta JavaScript SDK which flow to run.
 7. Still in WhatsApp → Configuration, find the **Allowed Domains** or **JavaScript SDK** section:
-   - Add our production domain to **Domains allowed to use JavaScript SDK** (e.g. `https://maitreai.vercel.app`).
+   - Add our production domain to **Domains allowed to use JavaScript SDK**: `https://getkivo.io`
 8. Go to **Facebook Login** in the left sidebar (under Products) → **Settings**:
-   - Under **Valid OAuth Redirect URIs**, add our production domain (e.g. `https://maitreai.vercel.app`).
+   - Under **Valid OAuth Redirect URIs**, add: `https://getkivo.io`
    - Click **Save Changes**.
 
 > **What the Configuration ID is for:** when a restaurant owner clicks "Connect WhatsApp" in our app, the Meta JavaScript SDK pops up a modal using this configuration. After the owner completes the flow, Meta sends a short-lived `code` back to our frontend. Our backend (the embedded-signup route) then exchanges that `code` for a long-lived token. The Configuration ID tells Meta which flow/permissions to show the owner.
@@ -115,11 +115,7 @@ This tells Meta where to send inbound WhatsApp messages. Every message a custome
 
 **Our webhook URL is:**
 ```
-https://<YOUR_PRODUCTION_DOMAIN>/api/whatsapp/webhook
-```
-Replace `<YOUR_PRODUCTION_DOMAIN>` with your actual Vercel domain, e.g.:
-```
-https://maitreai.vercel.app/api/whatsapp/webhook
+https://getkivo.io/api/whatsapp/webhook
 ```
 
 **The verify token** is an arbitrary string *you choose*. It proves to Meta that the webhook belongs to us (Meta will call the URL with this token and expect our server to echo it back). Choose any non-guessable string (a random UUID works well). **Write it down** — you need to put the exact same string in two places:
