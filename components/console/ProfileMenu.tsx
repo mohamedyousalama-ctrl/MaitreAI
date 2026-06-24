@@ -3,12 +3,14 @@
 // ============================================================================
 // Kivo console — profile menu + logout. The topbar avatar becomes a button that
 // opens a small dropdown showing the signed-in user's name/email and a
-// «تسجيل الخروج» item. Logout is a native form POST to the server route
-// /auth/signout, which clears the auth cookies server-side and 303-redirects to
-// /login (robust hard navigation — see that route for why the old client-side
-// signOut + router.push was unreliable). Kivo tokens, RTL, closes on
-// outside-click / Escape. In demo mode (no Supabase session) the menu still
-// opens but shows an honest "no session" note instead of a dead logout.
+// «تسجيل الخروج» item. Logout is a real form POST to the server route
+// /auth/signout (clears the auth cookies server-side, 303 → /login), submitted
+// imperatively so nothing can swallow it. It is ALWAYS rendered — never gated
+// behind the browser Supabase SDK: in production that client can be null (env
+// not inlined client-side) even for a signed-in user, and the old gate then
+// showed a dead "no session" note (text «…لتسجيل الخروج») that did nothing on
+// click. The server route signs out correctly with or without the client SDK.
+// The browser SDK is used ONLY to show the user's name/email when available.
 // ============================================================================
 
 import { useEffect, useRef, useState } from "react";
@@ -26,6 +28,7 @@ const MENU_CSS = `
 export function ProfileMenu() {
   const supabase = createClient();
   const ref = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -64,6 +67,20 @@ export function ProfileMenu() {
   }, [open]);
 
   const displayName = user.name || (user.email ? user.email.split("@")[0] : "المستخدم");
+
+  // Drive the POST imperatively: nothing (an ancestor's preventDefault, React
+  // disabling the button mid-submit, etc.) can swallow it. The server route does
+  // the real sign-out + 303 → /login, so this works even when the browser
+  // Supabase SDK is unconfigured client-side (the bug: it returned null in prod,
+  // so the menu used to show a dead "no session" note instead of a logout).
+  function handleLogout(e: React.MouseEvent) {
+    e.preventDefault();
+    if (loading) return;
+    setLoading(true);
+    const f = formRef.current;
+    if (f?.requestSubmit) f.requestSubmit();
+    else f?.submit();
+  }
 
   return (
     <div ref={ref} style={{ position: "relative", flex: "none" }}>
@@ -126,41 +143,37 @@ export function ProfileMenu() {
             </div>
           </div>
 
-          {/* logout (or honest demo-mode note). A native form POST to the
-              server sign-out route → it clears the auth cookies and 303-redirects
-              to /login (hard navigation). No soft-nav race, no way back in. */}
-          {supabase ? (
-            <form action="/auth/signout" method="post" onSubmit={() => setLoading(true)} style={{ margin: 0 }}>
-              <button
-                type="submit"
-                role="menuitem"
-                className="kv-prof-out"
-                disabled={loading}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "12px 14px",
-                  border: 0,
-                  background: "transparent",
-                  cursor: loading ? "default" : "pointer",
-                  fontFamily: "inherit",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: "var(--kv-red)",
-                  textAlign: "start",
-                }}
-              >
-                {loading ? <Loader2 size={16} className="kv-prof-spin" /> : <LogOut size={16} />}
-                {loading ? "جاري الخروج…" : "تسجيل الخروج"}
-              </button>
-            </form>
-          ) : (
-            <div style={{ padding: "12px 14px", fontSize: 11.5, fontWeight: 600, color: "var(--kv-faint)", lineHeight: 1.5 }}>
-              وضع تجريبي — مفيش جلسة لتسجيل الخروج.
-            </div>
-          )}
+          {/* logout — ALWAYS rendered (never gated behind the browser SDK). It's a
+              real form POST to the server route /auth/signout, which clears the
+              auth cookies server-side and 303-redirects to /login. Submitted
+              imperatively via handleLogout so it can't be swallowed. */}
+          <form ref={formRef} action="/auth/signout" method="post" style={{ margin: 0 }}>
+            <button
+              type="submit"
+              role="menuitem"
+              className="kv-prof-out"
+              onClick={handleLogout}
+              disabled={loading}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "12px 14px",
+                border: 0,
+                background: "transparent",
+                cursor: loading ? "default" : "pointer",
+                fontFamily: "inherit",
+                fontSize: 13,
+                fontWeight: 700,
+                color: "var(--kv-red)",
+                textAlign: "start",
+              }}
+            >
+              {loading ? <Loader2 size={16} className="kv-prof-spin" /> : <LogOut size={16} />}
+              {loading ? "جاري الخروج…" : "تسجيل الخروج"}
+            </button>
+          </form>
         </div>
       )}
     </div>
