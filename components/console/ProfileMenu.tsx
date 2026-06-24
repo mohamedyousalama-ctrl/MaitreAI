@@ -1,37 +1,34 @@
 "use client";
 
 // ============================================================================
-// Kivo console — profile menu + logout. The topbar avatar becomes a button that
-// opens a small dropdown showing the signed-in user's name/email and a
-// «تسجيل الخروج» item. Logout is a real form POST to the server route
-// /auth/signout (clears the auth cookies server-side, 303 → /login), submitted
-// imperatively so nothing can swallow it. It is ALWAYS rendered — never gated
-// behind the browser Supabase SDK: in production that client can be null (env
-// not inlined client-side) even for a signed-in user, and the old gate then
-// showed a dead "no session" note (text «…لتسجيل الخروج») that did nothing on
-// click. The server route signs out correctly with or without the client SDK.
-// The browser SDK is used ONLY to show the user's name/email when available.
+// Kivo console — profile menu + logout. The topbar avatar opens a small dropdown
+// showing the signed-in user's name/email and a «تسجيل الخروج» item.
+//
+// Logout is a PLAIN anchor: <a href="/auth/signout">. Earlier attempts (browser
+// signOut + router.push, then a JS form submit) failed in production — the click
+// never reached the route (no request fired). A native <a> navigation can't be
+// swallowed by preventDefault, a disabled-on-submit race, the dropdown's
+// close handler, hydration, or a null browser SDK — it's just a navigation,
+// which we proved works by hitting /auth/signout directly. The server route
+// (GET) clears the session cookies and 303 → /login, with or without the
+// client SDK. The browser SDK is used ONLY to show the name/email when present.
 // ============================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { LogOut, Loader2 } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const MENU_CSS = `
-@keyframes kvProfSpin{to{transform:rotate(360deg)}}
-.kv-prof-spin{animation:kvProfSpin .8s linear infinite}
 .kv-prof-out{transition:background .12s}
-.kv-prof-out:hover:not(:disabled){background:rgba(214,45,33,.08)}
+.kv-prof-out:hover{background:rgba(214,45,33,.08)}
 .kv-prof-avatar{transition:box-shadow .12s}
 `;
 
 export function ProfileMenu() {
   const supabase = createClient();
   const ref = useRef<HTMLDivElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
 
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<{ name: string; email: string; initial: string }>({ name: "", email: "", initial: "؟" });
 
   useEffect(() => {
@@ -67,20 +64,6 @@ export function ProfileMenu() {
   }, [open]);
 
   const displayName = user.name || (user.email ? user.email.split("@")[0] : "المستخدم");
-
-  // Drive the POST imperatively: nothing (an ancestor's preventDefault, React
-  // disabling the button mid-submit, etc.) can swallow it. The server route does
-  // the real sign-out + 303 → /login, so this works even when the browser
-  // Supabase SDK is unconfigured client-side (the bug: it returned null in prod,
-  // so the menu used to show a dead "no session" note instead of a logout).
-  function handleLogout(e: React.MouseEvent) {
-    e.preventDefault();
-    if (loading) return;
-    setLoading(true);
-    const f = formRef.current;
-    if (f?.requestSubmit) f.requestSubmit();
-    else f?.submit();
-  }
 
   return (
     <div ref={ref} style={{ position: "relative", flex: "none" }}>
@@ -143,37 +126,33 @@ export function ProfileMenu() {
             </div>
           </div>
 
-          {/* logout — ALWAYS rendered (never gated behind the browser SDK). It's a
-              real form POST to the server route /auth/signout, which clears the
-              auth cookies server-side and 303-redirects to /login. Submitted
-              imperatively via handleLogout so it can't be swallowed. */}
-          <form ref={formRef} action="/auth/signout" method="post" style={{ margin: 0 }}>
-            <button
-              type="submit"
-              role="menuitem"
-              className="kv-prof-out"
-              onClick={handleLogout}
-              disabled={loading}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "12px 14px",
-                border: 0,
-                background: "transparent",
-                cursor: loading ? "default" : "pointer",
-                fontFamily: "inherit",
-                fontSize: 13,
-                fontWeight: 700,
-                color: "var(--kv-red)",
-                textAlign: "start",
-              }}
-            >
-              {loading ? <Loader2 size={16} className="kv-prof-spin" /> : <LogOut size={16} />}
-              {loading ? "جاري الخروج…" : "تسجيل الخروج"}
-            </button>
-          </form>
+          {/* logout — a PLAIN anchor straight to the server sign-out route.
+              Deliberately NOT a JS form/button: a native <a> navigation can't be
+              swallowed by preventDefault, a disabled-on-submit race, the
+              dropdown's close handler, hydration, or a null browser SDK. The
+              route (GET) clears the session cookies and 303 → /login — a path
+              we've proven works by hitting /auth/signout directly. Plain <a>
+              (not next/link) so it's a real browser navigation to the handler. */}
+          <a
+            href="/auth/signout"
+            role="menuitem"
+            className="kv-prof-out"
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "12px 14px",
+              textDecoration: "none",
+              fontFamily: "inherit",
+              fontSize: 13,
+              fontWeight: 700,
+              color: "var(--kv-red)",
+            }}
+          >
+            <LogOut size={16} />
+            تسجيل الخروج
+          </a>
         </div>
       )}
     </div>
