@@ -4,13 +4,12 @@
 // page's loaded data via the console-ui store), a notifications bell that shows a
 // red dot ONLY on a live intervention signal, and the real signed-in user avatar.
 
-import { useEffect, useState } from "react";
 import { Search, Bell } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
 import { countEscalations } from "@/lib/escalation";
 import { useHasHydrated } from "@/lib/store";
-import { createClient } from "@/lib/supabase/client";
 import { useConsoleUi } from "./console-ui-store";
+import { ProfileMenu } from "./ProfileMenu";
 
 export function ConsoleTopbar() {
   const hydrated = useHasHydrated();
@@ -21,18 +20,6 @@ export function ConsoleTopbar() {
   const setQuery = useConsoleUi((s) => s.setQuery);
   const dateScope = useConsoleUi((s) => s.dateScope);
   const setDateScope = useConsoleUi((s) => s.setDateScope);
-
-  const [initial, setInitial] = useState("؟");
-  useEffect(() => {
-    const sb = createClient();
-    if (!sb) return;
-    sb.auth.getUser().then(({ data }) => {
-      const email = data.user?.email ?? "";
-      const name = (data.user?.user_metadata?.name as string | undefined) ?? email;
-      const ch = name.trim().charAt(0).toUpperCase();
-      if (ch) setInitial(ch);
-    }).catch(() => {});
-  }, []);
 
   return (
     <header
@@ -77,10 +64,8 @@ export function ConsoleTopbar() {
           )}
         </div>
 
-        {/* Signed-in user avatar */}
-        <span style={{ width: 36, height: 36, borderRadius: 11, background: "var(--kv-grad-brand)", color: "#fff", fontSize: 14, fontWeight: 800, display: "grid", placeItems: "center" }}>
-          {initial}
-        </span>
+        {/* Signed-in user avatar → profile menu + logout */}
+        <ProfileMenu />
       </div>
     </header>
   );
