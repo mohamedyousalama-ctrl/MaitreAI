@@ -2,7 +2,7 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-24 (V1 operator console + onboarding full-stack shipped; getkivo.io live).
+> Last updated: 2026-06-24 (Kivo brand + landing + login scenes shipped; cleanup pass merged; getkivo.io live; Sweet Shop demo tenant set up).
 
 ## North Star
 
@@ -145,6 +145,13 @@ V1 = a sellable, plug-and-play product. A new restaurant can self-onboard — co
 - **Operator console — 7 pages (#123/#125/#126/#127):** Login · Home/Dashboard · Orders · Conversations · Insights · Customers · Settings — all wired to real per-tenant data, truth-states enforced (live/gathering/coming-soon), no invented metrics. Kivo brand applied throughout (teal/emerald, KivoLogo component, hero animation on login page). getkivo.io is the live production domain.
 - **Self-serve onboarding — full backend stack:** WhatsApp Embedded Signup (per-tenant WABA + token stored encrypted); menu ingestion + draft/publish RPC; config APIs (hours, delivery zones, persona/tone); go-live gate (readiness checklist — WA ✓ / menu ✓ / hours ✓ / zones advisory — enforced server-side before flipping `active=true, agent_mode=live`); E2E proof script covering all stages + tenant isolation. `docs/META_SETUP_GUIDE.md` written for partner handoff.
 - **Settings backend gaps:** WhatsApp GET now returns `lastInboundAt`/`lastOutboundAt` from `messages` table; `escalation_timeout_minutes` column (migration 0037, default 10 min) + GET/PUT route; tier read-only route (`/api/settings/plan`) for plan display on Settings page.
+- **Kivo brand fully implemented:** `KivoLogo`/`KivoWordmark` components; self-drawing animated check-arrow mark; first-load site intro reveal.
+- **Kivo landing page live:** hero animation, value/proof sections, truth-system disclaimer.
+- **Login page — 3 cycling Karim sales-scene animations:** objection handling · order change mid-flow · indecisive customer — showcases Karim capabilities as marketing content on the pre-auth page.
+- **getkivo.io is LIVE as the production domain:** Cloudflare DNS → Vercel, all on one project, no split-project complexity.
+- **Comprehensive cleanup pass merged (#131):** Kivo Home re-landed at `/dashboard` inside `(console)` (old terracotta dashboard deleted; `/dashboard` is now the correct post-login landing for both OTP and magic-link flows); all legacy `(main)` pages 307-redirect to Kivo equivalents (`/deliveries→/orders`, `/cod→/settings`, `/menu /maitre /promotions /branches /ai-review /restaurant-brain→/dashboard`); MaitreAI→Kivo user-facing rebrand (tab title, contact, footer, checkout, tracking, old-shell topbar); `/settings/messaging-test` gated dev-only; FLAG-2 login CTA fixed (`/settings→/onboarding`).
+- **Sweet Shop demo tenant set up:** renamed from بلبن → "Sweet Shop / سويت شوب" (display name only; restaurant_id, phone config, menu, and all functional data unchanged). Partner-access SQL procedure documented (paste partner email → links user_id to Sweet Shop as manager or operation role).
+- **Meta setup guide updated:** `docs/META_SETUP_GUIDE.md` updated with real production domain (`https://getkivo.io`), correct webhook URL (`https://getkivo.io/api/whatsapp/webhook`), JS SDK allowed domain, OAuth redirect URI, and missing `WHATSAPP_APP_ID` env var.
 
 ---
 
@@ -162,17 +169,19 @@ handoff de-dup); CI eval gate on agent-path PRs.
 > ⚠️ **#1 blocker to live WhatsApp:** Meta Tech Provider setup (env vars in Vercel + App Review for `whatsapp_business_management`). See `docs/META_SETUP_GUIDE.md` for the full step-by-step guide. Without this, Embedded Signup errors for every new client.
 
 ### In progress
-- [ ] **Login-page Karim conversation animation** — showcase real Karim capabilities (smooth order / allergy safety / warmth) as a marketing animation on the login page.
+- [ ] **Console profile menu + logout** — the topbar avatar currently has no logout button; being added now.
 
 ### Next (V1 completion)
-- [ ] **Sweet Shop demo tenant + partner-login procedure** — a pre-seeded demo restaurant that a prospect can log in to and see Karim working end-to-end without connecting their own WhatsApp number. Define the partner-login flow (credentials, reset procedure).
+- [ ] **Sweet Shop demo-data seed** — date-spread orders + more conversations so the console looks alive for partner demos. Tenant and partner-access SQL procedure are done; data volume is thin. **Pending review** before seeding.
 - [ ] **One real end-to-end onboarding test** — a real client or internal tester goes through the full self-serve flow on getkivo.io: Embedded Signup with their own WhatsApp number → menu ingestion → go-live gate → Karim replies to a real WhatsApp message. Proves the product works outside the lab.
+- [ ] **Meta Tech Provider setup (env vars + App Review)** — #1 blocker to live WhatsApp for new clients. Set `WHATSAPP_APP_ID` + submit for `whatsapp_business_management` scope. See `docs/META_SETUP_GUIDE.md` for the full step-by-step guide. Without this, Embedded Signup errors for every new client.
 
 ### Deferred / logged (not forgotten)
 - [ ] **Wire `escalation_timeout_minutes` to stuck-detection engine** — the column exists (migration 0037) and the Settings API reads/writes it, but `checkAndNotifyStuck` in `lib/intelligence/stuck-detection.ts` still uses the hardcoded `STUCK_THRESHOLDS.humanNoResponseMinutes = 10`. Wiring requires changing the caller in `lib/messaging/respond-and-send.ts` (inbound spine) — flagged spine-risk, deferred. Route comment documents this explicitly.
 - [ ] **Public legal page for Meta verification** — a publicly accessible privacy-policy / terms-of-service URL is required for Meta App Review (Step 3c in META_SETUP_GUIDE.md). Needs a hosted page; currently blocking full App Review submission.
 - [ ] **Insights commission/margin formula** — the Insights page shows revenue data but the commission/margin calculation logic is not yet defined. Deferred until billing model is confirmed.
 - [ ] **Kivo billing model** — how clients pay us (per-seat, per-order, monthly flat). Define before V1.5 launch. Currently a placeholder in the Settings plan view.
+- [ ] **Once-per-session gate for site intro reveal** — the first-load Kivo mark reveal animation currently fires on every cold load; should fire only once per browser session (sessionStorage gate). Low-priority UX polish.
 
 ### Per-tenant integrity (must clear before selling)
 - [ ] R1 — reconcile `0024_restaurant_feature_flags.sql` vs reality (flags live on `restaurants.feature_flags` jsonb). MUST fix before onboarding ships, or new tenants break.
@@ -186,6 +195,8 @@ Configure-by-chat (one menu engine, two doors) · duration/auto-revert 86ing rem
 (coverage/evidence/confidence) · Insights leakage→action depth · Paymob/mada payments · e-invoicing
 (ZATCA/ETA) · Foodics POS · web-chat channel · customer timeline/depth · capability-based RBAC ·
 production hardening (rate limits, X-Hub-Sig).
+- **COD / Deliveries operations page** — dedicated Kivo-designed UI with driver assignment, cash/money reconciliation calculation, and an embedded Google Map showing live driver locations. Requires a driver-GPS/location source (driver app or device tracking) as a prerequisite. Currently `/cod` and `/deliveries` 307-redirect to existing console pages; this is the proper V2 rebuild.
+- **Kivo Menu management page** — a proper menu management UI inside the Kivo console. Currently `/menu` 307-redirects to `/dashboard`; the menu editor UI is V2 scope.
 
 ## 🟪 V3 — OPERATING-SYSTEM VISION
 Interactive campaigns/quizzes (promo-engine-backed) · cockpit UI rebuild (object drawers) · CRM
@@ -204,4 +215,4 @@ multi-restaurant console · white-label.
 - Repo `mohamedyousalama-ctrl/MaitreAI` · Supabase ref `zlighrbsjexrozrmuwpw` · Vercel `maitre-ai` · **Production domain: getkivo.io**
 - Wesaya tenant `5acbc72f-def3-46cd-ad6c-bf0ff4a23642` · phone_number_id `1204305262760496`
 - demo-pro tenant `0de3c0de-0001-4a00-8a00-000000000001`
-- BLaban tenant (to seed) · phone_number_id `1141332049069236` · WABA `1738425377597624`
+- Sweet Shop tenant (formerly بلبن) `9244d8ef-66b1-417a-a012-41a389ab1abf` · phone_number_id `1141332049069236` · WABA `1738425377597624`
