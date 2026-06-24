@@ -23,6 +23,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { useRiseIn } from "@/components/kivo";
+import { LoginScenes } from "./LoginScenes";
 
 type Step = "request" | "verify";
 
@@ -211,32 +212,13 @@ export function LoginForm() {
             </div>
           </div>
 
-          {/* lower block */}
-          <div style={{ position: "relative", marginTop: "auto" }}>
-            <h2 style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.4, margin: 0 }}>
-              شغّل وكيلك على واتساب،
-              <br />
-              واحتفظ بهامشك.
+          {/* Animated Karim chat scenes (A → B → C, looping). Replaces the old
+              static marketing block — see LoginScenes (CSS-only, RTL). */}
+          <div style={{ position: "relative", marginTop: "auto", paddingTop: 28 }}>
+            <h2 style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.4, margin: "0 0 18px" }}>
+              شغّل وكيلك على واتساب، واحتفظ بهامشك.
             </h2>
-            <p style={{ fontSize: 12.5, opacity: 0.88, fontWeight: 600, lineHeight: 1.7, margin: "14px 0 0", maxWidth: 320 }}>
-              كريم بيرد على عملاءك، بياخد الطلب، ويقفله — وإنت بتوصّل. كل طلب من غير عمولة التطبيقات.
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 24 }}>
-              {[
-                "طلبات أكتر من نفس المحادثات",
-                "أرقام حقيقية بس — مفيش تخمين",
-                "تستلم أي محادثة في ثانية",
-              ].map((t) => (
-                <div key={t} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, fontWeight: 700 }}>
-                  <span style={{ width: 22, height: 22, borderRadius: 7, background: "rgba(255,255,255,.16)", display: "grid", placeItems: "center", flex: "none" }}>
-                    <svg width="12" height="9" viewBox="0 0 80 64" fill="none">
-                      <path d="M14 34 L28 50 L52 16" stroke="#fff" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                  {t}
-                </div>
-              ))}
-            </div>
+            <LoginScenes />
           </div>
         </div>
 
