@@ -2,7 +2,7 @@
 
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
-> Last updated: 2026-06-23 (#102–#106 merged; goal reframed from proving-grounds to sellable plug-and-play product).
+> Last updated: 2026-06-24 (V1 operator console + onboarding full-stack shipped; getkivo.io live).
 
 ## North Star
 
@@ -142,6 +142,9 @@ V1 = a sellable, plug-and-play product. A new restaurant can self-onboard — co
   Blocking: `tsc --noEmit`, `next build`, 101 pure unit-test cases (allergen gate 34 · ownership
   transitions 27 · phone normalise 20 · stuck detection 20 · retry policy). DB-backed integration
   proofs documented as required manual pre-merge steps in `docs/MANUAL_EVAL_CHECKLIST.md`.
+- **Operator console — 7 pages (#123/#125/#126/#127):** Login · Home/Dashboard · Orders · Conversations · Insights · Customers · Settings — all wired to real per-tenant data, truth-states enforced (live/gathering/coming-soon), no invented metrics. Kivo brand applied throughout (teal/emerald, KivoLogo component, hero animation on login page). getkivo.io is the live production domain.
+- **Self-serve onboarding — full backend stack:** WhatsApp Embedded Signup (per-tenant WABA + token stored encrypted); menu ingestion + draft/publish RPC; config APIs (hours, delivery zones, persona/tone); go-live gate (readiness checklist — WA ✓ / menu ✓ / hours ✓ / zones advisory — enforced server-side before flipping `active=true, agent_mode=live`); E2E proof script covering all stages + tenant isolation. `docs/META_SETUP_GUIDE.md` written for partner handoff.
+- **Settings backend gaps:** WhatsApp GET now returns `lastInboundAt`/`lastOutboundAt` from `messages` table; `escalation_timeout_minutes` column (migration 0037, default 10 min) + GET/PUT route; tier read-only route (`/api/settings/plan`) for plan display on Settings page.
 
 ---
 
@@ -152,26 +155,28 @@ V1 = a sellable, plug-and-play product. A new restaurant can self-onboard — co
 never-stuck spine (ownership state machine, stuck detection, enforcement, conversation-lock serialization,
 handoff de-dup); CI eval gate on agent-path PRs.
 
-### Operator console (front-end, in progress)
-- [ ] Design tokens (emerald system) formalized
-- [ ] Login · Orders · Conversations · Insights · Customers · Settings · Home/Control
-- [ ] COD · Escalations · Deliveries surfaced per IA
-- [ ] All wired to real per-tenant data; truth-states (live/gathering/coming) enforced
-- [ ] No page shows data the backend can't truthfully produce
+**Operator console — DONE:** Login · Home/Dashboard · Orders · Conversations · Insights · Customers · Settings — all 7 pages shipped, wired to real per-tenant data, truth-states enforced. Kivo brand applied (logo, hero animation). getkivo.io live as the production domain.
 
-### Self-serve onboarding (own WhatsApp number — the plug-and-play core)
-- [ ] WhatsApp Embedded Signup: client connects own WABA + number via Meta in-app flow → credentials stored per-tenant
-- [ ] Webhook auto-subscribes the new number; per-tenant routing (extends #86)
-- [ ] Menu ingestion: structured entry → review → publish (photo/PDF/URL later)
-- [ ] Config: hours, delivery zones, fulfillment, persona/tone, COD — per-tenant, no SQL
-- [ ] Tenant provisioning by the flow, not by hand
-- [ ] "Go live" gate: onboarding checklist complete → agent active for that tenant
-- [ ] Test: brand-new tenant onboarded end-to-end with zero manual DB/Meta work ("client #N" test)
+**Self-serve onboarding backend — DONE:** WhatsApp Embedded Signup (per-tenant WABA + encrypted token); menu ingestion + draft/publish; config APIs (hours, zones, persona/tone); go-live gate (server-side readiness check before activating tenant); E2E proof script (zero manual DB/Meta work). Settings backend gaps filled (WA timestamps, escalation timeout column, tier endpoint). See `docs/META_SETUP_GUIDE.md` for Meta setup.
+
+> ⚠️ **#1 blocker to live WhatsApp:** Meta Tech Provider setup (env vars in Vercel + App Review for `whatsapp_business_management`). See `docs/META_SETUP_GUIDE.md` for the full step-by-step guide. Without this, Embedded Signup errors for every new client.
+
+### In progress
+- [ ] **Login-page Karim conversation animation** — showcase real Karim capabilities (smooth order / allergy safety / warmth) as a marketing animation on the login page.
+
+### Next (V1 completion)
+- [ ] **Sweet Shop demo tenant + partner-login procedure** — a pre-seeded demo restaurant that a prospect can log in to and see Karim working end-to-end without connecting their own WhatsApp number. Define the partner-login flow (credentials, reset procedure).
+- [ ] **One real end-to-end onboarding test** — a real client or internal tester goes through the full self-serve flow on getkivo.io: Embedded Signup with their own WhatsApp number → menu ingestion → go-live gate → Karim replies to a real WhatsApp message. Proves the product works outside the lab.
+
+### Deferred / logged (not forgotten)
+- [ ] **Wire `escalation_timeout_minutes` to stuck-detection engine** — the column exists (migration 0037) and the Settings API reads/writes it, but `checkAndNotifyStuck` in `lib/intelligence/stuck-detection.ts` still uses the hardcoded `STUCK_THRESHOLDS.humanNoResponseMinutes = 10`. Wiring requires changing the caller in `lib/messaging/respond-and-send.ts` (inbound spine) — flagged spine-risk, deferred. Route comment documents this explicitly.
+- [ ] **Public legal page for Meta verification** — a publicly accessible privacy-policy / terms-of-service URL is required for Meta App Review (Step 3c in META_SETUP_GUIDE.md). Needs a hosted page; currently blocking full App Review submission.
+- [ ] **Insights commission/margin formula** — the Insights page shows revenue data but the commission/margin calculation logic is not yet defined. Deferred until billing model is confirmed.
+- [ ] **Kivo billing model** — how clients pay us (per-seat, per-order, monthly flat). Define before V1.5 launch. Currently a placeholder in the Settings plan view.
 
 ### Per-tenant integrity (must clear before selling)
 - [ ] R1 — reconcile `0024_restaurant_feature_flags.sql` vs reality (flags live on `restaurants.feature_flags` jsonb). MUST fix before onboarding ships, or new tenants break.
 - [ ] Per-tenant isolation audit: every Karim read (menu/hours/zones/persona/flags) is tenant-scoped
-- [ ] Billing/plan model for Kivo itself (how clients pay us) — define (may be V1.5)
 
 ---
 
@@ -196,7 +201,7 @@ multi-restaurant console · white-label.
 ---
 
 ## Key identifiers
-- Repo `mohamedyousalama-ctrl/MaitreAI` · Supabase ref `zlighrbsjexrozrmuwpw` · Vercel `maitre-ai`
+- Repo `mohamedyousalama-ctrl/MaitreAI` · Supabase ref `zlighrbsjexrozrmuwpw` · Vercel `maitre-ai` · **Production domain: getkivo.io**
 - Wesaya tenant `5acbc72f-def3-46cd-ad6c-bf0ff4a23642` · phone_number_id `1204305262760496`
 - demo-pro tenant `0de3c0de-0001-4a00-8a00-000000000001`
 - BLaban tenant (to seed) · phone_number_id `1141332049069236` · WABA `1738425377597624`
