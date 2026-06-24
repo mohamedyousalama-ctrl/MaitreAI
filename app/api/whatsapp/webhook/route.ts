@@ -14,7 +14,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { extractInboundPhoneNumberId, markWhatsAppRead, normalizeWhatsAppInbound, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
-import { isWhatsAppConfigured, readWhatsAppEnv } from "@/lib/messaging/config";
+import { isWhatsAppConfigured, readWhatsAppEnv, type WhatsAppEnv } from "@/lib/messaging/config";
 import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMessage } from "@/lib/db/messages";
@@ -114,16 +114,27 @@ export async function POST(req: NextRequest) {
     process.env.NODE_ENV !== "production" &&
     (process.env.WHATSAPP_SKIP_SIGNATURE ?? "").trim().toLowerCase() === "true";
   const sigSecrets = [env.appSecret, tenant?.env.appSecret].filter((s): s is string => !!s && s.length > 0);
-  if (sigSecrets.length && !skipSig) {
-    const okSig =
-      !!sig &&
-      sigSecrets.some((secret) => {
-        const comp = "sha256=" + createHmac("sha256", secret).update(rawBuf).digest("hex");
-        return sig.length === comp.length && timingSafeEqual(Buffer.from(sig), Buffer.from(comp));
+  if (!skipSig) {
+    if (sigSecrets.length > 0) {
+      const okSig =
+        !!sig &&
+        sigSecrets.some((secret) => {
+          const comp = "sha256=" + createHmac("sha256", secret).update(rawBuf).digest("hex");
+          return sig.length === comp.length && timingSafeEqual(Buffer.from(sig), Buffer.from(comp));
+        });
+      if (!okSig) {
+        return NextResponse.json({ ok: false, message: "invalid signature" }, { status: 401 });
+      }
+    } else if (process.env.NODE_ENV === "production") {
+      // No signing secret configured for this context → fail closed in production.
+      // Without this guard any unsigned POST would be processed as legitimate.
+      console.warn("[whatsapp:webhook] no_app_secret_configured", {
+        phoneNumberId: phoneNumberId ?? null,
+        tenantResolved: tenant?.restaurantId ?? null,
       });
-    if (!okSig) {
-      return NextResponse.json({ ok: false, message: "invalid signature" }, { status: 401 });
+      return NextResponse.json({ ok: false, message: "webhook signing not configured" }, { status: 503 });
     }
+    // dev/test with no secret → permissive pass-through (unchanged local behavior)
   }
 
   const messages = normalizeWhatsAppInbound(payload);
@@ -135,14 +146,34 @@ export async function POST(req: NextRequest) {
   let responded = 0;
   let resolvedBy: "phone_number_id" | "env_fallback" = "env_fallback";
   if (admin && messages.length > 0) {
-    // Per-tenant routing: resolve the restaurant by the inbound phone_number_id
-    // and use ITS decrypted credentials for both persistence and the outbound
-    // reply (so a tenant answers from its own number). If no tenant matches, or
-    // it isn't fully/decryptably configured, resolveWebhookTenant returns null
-    // and we fall back to the EXISTING env behavior — unchanged for Wesaya.
-    const restaurantId = tenant?.restaurantId ?? (await resolveWebhookRestaurantId(admin));
-    const perTenantEnv = tenant?.env ?? null; // null → readWhatsAppEnv() uses env vars
-    resolvedBy = tenant ? "phone_number_id" : "env_fallback";
+    // Strict per-tenant routing. Three cases:
+    // 1. tenant resolved by phone_number_id → use its creds (multi-tenant path)
+    // 2. phone_number_id present but NO tenant matched → drop cleanly (200, no
+    //    persist, no reply). Never fall back to a different restaurant's creds.
+    // 3. NO phone_number_id at all → env fallback (legacy single-tenant path)
+    let restaurantId: string | null;
+    let perTenantEnv: WhatsAppEnv | null;
+    if (tenant) {
+      restaurantId = tenant.restaurantId;
+      perTenantEnv = tenant.env;
+      resolvedBy = "phone_number_id";
+    } else if (phoneNumberId) {
+      console.warn("[whatsapp:webhook] unresolved_phone_number_id", {
+        phoneNumberId,
+        messageCount: messages.length,
+        action: "dropped",
+      });
+      return NextResponse.json({
+        ok: true,
+        received: messages.length,
+        dropped: true,
+        reason: "unresolved_phone_number_id",
+      });
+    } else {
+      restaurantId = await resolveWebhookRestaurantId(admin);
+      perTenantEnv = null;
+      resolvedBy = "env_fallback";
+    }
 
     if (restaurantId) {
       // Bind the resolved creds for the whole persist→Brain→send chain. With a
