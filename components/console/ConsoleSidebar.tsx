@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  LayoutDashboard,
   LineChart,
   MessagesSquare,
   ClipboardList,
@@ -167,6 +168,7 @@ export function ConsoleSidebar() {
 
       <GroupLabel>الوكيل</GroupLabel>
       <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <NavLink href="/dashboard" icon={LayoutDashboard} label="الرئيسية" active={is("/dashboard")} />
         <NavLink href="/insights" icon={LineChart} label="الرؤى" active={is("/insights")} />
         <NavLink href="/conversations" icon={MessagesSquare} label="المحادثات" active={is("/conversations")} badge={escalations} />
         <NavLink href="/orders" icon={ClipboardList} label="الطلبات" active={is("/orders")} />

@@ -12,7 +12,7 @@
 //    السر؟» are NOT built: the repo has no password auth, no reset flow, and
 //    users have no passwords — a password box would be a false affordance.
 //    So the password row becomes the real two-step code flow, Kivo-styled.
-//  • On success: existing session is set; redirect to /orders (Home not built).
+//  • On success: existing session is set; redirect to /dashboard (operator Home).
 //    Tenant resolution is handled by the existing session + middleware path —
 //    not re-implemented here (spine untouched).
 // ============================================================================
@@ -93,8 +93,9 @@ export function LoginForm() {
     setLoading(false);
     if (error) return setError(friendlyAuthError(error.message));
     // Existing session is now set; existing middleware resolves the tenant.
-    // TODO: redirect to /home once built.
-    router.push("/orders");
+    // Land on the operator Home/Control (الرئيسية) at /dashboard, matching the
+    // server-side redirects (middleware + auth callback default next).
+    router.push("/dashboard");
     router.refresh();
   }
 
