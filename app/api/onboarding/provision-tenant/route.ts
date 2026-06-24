@@ -56,6 +56,9 @@ export async function POST(req: Request) {
   const country = typeof body.country === "string" && body.country.trim() ? body.country.trim() : "SA";
 
   // 3. Create restaurant with safe defaults — Brain silent, not live.
+  // deterministic_allergen_safety MUST be on for every tenant: it is the code
+  // gate that catches allergy euphemisms (e.g. «بيتعب من البندق») without
+  // requiring the word «حساسية». Leaving it off is a child-safety failure mode.
   const { data: restaurant, error: restaurantErr } = await admin
     .from("restaurants")
     .insert({
@@ -66,6 +69,7 @@ export async function POST(req: Request) {
       country,
       agent_mode: "setup",  // Brain is silent until operator explicitly enables
       active: false,        // Not visible in public listings until enabled
+      feature_flags: { deterministic_allergen_safety: true },
     })
     .select("id")
     .single();
