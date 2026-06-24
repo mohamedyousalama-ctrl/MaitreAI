@@ -7,6 +7,7 @@
  * no real data — every number here is illustrative of the primitives only.
  */
 
+import { notFound } from "next/navigation";
 import {
   CountUp,
   KvComingPanel,
@@ -103,6 +104,10 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 export default function StyleguidePage() {
+  // Dev-only token eyeball-check: never reachable in production (like the
+  // messaging-test tool). Renders a 404 in prod builds.
+  if (process.env.NODE_ENV === "production") notFound();
+
   const rise0 = useRiseIn(0);
   const rise1 = useRiseIn(1);
   const rise2 = useRiseIn(2);

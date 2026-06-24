@@ -3,14 +3,15 @@
 // ============================================================================
 // Kivo console — profile menu + logout. The topbar avatar becomes a button that
 // opens a small dropdown showing the signed-in user's name/email and a
-// «تسجيل الخروج» item. Sign-out reuses the existing supabase.auth.signOut()
-// flow (same as components/layout/SignOutButton) → /login. Kivo tokens, RTL,
-// closes on outside-click / Escape. In demo mode (no Supabase session) the menu
-// still opens but shows an honest "no session" note instead of a dead logout.
+// «تسجيل الخروج» item. Logout is a native form POST to the server route
+// /auth/signout, which clears the auth cookies server-side and 303-redirects to
+// /login (robust hard navigation — see that route for why the old client-side
+// signOut + router.push was unreliable). Kivo tokens, RTL, closes on
+// outside-click / Escape. In demo mode (no Supabase session) the menu still
+// opens but shows an honest "no session" note instead of a dead logout.
 // ============================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { LogOut, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -23,7 +24,6 @@ const MENU_CSS = `
 `;
 
 export function ProfileMenu() {
-  const router = useRouter();
   const supabase = createClient();
   const ref = useRef<HTMLDivElement>(null);
 
@@ -62,14 +62,6 @@ export function ProfileMenu() {
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
-
-  async function signOut() {
-    if (!supabase || loading) return;
-    setLoading(true);
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  }
 
   const displayName = user.name || (user.email ? user.email.split("@")[0] : "المستخدم");
 
@@ -134,33 +126,36 @@ export function ProfileMenu() {
             </div>
           </div>
 
-          {/* logout (or honest demo-mode note) */}
+          {/* logout (or honest demo-mode note). A native form POST to the
+              server sign-out route → it clears the auth cookies and 303-redirects
+              to /login (hard navigation). No soft-nav race, no way back in. */}
           {supabase ? (
-            <button
-              type="button"
-              role="menuitem"
-              className="kv-prof-out"
-              onClick={signOut}
-              disabled={loading}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "12px 14px",
-                border: 0,
-                background: "transparent",
-                cursor: loading ? "default" : "pointer",
-                fontFamily: "inherit",
-                fontSize: 13,
-                fontWeight: 700,
-                color: "var(--kv-red)",
-                textAlign: "start",
-              }}
-            >
-              {loading ? <Loader2 size={16} className="kv-prof-spin" /> : <LogOut size={16} />}
-              {loading ? "جاري الخروج…" : "تسجيل الخروج"}
-            </button>
+            <form action="/auth/signout" method="post" onSubmit={() => setLoading(true)} style={{ margin: 0 }}>
+              <button
+                type="submit"
+                role="menuitem"
+                className="kv-prof-out"
+                disabled={loading}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 14px",
+                  border: 0,
+                  background: "transparent",
+                  cursor: loading ? "default" : "pointer",
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "var(--kv-red)",
+                  textAlign: "start",
+                }}
+              >
+                {loading ? <Loader2 size={16} className="kv-prof-spin" /> : <LogOut size={16} />}
+                {loading ? "جاري الخروج…" : "تسجيل الخروج"}
+              </button>
+            </form>
           ) : (
             <div style={{ padding: "12px 14px", fontSize: 11.5, fontWeight: 600, color: "var(--kv-faint)", lineHeight: 1.5 }}>
               وضع تجريبي — مفيش جلسة لتسجيل الخروج.
