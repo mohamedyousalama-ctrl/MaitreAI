@@ -21,6 +21,7 @@ import { type Tier, isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { isSafetyHold } from "@/lib/tenant/handoff";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
+import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
 import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
@@ -266,10 +267,17 @@ export async function runCustomerTurn(
   // safety escalation, so safety never depends on a lucky LLM read. Off → never fires.
   const allergenSafetyOn = ctx.deterministicAllergenSafety === true;
   const allergenHit = allergenSafetyOn ? detectAllergenAvoidance(input.userMessage) : { fired: false, term: null };
+  // Additive symptom/condition/English layer — only evaluated when the base gate
+  // did NOT fire and the tenant has allergen_symptom_detection explicitly enabled.
+  const symptomDetectionOn = allergenSafetyOn && isFeatureExplicitlyEnabled("allergen_symptom_detection", tenantFeatures);
+  const symptomHit = (!allergenHit.fired && symptomDetectionOn)
+    ? detectAllergenSymptom(input.userMessage)
+    : { fired: false, term: null };
+  const combinedAllergenHit = allergenHit.fired ? allergenHit : symptomHit;
 
   // P3 perception — skip the Haiku read entirely when the deterministic gate already
   // fired (the decision is made; no LLM needed). Otherwise unchanged.
-  const perceptionOn = isFeatureExplicitlyEnabled("perception", tenantFeatures) && !allergenHit.fired;
+  const perceptionOn = isFeatureExplicitlyEnabled("perception", tenantFeatures) && !combinedAllergenHit.fired;
   const perception = perceptionOn ? await perceiveTurn(input.userMessage, input.history) : null;
   const perceptionDirective = perceptionOn ? recoveryDirective(perception) : null;
   // P4 cadence cue (consumes the P3 read; fires only on a non-default mood signal).
@@ -277,9 +285,9 @@ export async function runCustomerTurn(
 
   const t0 = Date.now();
   let result: RespondResult;
-  if (allergenHit.fired) {
+  if (combinedAllergenHit.fired) {
     // Deterministic safety escalation — no LLM call, draft preserved.
-    result = forcedAllergenSafetyResult(allergenHit.term, dialect, initialDraft, ctx.profile.currency);
+    result = forcedAllergenSafetyResult(combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency);
   } else {
     try {
       result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive });
