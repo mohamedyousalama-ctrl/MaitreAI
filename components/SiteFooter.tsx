@@ -26,11 +26,11 @@ export function SiteFooter() {
 
         <div className="mt-5 space-y-1 text-xs leading-relaxed text-slate-500">
           <p dir="rtl">
-            MaitreAI هو منتج من شركة سيتي بيكر (ش.ذ.م.م) — سجل تجاري رقم ٢١٦٥٦٥ — ١٤٩ شارع النصر،
+            Kivo هو منتج من شركة سيتي بيكر (ش.ذ.م.م) — سجل تجاري رقم ٢١٦٥٦٥ — ١٤٩ شارع النصر،
             المعادي، القاهرة، مصر
           </p>
           <p dir="ltr">
-            MaitreAI is a product of City Baker LLC — Commercial Register No. 216565 — 149 El-Nasr
+            Kivo is a product of City Baker LLC — Commercial Register No. 216565 — 149 El-Nasr
             St., Maadi, Cairo, Egypt
           </p>
         </div>

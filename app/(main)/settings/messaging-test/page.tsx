@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SettingsCard } from "@/components/ui/SettingsCard";
@@ -16,6 +17,8 @@ import { MessageCircle, Send, ArrowRight, Trash2 } from "lucide-react";
 const CHANNEL_OPTS = ACTIVE_CHANNELS.map((c) => ({ value: c, label: CHANNEL_LABELS[c] }));
 
 export default function MessagingTestPage() {
+  // Dev-only orphaned tool: never reachable in production (renders the old shell).
+  if (process.env.NODE_ENV === "production") notFound();
   const hydrated = useHasHydrated();
   const { simulateInbound } = useConversationEngine();
   const outbound = useMessageLogStore((s) => s.outbound);

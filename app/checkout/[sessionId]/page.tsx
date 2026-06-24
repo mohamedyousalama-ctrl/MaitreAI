@@ -240,7 +240,7 @@ export default function CheckoutPage() {
                 <Bot className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-sm font-bold leading-none">MaitreAI</p>
+                <p className="text-sm font-bold leading-none">Kivo</p>
                 <p className="mt-0.5 text-xs text-white/80">دفع آمن</p>
               </div>
             </div>

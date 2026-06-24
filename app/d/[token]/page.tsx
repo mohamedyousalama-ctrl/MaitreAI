@@ -69,7 +69,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="mx-auto max-w-md space-y-4">
         <div className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-mark.svg" alt="MaitreAI" width={32} height={32} className="h-8 w-8" />
+          <img src="/logo-mark.svg" alt="Kivo" width={32} height={32} className="h-8 w-8" />
           <h1 className="text-base font-bold text-[#2a211b]">صفحة المندوب</h1>
         </div>
         {children}

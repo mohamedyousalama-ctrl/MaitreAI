@@ -23,9 +23,9 @@ const arabic = IBM_Plex_Sans_Arabic({
 });
 
 export const metadata: Metadata = {
-  title: "MaitreAI — مساعد تشغيل ومبيعات للمطاعم",
+  title: "Kivo — مساعد تشغيل ومبيعات للمطاعم",
   description:
-    "MaitreAI — مساعد تشغيل ومبيعات للمطاعم. يبدأ من واتساب، ويُدير تجربة الطلب كاملة: من المحادثة إلى المطبخ، الدفع، التتبّع، والعروض.",
+    "Kivo — مساعد تشغيل ومبيعات للمطاعم. يبدأ من واتساب، ويُدير تجربة الطلب كاملة: من المحادثة إلى المطبخ، الدفع، التتبّع، والعروض.",
   icons: {
     icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
     apple: [{ url: "/logo-mark.svg" }],

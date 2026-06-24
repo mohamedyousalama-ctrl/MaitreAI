@@ -31,7 +31,7 @@ export function AppTopbar() {
         <span className="flex h-[30px] w-[30px] items-center justify-center rounded-[9px] text-white" style={{ background: "linear-gradient(155deg,#C25A3E,#8A3621)" }}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#F6EDDF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 13a4 4 0 0 1-1-7.9 4.5 4.5 0 0 1 8.9-1A4 4 0 0 1 18 13" /><path d="M6 13h12v5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-5Z" /></svg>
         </span>
-        <span className="hidden text-[15px] font-bold text-[#2A2019] sm:block" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>MaitreAI</span>
+        <span className="hidden text-[15px] font-bold text-[#2A2019] sm:block" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>Kivo</span>
       </div>
 
       {/* Restaurant / branch pill */}
