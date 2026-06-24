@@ -12,6 +12,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { KivoMark, KivoWordmark } from "@/components/brand/KivoLogo";
+import { IntroReveal } from "@/components/brand/IntroReveal";
 
 export const metadata: Metadata = {
   title: "Kivo — خلّي طلباتك ماشية",
@@ -66,6 +67,7 @@ const SCOPED_CSS = `
 export default function Home() {
   return (
     <div className="kv-console kv-land" dir="rtl" lang="ar" style={{ background: "#eef5f1", color: "#0f2a20" }}>
+      <IntroReveal />
       <style dangerouslySetInnerHTML={{ __html: SCOPED_CSS }} />
 
       {/* ===== HERO ===== */}
