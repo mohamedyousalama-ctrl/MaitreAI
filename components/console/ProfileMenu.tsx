@@ -4,14 +4,15 @@
 // Kivo console — profile menu + logout. The topbar avatar opens a small dropdown
 // showing the signed-in user's name/email and a «تسجيل الخروج» item.
 //
-// Logout is a PLAIN anchor: <a href="/auth/signout">. Earlier attempts (browser
-// signOut + router.push, then a JS form submit) failed in production — the click
-// never reached the route (no request fired). A native <a> navigation can't be
-// swallowed by preventDefault, a disabled-on-submit race, the dropdown's
-// close handler, hydration, or a null browser SDK — it's just a navigation,
-// which we proved works by hitting /auth/signout directly. The server route
-// (GET) clears the session cookies and 303 → /login, with or without the
-// client SDK. The browser SDK is used ONLY to show the name/email when present.
+// Logout: the click does an EXPLICIT hard navigation — window.location.href =
+// "/auth/signout". Earlier attempts (browser signOut + router.push, a JS form
+// submit, then a plain <a>) all failed in production — the click was somehow
+// being turned into a client-side navigation/fetch that never landed. A direct
+// window.location call is a browser-navigation API, not a DOM-event default
+// action, so NOTHING can intercept it: it's identical to typing /auth/signout in
+// the address bar, which we've proven works on production. The route (GET) clears
+// the session cookies and 303 → /login. The browser SDK is used ONLY to show the
+// user's name/email when present.
 // ============================================================================
 
 import { useEffect, useRef, useState } from "react";
@@ -126,17 +127,24 @@ export function ProfileMenu() {
             </div>
           </div>
 
-          {/* logout — a PLAIN anchor straight to the server sign-out route.
-              Deliberately NOT a JS form/button: a native <a> navigation can't be
-              swallowed by preventDefault, a disabled-on-submit race, the
-              dropdown's close handler, hydration, or a null browser SDK. The
-              route (GET) clears the session cookies and 303 → /login — a path
-              we've proven works by hitting /auth/signout directly. Plain <a>
-              (not next/link) so it's a real browser navigation to the handler. */}
+          {/* logout — anchor to the server sign-out route, but the click does an
+              EXPLICIT hard navigation via window.location. This is the one path
+              that cannot be intercepted: it's a direct browser-navigation API
+              call, not a DOM-event default action, so nothing (a Next router
+              soft-nav, a global click listener, prefetch turning it into a
+              fetch/xhr, an ancestor preventDefault) can convert it into a
+              client-side navigation. It is identical to typing /auth/signout in
+              the address bar — which we've proven works on production. The href
+              stays for accessibility / "open in new tab" and as a no-JS fallback;
+              the route (GET) clears the session cookies and 303 → /login. */}
           <a
             href="/auth/signout"
             role="menuitem"
             className="kv-prof-out"
+            onClick={(e) => {
+              e.preventDefault();
+              window.location.href = "/auth/signout";
+            }}
             style={{
               width: "100%",
               display: "flex",
