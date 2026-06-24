@@ -34,6 +34,16 @@ export function ConsoleTopbar() {
         borderBottom: "1px solid var(--kv-border)",
         background: "rgba(255,255,255,.7)",
         backdropFilter: "blur(8px)",
+        // The topbar establishes a stacking context (backdrop-filter). Without an
+        // explicit z-index, that context ranks at the same level as <main>, and
+        // because <main> follows the topbar in DOM order, <main>'s content (whose
+        // dashboard sections create their OWN stacking contexts via transform/
+        // will-change for the rise-in animation) paints ON TOP — swallowing the
+        // ProfileMenu dropdown that hangs down into <main>'s area, so clicks on
+        // «تسجيل الخروج» landed on the dashboard heading instead of the logout
+        // link. Lifting the topbar above <main> keeps the dropdown clickable.
+        position: "relative",
+        zIndex: 30,
       }}
     >
       {/* Search pill */}
