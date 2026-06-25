@@ -3,8 +3,14 @@
 // Secret-guarded HTTP entry to the Customer-Agent Brain. Used by the eval/test
 // harness and any server-to-server caller. The actual turn (Brain + persistence
 // + cost logging + escalation flip) lives in lib/ai/customer-turn so the
-// WhatsApp webhook bridge runs the exact same path with no drift. Guarded by a
-// shared secret so it isn't an open, cost-bearing LLM proxy.
+// WhatsApp webhook bridge runs the exact same path with no drift.
+//
+// AUTH: AGENT_ROUTE_SECRET must be set to "<restaurantId>:<token>" (colon-
+// separated). The token in the x-agent-secret header is validated against the
+// token half; the restaurant half is the AUTHORITATIVE tenant — the body-
+// supplied restaurantId must match exactly. A single leaked secret therefore
+// can only ever drive the one restaurant it was issued for. An unset or
+// malformed env var closes the route entirely (returns 401).
 // ============================================================================
 
 import { NextResponse } from "next/server";
@@ -14,9 +20,25 @@ import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export const runtime = "nodejs";
 
+/** Parse AGENT_ROUTE_SECRET ("restaurantId:token") → null if unset/malformed. */
+function parseAgentSecret(env: string | undefined): { boundRestaurantId: string; token: string } | null {
+  if (!env) return null;
+  const colonIdx = env.indexOf(":");
+  if (colonIdx < 1) return null; // no colon, or colon at position 0 → malformed
+  const boundRestaurantId = env.slice(0, colonIdx);
+  const token = env.slice(colonIdx + 1);
+  if (!boundRestaurantId || !token) return null;
+  return { boundRestaurantId, token };
+}
+
 export async function POST(req: Request) {
-  const secret = process.env.AGENT_ROUTE_SECRET;
-  if (!secret || req.headers.get("x-agent-secret") !== secret) {
+  const parsed = parseAgentSecret(process.env.AGENT_ROUTE_SECRET);
+  if (!parsed) {
+    // Unset or malformed secret → route is closed.
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  if (req.headers.get("x-agent-secret") !== parsed.token) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -26,8 +48,13 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const restaurantId = String(body.restaurantId ?? "");
   const text = String(body.text ?? "").trim();
+
+  // Reject any mismatch between the secret's bound tenant and the requested tenant.
+  if (!restaurantId || restaurantId !== parsed.boundRestaurantId) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   const conversationId = body.conversationId ? String(body.conversationId) : null;
-  if (!restaurantId || !text) {
+  if (!text) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
