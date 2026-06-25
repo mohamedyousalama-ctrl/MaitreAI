@@ -17,6 +17,7 @@ export async function POST(req: Request) {
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const driverId = String(body.driverId ?? "");
