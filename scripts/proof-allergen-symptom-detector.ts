@@ -261,6 +261,46 @@ check("الطفل ممنوع بيض نهائي",      "الطفل ممنوع م�
 
 // ── v3 ADDITIONS ──
 
+// ── v4 ADDITIONS ──
+
+console.log("\n── C-v4a: SET 1 – Past-tense airway closure (v4) ──");
+check("حلقي اتقفل (v4)",              "حلقي اتقفل لما اكلت جمبري", true);
+check("زوري اتقفل (v4)",              "زوري اتقفل بعد ما اكلت بندق", true);
+check("حنجرتي اتسدت (v4)",            "حنجرتي اتسدت من اللوز", true);
+check("نفسي اتسد (v4)",               "نفسي اتسد لما اكلت مكسرات", true);
+check("صدري اتقفل (v4)",              "صدري اتقفل بعد الجمبري", true);
+check("اتقفل في الحلق (v4)",          "اتقفل في الحلق لما اكلت كاجو", true);
+check("اتسد في الصدر (v4)",           "اتسد في الصدر من الفول", true);
+
+console.log("\n── C-v4b: SET 1 – Past-tense choking (v4) ──");
+check("اتخنقت (v4)",                  "اتخنقت لما اكلت بندق", true);
+check("اتخنق (v4)",                   "اتخنق من اللبن", true);
+check("باتخنق (v4)",                  "باتخنق كل ما اكل جمبري", true);
+check("باتخنقت (v4)",                 "باتخنقت من الفول", true);
+
+console.log("\n── C-v4c: SET 4 – ماينفعش ياكل/تاكل/ناكل (v4) ──");
+check("ماينفعش ياكل allergen (v4)",   "ابني ماينفعش ياكل اللوز", true);
+check("ماينفعش تاكل allergen (v4)",   "بنتي ماينفعش تاكل الجمبري", true);
+check("ماينفعش ناكل allergen (v4)",   "عيالي ماينفعش ناكل مكسرات", true);
+check("ما ينفعش ياكل spaced (v4)",    "ابني ما ينفعش ياكل بندق", true);
+check("ماينفعش ياكل—no child → no fire", "ماينفعش ياكل اللوز", false);
+
+console.log("\n── C-v4d: SET 4 – Doctor restriction for child (v4) ──");
+check("الدكتور مانع ابني من اللوز",    "الدكتور مانع ابني من اللوز", true);
+check("الدكتور منع بنتي من الجمبري",   "الدكتور منع بنتي من الجمبري", true);
+check("الطبيب مانع الطفل من البيض",    "الطبيب مانع الطفل من البيض", true);
+check("الدكتورة منع ابني اللبن",       "الدكتورة منع ابني اللبن", true);
+check("الدكتور مانع من اللوز—no child → no fire", "الدكتور مانع من اللوز", false);
+
+console.log("\n── C-v4e: SET 3 – English respiratory (v4) ──");
+check("shortness of breath (v4)",      "I have shortness of breath after eating", true);
+check("wheezing (v4)",                 "I start wheezing after peanuts", true);
+check("wheeze (v4)",                   "I wheeze when I eat nuts", true);
+check("chest tight (v4)",              "my chest gets tight", true);
+check("chest tightness (v4)",          "chest tightness after eating shrimp", true);
+check("tightness in my throat (v4)",   "I get tightness in my throat", true);
+check("tight chest (v4)",              "tight chest after eating", true);
+
 console.log("\n── C14: SET 1 – سوداني/فول سوداني (v3 CRITICAL) ──");
 check("دخلت الطوارئ بعد السوداني",     "دخلت الطوارئ بعد السوداني", true);
 check("hospital after فول سوداني",     "روحت المستشفى بسبب فول سوداني", true);

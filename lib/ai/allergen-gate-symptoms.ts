@@ -42,9 +42,14 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   // Can't breathe — ADDED: Egyptian colloquial "مش عارف اتنفس" / "مبعرفش اتنفس"
   { re: /(?:مش\s+عارف|مبعرفش|مش\s+عارفه?|مبقدرش|مقدرش)\s+(?:اتنفس|انفس)/, label: "صعوبة في التنفس" },
 
+  // Past-tense airway closure — ADDED: اتقفل/اتسد co-occurring with throat/chest body part.
+  // Catches "حلقي اتقفل" / "زوري اتسد" / "صدري اتقفل" reported after an incident.
+  { re: /(?:(?:حلق|زور|حنجر|نفس|صدر)(?:ي|تي|ه|ها)?\s+(?:اتقفل[ت]?|اتسد[ت]?)|(?:اتقفل[ت]?|اتسد[ت]?)\s+(?:في\s+)?(?:(?:ال)?(?:حلق|زور|حنجر|نفس|صدر)))/, label: "ضيق في الحلق" },
+
   // Choking / airway emergency — ADDED: covers اختناق / بتخنق / بيخنق / بختنق / بخنق / نفسي بيقف / ربو etc.
   // بخنق = ب+خ+نق; بختنق = ب+خت+نق; بتخنق/بيخنق = بت/بي+خنق — covered by separate alternates.
-  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|ب(?:خت|خ)نق(?:ني)?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة](?:\s+في\s+صدري)?|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|ربو)/, label: "ضيق في التنفس" },
+  // Past-tense اتخنق/اتخنقت / present باتخنق/باتخنقت ADDED (reported after-the-fact incidents).
+  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|ب(?:خت|خ)نق(?:ني)?|(?:ب)?اتخنق[ت]?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة](?:\s+في\s+صدري)?|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|ربو)/, label: "ضيق في التنفس" },
 
   // Swelling — original انتفاخ/تورم patterns
   { re: /(?:وجه|وشي?|عيني?|شفايف|شفه|لسان)(?:\s+\S+)?\s*(?:بي?نتفخ|بينتفخ|انتفخ|بتورم|اتورم|بيتورم)/, label: "تورم" },
@@ -133,9 +138,13 @@ const ENGLISH_FRANCO_RE = new RegExp(
     String.raw`allerg(?:ic|y|ies|en|ens)`,
     String.raw`sensitiv(?:e|ity)`,
     String.raw`intoleran(?:t|ce)`,
-    // English symptom-only — ADDED (curly apostrophe U+2019 + straight + cannot)
-    String.raw`can[’']?t\s+breathe`,
+    // English symptom-only — ADDED (ASCII apostrophe U+0027 + curly U+2018/2019 + cannot)
+    String.raw`can[\u0027\u2018\u2019]?t\s+breathe`,
     String.raw`cannot\s+breathe`,
+    String.raw`shortness\s+of\s+breath`,
+    String.raw`wheez(?:e|es|ing|y|er)?`,
+    String.raw`chest(?:\s+\w+)?\s+tight(?:ness)?`,
+    String.raw`tight(?:ness)?\s+(?:in\s+(?:my\s+)?)?(?:chest|throat)`,
     String.raw`throat(?:\s+\w+)?\s+(?:clos(?:es?|ing|ed)|tight(?:en(?:ing|s)?|s)?)`,
     String.raw`(?:lips?|face)\s+swells?`,
     String.raw`(?:lips?|face)\s+swelling`,
@@ -179,19 +188,32 @@ const ALLERGEN_COMBINED_RE =
 const CHILD_MARKER_RE =
   /(?:ابني|ابنتي|بنتي|ولادي|عيالي|طفلي|الطفل|البيبي|بيبي|ابنهم|ابنها|بنتها|رضيع)/;
 
-/** Strict-avoidance words (خالص/نهائي/بلاش/مايقربش/ممنوع etc.).
+/** Strict-avoidance words (خالص/نهائي/بلاش/مايقربش/ماينفعش ياكل/ممنوع etc.).
  *  - نهايي (NOT نهائي): normalizeAr maps ئ→ي so نهائي→نهايي in normalized text.
  *  - ما\s*يقرب covers both spaced (ما يقربش) and unspaced (مايقربش) forms.
- *  - ما\s*ينفعش covers both spaced (ما ينفعش يقرب) and unspaced (ماينفعش يقرب). */
+ *  - ما\s*ينفعش covers ياكل/تاكل/ناكل eating verbs and يقرب proximity verb. */
 const STRICT_AVOIDANCE_CHILD_RE =
-  /(?:خالص|نهايي|بلاش|ما\s*يقرب(?:ها|هو|ني|و)?ش|ما\s*ينفعش\s+يقرب|ممنوع)/;
+  /(?:خالص|نهايي|بلاش|ما\s*يقرب(?:ها|هو|ني|و)?ش|ما\s*ينفعش\s+(?:يقرب|[يتن]اكل)|ممنوع)/;
+
+/** Doctor-prescribed restriction: الدكتور/الطبيب + restriction verb.
+ *  Used in the doctor–child–allergen triple conjunction. */
+const DOCTOR_RE = /(?:الدكتور[هة]?|الطبيب[هة]?)/;
+const DOCTOR_AVOIDANCE_RE = /(?:مانع|منع|حذر|قال\s+ما\s*(?:[يتن](?:اكل|قرب)))/;
 
 /**
- * Returns true only when ALL THREE signals co-occur in the same message:
- * child marker + strict avoidance + a known allergen term.
+ * Returns true when a child + allergen triple conjunction is detected:
+ *   (a) child marker + strict avoidance (ممنوع/بلاش/ماينفعش ياكل/…) + allergen, OR
+ *   (b) doctor restriction (الدكتور مانع/منع) + child marker + allergen.
+ * Both variants require an explicit allergen term — neither fires on a simple
+ * preference ("بنتي عايزة من غير جوز").
  */
 function detectChildAllergenPattern(n: string): boolean {
-  return CHILD_MARKER_RE.test(n) && STRICT_AVOIDANCE_CHILD_RE.test(n) && ALLERGEN_COMBINED_RE.test(n);
+  if (!ALLERGEN_COMBINED_RE.test(n)) return false;
+  if (!CHILD_MARKER_RE.test(n)) return false;
+  // Branch (a): classic strict-avoidance triple
+  if (STRICT_AVOIDANCE_CHILD_RE.test(n)) return true;
+  // Branch (b): doctor prescribed restriction for child
+  return DOCTOR_RE.test(n) && DOCTOR_AVOIDANCE_RE.test(n);
 }
 
 // ---------------------------------------------------------------------------
