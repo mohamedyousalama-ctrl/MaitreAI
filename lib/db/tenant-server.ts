@@ -3,10 +3,12 @@
 // ============================================================================
 
 import "server-only";
+import { cookies } from "next/headers";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { resolveTenant, type Tenant } from "./tenant";
+import { resolveTenant, ACTIVE_RESTAURANT_COOKIE, type Tenant } from "./tenant";
 
 /** Server Components / Route Handlers. */
 export async function getServerTenant(): Promise<Tenant | null> {
-  return resolveTenant(createServerClient());
+  const activeRid = cookies().get(ACTIVE_RESTAURANT_COOKIE)?.value ?? null;
+  return resolveTenant(createServerClient(), activeRid);
 }
