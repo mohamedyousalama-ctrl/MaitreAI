@@ -32,7 +32,7 @@ function token(): string {
 }
 
 export function appBaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL || "https://www.maitre.chat").replace(/\/$/, "");
+  return (process.env.NEXT_PUBLIC_APP_URL || "https://getkivo.io").replace(/\/$/, "");
 }
 
 export function isExpired(d: { expires_at?: string | null; status?: string }): boolean {
