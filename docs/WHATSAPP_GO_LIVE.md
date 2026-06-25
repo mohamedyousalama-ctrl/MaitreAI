@@ -46,7 +46,7 @@ test-mode (skips sending) to live the moment `WHATSAPP_ACCESS_TOKEN` +
 
 ## Meta dashboard wiring (one-time, done in the Meta App, not the codebase)
 
-1. **Webhook callback URL:** `https://www.maitre.chat/api/whatsapp/webhook`
+1. **Webhook callback URL:** `https://getkivo.io/api/whatsapp/webhook`
    (copyable from الإعدادات → ربط واتساب).
 2. **Verify token:** the value you set in `WHATSAPP_VERIFY_TOKEN`.
 3. **Subscribe** the app to the `messages` webhook field.

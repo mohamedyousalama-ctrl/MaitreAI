@@ -19,6 +19,15 @@ export function SiteFooter() {
           <Link href="/contact" className="transition hover:text-slate-900">
             اتصل بنا
           </Link>
+          <Link href="/privacy" className="transition hover:text-slate-900">
+            سياسة الخصوصية
+          </Link>
+          <Link href="/terms" className="transition hover:text-slate-900">
+            الشروط والأحكام
+          </Link>
+          <Link href="/data-deletion" className="transition hover:text-slate-900">
+            حذف البيانات
+          </Link>
           <a href="mailto:info@getkivo.io" className="transition hover:text-slate-900" dir="ltr">
             info@getkivo.io
           </a>
