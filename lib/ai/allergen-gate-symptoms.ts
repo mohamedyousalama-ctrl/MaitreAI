@@ -39,17 +39,20 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   { re: /ضيق(?:\s+في\s+|\s+)(?:التنفس|النفس|الصدر)/, label: "ضيق في التنفس" },
   { re: /صعوب[هة]\s+(?:في\s+)?(?:التنفس|النفس|البلع)/, label: "صعوبة في التنفس" },
   { re: /(?:مقدرش|مش\s+قادر|مبقدرش|ماقدرش)\s+(?:اتنفس|ابلع)/, label: "صعوبة في التنفس" },
+  // Can't breathe — ADDED: Egyptian colloquial "مش عارف اتنفس" / "مبعرفش اتنفس"
+  { re: /(?:مش\s+عارف|مبعرفش|مش\s+عارفه?|مبقدرش|مقدرش)\s+(?:اتنفس|انفس)/, label: "صعوبة في التنفس" },
 
-  // Choking / airway emergency — ADDED: covers اختناق / بتخنق / نفسي بيقف / ربو etc.
-  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة](?:\s+في\s+صدري)?|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|ربو)/, label: "ضيق في التنفس" },
+  // Choking / airway emergency — ADDED: covers اختناق / بتخنق / بيخنق / بختنق / بخنق / نفسي بيقف / ربو etc.
+  // بخنق = ب+خ+نق; بختنق = ب+خت+نق; بتخنق/بيخنق = بت/بي+خنق — covered by separate alternates.
+  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|ب(?:خت|خ)نق(?:ني)?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة](?:\s+في\s+صدري)?|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|ربو)/, label: "ضيق في التنفس" },
 
   // Swelling — original انتفاخ/تورم patterns
   { re: /(?:وجه|وشي?|عيني?|شفايف|شفه|لسان)(?:\s+\S+)?\s*(?:بي?نتفخ|بينتفخ|انتفخ|بتورم|اتورم|بيتورم)/, label: "تورم" },
   { re: /(?:انتفاخ|تورم)\s+(?:في\s+)?(?:الوجه|الوش|الشفاه|اللسان|العين|الحلق)/, label: "تورم" },
   { re: /بي?نتفخ(?:لي|لنا|ي)?/, label: "تورم" },
 
-  // Swelling — ADDED: ورم/ورمت forms missed by original patterns
-  { re: /(?:(?:وش|وجه|شفايف|عين|لسان)(?:ي|ه)?\s+ورم[ت]?|ورم[ت]?\s+(?:في\s+)?(?:الوجه|الوش|الشفاه|اللسان|العين|الحلق)|ورمت)/, label: "تورم" },
+  // Swelling — ADDED: ورم/ورمت/بيورم/بيورملي forms missed by original patterns
+  { re: /(?:(?:وش|وجه|شفايف|عين|لسان)(?:ي|ه)?\s+(?:ورم[ت]?|بيورم(?:لي|لنا)?)|ورم[ت]?\s+(?:في\s+)?(?:الوجه|الوش|الشفاه|اللسان|العين|الحلق)|بيورم(?:لي|لنا)?|ورمت)/, label: "تورم" },
 
   // Skin reaction — original طفح / حكة
   { re: /(?:طفح|حبوب|حكه|حكة|هرش|اكزيما)\s*(?:جلدي[هة]?)?/, label: "طفح جلدي" },
@@ -72,7 +75,8 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
 
   // Hospital/ER after allergen — ADDED: broader (any allergen; allows ال article)
   // Note: normalizeAr maps ئ→ي so "الطوارئ" becomes "الطواري" — pattern uses طواري.
-  { re: /(?:(?:ال)?(?:مستشفي|مستشفى|طواري|اسعاف))\s+(?:من|عشان|بسبب|بعد|لما)\s+(?:ما\s+)?(?:(?:ال)?(?:اكل|طعام|بندق|فستق|لوز|كاجو|جوز|مكسرات|فول|لبن|حليب|جلوتين|قمح|بيض|سمسم|صويا|سمك|جمبري|قشريات))/, label: "رد فعل تحسسي" },
+  // سوداني / فول سوداني ADDED (peanuts — most common Egyptian term, most critical allergy).
+  { re: /(?:(?:ال)?(?:مستشفي|مستشفى|طواري|اسعاف))\s+(?:من|عشان|بسبب|بعد|لما)\s+(?:ما\s+)?(?:(?:ال)?(?:اكل|طعام|بندق|فستق|لوز|كاجو|جوز|مكسرات|فول|سوداني|فول\s+سوداني|لبن|حليب|جلوتين|قمح|بيض|سمسم|صويا|سمك|جمبري|قشريات))/, label: "رد فعل تحسسي" },
 
   // Other anaphylaxis signals — original
   { re: /(?:رد\s+فعل|reaction)\s+(?:تحسسي|allergic)/, label: "رد فعل تحسسي" },
@@ -80,6 +84,9 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
 
   // Vomiting linked to specific food — original (narrow)
   { re: /(?:قي[ءئ]|اتقيا?[تث]|بتقيا?[تث])\s+(?:من|بعد|لما)\s+(?:ما\s+)?(?:اكل|اكلت)/, label: "رد فعل تحسسي" },
+
+  // Lactose/dairy triggers symptom — ADDED: "اللاكتوز بيتعبني" / "اللبن بيوجعني" etc.
+  { re: /(?:اللاكتوز|اللبن|الحليب|منتجات\s+الالبان)\s+(?:بيتعبني|بيوجعني|بيضرني|بياذيني|بيأذيني|بيعملي\s+مشكله?|مش\s+ماشي\s+معي)/, label: "عدم تحمل اللاكتوز" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -126,8 +133,9 @@ const ENGLISH_FRANCO_RE = new RegExp(
     String.raw`allerg(?:ic|y|ies|en|ens)`,
     String.raw`sensitiv(?:e|ity)`,
     String.raw`intoleran(?:t|ce)`,
-    // English symptom-only — ADDED
-    String.raw`can'?t\s+breathe`,
+    // English symptom-only — ADDED (curly apostrophe U+2019 + straight + cannot)
+    String.raw`can[’']?t\s+breathe`,
+    String.raw`cannot\s+breathe`,
     String.raw`throat(?:\s+\w+)?\s+(?:clos(?:es?|ing|ed)|tight(?:en(?:ing|s)?|s)?)`,
     String.raw`(?:lips?|face)\s+swells?`,
     String.raw`(?:lips?|face)\s+swelling`,
@@ -151,6 +159,7 @@ const FRANCO_AR_RE = new RegExp(
     String.raw`nafasy?\s+bye?2af`,             // نفسي بيقف (2=ق in Egyptian Franco)
     String.raw`betkhane?2`,                    // بتخنق (2=ق)
     String.raw`betkhana2`,
+    String.raw`m[e]?sh\s+ba3raf\s+atnafas`,   // مش عارف اتنفس in Franco
   ].join("|"),
   "i"
 );
@@ -161,18 +170,21 @@ const FRANCO_AR_RE = new RegExp(
 // can harm a child. Does NOT fire on a simple «من غير X» preference.
 // ---------------------------------------------------------------------------
 
-/** All allergens known to the system (union of base gate + condition terms). */
+/** All allergens known to the system (union of base gate + condition terms).
+ *  سوداني ADDED: peanuts (فول سوداني) — most common Egyptian peanut term, highest anaphylaxis risk. */
 const ALLERGEN_COMBINED_RE =
-  /بندق|فستق|لوز|كاجو|جوز|مكسرات|فول|لبن|البان|حليب|جلوتين|قمح|بيض|سمسم|صويا|سمك|جمبري|قشريات/;
+  /بندق|فستق|لوز|كاجو|جوز|مكسرات|فول|سوداني|لبن|البان|حليب|جلوتين|قمح|بيض|سمسم|صويا|سمك|جمبري|قشريات/;
 
 /** Possessive child / family markers (normalized). */
 const CHILD_MARKER_RE =
   /(?:ابني|ابنتي|بنتي|ولادي|عيالي|طفلي|الطفل|البيبي|بيبي|ابنهم|ابنها|بنتها|رضيع)/;
 
 /** Strict-avoidance words (خالص/نهائي/بلاش/مايقربش/ممنوع etc.).
- *  مايقرب(?:ها|هو|ني|و)?ش covers مايقربش, مايقربهاش (her), مايقربهوش (him), مايقربوش (them). */
+ *  - نهايي (NOT نهائي): normalizeAr maps ئ→ي so نهائي→نهايي in normalized text.
+ *  - ما\s*يقرب covers both spaced (ما يقربش) and unspaced (مايقربش) forms.
+ *  - ما\s*ينفعش covers both spaced (ما ينفعش يقرب) and unspaced (ماينفعش يقرب). */
 const STRICT_AVOIDANCE_CHILD_RE =
-  /(?:خالص|نهائي|بلاش|مايقرب(?:ها|هو|ني|و)?ش|ماينفعش\s+يقرب|ممنوع)/;
+  /(?:خالص|نهايي|بلاش|ما\s*يقرب(?:ها|هو|ني|و)?ش|ما\s*ينفعش\s+يقرب|ممنوع)/;
 
 /**
  * Returns true only when ALL THREE signals co-occur in the same message:

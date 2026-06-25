@@ -3,12 +3,15 @@
 // Proof: allergen-gate-symptoms.ts — imports the REAL production module.
 // Run: npx tsx scripts/proof-allergen-symptom-detector.ts
 //
-// Three proof sections:
+// Four proof sections:
 //   A. Wiring assertions (source-code analysis of customer-turn.ts)
 //      — escalate:true, forcedAllergenSafetyResult, respond() in else-branch,
 //        BOTH flags required, absent flag = OFF
 //   B. Flag-gate unit tests (isFeatureExplicitlyEnabled logic)
 //   C. Detector unit tests — positives + negatives (real module, not a copy)
+//   D. Runtime integration test — calls real runCustomerTurn() with a mocked
+//      Supabase admin client; asserts escalate:true / zero-token / no-LLM path
+//      when both flags ON, and that the absent-flag path falls through to LLM.
 // ============================================================================
 
 import { readFileSync } from "fs";
@@ -141,7 +144,7 @@ ok(
 // SECTION C — Detector unit tests (REAL module)
 // ============================================================
 
-// ── SET 1 originals ──
+// ── v2 + v3 SET 1 originals ──
 console.log("\n── C1: SET 1 – Throat / airway (original patterns) ──");
 check("throat tightening",          "حلقي بيتضيق لما باكل بندق", true);
 check("throat closing (حنجرتي)",    "حنجرتي بتقفل لو اكلت جمبري", true);
@@ -256,10 +259,48 @@ check("الطفل ممنوع الجمبري",        "الطفل ممنوع ال
 check("عيالي بلاش فول",             "عيالي بلاش الفول نهائي", true);
 check("الطفل ممنوع بيض نهائي",      "الطفل ممنوع من البيض نهائي", true);
 
+// ── v3 ADDITIONS ──
+
+console.log("\n── C14: SET 1 – سوداني/فول سوداني (v3 CRITICAL) ──");
+check("دخلت الطوارئ بعد السوداني",     "دخلت الطوارئ بعد السوداني", true);
+check("hospital after فول سوداني",     "روحت المستشفى بسبب فول سوداني", true);
+check("SET4 ابني الجوز والسوداني",     "ابني ممنوع الجوز والسوداني خالص", true);
+check("severe allergy فول سوداني",     "عندي حساسية شديدة من فول سوداني", true);
+
+console.log("\n── C15: SET 1 – بيورم/بيورملي swelling (v3) ──");
+check("وشي بيورم (v3)",               "وشي بيورم من الجمبري", true);
+check("شفايفي بيورملي (v3)",          "شفايفي بيورملي من البندق", true);
+check("بيورملي standalone (v3)",      "بيورملي لما اكل مكسرات", true);
+
+console.log("\n── C16: SET 1 – بختنق/بخنق choking (v3) ──");
+check("بختنق (v3)",                   "بختنق لما اكل جمبري", true);
+check("بخنق (v3)",                    "بخنق من اللبن", true);
+
+console.log("\n── C17: SET 1 – مش عارف اتنفس breathing (v3) ──");
+check("مش عارف اتنفس (v3)",          "مش عارف اتنفس لو اكلت فول", true);
+check("مبعرفش اتنفس (v3)",           "مبعرفش اتنفس بعد ما اكلت", true);
+
+console.log("\n── C18: SET 1 – Lactose symptom phrasing (v3) ──");
+check("اللاكتوز بيتعبني (v3)",       "اللاكتوز بيتعبني", true);
+check("اللبن بيوجعني (v3)",          "اللبن بيوجعني", true);
+check("الحليب بيضرني (v3)",          "الحليب بيضرني", true);
+
+console.log("\n── C19: SET 3 – Curly apostrophe + cannot breathe (v3) ──");
+check("can’t breathe (curly apostrophe)", "I can’t breathe when I eat nuts", true);
+check("cannot breathe (v3)",                   "I cannot breathe after eating", true);
+check("msh ba3raf atnafas (v3)",               "msh ba3raf atnafas", true);
+check("mesh ba3raf atnafas (v3)",              "mesh ba3raf atnafas", true);
+
+console.log("\n── C20: SET 4 – Normalization + spacing fixes (v3) ──");
+// نهائي→نهايي: نهائي is the ONLY strict-avoidance word (tests the normalization fix)
+check("ابني الفول نهائي (normalizeAr fix)",   "ابني الفول نهائي", true);
+check("ما يقربش spaced (v3)",                  "ابني ما يقربش الجمبري", true);
+check("ما ينفعش يقرب spaced (v3)",            "الطفل ما ينفعش يقرب اللبن", true);
+
 // ============================================================
 // NEGATIVES — must NOT fire (false-positive guard)
 // ============================================================
-console.log("\n── C14: Negatives (must NOT fire) ──");
+console.log("\n── C21: Negatives (must NOT fire) ──");
 check("preference: without nuts",      "عايز حاجة من غير بندق", false);
 check("preference: without dairy",     "عندكم حاجة من غير لبن؟", false);
 check("love nuts",                     "أنا بحب البندق جداً", false);
@@ -275,15 +316,166 @@ check("child only (no strict + allergen)", "ابني بيحب البندق", fal
 check("strict only (no child + allergen)",  "ممنوع التأخير", false);
 check("child + allergen, no strict (preference)", "بنتي عايزة من غير جوز", false);
 check("child + strict, no allergen",    "ابني ممنوع الشوكولاتة نهائي", false);
+// سوداني as nationality: SET 1/2/3 have no match; SET 4 needs child+strict+allergen (no child here)
+check("سوداني as nationality (no child/strict/symptom)", "أنا سوداني الجنسية", false);
+// Standalone بيورملي DOES fire (swelling fires standalone; over-escalation is safe by design)
+check("بيورملي standalone fires (intended)", "ايدي بيورملي بسبب الكيبورد", true);
+
 
 // ============================================================
-// Summary
+// SECTION D — Runtime integration test
+// Calls the real runCustomerTurn() with a mocked Supabase admin
+// client.  No Anthropic API key required for the allergen-gate
+// path (respond() is never called when the gate fires).
 // ============================================================
-console.log(`\n══════════════════════════════════`);
-console.log(`  Results: ${pass} passed, ${fail} failed (${pass + fail} total)`);
-if (errors.length) {
-  console.log(`\n  Failed tests:`);
-  errors.forEach((e) => console.log(`    • ${e}`));
+console.log("\n── D: Runtime integration (runCustomerTurn with mock admin) ──");
+
+// ---------------------------------------------------------------------------
+// Mock Supabase admin builder
+// A fluent chain that:
+//   • resolves to { data: listData, error: null } when awaited directly
+//   • resolves to { data: singleData, error: null } on .single()
+//   • returns itself on select / eq / order / limit / insert / update
+// ---------------------------------------------------------------------------
+function buildChain(singleData: unknown, listData: unknown = []) {
+  const listPromise = Promise.resolve({ data: listData, error: null });
+  const singlePromise = Promise.resolve({ data: singleData, error: null });
+
+  const chain: Record<string, unknown> = {};
+  for (const m of ["select", "eq", "order", "limit", "insert", "update"]) {
+    chain[m] = () => chain;
+  }
+  chain["single"] = () => singlePromise;
+  // Thenable so `await admin.from("conversation_signals").insert(...)` resolves
+  chain["then"] = (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => listPromise.then(res, rej);
+  chain["catch"] = (rej: (e: unknown) => unknown) => listPromise.catch(rej);
+  return chain;
 }
-console.log(`══════════════════════════════════`);
-if (fail > 0) process.exit(1);
+
+function createMockAdmin(featureFlags: Record<string, unknown>) {
+  // Row returned by both customer-turn.ts restaurants query AND loadBrain restaurants query.
+  const restaurantRow = {
+    agent_mode: "active", is_open: true, ai_tone: null, dialect: "egyptian",
+    name: "Test Restaurant", currency: "EGP", timezone: "Africa/Cairo",
+    business_type: "restaurant", tier: "standard", feature_flags: featureFlags,
+    auto_accept_orders: false, agent_persona_name: null, tax_mode: "inclusive", tax_rate: 0,
+    logo_url: null, phone: null, email: null, default_language: "ar",
+  };
+
+  return {
+    from: (table: string) => {
+      if (table === "restaurants") return buildChain(restaurantRow);
+      if (table === "agent_runs") return buildChain({ id: "mock-run-id" });
+      // branches, menu_items, modifiers, etc. → empty list
+      return buildChain(null, []);
+    },
+  } as unknown;
+}
+
+// Dangerous symptom phrase — would normally fire detectAllergenSymptom
+const SYMPTOM_MSG = "دخلت الطوارئ بعد السوداني";
+const RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
+
+async function runIntegrationTests(): Promise<void> {
+  // Polyfill `server-only` for Node.js/tsx: the package always throws outside Next.js.
+  // We intercept the require() call and return an empty module instead.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
+  const Module = require("module") as { _load: (...a: any[]) => unknown };
+  const orig = Module._load;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Module._load = function (request: string, ...args: any[]) {
+    if (request === "server-only") return {};
+    return orig.call(Module, request, ...args);
+  };
+
+  // Import here so tsx resolves path aliases at runtime
+  const { runCustomerTurn, CustomerTurnError } =
+    await import("../lib/ai/customer-turn");
+
+  // ─── Test D1: BOTH flags ON → deterministic gate fires, respond() not called ──
+  const bothFlagsAdmin = createMockAdmin({
+    deterministic_allergen_safety: true,
+    allergen_symptom_detection: true,
+  });
+  try {
+    const outcome = await runCustomerTurn(bothFlagsAdmin as never, {
+      restaurantId: RESTAURANT_ID,
+      conversationId: null,
+      history: [],
+      userMessage: SYMPTOM_MSG,
+      persistReply: false,
+    });
+    ok("D1: escalate=true (gate fired)", outcome.escalate === true);
+    ok("D1: model=deterministic_allergen_gate", outcome.model === "deterministic_allergen_gate");
+    ok("D1: adapter=mock (no LLM)", outcome.adapter === "mock");
+    ok("D1: inputTokens=0 (no LLM call)", outcome.usage.inputTokens === 0);
+    ok("D1: outputTokens=0 (no LLM call)", outcome.usage.outputTokens === 0);
+  } catch (e) {
+    ok("D1: should NOT throw for allergen gate path", false,
+      `unexpected throw: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // ─── Test D2: base flag OFF → symptom detector never evaluated → falls through to LLM ──
+  // NOTE: when ANTHROPIC_API_KEY is absent, the system uses a mock LLM adapter that
+  // returns successfully (no throw). So "falls through" means model ≠ deterministic_allergen_gate.
+  const baseFlagOffAdmin = createMockAdmin({
+    // deterministic_allergen_safety: absent (false by default)
+    allergen_symptom_detection: true, // irrelevant when base is off
+  });
+  try {
+    const outcome = await runCustomerTurn(baseFlagOffAdmin as never, {
+      restaurantId: RESTAURANT_ID,
+      conversationId: null,
+      history: [],
+      userMessage: SYMPTOM_MSG,
+      persistReply: false,
+    });
+    ok("D2: absent base flag → falls through to LLM (model ≠ allergen_gate)",
+      outcome.model !== "deterministic_allergen_gate",
+      `got model: ${outcome.model}`);
+    ok("D2: absent base flag → escalate should be false (LLM, not gate)",
+      outcome.escalate === false,
+      `got escalate: ${outcome.escalate}`);
+  } catch (e) {
+    ok("D2: unexpected throw (flag-off should succeed via LLM mock)", false,
+      `got: ${e instanceof Error ? `${e.constructor.name}: ${e.message}` : String(e)}`);
+  }
+
+  // ─── Test D3: base ON but symptom flag OFF → same fall-through ──
+  const symptomFlagOffAdmin = createMockAdmin({
+    deterministic_allergen_safety: true,
+    allergen_symptom_detection: false,
+  });
+  try {
+    const outcome = await runCustomerTurn(symptomFlagOffAdmin as never, {
+      restaurantId: RESTAURANT_ID,
+      conversationId: null,
+      history: [],
+      userMessage: SYMPTOM_MSG,
+      persistReply: false,
+    });
+    ok("D3: symptom flag OFF → falls through to LLM (model ≠ allergen_gate)",
+      outcome.model !== "deterministic_allergen_gate",
+      `got model: ${outcome.model}`);
+  } catch (e) {
+    ok("D3: unexpected throw (symptom-flag-off should succeed via LLM mock)", false,
+      `got: ${e instanceof Error ? `${e.constructor.name}: ${e.message}` : String(e)}`);
+  }
+}
+
+// Wrap in async IIFE — top-level await not available in cjs output
+(async () => {
+  await runIntegrationTests();
+  // ============================================================
+  // Summary (moved inside so it prints after async tests complete)
+  // ============================================================
+  console.log(`\n══════════════════════════════════`);
+  console.log(`  Results: ${pass} passed, ${fail} failed (${pass + fail} total)`);
+  if (errors.length) {
+    console.log(`\n  Failed tests:`);
+    errors.forEach((e) => console.log(`    • ${e}`));
+  }
+  console.log(`══════════════════════════════════`);
+  if (fail > 0) process.exit(1);
+})();
+
