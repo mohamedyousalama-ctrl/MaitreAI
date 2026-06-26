@@ -158,6 +158,33 @@ export default function OrdersPage() {
     n: scoped.filter((o) => p.statuses.includes(o.orderStatus) && (!p.todayOnly || deliveredAt(o) >= since)).length,
   }));
 
+  // ── daily payments summary ──
+  // COD money is NOT recomputed here: it is read from the EXISTING codDailySummary()
+  // via GET /api/cod/ledger — the same source the /cod ledger page uses — so the
+  // orders-page figure and the ledger can never drift apart.
+  const [codSummary, setCodSummary] = useState<{ expectedToday: number; collectedToday: number; outstanding: number } | null>(null);
+  const [codLoaded, setCodLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/cod/ledger", { cache: "no-store" });
+        if (r.ok) { const j = await r.json(); if (alive && j?.summary) setCodSummary(j.summary); }
+      } catch { /* flag off / not configured → gathering state */ }
+      finally { if (alive) setCodLoaded(true); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Orders today (count + value) — real, from the loaded store (cancelled excluded).
+  const todayOrders = useMemo(
+    () => (hydrated ? orders.filter((o) => o.createdAt >= since && o.orderStatus !== "cancelled") : []),
+    [orders, hydrated] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const todayCount = todayOrders.length;
+  const todayValue = todayOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+  const dayCurrency = todayOrders[0]?.currency ?? "ج.م";
+
   // ── table list (filter + search) ──
   const list = useMemo(() => {
     const q = query.trim();
@@ -233,6 +260,27 @@ export default function OrdersPage() {
             <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6 }}>{toAr(p.n)}</div>
           </div>
         ))}
+      </div>
+
+      {/* ── Daily payments summary strip ──
+          COD money reuses codDailySummary() (via /api/cod/ledger); counts/value are
+          real from the loaded orders. The Vodafone Cash split is NOT in the order
+          store (no payment_method field), so it shows an honest "gathering" state —
+          never a fabricated number. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginTop: 18 }}>
+        <SumCard label="طلبات النهارده" value={hydrated ? toAr(todayCount) : "…"} />
+        <SumCard label="قيمة الطلبات" value={hydrated ? `${money(todayValue)} ${dayCurrency}` : "…"} />
+        <SumCard
+          label="COD محصّل النهارده"
+          value={codLoaded ? (codSummary ? `${money(codSummary.collectedToday)} ${dayCurrency}` : null) : "…"}
+          tone="primary"
+        />
+        <SumCard
+          label="COD معلّق"
+          value={codLoaded ? (codSummary ? `${money(codSummary.outstanding)} ${dayCurrency}` : null) : "…"}
+          tone={codSummary && codSummary.outstanding > 0 ? "amber" : undefined}
+        />
+        <SumCard label="فودافون كاش" gathering />
       </div>
 
       {/* ── Table + Drawer ── */}
@@ -324,6 +372,26 @@ function StatTile({ label, value, suffix = "", primary, urgent, placeholder }: {
       <span style={{ fontSize: 18, fontWeight: 800, color }}>
         {value == null ? (placeholder ?? "—") : <><CountUp value={value} format={(n) => toAr(Math.round(n))} />{suffix}</>}
       </span>
+    </div>
+  );
+}
+
+// Compact daily-summary card. `gathering` (or a null value) renders an honest
+// "قيد التجميع" state — never a fabricated number.
+function SumCard({ label, value, tone, gathering }: { label: string; value?: string | null; tone?: "primary" | "amber"; gathering?: boolean }) {
+  const isGathering = gathering || value == null;
+  const isLoading = value === "…";
+  const color = tone === "primary" ? "var(--kv-primary)" : tone === "amber" ? "#9a6a14" : "var(--kv-text)";
+  return (
+    <div style={{ minHeight: 58, padding: "10px 14px", display: "flex", flexDirection: "column", justifyContent: "center", borderRadius: 13, background: "var(--kv-card)", border: "1px solid var(--kv-border)", boxShadow: "var(--kv-shadow-panel)" }}>
+      <span style={{ fontSize: 10.5, fontWeight: 800, color: "var(--kv-faint)" }}>{label}</span>
+      {isGathering ? (
+        <span style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 5, alignSelf: "flex-start", padding: "2px 8px", borderRadius: 99, border: "1px dashed rgba(100,116,139,.35)", color: "#6b7a88", fontSize: 10, fontWeight: 800 }}>
+          قيد التجميع
+        </span>
+      ) : (
+        <span style={{ fontSize: 15.5, fontWeight: 800, color, marginTop: 2 }}>{isLoading ? "…" : value}</span>
+      )}
     </div>
   );
 }
