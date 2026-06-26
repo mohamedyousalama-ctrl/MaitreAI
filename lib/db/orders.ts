@@ -46,6 +46,7 @@ interface OrderRowJoined extends Record<string, unknown> {
   source?: string | null;
   order_status: string;
   payment_status: string;
+  payment_method: string | null;
   address: string | null;
   zone_id: string | null;
   notes: string | null;
@@ -77,6 +78,7 @@ function mapOrder(r: OrderRowJoined): LocalOrder {
     total: Number(r.total),
     currency: r.currency,
     paymentStatus: r.payment_status as PaymentStatusKey,
+    paymentMethod: r.payment_method ?? null,
     orderStatus,
     kitchenStatus: kitchenFromOrderStatus(orderStatus),
     notes: r.notes ?? undefined,
