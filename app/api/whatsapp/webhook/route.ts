@@ -144,6 +144,7 @@ export async function POST(req: NextRequest) {
   let persisted = 0;
   let deduped = 0;
   let responded = 0;
+  let persistFailed = 0;
   let resolvedBy: "phone_number_id" | "env_fallback" = "env_fallback";
   if (admin && messages.length > 0) {
     // Strict per-tenant routing. Three cases:
@@ -235,6 +236,12 @@ export async function POST(req: NextRequest) {
           }
         } catch (e) {
           console.error("[whatsapp:webhook] persist error", e);
+          // Track the failure — do NOT swallow. The response gate below will
+          // return 5xx so Meta redelivers. Redelivery is safe: the dedup on
+          // channel_message_id (messages.ts upsert ignoreDuplicates) means any
+          // already-persisted message in the same batch becomes inserted=false
+          // and is never added to toAnswer → agent never fires twice.
+          persistFailed++;
         }
       }
 
@@ -265,6 +272,18 @@ export async function POST(req: NextRequest) {
     console.log(
       `[whatsapp:webhook] received ${messages.length} message(s)`,
       messages.map((m) => ({ from: m.from, name: m.customerName, text: m.text }))
+    );
+  }
+
+  // If any inbound message failed to persist, return 5xx so Meta redelivers
+  // the entire batch. Already-persisted messages in the batch are safe:
+  // channel_message_id dedup (ignoreDuplicates upsert in persistInboundMessage)
+  // returns inserted=false, which gates toAnswer, which gates the agent — so
+  // no message is stored twice and no agent turn fires twice.
+  if (persistFailed > 0) {
+    return NextResponse.json(
+      { ok: false, error: "persist_failed", failed: persistFailed, persisted, deduped },
+      { status: 500 }
     );
   }
 
