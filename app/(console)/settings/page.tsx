@@ -27,7 +27,7 @@ import { useRiseIn, StatePill } from "@/components/kivo";
 
 type Ops = { isOpen: boolean; assistantOn: boolean };
 type Wa = { phoneNumberId: string; verifyToken: string; configured: boolean };
-type Pay = { cod_enabled: boolean };
+type Pay = { cod_enabled: boolean; vodafone_cash: { enabled: boolean; number: string } };
 type Persona = { dialect: string; agentPersonaName: string | null };
 
 const DIALECT_AR: Record<string, string> = { saudi: "سعودي", egyptian: "مصري" };
@@ -51,6 +51,9 @@ export default function SettingsPage() {
   const [pay, setPay] = useState<{ loaded: boolean; ok: boolean; v: Pay | null }>({ loaded: false, ok: false, v: null });
   const [persona, setPersona] = useState<{ loaded: boolean; ok: boolean; v: Persona | null }>({ loaded: false, ok: false, v: null });
   const [busy, setBusy] = useState(false);
+  const [vcDraft, setVcDraft] = useState<{ enabled: boolean; number: string } | null>(null);
+  const [vcSaving, setVcSaving] = useState(false);
+  const [vcError, setVcError] = useState<string | null>(null);
 
   const rHead = useRiseIn(0); const rStrip = useRiseIn(1); const rWork = useRiseIn(2);
 
@@ -58,7 +61,13 @@ export default function SettingsPage() {
     let alive = true;
     getJson<Ops>("/api/settings/ops").then((r) => alive && setOps({ loaded: true, ok: r.ok, v: r.data }));
     getJson<Wa>("/api/settings/whatsapp").then((r) => alive && setWa({ loaded: true, ok: r.ok, v: r.data }));
-    getJson<Pay>("/api/settings/payment").then((r) => alive && setPay({ loaded: true, ok: r.ok, v: r.data }));
+    getJson<Pay>("/api/settings/payment").then((r) => {
+      if (!alive) return;
+      setPay({ loaded: true, ok: r.ok, v: r.data });
+      if (r.ok && r.data?.vodafone_cash) {
+        setVcDraft({ enabled: r.data.vodafone_cash.enabled, number: r.data.vodafone_cash.number ?? "" });
+      }
+    });
     getJson<Persona>("/api/onboarding/config/persona").then((r) => alive && setPersona({ loaded: true, ok: r.ok, v: r.data }));
     return () => { alive = false; };
   }, []);
@@ -85,6 +94,29 @@ export default function SettingsPage() {
     if (!r.ok) setOps((s) => ({ ...s, v: s.v ? { ...s.v, assistantOn: !next } : s.v }));
     setBusy(false);
   }
+  async function saveVodafoneCash() {
+    if (!vcDraft || vcSaving || !pay.ok) return;
+    if (vcDraft.enabled && !vcDraft.number.trim()) {
+      setVcError("أدخل رقم فودافون كاش قبل التفعيل");
+      return;
+    }
+    setVcError(null);
+    setVcSaving(true);
+    const r = await fetch("/api/settings/payment", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vodafone_cash: { enabled: vcDraft.enabled, number: vcDraft.number.trim() } }),
+    });
+    if (!r.ok) {
+      setVcError("حصل خطأ — حاول تاني");
+    } else {
+      const data = (await r.json()) as Pay;
+      setPay((s) => ({ ...s, v: data }));
+      setVcDraft({ enabled: data.vodafone_cash.enabled, number: data.vodafone_cash.number ?? "" });
+    }
+    setVcSaving(false);
+  }
+
   async function toggleCod() {
     if (!pay.ok || busy) return;
     const next = !codEnabled;
@@ -177,10 +209,49 @@ export default function SettingsPage() {
 
           {/* Payments */}
           <Card>
-            <Row icon={<CreditCard size={19} color="#0a8a5f" />} title="طرق الدفع" sub="الدفع عند الاستلام شغّال · الباقي قريّب" />
+            <Row icon={<CreditCard size={19} color="#0a8a5f" />} title="طرق الدفع" sub="الدفع عند الاستلام شغّال · فودافون كاش متاح" />
             <ToggleRow title="الدفع عند الاستلام (COD)" on={codEnabled} disabled={!pay.ok || busy} onToggle={toggleCod} />
-            {["محفظة موبايل", "إنستاباي", "كارت ائتمان"].map((m, i) => (
-              <div key={m} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: i < 2 ? "1px solid #eef2f0" : "none" }}>
+            {/* Vodafone Cash — functional */}
+            <div style={{ padding: "11px 0", borderBottom: "1px solid #eef2f0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800 }}>فودافون كاش</div>
+                  <div style={{ fontSize: 10, color: "var(--kv-faint)", fontWeight: 600, marginTop: 2 }}>تحويل فوري على رقم محدد</div>
+                </div>
+                <button
+                  type="button" role="switch" aria-checked={vcDraft?.enabled ?? false} aria-label="فودافون كاش"
+                  disabled={!pay.ok || vcSaving}
+                  onClick={() => setVcDraft((d) => d ? { ...d, enabled: !d.enabled } : d)}
+                  style={{ width: 46, height: 26, borderRadius: 99, border: 0, padding: 0, position: "relative", flex: "none",
+                    cursor: (!pay.ok || vcSaving) ? "default" : "pointer", opacity: (!pay.ok || vcSaving) ? 0.55 : 1,
+                    background: vcDraft?.enabled ? "var(--kv-primary)" : "#cdd9d2", transition: "background .15s" }}>
+                  <span style={{ position: "absolute", top: 3, insetInlineStart: vcDraft?.enabled ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 2px 5px rgba(0,0,0,.2)", transition: "inset-inline-start .15s" }} />
+                </button>
+              </div>
+              <div style={{ marginTop: 10 }}>
+                <input
+                  type="tel" dir="ltr" placeholder="رقم فودافون كاش (مثلاً 01007636312)"
+                  value={vcDraft?.number ?? ""}
+                  disabled={!pay.ok || vcSaving}
+                  onChange={(e) => { setVcDraft((d) => d ? { ...d, number: e.target.value } : d); setVcError(null); }}
+                  style={{ width: "100%", padding: "7px 10px", borderRadius: 9,
+                    border: `1px solid ${vcError ? "#e53e3e" : "var(--kv-border)"}`,
+                    background: "var(--kv-card-soft)", fontSize: 12.5, fontWeight: 700,
+                    color: "var(--kv-text)", boxSizing: "border-box" as const }}
+                />
+                {vcError && <div style={{ fontSize: 10, color: "#e53e3e", fontWeight: 700, marginTop: 4 }}>{vcError}</div>}
+                <button
+                  type="button" onClick={saveVodafoneCash} disabled={!pay.ok || vcSaving}
+                  style={{ marginTop: 8, height: 30, padding: "0 14px", borderRadius: 9, border: 0,
+                    background: "var(--kv-primary)", color: "#fff", fontSize: 11.5, fontWeight: 800,
+                    cursor: (!pay.ok || vcSaving) ? "default" : "pointer", opacity: (!pay.ok || vcSaving) ? 0.55 : 1 }}>
+                  {vcSaving ? "جاري الحفظ…" : "حفظ"}
+                </button>
+              </div>
+            </div>
+            {/* Remaining coming-soon payment methods */}
+            {(["إنستاباي", "كارت ائتمان"] as const).map((m, i) => (
+              <div key={m} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: i < 1 ? "1px solid #eef2f0" : "none" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--kv-faint)" }}>{m}</span>
                   <StatePill state="coming" />
