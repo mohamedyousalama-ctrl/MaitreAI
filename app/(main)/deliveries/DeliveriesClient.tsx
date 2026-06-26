@@ -9,7 +9,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { LiveMap, type MapMarker } from "@/components/delivery/LiveMap";
 import { Truck, Plus, Loader2, Link2, Check } from "lucide-react";
 
 interface Driver { id: string; name: string; phone: string; vehicle: string | null; active: boolean }
@@ -19,7 +18,6 @@ interface Delivery {
   driver_id: string | null;
   drivers: { name: string; phone: string } | null;
   orders: { order_number: string | null; total: number | null; currency: string | null; address: string | null } | null;
-  latestLocation?: { lat: number; lng: number } | null;
 }
 
 const STATUS_AR: Record<string, string> = {
@@ -120,23 +118,15 @@ export function DeliveriesClient() {
     loadDrivers();
   }
 
-  const markers: MapMarker[] = deliveries
-    .filter((d) => d.latestLocation)
-    .map((d) => ({ lat: d.latestLocation!.lat, lng: d.latestLocation!.lng, label: d.drivers?.name ?? "مندوب" }));
   const activeDrivers = drivers.filter((d) => d.active);
 
   return (
     <div>
-      <PageHeader title="التوصيل" subtitle="إدارة المندوبين وتعيين الطلبات وتتبّعها مباشرة" icon={Truck} accentBg="bg-orders" />
+      <PageHeader title="التوصيل" subtitle="إدارة المندوبين وتعيين الطلبات" icon={Truck} accentBg="bg-orders" />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {/* Live map + deliveries */}
+        {/* Deliveries list */}
         <div className="space-y-4 lg:col-span-2">
-          <div className="card p-3">
-            <p className="mb-2 px-1 text-xs font-semibold text-[#9b8b7c]">المندوبون في الطريق الآن</p>
-            <LiveMap markers={markers} height={260} />
-          </div>
-
           <div className="card divide-y divide-[#f0e7da] p-0">
             {loading ? (
               <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-[#b5502e]" /></div>
