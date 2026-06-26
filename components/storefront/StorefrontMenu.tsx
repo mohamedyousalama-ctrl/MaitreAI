@@ -43,6 +43,7 @@ export function StorefrontMenu({
   modifiers,
   branches,
   deliveryAreas,
+  vodafoneCash,
 }: {
   slug: string;
   restaurantName: string;
@@ -51,6 +52,7 @@ export function StorefrontMenu({
   modifiers: Modifier[];
   branches: Branch[];
   deliveryAreas: DeliveryArea[];
+  vodafoneCash?: { enabled: boolean; number?: string; instructions: string } | null;
 }) {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [openItem, setOpenItem] = useState<MenuItem | null>(null);
@@ -73,6 +75,7 @@ export function StorefrontMenu({
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [notes, setNotes] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"cod" | "vodafone_cash">("cod");
   const [submitting, setSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const [confirmation, setConfirmation] = useState<{
@@ -191,6 +194,7 @@ export function StorefrontMenu({
           customerPhone,
           address: fulfillment === "delivery" ? address : "",
           notes,
+          paymentMethod,
         }),
       });
       const data = (await res.json()) as { error?: string } & NonNullable<typeof confirmation>;
@@ -512,10 +516,19 @@ export function StorefrontMenu({
                     <span className="text-sm font-bold text-wesaya-ink">الإجمالي</span>
                     <span className="font-baloo text-base font-extrabold text-wesaya-red">{formatCurrency(confirmation.total, confirmation.currency)}</span>
                   </div>
-                  <div className="flex items-center gap-2 rounded-[10px] bg-wesaya-cream px-3 py-2.5 text-xs text-wesaya-muted">
-                    <span>🕒</span>
-                    <span>{fulfillment === "delivery" ? "توصيل" : "استلام من الفرع"} · الدفع عند الاستلام — يُؤكَّد طلبك قريبًا على واتساب.</span>
-                  </div>
+                  {paymentMethod === "vodafone_cash" && vodafoneCash?.number ? (
+                    <div className="flex flex-col gap-1.5 rounded-[10px] bg-wesaya-tint px-3 py-3 text-xs">
+                      <div className="font-bold text-wesaya-ink">📱 ادفع بفودافون كاش</div>
+                      <div className="text-wesaya-muted">اتحول المبلغ على الرقم ده:</div>
+                      <div className="font-baloo text-[16px] font-extrabold tracking-wide text-wesaya-red" dir="ltr">{vodafoneCash.number}</div>
+                      <div className="text-wesaya-muted">وهنأكد طلبك على واتساب.</div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 rounded-[10px] bg-wesaya-cream px-3 py-2.5 text-xs text-wesaya-muted">
+                      <span>🕒</span>
+                      <span>{fulfillment === "delivery" ? "توصيل" : "استلام من الفرع"} · الدفع عند الاستلام — يُؤكَّد طلبك قريبًا على واتساب.</span>
+                    </div>
+                  )}
                 </div>
 
                 <button onClick={orderAgain} className="rounded-2xl border-[1.5px] border-wesaya-line bg-white px-4 py-3.5 font-baloo text-[15px] font-bold text-wesaya-ink transition hover:border-wesaya-red/40">
@@ -664,22 +677,43 @@ export function StorefrontMenu({
                     {/* payment method */}
                     <div className="flex flex-col gap-2.5">
                       <div className="font-baloo text-base font-bold text-wesaya-ink">طريقة الدفع</div>
-                      <div className="flex items-center gap-3 rounded-[14px] border-2 border-wesaya-red bg-white p-3.5">
-                        <span className="h-[22px] w-[22px] flex-none rounded-full border-[6px] border-wesaya-red bg-white" />
+                      {/* COD — always available */}
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod("cod")}
+                        className={"flex items-center gap-3 rounded-[14px] p-3.5 text-start transition " + (paymentMethod === "cod" ? "border-2 border-wesaya-red bg-white" : "border-[1.5px] border-wesaya-line bg-white hover:border-wesaya-red/40")}
+                      >
+                        <span className={"h-[22px] w-[22px] flex-none rounded-full " + (paymentMethod === "cod" ? "border-[6px] border-wesaya-red bg-white" : "border-2 border-wesaya-line bg-white")} />
                         <div className="flex-1">
                           <div className="text-sm font-bold text-wesaya-ink">الدفع عند الاستلام</div>
                           <div className="text-[11.5px] text-wesaya-muted">كاش عند استلام طلبك</div>
                         </div>
                         <span className="text-xl">💵</span>
-                      </div>
-                      <div className="flex items-center gap-3 rounded-[14px] border-[1.5px] border-dashed border-wesaya-line bg-[#F6F0E6] p-3.5 opacity-70">
-                        <span className="h-[22px] w-[22px] flex-none rounded-full border-2 border-wesaya-line bg-white" />
-                        <div className="flex-1">
-                          <div className="text-sm font-bold text-wesaya-muted">الدفع الإلكتروني</div>
-                          <div className="text-[11.5px] text-wesaya-muted">بطاقة / محفظة</div>
+                      </button>
+                      {/* Vodafone Cash — shown when enabled in payment_config */}
+                      {vodafoneCash?.enabled ? (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod("vodafone_cash")}
+                          className={"flex items-center gap-3 rounded-[14px] p-3.5 text-start transition " + (paymentMethod === "vodafone_cash" ? "border-2 border-wesaya-red bg-white" : "border-[1.5px] border-wesaya-line bg-white hover:border-wesaya-red/40")}
+                        >
+                          <span className={"h-[22px] w-[22px] flex-none rounded-full " + (paymentMethod === "vodafone_cash" ? "border-[6px] border-wesaya-red bg-white" : "border-2 border-wesaya-line bg-white")} />
+                          <div className="flex-1">
+                            <div className="text-sm font-bold text-wesaya-ink">فودافون كاش</div>
+                            <div className="text-[11.5px] text-wesaya-muted">تحويل فوري على الرقم</div>
+                          </div>
+                          <span className="text-xl">📱</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-3 rounded-[14px] border-[1.5px] border-dashed border-wesaya-line bg-[#F6F0E6] p-3.5 opacity-70">
+                          <span className="h-[22px] w-[22px] flex-none rounded-full border-2 border-wesaya-line bg-white" />
+                          <div className="flex-1">
+                            <div className="text-sm font-bold text-wesaya-muted">الدفع الإلكتروني</div>
+                            <div className="text-[11.5px] text-wesaya-muted">بطاقة / محفظة</div>
+                          </div>
+                          <span className="rounded-lg bg-[#E9DECB] px-2.5 py-1 text-[11px] font-bold text-[#8a6a16]">قريبًا</span>
                         </div>
-                        <span className="rounded-lg bg-[#E9DECB] px-2.5 py-1 text-[11px] font-bold text-[#8a6a16]">قريبًا</span>
-                      </div>
+                      )}
                     </div>
 
                     {/* totals (server recomputes the authoritative total at checkout) */}

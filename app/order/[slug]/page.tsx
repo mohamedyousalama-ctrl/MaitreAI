@@ -11,6 +11,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadBrain } from "@/lib/db/brain";
 import { StorefrontMenu } from "@/components/storefront/StorefrontMenu";
+import { normalizePaymentConfig } from "@/lib/payments/config";
 import { UtensilsCrossed } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -24,12 +25,13 @@ export default async function StorefrontMenuPage({ params }: { params: { slug: s
 
   const { data: restaurant } = await admin
     .from("restaurants")
-    .select("id")
+    .select("id, payment_config")
     .ilike("slug", slug)
     .maybeSingle();
   if (!restaurant) return <NotFound />;
 
   const brain = await loadBrain(admin, restaurant.id as string);
+  const payConfig = normalizePaymentConfig(restaurant.payment_config);
   const currency = brain.profile.currency || "ج.م";
   const availableItems = brain.menuItems.filter((i) => i.available);
 
@@ -52,6 +54,7 @@ export default async function StorefrontMenuPage({ params }: { params: { slug: s
           modifiers={brain.modifiers}
           branches={brain.branches.filter((b) => b.open)}
           deliveryAreas={brain.deliveryAreas.filter((z) => z.active)}
+          vodafoneCash={payConfig.vodafone_cash}
         />
       </main>
     </>
