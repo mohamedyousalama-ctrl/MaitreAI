@@ -17,6 +17,8 @@ import {
   Bell,
   GraduationCap,
   Wallet,
+  UtensilsCrossed,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
@@ -174,12 +176,15 @@ export function ConsoleSidebar() {
         <NavLink href="/conversations" icon={MessagesSquare} label="المحادثات" active={is("/conversations")} badge={escalations} />
         <NavLink href="/orders" icon={ClipboardList} label="الطلبات" active={is("/orders")} />
         <NavLink href="/customers" icon={Users} label="العملاء" active={is("/customers")} />
+        {/* Menu & Memory — the editor + «ذاكرة المطعم» tab + «مناطق التوصيل» zones editor live here. */}
+        <NavLink href="/menu" icon={UtensilsCrossed} label="المنيو والذاكرة" active={is("/menu")} />
         <NavLink href="/settings" icon={Settings} label="الربط والإعدادات" active={is("/settings")} />
       </nav>
 
       <GroupLabel>تشغيل</GroupLabel>
       <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <NavLink href="/cod" icon={Wallet} label="الكاش والتحصيل" active={is("/cod")} />
+        <NavLink href="/deliveries" icon={Truck} label="التوصيل" active={is("/deliveries")} />
         <NavLink href="/conversations" icon={Bell} label="التنبيهات" badge={escalations} />
         {/* التعلّم — coming-soon, non-navigating (learning depth is V2). */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, height: 40, padding: "0 12px", borderRadius: 13, color: "var(--kv-faint)", cursor: "default" }}>
