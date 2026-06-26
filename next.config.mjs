@@ -8,11 +8,12 @@ const nextConfig = {
   // normal navigation (they render the old shell with a sidebar that links into
   // the Kivo console). Redirect each to its Kivo equivalent, else to the Kivo
   // Home (/dashboard). /dashboard itself is now the Kivo Home in (console).
+  // NOTE: /menu, /cod, /deliveries are intentionally NOT redirected — they are
+  // linked from the live console (ConsoleSidebar) and must serve their real
+  // (main) pages (menu+zones editor, COD ledger, deliveries). They render in the
+  // old shell for now (reachability over skin); the rest stay redirected.
   async redirects() {
     return [
-      { source: "/deliveries", destination: "/orders", permanent: false },
-      { source: "/cod", destination: "/settings", permanent: false },
-      { source: "/menu", destination: "/dashboard", permanent: false },
       { source: "/maitre", destination: "/dashboard", permanent: false },
       { source: "/promotions", destination: "/dashboard", permanent: false },
       { source: "/branches", destination: "/dashboard", permanent: false },
