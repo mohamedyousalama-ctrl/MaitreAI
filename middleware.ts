@@ -4,12 +4,12 @@
 // it no-ops so the existing localStorage app keeps working unchanged.
 //
 // Phase 6: host-aware subdomain split (lib/domains.ts). On a tenant STOREFRONT
-// host (e.g. order.wesayachicken.com) the root "/" is internally rewritten to
+// host (e.g. wesayachicken.com) the root "/" is internally rewritten to
 // the EXISTING public /order/[slug] page for that tenant — the customer never
 // sees /order/wesaya, the hostname maps to the tenant. Every other host
 // (maitre.chat, *.vercel.app) falls through to the normal auth flow UNCHANGED.
 //
-// Operator host "/" (e.g. app.wesayachicken.com): the root marketing landing is
+// Operator host "/" (e.g. console.wesayachicken.com): the root marketing landing is
 // MaitreAI's OWN company site (logo, City Baker legal footer) and must not show
 // on a client's operator domain. There, "/" redirects to /login; the auth helper
 // then bounces an already-signed-in operator from /login to /dashboard (existing

@@ -16,8 +16,10 @@ export type HostMapping =
   | { kind: "operator" }; // the normal login-gated operator app
 
 export const HOST_MAP: Record<string, HostMapping> = {
+  "wesayachicken.com": { kind: "storefront", slug: "wesaya" },
   "order.wesayachicken.com": { kind: "storefront", slug: "wesaya" },
-  "app.wesayachicken.com": { kind: "operator" },
+  "app.wesayachicken.com": { kind: "storefront", slug: "wesaya" },
+  "console.wesayachicken.com": { kind: "operator" },
 };
 
 /** Normalize a Host header (strip port, lowercase) and look up its mapping. */
