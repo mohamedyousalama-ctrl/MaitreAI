@@ -25,6 +25,7 @@ import { useConversationStore } from "@/lib/conversation-store";
 import { useHasHydrated } from "@/lib/store";
 import { CountUp, useRiseIn } from "@/components/kivo";
 import { useConsoleUi } from "@/components/console/console-ui-store";
+import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import type { LocalOrder, OrderStatusKey } from "@/lib/types";
 
 // ── helpers (Arabic digits + money; money is display-only, value from the row) ─
@@ -342,6 +343,119 @@ function PaymentPill({ o }: { o: LocalOrder }) {
   return <Pill label="بانتظار الدفع" dot="var(--kv-amber)" bg="rgba(201,138,31,.16)" fg="#9a6a14" />;
 }
 
+// ── driver assignment (delivery orders) ──
+// Wires the EXISTING dispatch backend into the orders drawer: the drivers list
+// comes from GET /api/drivers and the assignment posts to the SAME endpoint the
+// /deliveries page uses (POST /api/deliveries/[deliveryId]/assign), which mints
+// the tokens and WhatsApps the driver. We map this order to its delivery row via
+// the order number returned by GET /api/deliveries — no new mechanism, no new API.
+type DeliveryRow = {
+  id: string;
+  status: string;
+  driver_id: string | null;
+  drivers: { name: string; phone: string } | null;
+  orders: { order_number: string | number | null } | null;
+};
+type DriverRow = { id: string; name: string; phone: string; active: boolean };
+const ASSIGNABLE: OrderStatusKey[] = ["ready", "out_for_delivery"];
+
+function DriverAssign({ o }: { o: LocalOrder }) {
+  const [delivery, setDelivery] = useState<DeliveryRow | null>(null);
+  const [drivers, setDrivers] = useState<DriverRow[]>([]);
+  const [pick, setPick] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  async function load() {
+    try {
+      const [dRes, drRes] = await Promise.all([
+        fetch("/api/deliveries", { cache: "no-store" }),
+        fetch("/api/drivers", { cache: "no-store" }),
+      ]);
+      if (dRes.ok) {
+        const rows = ((await dRes.json()).deliveries ?? []) as DeliveryRow[];
+        setDelivery(rows.find((x) => String(x.orders?.order_number ?? "") === String(o.orderNumber)) ?? null);
+      }
+      if (drRes.ok) setDrivers(((await drRes.json()).drivers ?? []).filter((d: DriverRow) => d.active));
+    } catch {
+      /* flag off / not configured → render nothing */
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  useEffect(() => {
+    setLoaded(false);
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [o.id]);
+
+  async function assign() {
+    if (!delivery || !pick) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/deliveries/${delivery.id}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driverId: pick }),
+      });
+      if (r.ok) { setPick(""); await load(); }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!ENABLE_DELIVERY_TRACKING || !loaded) return null;
+
+  // Already assigned → show the driver on the order (any status).
+  if (delivery?.driver_id && delivery.drivers?.name) {
+    return (
+      <div style={{ padding: 18, borderBottom: "1px solid var(--kv-border)" }}>
+        <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8 }}>المندوب</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: 12, background: "rgba(124,92,208,.08)", border: "1px solid rgba(124,92,208,.22)", padding: "10px 13px" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--kv-delivery)", flex: "none" }} />
+          <span style={{ fontSize: 12.5, fontWeight: 700 }}>{delivery.drivers.name}</span>
+          {delivery.drivers.phone && <span style={{ fontSize: 11, color: "var(--kv-faint)", marginInlineStart: "auto" }} dir="ltr">{delivery.drivers.phone}</span>}
+        </div>
+      </div>
+    );
+  }
+
+  // Unassigned + order is ready / out for delivery + a delivery row exists → offer assignment.
+  if (!delivery || !ASSIGNABLE.includes(o.orderStatus)) return null;
+
+  return (
+    <div style={{ padding: 18, borderBottom: "1px solid var(--kv-border)" }}>
+      <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8 }}>تعيين مندوب</div>
+      {drivers.length === 0 ? (
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--kv-faint)" }}>
+          لا يوجد مندوبون نشطون — أضِف مندوبًا من صفحة التوصيل.
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <select
+            value={pick}
+            onChange={(e) => setPick(e.target.value)}
+            style={{ flex: 1, height: 38, borderRadius: 10, border: "1px solid var(--kv-border)", background: "var(--kv-card)", padding: "0 10px", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600, color: "var(--kv-text)" }}
+          >
+            <option value="">اختر مندوباً…</option>
+            {drivers.map((d) => (
+              <option key={d.id} value={d.id}>{d.name} — {d.phone}</option>
+            ))}
+          </select>
+          <button
+            onClick={assign}
+            disabled={!pick || busy}
+            style={{ height: 38, padding: "0 16px", border: 0, borderRadius: 10, background: pick && !busy ? "var(--kv-grad-brand)" : "var(--kv-card-soft)", color: pick && !busy ? "#fff" : "var(--kv-faint)", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, cursor: pick && !busy ? "pointer" : "default" }}
+          >
+            {busy ? "..." : "تعيين"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const RANK: Record<string, number> = { pending_confirmation: 0, pending_payment: 0, paid: 1, preparing: 2, ready: 3, out_for_delivery: 4, delivered: 5 };
 function OrderDrawer({ o, escalated, onAdvance }: { o: LocalOrder; escalated: boolean; onAdvance: (o: LocalOrder) => void }) {
   const m = statusMeta(o.orderStatus);
@@ -413,6 +527,11 @@ function OrderDrawer({ o, escalated, onAdvance }: { o: LocalOrder; escalated: bo
           </div>
         </div>
       )}
+
+      {/* driver assignment (delivery orders only) — reuses the SAME drivers list
+          (/api/drivers) and assign endpoint (POST /api/deliveries/[id]/assign) as
+          the /deliveries page; this is UI wiring, no new backend. */}
+      {o.fulfillmentType === "delivery" && <DriverAssign o={o} />}
 
       {/* status timeline */}
       <div style={{ padding: 18, borderBottom: "1px solid var(--kv-border)" }}>
