@@ -25,6 +25,7 @@ type CheckoutPayload = {
   customerPhone?: string;
   address?: string;
   notes?: string;
+  paymentMethod?: string;
 };
 
 const clean = (v: unknown) => (typeof v === "string" ? v.trim() : "");
@@ -97,6 +98,13 @@ export async function POST(req: NextRequest) {
     return bad(err instanceof Error ? err.message : "تعذر حساب الطلب.");
   }
 
+  const VALID_METHODS = ["cod", "vodafone_cash"] as const;
+  type ValidMethod = (typeof VALID_METHODS)[number];
+  const paymentMethod: ValidMethod =
+    VALID_METHODS.includes(payload.paymentMethod as ValidMethod)
+      ? (payload.paymentMethod as ValidMethod)
+      : "cod";
+
   const customerId = await ensureCustomerId(admin, restaurantId, customerPhone, customerName);
   const notes = clean(payload.notes) || null;
   const fingerprint = JSON.stringify({
@@ -134,6 +142,7 @@ export async function POST(req: NextRequest) {
         currency: priced.currency,
         order_status: "pending_confirmation",
         payment_status: "unpaid",
+        payment_method: paymentMethod,
         address,
         zone_id: priced.deliveryZone?.id ?? null,
         notes,
