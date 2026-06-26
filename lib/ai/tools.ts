@@ -38,6 +38,8 @@ export interface OrderDraft {
   lines: DraftLine[];
   fulfillment: "pickup" | "delivery" | null;
   deliveryZone: string | null;
+  /** Customer's written street address for delivery (null for pickup or not yet provided). */
+  address: string | null;
   deliveryFee: number;
   subtotal: number;
   tax: number; // VAT amount (0 when tax-inclusive)
@@ -142,6 +144,7 @@ export function emptyDraft(currency: string): OrderDraft {
     lines: [],
     fulfillment: null,
     deliveryZone: null,
+    address: null,
     deliveryFee: 0,
     subtotal: 0,
     tax: 0,
@@ -214,6 +217,22 @@ export const ORDER_TOOLS: LlmToolDef[] = [
         zone_name: { type: "string" },
       },
       required: ["type"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_delivery_address",
+    description:
+      "Store the customer's written street address for a delivery order. " +
+      "Call this as soon as the customer types their address (منطقة + شارع + علامة مميزة). " +
+      "Required before finalize_draft can succeed for a delivery order. " +
+      "Do NOT call for pickup orders.",
+    input_schema: {
+      type: "object",
+      properties: {
+        address: { type: "string", description: "The customer's full written delivery address" },
+      },
+      required: ["address"],
       additionalProperties: false,
     },
   },
@@ -625,6 +644,7 @@ export function executeTool(
       d.fulfillment = type;
       d.deliveryZone = null;
       d.deliveryFee = 0;
+      if (type === "pickup") d.address = null;
       if (type === "delivery") {
         const zoneName = String(input.zone_name ?? "");
         const zone = ctx.deliveryAreas.find((z) => z.active && norm(z.name) === norm(zoneName)) ||
@@ -649,6 +669,15 @@ export function executeTool(
       const label = type === "delivery" ? `توصيل إلى ${d.deliveryZone}` : "استلام من الفرع";
       return { content: `${label}.\n${summary(d)}` };
     }
+    case "set_delivery_address": {
+      if (d.fulfillment !== "delivery") {
+        return { content: "set_delivery_address يُستخدم فقط لطلبات التوصيل. اختر التوصيل أولاً.", isError: true };
+      }
+      const addr = String(input.address ?? "").trim();
+      if (!addr) return { content: "العنوان فارغ — اطلب من العميل كتابة العنوان.", isError: true };
+      d.address = addr;
+      return { content: `تم تسجيل عنوان التوصيل: ${addr}` };
+    }
     case "get_order_summary": {
       const notice = recompute(ctx);
       if (notice) return { content: notice };
@@ -657,6 +686,9 @@ export function executeTool(
     case "finalize_draft": {
       if (!d.lines.length) return { content: "لا يمكن تأكيد طلب فارغ.", isError: true };
       if (!d.fulfillment) return { content: "لا يمكن تأكيد الطلب قبل اختيار الاستلام أو التوصيل.", isError: true };
+      if (d.fulfillment === "delivery" && !d.address?.trim()) {
+        return { content: "لم يتم تسجيل عنوان التوصيل. اطلب من العميل العنوان الكامل (المنطقة + الشارع + علامة مميزة) ثم استدعِ set_delivery_address.", isError: true };
+      }
       {
         // Real-time 86ing guard: never finalize an order containing an item that has
         // been marked out-of-stock since it was added. Availability is the tool's

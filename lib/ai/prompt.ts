@@ -105,7 +105,7 @@ function currentOrderBlock(draft: OrderDraft | null | undefined, currency: strin
     .join("\n");
   const ful =
     draft.fulfillment === "delivery"
-      ? `الاستلام: توصيل${draft.deliveryZone ? `/${draft.deliveryZone}` : ""}${draft.deliveryFee ? ` (رسوم ${toAr(draft.deliveryFee)} ${currency})` : ""}`
+      ? `الاستلام: توصيل${draft.deliveryZone ? `/${draft.deliveryZone}` : ""}${draft.deliveryFee ? ` (رسوم ${toAr(draft.deliveryFee)} ${currency})` : ""}${draft.address ? `\nعنوان التوصيل: ${draft.address}` : "\nعنوان التوصيل: لسه ماتحددش — اطلب العنوان من العميل واستخدم set_delivery_address"}`
       : draft.fulfillment === "pickup"
         ? "الاستلام: من الفرع"
         : "الاستلام: لسه ماتحددش";
@@ -391,6 +391,7 @@ ${
   • after the customer picks an item → present_quantity (1/2/3)
   • a small finite choice (variant عادي/حار, size, pickup vs delivery) → present the tappable options rather than asking them to type
   • FULFILLMENT BEFORE CONFIRM — set pickup/delivery (set_fulfillment) BEFORE you read back to confirm. Never offer «تأكيد» / «نكمّل للدفع» / present_order_actions while الاستلام/التوصيل لسه ماتحددش؛ اسأل «استلام من الفرع ولا توصيل؟» أول. (Finalizing without fulfillment is rejected and loops.)
+  • ADDRESS FOR DELIVERY — for a delivery order, collect the customer's written address (منطقة + شارع + علامة مميزة) and call set_delivery_address BEFORE finalize_draft. If the customer sends a location pin, ask them to type the address instead (you cannot read pins). Finalizing without an address is rejected. For pickup, no address needed.
   • after fulfillment is set AND you read back the summary + total → present_order_actions (تأكيد/إضافة/إلغاء)
   • collecting payment → present_payment_methods (الدفع عند الاستلام)
 - Still add/finalize with the order tools (money always comes from them). Presentation tools only SHOW choices; they don't change the order.
