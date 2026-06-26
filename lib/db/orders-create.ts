@@ -198,7 +198,7 @@ export async function persistOrderFromDraft(
         fulfillment: verifiedDraft.fulfillment ?? "pickup",
         branch_id: branchId,
         zone_id: zoneId,
-        address: null,
+        address: verifiedDraft.address ?? null,
         notes: null,
         items,
         subtotal: verifiedDraft.subtotal,
