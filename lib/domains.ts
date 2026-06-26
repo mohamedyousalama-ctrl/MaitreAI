@@ -13,14 +13,14 @@
 
 export type HostMapping =
   | { kind: "storefront"; slug: string } // public customer storefront for a tenant
-  | { kind: "operator" }; // the normal login-gated operator app
+  | { kind: "operator"; restaurantId?: string }; // the normal login-gated operator app; restaurantId pins the console to a specific tenant
 
 export const HOST_MAP: Record<string, HostMapping> = {
   "wesayachicken.com": { kind: "storefront", slug: "wesaya" },
   "www.wesayachicken.com": { kind: "storefront", slug: "wesaya" },
   "order.wesayachicken.com": { kind: "storefront", slug: "wesaya" },
   "app.wesayachicken.com": { kind: "storefront", slug: "wesaya" },
-  "console.wesayachicken.com": { kind: "operator" },
+  "console.wesayachicken.com": { kind: "operator", restaurantId: "5acbc72f-def3-46cd-ad6c-bf0ff4a23642" },
 };
 
 /** Normalize a Host header (strip port, lowercase) and look up its mapping. */

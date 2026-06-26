@@ -7,6 +7,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MemberRole } from "./types";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { hostMapping } from "@/lib/domains";
 
 export interface Tenant {
   userId: string;
@@ -68,9 +69,17 @@ export async function resolveTenant(
 
 /** Client components. */
 export async function getBrowserTenant(): Promise<Tenant | null> {
-  const activeRid =
+  // Host-pinned tenant takes precedence over the cookie so that a branded
+  // console subdomain (e.g. console.wesayachicken.com) always resolves to its
+  // configured restaurant regardless of any previously-set cookie.
+  // resolveTenant() still verifies membership — a non-member gets null.
+  const hostRid =
+    typeof window !== "undefined"
+      ? (() => { const m = hostMapping(window.location.hostname); return m?.kind === "operator" ? (m.restaurantId ?? null) : null; })()
+      : null;
+  const cookieRid =
     typeof document !== "undefined"
       ? (document.cookie.match(new RegExp(`(?:^|;\\s*)${ACTIVE_RESTAURANT_COOKIE}=([^;]+)`)) ?? [])[1] ?? null
       : null;
-  return resolveTenant(createBrowserClient(), activeRid);
+  return resolveTenant(createBrowserClient(), hostRid ?? cookieRid);
 }
