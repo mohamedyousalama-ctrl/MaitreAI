@@ -97,6 +97,9 @@ export interface LocalOrder {
   total: number;
   currency: string;
   paymentStatus: PaymentStatusKey;
+  /** Payment method chosen at checkout (e.g. "cod", "vodafone_cash"); null/undefined
+   *  when unspecified (e.g. WhatsApp orders that never picked one). Read-only display. */
+  paymentMethod?: string | null;
   orderStatus: OrderStatusKey;
   kitchenStatus: KitchenStatusKey;
   notes?: string;

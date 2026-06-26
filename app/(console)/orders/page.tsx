@@ -158,6 +158,41 @@ export default function OrdersPage() {
     n: scoped.filter((o) => p.statuses.includes(o.orderStatus) && (!p.todayOnly || deliveredAt(o) >= since)).length,
   }));
 
+  // ── daily payments summary ──
+  // COD MONEY is NOT recomputed here: it's read from the EXISTING codDailySummary()
+  // via GET /api/cod/ledger — the same source the /cod ledger page uses — so the
+  // orders-page figure and the ledger can never drift. The per-order paymentMethod
+  // field (newly surfaced from orders.payment_method) is used ONLY for the method
+  // counts and the Vodafone Cash amount (no COD-ledger equivalent exists for VF).
+  const [codSummary, setCodSummary] = useState<{ expectedToday: number; collectedToday: number; outstanding: number } | null>(null);
+  const [codLoaded, setCodLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/cod/ledger", { cache: "no-store" });
+        if (r.ok) { const j = await r.json(); if (alive && j?.summary) setCodSummary(j.summary); }
+      } catch { /* flag off / not configured → gathering state */ }
+      finally { if (alive) setCodLoaded(true); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Today's orders (count + value + method split) — real, from the loaded store
+  // (cancelled excluded). Method split uses the new per-order paymentMethod field.
+  const todayOrders = useMemo(
+    () => (hydrated ? orders.filter((o) => o.createdAt >= since && o.orderStatus !== "cancelled") : []),
+    [orders, hydrated] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const todayCount = todayOrders.length;
+  const todayValue = todayOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+  const dayCurrency = todayOrders[0]?.currency ?? "ج.م";
+  const codCount = todayOrders.filter((o) => o.paymentMethod === "cod").length;
+  const vfOrders = todayOrders.filter((o) => o.paymentMethod === "vodafone_cash");
+  const vfCount = vfOrders.length;
+  const vfAmount = vfOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+  const unspecifiedCount = todayOrders.filter((o) => o.paymentMethod !== "cod" && o.paymentMethod !== "vodafone_cash").length;
+
   // ── table list (filter + search) ──
   const list = useMemo(() => {
     const q = query.trim();
@@ -233,6 +268,33 @@ export default function OrdersPage() {
             <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6 }}>{toAr(p.n)}</div>
           </div>
         ))}
+      </div>
+
+      {/* ── Daily payments summary strip ──
+          COD money (collected / outstanding) reuses codDailySummary() via
+          /api/cod/ledger — never recomputed here. Counts + Vodafone Cash amount come
+          from the loaded orders' real paymentMethod field. Orders with no method are
+          surfaced honestly as "غير محدد" — never folded into a method. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginTop: 18 }}>
+        <SumCard label="طلبات النهارده" value={hydrated ? toAr(todayCount) : "…"} />
+        <SumCard label="قيمة الطلبات" value={hydrated ? `${money(todayValue)} ${dayCurrency}` : "…"} />
+        <SumCard
+          label="COD محصّل النهارده"
+          value={codLoaded ? (codSummary ? `${money(codSummary.collectedToday)} ${dayCurrency}` : null) : "…"}
+          sub={hydrated ? `${toAr(codCount)} طلب${codSummary ? ` · معلّق ${money(codSummary.outstanding)}` : ""}` : undefined}
+          tone="primary"
+        />
+        <SumCard
+          label="فودافون كاش"
+          value={hydrated ? `${money(vfAmount)} ${dayCurrency}` : "…"}
+          sub={hydrated ? `${toAr(vfCount)} طلب` : undefined}
+          tone="vodafone"
+        />
+        <SumCard
+          label="غير محدد الدفع"
+          value={hydrated ? toAr(unspecifiedCount) : "…"}
+          sub={hydrated ? "طلب بدون طريقة دفع" : undefined}
+        />
       </div>
 
       {/* ── Table + Drawer ── */}
@@ -328,6 +390,29 @@ function StatTile({ label, value, suffix = "", primary, urgent, placeholder }: {
   );
 }
 
+// Compact daily-summary card. A null value renders an honest "قيد التجميع" state
+// (e.g. COD money before the ledger responds) — never a fabricated number.
+function SumCard({ label, value, sub, tone }: { label: string; value?: string | null; sub?: string; tone?: "primary" | "vodafone" }) {
+  const isGathering = value == null;
+  const isLoading = value === "…";
+  const color = tone === "primary" ? "var(--kv-primary)" : tone === "vodafone" ? "#c40000" : "var(--kv-text)";
+  return (
+    <div style={{ minHeight: 58, padding: "10px 14px", display: "flex", flexDirection: "column", justifyContent: "center", borderRadius: 13, background: "var(--kv-card)", border: "1px solid var(--kv-border)", boxShadow: "var(--kv-shadow-panel)" }}>
+      <span style={{ fontSize: 10.5, fontWeight: 800, color: "var(--kv-faint)" }}>{label}</span>
+      {isGathering ? (
+        <span style={{ marginTop: 4, display: "inline-flex", alignSelf: "flex-start", padding: "2px 8px", borderRadius: 99, border: "1px dashed rgba(100,116,139,.35)", color: "#6b7a88", fontSize: 10, fontWeight: 800 }}>
+          قيد التجميع
+        </span>
+      ) : (
+        <>
+          <span style={{ fontSize: 15.5, fontWeight: 800, color, marginTop: 2 }}>{isLoading ? "…" : value}</span>
+          {sub && !isLoading && <span style={{ fontSize: 9.5, fontWeight: 700, color: "var(--kv-faint)", marginTop: 1 }}>{sub}</span>}
+        </>
+      )}
+    </div>
+  );
+}
+
 function Pill({ label, dot, bg, fg }: { label: string; dot: string; bg: string; fg: string }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: 99, background: bg, color: fg, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>
@@ -338,6 +423,8 @@ function Pill({ label, dot, bg, fg }: { label: string; dot: string; bg: string; 
 }
 
 function PaymentPill({ o }: { o: LocalOrder }) {
+  // Vodafone Cash is a distinct method — show it apart from COD (red brand tint).
+  if (o.paymentMethod === "vodafone_cash") return <Pill label="فودافون كاش" dot="#e60000" bg="rgba(230,0,0,.10)" fg="#c40000" />;
   if (o.paymentStatus === "paid") return <Pill label="مدفوع" dot="var(--kv-primary)" bg="rgba(14,159,110,.12)" fg="#0a8a5f" />;
   if (o.fulfillmentType === "delivery") return <Pill label="COD مؤكد" dot="var(--kv-primary)" bg="rgba(14,159,110,.12)" fg="#0a8a5f" />;
   return <Pill label="بانتظار الدفع" dot="var(--kv-amber)" bg="rgba(201,138,31,.16)" fg="#9a6a14" />;
@@ -462,7 +549,8 @@ function OrderDrawer({ o, escalated, onAdvance }: { o: LocalOrder; escalated: bo
   const n = nextStatus(o);
   const rank = RANK[o.orderStatus] ?? 0;
   const cancelled = o.orderStatus === "cancelled";
-  const isCod = o.fulfillmentType === "delivery" && o.paymentStatus !== "paid";
+  const isVf = o.paymentMethod === "vodafone_cash";
+  const isCod = !isVf && o.fulfillmentType === "delivery" && o.paymentStatus !== "paid";
   const area = o.deliveryAddress || o.branchName || "";
 
   const steps: { key: string; label: string; rank: number }[] = [
@@ -517,6 +605,16 @@ function OrderDrawer({ o, escalated, onAdvance }: { o: LocalOrder; escalated: bo
           </div>
         </div>
       </div>
+
+      {/* Vodafone Cash card — distinct from COD (red brand tint). */}
+      {isVf && (
+        <div style={{ padding: 18, borderBottom: "1px solid var(--kv-border)" }}>
+          <div style={{ borderRadius: 13, background: "rgba(230,0,0,.05)", border: "1px solid rgba(230,0,0,.2)", padding: "12px 14px" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "#c40000" }}>فودافون كاش</div>
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--kv-muted)", marginTop: 3 }}>{money(o.total)} {o.currency} · تحويل على المحفظة</div>
+          </div>
+        </div>
+      )}
 
       {/* COD card */}
       {isCod && (

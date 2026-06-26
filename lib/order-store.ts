@@ -159,6 +159,7 @@ export const useOrderStore = create<OrderState>()(
           total,
           currency: brain.profile?.currency || "ج.م",
           paymentStatus: "unpaid",
+          paymentMethod: null, // unspecified until a method is recorded (read-only display elsewhere)
           orderStatus: "pending_payment",
           kitchenStatus: "new",
           notes: input.notes,
