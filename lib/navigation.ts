@@ -7,6 +7,7 @@ import {
   Sparkles,
   Megaphone,
   Truck,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import type { ModuleKey } from "./types";
@@ -37,6 +38,8 @@ export const navItems: NavItem[] = [
   // Delivery dispatch + live tracking — shown only when ENABLE_DELIVERY_TRACKING
   // is on (filtered at consumption in AppSidebar/MobileTabs).
   { href: "/deliveries", label: "التوصيل", en: "Delivery", icon: Truck, module: "orders", accent: "text-orders", accentBg: "bg-orders" },
+  // COD cash reconciliation ledger (manager-only; filtered at consumption in AppSidebar/MobileTabs).
+  { href: "/cod", label: "الكاش والتحصيل", en: "Cash & Collection", icon: Wallet, module: "orders", accent: "text-orders", accentBg: "bg-orders" },
   {
     href: "/menu",
     label: "المنيو والذاكرة",
