@@ -19,13 +19,17 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, ArrowLeft, Plus, Trash2, MessageCircle, PartyPopper } from "lucide-react";
 import { StatePill } from "@/components/kivo";
+import { FbSdkLoader } from "@/components/FbSdkLoader";
 
 const AR = "٠١٢٣٤٥٦٧٨٩";
 const toAr = (n: number | string) => String(n).replace(/[0-9]/g, (d) => AR[+d]);
 
-// Public Meta app id — only present once the deployment-level Meta integration is
-// configured. Absent ⇒ WhatsApp Embedded Signup isn't available yet (honest gate).
+// Public Meta credentials — only present once the deployment-level Meta integration
+// is configured. Either absent ⇒ Embedded Signup shows an honest "not available" gate.
 const META_APP_ID = process.env.NEXT_PUBLIC_WHATSAPP_APP_ID || "";
+// Configuration ID from Meta App Dashboard → WhatsApp → Configuration → Embedded Signup.
+// Required for the FB.login() call that opens the Meta consent modal.
+const META_CONFIG_ID = process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID || "";
 
 type Dialect = "egyptian" | "saudi";
 const DIALECTS: { v: Dialect; label: string }[] = [
@@ -226,62 +230,283 @@ function StepBasics({ dialect, setDialect, restaurantId, onDone }: { dialect: Di
 }
 
 // ── Step 2: WhatsApp → embedded-signup (honest gate) ──
-function StepWhatsApp({ restaurantId, waState, onConnected, onSkip, onUnavailable }: { restaurantId: string | null; waState: string | null; onConnected: () => void; onSkip: () => void; onUnavailable: () => void }) {
+//
+// FB.login() parameters — verified against Meta Embedded Signup docs (June 2026).
+// ⚠️  FLAG: `sessionInfoVersion: "3"` is current as of training data (Aug 2025).
+//     Verify against https://developers.facebook.com/docs/whatsapp/embedded-signup
+//     before going live — Meta bumps this without notice.
+// ⚠️  FLAG: `phoneNumberId`/`wabaId` come via the window "message" event from the
+//     Meta popup, NOT from the FB.login() authResponse. The message fires before
+//     the OAuth callback resolves. If Meta changes the event payload shape, the
+//     keys `phone_number_id` and `waba_id` in `event.data.data` are what to verify.
+// ⚠️  FLAG: `scope` alongside `config_id` — included for belt-and-suspenders; some
+//     Meta docs show config_id encoding permissions. Remove scope if Meta rejects it.
+//
+type SdkState = "loading" | "ready" | "error";
+
+function StepWhatsApp({
+  restaurantId,
+  waState,
+  onConnected,
+  onSkip,
+  onUnavailable,
+}: {
+  restaurantId: string | null;
+  waState: string | null;
+  onConnected: () => void;
+  onSkip: () => void;
+  onUnavailable: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [sdkState, setSdkState] = useState<SdkState>(
+    META_APP_ID && META_CONFIG_ID ? "loading" : "error",
+  );
 
-  // Real Embedded Signup launch — only possible when Meta is configured deployment-side.
+  const handleSdkReady = useCallback(() => setSdkState("ready"), []);
+  const handleSdkError = useCallback(() => {
+    setSdkState("error");
+    // Don't auto-flip to onUnavailable() here — the user might refresh.
+    // Let the UI reflect the error state without hiding the skip button.
+  }, []);
+
+  // Real Embedded Signup launch.
+  // Flow:
+  //   1. Register window message listener to capture phoneNumberId + wabaId
+  //      (Meta sends these via postMessage from the popup before closing).
+  //   2. Call FB.login() with config_id + response_type:"code" to get the
+  //      short-lived auth code in authResponse.code.
+  //   3. POST both to our backend route for the server-side token exchange.
   const connect = async () => {
-    if (!restaurantId) return;
+    if (!restaurantId || !META_APP_ID || !META_CONFIG_ID) return;
+    if (sdkState !== "ready" || !window.FB) {
+      onUnavailable();
+      return;
+    }
     setErr(null);
-    const w = window as any;
-    if (!META_APP_ID || !w.FB) { onUnavailable(); return; }
     setLoading(true);
+
+    let phoneNumberId: string | null = null;
+    let wabaId: string | null = null;
+
+    // Capture phoneNumberId + wabaId from the Meta popup message event.
+    // Meta sends a WA_EMBEDDED_SIGNUP message when the user selects their
+    // phone number — this arrives BEFORE the FB.login() callback resolves.
+    const messageHandler = (event: MessageEvent) => {
+      if (event.origin !== "https://www.facebook.com") return;
+      try {
+        const payload =
+          typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (payload?.type !== "WA_EMBEDDED_SIGNUP") return;
+        if (payload.event === "FINISH") {
+          // ⚠️  FLAG: shape is { data: { phone_number_id, waba_id } } per docs
+          // as of Aug 2025. Verify this against live Meta behaviour on first test.
+          phoneNumberId = payload.data?.phone_number_id ?? null;
+          wabaId = payload.data?.waba_id ?? null;
+        }
+        // CANCEL and ERROR events: FB.login() callback handles the missing code case.
+      } catch {
+        // Non-JSON or unrelated message — ignore.
+      }
+    };
+
+    window.addEventListener("message", messageHandler);
+
     try {
-      const auth: any = await new Promise((res) => w.FB.login((r: any) => res(r), { scope: "whatsapp_business_management,whatsapp_business_messaging", extras: { feature: "whatsapp_embedded_signup" } }));
+      const auth = await new Promise<{ authResponse?: { code?: string } | null }>(
+        (resolve) =>
+          window.FB.login(resolve, {
+            config_id: META_CONFIG_ID,
+            response_type: "code",
+            override_default_response_type: true,
+            // scope alongside config_id — belt-and-suspenders (see ⚠️ FLAG above)
+            scope: "whatsapp_business_management,whatsapp_business_messaging",
+            extras: {
+              feature: "whatsapp_embedded_signup",
+              sessionInfoVersion: "3", // ⚠️  FLAG: verify this value is current
+            },
+          }),
+      );
+
+      window.removeEventListener("message", messageHandler);
+
       const code = auth?.authResponse?.code;
-      // phoneNumberId/wabaId arrive via the ES message channel in the real flow;
-      // we forward whatever Meta returned. The route validates + 400s if missing.
-      if (!code) { setLoading(false); return setErr("اتلغى الربط قبل ما يكمّل."); }
-      const r = await api("POST", "/api/onboarding/embedded-signup", { restaurantId, code, phoneNumberId: auth?.phoneNumberId, wabaId: auth?.wabaId });
+      if (!code) {
+        setLoading(false);
+        setErr("اتلغى الربط قبل ما يكمّل.");
+        return;
+      }
+
+      if (!phoneNumberId || !wabaId) {
+        setLoading(false);
+        setErr(
+          "ما وصلناش بيانات الرقم من Meta — جرّب تاني أو راجع إعداد Meta.",
+        );
+        return;
+      }
+
+      const r = await api("POST", "/api/onboarding/embedded-signup", {
+        restaurantId,
+        code,
+        phoneNumberId,
+        wabaId,
+      });
       setLoading(false);
-      if (r.status === 503 || r.data?.error === "not_configured") { onUnavailable(); return; }
-      if (!r.ok || !r.data?.configured) return setErr(errMsg(r.status, r.data));
+
+      if (r.status === 503 || r.data?.error === "not_configured") {
+        onUnavailable();
+        return;
+      }
+      if (!r.ok || !r.data?.configured) {
+        setErr(errMsg(r.status, r.data));
+        return;
+      }
       onConnected();
     } catch {
-      setLoading(false); onUnavailable();
+      window.removeEventListener("message", messageHandler);
+      setLoading(false);
+      onUnavailable();
     }
   };
 
-  const unavailable = !META_APP_ID || waState === "unavailable";
+  // Unavailable when either env var is missing, SDK failed to load, or a previous
+  // attempt ended in the unavailable state.
+  const unavailable =
+    !META_APP_ID ||
+    !META_CONFIG_ID ||
+    sdkState === "error" ||
+    waState === "unavailable";
+
+  const sdkLoading = sdkState === "loading" && !unavailable;
 
   return (
     <div>
-      <H title="ربط واتساب الرسمي" sub="كريم بيرد على عملاءك من رقم واتساب الرسمي بتاعك. الربط بيتم عبر Meta." />
-      {!restaurantId ? <NoRid /> : (
+      {/* Load FB SDK when credentials are present — invisible component */}
+      {META_APP_ID && META_CONFIG_ID && (
+        <FbSdkLoader
+          appId={META_APP_ID}
+          onReady={handleSdkReady}
+          onError={handleSdkError}
+        />
+      )}
+
+      <H
+        title="ربط واتساب الرسمي"
+        sub="كريم بيرد على عملاءك من رقم واتساب الرسمي بتاعك. الربط بيتم عبر Meta."
+      />
+
+      {!restaurantId ? (
+        <NoRid />
+      ) : (
         <>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 18px", borderRadius: 14, background: "var(--kv-card-soft)", border: "1px solid var(--kv-border)" }}>
-            <div style={{ width: 44, height: 44, borderRadius: 13, background: "linear-gradient(150deg,#d6f4ea,#bdebda)", display: "grid", placeItems: "center", flex: "none" }}><MessageCircle size={22} color="#0a8a5f" /></div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "16px 18px",
+              borderRadius: 14,
+              background: "var(--kv-card-soft)",
+              border: "1px solid var(--kv-border)",
+            }}
+          >
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 13,
+                background: "linear-gradient(150deg,#d6f4ea,#bdebda)",
+                display: "grid",
+                placeItems: "center",
+                flex: "none",
+              }}
+            >
+              <MessageCircle size={22} color="#0a8a5f" />
+            </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 800 }}>ربط واتساب عبر Meta</div>
-              <div style={{ fontSize: 11, color: "var(--kv-faint)", fontWeight: 600, marginTop: 2 }}>
-                {waState === "connected" ? "متصل ✓" : unavailable ? "محتاج إعداد من جهة Meta" : "هيفتح نافذة Meta للربط"}
+              <div style={{ fontSize: 13.5, fontWeight: 800 }}>
+                ربط واتساب عبر Meta
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--kv-faint)",
+                  fontWeight: 600,
+                  marginTop: 2,
+                }}
+              >
+                {waState === "connected"
+                  ? "متصل ✓"
+                  : unavailable
+                    ? "محتاج إعداد من جهة Meta"
+                    : sdkLoading
+                      ? "جاري تحميل SDK…"
+                      : "هيفتح نافذة Meta للربط"}
               </div>
             </div>
-            {unavailable ? <StatePill state="coming" label="لسه مش متاح" /> : waState === "connected" ? <StatePill state="live" label="متصل" /> : null}
+            {unavailable ? (
+              <StatePill state="coming" label="لسه مش متاح" />
+            ) : waState === "connected" ? (
+              <StatePill state="live" label="متصل" />
+            ) : null}
           </div>
 
           {unavailable && (
-            <div style={{ marginTop: 14, borderRadius: 13, border: "1px dashed rgba(100,116,139,.35)", background: "rgba(100,116,139,.05)", padding: "13px 15px", fontSize: 11.5, color: "var(--kv-slate)", fontWeight: 600, lineHeight: 1.6 }}>
-              ربط واتساب لسه مش متاح على النشر ده (محتاج إعداد Meta + مراجعة التطبيق). تقدر تكمّل باقي الخطوات دلوقتي وتربط واتساب بعدين — بس التشغيل النهائي مش هيتم من غيره.
+            <div
+              style={{
+                marginTop: 14,
+                borderRadius: 13,
+                border: "1px dashed rgba(100,116,139,.35)",
+                background: "rgba(100,116,139,.05)",
+                padding: "13px 15px",
+                fontSize: 11.5,
+                color: "var(--kv-slate)",
+                fontWeight: 600,
+                lineHeight: 1.6,
+              }}
+            >
+              ربط واتساب لسه مش متاح على النشر ده (محتاج إعداد Meta +
+              مراجعة التطبيق). تقدر تكمّل باقي الخطوات دلوقتي وتربط واتساب
+              بعدين — بس التشغيل النهائي مش هيتم من غيره.
             </div>
           )}
 
           <ErrLine msg={err} />
 
-          <div style={{ display: "flex", gap: 10, marginTop: 20, alignItems: "center" }}>
-            {!unavailable && <PrimaryBtn onClick={connect} loading={loading}>اربط واتساب</PrimaryBtn>}
-            <button onClick={onSkip} style={{ height: 46, padding: "0 18px", borderRadius: 12, border: "1px solid var(--kv-border)", background: "var(--kv-card)", color: "var(--kv-muted)", fontSize: 12.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>تخطّى دلوقتي</button>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              marginTop: 20,
+              alignItems: "center",
+            }}
+          >
+            {!unavailable && (
+              <PrimaryBtn
+                onClick={connect}
+                loading={loading}
+                disabled={sdkLoading}
+              >
+                اربط واتساب
+              </PrimaryBtn>
+            )}
+            <button
+              onClick={onSkip}
+              style={{
+                height: 46,
+                padding: "0 18px",
+                borderRadius: 12,
+                border: "1px solid var(--kv-border)",
+                background: "var(--kv-card)",
+                color: "var(--kv-muted)",
+                fontSize: 12.5,
+                fontWeight: 800,
+                fontFamily: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              تخطّى دلوقتي
+            </button>
           </div>
         </>
       )}
