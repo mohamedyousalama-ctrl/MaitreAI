@@ -17,6 +17,8 @@ export type HostMapping =
 
 export const HOST_MAP: Record<string, HostMapping> = {
   "wesayachicken.com": { kind: "storefront", slug: "wesaya" },
+  "order.wesayachicken.com": { kind: "storefront", slug: "wesaya" },
+  "app.wesayachicken.com": { kind: "storefront", slug: "wesaya" },
   "console.wesayachicken.com": { kind: "operator" },
 };
 
