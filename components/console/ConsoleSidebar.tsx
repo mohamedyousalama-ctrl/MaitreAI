@@ -16,6 +16,7 @@ import {
   Settings,
   Bell,
   GraduationCap,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
@@ -178,6 +179,7 @@ export function ConsoleSidebar() {
 
       <GroupLabel>تشغيل</GroupLabel>
       <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <NavLink href="/cod" icon={Wallet} label="الكاش والتحصيل" active={is("/cod")} />
         <NavLink href="/conversations" icon={Bell} label="التنبيهات" badge={escalations} />
         {/* التعلّم — coming-soon, non-navigating (learning depth is V2). */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, height: 40, padding: "0 12px", borderRadius: 13, color: "var(--kv-faint)", cursor: "default" }}>
