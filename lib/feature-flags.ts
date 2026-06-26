@@ -17,11 +17,11 @@ export const ENABLE_ADMIN_CHAT_CONSOLE =
 // (the operator's primary working surface) instead.
 export const HOME_HREF = ENABLE_ADMIN_CHAT_CONSOLE ? "/dashboard" : "/conversations";
 
-// ENABLE_DELIVERY_TRACKING — the delivery dispatch + driver flow + live customer
+// ENABLE_DELIVERY_TRACKING — the delivery dispatch + driver flow + customer
 // tracking module (drivers, deliveries, /d/<token> driver page, /t/<token>
-// tracking page, operator deliveries view). HIDDEN by default: every surface and
-// the finalize→deliveries hook check this flag, so with it off the module is
-// fully inert and existing flows are unchanged. Set the env var to "true" (and
-// redeploy) to turn the whole module on. Readable on client + server.
+// tracking page, operator deliveries view). ON by default: the «التوصيل» nav
+// item and /deliveries page render for managers (manual driver assignment +
+// end-of-shift cash settlement; no live GPS map). Set the env var explicitly to
+// "false" (and redeploy) to make the whole module inert again. Client + server.
 export const ENABLE_DELIVERY_TRACKING =
-  process.env.NEXT_PUBLIC_ENABLE_DELIVERY_TRACKING === "true";
+  process.env.NEXT_PUBLIC_ENABLE_DELIVERY_TRACKING !== "false";
