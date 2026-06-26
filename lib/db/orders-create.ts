@@ -63,7 +63,7 @@ export interface PersistOrderResult {
 async function recomputeDraftFromDb(
   admin: SupabaseClient,
   args: { restaurantId: string; draft: OrderDraft }
-): Promise<OrderDraft> {
+): Promise<{ draft: OrderDraft; zoneId: string | null; branchId: string | null }> {
   const brain = await loadBrain(admin, args.restaurantId);
   const priced = recomputeOrderPricing({
     menuItems: brain.menuItems,
@@ -83,25 +83,29 @@ async function recomputeDraftFromDb(
     currency: brain.profile.currency || args.draft.currency,
   });
   return {
-    ...args.draft,
-    lines: priced.lines.map((line) => ({
-      itemId: line.itemId,
-      name: line.name,
-      quantity: line.quantity,
-      unitPrice: line.unitPrice,
-      variant: line.variant,
-      choices: line.choices,
-      modifiers: line.modifiers,
-      lineTotal: line.lineTotal,
-    })),
-    deliveryZone: priced.deliveryZone?.name ?? null,
-    deliveryFee: priced.deliveryFee,
-    subtotal: priced.subtotal,
-    tax: priced.taxAmount,
-    taxRate: priced.taxRate,
-    total: priced.total,
-    currency: priced.currency,
-    finalized: args.draft.finalized,
+    draft: {
+      ...args.draft,
+      lines: priced.lines.map((line) => ({
+        itemId: line.itemId,
+        name: line.name,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        variant: line.variant,
+        choices: line.choices,
+        modifiers: line.modifiers,
+        lineTotal: line.lineTotal,
+      })),
+      deliveryZone: priced.deliveryZone?.name ?? null,
+      deliveryFee: priced.deliveryFee,
+      subtotal: priced.subtotal,
+      tax: priced.taxAmount,
+      taxRate: priced.taxRate,
+      total: priced.total,
+      currency: priced.currency,
+      finalized: args.draft.finalized,
+    },
+    zoneId: priced.deliveryZone?.id ?? null,
+    branchId: priced.deliveryZone?.branchId ?? null,
   };
 }
 
@@ -111,7 +115,7 @@ export async function persistOrderFromDraft(
 ): Promise<PersistOrderResult> {
   const { restaurantId, conversationId, customerId, draft, agentRunId } = args;
   if (!draft.finalized || !draft.lines.length) return { created: false, orderId: null, orderNumber: null };
-  const verifiedDraft = await recomputeDraftFromDb(admin, { restaurantId, draft });
+  const { draft: verifiedDraft, zoneId, branchId } = await recomputeDraftFromDb(admin, { restaurantId, draft });
 
   // Idempotency key: the finalized draft content + the agent-run that produced it.
   // agentRunId is unique per customer message (deduplicated at the webhook level on
@@ -192,6 +196,10 @@ export async function persistOrderFromDraft(
         conversation_id: conversationId,
         customer_id: customerId,
         fulfillment: verifiedDraft.fulfillment ?? "pickup",
+        branch_id: branchId,
+        zone_id: zoneId,
+        address: null,
+        notes: null,
         items,
         subtotal: verifiedDraft.subtotal,
         delivery_fee: verifiedDraft.deliveryFee,
