@@ -370,9 +370,9 @@ export async function respondAndSendWhatsApp(
           total: outcome.draft.total,
           fulfillment: outcome.draft.fulfillment,
           paymentStatus: "unpaid",
-          // F1.7 Fix 2 — the real method stamped at creation (orders-create.ts).
-          // COD-only pilot today; matches the "cod" default written there.
-          paymentMethod: "cod",
+          // F1.7 Fix 2 / F1.6 — the real method stamped at creation (orders-create.ts):
+          // the customer's chosen method, or "cod" when none was selected.
+          paymentMethod: outcome.draft.paymentMethod ?? "cod",
           branchId: null,
         },
         transcript: [

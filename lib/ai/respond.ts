@@ -11,6 +11,7 @@
 import { getAdapter } from "./llm";
 import type { LlmContentBlock, LlmMessage, LlmUsage } from "./llm/types";
 import { buildCustomerAgentSystemPrompt, type BrainContext } from "./prompt";
+import { DEFAULT_PAYMENT_CONFIG } from "@/lib/payments/config";
 import { modeAllowsOrders } from "./modes";
 import { dialectProfile } from "./dialect";
 import { fabricatesMoney, knownMenuPrices, offersNonMenuProduct } from "./money-guard";
@@ -176,6 +177,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     photoRequests: [],
     taxMode: input.brain.taxMode ?? "inclusive",
     taxRate: input.brain.taxRate ?? 0,
+    paymentConfig: input.brain.paymentConfig ?? DEFAULT_PAYMENT_CONFIG,
     resendReceipt: false,
   };
 

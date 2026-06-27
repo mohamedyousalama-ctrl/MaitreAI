@@ -17,6 +17,7 @@ import { deriveSystemMode } from "@/lib/ai/modes";
 import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
+import { normalizePaymentConfig } from "@/lib/payments/config";
 import { type Tier, isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { isSafetyHold } from "@/lib/tenant/handoff";
 import { setOwnershipState } from "@/lib/db/ownership";
@@ -133,7 +134,7 @@ export async function runCustomerTurn(
   const { data: r } = await admin
     .from("restaurants")
     .select(
-      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,tier,feature_flags,auto_accept_orders,agent_persona_name,tax_mode,tax_rate"
+      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,tier,feature_flags,auto_accept_orders,agent_persona_name,tax_mode,tax_rate,payment_config"
     )
     .eq("id", restaurantId)
     .single();
@@ -241,6 +242,8 @@ export async function runCustomerTurn(
     personaName: (row.agent_persona_name as string | null) ?? undefined,
     taxMode: String(row.tax_mode ?? "inclusive"),
     taxRate: Number(row.tax_rate ?? 0),
+    // F1.2/F1.6 — per-tenant payment config (gates which methods Karim offers).
+    paymentConfig: normalizePaymentConfig(row.payment_config),
     tier: (row.tier as Tier | null) ?? "standard",
     // Karim Pro P4 (cadence): the prompt's §CAD section is included only when the
     // narrow `cadence` flag is on; default off → no cadence section, no change.

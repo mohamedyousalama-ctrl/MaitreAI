@@ -27,6 +27,7 @@ import { promoDescription } from "../promo";
 import { dialectProfile } from "./dialect";
 import { MODE_LABELS_AR, modeAllowsOrders, type SystemMode } from "./modes";
 import type { OrderDraft } from "./tools";
+import type { PaymentConfig } from "@/lib/payments/config";
 
 export interface BrainContext {
   profile: Pick<RestaurantProfile, "name" | "currency" | "timezone" | "businessType">;
@@ -53,6 +54,8 @@ export interface BrainContext {
   /** Tax mode + rate (Sprint 10): "added" adds a VAT line; "inclusive" = no change. */
   taxMode?: string;
   taxRate?: number;
+  /** Per-tenant payment config (F1.2/F1.6): gates the payment methods Karim offers. */
+  paymentConfig?: PaymentConfig;
   /** Karim Pro P0: tenant tier ('standard' | 'pro'). Available to the brain but
    *  NOT read yet — later Pro features gate on it via isProTenant(). */
   tier?: import("@/lib/tenant/tier").Tier;
@@ -393,7 +396,8 @@ ${
   • FULFILLMENT BEFORE CONFIRM — set pickup/delivery (set_fulfillment) BEFORE you read back to confirm. Never offer «تأكيد» / «نكمّل للدفع» / present_order_actions while الاستلام/التوصيل لسه ماتحددش؛ اسأل «استلام من الفرع ولا توصيل؟» أول. (Finalizing without fulfillment is rejected and loops.)
   • ADDRESS FOR DELIVERY — for a delivery order, collect the customer's written address (منطقة + شارع + علامة مميزة) and call set_delivery_address BEFORE finalize_draft. If the customer sends a location pin, ask them to type the address instead (you cannot read pins). Finalizing without an address is rejected. For pickup, no address needed.
   • after fulfillment is set AND you read back the summary + total → present_order_actions (تأكيد/إضافة/إلغاء)
-  • collecting payment → present_payment_methods (الدفع عند الاستلام)
+  • collecting payment → present_payment_methods (shows the methods available for this order from the restaurant's config), then record the customer's pick with set_payment_method (method="cod" = الدفع عند الاستلام / الدفع عند الاستلام من الفرع؛ method="vodafone_cash" only when it was offered). For فودافون كاش, set_payment_method returns the transfer number + amount + instructions — show them to the customer as-is.
+  • PAYMENT HONESTY (hard rule): NEVER say «تم استلام الدفع» / «الدفع تمّ» / «اتدفع» or imply the order is paid. For فودافون كاش say «حوّل المبلغ على الرقم ده وابعتلنا وهنأكد طلبك» — the payment is NOT confirmed until the restaurant verifies it; the order stays «بانتظار الدفع» until an operator confirms. Money/total always comes from the order tools, never invented.
 - Still add/finalize with the order tools (money always comes from them). Presentation tools only SHOW choices; they don't change the order.
 `
     : ""
