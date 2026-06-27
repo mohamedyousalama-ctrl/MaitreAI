@@ -74,7 +74,7 @@ export default function MenuMemoryPage() {
   // on the next turn. Optimistic flip + DB reconcile lives in the store action.
   const toggleAvail = (it: MenuItem) => s.setItemAvailability(it.id, !it.available);
 
-  if (!hydrated) return <div className="h-[calc(100vh-8rem)] animate-pulse rounded-2xl border border-[#ECE3D5] bg-white/60" />;
+  if (!hydrated) return <div className="h-[calc(100vh-8rem)] animate-pulse rounded-2xl border" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card)" }} />;
 
   const C = 351.8, ringOff = C * (1 - overall / 100);
 
@@ -82,20 +82,20 @@ export default function MenuMemoryPage() {
     <div dir="rtl" className="mx-auto max-w-[1320px]">
       {/* tab switch + add */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1.5 rounded-[13px] border border-[#EBE2D3] bg-white p-1.5">
+        <div className="flex gap-1.5 rounded-[13px] border p-1.5" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card)" }}>
           {(["menu", "memory"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)} className="rounded-[9px] px-5 py-2 text-[13.5px] font-bold transition"
-              style={tab === t ? { background: "#BE5238", color: "#fff", boxShadow: "0 6px 14px -6px rgba(190,82,56,.55)" } : { color: "#8A7E6E" }}>
+              style={tab === t ? { background: "var(--kv-primary)", color: "#fff", boxShadow: "0 6px 14px -6px rgba(14,159,110,.45)" } : { color: "var(--kv-muted)" }}>
               {t === "menu" ? "المنيو" : "ذاكرة المطعم"}
             </button>
           ))}
         </div>
         <div className="flex gap-2">
           {tab === "menu" && (
-            <button onClick={() => setModOpen(true)} className="flex items-center gap-1.5 rounded-[11px] border border-[#EBE2D3] bg-white px-3.5 py-2.5 text-[12.5px] font-semibold text-[#514538] hover:border-[#E0C4B6]"><SlidersHorizontal className="h-4 w-4" /> الإضافات</button>
+            <button onClick={() => setModOpen(true)} className="flex items-center gap-1.5 rounded-[11px] border px-3.5 py-2.5 text-[12.5px] font-semibold" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card)", color: "var(--kv-muted)" }}><SlidersHorizontal className="h-4 w-4" /> الإضافات</button>
           )}
           <button onClick={() => { if (tab === "menu") { setEditingItem(null); setItemForm(true); } else { setEditingZone(null); setZoneForm(true); } }}
-            className="flex items-center gap-1.5 rounded-[11px] bg-[#BE5238] px-4 py-2.5 text-[13px] font-bold text-white shadow-[0_8px_18px_-8px_rgba(190,82,56,.6)] hover:bg-[#A8472F]">
+            className="flex items-center gap-1.5 rounded-[11px] px-4 py-2.5 text-[13px] font-bold text-white" style={{ background: "var(--kv-grad-brand)", boxShadow: "0 8px 18px -8px rgba(14,159,110,.6)" }}>
             <Plus className="h-4 w-4" /> {tab === "menu" ? "صنف جديد" : "إضافة منطقة"}
           </button>
         </div>
@@ -108,36 +108,36 @@ export default function MenuMemoryPage() {
               <div className="mb-4 flex flex-wrap gap-2">
                 {categories.map((c) => (
                   <button key={c} onClick={() => setCategory(c)} className="rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition"
-                    style={category === c ? { background: "#BE5238", color: "#fff" } : { background: "#fff", border: "1px solid #EBE2D3", color: "#514538" }}>{c}</button>
+                    style={category === c ? { background: "var(--kv-primary)", color: "#fff" } : { background: "var(--kv-card)", border: "1px solid var(--kv-border)", color: "var(--kv-muted)" }}>{c}</button>
                 ))}
               </div>
               {items.length === 0 ? (
-                <div className="rounded-[16px] border border-[#ECE3D5] bg-white p-12 text-center text-[13px] text-[#A99D8D]">لا أصناف في هذا التصنيف.</div>
+                <div className="rounded-[16px] border p-12 text-center text-[13px]" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card)", color: "var(--kv-faint)" }}>لا أصناف في هذا التصنيف.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
                   {items.map((it) => (
-                    <div key={it.id} className="group relative overflow-hidden rounded-[16px] border border-[#ECE3D5] bg-white transition hover:border-[#E0C4B6]" style={{ opacity: it.available ? 1 : 0.72 }}>
-                      <button onClick={(e) => { e.stopPropagation(); setToDelete(it); }} title="حذف الصنف" className="absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-[8px] bg-white/85 text-[#BE5238] opacity-0 shadow transition group-hover:opacity-100"><Trash2 className="h-3.5 w-3.5" /></button>
+                    <div key={it.id} className="group relative overflow-hidden rounded-[16px] border transition" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card)", boxShadow: "var(--kv-shadow-panel)", opacity: it.available ? 1 : 0.72 }}>
+                      <button onClick={(e) => { e.stopPropagation(); setToDelete(it); }} title="حذف الصنف" className="absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-[8px] bg-white/85 opacity-0 shadow transition group-hover:opacity-100" style={{ color: "var(--kv-red)" }}><Trash2 className="h-3.5 w-3.5" /></button>
                       <button onClick={() => { setEditingItem(it); setItemForm(true); }} className="block h-[92px] w-full">
                         {it.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={it.imageUrl} alt={it.name} className="h-full w-full object-cover" style={it.available ? {} : { filter: "grayscale(.4)" }} />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center text-[40px]" style={{ background: "linear-gradient(150deg,#F4D9A8,#E8B26B)" }}>{catEmoji(it.category)}</div>
+                          <div className="flex h-full w-full items-center justify-center text-[40px]" style={{ background: "var(--kv-primary-tint)" }}>{catEmoji(it.category)}</div>
                         )}
                       </button>
                       <div className="p-3">
                         <div className="flex items-center justify-between">
-                          <button onClick={() => { setEditingItem(it); setItemForm(true); }} className="truncate text-right text-[14px] font-bold text-[#2A2019]">{it.name}</button>
-                          <span className="text-[14px] font-bold text-[#BE5238]">{toAr(it.price)}</span>
+                          <button onClick={() => { setEditingItem(it); setItemForm(true); }} className="truncate text-right text-[14px] font-bold" style={{ color: "var(--kv-text)" }}>{it.name}</button>
+                          <span className="text-[14px] font-bold" style={{ color: "var(--kv-primary)" }}>{toAr(it.price)}</span>
                         </div>
-                        <div className="mt-0.5 text-[11px] text-[#9A8E7E]">{it.category || "—"}</div>
-                        <div className="mt-2.5 flex items-center justify-between border-t border-[#F2EBE0] pt-2.5">
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: it.available ? "#436B50" : "#A99D8D" }}>
-                            <span className="h-1.5 w-1.5 rounded-full" style={{ background: it.available ? "#5C8A6B" : "#C9BFAE" }} />{it.available ? "متاح" : "غير متوفر"}
+                        <div className="mt-0.5 text-[11px]" style={{ color: "var(--kv-muted)" }}>{it.category || "—"}</div>
+                        <div className="mt-2.5 flex items-center justify-between pt-2.5" style={{ borderTop: "1px solid var(--kv-border)" }}>
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: it.available ? "var(--kv-primary)" : "var(--kv-faint)" }}>
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ background: it.available ? "var(--kv-primary)" : "var(--kv-border)" }} />{it.available ? "متاح" : "غير متوفر"}
                           </span>
                           {/* availability toggle → updateMenuItem (persists) */}
-                          <button onClick={() => toggleAvail(it)} title={it.available ? "إيقاف الإتاحة" : "تفعيل الإتاحة"} className="relative h-[21px] w-9 rounded-full transition" style={{ background: it.available ? "#5C8A6B" : "#E2D8C7" }}>
+                          <button onClick={() => toggleAvail(it)} title={it.available ? "إيقاف الإتاحة" : "تفعيل الإتاحة"} className="relative h-[21px] w-9 rounded-full transition" style={{ background: it.available ? "var(--kv-primary)" : "var(--kv-border)" }}>
                             <span className="absolute top-[2px] h-[17px] w-[17px] rounded-full bg-white shadow" style={it.available ? { left: 2 } : { right: 2 }} />
                           </button>
                         </div>
