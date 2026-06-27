@@ -209,7 +209,7 @@ export default function MenuMemoryPage() {
 
         {/* صحة الذاكرة rail (REAL) */}
         <aside className="hidden w-[286px] flex-none rounded-[16px] border p-4 lg:block" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card)", boxShadow: "var(--kv-shadow-panel)", alignSelf: "flex-start" }}>
-          <div className="mb-4 text-[14px] font-bold" style={{ color: "var(--kv-text)" }}>صحة الذاكرة</div>
+          <div className="mb-4 text-[14px] font-bold" style={{ color: "var(--kv-text)" }}>اكتمال بيانات كريم</div>
           <div className="flex flex-col items-center pb-4">
             <div className="relative h-[132px] w-[132px]">
               <svg width="132" height="132" viewBox="0 0 132 132" style={{ transform: "rotate(-90deg)" }}>

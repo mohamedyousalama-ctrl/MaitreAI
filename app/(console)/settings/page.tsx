@@ -299,7 +299,7 @@ export default function SettingsPage() {
           <Card>
             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 13 }}>قواعد الأمان</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-              <SafetyRule title="مبيخترعش أسعار" body="الإجمالي من POS بس، مش من كلام النموذج." />
+              <SafetyRule title="مبيخترعش أسعار" body="الإجمالي من منيو Kivo المنشور وقواعد التسعير، مش من كلام النموذج." />
               <SafetyRule title="مبيأكّدش الدفع" body="الدفع عند الاستلام بيتحصّل وقت التسليم بس." />
               <SafetyRule title="بيسكت بعد التصعيد" body="لما يحوّل للفريق، مبيكمّلش رد لوحده." />
             </div>

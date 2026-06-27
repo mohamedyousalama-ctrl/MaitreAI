@@ -155,7 +155,7 @@ export default function ConversationsPage() {
         </div>
         <div style={{ marginInlineStart: "auto", display: "flex", gap: 11, flexWrap: "wrap" }}>
           <TriageTile value={needIntervention} label="محتاجة تدخّل الآن" tone="red" />
-          <TriageTile value={aiSafe} label="كريم بيتولاها بأمان" tone="green" />
+          <TriageTile value={aiSafe} label="مع كريم بدون تنبيه" tone="green" />
           {/* avg response time not reliably derivable client-side → gathering (honest) */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, height: 52, padding: "0 16px", borderRadius: 14, background: "var(--kv-card)", border: "1px solid var(--kv-border)" }}>
             <div>
