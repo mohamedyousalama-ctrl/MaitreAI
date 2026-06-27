@@ -18,7 +18,9 @@ export function MobileTabs() {
       (i.href !== "/dashboard" || ENABLE_ADMIN_CHAT_CONSOLE) &&
       (i.href !== "/deliveries" || ENABLE_DELIVERY_TRACKING)
   );
-  const items = (role === "operation" ? visible.filter((i) => OPERATION_HREFS.has(i.href)) : visible).filter((i) => !i.railOnly);
+  // M1.2 — only a confirmed manager sees the full tab set; non-managers (incl.
+  // loading/unresolved) get the restricted set, never a manager-nav flash.
+  const items = (role !== "manager" ? visible.filter((i) => OPERATION_HREFS.has(i.href)) : visible).filter((i) => !i.railOnly);
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#EDE5D8] bg-white lg:hidden">
       {items.map((item) => {
