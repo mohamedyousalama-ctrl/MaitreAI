@@ -239,6 +239,43 @@ export async function recordCollection(
   return { ok: true, expected: Number(r.expected_cash) };
 }
 
+/** A past settlement (driver cash handed in), for the read-only history view. */
+export interface SettlementRow {
+  id: string;
+  driverName: string | null;
+  totalAmount: number;
+  orderCount: number;
+  settledByRole: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+/**
+ * READ-ONLY: recent settlements (newest first). Surfaces cod_settlements rows
+ * (already written by settleDriver) so past hand-ins are visible. settled_by is
+ * an auth user id we don't resolve to a name here (auth.users isn't cheaply
+ * joinable via PostgREST) — we show settled_by_role + time; name-resolution is a
+ * follow-up. No writes.
+ */
+export async function settlementHistory(db: SupabaseClient, restaurantId: string, limit = 50): Promise<SettlementRow[]> {
+  const { data } = await db
+    .from("cod_settlements")
+    .select("id, driver_name, total_amount, order_count, settled_by_role, note, created_at")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  type Row = { id: string; driver_name: string | null; total_amount: number; order_count: number; settled_by_role: string | null; note: string | null; created_at: string };
+  return ((data ?? []) as Row[]).map((r) => ({
+    id: r.id,
+    driverName: r.driver_name,
+    totalAmount: round2(Number(r.total_amount)),
+    orderCount: r.order_count,
+    settledByRole: r.settled_by_role,
+    note: r.note,
+    createdAt: r.created_at,
+  }));
+}
+
 export interface DriverLedgerRow {
   driverId: string | null;
   driverName: string;

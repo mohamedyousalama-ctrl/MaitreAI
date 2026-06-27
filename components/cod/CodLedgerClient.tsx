@@ -40,6 +40,16 @@ interface HeldOrderItem {
   collectedAt: string | null;
   customer: string | null;
 }
+interface SettlementRow {
+  id: string;
+  driverName: string | null;
+  totalAmount: number;
+  orderCount: number;
+  settledByRole: string | null;
+  note: string | null;
+  createdAt: string;
+}
+const ROLE_AR: Record<string, string> = { manager: "مدير", operation: "موظف" };
 
 // Order-status labels (Arabic) for the itemized rows.
 const ORDER_STATUS_AR: Record<string, string> = {
@@ -65,6 +75,8 @@ export function CodLedgerClient() {
   const [drivers, setDrivers] = useState<DriverLedgerRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [items, setItems] = useState<HeldOrderItem[]>([]);
+  const [settlements, setSettlements] = useState<SettlementRow[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [settling, setSettling] = useState<string | null>(null);
@@ -78,6 +90,7 @@ export function CodLedgerClient() {
         setDrivers(j.drivers ?? []);
         setSummary(j.summary ?? null);
         setItems(j.items ?? []);
+        setSettlements(j.settlements ?? []);
       }
     } finally {
       setLoading(false);
@@ -222,6 +235,47 @@ export function CodLedgerClient() {
           })}
         </div>
       )}
+
+      {/* Settlement history (read-only) — past hand-ins from cod_settlements.
+          Collapsed by default so it doesn't clutter the active ledger. */}
+      <div className="mt-6 rounded-[16px] border" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card)", boxShadow: "var(--kv-shadow-panel)" }}>
+        <button
+          type="button"
+          onClick={() => setShowHistory((v) => !v)}
+          aria-expanded={showHistory}
+          className="flex w-full items-center justify-between p-4 text-right"
+        >
+          <span className="text-sm font-bold" style={{ color: "var(--kv-text)" }}>
+            سجل التسويات {settlements.length > 0 && <span style={{ color: "var(--kv-muted)", fontWeight: 600 }}>({settlements.length})</span>}
+          </span>
+          <ChevronDown className="h-4 w-4 transition-transform" style={{ color: "var(--kv-muted)", transform: showHistory ? "rotate(180deg)" : "none" }} />
+        </button>
+        {showHistory && (
+          <div className="border-t px-4 pb-4 pt-2" style={{ borderColor: "var(--kv-border)" }}>
+            {settlements.length === 0 ? (
+              <p className="py-4 text-center text-xs" style={{ color: "var(--kv-muted)" }}>لا توجد تسويات سابقة بعد.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {settlements.map((s) => (
+                  <li key={s.id} className="flex items-center justify-between rounded-[10px] p-2.5" style={{ background: "var(--kv-card-soft)", border: "1px solid var(--kv-border)" }}>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold" style={{ color: "var(--kv-text)" }}>{s.driverName ?? "غير معيّن"}</p>
+                      <p className="mt-0.5 text-[11px]" style={{ color: "var(--kv-muted)" }}>
+                        {timeAr(s.createdAt)} · {s.settledByRole ? (ROLE_AR[s.settledByRole] ?? s.settledByRole) : "—"}
+                        {s.note ? ` · ${s.note}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex flex-none flex-col items-end">
+                      <span className="text-sm font-bold" style={{ color: "var(--kv-deep)" }}>{formatCurrency(s.totalAmount)}</span>
+                      <span className="text-[10px]" style={{ color: "var(--kv-muted)" }}>{s.orderCount} طلب</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
