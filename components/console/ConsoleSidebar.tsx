@@ -30,6 +30,7 @@ import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { StatePill } from "@/components/kivo";
 import { KivoMark } from "@/components/brand/KivoLogo";
 import type { OrderStatusKey } from "@/lib/types";
+import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 
 const ACTIVE: OrderStatusKey[] = [
   "pending_confirmation",
@@ -225,7 +226,12 @@ export function ConsoleSidebar() {
       <GroupLabel>تشغيل</GroupLabel>
       <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <NavLink href="/cod" icon={Wallet} label="الكاش والتحصيل" active={is("/cod")} />
-        <NavLink href="/deliveries" icon={Truck} label="التوصيل" active={is("/deliveries")} />
+        {/* «التوصيل» renders only when delivery tracking is enabled — same flag the
+            /deliveries page gates on (notFound() when off), so the nav can't link
+            to a 404. Flag is ON by default, so this is currently shown as before. */}
+        {ENABLE_DELIVERY_TRACKING && (
+          <NavLink href="/deliveries" icon={Truck} label="التوصيل" active={is("/deliveries")} />
+        )}
         {/* «التنبيهات» removed: it pointed to /conversations — identical to «المحادثات»
             above — with no distinct alerts view. The conversations escalation filter
             is local-state only (no URL param to deep-link), so there was nothing real
