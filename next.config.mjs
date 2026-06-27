@@ -17,7 +17,6 @@ const nextConfig = {
       { source: "/maitre", destination: "/dashboard", permanent: false },
       { source: "/promotions", destination: "/dashboard", permanent: false },
       { source: "/branches", destination: "/dashboard", permanent: false },
-      { source: "/restaurant-brain", destination: "/dashboard", permanent: false },
     ];
   },
   experimental: {

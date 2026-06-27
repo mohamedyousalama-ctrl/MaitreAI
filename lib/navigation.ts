@@ -48,7 +48,7 @@ export const navItems: NavItem[] = [
     module: "menu",
     accent: "text-menu",
     accentBg: "bg-menu",
-    match: ["/menu", "/restaurant-brain"],
+    match: ["/menu"],
   },
   { href: "/promotions", label: "العروض", en: "Promotions", icon: Megaphone, module: "promotions", accent: "text-promotions", accentBg: "bg-promotions", railOnly: true },
   { href: "/settings", label: "الإعدادات", en: "Settings", icon: Settings, module: "settings", accent: "text-settings", accentBg: "bg-settings", match: ["/settings", "/branches"] },
