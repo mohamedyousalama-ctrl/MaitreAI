@@ -14,6 +14,7 @@ import { ConsoleSidebar } from "./ConsoleSidebar";
 import { ConsoleTopbar } from "./ConsoleTopbar";
 import { AlertBanner } from "./AlertBanner";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
+import { useConsoleDataStore, isConsoleDataPresentable } from "@/lib/console-data-state";
 
 // M1.1 — manager-only console surfaces. Operators may reach ONLY the
 // OPERATION_HREFS (conversations/orders/deliveries); every other console route is
@@ -54,6 +55,32 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Full-screen blocking state (no shell, no store data) for the non-presentable
+ *  data states. Prevents seed/demo data ever rendering as real and the console
+ *  rendering with no resolved tenant. */
+function ConsoleBlock({ message, sub }: { message: string; sub?: string }) {
+  return (
+    <div style={{ flex: 1, display: "grid", placeItems: "center", height: "100vh", background: "var(--kv-bg-console)" }}>
+      <div style={{ textAlign: "center", color: "var(--kv-muted)", maxWidth: 360, padding: 24 }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: "var(--kv-text)" }}>{message}</div>
+        {sub && <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** M1.3 — gate the whole operating shell on real data being present. DataBootstrap
+ *  is mounted by the caller (outside this gate) so it always runs and sets state. */
+function ConsoleGate({ children }: { children: React.ReactNode }) {
+  const dataState = useConsoleDataStore((s) => s.state);
+  if (isConsoleDataPresentable(dataState)) return <>{children}</>; // DB_READY or DEMO
+  if (dataState === "NO_TENANT")
+    return <ConsoleBlock message="مفيش مطعم مرتبط بالحساب ده" sub="لو عندك أكتر من مطعم، افتح من رابط المطعم المخصص. لو المشكلة مستمرة كلّم الدعم." />;
+  if (dataState === "DB_FAILED")
+    return <ConsoleBlock message="تعذّر تحميل بيانات المطعم" sub="حدّث الصفحة. لو المشكلة مستمرة كلّم الدعم." />;
+  return <ConsoleBlock message="جارٍ تحميل بيانات المطعم…" />; // DB_LOADING
+}
+
 export function ConsoleLayout({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -67,16 +94,19 @@ export function ConsoleLayout({ children }: { children: React.ReactNode }) {
         background: "var(--kv-bg-console)",
       }}
     >
+      {/* Always mounted (outside the gate) so it resolves the tenant + sets state. */}
       <DataBootstrap />
-      <ConsoleSidebar />
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <ConsoleTopbar />
-        {/* Global critical-failure banner — manager-visible, real failures only. */}
-        <AlertBanner />
-        <main className="kv-scroll" style={{ flex: 1, overflowY: "auto", padding: "34px 24px 60px" }}>
-          <RoleGuard>{children}</RoleGuard>
-        </main>
-      </div>
+      <ConsoleGate>
+        <ConsoleSidebar />
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <ConsoleTopbar />
+          {/* Global critical-failure banner — manager-visible, real failures only. */}
+          <AlertBanner />
+          <main className="kv-scroll" style={{ flex: 1, overflowY: "auto", padding: "34px 24px 60px" }}>
+            <RoleGuard>{children}</RoleGuard>
+          </main>
+        </div>
+      </ConsoleGate>
     </div>
   );
 }
