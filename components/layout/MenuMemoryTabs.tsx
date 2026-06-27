@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 const SECTIONS = [
   { href: "/menu", label: "المنيو" },
   { href: "/restaurant-brain", label: "ذاكرة المطعم" },
-  { href: "/ai-review", label: "مراجعة المساعد" },
 ];
 
 export function MenuMemoryTabs() {
