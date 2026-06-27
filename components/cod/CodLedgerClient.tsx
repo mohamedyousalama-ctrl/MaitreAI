@@ -12,7 +12,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatCurrency, cn } from "@/lib/utils";
-import { Wallet, HandCoins, AlertTriangle, Banknote, ChevronDown } from "lucide-react";
+import { useRole } from "@/lib/use-role";
+import { Wallet, HandCoins, AlertTriangle, Banknote, ChevronDown, Loader2 } from "lucide-react";
 
 interface DriverLedgerRow {
   driverId: string | null;
@@ -72,6 +73,7 @@ function timeAr(iso: string | null): string {
 }
 
 export function CodLedgerClient() {
+  const isManager = useRole() === "manager";
   const [drivers, setDrivers] = useState<DriverLedgerRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [items, setItems] = useState<HeldOrderItem[]>([]);
@@ -197,22 +199,7 @@ export function CodLedgerClient() {
                     <p className="px-1 py-2 text-center text-xs" style={{ color: "var(--kv-muted)" }}>لا تفاصيل متاحة.</p>
                   ) : (
                     driverItems.map((it) => (
-                      <div key={it.orderId} className="rounded-[9px] p-2" style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)" }}>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold" style={{ color: "var(--kv-text)" }}>طلب {it.orderNumber ?? "—"}</span>
-                          <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "var(--kv-primary-tint)", color: "var(--kv-deep)" }}>
-                            {it.status ? (ORDER_STATUS_AR[it.status] ?? it.status) : "—"}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex items-center justify-between text-[11px]" style={{ color: "var(--kv-muted)" }}>
-                          <span>{it.customer ?? "عميل"}</span>
-                          <span>{timeAr(it.collectedAt)}</span>
-                        </div>
-                        <div className="mt-1 flex items-center justify-between text-[11px]">
-                          <span style={{ color: "var(--kv-muted)" }}>متوقع {formatCurrency(it.expected)}</span>
-                          <span className="font-semibold" style={{ color: "var(--kv-text)" }}>مُحصّل {formatCurrency(it.collected)}</span>
-                        </div>
-                      </div>
+                      <OrderCashRow key={`${it.orderId}:${it.collected}`} it={it} canEdit={isManager} onSaved={load} />
                     ))
                   )}
                 </div>
@@ -276,6 +263,96 @@ export function CodLedgerClient() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// One held-order row in the itemized breakdown. Read-only for everyone; managers
+// additionally get an "actual cash collected" input that records the real amount
+// via the EXISTING /api/cod/collect (recordCollection) — expected_cash is never
+// sent or editable; the server is the authoritative manager gate.
+function OrderCashRow({ it, canEdit, onSaved }: { it: HeldOrderItem; canEdit: boolean; onSaved: () => Promise<void> | void }) {
+  const [val, setVal] = useState(String(it.collected));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(false);
+
+  const parsed = Number(val);
+  const valid = Number.isFinite(parsed) && parsed >= 0;
+  const changed = valid && Math.abs(parsed - it.collected) > 0.001;
+  // Discrepancy previewed against the entered value (falls back to stored).
+  const disc = (valid ? parsed : it.collected) - it.expected;
+  const hasDisc = Math.abs(disc) > 0.001;
+
+  async function save() {
+    if (!canEdit || !valid || !changed || saving) return;
+    setSaving(true);
+    setErr(false);
+    try {
+      const r = await fetch("/api/cod/collect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: it.orderId, cashCollected: parsed }),
+      });
+      if (r.ok) await onSaved();
+      else setErr(true);
+    } catch {
+      setErr(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-[9px] p-2" style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)" }}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold" style={{ color: "var(--kv-text)" }}>طلب {it.orderNumber ?? "—"}</span>
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "var(--kv-primary-tint)", color: "var(--kv-deep)" }}>
+          {it.status ? (ORDER_STATUS_AR[it.status] ?? it.status) : "—"}
+        </span>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[11px]" style={{ color: "var(--kv-muted)" }}>
+        <span>{it.customer ?? "عميل"}</span>
+        <span>{timeAr(it.collectedAt)}</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[11px]">
+        <span style={{ color: "var(--kv-muted)" }}>متوقع {formatCurrency(it.expected)}</span>
+        {!canEdit && <span className="font-semibold" style={{ color: "var(--kv-text)" }}>مُحصّل {formatCurrency(it.collected)}</span>}
+      </div>
+
+      {canEdit && (
+        <div className="mt-2 flex items-center gap-2">
+          <label className="text-[11px] font-semibold" style={{ color: "var(--kv-muted)" }}>النقدية الفعلية</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="0.01"
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            className="w-24 rounded-lg px-2 py-1 text-xs"
+            style={{ border: "1px solid var(--kv-border)", background: "var(--kv-card-soft)", color: "var(--kv-text)" }}
+          />
+          <button
+            type="button"
+            onClick={save}
+            disabled={!valid || !changed || saving}
+            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold text-white transition disabled:opacity-50"
+            style={{ background: "var(--kv-grad-brand)" }}
+          >
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            حفظ
+          </button>
+        </div>
+      )}
+
+      {/* discrepancy — short (عجز) / over (زيادة), always visible when nonzero */}
+      {hasDisc && (
+        <div className="mt-1.5 flex items-center justify-between rounded-lg px-2 py-1 text-[10.5px] font-semibold" style={{ background: "rgba(216,151,43,.12)", color: "var(--kv-amber)", boxShadow: "inset 0 0 0 1px rgba(216,151,43,.3)" }}>
+          <span className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> {disc < 0 ? "عجز" : "زيادة"}</span>
+          <span>{formatCurrency(Math.abs(disc))}</span>
+        </div>
+      )}
+      {err && <p className="mt-1 text-[10.5px] font-semibold" style={{ color: "var(--kv-red)" }}>تعذّر الحفظ — حاول تاني.</p>}
     </div>
   );
 }
