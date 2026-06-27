@@ -87,6 +87,22 @@ export async function setDriverActive(db: SupabaseClient, restaurantId: string, 
   if (error) throw error;
 }
 
+/** Edit a driver's profile (name/phone/vehicle only). The row id (driver_id) is
+ *  unchanged, so existing deliveries/COD attribution is unaffected. Tenant-scoped. */
+export async function updateDriver(
+  db: SupabaseClient,
+  restaurantId: string,
+  driverId: string,
+  input: { name: string; phone: string; vehicle?: string | null }
+) {
+  const { error } = await db
+    .from("drivers")
+    .update({ name: input.name.trim(), phone: input.phone.trim(), vehicle: input.vehicle?.trim() || null })
+    .eq("id", driverId)
+    .eq("restaurant_id", restaurantId);
+  if (error) throw error;
+}
+
 // --- operator deliveries list (+ latest location for in-progress) ------------
 const IN_PROGRESS = ["assigned", "picked_up", "on_the_way"];
 const LOCATION_FRESH_MS = 30 * 1000;
