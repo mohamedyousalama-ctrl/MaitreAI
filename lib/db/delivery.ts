@@ -295,11 +295,23 @@ export async function updateDeliveryStatusByToken(
   if (!d) return { ok: false, error: "not_found" };
   if (isExpired(d as { expires_at?: string | null; status?: string })) return { ok: false, error: "completed" };
 
+  // Forward-only guard (server-side; the public endpoint can't trust the client
+  // for ordering). Allow ONLY a move to the immediate next status in the sequence
+  // — this rejects backward moves, repeats, AND skips (e.g. delivered on an
+  // `assigned` row, which would otherwise bypass picked_up/on_the_way and is the
+  // exact G1 gap). `failed` stays allowed from any non-terminal state (terminal
+  // is already blocked by isExpired above). The legitimate driver UI always sends
+  // the immediate next step, so this never breaks the real flow.
+  const SEQ = ["pending", "assigned", "picked_up", "on_the_way", "delivered"];
+  if (target !== "failed" && SEQ.indexOf(target) !== SEQ.indexOf(String((d as { status?: string }).status)) + 1) {
+    return { ok: false, error: "invalid_transition" };
+  }
+
   const patch: Record<string, unknown> = { status: target, updated_at: new Date().toISOString() };
   if (target === "picked_up") patch.picked_up_at = new Date().toISOString();
   if (target === "delivered") {
     patch.delivered_at = new Date().toISOString();
-    patch.token_used = true;
+    patch.token_used = true; // audit flag; reuse is already blocked by expires_at + terminal-status via isExpired
     patch.expires_at = new Date().toISOString(); // close the link
   }
   await admin.from("deliveries").update(patch).eq("id", d.id);
