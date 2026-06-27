@@ -61,6 +61,30 @@ export async function createDeliveryForOrder(
   return { created: false, deliveryId: (ex?.id as string) ?? null };
 }
 
+/**
+ * Sync the linked delivery to "delivered" when the operator marks the ORDER
+ * delivered on the orders page (the order-status path updates orders.order_status
+ * only). Mirrors the delivered patch the driver-token path writes
+ * (updateDeliveryStatusByToken): status + delivered_at + closes the one-time link.
+ * Idempotent: no row → no-op; already delivered → no-op (no error, no dup event).
+ * Does NOT touch COD/driver attribution — only deliveries.status fields.
+ */
+export async function markDeliveryDelivered(admin: SupabaseClient, restaurantId: string, orderId: string): Promise<void> {
+  const { data: d } = await admin
+    .from("deliveries")
+    .select("id,status")
+    .eq("order_id", orderId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (!d || (d as { status: string }).status === "delivered") return; // no row / already delivered → no-op
+  const now = new Date().toISOString();
+  await admin
+    .from("deliveries")
+    .update({ status: "delivered", delivered_at: now, token_used: true, expires_at: now, updated_at: now })
+    .eq("id", (d as { id: string }).id);
+  await admin.from("delivery_events").insert({ delivery_id: (d as { id: string }).id, type: "status:delivered", payload: { via: "operator" } });
+}
+
 // --- drivers -----------------------------------------------------------------
 export async function listDrivers(db: SupabaseClient, restaurantId: string) {
   const { data } = await db

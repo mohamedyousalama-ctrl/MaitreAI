@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createClient } from "@/lib/supabase/server";
 import { captureCodOnDelivered } from "@/lib/db/cod";
+import { markDeliveryDelivered } from "@/lib/db/delivery";
 
 export const runtime = "nodejs";
 
@@ -47,5 +48,16 @@ export async function POST(req: Request) {
     actorRole: tenant.role ?? "operator",
   });
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: 500 });
+
+  // Status sync: mirror the driver-token path so the /deliveries board reflects
+  // reality (orders.order_status was set to delivered by the order-store; the
+  // delivery row otherwise stays stale). Idempotent; never breaks the capture
+  // response — COD attribution above is unchanged.
+  try {
+    await markDeliveryDelivered(supabase, tenant.restaurantId, orderId);
+  } catch (e) {
+    console.error("[cod/capture-delivered] delivery status sync error", e);
+  }
+
   return NextResponse.json({ ok: true, collected: r.collected, expected: r.expected });
 }
