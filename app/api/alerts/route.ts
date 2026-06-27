@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ alerts: [] });
 
