@@ -31,6 +31,8 @@ export interface ReportOrderFacts {
   total: number | null;
   fulfillment: "delivery" | "pickup" | null;
   paymentStatus?: string | null;
+  /** The real payment METHOD (cod | vodafone_cash | …), not the status. */
+  paymentMethod?: string | null;
   branchId?: string | null;
 }
 
@@ -204,7 +206,9 @@ export async function emitConversationReport(
       order_placed: orderPlaced,
       order_total: orderPlaced ? order?.total ?? null : null,
       fulfillment: order?.fulfillment ?? null,
-      payment_method: order?.paymentStatus ?? null,
+      // F1.7 Fix 2 — store the real payment METHOD here, not the status. Falls back
+      // to null for legacy orders with no method (never to a status string).
+      payment_method: order?.paymentMethod ?? null,
       escalated: terminalTrigger === "escalated",
       escalation_reason: args.escalationReason ?? null,
       turn_count: msgCount ?? 0,

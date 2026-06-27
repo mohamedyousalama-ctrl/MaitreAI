@@ -210,6 +210,11 @@ export async function persistOrderFromDraft(
         source: "whatsapp",
         order_status: "pending_confirmation",
         payment_status: "unpaid",
+        // F1.7 Fix 1 — stamp the payment method at birth so pending/pickup/cancelled
+        // WhatsApp orders aren't born NULL (uncapturable later). COD-only pilot: the
+        // agent offers only COD today (the draft carries no method field), so default
+        // to "cod" — mirroring the web path's default. F1.6 will add VF-Cash selection.
+        payment_method: "cod",
       },
       { onConflict: "id", ignoreDuplicates: true }
     )

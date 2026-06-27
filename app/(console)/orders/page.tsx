@@ -444,7 +444,9 @@ function PaymentPill({ o }: { o: LocalOrder }) {
   // Vodafone Cash is a distinct method — show it apart from COD (red brand tint).
   if (o.paymentMethod === "vodafone_cash") return <Pill label="فودافون كاش" dot="#e60000" bg="rgba(230,0,0,.10)" fg="#c40000" />;
   if (o.paymentStatus === "paid") return <Pill label="مدفوع" dot="var(--kv-primary)" bg="rgba(14,159,110,.12)" fg="#0a8a5f" />;
-  if (o.fulfillmentType === "delivery") return <Pill label="COD مؤكد" dot="var(--kv-primary)" bg="rgba(14,159,110,.12)" fg="#0a8a5f" />;
+  // F1.7 Fix 5 — assert COD only when the order is ACTUALLY cod, not for any delivery
+  // order with a null/unknown method. Unknown method + unpaid → "awaiting payment".
+  if (o.paymentMethod === "cod") return <Pill label="COD مؤكد" dot="var(--kv-primary)" bg="rgba(14,159,110,.12)" fg="#0a8a5f" />;
   return <Pill label="بانتظار الدفع" dot="var(--kv-amber)" bg="rgba(201,138,31,.16)" fg="#9a6a14" />;
 }
 

@@ -66,7 +66,10 @@ export async function POST(req: NextRequest, { params }: { params: { sessionId: 
     }
   } else if (body.action === "success") {
     await admin.from("payment_sessions").update({ status: "paid", provider_ref: body.method ?? "mada", updated_at: now }).eq("id", sessionId);
-    await admin.from("orders").update({ payment_status: "paid", order_status: "paid", updated_at: now }).eq("id", view.orderId);
+    // F1.7 Fix 4 — an online-paid order's method IS known (the provider): record it
+    // so the order carries the real method, not a COD default. Label only — amounts
+    // and settlement are untouched.
+    await admin.from("orders").update({ payment_status: "paid", order_status: "paid", payment_method: body.method ?? "mada", updated_at: now }).eq("id", view.orderId);
     view.status = "paid";
   } else if (body.action === "fail") {
     await admin.from("payment_sessions").update({ status: "failed", updated_at: now }).eq("id", sessionId);
