@@ -115,7 +115,9 @@ export function PulseStrip() {
           طلبات اليوم: {ordersCount}
         </span>
 
-        {role !== "operation" && (
+        {/* M1.2 — revenue/manager content shows ONLY for a confirmed manager (not
+            for operation/loading/unresolved). */}
+        {role === "manager" && (
           <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#F7F2EA] px-2.5 py-1.5 text-xs font-semibold text-[#7C7163]" title="إيرادات اليوم">
             <Banknote className="h-3.5 w-3.5" />
             {revenue} {currency}

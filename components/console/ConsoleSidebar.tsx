@@ -31,6 +31,7 @@ import { StatePill } from "@/components/kivo";
 import { KivoMark } from "@/components/brand/KivoLogo";
 import type { OrderStatusKey } from "@/lib/types";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
+import { useRole } from "@/lib/use-role";
 
 const ACTIVE: OrderStatusKey[] = [
   "pending_confirmation",
@@ -119,6 +120,10 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 export function ConsoleSidebar() {
   const pathname = usePathname();
   const hydrated = useHasHydrated();
+  // M1.1 — role-aware nav. Only a CONFIRMED manager sees the full nav + agent
+  // card. Operators (and loading/unresolved) see only المحادثات/الطلبات/التوصيل,
+  // never a manager-nav flash. Page access is enforced again in ConsoleLayout.
+  const isManager = useRole() === "manager";
 
   const orders = useOrderStore((s) => s.orders);
   const conversations = useConversationStore((s) => s.conversations);
@@ -213,19 +218,19 @@ export function ConsoleSidebar() {
 
       <GroupLabel>الوكيل</GroupLabel>
       <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <NavLink href="/dashboard" icon={LayoutDashboard} label="الرئيسية" active={is("/dashboard")} />
-        <NavLink href="/insights" icon={LineChart} label="الرؤى" active={is("/insights")} />
+        {isManager && <NavLink href="/dashboard" icon={LayoutDashboard} label="الرئيسية" active={is("/dashboard")} />}
+        {isManager && <NavLink href="/insights" icon={LineChart} label="الرؤى" active={is("/insights")} />}
         <NavLink href="/conversations" icon={MessagesSquare} label="المحادثات" active={is("/conversations")} badge={escalations} />
         <NavLink href="/orders" icon={ClipboardList} label="الطلبات" active={is("/orders")} />
-        <NavLink href="/customers" icon={Users} label="العملاء" active={is("/customers")} />
-        {/* Menu & Memory — the editor + «ذاكرة المطعم» tab + «مناطق التوصيل» zones editor live here. */}
-        <NavLink href="/menu" icon={UtensilsCrossed} label="المنيو والذاكرة" active={is("/menu")} />
-        <NavLink href="/settings" icon={Settings} label="الربط والإعدادات" active={is("/settings")} />
+        {isManager && <NavLink href="/customers" icon={Users} label="العملاء" active={is("/customers")} />}
+        {/* Menu & Memory — the editor + «ذاكرة المطعم» tab + «مناطق التوصيل» zones editor live here. Manager-only in V1 (M1.1). */}
+        {isManager && <NavLink href="/menu" icon={UtensilsCrossed} label="المنيو والذاكرة" active={is("/menu")} />}
+        {isManager && <NavLink href="/settings" icon={Settings} label="الربط والإعدادات" active={is("/settings")} />}
       </nav>
 
       <GroupLabel>تشغيل</GroupLabel>
       <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <NavLink href="/cod" icon={Wallet} label="الكاش والتحصيل" active={is("/cod")} />
+        {isManager && <NavLink href="/cod" icon={Wallet} label="الكاش والتحصيل" active={is("/cod")} />}
         {/* «التوصيل» renders only when delivery tracking is enabled — same flag the
             /deliveries page gates on (notFound() when off), so the nav can't link
             to a 404. Flag is ON by default, so this is currently shown as before. */}
@@ -244,7 +249,9 @@ export function ConsoleSidebar() {
         </div>
       </nav>
 
-      {/* Agent status card */}
+      {/* Agent status card — manager-only (M1.1): its pause toggle calls the
+          manager-gated /api/settings/ops, so don't show operators a control that 403s. */}
+      {isManager && (
       <div
         style={{
           marginTop: "auto",
@@ -308,6 +315,7 @@ export function ConsoleSidebar() {
           {toAr(activeOrders)} طلب نشط دلوقتي · {toAr(ordersNeedingHuman)} محتاج تدخّل
         </div>
       </div>
+      )}
     </aside>
   );
 }

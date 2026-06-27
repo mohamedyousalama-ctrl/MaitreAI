@@ -28,7 +28,9 @@ export function AppSidebar() {
       (i.href !== "/dashboard" || ENABLE_ADMIN_CHAT_CONSOLE) &&
       (i.href !== "/deliveries" || ENABLE_DELIVERY_TRACKING)
   );
-  const all = role === "operation" ? visible.filter((i) => OPERATION_HREFS.has(i.href)) : visible;
+  // M1.2 — only a CONFIRMED manager sees the full nav; operation/loading/unresolved
+  // get the restricted set (never a manager-nav flash on a failed role lookup).
+  const all = role !== "manager" ? visible.filter((i) => OPERATION_HREFS.has(i.href)) : visible;
   const top = all.filter((i) => i.href !== "/settings" && i.href !== "/dashboard");
   const settings = all.find((i) => i.href === "/settings");
   const homeActive = pathname === "/dashboard";
