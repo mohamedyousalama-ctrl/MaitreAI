@@ -7,14 +7,18 @@
 
 import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { settleDriver } from "@/lib/db/cod";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const supabase = createClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  // M1.7-D — auth/authorize as the member (getServerTenant + manager gate), but
+  // perform the WRITE with the service-role client so it keeps working once the
+  // RLS lockdown makes cod_* member-read-only. settleDriver enforces tenant scope
+  // in code (every write is filtered/set by restaurantId).
+  const admin = createAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -24,7 +28,7 @@ export async function POST(req: Request) {
   if (!driverId) return NextResponse.json({ error: "bad_params" }, { status: 400 });
   const note = typeof body.note === "string" ? body.note : null;
 
-  const r = await settleDriver(supabase, tenant.restaurantId, {
+  const r = await settleDriver(admin, tenant.restaurantId, {
     driverId,
     settledBy: tenant.userId,
     settledByRole: tenant.role,
