@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { setItemAvailabilityDb } from "@/lib/db/brain";
 import { getAdapter, modelFor, costUsd } from "@/lib/ai/llm";
@@ -68,6 +69,10 @@ const startOfToday = () => {
 export async function POST(req: Request) {
   const supabase = createClient();
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  // M1.7-E — agent_runs is observability and becomes member-read-only under the RLS
+  // lockdown, so its inserts go through the service-role client (best-effort; never
+  // a member write). Auth + config writes stay on the member client unchanged.
+  const admin = createAdminClient();
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const restaurantId = tenant.restaurantId;
@@ -176,7 +181,7 @@ export async function POST(req: Request) {
     } catch (e) {
       return NextResponse.json({ error: "write_failed", detail: e instanceof Error ? e.message : String(e) }, { status: 502 });
     }
-    await supabase.from("agent_runs").insert({
+    if (admin) await admin.from("agent_runs").insert({
       restaurant_id: restaurantId, trigger: "owner", input: `confirm:${confirm.intent}`, output: result, adapter: "system", tokens: 0, cost_usd: 0,
     });
     return NextResponse.json({ result });
@@ -195,7 +200,7 @@ export async function POST(req: Request) {
   const parsed = parseRouter(res.text) ?? { intent: "off_scope", params: {}, sentence: "أساعدك في تشغيل مطعمك فقط." };
 
   // Log the admin turn (per-surface cost visibility, §P5).
-  await supabase.from("agent_runs").insert({
+  if (admin) await admin.from("agent_runs").insert({
     restaurant_id: restaurantId, trigger: "owner", input: text, output: parsed.sentence,
     model: res.model, adapter: adapter.name, input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens,
     cache_read_tokens: res.usage.cacheReadTokens, cost_usd: cost, latency_ms: Date.now() - t0,

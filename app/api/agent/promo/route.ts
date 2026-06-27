@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { loadBrain } from "@/lib/db/brain";
 import { getAdapter } from "@/lib/ai/llm";
@@ -23,6 +24,10 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   const supabase = createClient();
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  // M1.7-E — agent_runs (observability) becomes member-read-only under the RLS
+  // lockdown; its inserts go through the service-role client (best-effort, never a
+  // member write). Auth + promotion writes stay on the member client unchanged.
+  const admin = createAdminClient();
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const restaurantId = tenant.restaurantId;
@@ -57,7 +62,7 @@ export async function POST(req: Request) {
     try {
       const res = await adapter.generate({ system, messages: [{ role: "user", content: `العرض: ${summary}` }], tools: [] }, "customer_agent");
       caption = (res.text || "").trim().split("\n")[0].slice(0, 120);
-      await supabase.from("agent_runs").insert({
+      if (admin) await admin.from("agent_runs").insert({
         restaurant_id: restaurantId, trigger: "owner", input: `promo_caption:${summary}`, output: caption,
         model: res.model, adapter: adapter.name, input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens,
         cost_usd: 0, tokens: res.usage.inputTokens + res.usage.outputTokens, tools_used: ["promo_caption"],
@@ -126,7 +131,7 @@ export async function POST(req: Request) {
       .single();
     if (error) return NextResponse.json({ error: "insert_failed", detail: error.message }, { status: 502 });
 
-    await supabase.from("agent_runs").insert({
+    if (admin) await admin.from("agent_runs").insert({
       restaurant_id: restaurantId, trigger: "owner", input: `promo_publish:${row.name}`, output: `active:${ins.id}`,
       adapter: "system", tokens: 0, cost_usd: 0, tools_used: ["promo_publish"],
     });
