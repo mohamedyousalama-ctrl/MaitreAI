@@ -21,6 +21,7 @@ import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { sendReceiptToCustomer } from "./send-receipt";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { checkAndNotifyStuck } from "@/lib/intelligence/stuck-detection";
+import { recordCriticalAlert } from "@/lib/alerts/record";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export type RespondAndSendStatus =
@@ -322,6 +323,8 @@ export async function respondAndSendWhatsApp(
       "تعذّر توليد رد المساعد تلقائياً — تم تحويل المحادثة لموظف للمتابعة.",
       { kind: "agent_error", detail }
     );
+    // Critical-failure alert: console banner + email (best-effort, never throws).
+    await recordCriticalAlert(admin, { restaurantId, type: "agent_error", detail, conversationId });
     return { status: "agent_error", error: detail };
   }
 
@@ -467,6 +470,14 @@ export async function respondAndSendWhatsApp(
     `تعذّر إرسال رد المساعد عبر واتساب: ${send.error ?? "خطأ غير معروف"}. الرسالة محفوظة ويمكن إعادة المحاولة.`,
     { kind: "send_error", windowState: send.windowState, attempts: send.attempts }
   );
+  // Critical-failure alert: console banner + email (best-effort, never throws).
+  await recordCriticalAlert(admin, {
+    restaurantId,
+    type: "whatsapp_send_failed",
+    detail: send.error ?? "خطأ غير معروف",
+    conversationId,
+    context: { windowState: send.windowState, attempts: send.attempts },
+  });
   return {
     status: "send_failed",
     reply: outcome.reply,

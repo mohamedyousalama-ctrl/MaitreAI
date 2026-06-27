@@ -22,6 +22,7 @@ import { resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/resta
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
 import { withConversationLock } from "@/lib/db/conversation-lock";
 import { transcribeWhatsAppVoice } from "@/lib/messaging/voice";
+import { recordCriticalAlert } from "@/lib/alerts/record";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -242,6 +243,13 @@ export async function POST(req: NextRequest) {
           // already-persisted message in the same batch becomes inserted=false
           // and is never added to toAnswer → agent never fires twice.
           persistFailed++;
+          // Critical-failure alert: console banner + email (best-effort, never throws).
+          await recordCriticalAlert(admin, {
+            restaurantId,
+            type: "inbound_persist_failed",
+            detail: e instanceof Error ? e.message : String(e),
+            context: { from: m.from },
+          });
         }
       }
 
