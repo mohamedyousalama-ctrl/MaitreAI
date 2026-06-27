@@ -54,6 +54,9 @@ export function DeliveriesClient() {
   const [links, setLinks] = useState<Record<string, { driverLink: string; customerLink: string; whatsapp: string }>>({});
   const [form, setForm] = useState({ name: "", phone: "", vehicle: "" });
   const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", phone: "", vehicle: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function loadDrivers() {
@@ -121,6 +124,25 @@ export function DeliveriesClient() {
   async function toggleDriver(d: Driver) {
     await fetch(`/api/drivers/${d.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !d.active }) });
     loadDrivers();
+  }
+
+  function startEdit(d: Driver) {
+    setEditId(d.id);
+    setEditForm({ name: d.name, phone: d.phone, vehicle: d.vehicle ?? "" });
+  }
+  async function saveEdit(id: string) {
+    if (!editForm.name.trim() || !editForm.phone.trim() || savingEdit) return;
+    setSavingEdit(true);
+    try {
+      const r = await fetch(`/api/drivers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editForm.name, phone: editForm.phone, vehicle: editForm.vehicle }),
+      });
+      if (r.ok) { setEditId(null); await loadDrivers(); }
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   const activeDrivers = drivers.filter((d) => d.active);
@@ -226,14 +248,36 @@ export function DeliveriesClient() {
             ) : (
               <ul className="divide-y" style={{ borderColor: "var(--kv-border)" }}>
                 {drivers.map((d) => (
-                  <li key={d.id} className="flex items-center justify-between p-3" style={{ borderColor: "var(--kv-border)" }}>
-                    <div>
-                      <p className="text-sm font-semibold" style={d.active ? { color: "var(--kv-text)" } : { color: "var(--kv-faint)", textDecoration: "line-through" }}>{d.name}</p>
-                      <p className="text-xs" style={{ color: "var(--kv-muted)" }}>{d.phone}{d.vehicle ? ` · ${d.vehicle}` : ""}</p>
-                    </div>
-                    <button onClick={() => toggleDriver(d)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>
-                      {d.active ? "إيقاف" : "تفعيل"}
-                    </button>
+                  <li key={d.id} className="p-3" style={{ borderColor: "var(--kv-border)" }}>
+                    {editId === d.id ? (
+                      // inline edit (manager) — name/phone required; reuses add-form styling
+                      <div className="space-y-2">
+                        <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} placeholder="الاسم" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
+                        <input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} placeholder="رقم واتساب" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
+                        <input value={editForm.vehicle} onChange={(e) => setEditForm({ ...editForm, vehicle: e.target.value })} placeholder="المركبة (اختياري)" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
+                        <div className="flex gap-2">
+                          <button onClick={() => saveEdit(d.id)} disabled={!editForm.name.trim() || !editForm.phone.trim() || savingEdit} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50" style={{ background: "var(--kv-grad-brand)" }}>
+                            {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} حفظ
+                          </button>
+                          <button onClick={() => setEditId(null)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>إلغاء</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold" style={d.active ? { color: "var(--kv-text)" } : { color: "var(--kv-faint)", textDecoration: "line-through" }}>{d.name}</p>
+                          <p className="text-xs" style={{ color: "var(--kv-muted)" }}>{d.phone}{d.vehicle ? ` · ${d.vehicle}` : ""}</p>
+                        </div>
+                        <div className="flex flex-none items-center gap-1.5">
+                          <button onClick={() => startEdit(d)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>
+                            تعديل
+                          </button>
+                          <button onClick={() => toggleDriver(d)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>
+                            {d.active ? "إيقاف" : "تفعيل"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
