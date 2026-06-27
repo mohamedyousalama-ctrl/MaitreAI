@@ -8,14 +8,18 @@
 
 import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { recordCollection } from "@/lib/db/cod";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const supabase = createClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  // M1.7-D — auth/authorize as the member (getServerTenant + manager gate), but
+  // perform the WRITE with the service-role client (survives the RLS lockdown).
+  // recordCollection enforces tenant scope in code (reads/writes filtered by
+  // restaurantId).
+  const admin = createAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -27,7 +31,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad_params" }, { status: 400 });
   }
 
-  const r = await recordCollection(supabase, tenant.restaurantId, {
+  const r = await recordCollection(admin, tenant.restaurantId, {
     orderId,
     cashCollected,
     actorUserId: tenant.userId,

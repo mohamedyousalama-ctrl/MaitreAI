@@ -9,15 +9,18 @@
 
 import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { captureCodOnDelivered } from "@/lib/db/cod";
 import { markDeliveryDelivered } from "@/lib/db/delivery";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const supabase = createClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  // M1.7-D — auth/authorize as the member (getServerTenant), but read the guard
+  // row + perform the WRITES with the service-role client (survives the RLS
+  // lockdown). All DB access below is explicitly scoped by tenant.restaurantId.
+  const admin = createAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -26,7 +29,7 @@ export async function POST(req: Request) {
   if (!orderId) return NextResponse.json({ error: "bad_params" }, { status: 400 });
 
   // Server-side guard: only capture for unpaid delivery orders.
-  const { data: order } = await supabase
+  const { data: order } = await admin
     .from("orders")
     .select("fulfillment,payment_status")
     .eq("id", orderId)
@@ -41,7 +44,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
-  const r = await captureCodOnDelivered(supabase, {
+  const r = await captureCodOnDelivered(admin, {
     restaurantId: tenant.restaurantId,
     orderId,
     actorUserId: tenant.userId,
@@ -54,7 +57,7 @@ export async function POST(req: Request) {
   // delivery row otherwise stays stale). Idempotent; never breaks the capture
   // response — COD attribution above is unchanged.
   try {
-    await markDeliveryDelivered(supabase, tenant.restaurantId, orderId);
+    await markDeliveryDelivered(admin, tenant.restaurantId, orderId);
   } catch (e) {
     console.error("[cod/capture-delivered] delivery status sync error", e);
   }
