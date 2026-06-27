@@ -9,6 +9,7 @@
 
 import type { DeliveryArea, MenuItem, Modifier } from "../types";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
+import type { PaymentConfig } from "@/lib/payments/config";
 import type { LlmToolDef } from "./llm/types";
 
 export interface DraftModifier {
@@ -46,6 +47,9 @@ export interface OrderDraft {
   taxRate: number; // applied rate (0 when inclusive)
   total: number;
   currency: string;
+  /** Chosen payment method (F1.2/F1.6): "cod" | "vodafone_cash" | null (not yet
+   *  chosen). Persisted to orders.payment_method at creation; null → "cod" default. */
+  paymentMethod: string | null;
   finalized: boolean;
 }
 
@@ -95,6 +99,9 @@ export interface ToolContext {
   /** Tax mode + rate (Sprint 10). "added" → a VAT line; "inclusive" → no change. */
   taxMode: string;
   taxRate: number;
+  /** Per-tenant payment config (F1.2/F1.6). Gates which methods Karim offers — VF
+   *  Cash is offered ONLY when paymentConfig.vodafone_cash.enabled. */
+  paymentConfig: PaymentConfig;
   /** Set to true by resend_receipt tool; triggers receipt re-send in respond-and-send. */
   resendReceipt: boolean;
 }
@@ -151,6 +158,7 @@ export function emptyDraft(currency: string): OrderDraft {
     taxRate: 0,
     total: 0,
     currency,
+    paymentMethod: null,
     finalized: false,
   };
 }
@@ -299,8 +307,25 @@ export const ORDER_TOOLS: LlmToolDef[] = [
   },
   {
     name: "present_payment_methods",
-    description: "Show the payment-method button(s) — الدفع عند الاستلام (COD). Use when collecting how the customer will pay.",
+    description:
+      "Show the payment-method buttons available for THIS order (built from the restaurant's payment config + fulfillment): " +
+      "الدفع عند الاستلام (COD) and فودافون كاش when enabled; for pickup, فودافون كاش (prepay) vs الدفع عند الاستلام من الفرع. " +
+      "Use when collecting how the customer will pay.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "set_payment_method",
+    description:
+      "Record the customer's chosen payment method on the order. method=\"cod\" (الدفع عند الاستلام / counter cash) " +
+      "or \"vodafone_cash\" (ONLY when offered/enabled). For vodafone_cash it returns the transfer number + amount + " +
+      "instructions to show the customer; the order stays UNPAID until an operator confirms — NEVER tell the customer " +
+      "the payment was received.",
+    input_schema: {
+      type: "object",
+      properties: { method: { type: "string", enum: ["cod", "vodafone_cash"] } },
+      required: ["method"],
+      additionalProperties: false,
+    },
   },
   {
     name: "resend_receipt",
@@ -815,11 +840,48 @@ export function executeTool(
       return { content: "تم عرض أزرار (تأكيد / إضافة / إلغاء) للعميل." };
     }
     case "present_payment_methods": {
-      ctx.presentation = {
-        kind: "buttons",
-        buttons: [{ id: "pay_cod", title: truncate("الدفع عند الاستلام", BUTTON_TITLE_MAX) }],
-      };
-      return { content: "تم عرض طريقة الدفع (الدفع عند الاستلام) للعميل." };
+      const cfg = ctx.paymentConfig;
+      const buttons: PresentationButton[] = [];
+      if (cfg.vodafone_cash.enabled) {
+        // VF Cash available → tailor by fulfillment.
+        if (d.fulfillment === "pickup") {
+          // F1.6 pickup: prepay via VF, or pay cash at the counter.
+          buttons.push({ id: "pay_vodafone_cash", title: truncate("فودافون كاش (تحويل)", BUTTON_TITLE_MAX) });
+          buttons.push({ id: "pay_counter", title: truncate("الدفع عند الاستلام من الفرع", BUTTON_TITLE_MAX) });
+        } else {
+          // F1.2 delivery: COD vs VF Cash.
+          if (cfg.cod_enabled) buttons.push({ id: "pay_cod", title: truncate("الدفع عند الاستلام", BUTTON_TITLE_MAX) });
+          buttons.push({ id: "pay_vodafone_cash", title: truncate("فودافون كاش", BUTTON_TITLE_MAX) });
+        }
+      } else {
+        // VF disabled (e.g. Wesaya today) → COD only; unchanged behavior.
+        buttons.push({ id: "pay_cod", title: truncate("الدفع عند الاستلام", BUTTON_TITLE_MAX) });
+      }
+      ctx.presentation = { kind: "buttons", buttons };
+      return { content: `تم عرض طرق الدفع المتاحة للعميل (${buttons.map((b) => b.title).join("، ")}).` };
+    }
+    case "set_payment_method": {
+      const method = input.method === "vodafone_cash" ? "vodafone_cash" : "cod";
+      const cfg = ctx.paymentConfig;
+      // Gate VF strictly on config — never offer/record it when disabled.
+      if (method === "vodafone_cash" && !cfg.vodafone_cash.enabled) {
+        return { content: "فودافون كاش مش متاح حاليًا — الدفع عند الاستلام.", isError: true };
+      }
+      d.paymentMethod = method;
+      if (method === "vodafone_cash") {
+        const num = (cfg.vodafone_cash.number ?? "").trim();
+        const extra = (cfg.vodafone_cash.instructions ?? "").trim();
+        // HONESTY: never claim the payment was received — transfer + we'll confirm.
+        const lines = [
+          "تمام، اختَرت فودافون كاش 📱",
+          `حوّل المبلغ (${d.total} ${d.currency}) على الرقم ده:`,
+          num || "(رقم المحفظة هيتبعتلك من المطعم)",
+          extra,
+          "وابعتلنا لما تحوّل وهنأكد طلبك. (الدفع لسه ما اتأكدش لحد ما المطعم يراجعه.)",
+        ].filter(Boolean);
+        return { content: lines.join("\n") };
+      }
+      return { content: "تمام، الدفع عند الاستلام. هنأكد طلبك حالًا." };
     }
     default:
       return { content: `أداة غير معروفة: ${name}`, isError: true };
