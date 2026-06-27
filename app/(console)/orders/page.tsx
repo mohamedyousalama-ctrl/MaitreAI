@@ -229,9 +229,27 @@ export default function OrdersPage() {
   // fall back to the full order set so a deeplinked order opens in the drawer
   // even when it's outside the current date scope / tab filter.
   const selected = scoped.find((o) => o.id === selectedId) ?? orders.find((o) => o.id === selectedId) ?? null;
-  const advance = (o: LocalOrder) => {
+  // Guard: a delivery order must have an assigned driver before it can be marked
+  // "delivered", else COD capture attributes to no driver (cod_collections.driver_id
+  // = null → «غير معيّن», breaking per-driver reconciliation). UI-only guard — it
+  // blocks the advance and points to the existing «تعيين مندوب» control; it never
+  // touches the capture/money path. Only blocks when a delivery row EXISTS without
+  // a driver (historical orders with no delivery row aren't strandable here).
+  const [noDriverBlock, setNoDriverBlock] = useState<string | null>(null);
+  const advance = async (o: LocalOrder) => {
     const n = nextStatus(o);
     if (!n) return;
+    if (ENABLE_DELIVERY_TRACKING && n === "delivered" && o.fulfillmentType === "delivery") {
+      try {
+        const res = await fetch("/api/deliveries", { cache: "no-store" });
+        if (res.ok) {
+          const rows = ((await res.json()).deliveries ?? []) as Array<{ driver_id: string | null; orders: { order_number: string | null } | null }>;
+          const row = rows.find((x) => String(x.orders?.order_number ?? "") === String(o.orderNumber));
+          if (row && !row.driver_id) { setNoDriverBlock(o.id); return; } // delivery row exists, unassigned → block
+        }
+      } catch { /* fail-open on network error — never strand the operator */ }
+    }
+    setNoDriverBlock(null);
     const isConfirm = ["pending_confirmation", "pending_payment", "paid"].includes(o.orderStatus) && n === "preparing";
     updateOrderStatus(o.id, n, "human"); // existing handler → DB write-through (+COD capture on delivered)
     if (isConfirm) void fetch(`/api/orders/${o.id}/send-receipt`, { method: "POST" }).catch(() => {});
@@ -367,7 +385,7 @@ export default function OrdersPage() {
 
         {/* DRAWER */}
         <div style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: 16, boxShadow: "var(--kv-shadow-card)", overflow: "hidden", position: "sticky", top: 0 }}>
-          {selected ? <OrderDrawer key={selected.id} o={selected} escalated={isEscalated(selected)} onAdvance={advance} /> : (
+          {selected ? <OrderDrawer key={selected.id} o={selected} escalated={isEscalated(selected)} onAdvance={advance} blockedNoDriver={noDriverBlock === selected.id} /> : (
             <div style={{ padding: "56px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 13, fontWeight: 600 }}>اختر طلب لعرض تفاصيله</div>
           )}
         </div>
@@ -544,7 +562,7 @@ function DriverAssign({ o }: { o: LocalOrder }) {
 }
 
 const RANK: Record<string, number> = { pending_confirmation: 0, pending_payment: 0, paid: 1, preparing: 2, ready: 3, out_for_delivery: 4, delivered: 5 };
-function OrderDrawer({ o, escalated, onAdvance }: { o: LocalOrder; escalated: boolean; onAdvance: (o: LocalOrder) => void }) {
+function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver }: { o: LocalOrder; escalated: boolean; onAdvance: (o: LocalOrder) => void; blockedNoDriver?: boolean }) {
   const m = statusMeta(o.orderStatus);
   const n = nextStatus(o);
   const rank = RANK[o.orderStatus] ?? 0;
@@ -660,6 +678,11 @@ function OrderDrawer({ o, escalated, onAdvance }: { o: LocalOrder; escalated: bo
 
       {/* actions */}
       <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+        {blockedNoDriver && (
+          <div style={{ borderRadius: 11, background: "rgba(192,73,47,.08)", border: "1px solid rgba(192,73,47,.3)", padding: "10px 12px", fontSize: 12, fontWeight: 700, color: "#c0492f", lineHeight: 1.5 }}>
+            عيّن مندوبًا أولاً قبل «تم التسليم» — وإلا الكاش مش هيتنسب لمندوب. استخدم «تعيين مندوب» بالأعلى.
+          </div>
+        )}
         {n ? (
           <button onClick={() => onAdvance(o)} style={{ height: 44, border: 0, borderRadius: 12, background: "var(--kv-grad-brand)", color: "#fff", fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 14px 26px -16px rgba(14,159,110,.7)" }}>
             {ADVANCE_LABEL[n] ?? "قدّم الحالة"} <ArrowLeft size={16} />
