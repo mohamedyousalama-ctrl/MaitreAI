@@ -11,6 +11,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendAlertEmail } from "./email";
+import { sendAlertWhatsApp } from "./whatsapp";
 
 export type CriticalAlertType =
   | "agent_error"
@@ -61,5 +62,33 @@ export async function recordCriticalAlert(
     }
   } catch (e) {
     console.error("[alerts] email scaffold threw (swallowed)", input.type, e);
+  }
+
+  // Q1 — real out-of-band channel: WhatsApp-to-admin. Best-effort, never throws.
+  // Logs LOUDLY on a real failure (not the clean unset/no-recipient no-op), so an
+  // alert-send failure is itself visible instead of silently swallowed (Audit-7 Q3).
+  try {
+    let restaurantName: string | null = null;
+    if (admin) {
+      const { data } = await admin
+        .from("restaurants")
+        .select("name")
+        .eq("id", input.restaurantId)
+        .maybeSingle();
+      restaurantName = (data as { name?: string } | null)?.name ?? null;
+    }
+    const r = await sendAlertWhatsApp({
+      type: input.type,
+      detail: input.detail,
+      restaurantName,
+      restaurantId: input.restaurantId,
+      conversationId: input.conversationId ?? null,
+      at,
+    });
+    if (!r.sent && r.reason !== "no_recipient") {
+      console.error("[alerts] WhatsApp alert send failed", input.type, r.reason);
+    }
+  } catch (e) {
+    console.error("[alerts] WhatsApp alert threw (swallowed)", input.type, e);
   }
 }
