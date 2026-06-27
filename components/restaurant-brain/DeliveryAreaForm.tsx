@@ -74,7 +74,7 @@ export function DeliveryAreaForm({ open, initial, branches, currency, defaultBra
       open={open}
       onClose={onClose}
       title={initial ? "تعديل منطقة التوصيل" : "منطقة توصيل جديدة"}
-      footer={<DrawerFooter onCancel={onClose} onSave={() => valid && onSubmit(values)} accent="bg-brain" disabled={!valid} />}
+      footer={<DrawerFooter onCancel={onClose} onSave={() => valid && onSubmit(values)} accent="bg-[image:var(--kv-grad-brand)]" disabled={!valid} />}
     >
       <div className="space-y-4">
         <TextField label="اسم المنطقة" value={values.name} onChange={(v) => set("name", v)} placeholder="مثال: الياسمين" />

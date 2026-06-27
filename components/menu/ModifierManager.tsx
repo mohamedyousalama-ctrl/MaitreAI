@@ -43,7 +43,7 @@ export function ModifierManager({ open, onClose }: ModifierManagerProps) {
     setDraft(blankDraft);
   };
 
-  const inputCls = "rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-menu";
+  const inputCls = "rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-[#0E9F6E]";
 
   return (
     <Drawer open={open} onClose={onClose} title="إدارة الإضافات" subtitle="مكتبة الإضافات والتعديلات القابلة لإرفاقها بالأصناف">
@@ -77,7 +77,7 @@ export function ModifierManager({ open, onClose }: ModifierManagerProps) {
           </select>
           <button
             onClick={addNew}
-            className="inline-flex items-center justify-center gap-1 rounded-lg bg-menu px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+            className="inline-flex items-center justify-center gap-1 rounded-lg bg-[#0E9F6E] px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
           >
             <Plus className="h-4 w-4" /> إضافة
           </button>
@@ -105,7 +105,7 @@ export function ModifierManager({ open, onClose }: ModifierManagerProps) {
                   ))}
                 </select>
                 <div className="flex gap-1">
-                  <button onClick={saveEdit} className="flex flex-1 items-center justify-center rounded-lg bg-emerald-500 py-1.5 text-white hover:opacity-90">
+                  <button onClick={saveEdit} className="flex flex-1 items-center justify-center rounded-lg bg-[#0E9F6E] py-1.5 text-white hover:opacity-90">
                     <Check className="h-4 w-4" />
                   </button>
                   <button onClick={() => setEditingId(null)} className="flex flex-1 items-center justify-center rounded-lg border border-slate-200 py-1.5 text-slate-500 hover:bg-slate-50">
@@ -127,12 +127,12 @@ export function ModifierManager({ open, onClose }: ModifierManagerProps) {
                     onClick={() => updateModifier(m.id, { active: !m.active })}
                     className={cn(
                       "rounded-full px-2 py-0.5 text-xs font-semibold",
-                      m.active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
+                      m.active ? "bg-[rgba(14,159,110,.12)] text-[#0A8A5F]" : "bg-slate-100 text-slate-500"
                     )}
                   >
                     {m.active ? "مفعّل" : "متوقف"}
                   </button>
-                  <button onClick={() => startEdit(m)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-menu">
+                  <button onClick={() => startEdit(m)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#0E9F6E]">
                     <Pencil className="h-4 w-4" />
                   </button>
                   <button onClick={() => setToDelete(m)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500">

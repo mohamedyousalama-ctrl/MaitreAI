@@ -79,7 +79,7 @@ export function MenuItemForm({ open, initial, categories, modifiers, onClose, on
       title={initial ? "تعديل الصنف" : "صنف جديد"}
       subtitle="كلما اكتملت البيانات، ارتفعت جاهزية الذكاء"
       footer={
-        <DrawerFooter onCancel={onClose} onSave={() => valid && onSubmit(values)} accent="bg-menu" disabled={!valid} />
+        <DrawerFooter onCancel={onClose} onSave={() => valid && onSubmit(values)} accent="bg-[image:var(--kv-grad-brand)]" disabled={!valid} />
       }
     >
       <div className="space-y-4">
@@ -119,7 +119,7 @@ export function MenuItemForm({ open, initial, categories, modifiers, onClose, on
                     onClick={() => toggleModifier(m.id)}
                     className={cn(
                       "rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
-                      on ? "bg-menu text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      on ? "bg-[#0E9F6E] text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                     )}
                   >
                     {m.name}

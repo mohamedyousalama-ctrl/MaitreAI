@@ -39,7 +39,7 @@ export function FaqForm({ open, initial, onClose, onSubmit }: FaqFormProps) {
       open={open}
       onClose={onClose}
       title={initial ? "تعديل السؤال" : "سؤال جديد"}
-      footer={<DrawerFooter onCancel={onClose} onSave={() => valid && onSubmit(values)} accent="bg-brain" disabled={!valid} />}
+      footer={<DrawerFooter onCancel={onClose} onSave={() => valid && onSubmit(values)} accent="bg-[image:var(--kv-grad-brand)]" disabled={!valid} />}
     >
       <div className="space-y-4">
         <TextField label="السؤال" value={values.question} onChange={(v) => set("question", v)} placeholder="مثال: كم وقت التوصيل؟" />
