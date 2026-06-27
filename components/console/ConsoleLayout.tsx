@@ -10,6 +10,7 @@
 import { DataBootstrap } from "@/components/DataBootstrap";
 import { ConsoleSidebar } from "./ConsoleSidebar";
 import { ConsoleTopbar } from "./ConsoleTopbar";
+import { AlertBanner } from "./AlertBanner";
 
 export function ConsoleLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -28,6 +29,8 @@ export function ConsoleLayout({ children }: { children: React.ReactNode }) {
       <ConsoleSidebar />
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <ConsoleTopbar />
+        {/* Global critical-failure banner — manager-visible, real failures only. */}
+        <AlertBanner />
         <main className="kv-scroll" style={{ flex: 1, overflowY: "auto", padding: "34px 24px 60px" }}>
           {children}
         </main>
