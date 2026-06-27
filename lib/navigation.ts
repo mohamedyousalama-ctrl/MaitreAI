@@ -17,7 +17,7 @@ export interface NavItem {
   label: string; // Arabic label
   en: string; // English reference label
   icon: LucideIcon;
-  module: ModuleKey | "ai-review";
+  module: ModuleKey;
   accent: string;
   accentBg: string;
   /** Extra path prefixes that keep this tab active (folded sections, §M2/K1). */
@@ -48,7 +48,7 @@ export const navItems: NavItem[] = [
     module: "menu",
     accent: "text-menu",
     accentBg: "bg-menu",
-    match: ["/menu", "/restaurant-brain", "/ai-review"],
+    match: ["/menu", "/restaurant-brain"],
   },
   { href: "/promotions", label: "العروض", en: "Promotions", icon: Megaphone, module: "promotions", accent: "text-promotions", accentBg: "bg-promotions", railOnly: true },
   { href: "/settings", label: "الإعدادات", en: "Settings", icon: Settings, module: "settings", accent: "text-settings", accentBg: "bg-settings", match: ["/settings", "/branches"] },
