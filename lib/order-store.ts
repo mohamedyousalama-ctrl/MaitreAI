@@ -22,13 +22,7 @@ import {
   PAYMENT_STATUS_LABELS,
 } from "./orders";
 import { createClient } from "./supabase/client";
-import {
-  ensureCustomerId,
-  insertOrderDb,
-  loadOrders,
-  subscribeOrders,
-  updateOrderDb,
-} from "./db/orders";
+import { loadOrders, subscribeOrders } from "./db/orders";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Brain } from "./ai/engine";
 import type {
@@ -41,6 +35,23 @@ import type {
   OrderStatusKey,
   PaymentStatusKey,
 } from "./types";
+
+// M1.7-A — order status/payment/cancel persist through AUTHORIZED server routes
+// (service-role admin client, RLS-lockdown-safe + tenant-scoped) instead of the
+// browser client. The optimistic set() in each action already updated local
+// state; this persists it. Guarded by `_sb` at the call site so non-console pages
+// (no DB session, e.g. the customer checkout) stay local-only.
+async function orderWrite(
+  id: string,
+  action: "status" | "payment" | "cancel",
+  body?: Record<string, unknown>
+): Promise<void> {
+  await fetch(`/api/orders/${id}/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+}
 
 export interface CreateOrderInput {
   conversationId?: string;
@@ -170,13 +181,13 @@ export const useOrderStore = create<OrderState>()(
 
         set((s) => ({ orders: [order, ...s.orders], nextNumber: s.nextNumber + 1 }));
 
-        if (_sb && _rid) {
-          fire(
-            ensureCustomerId(_sb, _rid, order.customerPhone, order.customerName).then((cid) =>
-              insertOrderDb(_sb, _rid, order, cid)
-            )
-          );
-        }
+        // M1.7-A — browser-side order CREATE removed. The real order-create paths
+        // are server-side (orders-create.ts via the WhatsApp webhook + storefront,
+        // both service-role). This store action is only reached by the in-browser
+        // demo engine (messaging-test); it keeps the optimistic local order but no
+        // longer writes the DB via the browser client (which the RLS lockdown will
+        // deny). `_sb`/`_rid` retained for the realtime reload path.
+        void _sb; void _rid;
         return order;
       },
 
@@ -190,7 +201,7 @@ export const useOrderStore = create<OrderState>()(
           ),
         }));
         const { _sb } = get();
-        if (_sb) fire(updateOrderDb(_sb, id, { order_status: status }));
+        if (_sb) fire(orderWrite(id, "status", { status }));
         notifyConversation(order, orderStatusMessage(order, status));
         if (status === "delivered") {
           if (order.conversationId) {
@@ -220,7 +231,7 @@ export const useOrderStore = create<OrderState>()(
           ),
         }));
         const { _sb } = get();
-        if (_sb) fire(updateOrderDb(_sb, id, { payment_status: status }));
+        if (_sb) fire(orderWrite(id, "payment", { paymentStatus: status }));
       },
 
       updateKitchenStatus: (id, status, actor = "human") => {
@@ -247,7 +258,7 @@ export const useOrderStore = create<OrderState>()(
           ),
         }));
         const { _sb } = get();
-        if (_sb) fire(updateOrderDb(_sb, id, { order_status: "cancelled", payment_status: refunded }));
+        if (_sb) fire(orderWrite(id, "cancel"));
         notifyConversation(order, orderStatusMessage(order, "cancelled"));
       },
 
@@ -263,7 +274,7 @@ export const useOrderStore = create<OrderState>()(
           ),
         }));
         const { _sb } = get();
-        if (_sb) fire(updateOrderDb(_sb, id, { payment_status: "paid", order_status: "paid" }));
+        if (_sb) fire(orderWrite(id, "payment", { paymentStatus: "paid" }));
         notifyConversation(order, `تم استلام الدفع لطلب #${order.orderNumber}. بدأ تجهيز الطلب.`);
       },
 
