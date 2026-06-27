@@ -29,8 +29,28 @@ type Ops = { isOpen: boolean; assistantOn: boolean };
 type Wa = { phoneNumberId: string; verifyToken: string; configured: boolean };
 type Pay = { cod_enabled: boolean; vodafone_cash: { enabled: boolean; number: string } };
 type Persona = { dialect: string; agentPersonaName: string | null };
+type Health = { lastInboundAt: string | null; lastOutboundAt: string | null; lastFailedOutboundAt: string | null; lastFailedReason: string | null };
 
 const DIALECT_AR: Record<string, string> = { saudi: "سعودي", egyptian: "مصري" };
+
+// Q4 — recent-activity window: WhatsApp counts as "actively flowing" if there's an
+// inbound or outbound within the last 24h. Used to gate the «بيستقبل ويرد فعلياً»
+// claim so it can never contradict the WhatsApp-connection card.
+const ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Honest relative time: «من ٣ دقائق» / «من ساعتين» / «من ٣ أيام»; null → «لا يوجد». */
+function relAr(iso: string | null): string {
+  if (!iso) return "لا يوجد";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "الآن";
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "الآن";
+  if (m < 60) return `من ${toAr(m)} دقيقة`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `من ${toAr(h)} ساعة`;
+  const d = Math.floor(h / 24);
+  return `من ${toAr(d)} يوم`;
+}
 
 async function getJson<T>(url: string): Promise<{ ok: boolean; data: T | null }> {
   try {
@@ -50,6 +70,7 @@ export default function SettingsPage() {
   const [wa, setWa] = useState<{ loaded: boolean; ok: boolean; v: Wa | null }>({ loaded: false, ok: false, v: null });
   const [pay, setPay] = useState<{ loaded: boolean; ok: boolean; v: Pay | null }>({ loaded: false, ok: false, v: null });
   const [persona, setPersona] = useState<{ loaded: boolean; ok: boolean; v: Persona | null }>({ loaded: false, ok: false, v: null });
+  const [health, setHealth] = useState<{ loaded: boolean; ok: boolean; v: Health | null }>({ loaded: false, ok: false, v: null });
   const [busy, setBusy] = useState(false);
   const [vcDraft, setVcDraft] = useState<{ enabled: boolean; number: string } | null>(null);
   const [vcSaving, setVcSaving] = useState(false);
@@ -69,11 +90,17 @@ export default function SettingsPage() {
       }
     });
     getJson<Persona>("/api/onboarding/config/persona").then((r) => alive && setPersona({ loaded: true, ok: r.ok, v: r.data }));
+    getJson<Health>("/api/settings/whatsapp-health").then((r) => alive && setHealth({ loaded: true, ok: r.ok, v: r.data }));
     return () => { alive = false; };
   }, []);
 
   const assistantOn = ops.v?.assistantOn ?? false;
   const waConnected = wa.ok && !!wa.v?.configured;
+  // Q4 — real WhatsApp activity recency from the messages table. "Recent" = an
+  // inbound or outbound within the last 24h. Gates the «بيستقبل ويرد فعلياً» claim.
+  const lastActivityIso =
+    [health.v?.lastInboundAt, health.v?.lastOutboundAt].filter(Boolean).sort().slice(-1)[0] ?? null;
+  const recentActivity = !!lastActivityIso && Date.now() - new Date(lastActivityIso).getTime() < ACTIVITY_WINDOW_MS;
   const codEnabled = pay.v?.cod_enabled ?? false;
   const dialect = persona.v?.dialect ? (DIALECT_AR[persona.v.dialect] ?? persona.v.dialect) : null;
 
@@ -140,7 +167,9 @@ export default function SettingsPage() {
 
       {/* STATUS STRIP */}
       <section style={{ ...rStrip.style, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-        <StatTile dot={ops.ok ? (assistantOn ? "green" : "grey") : "grey"} label="حالة كريم" value={!ops.loaded ? "…" : !ops.ok ? "غير مهيّأ" : assistantOn ? "مباشر" : "متوقف"} sub={ops.ok ? "بيستقبل ويرد فعلياً" : "محتاج ربط الباك"} valueColor={ops.ok && assistantOn ? "var(--kv-deep)" : undefined} />
+        {/* Q4 — reconcile with the WhatsApp card: never claim «بيستقبل ويرد فعلياً»
+            unless WhatsApp is connected AND there's recent real WhatsApp activity. */}
+        <StatTile dot={ops.ok ? (assistantOn ? "green" : "grey") : "grey"} label="حالة كريم" value={!ops.loaded ? "…" : !ops.ok ? "غير مهيّأ" : assistantOn ? "مباشر" : "متوقف"} sub={!ops.ok ? "محتاج ربط الباك" : !assistantOn ? "متوقف" : !waConnected ? "شغّال — لكن واتساب مش متصل" : recentActivity ? "بيستقبل ويرد فعلياً" : "شغّال — مفيش نشاط واتساب حديث"} valueColor={ops.ok && assistantOn ? "var(--kv-deep)" : undefined} />
         <StatTile dot={waConnected ? "green" : "grey"} label="واتساب" value={!wa.loaded ? "…" : waConnected ? "متصل" : "غير متصل"} sub={waConnected ? "القناة الوحيدة المتاحة دلوقتي" : "محتاج ربط"} />
         <StatTile dot={menuReady ? "green" : "grey"} label="المنيو المنشور" value={menuReady ? toAr(activeItems) : "—"} sub={menuReady ? `${toAr(activeItems)} صنف نشط · ${toAr(categories)} أقسام` : "لسه مفيش منيو"} />
         <StatTile dot={alerts === 0 ? "green" : "amber"} label="تنبيهات إعداد" value={toAr(alerts)} sub={alerts === 0 ? "كله متظبّط" : "محتاج إكمال ربط"} />
@@ -162,9 +191,12 @@ export default function SettingsPage() {
               )}
             </Row>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginTop: 14 }}>
-              {/* last in/out timestamps are NOT in the API → honest «غير متاح» */}
-              <MiniStat title="آخر استقبال" value="غير متاح" />
-              <MiniStat title="آخر إرسال" value="غير متاح" />
+              {/* Q4 — real health facts derived from messages (WhatsApp channel). */}
+              <MiniStat title="آخر استقبال" value={!health.loaded ? "…" : relAr(health.v?.lastInboundAt ?? null)} />
+              <MiniStat title="آخر إرسال" value={!health.loaded ? "…" : relAr(health.v?.lastOutboundAt ?? null)} />
+              {health.loaded && health.v?.lastFailedOutboundAt && (
+                <MiniStat title="آخر فشل إرسال" value={relAr(health.v.lastFailedOutboundAt)} valueColor="var(--kv-red)" />
+              )}
               <MiniStat title="Webhook" value={waConnected && wa.v?.verifyToken ? "مهيّأ" : "—"} valueColor={waConnected ? "#0a8a5f" : undefined} />
             </div>
           </Card>
