@@ -17,7 +17,6 @@ import {
   ClipboardList,
   Users,
   Settings,
-  Bell,
   GraduationCap,
   Wallet,
   UtensilsCrossed,
@@ -227,7 +226,10 @@ export function ConsoleSidebar() {
       <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <NavLink href="/cod" icon={Wallet} label="الكاش والتحصيل" active={is("/cod")} />
         <NavLink href="/deliveries" icon={Truck} label="التوصيل" active={is("/deliveries")} />
-        <NavLink href="/conversations" icon={Bell} label="التنبيهات" badge={escalations} />
+        {/* «التنبيهات» removed: it pointed to /conversations — identical to «المحادثات»
+            above — with no distinct alerts view. The conversations escalation filter
+            is local-state only (no URL param to deep-link), so there was nothing real
+            to point at. Topbar bell stays as the escalations shortcut. */}
         {/* التعلّم — coming-soon, non-navigating (learning depth is V2). */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, height: 40, padding: "0 12px", borderRadius: 13, color: "var(--kv-faint)", cursor: "default" }}>
           <GraduationCap size={18} strokeWidth={2.1} style={{ flex: "none" }} />
