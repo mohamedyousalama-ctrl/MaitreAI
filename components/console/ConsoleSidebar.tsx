@@ -2,10 +2,13 @@
 
 // Kivo console sidebar (SPEC 02 §2a). 226px, right side in RTL. Brand + real
 // tenant/branch, nav with live intervention counts (never hardcoded), and the
-// agent status card with a pause toggle bound to the ops-store (local-only for
-// now — see TODO).
+// agent status card whose pause toggle reads/writes the REAL agent state via
+// /api/settings/ops — the SAME endpoint the Settings page uses, so the sidebar,
+// Settings, and dashboard banner can never disagree. A failed save reverts so
+// the switch never shows a false "paused" while Karim is still replying.
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -24,7 +27,6 @@ import {
 import { useOrderStore } from "@/lib/order-store";
 import { useConversationStore } from "@/lib/conversation-store";
 import { countEscalations } from "@/lib/escalation";
-import { useOpsStore } from "@/lib/ops-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { StatePill } from "@/components/kivo";
 import { KivoMark } from "@/components/brand/KivoLogo";
@@ -122,8 +124,48 @@ export function ConsoleSidebar() {
   const conversations = useConversationStore((s) => s.conversations);
   const profileName = useRestaurantStore((s) => s.profile.name);
   const branches = useRestaurantStore((s) => s.branches);
-  const agentEnabled = useOpsStore((s) => s.agentEnabled);
-  const setAgentEnabled = useOpsStore((s) => s.setAgentEnabled);
+  // Real agent state from the SAME endpoint the Settings page reads/writes, so
+  // the sidebar reflects reality and can never disagree with Settings/dashboard.
+  // null = still loading (we never render a definitive on/off until we know).
+  const [assistantOn, setAssistantOn] = useState<boolean | null>(null);
+  const [savingAgent, setSavingAgent] = useState(false);
+  const [agentSaveError, setAgentSaveError] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/settings/ops", { credentials: "include", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d && typeof d.assistantOn === "boolean") setAssistantOn(d.assistantOn); })
+      .catch(() => { /* leave as null (loading); never assume a state */ });
+    return () => { alive = false; };
+  }, []);
+
+  // Flip the REAL agent_mode via /api/settings/ops (manager-only, server-enforced).
+  // Optimistic, but reverts on any failure so the switch never lies about state.
+  async function toggleAgent() {
+    if (assistantOn === null || savingAgent) return;
+    const next = !assistantOn;
+    setAgentSaveError(false);
+    setSavingAgent(true);
+    setAssistantOn(next);
+    try {
+      const r = await fetch("/api/settings/ops", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assistantOn: next }),
+      });
+      if (!r.ok) { setAssistantOn(!next); setAgentSaveError(true); }
+    } catch {
+      setAssistantOn(!next);
+      setAgentSaveError(true);
+    } finally {
+      setSavingAgent(false);
+    }
+  }
+
+  const agentEnabled = assistantOn === true;
+  const agentLoading = assistantOn === null;
 
   const escalations = hydrated ? countEscalations(conversations) : 0;
   const activeOrders = hydrated ? orders.filter((o) => ACTIVE.includes(o.orderStatus)).length : 0;
@@ -211,21 +253,23 @@ export function ConsoleSidebar() {
             style={{ width: 8, height: 8, borderRadius: "50%", background: agentEnabled ? "var(--kv-primary)" : "var(--kv-faint)", flex: "none" }}
           />
           <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--kv-text)", flex: 1 }}>
-            {agentEnabled ? "كريم نشط" : "كريم متوقف مؤقتاً"}
+            {agentLoading ? "كريم — جارٍ التحميل…" : agentEnabled ? "كريم نشط" : "كريم متوقف مؤقتاً"}
           </span>
-          {/* Pause toggle → ops-store (client). TODO: sync to backend agent_mode. */}
+          {/* Pause toggle → REAL agent_mode via /api/settings/ops (same as Settings). */}
           <button
             type="button"
             role="switch"
             aria-checked={agentEnabled}
             aria-label="إيقاف مؤقت لكريم"
-            onClick={() => setAgentEnabled(!agentEnabled)}
+            disabled={agentLoading || savingAgent}
+            onClick={toggleAgent}
             style={{
               width: 38,
               height: 22,
               borderRadius: 99,
               border: 0,
-              cursor: "pointer",
+              cursor: agentLoading || savingAgent ? "default" : "pointer",
+              opacity: agentLoading ? 0.5 : 1,
               padding: 0,
               position: "relative",
               background: agentEnabled ? "var(--kv-primary)" : "#cdd9d2",
@@ -247,6 +291,11 @@ export function ConsoleSidebar() {
             />
           </button>
         </div>
+        {agentSaveError && (
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--kv-red)", marginTop: 8, lineHeight: 1.5 }}>
+            تعذّر تغيير حالة كريم — الحالة زي ما هي. حاول تاني أو من الإعدادات.
+          </div>
+        )}
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--kv-muted)", marginTop: 8, lineHeight: 1.5 }}>
           {toAr(activeOrders)} طلب نشط دلوقتي · {toAr(ordersNeedingHuman)} محتاج تدخّل
         </div>
