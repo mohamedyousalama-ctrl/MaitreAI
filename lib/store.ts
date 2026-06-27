@@ -260,12 +260,14 @@ export const useRestaurantStore = create<RestaurantState>()(
       updateDeliveryArea: (id, patch) => {
         set((s) => ({ deliveryAreas: s.deliveryAreas.map((d) => (d.id === id ? { ...d, ...patch } : d)) }));
         const { _sb } = get();
-        if (_sb) fire(updateDeliveryAreaDb(_sb, id, patch));
+        // Reconcile from the DB after the write, mirroring addDeliveryArea, so the
+        // edited zone reflects the canonical persisted values without a page reload.
+        if (_sb) fire(updateDeliveryAreaDb(_sb, id, patch).then(() => get().refreshBrain()));
       },
       deleteDeliveryArea: (id) => {
         set((s) => ({ deliveryAreas: s.deliveryAreas.filter((d) => d.id !== id) }));
         const { _sb } = get();
-        if (_sb) fire(deleteDeliveryAreaDb(_sb, id));
+        if (_sb) fire(deleteDeliveryAreaDb(_sb, id).then(() => get().refreshBrain()));
       },
 
       addFaq: (f) => {
