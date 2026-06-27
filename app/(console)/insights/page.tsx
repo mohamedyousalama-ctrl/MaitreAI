@@ -144,7 +144,7 @@ export default function InsightsPage() {
       {/* HEADER */}
       <header style={{ ...rHead.style, display: "flex", alignItems: "flex-end", gap: 20, flexWrap: "wrap" }}>
         <div>
-          <span style={{ display: "inline-flex", alignItems: "center", height: 24, padding: "0 11px", borderRadius: 99, background: "rgba(14,159,110,.10)", color: "var(--kv-deep)", fontSize: 10.5, fontWeight: 800 }}>الرؤى · مقاييس كريم بس</span>
+          <span style={{ display: "inline-flex", alignItems: "center", height: 24, padding: "0 11px", borderRadius: 99, background: "rgba(14,159,110,.10)", color: "var(--kv-deep)", fontSize: 10.5, fontWeight: 800 }}>الرؤى · مؤشرات Kivo</span>
           <h1 style={{ fontSize: 25, fontWeight: 800, margin: "11px 0 0" }}>كريم هذا الأسبوع</h1>
           <p style={{ fontSize: 12.5, color: "var(--kv-muted)", fontWeight: 600, margin: "6px 0 0", maxWidth: 560, lineHeight: 1.6 }}>
             قصة أسبوع من شغل كريم — قد إيه رجّع لك، وفين الطلبات بتفلت. كل رقم هنا حقيقي ومن طلبات كريم بس؛ واللي لسه بنجمعه بيتعرض بأمانة.
@@ -173,9 +173,9 @@ export default function InsightsPage() {
             <div style={{ fontSize: 10, color: "var(--kv-faint)", fontWeight: 700, lineHeight: 1.5 }}>محتاج إعداد نسبة عمولة التطبيقات قبل ما نحسبه — مش هنخمّن رقم.</div>
           </div>
         </div>
-        <KpiTile label="نسبة التحويل" value={m.conversion} suffix="٪" />
+        <KpiTile label="مؤشر تحويل تقريبي" value={m.conversion} suffix="٪" />
         <KpiTile label="محادثات كريم" value={m.convCount} />
-        <KpiTile label="طلبات قفلها كريم" value={m.deliveredCount} delta={m.deliveredDelta} />
+        <KpiTile label="طلبات مكتملة عبر Kivo" value={m.deliveredCount} delta={m.deliveredDelta} />
         <KpiTile label="طلبات مش مكتملة" value={m.incomplete} />
       </section>
 

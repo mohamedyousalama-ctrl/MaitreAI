@@ -263,7 +263,7 @@ export default function OrdersPage() {
       <div style={{ ...head.style, display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
         <div>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 11px", borderRadius: 99, background: "var(--kv-primary-tint)", color: "var(--kv-deep)", fontSize: 11, fontWeight: 800 }}>
-            طلبات كريم · حقائق POS
+            طلبات كريم · حقائق من منيو Kivo
           </span>
           <h1 style={{ fontSize: 24, fontWeight: 800, margin: "8px 0 0" }}>الطلبات</h1>
         </div>
@@ -620,7 +620,7 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver }: { o: LocalOrd
           <Row label="المجموع" value={`${money(o.subtotal)} ${o.currency}`} />
           {o.deliveryFee > 0 && <Row label="رسوم التوصيل" value={`${money(o.deliveryFee)} ${o.currency}`} />}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 800 }}>الإجمالي (من POS)</span>
+            <span style={{ fontSize: 13, fontWeight: 800 }}>الإجمالي (من منيو Kivo)</span>
             <span style={{ fontSize: 13, fontWeight: 800, color: "var(--kv-primary)" }}>{money(o.total)} {o.currency}</span>
           </div>
         </div>
