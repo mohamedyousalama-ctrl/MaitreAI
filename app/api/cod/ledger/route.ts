@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createClient } from "@/lib/supabase/server";
-import { driverLedger, codDailySummary } from "@/lib/db/cod";
+import { driverLedger, codDailySummary, heldCollectionItems } from "@/lib/db/cod";
 
 export const runtime = "nodejs";
 
@@ -17,9 +17,10 @@ export async function GET() {
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const [drivers, summary] = await Promise.all([
+  const [drivers, summary, items] = await Promise.all([
     driverLedger(supabase, tenant.restaurantId),
     codDailySummary(supabase, tenant.restaurantId),
+    heldCollectionItems(supabase, tenant.restaurantId),
   ]);
-  return NextResponse.json({ ok: true, drivers, summary });
+  return NextResponse.json({ ok: true, drivers, summary, items });
 }

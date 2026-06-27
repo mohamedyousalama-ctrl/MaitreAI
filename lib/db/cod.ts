@@ -249,6 +249,52 @@ export interface DriverLedgerRow {
   unsettledCount: number;
 }
 
+/** One held (unsettled) COD order, itemized for the per-driver breakdown view. */
+export interface HeldOrderItem {
+  driverId: string | null;
+  orderId: string;
+  orderNumber: string | null;
+  expected: number;
+  collected: number;
+  status: string | null;
+  collectedAt: string | null;
+  customer: string | null;
+}
+
+/**
+ * READ-ONLY: the individual held_by_driver collections (one row per order) that
+ * make up each driver's outstanding cash. UUID-keyed joins only
+ * (cod_collections.order_id → orders.id → customers.id) — no order_number match.
+ * The client groups these by driverId under each driver card; sums reconcile
+ * with driverLedger() because both read the same held rows.
+ */
+export async function heldCollectionItems(db: SupabaseClient, restaurantId: string): Promise<HeldOrderItem[]> {
+  const { data } = await db
+    .from("cod_collections")
+    .select("driver_id, order_id, expected_cash, cash_collected, collected_at, orders(order_number, order_status, customers(name))")
+    .eq("restaurant_id", restaurantId)
+    .eq("settlement_status", "held_by_driver")
+    .order("collected_at", { ascending: false });
+  type Row = {
+    driver_id: string | null;
+    order_id: string;
+    expected_cash: number;
+    cash_collected: number | null;
+    collected_at: string | null;
+    orders: { order_number: string | null; order_status: string | null; customers: { name: string | null } | null } | null;
+  };
+  return ((data ?? []) as unknown as Row[]).map((r) => ({
+    driverId: r.driver_id,
+    orderId: r.order_id,
+    orderNumber: r.orders?.order_number ?? null,
+    expected: round2(Number(r.expected_cash)),
+    collected: round2(Number(r.cash_collected ?? 0)),
+    status: r.orders?.order_status ?? null,
+    collectedAt: r.collected_at,
+    customer: r.orders?.customers?.name ?? null,
+  }));
+}
+
 /** Per-driver cash position over UNSETTLED (held_by_driver) collections. */
 export async function driverLedger(db: SupabaseClient, restaurantId: string): Promise<DriverLedgerRow[]> {
   const { data } = await db
