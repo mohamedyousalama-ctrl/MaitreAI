@@ -116,12 +116,23 @@ export async function captureCodOnDelivered(
   // Resolve the order total (expected) + the driver holding the cash (if any).
   const { data: order } = await db
     .from("orders")
-    .select("total")
+    .select("total,payment_method")
     .eq("id", orderId)
     .eq("restaurant_id", restaurantId)
     .maybeSingle();
   if (!order) return { ok: false, error: "order_not_found" };
   const expected = Number((order as { total: number }).total);
+
+  // F1.7 Fix 3 — never cash-capture or relabel a NON-COD order. A delivery order
+  // paid by another method (e.g. vodafone_cash) is not driver-collected cash: do
+  // NOT open a cod_collections row and do NOT overwrite payment_method. Genuine COD
+  // ("cod") and legacy/unset (null) proceed exactly as before — null is treated as
+  // COD so the historical back-fill still works. This is the single chokepoint for
+  // all delivered paths (operator route, driver-token, order-store).
+  const method = (order as { payment_method: string | null }).payment_method;
+  if (method && method !== "cod") {
+    return { ok: true, expected };
+  }
 
   let deliveryId = args.deliveryId ?? null;
   let driverId: string | null = null;
