@@ -25,6 +25,10 @@ const TYPE_LABEL: Record<string, string> = {
   agent_error: "تعذّر رد كريم (خطأ في المساعد)",
   whatsapp_send_failed: "فشل إرسال رسالة واتساب",
   inbound_persist_failed: "فشل حفظ رسالة واردة",
+  order_persist_failed: "فشل حفظ الطلب (مطلوب متابعة يدوية)",
+  receipt_send_failed: "فشل إرسال الإيصال للعميل",
+  cod_capture_failed: "فشل تسجيل تحصيل الكاش (COD)",
+  operator_send_failed: "فشل إرسال رسالة الموظف عبر واتساب",
 };
 
 const POLL_MS = 30000;
