@@ -45,14 +45,24 @@ function timeAr(iso: string): string {
 export function AlertBanner() {
   const role = useRole();
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [degraded, setDegraded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function load() {
     try {
       const r = await fetch("/api/alerts", { cache: "no-store" });
-      if (r.ok) setAlerts(((await r.json()).alerts ?? []) as Alert[]);
+      if (r.ok) {
+        // Healthy path (alertSystemStatus:"ok") — refresh the list, clear degraded.
+        setAlerts(((await r.json()).alerts ?? []) as Alert[]);
+        setDegraded(false);
+      } else {
+        // Q3 — 503/degraded (or any non-OK): alerting is down. Show the degraded
+        // banner instead of a false all-clear. Keep the last-known alerts visible.
+        setDegraded(true);
+      }
     } catch {
-      /* network hiccup — keep last state, no fake data */
+      // Can't even reach /api/alerts → alerting is unverifiable; fail loud.
+      setDegraded(true);
     }
   }
 
@@ -78,10 +88,32 @@ export function AlertBanner() {
     }
   }
 
-  if (role !== "manager" || alerts.length === 0) return null;
+  if (role !== "manager") return null;
+  if (alerts.length === 0 && !degraded) return null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 24px 0" }}>
+      {/* Q3 — distinct degraded state: alerting itself is down (not "all clear"). */}
+      {degraded && (
+        <div
+          role="alert"
+          style={{
+            display: "flex", alignItems: "center", gap: 11,
+            borderRadius: 12, padding: "10px 14px",
+            background: "rgba(216,151,43,.12)", border: "1px solid rgba(216,151,43,.40)",
+          }}
+        >
+          <AlertTriangle size={18} style={{ flex: "none", color: "var(--kv-amber)" }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#9a6a14" }}>
+              تنبيه: نظام التنبيهات مش شغّال صح — راجِع الدعم
+            </span>
+            <div style={{ fontSize: 11.5, color: "var(--kv-muted)", marginTop: 2 }}>
+              ممكن تكون فيه أعطال غير ظاهرة دلوقتي. هنحاول نوصل تاني تلقائياً.
+            </div>
+          </div>
+        </div>
+      )}
       {alerts.map((a) => (
         <div
           key={a.id}
