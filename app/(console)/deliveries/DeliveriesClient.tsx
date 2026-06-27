@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from "react";
+import { useRole } from "@/lib/use-role";
 import { Truck, Plus, Loader2, Link2, Check } from "lucide-react";
 
 interface Driver { id: string; name: string; phone: string; vehicle: string | null; active: boolean }
@@ -46,6 +47,10 @@ const cardStyle: React.CSSProperties = { borderRadius: 16, border: "1px solid va
 const fieldStyle: React.CSSProperties = { borderRadius: 8, border: "1px solid var(--kv-border)", background: "var(--kv-card)", color: "var(--kv-text)" };
 
 export function DeliveriesClient() {
+  // Driver mutations (add/edit/activate-deactivate) are manager-only server-side
+  // (/api/drivers, /api/drivers/[id] → 403). Hide those controls from non-managers
+  // so they don't see actions that would fail; the server gate stays authoritative.
+  const isManager = useRole() === "manager";
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
@@ -229,17 +234,20 @@ export function DeliveriesClient() {
 
         {/* Driver roster */}
         <div className="space-y-3">
-          <div className="p-4" style={cardStyle}>
-            <p className="mb-3 text-sm font-bold" style={{ color: "var(--kv-text)" }}>إضافة مندوب</p>
-            <div className="space-y-2">
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="الاسم" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
-              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="رقم واتساب" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
-              <input value={form.vehicle} onChange={(e) => setForm({ ...form, vehicle: e.target.value })} placeholder="المركبة (اختياري)" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
-              <button onClick={addDriver} disabled={adding} className="flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-50" style={{ background: "var(--kv-grad-brand)" }}>
-                {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} إضافة
-              </button>
+          {/* add-driver form — manager-only (server: POST /api/drivers is manager-gated) */}
+          {isManager && (
+            <div className="p-4" style={cardStyle}>
+              <p className="mb-3 text-sm font-bold" style={{ color: "var(--kv-text)" }}>إضافة مندوب</p>
+              <div className="space-y-2">
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="الاسم" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
+                <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="رقم واتساب" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
+                <input value={form.vehicle} onChange={(e) => setForm({ ...form, vehicle: e.target.value })} placeholder="المركبة (اختياري)" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
+                <button onClick={addDriver} disabled={adding} className="flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-50" style={{ background: "var(--kv-grad-brand)" }}>
+                  {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} إضافة
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="p-0" style={cardStyle}>
             <p className="p-4 text-sm font-bold" style={{ color: "var(--kv-text)", borderBottom: "1px solid var(--kv-border)" }}>المندوبون</p>
@@ -249,7 +257,7 @@ export function DeliveriesClient() {
               <ul className="divide-y" style={{ borderColor: "var(--kv-border)" }}>
                 {drivers.map((d) => (
                   <li key={d.id} className="p-3" style={{ borderColor: "var(--kv-border)" }}>
-                    {editId === d.id ? (
+                    {editId === d.id && isManager ? (
                       // inline edit (manager) — name/phone required; reuses add-form styling
                       <div className="space-y-2">
                         <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} placeholder="الاسم" className="w-full px-3 py-2 text-sm" style={fieldStyle} />
@@ -268,14 +276,17 @@ export function DeliveriesClient() {
                           <p className="text-sm font-semibold" style={d.active ? { color: "var(--kv-text)" } : { color: "var(--kv-faint)", textDecoration: "line-through" }}>{d.name}</p>
                           <p className="text-xs" style={{ color: "var(--kv-muted)" }}>{d.phone}{d.vehicle ? ` · ${d.vehicle}` : ""}</p>
                         </div>
-                        <div className="flex flex-none items-center gap-1.5">
-                          <button onClick={() => startEdit(d)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>
-                            تعديل
-                          </button>
-                          <button onClick={() => toggleDriver(d)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>
-                            {d.active ? "إيقاف" : "تفعيل"}
-                          </button>
-                        </div>
+                        {/* mutating controls — manager-only (server: PATCH /api/drivers/[id] is manager-gated) */}
+                        {isManager && (
+                          <div className="flex flex-none items-center gap-1.5">
+                            <button onClick={() => startEdit(d)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>
+                              تعديل
+                            </button>
+                            <button onClick={() => toggleDriver(d)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>
+                              {d.active ? "إيقاف" : "تفعيل"}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </li>
