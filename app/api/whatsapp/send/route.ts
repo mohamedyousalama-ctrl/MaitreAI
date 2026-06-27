@@ -9,9 +9,11 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
 import { setOwnershipState } from "@/lib/db/ownership";
+import { recordCriticalAlert } from "@/lib/alerts/record";
 
 export const runtime = "nodejs";
 
@@ -105,5 +107,14 @@ export async function POST(req: Request) {
     meta: { kind: "send_error", windowState: send.windowState },
   });
   const code = send.windowState === "out_of_window" ? "outside_24h_window" : "send_failed";
+  // Q2 — human-takeover reply failed to leave the building; surface to banner +
+  // WhatsApp. Uses the service-role client for the trusted system_alerts write.
+  await recordCriticalAlert(createAdminClient(), {
+    type: "operator_send_failed",
+    restaurantId,
+    conversationId,
+    detail: `${code}: ${send.error ?? "unknown"}`,
+    context: { windowState: send.windowState },
+  });
   return NextResponse.json({ ok: false, code, error: send.error }, { status: 502 });
 }

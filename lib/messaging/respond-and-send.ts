@@ -352,6 +352,8 @@ export async function respondAndSendWhatsApp(
         "تعذّر تأكيد الطلب تلقائياً لأن مراجعة الأسعار من السيستم فشلت — تم تحويل المحادثة لموظف للمتابعة.",
         { kind: "order_persist_error", detail }
       );
+      // Q2 — revenue path: order row failed to persist. Surface to banner + WhatsApp.
+      await recordCriticalAlert(admin, { restaurantId, type: "order_persist_failed", detail, conversationId });
       return { status: "agent_error", reply: outcome.reply, escalate: true, error: detail };
     }
 
@@ -416,9 +418,17 @@ export async function respondAndSendWhatsApp(
       .limit(1)
       .maybeSingle();
     if (latestOrd?.id) {
-      sendReceiptToCustomer(admin, latestOrd.id as string).catch((e) =>
-        console.error("[respond-and-send] receipt resend error", e)
-      );
+      sendReceiptToCustomer(admin, latestOrd.id as string).catch((e) => {
+        console.error("[respond-and-send] receipt resend error", e);
+        // Q2 — best-effort alert on a failed receipt resend (non-blocking).
+        void recordCriticalAlert(admin, {
+          type: "receipt_send_failed",
+          restaurantId,
+          conversationId,
+          detail: e instanceof Error ? e.message : String(e),
+          context: { orderId: latestOrd.id, resend: true },
+        });
+      });
     }
   }
 
@@ -437,6 +447,14 @@ export async function respondAndSendWhatsApp(
       await sendReceiptToCustomer(admin, persistedOrder.orderId);
     } catch (e) {
       console.error("[respond-and-send] receipt error", e);
+      // Q2 — customer didn't get their receipt; surface to banner + WhatsApp.
+      await recordCriticalAlert(admin, {
+        type: "receipt_send_failed",
+        restaurantId,
+        conversationId,
+        detail: e instanceof Error ? e.message : String(e),
+        context: { orderId: persistedOrder.orderId },
+      });
     }
   }
 

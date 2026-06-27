@@ -16,7 +16,12 @@ import { sendAlertWhatsApp } from "./whatsapp";
 export type CriticalAlertType =
   | "agent_error"
   | "whatsapp_send_failed"
-  | "inbound_persist_failed";
+  | "inbound_persist_failed"
+  // Q2 — launch-critical revenue/cash failures (previously console.error-only).
+  | "order_persist_failed"
+  | "receipt_send_failed"
+  | "cod_capture_failed"
+  | "operator_send_failed";
 
 export interface CriticalAlertInput {
   restaurantId: string;

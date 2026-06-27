@@ -12,6 +12,7 @@ import { randomBytes } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
 import { captureCodOnDelivered } from "@/lib/db/cod";
+import { recordCriticalAlert } from "@/lib/alerts/record";
 
 export const DELIVERY_STATUSES = [
   "pending",
@@ -338,6 +339,13 @@ export async function updateDeliveryStatusByToken(
       }
     } catch (e) {
       console.error("[delivery] captureCodOnDelivered error", e);
+      // Q2 — cash-control: a delivered COD order failed to enter the ledger.
+      await recordCriticalAlert(admin, {
+        type: "cod_capture_failed",
+        restaurantId: d.restaurant_id as string,
+        detail: e instanceof Error ? e.message : String(e),
+        context: { orderId: d.order_id, deliveryId: d.id },
+      });
     }
   }
 
