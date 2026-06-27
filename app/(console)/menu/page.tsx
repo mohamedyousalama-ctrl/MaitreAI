@@ -14,6 +14,7 @@
 
 import { useMemo, useState } from "react";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
+import { useRole } from "@/lib/use-role";
 import { computeKnowledgeAreas, computeOverallScore } from "@/lib/knowledge";
 import { MenuItemForm, type MenuItemFormValues } from "@/components/menu/MenuItemForm";
 import { ModifierManager } from "@/components/menu/ModifierManager";
@@ -36,6 +37,8 @@ const barColor = (s: number) => (s >= 80 ? "var(--kv-primary)" : s >= 50 ? "var(
 export default function MenuMemoryPage() {
   const hydrated = useHasHydrated();
   const s = useRestaurantStore();
+  // Zone delete is a manager-only, destructive action (consistent with D2.1).
+  const isManager = useRole() === "manager";
   const [tab, setTab] = useState<"menu" | "memory">("menu");
   const [category, setCategory] = useState("الكل");
 
@@ -46,6 +49,7 @@ export default function MenuMemoryPage() {
   const [toDelete, setToDelete] = useState<MenuItem | null>(null);
   const [zoneForm, setZoneForm] = useState(false);
   const [editingZone, setEditingZone] = useState<DeliveryArea | null>(null);
+  const [zoneToDelete, setZoneToDelete] = useState<DeliveryArea | null>(null);
   const [faqForm, setFaqForm] = useState(false);
   const [editingFaq, setEditingFaq] = useState<FaqItem | null>(null);
   const [editPolicy, setEditPolicy] = useState<keyof Policies | null>(null);
@@ -154,9 +158,14 @@ export default function MenuMemoryPage() {
                 {s.deliveryAreas.length === 0 ? <Empty>لا مناطق توصيل بعد.</Empty> : (
                   <div className="flex flex-wrap gap-2">
                     {s.deliveryAreas.map((z) => (
-                      <button key={z.id} onClick={() => { setEditingZone(z); setZoneForm(true); }} className="inline-flex items-center gap-2 rounded-[10px] border px-3 py-1.5 text-[12.5px]" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card-soft)", color: "var(--kv-text)" }}>
-                        {z.name} <span className="text-[11px]" style={{ color: "var(--kv-muted)" }}>{toAr(z.deliveryFee)} {s.profile.currency}</span>{!z.active && <span className="text-[9.5px]" style={{ color: "var(--kv-faint)" }}>(موقوفة)</span>}
-                      </button>
+                      <div key={z.id} className="inline-flex items-center gap-1 rounded-[10px] border px-3 py-1.5 text-[12.5px]" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card-soft)", color: "var(--kv-text)" }}>
+                        <button onClick={() => { setEditingZone(z); setZoneForm(true); }} className="inline-flex items-center gap-2">
+                          {z.name} <span className="text-[11px]" style={{ color: "var(--kv-muted)" }}>{toAr(z.deliveryFee)} {s.profile.currency}</span>{!z.active && <span className="text-[9.5px]" style={{ color: "var(--kv-faint)" }}>(موقوفة)</span>}
+                        </button>
+                        {isManager && (
+                          <button onClick={() => setZoneToDelete(z)} title="حذف المنطقة" className="ms-1 flex h-5 w-5 items-center justify-center rounded-[6px] transition hover:bg-[rgba(192,73,47,.1)]" style={{ color: "var(--kv-red)" }}><Trash2 className="h-3 w-3" /></button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}
@@ -242,6 +251,9 @@ export default function MenuMemoryPage() {
         onSubmit={(v: FaqFormValues) => { if (editingFaq) s.updateFaq(editingFaq.id, v); else s.addFaq(v); setFaqForm(false); }} />
       <ConfirmDialog open={!!toDelete} title="حذف الصنف" message={`سيتم حذف «${toDelete?.name}» من المنيو.`}
         onConfirm={() => { if (toDelete) s.deleteMenuItem(toDelete.id); setToDelete(null); }} onCancel={() => setToDelete(null)} />
+      <ConfirmDialog open={!!zoneToDelete} title="حذف منطقة التوصيل"
+        message={`سيتم حذف منطقة «${zoneToDelete?.name}» نهائيًا. الطلبات السابقة المرتبطة بها لن تتأثر — يُزال ربط المنطقة فقط.`}
+        onConfirm={() => { if (zoneToDelete) s.deleteDeliveryArea(zoneToDelete.id); setZoneToDelete(null); }} onCancel={() => setZoneToDelete(null)} />
 
       {/* policy inline editor (reuses updatePolicies) */}
       {editPolicy && (
