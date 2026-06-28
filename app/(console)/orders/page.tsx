@@ -296,7 +296,13 @@ export default function OrdersPage() {
         const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
         const st = String(data.status ?? (res.ok ? "" : "failed"));
         if (st === "sent") return { state: "success", message: "تم إرسال الإيصال" };
-        if (st === "skipped" || st === "no_phone") return { state: "info", message: "الإيصال متخطّى" };
+        // DLV3 — skip/no_phone are NEUTRAL (not red): a web order with no WhatsApp
+        // window is the normal case; the receipt is printable. Use the server's
+        // authoritative message when present (e.g. «العميل مش على واتساب…»).
+        if (st === "skipped" || st === "no_phone") {
+          const msg = typeof data.message === "string" && data.message ? data.message : "الإيصال متخطّى — متاح بالطباعة";
+          return { state: "info", message: msg };
+        }
         return { state: "failed", message: "تعذّر إرسال الإيصال", retry: true };
       });
     }
