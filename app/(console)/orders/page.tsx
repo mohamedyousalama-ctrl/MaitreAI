@@ -267,10 +267,20 @@ export default function OrdersPage() {
 
     // R2 — surface the REAL status-write result; on failure updateOrderStatus reverts
     // the optimistic change, and the toast offers retry.
+    // R3b — the server now AUTHORITATIVELY rejects a delivered transition with 409
+    // { error: "no_driver" } for a COD delivery order with no assigned driver (e.g.
+    // web orders the narrow client guard misses). Route that to the existing
+    // assign-driver prompt rather than the generic failure toast.
+    let code: string | undefined;
     const ok = await runAction(
       { pending: "جارٍ التحديث…", success: "تم تحديث الحالة", error: "تعذّر تحديث الحالة", retry: true },
-      () => updateOrderStatus(o.id, n, "human"),
+      async () => {
+        const res = await updateOrderStatus(o.id, n, "human");
+        code = res.code;
+        return res.ok;
+      },
     );
+    if (!ok && code === "no_driver") setNoDriverBlock(o.id);
 
     // R2 — receipt-on-confirm: only after a CONFIRMED status advance; three outcomes.
     if (ok && isConfirm) {

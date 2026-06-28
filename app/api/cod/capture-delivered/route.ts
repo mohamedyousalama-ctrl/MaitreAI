@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { captureCodOnDelivered } from "@/lib/db/cod";
-import { markDeliveryDelivered } from "@/lib/db/delivery";
+import { markDeliveryDelivered, orderHasAssignedDriver } from "@/lib/db/delivery";
 
 export const runtime = "nodejs";
 
@@ -31,17 +31,33 @@ export async function POST(req: Request) {
   // Server-side guard: only capture for unpaid delivery orders.
   const { data: order } = await admin
     .from("orders")
-    .select("fulfillment,payment_status")
+    .select("fulfillment,payment_status,payment_method")
     .eq("id", orderId)
     .eq("restaurant_id", tenant.restaurantId)
     .maybeSingle();
 
   if (!order) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
-  if (
-    (order as { fulfillment: string }).fulfillment !== "delivery" ||
-    (order as { payment_status: string }).payment_status === "paid"
-  ) {
+  const ord = order as { fulfillment: string; payment_status: string; payment_method: string | null };
+  if (ord.fulfillment !== "delivery" || ord.payment_status === "paid") {
     return NextResponse.json({ ok: true, skipped: true });
+  }
+
+  // R3b backstop — never insert an UNATTRIBUTED COD cash row. For a COD (or
+  // unspecified-method) delivery order, require a confirmed assigned driver
+  // BEFORE capture, matched by order_id. Non-COD methods (e.g. vodafone_cash)
+  // open no cash row (captureCodOnDelivered no-ops) so are exempt. FAIL-CLOSED:
+  // if the driver can't be verified (none, or a lookup error), reject — this
+  // guarantees cash is never captured to driver_id=null even if some path reaches
+  // here, independent of the primary status-route guard.
+  const isCod = ord.payment_method == null || ord.payment_method === "cod";
+  if (isCod) {
+    let hasDriver = false;
+    try {
+      hasDriver = await orderHasAssignedDriver(admin, tenant.restaurantId, orderId);
+    } catch {
+      return NextResponse.json({ error: "no_driver" }, { status: 409 });
+    }
+    if (!hasDriver) return NextResponse.json({ error: "no_driver" }, { status: 409 });
   }
 
   const r = await captureCodOnDelivered(admin, {

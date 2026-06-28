@@ -42,6 +42,30 @@ export function isExpired(d: { expires_at?: string | null; status?: string }): b
   return false;
 }
 
+// --- R3b — driver-presence check for the delivered / COD-capture guard --------
+/**
+ * Is there a delivery row for this order carrying an ASSIGNED driver?
+ * Matched by order_id (the authoritative key — the client's order_number match is
+ * only a fast-feedback heuristic). THROWS on a query error so callers can
+ * FAIL-CLOSED: a COD delivery must never be booked "delivered" when driver
+ * attribution can't be verified, else the cash is captured to driver_id=null
+ * («غير معيّن») and per-driver reconciliation breaks.
+ */
+export async function orderHasAssignedDriver(
+  admin: SupabaseClient,
+  restaurantId: string,
+  orderId: string
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("deliveries")
+    .select("driver_id")
+    .eq("order_id", orderId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (error) throw error;
+  return !!(data && (data as { driver_id: string | null }).driver_id);
+}
+
 // --- finalize → deliveries hook (idempotent on order_id) ---------------------
 /** Create the pending delivery for a finalized delivery order. No-op if exists. */
 export async function createDeliveryForOrder(

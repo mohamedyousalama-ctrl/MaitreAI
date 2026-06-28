@@ -45,16 +45,20 @@ async function orderWrite(
   id: string,
   action: "status" | "payment" | "cancel",
   body?: Record<string, unknown>
-): Promise<boolean> {
+): Promise<{ ok: boolean; code?: string }> {
   try {
     const res = await fetch(`/api/orders/${id}/${action}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body ?? {}),
     });
-    return res.ok; // R2 — real server result so callers can detect failure
+    if (res.ok) return { ok: true }; // R2 — real server result so callers can detect failure
+    // R3b — surface a structured rejection code (e.g. "no_driver") so the UI can
+    // route it to the existing assign-driver prompt instead of a generic error.
+    const data = (await res.json().catch(() => ({}))) as { error?: unknown };
+    return { ok: false, code: typeof data.error === "string" ? data.error : undefined };
   } catch {
-    return false;
+    return { ok: false };
   }
 }
 
@@ -83,7 +87,7 @@ interface OrderState {
   reload: () => Promise<void>;
 
   createOrderFromDraft: (input: CreateOrderInput, brain: Brain) => LocalOrder;
-  updateOrderStatus: (id: string, status: OrderStatusKey, actor?: OrderActor) => Promise<boolean>;
+  updateOrderStatus: (id: string, status: OrderStatusKey, actor?: OrderActor) => Promise<{ ok: boolean; code?: string }>;
   updatePaymentStatus: (id: string, status: PaymentStatusKey, actor?: OrderActor) => void;
   updateKitchenStatus: (id: string, status: KitchenStatusKey, actor?: OrderActor) => void;
   cancelOrder: (id: string, actor?: OrderActor) => void;
@@ -198,7 +202,7 @@ export const useOrderStore = create<OrderState>()(
 
       updateOrderStatus: async (id, status, actor = "system") => {
         const order = get().orders.find((o) => o.id === id);
-        if (!order) return false;
+        if (!order) return { ok: false };
         const prior = order.orderStatus; // R2 — for revert if the server rejects
         const event = ev("status", `الحالة: ${ORDER_STATUS_LABELS[status]}`, actor);
         set((s) => ({
@@ -227,16 +231,18 @@ export const useOrderStore = create<OrderState>()(
         }
         // R2 — surface the REAL server result. Demo mode (no DB) = local-only success.
         const { _sb } = get();
-        if (!_sb) return true;
-        const ok = await orderWrite(id, "status", { status });
-        if (!ok) {
+        if (!_sb) return { ok: true };
+        const res = await orderWrite(id, "status", { status });
+        if (!res.ok) {
           // Server rejected the write → revert the optimistic status to DB truth
           // (prior), so the board never shows a status the server didn't accept.
+          // R3b — this also reverts a 409 no_driver rejection; the caller reads
+          // res.code to surface the existing assign-driver prompt.
           set((s) => ({
             orders: s.orders.map((o) => (o.id === id ? { ...o, orderStatus: prior } : o)),
           }));
         }
-        return ok;
+        return res;
       },
 
       updatePaymentStatus: (id, status, actor = "system") => {
