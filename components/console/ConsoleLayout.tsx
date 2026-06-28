@@ -16,6 +16,7 @@ import { AlertBanner } from "./AlertBanner";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { useConsoleDataStore, isConsoleDataPresentable } from "@/lib/console-data-state";
 import { ActionToastHost } from "./ActionToastHost";
+import { ConsoleAlerts } from "./ConsoleAlerts";
 
 // M1.1 — manager-only console surfaces. Operators may reach ONLY the
 // OPERATION_HREFS (conversations/orders/deliveries); every other console route is
@@ -105,6 +106,8 @@ export function ConsoleLayout({ children }: { children: React.ReactNode }) {
           <ConsoleTopbar />
           {/* Global critical-failure banner — manager-visible, real failures only. */}
           <AlertBanner />
+          {/* DLV5 — layout-level audible alerts (fire on any console page). */}
+          <ConsoleAlerts />
           <main className="kv-scroll" style={{ flex: 1, overflowY: "auto", padding: "34px 24px 60px" }}>
             <RoleGuard>{children}</RoleGuard>
           </main>

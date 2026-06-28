@@ -11,6 +11,7 @@ import { countEscalations } from "@/lib/escalation";
 import { useHasHydrated } from "@/lib/store";
 import { useConsoleUi } from "./console-ui-store";
 import { ProfileMenu } from "./ProfileMenu";
+import { AlertSoundToggle } from "./ConsoleAlerts";
 
 export function ConsoleTopbar() {
   const hydrated = useHasHydrated();
@@ -66,6 +67,9 @@ export function ConsoleTopbar() {
         >
           {dateScope === "today" ? "النهارده" : "كل الفترات"}
         </button>
+
+        {/* DLV5 — per-operator audible-alert mute toggle (default on). */}
+        <AlertSoundToggle />
 
         {/* Notifications bell → the intervention queue (Conversations). Red dot
             only on a live intervention signal. */}
