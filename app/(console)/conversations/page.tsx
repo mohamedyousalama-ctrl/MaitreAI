@@ -34,7 +34,7 @@ import { useOrderStore } from "@/lib/order-store";
 import { useHasHydrated } from "@/lib/store";
 import { isEscalated, countEscalations } from "@/lib/escalation";
 import { useConsoleUi } from "@/components/console/console-ui-store";
-import { runAction } from "@/lib/console-toast";
+import { runAction, runActionOutcome } from "@/lib/console-toast";
 import { StatePill, KvSkeletonBlock, useRiseIn } from "@/components/kivo";
 import type { Conversation, ChannelKey } from "@/lib/types";
 
@@ -165,6 +165,20 @@ export default function ConversationsPage() {
 
   const open = (id: string) => { setLocalSel(id); selectConversation(id); };
 
+  // MO2 — takeover is now an atomic claim: surface the REAL result. On a lost race
+  // the store returns {ok:false, code:"already_claimed", conflictName} (and refreshes
+  // the row); we tell the operator who already owns it instead of silently stealing.
+  const handleTakeover = (id: string) => {
+    void runActionOutcome("جارٍ الاستلام…", async () => {
+      const r = await takeoverToHuman(id);
+      if (r.ok) return { state: "success", message: "استلمت المحادثة" };
+      if (r.code === "already_claimed") {
+        return { state: "info", message: r.conflictName ? `${r.conflictName} تولّاها بالفعل` : "المحادثة اتأخذت بالفعل" };
+      }
+      return { state: "failed", message: "تعذّر استلام المحادثة", retry: true };
+    });
+  };
+
   const needIntervention = hydrated ? countEscalations(conversations) : 0;
   const aiSafe = hydrated ? conversations.filter((c) => ownView(c) === "AI" && !resolveHold(c)).length : 0;
 
@@ -253,12 +267,12 @@ export default function ConversationsPage() {
         </div>
 
         {/* THREAD */}
-        {selected ? <Thread key={selected.id} c={selected} onTakeover={takeoverToHuman} onReturn={returnToAi} onSend={addHumanMessage} latestOrder={getLatestOrderByConversation(selected.id)} /> : (
+        {selected ? <Thread key={selected.id} c={selected} onTakeover={handleTakeover} onReturn={returnToAi} onSend={addHumanMessage} latestOrder={getLatestOrderByConversation(selected.id)} /> : (
           <div style={{ borderRadius: 16, background: "var(--kv-card)", border: "1px solid var(--kv-border)", display: "grid", placeItems: "center", color: "var(--kv-faint)", fontWeight: 600 }}>اختر محادثة</div>
         )}
 
         {/* ACTION RAIL */}
-        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={takeoverToHuman} onReturn={returnToAi} onWait={setConversationIdle} onClose={closeConversation} latestOrder={getLatestOrderByConversation(selected.id)} ownerName={ownerNameFor(selected)} /> : <div />}
+        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={handleTakeover} onReturn={returnToAi} onWait={setConversationIdle} onClose={closeConversation} latestOrder={getLatestOrderByConversation(selected.id)} ownerName={ownerNameFor(selected)} /> : <div />}
       </section>
     </div>
   );

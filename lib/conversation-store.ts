@@ -78,7 +78,7 @@ interface ConversationState {
   attachOrder: (convId: string, orderId: string) => void;
   setTyping: (convId: string, value: boolean) => void;
   commitAiTurn: (convId: string, aiMessage: ChatMessage, patch: Partial<Conversation>, history: IntentHistoryEntry) => void;
-  takeoverToHuman: (convId: string) => void;
+  takeoverToHuman: (convId: string) => Promise<{ ok: boolean; code?: string; conflictName?: string }>;
   returnToAi: (convId: string, note?: string) => void;
   // R5 — return-to-Karim chooser: park with the team (HUMAN_IDLE) / close (CLOSED).
   // Return the REAL server result so the caller can surface it via R1.
@@ -274,45 +274,58 @@ export const useConversationStore = create<ConversationState>()(
           }
         },
 
-        takeoverToHuman: (convId) => {
+        takeoverToHuman: async (convId) => {
           // Idempotent: if already human-owned in local state (e.g. operator double-click
           // while the Brain's automatic escalation already flipped ownership), skip the
           // duplicate "تم تحويل" message and DB write. A genuinely new takeover on an
           // AI-owned conversation still goes through normally.
-          if (get().conversations.find((c) => c.id === convId)?.owner === "human") return;
+          if (get().conversations.find((c) => c.id === convId)?.owner === "human") return { ok: true };
           const id = msgId();
-          set((s) => ({
-            conversations: patchConv(s.conversations, convId, (c) => ({
-              ...c,
-              owner: "human",
-              status: "تم التحويل لموظف",
-              aiTyping: false,
-              messages: [...c.messages, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف", time: nowTime() }],
-            })),
-          }));
+          const applyLocal = () =>
+            set((s) => ({
+              conversations: patchConv(s.conversations, convId, (c) => ({
+                ...c,
+                owner: "human",
+                status: "تم التحويل لموظف",
+                ownershipState: "HUMAN_ACTIVE",
+                aiTyping: false,
+                messages: [...c.messages, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف", time: nowTime() }],
+              })),
+            }));
           const { _sb, _rid } = get();
-          if (_sb && _rid) {
-            // Ownership axis (spine Step 1): UI takeover → HUMAN_ACTIVE, dual-writing
-            // the legacy owner/status via `extra`.
-            fire(setOwnershipState(_sb, convId, "HUMAN_ACTIVE", { extra: { owner: "human", status: "تم التحويل لموظف" } }));
-            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف" }));
-            // MO1 — named ownership: stamp WHICH member took it. The acting member is
-            // resolved + validated server-side from the session (never a client id).
-            // Patch the resolved id locally for immediate display; realtime reconfirms.
-            fire(
-              fetch(`/api/conversations/${convId}/assignee`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "claim" }),
-              }).then(async (r) => {
-                if (!r.ok) return;
-                const j = (await r.json().catch(() => ({}))) as { assignedMemberId?: string | null };
-                if (j.assignedMemberId) {
-                  set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, assignedMemberId: j.assignedMemberId })) }));
-                }
-              })
-            );
+          // Demo mode (no DB): local-only optimistic takeover.
+          if (!_sb || !_rid) { applyLocal(); return { ok: true }; }
+
+          // MO2 — ATOMIC CLAIM. The server performs a SINGLE conditional UPDATE (the
+          // ownership_state flip + the assignee stamp, with the precondition in the
+          // WHERE) and reports whether we won. PESSIMISTIC: flip local state only on a
+          // win, so a lost race never shows a false "you own it". This replaces the old
+          // browser setOwnershipState takeover write — the state-machine legality is now
+          // enforced inline by the claim's WHERE (same legal predecessors).
+          let res: Response;
+          try {
+            res = await fetch(`/api/conversations/${convId}/assignee`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "claim" }),
+            });
+          } catch {
+            return { ok: false };
           }
+          if (res.ok) {
+            const j = (await res.json().catch(() => ({}))) as { assignedMemberId?: string | null };
+            applyLocal();
+            if (j.assignedMemberId) {
+              set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, assignedMemberId: j.assignedMemberId })) }));
+            }
+            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف" }));
+            return { ok: true };
+          }
+          // Lost the race / not claimable → refresh to show the REAL current owner and
+          // surface the result (the UI shows «{name} تولّاها بالفعل»). No overwrite.
+          const j = (await res.json().catch(() => ({}))) as { error?: string; ownerName?: string };
+          fire(get().reload());
+          return { ok: false, code: j.error, conflictName: j.ownerName };
         },
 
         returnToAi: (convId, note) => {

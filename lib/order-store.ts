@@ -232,7 +232,10 @@ export const useOrderStore = create<OrderState>()(
         // R2 — surface the REAL server result. Demo mode (no DB) = local-only success.
         const { _sb } = get();
         if (!_sb) return { ok: true };
-        const res = await orderWrite(id, "status", { status });
+        // MO2 — send the status we BELIEVE is current (prior) so the server can
+        // reject a stale advance (another operator already moved it) instead of
+        // clobbering. A 409 status_conflict reverts (below) and the caller surfaces it.
+        const res = await orderWrite(id, "status", { status, expectedStatus: prior });
         if (!res.ok) {
           // Server rejected the write → revert the optimistic status to DB truth
           // (prior), so the board never shows a status the server didn't accept.
