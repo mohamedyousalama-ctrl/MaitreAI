@@ -16,8 +16,7 @@ import { persistOrderFromDraft } from "@/lib/db/orders-create";
 import { readHandoffConfig, isSafetyHold, isIdleBeyond } from "@/lib/tenant/handoff";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
-import { createDeliveryForOrder } from "@/lib/db/delivery";
-import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
+import { ensureDeliveryRowForOrder } from "@/lib/db/delivery";
 import { sendReceiptToCustomer } from "./send-receipt";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { checkAndNotifyStuck } from "@/lib/intelligence/stuck-detection";
@@ -435,11 +434,13 @@ export async function respondAndSendWhatsApp(
   // Receipt auto-sends after the customer confirmation (skips in test mode).
   if (persistedOrder?.created && persistedOrder.orderId) {
     try {
-      // Delivery dispatch (flag-gated): a finalized DELIVERY order opens a pending
-      // delivery for the operator to assign. Fully inert when the flag is off.
-      if (ENABLE_DELIVERY_TRACKING && persistedOrder.orderId && outcome.draft.fulfillment === "delivery") {
+      // DLV1 — a finalized DELIVERY order opens a pending delivery row so it's
+      // assignable + dispatchable. NOT gated on ENABLE_DELIVERY_TRACKING: the row
+      // must exist regardless of the UI toggle (same shared, idempotent helper the
+      // storefront path uses; it no-ops for pickup orders).
+      if (persistedOrder.orderId && outcome.draft.fulfillment === "delivery") {
         try {
-          await createDeliveryForOrder(admin, { restaurantId, orderId: persistedOrder.orderId });
+          await ensureDeliveryRowForOrder(admin, persistedOrder.orderId, restaurantId);
         } catch (e) {
           console.error("[respond-and-send] delivery create error", e);
         }
