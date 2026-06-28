@@ -45,12 +45,17 @@ async function orderWrite(
   id: string,
   action: "status" | "payment" | "cancel",
   body?: Record<string, unknown>
-): Promise<void> {
-  await fetch(`/api/orders/${id}/${action}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body ?? {}),
-  });
+): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/orders/${id}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+    return res.ok; // R2 — real server result so callers can detect failure
+  } catch {
+    return false;
+  }
 }
 
 export interface CreateOrderInput {
@@ -78,7 +83,7 @@ interface OrderState {
   reload: () => Promise<void>;
 
   createOrderFromDraft: (input: CreateOrderInput, brain: Brain) => LocalOrder;
-  updateOrderStatus: (id: string, status: OrderStatusKey, actor?: OrderActor) => void;
+  updateOrderStatus: (id: string, status: OrderStatusKey, actor?: OrderActor) => Promise<boolean>;
   updatePaymentStatus: (id: string, status: PaymentStatusKey, actor?: OrderActor) => void;
   updateKitchenStatus: (id: string, status: KitchenStatusKey, actor?: OrderActor) => void;
   cancelOrder: (id: string, actor?: OrderActor) => void;
@@ -191,17 +196,16 @@ export const useOrderStore = create<OrderState>()(
         return order;
       },
 
-      updateOrderStatus: (id, status, actor = "system") => {
+      updateOrderStatus: async (id, status, actor = "system") => {
         const order = get().orders.find((o) => o.id === id);
-        if (!order) return;
+        if (!order) return false;
+        const prior = order.orderStatus; // R2 — for revert if the server rejects
         const event = ev("status", `الحالة: ${ORDER_STATUS_LABELS[status]}`, actor);
         set((s) => ({
           orders: s.orders.map((o) =>
             o.id === id ? { ...o, orderStatus: status, updatedAt: event.timestamp, events: [...o.events, event] } : o
           ),
         }));
-        const { _sb } = get();
-        if (_sb) fire(orderWrite(id, "status", { status }));
         notifyConversation(order, orderStatusMessage(order, status));
         if (status === "delivered") {
           if (order.conversationId) {
@@ -210,7 +214,7 @@ export const useOrderStore = create<OrderState>()(
           // COD capture: fire for unpaid delivery orders completed via the order screen.
           // The server route double-guards (fulfillment=delivery, payment_status!=paid).
           // captureCodOnDelivered is idempotent on order_id — safe if the driver dispatch
-          // path already fired it (no double-capture).
+          // path already fired it (no double-capture). UNCHANGED by R2.
           if (order.fulfillmentType === "delivery" && order.paymentStatus !== "paid") {
             fire(
               fetch("/api/cod/capture-delivered", {
@@ -221,6 +225,18 @@ export const useOrderStore = create<OrderState>()(
             );
           }
         }
+        // R2 — surface the REAL server result. Demo mode (no DB) = local-only success.
+        const { _sb } = get();
+        if (!_sb) return true;
+        const ok = await orderWrite(id, "status", { status });
+        if (!ok) {
+          // Server rejected the write → revert the optimistic status to DB truth
+          // (prior), so the board never shows a status the server didn't accept.
+          set((s) => ({
+            orders: s.orders.map((o) => (o.id === id ? { ...o, orderStatus: prior } : o)),
+          }));
+        }
+        return ok;
       },
 
       updatePaymentStatus: (id, status, actor = "system") => {

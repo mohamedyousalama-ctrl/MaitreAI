@@ -31,7 +31,9 @@
 
 import { create } from "zustand";
 
-export type ToastState = "pending" | "success" | "failed";
+// "info" = a neutral terminal outcome (e.g. a receipt "skipped" — NOT a success,
+// NOT a failure). Added for R2 so neutral results aren't shown as false success.
+export type ToastState = "pending" | "success" | "failed" | "info";
 
 export interface ActionToast {
   id: number;
@@ -108,4 +110,43 @@ export async function runAction(opts: RunActionOpts, fn: () => Promise<ActionOut
     });
   }
   return ok;
+}
+
+/** A terminal outcome for runActionOutcome: success | failed | info (neutral). */
+export interface ActionResultOutcome {
+  state: "success" | "failed" | "info";
+  message: string;
+  /** Only honored for a "failed" outcome — shows a retry that re-runs the action. */
+  retry?: boolean;
+  successTtlMs?: number;
+}
+
+/**
+ * Like runAction, but the action resolves to an EXPLICIT terminal outcome
+ * (success | failed | info) — for flows with a neutral case that must not read as
+ * success (e.g. receipt "skipped"). Shows pending, then the chosen state.
+ */
+export async function runActionOutcome(pending: string, fn: () => Promise<ActionResultOutcome>): Promise<void> {
+  const id = useToastStore.getState().push({ state: "pending", message: pending });
+  let outcome: ActionResultOutcome;
+  try {
+    outcome = await fn();
+  } catch {
+    outcome = { state: "failed", message: "حدث خطأ غير متوقع" };
+  }
+  const store = useToastStore.getState();
+  store.update(id, {
+    state: outcome.state,
+    message: outcome.message,
+    retry:
+      outcome.state === "failed" && outcome.retry
+        ? () => {
+            useToastStore.getState().dismiss(id);
+            void runActionOutcome(pending, fn);
+          }
+        : undefined,
+  });
+  if (outcome.state !== "failed") {
+    setTimeout(() => useToastStore.getState().dismiss(id), outcome.successTtlMs ?? 3500);
+  }
 }

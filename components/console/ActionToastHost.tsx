@@ -8,7 +8,7 @@
 // for failures — so results are announced to screen readers (Audit-14).
 // ============================================================================
 
-import { Loader2, CheckCircle2, AlertTriangle, X, RotateCcw } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Info, X, RotateCcw } from "lucide-react";
 import { useToastStore } from "@/lib/console-toast";
 
 export function ActionToastHost() {
@@ -36,8 +36,9 @@ export function ActionToastHost() {
       {toasts.map((t) => {
         const failed = t.state === "failed";
         const success = t.state === "success";
-        const Icon = failed ? AlertTriangle : success ? CheckCircle2 : Loader2;
-        const accent = failed ? "#c0492f" : success ? "#0a8a5f" : "var(--kv-muted)";
+        const info = t.state === "info";
+        const Icon = failed ? AlertTriangle : success ? CheckCircle2 : info ? Info : Loader2;
+        const accent = failed ? "#c0492f" : success ? "#0a8a5f" : info ? "var(--kv-amber)" : "var(--kv-muted)";
         return (
           <div
             key={t.id}
@@ -50,8 +51,8 @@ export function ActionToastHost() {
               gap: 10,
               padding: "10px 13px",
               borderRadius: 12,
-              background: failed ? "rgba(192,73,47,.10)" : success ? "rgba(14,159,110,.10)" : "var(--kv-card)",
-              border: `1px solid ${failed ? "rgba(192,73,47,.34)" : success ? "rgba(14,159,110,.30)" : "var(--kv-border)"}`,
+              background: failed ? "rgba(192,73,47,.10)" : success ? "rgba(14,159,110,.10)" : info ? "rgba(216,151,43,.12)" : "var(--kv-card)",
+              border: `1px solid ${failed ? "rgba(192,73,47,.34)" : success ? "rgba(14,159,110,.30)" : info ? "rgba(216,151,43,.34)" : "var(--kv-border)"}`,
               boxShadow: "var(--kv-shadow-panel)",
               color: "var(--kv-text)",
             }}
@@ -70,7 +71,7 @@ export function ActionToastHost() {
                 <RotateCcw size={14} /> إعادة المحاولة
               </button>
             )}
-            {(failed || success) && (
+            {(failed || success || info) && (
               <button
                 onClick={() => dismiss(t.id)}
                 aria-label="إغلاق"
