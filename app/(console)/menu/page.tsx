@@ -15,6 +15,7 @@
 import { useMemo, useState } from "react";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { useRole } from "@/lib/use-role";
+import { runAction } from "@/lib/console-toast";
 import { computeKnowledgeAreas, computeOverallScore } from "@/lib/knowledge";
 import { MenuItemForm, type MenuItemFormValues } from "@/components/menu/MenuItemForm";
 import { ModifierManager } from "@/components/menu/ModifierManager";
@@ -41,6 +42,8 @@ export default function MenuMemoryPage() {
   const isManager = useRole() === "manager";
   const [tab, setTab] = useState<"menu" | "memory">("menu");
   const [category, setCategory] = useState("الكل");
+  // R7 — per-item availability-save in-flight set (prevents double-tap races).
+  const [savingAvail, setSavingAvail] = useState<Set<string>>(() => new Set());
 
   // form modals (existing components, persist via store handlers)
   const [itemForm, setItemForm] = useState(false);
@@ -76,7 +79,22 @@ export default function MenuMemoryPage() {
   // Real-time 86ing: route the one-tap toggle through the audited, tenant-scoped
   // availability path (writes a menu_availability_events row); «كريم» honors it
   // on the next turn. Optimistic flip + DB reconcile lives in the store action.
-  const toggleAvail = (it: MenuItem) => s.setItemAvailability(it.id, !it.available);
+  // R7 — surface the real save result (pending→success/fail+retry); on failure the
+  // store reconciles to the TRUE server state, now WITH a visible failure toast (no
+  // silent revert). Per-item in-flight guard prevents double-tap races.
+  const toggleAvail = async (it: MenuItem) => {
+    if (savingAvail.has(it.id)) return;
+    setSavingAvail((prev) => new Set(prev).add(it.id));
+    await runAction(
+      { pending: "جارٍ الحفظ…", success: "تم تحديث الإتاحة", error: "لم يتم حفظ الإتاحة", retry: true },
+      () => s.setItemAvailability(it.id, !it.available),
+    );
+    setSavingAvail((prev) => {
+      const n = new Set(prev);
+      n.delete(it.id);
+      return n;
+    });
+  };
 
   if (!hydrated) return <div className="h-[calc(100vh-8rem)] animate-pulse rounded-2xl border" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card)" }} />;
 
@@ -141,7 +159,7 @@ export default function MenuMemoryPage() {
                             <span className="h-1.5 w-1.5 rounded-full" style={{ background: it.available ? "var(--kv-primary)" : "var(--kv-border)" }} />{it.available ? "متاح" : "غير متوفر"}
                           </span>
                           {/* availability toggle → updateMenuItem (persists) */}
-                          <button onClick={() => toggleAvail(it)} title={it.available ? "إيقاف الإتاحة" : "تفعيل الإتاحة"} className="relative h-[21px] w-9 rounded-full transition" style={{ background: it.available ? "var(--kv-primary)" : "var(--kv-border)" }}>
+                          <button onClick={() => toggleAvail(it)} disabled={savingAvail.has(it.id)} title={it.available ? "إيقاف الإتاحة" : "تفعيل الإتاحة"} className="relative h-[21px] w-9 rounded-full transition" style={{ background: it.available ? "var(--kv-primary)" : "var(--kv-border)", opacity: savingAvail.has(it.id) ? 0.5 : 1, cursor: savingAvail.has(it.id) ? "wait" : "pointer" }}>
                             <span className="absolute top-[2px] h-[17px] w-[17px] rounded-full bg-white shadow" style={it.available ? { left: 2 } : { right: 2 }} />
                           </button>
                         </div>

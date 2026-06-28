@@ -94,7 +94,7 @@ interface RestaurantState {
   updateMenuItem: (id: string, patch: Partial<MenuItem>) => void;
   deleteMenuItem: (id: string) => void;
   /** Real-time 86ing: one-tap mark an item out-of-stock / back in stock. */
-  setItemAvailability: (id: string, available: boolean) => void;
+  setItemAvailability: (id: string, available: boolean) => Promise<boolean>;
 
   addModifier: (m: Omit<Modifier, "id">) => void;
   updateModifier: (id: string, patch: Partial<Modifier>) => void;
@@ -210,21 +210,30 @@ export const useRestaurantStore = create<RestaurantState>()(
         const { _sb } = get();
         if (_sb) fire(deleteMenuItemDb(_sb, id));
       },
-      setItemAvailability: (id, available) => {
+      setItemAvailability: async (id, available) => {
         // Optimistic flip so the toggle feels instant; the server route does the
         // tenant-scoped write + audit and «كريم» picks it up next turn.
         set((s) => ({ menuItems: s.menuItems.map((m) => (m.id === id ? { ...m, available } : m)) }));
         const { _sb, _rid } = get();
-        if (!_sb || !_rid) return; // demo mode: local only
-        fire(
-          fetch("/api/menu/availability", {
+        if (!_sb || !_rid) return true; // demo mode: local only
+        // R7 — return the REAL save result. On failure still reconcile to the TRUE
+        // server state (revert), but no longer SILENTLY — the caller surfaces a
+        // failure toast so staff never think an item is 86'd when the save failed.
+        try {
+          const r = await fetch("/api/menu/availability", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ itemId: id, available }),
-          }).then(async (r) => {
-            if (!r.ok) await get().refreshBrain(); // reconcile from the DB on failure
-          })
-        );
+          });
+          if (!r.ok) {
+            await get().refreshBrain(); // reconcile from the DB on failure
+            return false;
+          }
+          return true;
+        } catch {
+          await get().refreshBrain();
+          return false;
+        }
       },
 
       addModifier: (m) => {
