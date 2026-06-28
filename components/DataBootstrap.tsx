@@ -42,13 +42,15 @@ export function DataBootstrap() {
         return;
       }
       try {
-        await useRestaurantStore.getState().initFromDb(tenant.restaurantId);
+        // LIVE0 L2 — restaurant/brain store now returns a realtime cleanup too.
+        const stopBrain = await useRestaurantStore.getState().initFromDb(tenant.restaurantId);
         const stopConv = await useConversationStore.getState().initFromDb(tenant.restaurantId);
         const stopOrders = await useOrderStore.getState().initFromDb(tenant.restaurantId);
         const stopPay = await usePaymentStore.getState().initFromDb(tenant.restaurantId);
         // LIVE0 L1 — shared ops store (Karim active / open-closed / slug), live.
         const stopOps = await useConsoleOps.getState().initFromDb(tenant.restaurantId);
         if (cancelled) {
+          stopBrain?.();
           stopConv?.();
           stopOrders?.();
           stopPay?.();
@@ -57,6 +59,7 @@ export function DataBootstrap() {
         }
         setDataState("DB_READY", tenant.restaurantId);
         cleanup = () => {
+          stopBrain?.();
           stopConv?.();
           stopOrders?.();
           stopPay?.();
