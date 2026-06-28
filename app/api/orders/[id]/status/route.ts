@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { orderHasAssignedDriver } from "@/lib/db/delivery";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,39 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const status = String(body.status ?? "");
   if (!ORDER_STATUSES.has(status)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+
+  // R3b — AUTHORITATIVE driver guard on the delivered transition. A COD (or
+  // unspecified-method) delivery order cannot be booked "delivered" without an
+  // assigned driver, else captureCodOnDelivered books the cash to driver_id=null
+  // («غير معيّن») and per-driver reconciliation breaks. The client guard is only
+  // fast feedback (and too narrow — it skips orders with no delivery row, e.g.
+  // web orders); this is the real gate. Pickup orders and already-paid orders are
+  // unaffected; non-COD methods (e.g. vodafone_cash) carry no driver cash so are
+  // exempt. FAIL-CLOSED: if a confirmed assigned driver can't be verified (none,
+  // or a lookup error), the delivered write is rejected.
+  if (status === "delivered") {
+    const { data: ord, error: ordErr } = await admin
+      .from("orders")
+      .select("fulfillment,payment_method,payment_status")
+      .eq("id", params.id)
+      .eq("restaurant_id", tenant.restaurantId)
+      .maybeSingle();
+    if (ordErr || !ord) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
+    const o = ord as { fulfillment: string | null; payment_method: string | null; payment_status: string | null };
+    const isDelivery = o.fulfillment === "delivery";
+    const isPaid = o.payment_status === "paid";
+    const isCod = o.payment_method == null || o.payment_method === "cod";
+    if (isDelivery && !isPaid && isCod) {
+      let hasDriver = false;
+      try {
+        hasDriver = await orderHasAssignedDriver(admin, tenant.restaurantId, params.id);
+      } catch {
+        // Lookup failed → cannot confirm attribution → fail-closed (block).
+        return NextResponse.json({ error: "no_driver" }, { status: 409 });
+      }
+      if (!hasDriver) return NextResponse.json({ error: "no_driver" }, { status: 409 });
+    }
+  }
 
   // Tenant-scoped write: id AND restaurant_id (admin bypasses RLS).
   const { error } = await admin
