@@ -38,6 +38,7 @@ import {
 import { useOrderStore } from "@/lib/order-store";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
+import { useConsoleOps } from "@/lib/console-ops-store";
 import { countEscalations } from "@/lib/escalation";
 import { useRiseIn, StatePill } from "@/components/kivo";
 import type { Conversation, OrderStatusKey } from "@/lib/types";
@@ -58,7 +59,6 @@ function convTime(c: Conversation): number | undefined {
 }
 
 type AgentState = "loading" | "live" | "paused" | "setup";
-type Ops = { isOpen: boolean; assistantOn: boolean };
 type Wa = { configured: boolean };
 
 async function getJson<T>(url: string): Promise<{ ok: boolean; data: T | null }> {
@@ -78,7 +78,12 @@ export default function HomePage() {
   const profileName = useRestaurantStore((s) => s.profile.name);
   const menuItems = useRestaurantStore((s) => s.menuItems);
 
-  const [ops, setOps] = useState<{ loaded: boolean; ok: boolean; v: Ops | null }>({ loaded: false, ok: false, v: null });
+  // LIVE0 L1 — Karim active + open/closed from the SHARED ops store (DB-backed +
+  // realtime), so this banner stays in sync with the sidebar toggle same-page and
+  // reflects another operator's change live (was an independent mount-time fetch).
+  const assistantOn = useConsoleOps((s) => s.assistantOn);
+  const isOpen = useConsoleOps((s) => s.isOpen);
+  const opsLoaded = useConsoleOps((s) => s.loaded);
   const [wa, setWa] = useState<{ loaded: boolean; ok: boolean; v: Wa | null }>({ loaded: false, ok: false, v: null });
 
   const rHead = useRiseIn(0);
@@ -89,13 +94,14 @@ export default function HomePage() {
 
   useEffect(() => {
     let alive = true;
-    getJson<Ops>("/api/settings/ops").then((r) => alive && setOps({ loaded: true, ok: r.ok, v: r.data }));
     getJson<Wa>("/api/settings/whatsapp").then((r) => alive && setWa({ loaded: true, ok: r.ok, v: r.data }));
     return () => { alive = false; };
   }, []);
 
-  // agent status (live / paused / setup) — honest: a paused/setup agent isn't answering
-  const agent: AgentState = !ops.loaded ? "loading" : !ops.ok ? "setup" : ops.v?.assistantOn ? "live" : "paused";
+  // agent status (live / paused) — from the shared store. "setup" (ops backend
+  // unreachable) is no longer a banner sub-state; genuine onboarding gaps are
+  // surfaced by setupIncomplete (WhatsApp + menu) below, unchanged.
+  const agent: AgentState = !opsLoaded ? "loading" : assistantOn ? "live" : "paused";
 
   // "needs you now" — real counts only
   const escalations = hydrated ? countEscalations(conversations) : 0;
@@ -120,7 +126,7 @@ export default function HomePage() {
   // onboarding completeness — same real signals settings uses (no fragile rid plumbing)
   const waConnected = wa.ok && !!wa.v?.configured;
   const menuReady = hydrated && menuItems.length > 0;
-  const setupIncomplete = (wa.loaded && !waConnected) || (hydrated && !menuReady) || (ops.loaded && !ops.ok);
+  const setupIncomplete = (wa.loaded && !waConnected) || (hydrated && !menuReady);
 
   const greeting = hydrated && profileName ? profileName : "Kivo";
 
@@ -137,7 +143,7 @@ export default function HomePage() {
 
       {/* AGENT STATUS BANNER */}
       <section style={{ ...rBanner.style }}>
-        <AgentBanner state={agent} isOpen={ops.v?.isOpen ?? true} />
+        <AgentBanner state={agent} isOpen={isOpen} />
       </section>
 
       {/* NEEDS YOU NOW */}

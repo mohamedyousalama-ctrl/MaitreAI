@@ -8,7 +8,7 @@
 // the switch never shows a false "paused" while Karim is still replying.
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
 import { useConversationStore } from "@/lib/conversation-store";
+import { useConsoleOps } from "@/lib/console-ops-store";
 import { countEscalations } from "@/lib/escalation";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { StatePill } from "@/components/kivo";
@@ -131,48 +132,27 @@ export function ConsoleSidebar() {
   const conversations = useConversationStore((s) => s.conversations);
   const profileName = useRestaurantStore((s) => s.profile.name);
   const branches = useRestaurantStore((s) => s.branches);
-  // Real agent state from the SAME endpoint the Settings page reads/writes, so
-  // the sidebar reflects reality and can never disagree with Settings/dashboard.
-  // null = still loading (we never render a definitive on/off until we know).
-  const [assistantOn, setAssistantOn] = useState<boolean | null>(null);
+  // LIVE0 L1 — Karim active state from the SHARED ops store (DB-backed + realtime),
+  // so the sidebar, dashboard banner, and settings toggle always agree and update
+  // together same-page AND across devices. setAssistant is optimistic + reverts.
+  const assistantOn = useConsoleOps((s) => s.assistantOn);
+  const opsLoaded = useConsoleOps((s) => s.loaded);
+  const setAssistant = useConsoleOps((s) => s.setAssistant);
   const [savingAgent, setSavingAgent] = useState(false);
   const [agentSaveError, setAgentSaveError] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/settings/ops", { credentials: "include", cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive && d && typeof d.assistantOn === "boolean") setAssistantOn(d.assistantOn); })
-      .catch(() => { /* leave as null (loading); never assume a state */ });
-    return () => { alive = false; };
-  }, []);
-
-  // Flip the REAL agent_mode via /api/settings/ops (manager-only, server-enforced).
-  // Optimistic, but reverts on any failure so the switch never lies about state.
+  // Flip the REAL agent_mode via the store (POST is manager-only, server-enforced).
   async function toggleAgent() {
-    if (assistantOn === null || savingAgent) return;
-    const next = !assistantOn;
+    if (!opsLoaded || savingAgent) return;
     setAgentSaveError(false);
     setSavingAgent(true);
-    setAssistantOn(next);
-    try {
-      const r = await fetch("/api/settings/ops", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assistantOn: next }),
-      });
-      if (!r.ok) { setAssistantOn(!next); setAgentSaveError(true); }
-    } catch {
-      setAssistantOn(!next);
-      setAgentSaveError(true);
-    } finally {
-      setSavingAgent(false);
-    }
+    const res = await setAssistant(!assistantOn);
+    if (!res.ok) setAgentSaveError(true);
+    setSavingAgent(false);
   }
 
-  const agentEnabled = assistantOn === true;
-  const agentLoading = assistantOn === null;
+  const agentEnabled = opsLoaded && assistantOn;
+  const agentLoading = !opsLoaded;
 
   const escalations = hydrated ? countEscalations(conversations) : 0;
   const activeOrders = hydrated ? orders.filter((o) => ACTIVE.includes(o.orderStatus)).length : 0;
