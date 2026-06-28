@@ -15,6 +15,7 @@ import { useConversationStore } from "@/lib/conversation-store";
 import { useOrderStore } from "@/lib/order-store";
 import { usePaymentStore } from "@/lib/payment-store";
 import { useConsoleOps } from "@/lib/console-ops-store";
+import { useCodStore } from "@/lib/cod-store";
 import { useConsoleDataStore } from "@/lib/console-data-state";
 
 export function DataBootstrap() {
@@ -49,12 +50,16 @@ export function DataBootstrap() {
         const stopPay = await usePaymentStore.getState().initFromDb(tenant.restaurantId);
         // LIVE0 L1 — shared ops store (Karim active / open-closed / slug), live.
         const stopOps = await useConsoleOps.getState().initFromDb(tenant.restaurantId);
+        // LIVE0 L3 — shared COD ledger store, live across managers (read-only;
+        // tenant-scoped by RLS). Loaded for the tenant like the other stores.
+        const stopCod = await useCodStore.getState().initFromDb(tenant.restaurantId);
         if (cancelled) {
           stopBrain?.();
           stopConv?.();
           stopOrders?.();
           stopPay?.();
           stopOps?.();
+          stopCod?.();
           return;
         }
         setDataState("DB_READY", tenant.restaurantId);
@@ -64,6 +69,7 @@ export function DataBootstrap() {
           stopOrders?.();
           stopPay?.();
           stopOps?.();
+          stopCod?.();
         };
       } catch {
         if (!cancelled) setDataState("DB_FAILED", tenant.restaurantId);
