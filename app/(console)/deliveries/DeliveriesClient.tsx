@@ -3,13 +3,14 @@
 // ============================================================================
 // MaitreAI — Operator deliveries client (Kivo-styled). Live list of deliveries,
 // driver assignment / reassignment, and a simple driver roster (add / activate /
-// deactivate). Polls every 6s. Operator-only (the page is flag-gated +
-// session-guarded). No map. Styling uses Kivo tokens (var(--kv-*)); logic is
-// unchanged.
+// deactivate). LIVE0 L4: reads from the shared dispatch store (realtime) — the old
+// 6s poll is removed. Operator-only (the page is flag-gated + session-guarded). No
+// map. Styling uses Kivo tokens (var(--kv-*)); assign/CRUD logic is unchanged.
 // ============================================================================
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useRole } from "@/lib/use-role";
+import { useDispatchStore } from "@/lib/dispatch-store";
 import { runActionOutcome } from "@/lib/console-toast";
 import { Truck, Plus, Loader2, Link2, Check } from "lucide-react";
 
@@ -41,7 +42,6 @@ const CHIP: Record<string, { bg: string; color: string }> = {
   failed: { bg: "rgba(192,73,47,.12)", color: "var(--kv-red)" },
   cancelled: { bg: "rgba(100,116,139,.14)", color: "var(--kv-muted)" },
 };
-const POLL_MS = 6000;
 
 // Kivo card + field frames.
 const cardStyle: React.CSSProperties = { borderRadius: 16, border: "1px solid var(--kv-border)", background: "var(--kv-card)", boxShadow: "var(--kv-shadow-panel)" };
@@ -52,9 +52,17 @@ export function DeliveriesClient() {
   // (/api/drivers, /api/drivers/[id] → 403). Hide those controls from non-managers
   // so they don't see actions that would fail; the server gate stays authoritative.
   const isManager = useRole() === "manager";
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [loading, setLoading] = useState(true);
+  // LIVE0 L4 — deliveries + drivers come from the SHARED dispatch store (DB-backed
+  // + realtime, wired in DataBootstrap). The old 6s poll is GONE: an assignment /
+  // status / roster change by any operator now reflects here live. The store's
+  // loaders (which re-pull the same /api/deliveries self-heal + /api/drivers) are
+  // reused by the actions below for the acting operator's immediate refresh.
+  const deliveries = useDispatchStore((s) => s.deliveries) as Delivery[];
+  const drivers = useDispatchStore((s) => s.drivers) as Driver[];
+  const loaded = useDispatchStore((s) => s.loaded);
+  const loading = !loaded;
+  const loadDeliveries = useDispatchStore((s) => s.loadDeliveries);
+  const loadDrivers = useDispatchStore((s) => s.loadDrivers);
   const [assigning, setAssigning] = useState<string | null>(null);
   const [pick, setPick] = useState<Record<string, string>>({});
   const [links, setLinks] = useState<Record<string, { driverLink: string; customerLink: string; whatsapp: string }>>({});
@@ -63,31 +71,6 @@ export function DeliveriesClient() {
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", phone: "", vehicle: "" });
   const [savingEdit, setSavingEdit] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  async function loadDrivers() {
-    const r = await fetch("/api/drivers", { cache: "no-store" });
-    if (r.ok) setDrivers((await r.json()).drivers ?? []);
-  }
-  async function loadDeliveries() {
-    const r = await fetch("/api/deliveries", { cache: "no-store" });
-    if (r.ok) setDeliveries((await r.json()).deliveries ?? []);
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    loadDrivers();
-    let alive = true;
-    async function poll() {
-      await loadDeliveries();
-      if (alive) timer.current = setTimeout(poll, POLL_MS);
-    }
-    poll();
-    return () => {
-      alive = false;
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, []);
 
   // R8 — surface the COMPOSITE assignment result: assigned vs failed, and (if
   // assigned) the WhatsApp dispatch sub-status. A failed assign never shows as

@@ -16,6 +16,7 @@ import { useOrderStore } from "@/lib/order-store";
 import { usePaymentStore } from "@/lib/payment-store";
 import { useConsoleOps } from "@/lib/console-ops-store";
 import { useCodStore } from "@/lib/cod-store";
+import { useDispatchStore } from "@/lib/dispatch-store";
 import { useConsoleDataStore } from "@/lib/console-data-state";
 
 export function DataBootstrap() {
@@ -53,6 +54,9 @@ export function DataBootstrap() {
         // LIVE0 L3 — shared COD ledger store, live across managers (read-only;
         // tenant-scoped by RLS). Loaded for the tenant like the other stores.
         const stopCod = await useCodStore.getState().initFromDb(tenant.restaurantId);
+        // LIVE0 L4 — shared dispatch store (deliveries + drivers), live; replaces
+        // the التوصيل 6s poll.
+        const stopDispatch = await useDispatchStore.getState().initFromDb(tenant.restaurantId);
         if (cancelled) {
           stopBrain?.();
           stopConv?.();
@@ -60,6 +64,7 @@ export function DataBootstrap() {
           stopPay?.();
           stopOps?.();
           stopCod?.();
+          stopDispatch?.();
           return;
         }
         setDataState("DB_READY", tenant.restaurantId);
@@ -70,6 +75,7 @@ export function DataBootstrap() {
           stopPay?.();
           stopOps?.();
           stopCod?.();
+          stopDispatch?.();
         };
       } catch {
         if (!cancelled) setDataState("DB_FAILED", tenant.restaurantId);
