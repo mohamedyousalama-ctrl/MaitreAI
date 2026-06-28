@@ -5,21 +5,20 @@
 // red dot ONLY on a live intervention signal, and the real signed-in user avatar.
 
 import Link from "next/link";
-import { Search, Bell } from "lucide-react";
+import { Bell } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
 import { countEscalations } from "@/lib/escalation";
 import { useHasHydrated } from "@/lib/store";
 import { useConsoleUi } from "./console-ui-store";
 import { ProfileMenu } from "./ProfileMenu";
 import { AlertSoundToggle } from "./ConsoleAlerts";
+import { GlobalSearch } from "./GlobalSearch";
 
 export function ConsoleTopbar() {
   const hydrated = useHasHydrated();
   const conversations = useConversationStore((s) => s.conversations);
   const escalations = hydrated ? countEscalations(conversations) : 0;
 
-  const query = useConsoleUi((s) => s.query);
-  const setQuery = useConsoleUi((s) => s.setQuery);
   const dateScope = useConsoleUi((s) => s.dateScope);
   const setDateScope = useConsoleUi((s) => s.setDateScope);
 
@@ -47,16 +46,8 @@ export function ConsoleTopbar() {
         zIndex: 30,
       }}
     >
-      {/* Search pill */}
-      <div style={{ flex: 1, maxWidth: 420, display: "flex", alignItems: "center", gap: 9, height: 38, padding: "0 14px", borderRadius: 99, border: "1px solid var(--kv-border)", background: "var(--kv-card-soft)" }}>
-        <Search size={15} color="#9aa8a0" style={{ flex: "none" }} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="دوّر برقم الطلب أو اسم العميل"
-          style={{ flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600, color: "var(--kv-text)" }}
-        />
-      </div>
+      {/* SR1 — global search (orders + customers + conversations), server-side. */}
+      <GlobalSearch />
 
       <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 12 }}>
         {/* Date scope chip — default today; toggles the query scope. */}

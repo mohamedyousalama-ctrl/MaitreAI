@@ -60,6 +60,8 @@ export default function CustomersPage() {
   const orders = useOrderStore((s) => s.orders);
   const conversations = useConversationStore((s) => s.conversations);
   const query = useConsoleUi((s) => s.query);
+  const focus = useConsoleUi((s) => s.focus);
+  const clearFocus = useConsoleUi((s) => s.clearFocus);
   const [filter, setFilter] = useState<"all" | "returning" | "new">("all");
   const [selKey, setSelKey] = useState<string | null>(null);
   const rHead = useRiseIn(0);
@@ -147,6 +149,14 @@ export default function CustomersPage() {
     }
     deepRef.current = true;
   }, [hydrated, customers]);
+
+  // SR1 — global-search result click: select the chosen customer (reactive,
+  // same-page too). Matched on the real customerId or the derived key. One-shot.
+  useEffect(() => {
+    if (!focus || focus.kind !== "customer" || !hydrated) return;
+    const m = customers.find((c) => c.customerId === focus.id || c.key === focus.id);
+    if (m) { deepKey.current = m.key; setSelKey(m.key); clearFocus(); }
+  }, [focus, hydrated, customers, clearFocus]);
 
   useEffect(() => {
     // don't auto-pick the first customer while a deeplink owns the selection.

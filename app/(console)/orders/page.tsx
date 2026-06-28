@@ -119,6 +119,8 @@ export default function OrdersPage() {
 
   const query = useConsoleUi((s) => s.query);
   const dateScope = useConsoleUi((s) => s.dateScope);
+  const focus = useConsoleUi((s) => s.focus);
+  const clearFocus = useConsoleUi((s) => s.clearFocus);
 
   const [tab, setTab] = useState<"all" | "active" | "late">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -217,6 +219,17 @@ export default function OrdersPage() {
     }
     deepRef.current = true;
   }, [hydrated, orders]);
+
+  // SR1 — global-search result click: select the chosen order (reactive, works
+  // same-page too — a fresh focus object re-triggers). One-shot (cleared after).
+  useEffect(() => {
+    if (!focus || focus.kind !== "order" || !hydrated) return;
+    if (orders.some((o) => o.id === focus.id)) {
+      deepId.current = focus.id;
+      setSelectedId(focus.id);
+      clearFocus();
+    }
+  }, [focus, hydrated, orders, clearFocus]);
 
   // auto-select first row so the drawer always has context (but never clobber a
   // valid deeplinked order that's merely filtered out of the current view).
