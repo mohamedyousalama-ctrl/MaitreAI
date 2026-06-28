@@ -19,7 +19,9 @@ export function AIConfidenceBadge({ value, className }: { value: number; classNa
       )}
     >
       <Sparkles className="h-3 w-3" />
-      ثقة {value}%
+      {/* UI4 — "تقديرية" makes explicit this is the AI's own estimate, not a
+          measured/verified figure, so an inference isn't read as a hard number. */}
+      ثقة تقديرية {value}%
     </span>
   );
 }

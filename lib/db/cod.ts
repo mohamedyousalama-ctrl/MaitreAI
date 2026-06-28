@@ -135,6 +135,21 @@ export async function captureCodOnDelivered(
     return { ok: true, expected };
   }
 
+  // UI4 — a staff-marked TEST order must never enter the cash ledger (else its
+  // fake cash inflates the per-driver/held/today COD totals). Defensive separate
+  // read: if the is_test column isn't present yet (migration 0044 not applied) the
+  // query errors → data null → treated as non-test, so REAL COD capture is never
+  // blocked. No cod_collections row is opened for a test order.
+  const { data: testRow } = await db
+    .from("orders")
+    .select("is_test")
+    .eq("id", orderId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if ((testRow as { is_test?: boolean } | null)?.is_test === true) {
+    return { ok: true, expected };
+  }
+
   let deliveryId = args.deliveryId ?? null;
   let driverId: string | null = null;
   let driverName: string | null = null;

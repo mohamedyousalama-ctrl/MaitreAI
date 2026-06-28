@@ -20,10 +20,15 @@ export async function GET() {
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  // UI4 — exclude staff-marked test orders from the real source breakdown. The
+  // filter references is_test (migration 0044); a query error degrades gracefully
+  // to the card's «قيد التجميع» state, never a fabricated number. Apply 0044 before
+  // this ships so the breakdown is accurate.
   const { data, error } = await supabase
     .from("orders")
     .select("source")
-    .eq("restaurant_id", tenant.restaurantId);
+    .eq("restaurant_id", tenant.restaurantId)
+    .eq("is_test", false);
   if (error) return NextResponse.json({ error: "query_failed" }, { status: 502 });
 
   let web = 0;

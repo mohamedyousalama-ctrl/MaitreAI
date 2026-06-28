@@ -100,7 +100,8 @@ export default function HomePage() {
   // "needs you now" — real counts only
   const escalations = hydrated ? countEscalations(conversations) : 0;
   const safetyHolds = hydrated ? conversations.filter((c) => c.isSafetyHold).length : 0;
-  const ordersToAction = hydrated ? orders.filter((o) => NEEDS_ACTION.includes(o.orderStatus)).length : 0;
+  // UI4 — exclude staff-marked test orders from the real "needs action" + pulse counts.
+  const ordersToAction = hydrated ? orders.filter((o) => !o.isTest && NEEDS_ACTION.includes(o.orderStatus)).length : 0;
   const needsTotal = escalations + safetyHolds + ordersToAction;
 
   // today's pulse — real reads, gathering when timestamps absent
@@ -109,8 +110,8 @@ export default function HomePage() {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     const startOfToday = d.getTime();
-    const ordersToday = orders.filter((o) => o.createdAt >= startOfToday).length;
-    const completedToday = orders.filter((o) => o.orderStatus === "delivered" && o.createdAt >= startOfToday).length;
+    const ordersToday = orders.filter((o) => !o.isTest && o.createdAt >= startOfToday).length;
+    const completedToday = orders.filter((o) => !o.isTest && o.orderStatus === "delivered" && o.createdAt >= startOfToday).length;
     const convosKnown = conversations.some((c) => convTime(c) != null);
     const convosToday = convosKnown ? conversations.filter((c) => { const tm = convTime(c); return tm != null && tm >= startOfToday; }).length : 0;
     return { ready: true, ordersToday, completedToday, convosToday, convosKnown };

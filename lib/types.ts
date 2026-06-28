@@ -102,6 +102,11 @@ export interface LocalOrder {
   paymentMethod?: string | null;
   orderStatus: OrderStatusKey;
   kitchenStatus: KitchenStatusKey;
+  /** UI4 — staff-marked test/synthetic order. Set only server-side by a manager
+   *  (POST /api/orders/[id]/test). Excluded from every real-numbers surface
+   *  (insights, order counts, source breakdown, COD); shown in the list with a
+   *  «طلب تجريبي» badge so it's never confused for a real order. */
+  isTest?: boolean;
   notes?: string;
   createdAt: number;
   updatedAt: number;

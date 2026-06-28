@@ -21,13 +21,16 @@ export async function GET() {
 
   const { data } = await supabase
     .from("restaurants")
-    .select("is_open, agent_mode")
+    .select("is_open, agent_mode, slug")
     .eq("id", tenant.restaurantId)
     .maybeSingle();
 
   return NextResponse.json({
     isOpen: data?.is_open !== false, // default open when unset
     assistantOn: (data?.agent_mode ?? "live") !== "paused",
+    // UI4 — storefront slug so the console can link to the public ordering page
+    // (e.g. the Orders empty-state «ابعت طلب تجريبي» action).
+    slug: (data?.slug as string | null) ?? null,
   });
 }
 

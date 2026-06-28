@@ -9,9 +9,10 @@
 // ============================================================================
 
 import { useCallback, useEffect, useState } from "react";
-import { UserCog, ShieldCheck, UserRound, Mail } from "lucide-react";
+import { UserCog, ShieldCheck, UserRound, Mail, Users } from "lucide-react";
 import { runActionOutcome } from "@/lib/console-toast";
 import { useRiseIn } from "@/components/kivo";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 interface Member { id: string; name: string; email: string | null; role: "manager" | "operation"; createdAt: string }
 
@@ -84,7 +85,21 @@ export function TeamClient() {
           {!members ? (
             <div style={{ padding: "40px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 12.5, fontWeight: 600 }}>بنحمّل…</div>
           ) : members.length === 0 ? (
-            <div style={{ padding: "40px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 12.5, fontWeight: 600 }}>مفيش أعضاء.</div>
+            // UI4 — actionable empty-state: the invite form is right above; this
+            // focuses it so the manager can add the first member in one click.
+            <EmptyState
+              icon={Users}
+              title="مفيش أعضاء لسه"
+              description="ادعُ فريقك عشان يشتغلوا على المحادثات والطلبات معاك. كل عضو هيوصله إيميل لتعيين كلمة السر."
+              action={
+                <button
+                  onClick={() => { const el = document.getElementById("team-invite-email"); el?.focus(); el?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 40, padding: "0 18px", borderRadius: 10, border: 0, background: "var(--kv-grad-brand)", color: "#fff", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}
+                >
+                  <Mail size={15} /> ادعُ أول عضو
+                </button>
+              }
+            />
           ) : (
             members.map((m) => (
               <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderBottom: "1px solid var(--kv-border)" }}>
@@ -139,6 +154,7 @@ function InviteForm({ onInvited }: { onInvited: () => void }) {
       </div>
       <div style={{ display: "flex", gap: 9, flexWrap: "wrap", alignItems: "center" }}>
         <input
+          id="team-invite-email"
           type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="البريد الإلكتروني" dir="ltr"
           style={{ flex: 1, minWidth: 220, height: 40, borderRadius: 10, border: "1px solid var(--kv-border)", background: "var(--kv-card)", padding: "0 12px", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600, color: "var(--kv-text)" }}
         />

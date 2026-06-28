@@ -125,10 +125,14 @@ export default function InsightsPage() {
     const since = days != null ? now - days * DAY_MS : 0;
     const prevSince = days != null ? since - days * DAY_MS : 0;
 
+    // UI4 — exclude staff-marked test orders from EVERY insights figure (revenue,
+    // counts, conversion, returning customers, the daily trend). Real-numbers only.
+    const realOrders = orders.filter((o) => !o.isTest);
+
     const orderIn = (o: LocalOrder, from: number, to: number) => o.createdAt >= from && o.createdAt < to;
-    const ordersInRange = orders.filter((o) => o.createdAt >= since);
+    const ordersInRange = realOrders.filter((o) => o.createdAt >= since);
     const deliveredInRange = ordersInRange.filter((o) => o.orderStatus === "delivered");
-    const deliveredPrev = days != null ? orders.filter((o) => orderIn(o, prevSince, since) && o.orderStatus === "delivered").length : 0;
+    const deliveredPrev = days != null ? realOrders.filter((o) => orderIn(o, prevSince, since) && o.orderStatus === "delivered").length : 0;
 
     // conversations: scope by activity time when the data has it; else count all (demo)
     const anyConvTs = conversations.some((c) => convTime(c) != null);
@@ -159,18 +163,18 @@ export default function InsightsPage() {
     const returningPct = distinct > 0 ? Math.round((returning / distinct) * 100) : null;
 
     // daily orders series (real) over the range (cap to 14 buckets for "all")
-    const bucketDays = days ?? Math.min(14, Math.max(1, Math.ceil((now - (orders.reduce((min, o) => Math.min(min, o.createdAt), now))) / DAY_MS) || 1));
+    const bucketDays = days ?? Math.min(14, Math.max(1, Math.ceil((now - (realOrders.reduce((min, o) => Math.min(min, o.createdAt), now))) / DAY_MS) || 1));
     const daily: { day: number; orders: number; delivered: number }[] = [];
     for (let i = bucketDays - 1; i >= 0; i--) {
       const from = now - (i + 1) * DAY_MS;
       const to = now - i * DAY_MS;
-      const inDay = orders.filter((o) => o.createdAt >= from && o.createdAt < to);
+      const inDay = realOrders.filter((o) => o.createdAt >= from && o.createdAt < to);
       daily.push({ day: to, orders: inDay.length, delivered: inDay.filter((o) => o.orderStatus === "delivered").length });
     }
     const bestDay = daily.reduce((b, d) => (d.orders > b.orders ? d : b), daily[0] ?? { day: now, orders: 0, delivered: 0 });
 
     // period label from the real range
-    const startD = new Date(since || (orders.length ? Math.min(...orders.map((o) => o.createdAt)) : now));
+    const startD = new Date(since || (realOrders.length ? Math.min(...realOrders.map((o) => o.createdAt)) : now));
     const endD = new Date(now);
     const periodLabel = days != null
       ? `${toAr(startD.getDate())} — ${toAr(endD.getDate())} ${MONTHS[endD.getMonth()]}`
