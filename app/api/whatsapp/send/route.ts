@@ -62,6 +62,27 @@ export async function POST(req: Request) {
     extra: { owner: "human", updated_at: new Date().toISOString() },
   });
 
+  // HX1 — stamp WHICH member authored this human message, resolved server-side from
+  // the authenticated session (members row for THIS tenant) — never client-supplied.
+  // Karim's history builder reads meta.author_member_id to label the human turn with
+  // the staff name. Runs for every channel (incl. test mode) so the label is reliable.
+  if (messageId) {
+    const { data: mem } = await supabase
+      .from("members")
+      .select("id")
+      .eq("user_id", tenant.userId)
+      .eq("restaurant_id", restaurantId)
+      .maybeSingle();
+    const authorMemberId = (mem as { id?: string } | null)?.id ?? null;
+    if (authorMemberId) {
+      await supabase
+        .from("messages")
+        .update({ meta: { author_member_id: authorMemberId } })
+        .eq("id", messageId)
+        .eq("conversation_id", conversationId);
+    }
+  }
+
   if ((conv.channel as string) !== "whatsapp") {
     return NextResponse.json({ ok: true, skipped: "non_whatsapp_channel" });
   }

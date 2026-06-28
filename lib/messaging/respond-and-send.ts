@@ -17,6 +17,7 @@ import { readHandoffConfig, isSafetyHold, isIdleBeyond } from "@/lib/tenant/hand
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import { ensureDeliveryRowForOrder } from "@/lib/db/delivery";
+import { resolveMemberNames } from "@/lib/db/member-names";
 import { sendReceiptToCustomer } from "./send-receipt";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { checkAndNotifyStuck } from "@/lib/intelligence/stuck-detection";
@@ -257,7 +258,7 @@ export async function respondAndSendWhatsApp(
   //    (no double-counting of the message into the prompt).
   const { data: msgs } = await admin
     .from("messages")
-    .select("sender,text,created_at")
+    .select("sender,text,created_at,meta")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(40);
@@ -266,16 +267,32 @@ export async function respondAndSendWhatsApp(
   // long thread lastIndexOf("customer") resolved to message ~#40 — the agent
   // kept answering a stale message and looped. Reversing makes the window the
   // last 40 in order, so the final "customer" row IS the latest inbound.
-  const rows = ([...(msgs ?? [])] as { sender: string; text: string | null; created_at: string }[]).reverse();
+  const rows = ([...(msgs ?? [])] as { sender: string; text: string | null; created_at: string; meta: Record<string, unknown> | null }[]).reverse();
   const lastCustomerIdx = rows.map((m) => m.sender).lastIndexOf("customer");
   if (lastCustomerIdx < 0) return { status: "skipped_no_customer_msg" };
   const userMessage = (rows[lastCustomerIdx].text ?? "").trim();
   if (!userMessage) return { status: "skipped_no_customer_msg" };
   const lastInboundAtMs = new Date(rows[lastCustomerIdx].created_at).getTime();
-  const history: LlmMessage[] = rows
-    .slice(0, lastCustomerIdx)
-    .filter((m) => m.text)
-    .map((m) => ({ role: m.sender === "customer" ? "user" : "assistant", content: m.text as string }));
+
+  // HX1 — label human-authored turns so Karim distinguishes its own words from the
+  // operator's. Human turns stay role:"assistant" (a valid LLM role) but their
+  // content is prefixed with a marker carrying the staff name, resolved server-side
+  // from meta.author_member_id (stamped by /api/whatsapp/send). ai/customer turns
+  // are unchanged. System notes are HX2's job — left as-is here.
+  const histRows = rows.slice(0, lastCustomerIdx).filter((m) => m.text);
+  const authorIds = histRows
+    .filter((m) => m.sender === "human")
+    .map((m) => (m.meta as { author_member_id?: string } | null)?.author_member_id);
+  const nameMap = await resolveMemberNames(admin, authorIds);
+  const history: LlmMessage[] = histRows.map((m) => {
+    if (m.sender === "human") {
+      const aid = (m.meta as { author_member_id?: string } | null)?.author_member_id;
+      const name = aid ? nameMap.get(aid) : undefined;
+      const marker = name ? `«رسالة من فريق المطعم - ${name}»` : "«رسالة من فريق المطعم»";
+      return { role: "assistant", content: `${marker}: ${m.text as string}` };
+    }
+    return { role: m.sender === "customer" ? "user" : "assistant", content: m.text as string };
+  });
 
   // HANDOFF-HARDENING (Fix 1): after a timeout auto-return, open with an honest
   // resume line that acknowledges the wait BEFORE the Brain answers the message.
