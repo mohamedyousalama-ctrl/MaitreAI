@@ -174,7 +174,17 @@ export function subscribeConversations(
     .channel(`conv-${restaurantId}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter }, onChange)
-    .subscribe();
+    .subscribe((status) => {
+      // LIVE0 reconnect-reload guardrail (retrofit, mirrors lib/db/restaurant-settings.ts):
+      // on (re)subscribe — including recovery after a drop — trigger the store's
+      // (debounced, ephemeral-preserving) reload so changes missed while offline are
+      // caught instead of leaving the conversation list silently stale.
+      if (status === "SUBSCRIBED") {
+        onChange();
+      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        console.warn("[realtime:conversations] channel status:", status); // fail quietly; Supabase retries
+      }
+    });
   return () => {
     void s.removeChannel(ch);
   };

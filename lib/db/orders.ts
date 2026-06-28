@@ -165,7 +165,17 @@ export function subscribeOrders(s: SupabaseClient, restaurantId: string, onChang
   const ch = s
     .channel(`orders-${restaurantId}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` }, onChange)
-    .subscribe();
+    .subscribe((status) => {
+      // LIVE0 reconnect-reload guardrail (retrofit, mirrors lib/db/restaurant-settings.ts):
+      // on (re)subscribe — including recovery after a drop — trigger the store's
+      // (debounced) reload so changes missed while offline are caught instead of
+      // leaving the orders board silently stale.
+      if (status === "SUBSCRIBED") {
+        onChange();
+      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        console.warn("[realtime:orders] channel status:", status); // fail quietly; Supabase retries
+      }
+    });
   return () => {
     void s.removeChannel(ch);
   };
