@@ -25,6 +25,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { recordAuditEvent } from "@/lib/db/audit";
 
 export const runtime = "nodejs";
 
@@ -70,6 +71,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       .eq("id", params.id)
       .eq("restaurant_id", tenant.restaurantId);
     if (error) return NextResponse.json({ error: "update_failed" }, { status: 502 });
+    // MO4 — audit the deliberate release. `reason` distinguishes return-to-Karim
+    // vs close (the ownership_state flip itself happens on the browser spine path).
+    const reason = String(body.reason ?? "");
+    if (reason === "returned" || reason === "closed") {
+      await recordAuditEvent(admin, {
+        restaurantId: tenant.restaurantId,
+        userId: tenant.userId,
+        role: tenant.role,
+        action: reason === "closed" ? "conversation_closed" : "conversation_returned",
+        entityType: "conversation",
+        entityId: params.id,
+      });
+    }
     return NextResponse.json({ ok: true, assignedMemberId: null });
   }
 
@@ -100,6 +114,16 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (claimErr) return NextResponse.json({ error: "update_failed" }, { status: 502 });
 
   if (claimed && claimed.length === 1) {
+    // MO4 — audit the takeover (actor = the server-resolved acting member).
+    await recordAuditEvent(admin, {
+      restaurantId: tenant.restaurantId,
+      userId: tenant.userId,
+      role: tenant.role,
+      memberId: me,
+      action: "conversation_claimed",
+      entityType: "conversation",
+      entityId: params.id,
+    });
     return NextResponse.json({ ok: true, assignedMemberId: me });
   }
 

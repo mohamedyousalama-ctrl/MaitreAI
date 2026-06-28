@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { orderHasAssignedDriver } from "@/lib/db/delivery";
+import { recordAuditEvent } from "@/lib/db/audit";
 
 export const runtime = "nodejs";
 
@@ -96,5 +97,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       { status: 409 }
     );
   }
+
+  // MO4 — audit the advance (actor = the member who advanced it, server-resolved).
+  // {from,to} from the OCC expectedStatus (authoritative: the write succeeded only
+  // when order_status == expectedStatus). Best-effort; never blocks the response.
+  await recordAuditEvent(admin, {
+    restaurantId: tenant.restaurantId,
+    userId: tenant.userId,
+    role: tenant.role,
+    action: "order_status_changed",
+    entityType: "order",
+    entityId: params.id,
+    metadata: { from: expectedStatus, to: status },
+  });
+
   return NextResponse.json({ ok: true });
 }
