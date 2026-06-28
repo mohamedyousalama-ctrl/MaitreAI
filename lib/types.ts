@@ -316,6 +316,10 @@ export interface Conversation {
   // escalationReason text.
   ownershipState?: "AI_ACTIVE" | "HUMAN_ACTIVE" | "HUMAN_IDLE" | "SYSTEM_HOLD" | "CLOSED";
   isSafetyHold?: boolean;
+  // MO1 — named ownership: which member (members.id) currently owns a human-handled
+  // conversation. Set on takeover, cleared on return-to-AI / close. Written ONLY via
+  // the server route (member resolved from the authenticated session, never the client).
+  assignedMemberId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
