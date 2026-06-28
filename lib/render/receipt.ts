@@ -56,9 +56,17 @@ export interface ReceiptData {
   total: number;
   currency: string;
   paymentStatus?: string;
+  /** "cod" | "vodafone_cash" | … — drives the amount-to-collect vs VF-pending line. */
+  paymentMethod?: string;
+  /** "whatsapp" | "web" — order source, shown small on the ticket. */
+  source?: string;
+  /** TRUE when the linked conversation is on an allergy/safety hold (don't prepare). */
+  safetyHold?: boolean;
   customerName?: string;
   customerPhone?: string;
   address?: string;
+  zoneName?: string;
+  driverName?: string;
   branchName?: string;
   createdAt?: string;
 }
@@ -190,45 +198,135 @@ ${parts.join("\n")}
   return { svg, width: W };
 }
 
-// --- kitchen ticket (high-contrast, operator-facing) ------------------------
-export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "standard"): { svg: string; width: number } {
-  const { W, s, PAD, tRight, tLeft, rule } = layout(width);
-  const parts: string[] = [];
-  let y = s(70);
-  parts.push(tRight(y, `طلب ${ltr(d.orderNumber)}`, 42, "#000", 700));
-  parts.push(tLeft(y, FULFILL_AR[d.fulfillment], 30, "#000", 700));
-  y += s(32);
-  parts.push(tRight(y, fmtDate(d.createdAt), 20, "#444"));
-  if (d.customerName) parts.push(tLeft(y, d.customerName, 20, "#444"));
-  y += s(22);
-  parts.push(rule(y, "#000"));
-  y += s(44);
+const SOURCE_AR: Record<string, string> = { whatsapp: "واتساب", web: "الموقع" };
 
+// --- kitchen / delivery ticket (Audit-13 §14: operational hierarchy) --------
+// High-contrast, RTL, 80mm-first. The driver navigates from the TYPED ADDRESS +
+// phone (no map pin in V1), so address+phone are prominent and NEVER truncated
+// (word-wrapped). Money is shown from STORED values — never recomputed here.
+export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "standard"): { svg: string; width: number } {
+  const { W, s, PAD, tRight, tLeft, tMid, rule } = layout(width);
+  const LEFT = PAD;
+  const CW = W - 2 * PAD;
+  const cur = d.currency;
+  const parts: string[] = [];
+
+  // Word-wrap (resvg <text> doesn't wrap): greedy split by an estimated chars/line
+  // for the given font size, so long typed addresses/notes show in full.
+  const wrap = (text: string, size: number): string[] => {
+    const max = Math.max(8, Math.floor(CW / (s(size) * 0.52)));
+    const words = String(text).split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let c = "";
+    for (const w of words) {
+      const cand = c ? `${c} ${w}` : w;
+      if (cand.length <= max) { c = cand; continue; }
+      if (c) lines.push(c);
+      if (w.length <= max) { c = w; continue; }
+      let rest = w; // hard-split an over-long token
+      while (rest.length > max) { lines.push(rest.slice(0, max)); rest = rest.slice(max); }
+      c = rest;
+    }
+    if (c) lines.push(c);
+    return lines.length ? lines : [""];
+  };
+  const boxRect = (yTop: number, h: number, fill: string, stroke: string) =>
+    `<rect x="${LEFT}" y="${yTop}" width="${CW}" height="${h}" rx="${s(8)}" fill="${fill}" stroke="${stroke}" stroke-width="${s(2)}"/>`;
+
+  let y = s(48);
+  // 1. Restaurant + branch + print timestamp (small, top).
+  parts.push(tRight(y, d.restaurantName || "", 22, "#000", 700));
+  if (d.branchName) parts.push(tLeft(y, d.branchName, 18, "#444"));
+  y += s(24);
+  parts.push(tRight(y, `طُبع: ${fmtDate()}`, 16, "#666"));
+  if (d.createdAt) parts.push(tLeft(y, `الطلب: ${fmtDate(d.createdAt)}`, 16, "#666"));
+  y += s(18);
+  parts.push(rule(y, "#000"));
+  y += s(46);
+
+  // 2. Order # (large) + fulfillment (large) + source.
+  parts.push(tRight(y, `طلب ${ltr(d.orderNumber)}`, 42, "#000", 800));
+  parts.push(tLeft(y, d.fulfillment === "delivery" ? "توصيل" : "استلام من الفرع", 26, "#000", 800));
+  y += s(26);
+  if (d.source) { parts.push(tRight(y, `المصدر: ${SOURCE_AR[d.source] ?? d.source}`, 16, "#666")); y += s(18); }
+
+  // 2b. Allergy/safety hold — ⚠️ at TOP when flagged (red/boxed).
+  if (d.safetyHold) {
+    const h = s(42);
+    parts.push(boxRect(y, h, "#fdecec", "#c0392b"));
+    parts.push(tMid(y + s(27), "⚠️ حساسية — لا يتم التحضير قبل مراجعة المطعم", 19, "#a01b0b", 800));
+    y += h + s(12);
+  }
+  y += s(8);
+  parts.push(rule(y, "#000"));
+  y += s(42);
+
+  // 3. Payment + amount-to-collect (large / boxed), by variant.
+  const isPaid = d.paymentStatus === "paid";
+  const method = d.paymentMethod || "cod"; // COD-only pilot default
+  if (isPaid) {
+    parts.push(tRight(y, "الدفع: مدفوع — لا تحصيل", 26, "#0a7a33", 800));
+    y += s(38);
+  } else if (method === "vodafone_cash") {
+    parts.push(tRight(y, "فودافون كاش — بانتظار التأكيد", 25, "#000", 800));
+    y += s(32);
+    parts.push(tRight(y, "لا تُحصّل نقداً", 20, "#a01b0b", 700));
+    y += s(32);
+  } else {
+    // COD / unknown → collect cash. Amount = STORED order total.
+    const h = s(50);
+    parts.push(boxRect(y, h, "#fff7e6", "#000"));
+    parts.push(tRight(y + s(32), `${d.fulfillment === "delivery" ? "المطلوب تحصيله نقداً" : "يُحصّل عند الاستلام"}:`, 23, "#000", 800));
+    parts.push(tLeft(y + s(34), money(d.total, cur), 34, "#000", 800));
+    y += h + s(14);
+  }
+  // Subtotal | delivery-fee split (small, stored values).
+  parts.push(tRight(y, "المجموع الفرعي", 18, "#444")); parts.push(tLeft(y, money(d.subtotal, cur), 18, "#444")); y += s(24);
+  if (d.fulfillment === "delivery") { parts.push(tRight(y, "رسوم التوصيل", 18, "#444")); parts.push(tLeft(y, money(d.deliveryFee, cur), 18, "#444")); y += s(24); }
+  if (d.discountTotal && d.discountTotal > 0) { parts.push(tRight(y, "الخصم", 18, "#444")); parts.push(tLeft(y, `- ${money(d.discountTotal, cur)}`, 18, "#444")); y += s(24); }
+  parts.push(tRight(y, "الإجمالي", 22, "#000", 800)); parts.push(tLeft(y, money(d.total, cur), 22, "#000", 800)); y += s(30);
+  parts.push(rule(y, "#000"));
+  y += s(42);
+
+  // 4. Items + quantities + modifiers (large, readable).
   for (const it of d.items) {
-    parts.push(tRight(y, `${it.quantity}×  ${it.name}`, 34, "#000", 700));
+    parts.push(tRight(y, `${it.quantity}×  ${it.name}`, 32, "#000", 700));
     y += s(38);
     const opts = [it.variant, ...(it.choices ?? []), ...(it.modifiers ?? [])].filter(Boolean) as string[];
-    if (opts.length) {
-      parts.push(tRight(y, `+ ${opts.join("، ")}`, 24, "#333"));
-      y += s(30);
-    }
-    if (it.notes) {
-      parts.push(tRight(y, `ملاحظة: ${it.notes}`, 24, "#000", 700));
-      y += s(30);
-    }
+    if (opts.length) { for (const ln of wrap(`+ ${opts.join("، ")}`, 22)) { parts.push(tRight(y, ln, 22, "#333")); y += s(28); } }
+    if (it.notes) { for (const ln of wrap(`ملاحظة: ${it.notes}`, 22)) { parts.push(tRight(y, ln, 22, "#000", 700)); y += s(28); } }
     y += s(6);
   }
-
   parts.push(rule(y, "#000"));
-  y += s(36);
-  if (d.fulfillment === "delivery" && d.address) {
-    parts.push(tRight(y, `العنوان: ${d.address}`, 22, "#000"));
-    y += s(30);
+  y += s(40);
+
+  // 5. Address (full, wrapped) + zone + phone — the driver's only navigation.
+  if (d.fulfillment === "delivery") {
+    if (d.address && d.address.trim()) {
+      parts.push(tRight(y, "العنوان:", 22, "#000", 800));
+      y += s(30);
+      for (const ln of wrap(d.address, 24)) { parts.push(tRight(y, ln, 24, "#000")); y += s(32); }
+    } else {
+      const h = s(40);
+      parts.push(boxRect(y, h, "#fdecec", "#c0392b"));
+      parts.push(tMid(y + s(26), "⚠️ العنوان ناقص — تواصل مع العميل", 19, "#a01b0b", 800));
+      y += h + s(12);
+    }
+    if (d.zoneName) { parts.push(tRight(y, `المنطقة: ${d.zoneName}`, 20, "#000")); y += s(28); }
   }
+  if (d.customerName) { parts.push(tRight(y, `العميل: ${d.customerName}`, 20, "#000")); y += s(28); }
   if (d.customerPhone) {
-    parts.push(tRight(y, `الهاتف: ${d.customerPhone}`, 22, "#000"));
-    y += s(30);
+    parts.push(tRight(y, `الهاتف: ${ltr(d.customerPhone)}`, 24, "#000", 700));
+    y += s(32);
+  } else if (d.fulfillment === "delivery") {
+    parts.push(tRight(y, "⚠️ رقم الهاتف ناقص", 20, "#a01b0b", 700));
+    y += s(28);
   }
+  if (d.driverName) { parts.push(tRight(y, `المندوب: ${d.driverName}`, 20, "#000")); y += s(28); }
+
+  // 6. Allergy line ALWAYS present — explicit "no report" when not flagged
+  // (a blank line could be misread as "no allergy" when it's unknown).
+  if (!d.safetyHold) { parts.push(tRight(y, "لا يوجد بلاغ حساسية", 18, "#0a7a33")); y += s(26); }
 
   const H = y + PAD;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
