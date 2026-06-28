@@ -8,11 +8,12 @@
 // PATCH /api/members/[id] and POST /api/team/invite.
 // ============================================================================
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { UserCog, ShieldCheck, UserRound, Mail, Users } from "lucide-react";
 import { runActionOutcome } from "@/lib/console-toast";
 import { useRiseIn } from "@/components/kivo";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { useMembersStore } from "@/lib/members-store";
 
 interface Member { id: string; name: string; email: string | null; role: "manager" | "operation"; createdAt: string }
 
@@ -26,21 +27,15 @@ function since(iso: string): string {
 const roleLabel = (r: string) => (r === "manager" ? "مدير" : "موظف");
 
 export function TeamClient() {
-  const [members, setMembers] = useState<Member[] | null>(null);
+  // LIVE0 L5a — roster from the SHARED members store (DB-backed + realtime), so a
+  // role change / invite by another manager reflects here live. `load` re-pulls
+  // the store; mutations below still hit the gated routes, then refresh.
+  const members = useMembersStore((s) => s.members) as Member[];
+  const loaded = useMembersStore((s) => s.loaded);
+  const load = useMembersStore((s) => s.loadMembers);
   const [busyId, setBusyId] = useState<string | null>(null);
   const head = useRiseIn(0);
   const body = useRiseIn(1);
-
-  const load = useCallback(async () => {
-    try {
-      const r = await fetch("/api/members", { cache: "no-store" });
-      const j = r.ok ? await r.json() : null;
-      setMembers((j?.members ?? []) as Member[]);
-    } catch {
-      setMembers([]);
-    }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
 
   const toggleRole = (m: Member) => {
     const next = m.role === "manager" ? "operation" : "manager";
@@ -80,9 +75,9 @@ export function TeamClient() {
         <div style={{ borderRadius: 16, background: "var(--kv-card)", border: "1px solid var(--kv-border)", boxShadow: "var(--kv-shadow-card)", overflow: "hidden" }}>
           <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--kv-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span style={{ fontSize: 14, fontWeight: 800 }}>الأعضاء</span>
-            <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--kv-faint)" }}>{members ? `${toAr(members.length)} عضو` : "…"}</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--kv-faint)" }}>{loaded ? `${toAr(members.length)} عضو` : "…"}</span>
           </div>
-          {!members ? (
+          {!loaded ? (
             <div style={{ padding: "40px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 12.5, fontWeight: 600 }}>بنحمّل…</div>
           ) : members.length === 0 ? (
             // UI4 — actionable empty-state: the invite form is right above; this

@@ -31,6 +31,7 @@ import Link from "next/link";
 import { Search, ArrowLeft, Send, AlertTriangle, Lock, Sparkles, UserPlus, CornerUpLeft, UserCheck } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useOrderStore } from "@/lib/order-store";
+import { useMembersStore, membersNameMap } from "@/lib/members-store";
 import { useHasHydrated } from "@/lib/store";
 import { isEscalated, countEscalations } from "@/lib/escalation";
 import { useConsoleUi } from "@/components/console/console-ui-store";
@@ -95,20 +96,10 @@ export default function ConversationsPage() {
 
   // MO1 — member id→display-name map (names resolved server-side from the auth
   // user; `members` has no name column). Used to render «{name} تولّى المحادثة».
-  const [memberNames, setMemberNames] = useState<Record<string, string>>({});
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/members")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!alive || !d?.members) return;
-        const m: Record<string, string> = {};
-        for (const x of d.members as Array<{ id: string; name: string }>) m[x.id] = x.name;
-        setMemberNames(m);
-      })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
+  // LIVE0 L5a — sourced from the shared members store (DB-backed + realtime) so a
+  // name/role change reflects in assignee labels without a manual refresh.
+  const teamMembers = useMembersStore((s) => s.members);
+  const memberNames = useMemo(() => membersNameMap(teamMembers), [teamMembers]);
   // The owning member's display name (safe fallback, never blank) — empty when unowned.
   const ownerNameFor = (c: Conversation) =>
     c.assignedMemberId ? memberNames[c.assignedMemberId] || "موظف" : "";

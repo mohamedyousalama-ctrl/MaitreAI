@@ -17,6 +17,7 @@ import { usePaymentStore } from "@/lib/payment-store";
 import { useConsoleOps } from "@/lib/console-ops-store";
 import { useCodStore } from "@/lib/cod-store";
 import { useDispatchStore } from "@/lib/dispatch-store";
+import { useMembersStore } from "@/lib/members-store";
 import { useConsoleDataStore } from "@/lib/console-data-state";
 
 export function DataBootstrap() {
@@ -57,6 +58,8 @@ export function DataBootstrap() {
         // LIVE0 L4 — shared dispatch store (deliveries + drivers), live; replaces
         // the التوصيل 6s poll.
         const stopDispatch = await useDispatchStore.getState().initFromDb(tenant.restaurantId);
+        // LIVE0 L5a — shared members store (team roster + assignee names), live.
+        const stopMembers = await useMembersStore.getState().initFromDb(tenant.restaurantId);
         if (cancelled) {
           stopBrain?.();
           stopConv?.();
@@ -65,6 +68,7 @@ export function DataBootstrap() {
           stopOps?.();
           stopCod?.();
           stopDispatch?.();
+          stopMembers?.();
           return;
         }
         setDataState("DB_READY", tenant.restaurantId);
@@ -76,6 +80,7 @@ export function DataBootstrap() {
           stopOps?.();
           stopCod?.();
           stopDispatch?.();
+          stopMembers?.();
         };
       } catch {
         if (!cancelled) setDataState("DB_FAILED", tenant.restaurantId);
