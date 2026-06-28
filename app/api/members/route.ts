@@ -24,24 +24,26 @@ export async function GET() {
 
   const { data: rows } = await admin
     .from("members")
-    .select("id, user_id, role")
-    .eq("restaurant_id", tenant.restaurantId);
-  const members = (rows ?? []) as Array<{ id: string; user_id: string; role: string }>;
+    .select("id, user_id, role, created_at")
+    .eq("restaurant_id", tenant.restaurantId)
+    .order("created_at", { ascending: true });
+  const members = (rows ?? []) as Array<{ id: string; user_id: string; role: string; created_at: string }>;
 
   // Resolve each member's display name from the auth user (small roster: ≤ a handful).
   const out = await Promise.all(
     members.map(async (m) => {
       let name = FALLBACK;
+      let email: string | null = null;
       try {
         const { data } = await admin.auth.admin.getUserById(m.user_id);
         const meta = (data.user?.user_metadata ?? {}) as Record<string, unknown>;
         const metaName = typeof meta.name === "string" ? meta.name.trim() : "";
-        const email = data.user?.email ?? "";
+        email = data.user?.email ?? null;
         name = metaName || (email ? email.split("@")[0] : "") || FALLBACK;
       } catch {
         /* name stays the safe fallback — never blank */
       }
-      return { id: m.id, name, role: m.role };
+      return { id: m.id, name, email, role: m.role, createdAt: m.created_at };
     })
   );
 
