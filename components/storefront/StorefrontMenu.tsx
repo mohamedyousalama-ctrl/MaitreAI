@@ -193,6 +193,11 @@ export function StorefrontMenu({
           customerName,
           customerPhone,
           address: fulfillment === "delivery" ? address : "",
+          // DLV6b — real picked coordinates (for exact driver navigation). Sent
+          // only for a delivery order placed via the location picker; null when the
+          // customer only typed an address (never fabricated).
+          lat: fulfillment === "delivery" && coords ? coords.lat : null,
+          lng: fulfillment === "delivery" && coords ? coords.lng : null,
           notes,
           paymentMethod,
         }),

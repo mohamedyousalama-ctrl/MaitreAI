@@ -48,6 +48,8 @@ export default async function DriverPage({ params }: { params: { token: string }
           total: (o.total as number) ?? null,
           currency: (o.currency as string) ?? "",
           address: (o.address as string) ?? (o.zoneName as string) ?? null,
+          lat: typeof o.lat === "number" ? o.lat : null,
+          lng: typeof o.lng === "number" ? o.lng : null,
           customerPhone: (o.customerPhone as string) ?? null,
         }}
       />
