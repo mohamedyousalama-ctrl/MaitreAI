@@ -21,6 +21,7 @@ import {
   Wallet,
   UtensilsCrossed,
   Truck,
+  UserCog,
   type LucideIcon,
 } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
@@ -226,6 +227,7 @@ export function ConsoleSidebar() {
         {/* Menu & Memory — the editor + «ذاكرة المطعم» tab + «مناطق التوصيل» zones editor live here. Manager-only in V1 (M1.1). */}
         {isManager && <NavLink href="/menu" icon={UtensilsCrossed} label="المنيو والذاكرة" active={is("/menu")} />}
         {isManager && <NavLink href="/settings" icon={Settings} label="الربط والإعدادات" active={is("/settings")} />}
+        {isManager && <NavLink href="/team" icon={UserCog} label="الفريق" active={is("/team")} />}
       </nav>
 
       <GroupLabel>تشغيل</GroupLabel>
