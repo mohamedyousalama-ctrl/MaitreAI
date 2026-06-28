@@ -87,6 +87,33 @@ export async function createDeliveryForOrder(
 }
 
 /**
+ * DLV1 — the SINGLE finalize hook every order-create path calls so a delivery
+ * order always gets a pending delivery row (→ visible in التوصيل + assignable +
+ * R3b-satisfiable). Input-control: validates the order is delivery-fulfillment
+ * (authoritative, from the order row, tenant-scoped) before creating a row — a
+ * pickup order never gets one. Idempotent via createDeliveryForOrder's
+ * onConflict:"order_id" (unique index deliveries_order_idx), so re-saving an order
+ * never duplicates the row. NOT gated on ENABLE_DELIVERY_TRACKING: the row must
+ * exist for dispatch/guarding regardless of the UI toggle.
+ */
+export async function ensureDeliveryRowForOrder(
+  admin: SupabaseClient,
+  orderId: string,
+  restaurantId: string
+): Promise<{ created: boolean; deliveryId: string | null; skipped?: boolean }> {
+  const { data: o } = await admin
+    .from("orders")
+    .select("fulfillment")
+    .eq("id", orderId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (!o || (o as { fulfillment: string }).fulfillment !== "delivery") {
+    return { created: false, deliveryId: null, skipped: true };
+  }
+  return createDeliveryForOrder(admin, { orderId, restaurantId });
+}
+
+/**
  * Sync the linked delivery to "delivered" when the operator marks the ORDER
  * delivered on the orders page (the order-status path updates orders.order_status
  * only). Mirrors the delivered patch the driver-token path writes

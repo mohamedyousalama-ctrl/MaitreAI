@@ -6,6 +6,7 @@ import { loadBrain } from "@/lib/db/brain";
 import { ensureCustomerId } from "@/lib/db/orders";
 import { nextOrderNumber, uuidFromHash } from "@/lib/db/orders-create";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
+import { ensureDeliveryRowForOrder } from "@/lib/db/delivery";
 
 type CheckoutLine = {
   itemId: string;
@@ -152,6 +153,18 @@ export async function POST(req: NextRequest) {
     .select("id, order_number, total, subtotal, delivery_fee, tax_amount, tax_rate, currency");
 
   if (error) return bad("تعذر إنشاء الطلب. حاول مرة أخرى.", 500);
+
+  // DLV1 — every delivery order gets a pending delivery row so it appears in
+  // التوصيل and can be assigned a driver (R3b then lets it be delivered). Same
+  // idempotent helper the WhatsApp path uses; best-effort so it never blocks the
+  // order response. The helper no-ops for pickup orders.
+  if (fulfillment === "delivery") {
+    try {
+      await ensureDeliveryRowForOrder(admin, id, restaurantId);
+    } catch (e) {
+      console.error("[storefront/orders] delivery row create error", e);
+    }
+  }
 
   const created = (data?.length ?? 0) > 0;
   const row = created
