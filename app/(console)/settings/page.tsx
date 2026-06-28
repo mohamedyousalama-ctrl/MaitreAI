@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { MessageCircle, ShieldCheck, CreditCard, FileText, Sparkles, Bot } from "lucide-react";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
+import { useConsoleOps } from "@/lib/console-ops-store";
 import { useRiseIn, StatePill } from "@/components/kivo";
 
 type Ops = { isOpen: boolean; assistantOn: boolean };
@@ -65,6 +66,10 @@ async function getJson<T>(url: string): Promise<{ ok: boolean; data: T | null }>
 export default function SettingsPage() {
   const hydrated = useHasHydrated();
   const menuItems = useRestaurantStore((s) => s.menuItems);
+  // LIVE0 L1 — shared ops store drives the Karim toggle (live across surfaces).
+  const storeAssistantOn = useConsoleOps((s) => s.assistantOn);
+  const storeOpsLoaded = useConsoleOps((s) => s.loaded);
+  const setAssistant = useConsoleOps((s) => s.setAssistant);
 
   const [ops, setOps] = useState<{ loaded: boolean; ok: boolean; v: Ops | null }>({ loaded: false, ok: false, v: null });
   const [wa, setWa] = useState<{ loaded: boolean; ok: boolean; v: Wa | null }>({ loaded: false, ok: false, v: null });
@@ -94,7 +99,11 @@ export default function SettingsPage() {
     return () => { alive = false; };
   }, []);
 
-  const assistantOn = ops.v?.assistantOn ?? false;
+  // LIVE0 L1 — the Karim on/off VALUE comes from the shared ops store (live across
+  // sidebar/dashboard/settings + cross-device). The local `ops` fetch is kept only
+  // for the "configured / not-configured" probe (ops.ok/loaded) the status strip
+  // and alerts use — it no longer sources the toggle state.
+  const assistantOn = storeOpsLoaded ? storeAssistantOn : (ops.v?.assistantOn ?? false);
   const waConnected = wa.ok && !!wa.v?.configured;
   // Q4 — real WhatsApp activity recency from the messages table. "Recent" = an
   // inbound or outbound within the last 24h. Gates the «بيستقبل ويرد فعلياً» claim.
@@ -114,11 +123,11 @@ export default function SettingsPage() {
   // toggles → POST real routes; optimistic, reverts on failure
   async function toggleKarim() {
     if (!ops.ok || busy) return;
-    const next = !assistantOn;
     setBusy(true);
-    setOps((s) => ({ ...s, v: s.v ? { ...s.v, assistantOn: next } : s.v }));
-    const r = await fetch("/api/settings/ops", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assistantOn: next }) });
-    if (!r.ok) setOps((s) => ({ ...s, v: s.v ? { ...s.v, assistantOn: !next } : s.v }));
+    // Through the shared store (optimistic + server POST + revert) so the sidebar
+    // and dashboard banner update with this toggle instantly. Manager gate stays
+    // server-side on /api/settings/ops.
+    await setAssistant(!assistantOn);
     setBusy(false);
   }
   async function saveVodafoneCash() {
