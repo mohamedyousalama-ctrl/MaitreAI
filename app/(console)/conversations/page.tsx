@@ -114,6 +114,8 @@ export default function ConversationsPage() {
     c.assignedMemberId ? memberNames[c.assignedMemberId] || "موظف" : "";
 
   const query = useConsoleUi((s) => s.query);
+  const focus = useConsoleUi((s) => s.focus);
+  const clearFocus = useConsoleUi((s) => s.clearFocus);
 
   const [filter, setFilter] = useState<"all" | "escalation" | "order" | "idle">("all");
   const [localSel, setLocalSel] = useState<string | null>(null);
@@ -158,6 +160,18 @@ export default function ConversationsPage() {
     }
     deepRef.current = true;
   }, [hydrated, conversations, selectConversation]);
+
+  // SR1 — global-search result click: open the chosen conversation (reactive,
+  // same-page too — a fresh focus object re-triggers). One-shot (cleared after).
+  useEffect(() => {
+    if (!focus || focus.kind !== "conversation" || !hydrated) return;
+    if (conversations.some((c) => c.id === focus.id)) {
+      deepConv.current = focus.id;
+      setLocalSel(focus.id);
+      selectConversation(focus.id);
+      clearFocus();
+    }
+  }, [focus, hydrated, conversations, selectConversation, clearFocus]);
 
   useEffect(() => {
     // don't auto-pick the first thread while a deeplink owns the selection.
