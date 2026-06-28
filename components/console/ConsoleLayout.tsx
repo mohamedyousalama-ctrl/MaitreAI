@@ -15,6 +15,7 @@ import { ConsoleTopbar } from "./ConsoleTopbar";
 import { AlertBanner } from "./AlertBanner";
 import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { useConsoleDataStore, isConsoleDataPresentable } from "@/lib/console-data-state";
+import { ActionToastHost } from "./ActionToastHost";
 
 // M1.1 — manager-only console surfaces. Operators may reach ONLY the
 // OPERATION_HREFS (conversations/orders/deliveries); every other console route is
@@ -96,6 +97,8 @@ export function ConsoleLayout({ children }: { children: React.ReactNode }) {
     >
       {/* Always mounted (outside the gate) so it resolves the tenant + sets state. */}
       <DataBootstrap />
+      {/* Phase R1 — global action-result feedback host (one per shell). Overlay. */}
+      <ActionToastHost />
       <ConsoleGate>
         <ConsoleSidebar />
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
