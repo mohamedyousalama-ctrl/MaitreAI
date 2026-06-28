@@ -34,6 +34,7 @@ import { useOrderStore } from "@/lib/order-store";
 import { useHasHydrated } from "@/lib/store";
 import { isEscalated, countEscalations } from "@/lib/escalation";
 import { useConsoleUi } from "@/components/console/console-ui-store";
+import { runAction } from "@/lib/console-toast";
 import { StatePill, KvSkeletonBlock, useRiseIn } from "@/components/kivo";
 import type { Conversation, ChannelKey } from "@/lib/types";
 
@@ -86,6 +87,8 @@ export default function ConversationsPage() {
   const selectConversation = useConversationStore((s) => s.selectConversation);
   const takeoverToHuman = useConversationStore((s) => s.takeoverToHuman);
   const returnToAi = useConversationStore((s) => s.returnToAi);
+  const setConversationIdle = useConversationStore((s) => s.setConversationIdle);
+  const closeConversation = useConversationStore((s) => s.closeConversation);
   const addHumanMessage = useConversationStore((s) => s.addHumanMessage);
   const getLatestOrderByConversation = useOrderStore((s) => s.getLatestOrderByConversation);
 
@@ -229,7 +232,7 @@ export default function ConversationsPage() {
         )}
 
         {/* ACTION RAIL */}
-        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={takeoverToHuman} onReturn={returnToAi} latestOrder={getLatestOrderByConversation(selected.id)} /> : <div />}
+        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={takeoverToHuman} onReturn={returnToAi} onWait={setConversationIdle} onClose={closeConversation} latestOrder={getLatestOrderByConversation(selected.id)} /> : <div />}
       </section>
     </div>
   );
@@ -351,10 +354,12 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
   );
 }
 
-function Rail({ c, onTakeover, onReturn, latestOrder }: {
+function Rail({ c, onTakeover, onReturn, onWait, onClose, latestOrder }: {
   c: Conversation;
   onTakeover: (id: string) => void;
   onReturn: (id: string, note?: string) => void;
+  onWait: (id: string) => Promise<boolean>;
+  onClose: (id: string) => Promise<boolean>;
   latestOrder: ReturnType<ReturnType<typeof useOrderStore.getState>["getLatestOrderByConversation"]> | undefined;
 }) {
   const [chooser, setChooser] = useState(false);
@@ -373,14 +378,32 @@ function Rail({ c, onTakeover, onReturn, latestOrder }: {
     : view === "CLOSED" ? "المحادثة مقفولة"
     : c.ownershipState === "HUMAN_IDLE" ? "محوّلة للفريق · مستنية" : "مع الفريق";
 
-  // Return-to-AI = deliberate release. continue/ask resume via the existing
-  // returnToAi(note); wait/close intentionally do NOT resume (no such transition
-  // is exposed). TODO: structured "what next" payload + wait/close transitions.
+  // R5 — continue/ask resume via the existing returnToAi(note) (unchanged). wait/
+  // close now perform REAL ownership transitions (HUMAN_IDLE / CLOSED) with R1
+  // feedback. They're offered ONLY from a human-owned thread, never a SYSTEM_HOLD:
+  // a safety hold must be deliberately released (continue/ask) or taken over — it
+  // can't be parked-idle or closed-around (setOwnershipState also enforces this).
+  const canWaitClose = view === "HUMAN";
   const chooseNext = (key: "continue" | "ask" | "wait" | "close") => {
+    if (key === "wait" || key === "close") {
+      if (!canWaitClose) return; // disabled for SYSTEM_HOLD — never a silent close-around
+      setChooser(false);
+      if (key === "wait") {
+        void runAction(
+          { pending: "جارٍ التحويل للانتظار…", success: "المحادثة مستنية مع الفريق", error: "تعذّر التحويل", retry: true },
+          () => onWait(c.id),
+        );
+      } else {
+        void runAction(
+          { pending: "جارٍ الإقفال…", success: "تم إقفال المحادثة", error: "تعذّر إقفال المحادثة", retry: true },
+          () => onClose(c.id),
+        );
+      }
+      return;
+    }
     setChooser(false);
     if (key === "continue") onReturn(c.id, "كمّل الطلب");
     else if (key === "ask") onReturn(c.id, "اسأل عن الناقص");
-    // wait / close: no resume — leave ownership as-is (deliberate, never auto-resume).
   };
 
   return (
@@ -405,8 +428,8 @@ function Rail({ c, onTakeover, onReturn, latestOrder }: {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
               <ChooserBtn onClick={() => chooseNext("continue")}>كمّل الطلب</ChooserBtn>
               <ChooserBtn onClick={() => chooseNext("ask")}>اسأل عن الناقص</ChooserBtn>
-              <ChooserBtn onClick={() => chooseNext("wait")}>استنى</ChooserBtn>
-              <ChooserBtn onClick={() => chooseNext("close")}>اقفل المحادثة</ChooserBtn>
+              <ChooserBtn onClick={() => chooseNext("wait")} disabled={!canWaitClose} title={!canWaitClose ? "غير متاح أثناء تعليق الأمان" : undefined}>استنى</ChooserBtn>
+              <ChooserBtn onClick={() => chooseNext("close")} disabled={!canWaitClose} title={!canWaitClose ? "غير متاح أثناء تعليق الأمان" : undefined}>اقفل المحادثة</ChooserBtn>
             </div>
           </div>
         )}
@@ -477,8 +500,8 @@ function Card({ children }: { children: React.ReactNode }) {
 function CardLabel({ children, noMargin }: { children: React.ReactNode; noMargin?: boolean }) {
   return <div style={{ fontSize: 11, fontWeight: 800, color: "var(--kv-faint)", marginBottom: noMargin ? 0 : 10 }}>{children}</div>;
 }
-function ChooserBtn({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
-  return <button onClick={onClick} style={{ height: 32, border: "1px solid var(--kv-border)", borderRadius: 9, background: "#fff", color: "var(--kv-text)", fontSize: 10.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>{children}</button>;
+function ChooserBtn({ children, onClick, disabled, title }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; title?: string }) {
+  return <button onClick={onClick} disabled={disabled} title={title} style={{ height: 32, border: "1px solid var(--kv-border)", borderRadius: 9, background: disabled ? "var(--kv-card-soft)" : "#fff", color: disabled ? "var(--kv-faint)" : "var(--kv-text)", fontSize: 10.5, fontWeight: 800, fontFamily: "inherit", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.6 : 1 }}>{children}</button>;
 }
 function primaryBtn(disabled?: boolean): React.CSSProperties {
   return { height: 31, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "0 13px", borderRadius: 10, border: 0, background: disabled ? "#cdd9d2" : "var(--kv-primary)", color: "#fff", fontSize: 10.5, fontWeight: 800, fontFamily: "inherit", cursor: disabled ? "default" : "pointer", boxShadow: disabled ? "none" : "0 14px 26px -16px rgba(14,159,110,.7)" };
