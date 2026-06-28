@@ -336,6 +336,11 @@ export const useConversationStore = create<ConversationState>()(
           // returnToAi() call updated local state. #87 is unaffected: the gate,
           // setOwnershipState, and is_safety_hold reset paths are unchanged.
           if (get().conversations.find((c) => c.id === convId)?.owner === "ai") return;
+          // HX3 — capture the PRE-handback hold state. A SYSTEM_HOLD / safety-held
+          // thread must NEVER auto-resume Karim (#87): the deliberate release below
+          // returns ownership but the active-handback trigger is suppressed for holds.
+          const prev = get().conversations.find((c) => c.id === convId);
+          const wasHold = prev?.ownershipState === "SYSTEM_HOLD" || prev?.isSafetyHold === true;
           const id = msgId();
           const summary = note?.trim();
           const sysText = summary ? `تمت إعادة المحادثة إلى المساعد · ملخص: ${summary}` : "تمت إعادة المحادثة إلى المساعد";
@@ -362,10 +367,23 @@ export const useConversationStore = create<ConversationState>()(
             // path, which never fires when this browser write succeeds). #87 holds: this
             // ONLY runs on the deliberate operator action, never automatically and never on
             // a live hold where owner is still 'human'.
-            fire(setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null, is_safety_hold: false } }));
+            const ownWrite = setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null, is_safety_hold: false } });
+            fire(ownWrite);
             fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: sysText }));
             // MO1 — return-to-Karim clears named ownership server-side. MO4 — audited.
             fire(releaseAssignee(convId, "returned"));
+            // HX3 — active handback: once the state has flipped to AI_ACTIVE, ask the
+            // server to answer a pending customer message with ONE Karim turn. Chained
+            // off the ownership write so the resume route reads AI_ACTIVE. SUPPRESSED
+            // for a hold (deliberate release never auto-resumes — #87); the server route
+            // also fail-safe-bails if it still sees a hold.
+            if (!wasHold) {
+              fire(
+                Promise.resolve(ownWrite).then(() =>
+                  fetch(`/api/conversations/${convId}/resume`, { method: "POST" })
+                )
+              );
+            }
           }
         },
 
