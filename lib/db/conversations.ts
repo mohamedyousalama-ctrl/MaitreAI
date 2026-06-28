@@ -91,6 +91,8 @@ export async function loadConversations(s: SupabaseClient, restaurantId: string)
       // Authoritative ownership fields — read-only surfacing, no write path here.
       ownershipState: (c.ownership_state as Conversation["ownershipState"]) ?? undefined,
       isSafetyHold: (c.is_safety_hold as boolean | null) ?? false,
+      // MO1 — named ownership (resolved to a display name via GET /api/members).
+      assignedMemberId: (c.assigned_member_id as string | null) ?? null,
     } as Conversation;
   });
 }

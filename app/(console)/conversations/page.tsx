@@ -28,7 +28,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Search, ArrowLeft, Send, AlertTriangle, Lock, Sparkles, UserPlus, CornerUpLeft } from "lucide-react";
+import { Search, ArrowLeft, Send, AlertTriangle, Lock, Sparkles, UserPlus, CornerUpLeft, UserCheck } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useOrderStore } from "@/lib/order-store";
 import { useHasHydrated } from "@/lib/store";
@@ -91,6 +91,26 @@ export default function ConversationsPage() {
   const closeConversation = useConversationStore((s) => s.closeConversation);
   const addHumanMessage = useConversationStore((s) => s.addHumanMessage);
   const getLatestOrderByConversation = useOrderStore((s) => s.getLatestOrderByConversation);
+
+  // MO1 — member id→display-name map (names resolved server-side from the auth
+  // user; `members` has no name column). Used to render «{name} تولّى المحادثة».
+  const [memberNames, setMemberNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/members")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !d?.members) return;
+        const m: Record<string, string> = {};
+        for (const x of d.members as Array<{ id: string; name: string }>) m[x.id] = x.name;
+        setMemberNames(m);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  // The owning member's display name (safe fallback, never blank) — empty when unowned.
+  const ownerNameFor = (c: Conversation) =>
+    c.assignedMemberId ? memberNames[c.assignedMemberId] || "موظف" : "";
 
   const query = useConsoleUi((s) => s.query);
 
@@ -214,6 +234,12 @@ export default function ConversationsPage() {
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
                           <span style={{ height: 17, display: "inline-flex", alignItems: "center", padding: "0 7px", borderRadius: 99, background: pill.bg, color: pill.fg, fontSize: 8.5, fontWeight: 800 }}>{pill.label}</span>
                           <span style={{ fontSize: 9, fontWeight: 700, color: "var(--kv-faint)" }}>{CHANNEL_AR[c.channel] ?? c.channel}</span>
+                          {/* MO1 — named ownership badge: who took the conversation */}
+                          {ownView(c) === "HUMAN" && ownerNameFor(c) && (
+                            <span style={{ height: 17, display: "inline-flex", alignItems: "center", gap: 3, padding: "0 7px", borderRadius: 99, background: "rgba(192,73,47,.10)", color: "#a8412c", fontSize: 8.5, fontWeight: 800 }}>
+                              <UserCheck size={9} /> {ownerNameFor(c)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <span style={{ fontSize: 9.5, fontWeight: 800, color: esc ? "#c0492f" : "var(--kv-faint)" }}>{c.lastTime}</span>
@@ -232,7 +258,7 @@ export default function ConversationsPage() {
         )}
 
         {/* ACTION RAIL */}
-        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={takeoverToHuman} onReturn={returnToAi} onWait={setConversationIdle} onClose={closeConversation} latestOrder={getLatestOrderByConversation(selected.id)} /> : <div />}
+        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={takeoverToHuman} onReturn={returnToAi} onWait={setConversationIdle} onClose={closeConversation} latestOrder={getLatestOrderByConversation(selected.id)} ownerName={ownerNameFor(selected)} /> : <div />}
       </section>
     </div>
   );
@@ -354,13 +380,14 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
   );
 }
 
-function Rail({ c, onTakeover, onReturn, onWait, onClose, latestOrder }: {
+function Rail({ c, onTakeover, onReturn, onWait, onClose, latestOrder, ownerName }: {
   c: Conversation;
   onTakeover: (id: string) => void;
   onReturn: (id: string, note?: string) => void;
   onWait: (id: string) => Promise<boolean>;
   onClose: (id: string) => Promise<boolean>;
   latestOrder: ReturnType<ReturnType<typeof useOrderStore.getState>["getLatestOrderByConversation"]> | undefined;
+  ownerName?: string;
 }) {
   const [chooser, setChooser] = useState(false);
   const view = ownView(c);
@@ -373,10 +400,14 @@ function Rail({ c, onTakeover, onReturn, onWait, onClose, latestOrder }: {
   const ownColor = redOwn ? "#c0492f" : view === "CLOSED" ? "#51637a" : "#0a8a5f";
   const ownBg = redOwn ? "rgba(192,73,47,.06)" : view === "CLOSED" ? "rgba(100,116,139,.08)" : "rgba(14,159,110,.06)";
   const ownBorder = redOwn ? "rgba(192,73,47,.16)" : view === "CLOSED" ? "rgba(100,116,139,.18)" : "rgba(14,159,110,.18)";
+  // MO1 — named ownership: when a member owns it, say WHO. Safe fallback "موظف"
+  // (never blank) is already applied upstream in ownerNameFor.
+  const owner = ownerName?.trim();
   const ownLabel = view === "AI" ? "كريم نشط على المحادثة"
     : view === "HOLD" ? "تعليق أمان — مقفول"
     : view === "CLOSED" ? "المحادثة مقفولة"
-    : c.ownershipState === "HUMAN_IDLE" ? "محوّلة للفريق · مستنية" : "مع الفريق";
+    : c.ownershipState === "HUMAN_IDLE" ? (owner ? `${owner} · مستنية مع الفريق` : "محوّلة للفريق · مستنية")
+    : owner ? `${owner} تولّى المحادثة` : "مع الفريق";
 
   // R5 — continue/ask resume via the existing returnToAi(note) (unchanged). wait/
   // close now perform REAL ownership transitions (HUMAN_IDLE / CLOSED) with R1

@@ -38,6 +38,15 @@ export function nowTime(): string {
 
 const cloneSeed = (): Conversation[] => JSON.parse(JSON.stringify(seedConversations));
 const fire = (p: PromiseLike<unknown>) => void Promise.resolve(p).then(undefined, (e) => console.error("[conv:db]", e));
+
+/** MO1 — clear named ownership server-side (member resolution is server-side; the
+ *  release simply nulls assigned_member_id for the tenant's conversation). */
+const releaseAssignee = (conversationId: string): Promise<unknown> =>
+  fetch(`/api/conversations/${conversationId}/assignee`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "release" }),
+  });
 const digits = (p: string) => p.replace(/\D/g, "");
 
 /** Push an operator/takeover message onto the real WhatsApp transport (S9-1).
@@ -287,6 +296,22 @@ export const useConversationStore = create<ConversationState>()(
             // the legacy owner/status via `extra`.
             fire(setOwnershipState(_sb, convId, "HUMAN_ACTIVE", { extra: { owner: "human", status: "تم التحويل لموظف" } }));
             fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف" }));
+            // MO1 — named ownership: stamp WHICH member took it. The acting member is
+            // resolved + validated server-side from the session (never a client id).
+            // Patch the resolved id locally for immediate display; realtime reconfirms.
+            fire(
+              fetch(`/api/conversations/${convId}/assignee`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "claim" }),
+              }).then(async (r) => {
+                if (!r.ok) return;
+                const j = (await r.json().catch(() => ({}))) as { assignedMemberId?: string | null };
+                if (j.assignedMemberId) {
+                  set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, assignedMemberId: j.assignedMemberId })) }));
+                }
+              })
+            );
           }
         },
 
@@ -307,6 +332,8 @@ export const useConversationStore = create<ConversationState>()(
               owner: "ai",
               status: "AI نشط",
               escalationReason: undefined,
+              // MO1 — no longer owned by a person.
+              assignedMemberId: null,
               messages: [...c.messages, { id, sender: "system", text: sysText, time: nowTime() }],
             })),
           }));
@@ -324,6 +351,8 @@ export const useConversationStore = create<ConversationState>()(
             // a live hold where owner is still 'human'.
             fire(setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null, is_safety_hold: false } }));
             fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: sysText }));
+            // MO1 — return-to-Karim clears named ownership server-side.
+            fire(releaseAssignee(convId));
           }
         },
 
@@ -376,6 +405,8 @@ export const useConversationStore = create<ConversationState>()(
               conversations: patchConv(s.conversations, convId, (c) => ({
                 ...c,
                 ownershipState: "CLOSED",
+                // MO1 — a closed conversation is no longer owned by a person.
+                assignedMemberId: null,
                 aiTyping: false,
                 messages: [...c.messages, { id, sender: "system", text, time: nowTime() }],
               })),
@@ -389,6 +420,8 @@ export const useConversationStore = create<ConversationState>()(
           }
           apply();
           fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text }));
+          // MO1 — closing clears named ownership server-side.
+          fire(releaseAssignee(convId));
           return true;
         },
 
