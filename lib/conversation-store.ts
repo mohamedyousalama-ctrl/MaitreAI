@@ -41,11 +41,11 @@ const fire = (p: PromiseLike<unknown>) => void Promise.resolve(p).then(undefined
 
 /** MO1 — clear named ownership server-side (member resolution is server-side; the
  *  release simply nulls assigned_member_id for the tenant's conversation). */
-const releaseAssignee = (conversationId: string): Promise<unknown> =>
+const releaseAssignee = (conversationId: string, reason?: "returned" | "closed"): Promise<unknown> =>
   fetch(`/api/conversations/${conversationId}/assignee`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "release" }),
+    body: JSON.stringify({ action: "release", reason }),
   });
 const digits = (p: string) => p.replace(/\D/g, "");
 
@@ -364,8 +364,8 @@ export const useConversationStore = create<ConversationState>()(
             // a live hold where owner is still 'human'.
             fire(setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null, is_safety_hold: false } }));
             fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: sysText }));
-            // MO1 — return-to-Karim clears named ownership server-side.
-            fire(releaseAssignee(convId));
+            // MO1 — return-to-Karim clears named ownership server-side. MO4 — audited.
+            fire(releaseAssignee(convId, "returned"));
           }
         },
 
@@ -433,8 +433,8 @@ export const useConversationStore = create<ConversationState>()(
           }
           apply();
           fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text }));
-          // MO1 — closing clears named ownership server-side.
-          fire(releaseAssignee(convId));
+          // MO1 — closing clears named ownership server-side. MO4 — audited.
+          fire(releaseAssignee(convId, "closed"));
           return true;
         },
 
