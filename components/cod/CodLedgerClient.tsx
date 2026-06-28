@@ -9,10 +9,11 @@
 // Styling uses the Kivo token system (var(--kv-*)); logic is unchanged.
 // ============================================================================
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useRole } from "@/lib/use-role";
+import { runAction } from "@/lib/console-toast";
 import { Wallet, HandCoins, AlertTriangle, Banknote, ChevronDown, Loader2 } from "lucide-react";
 
 interface DriverLedgerRow {
@@ -82,6 +83,8 @@ export function CodLedgerClient() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [settling, setSettling] = useState<string | null>(null);
+  // R6 — driver pending settlement confirmation (dialog open when non-null).
+  const [confirmDriver, setConfirmDriver] = useState<DriverLedgerRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,19 +106,25 @@ export function CodLedgerClient() {
     void load();
   }, [load]);
 
-  const settle = async (driverId: string | null) => {
-    if (!driverId) return;
+  // R6 — settle only AFTER the manager confirms in the dialog. Feedback flows
+  // through the R1 primitive: pending → success/failed(+retry). NO optimistic
+  // settle — the ledger refreshes (and the history row appears) only when the
+  // server confirms; on failure the driver stays unsettled.
+  const doSettle = async (driverId: string) => {
     setSettling(driverId);
-    try {
-      const res = await fetch("/api/cod/settle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ driverId }),
-      });
-      if (res.ok) await load();
-    } finally {
-      setSettling(null);
-    }
+    await runAction(
+      { pending: "جارٍ التسوية…", success: "تمت التسوية", error: "تعذّرت التسوية", retry: true },
+      async () => {
+        const res = await fetch("/api/cod/settle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ driverId }),
+        });
+        if (res.ok) await load(); // refresh ONLY on confirmed success
+        return res; // runAction reads res.ok for the real result
+      }
+    );
+    setSettling(null);
   };
 
   return (
@@ -206,7 +215,7 @@ export function CodLedgerClient() {
               )}
 
               <button
-                onClick={() => settle(d.driverId)}
+                onClick={() => setConfirmDriver(d)}
                 disabled={!d.driverId || settling === d.driverId}
                 className={cn(
                   "mt-4 inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition",
@@ -263,6 +272,100 @@ export function CodLedgerClient() {
           </div>
         )}
       </div>
+
+      {/* R6 — confirm-before-settle dialog (manager reviews amounts/discrepancy). */}
+      {confirmDriver && (
+        <SettleConfirmDialog
+          driver={confirmDriver}
+          onCancel={() => setConfirmDriver(null)}
+          onConfirm={() => {
+            const id = confirmDriver.driverId;
+            setConfirmDriver(null);
+            if (id) void doSettle(id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// R6 — settlement confirmation dialog. Accessible: role="dialog" + aria-modal,
+// confirm button focused on open, Escape/overlay-click closes (Audit-14 basics).
+// Displays ONLY already-computed values (driverLedger) — no money is recomputed.
+function SettleConfirmDialog({
+  driver,
+  onConfirm,
+  onCancel,
+}: {
+  driver: DriverLedgerRow;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    confirmRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const disc = driver.discrepancy;
+  const hasDisc = Math.abs(disc) > 0.001;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" dir="rtl">
+      <div className="absolute inset-0" style={{ background: "rgba(13,52,38,.45)" }} onClick={onCancel} aria-hidden />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settle-dialog-title"
+        className="relative w-full max-w-sm rounded-[16px] p-5"
+        style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)", boxShadow: "var(--kv-shadow-panel)" }}
+      >
+        <h2 id="settle-dialog-title" className="text-base font-bold" style={{ color: "var(--kv-text)" }}>
+          تأكيد تسوية النقدية
+        </h2>
+        <p className="mt-1 text-xs" style={{ color: "var(--kv-muted)" }}>
+          راجِع المبالغ قبل تأكيد استلام الكاش من المندوب.
+        </p>
+        <div className="mt-4 flex flex-col gap-2 rounded-[12px] border p-3" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card-soft)" }}>
+          <DialogRow label="المندوب" value={driver.driverName} />
+          <DialogRow label="عدد الطلبات" value={String(driver.unsettledCount)} />
+          <DialogRow label="المتوقع" value={formatCurrency(driver.expected)} />
+          <DialogRow label="المُحصّل" value={formatCurrency(driver.collected)} />
+          {hasDisc && (
+            <DialogRow label={disc < 0 ? "عجز" : "زيادة"} value={formatCurrency(disc)} valueColor={disc < 0 ? "#c0492f" : "#0a8a5f"} />
+          )}
+        </div>
+        <div className="mt-5 flex gap-2">
+          <button
+            ref={confirmRef}
+            onClick={onConfirm}
+            className="flex-1 rounded-xl px-4 py-2.5 text-sm font-bold text-white"
+            style={{ background: "var(--kv-grad-brand)", boxShadow: "0 8px 18px -8px rgba(14,159,110,.6)" }}
+          >
+            تأكيد التسوية
+          </button>
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-xl border px-4 py-2.5 text-sm font-semibold"
+            style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}
+          >
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DialogRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs" style={{ color: "var(--kv-muted)" }}>{label}</span>
+      <span className="text-sm font-bold" style={{ color: valueColor ?? "var(--kv-text)" }}>{value}</span>
     </div>
   );
 }
