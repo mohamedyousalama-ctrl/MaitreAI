@@ -264,6 +264,59 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
   };
 }
 
+// --- realtime (LIVE0 Phase L2) ---------------------------------------------
+/**
+ * Subscribe to this tenant's brain tables so a menu/86/category/variant/modifier/
+ * zone/faq/policy/promotion change by ANY operator triggers a brain reload here.
+ * Mirrors the L1 Phase-0 guardrail convention (lib/db/restaurant-settings.ts):
+ *   (a) filter by restaurant_id, (b) the store DEBOUNCES the reload,
+ *   (c) returns a cleanup fn, (d) FAILS QUIETLY on a dropped channel,
+ *   (e) RECONNECT-RELOADs (onChange on SUBSCRIBED — initial AND after a reconnect).
+ *
+ * `restaurants` is intentionally NOT included: it's already streamed by L1's
+ * subscribeRestaurants (ops), and brain profile/tax edits are rare — the 86/menu
+ * freshness this phase targets lives entirely in the tables below. All of these
+ * carry restaurant_id (loadBrain filters each by it). One channel, many listeners.
+ */
+const BRAIN_REALTIME_TABLES = [
+  "branches",
+  "menu_categories",
+  "menu_items",
+  "menu_item_variants",
+  "menu_item_choice_groups",
+  "menu_item_choice_options",
+  "modifiers",
+  "menu_item_modifiers",
+  "delivery_zones",
+  "policies",
+  "faqs",
+  "promotions",
+] as const;
+
+export function subscribeBrain(
+  s: SupabaseClient,
+  restaurantId: string,
+  onChange: () => void
+): () => void {
+  const filter = `restaurant_id=eq.${restaurantId}`;
+  let ch = s.channel(`brain-${restaurantId}`);
+  for (const table of BRAIN_REALTIME_TABLES) {
+    ch = ch.on("postgres_changes", { event: "*", schema: "public", table, filter }, onChange);
+  }
+  ch.subscribe((status) => {
+    // (e) reconnect-reload — catch changes missed while disconnected.
+    if (status === "SUBSCRIBED") {
+      onChange();
+    } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      // (d) fail quietly — Supabase retries the channel; never throw into the UI.
+      console.warn("[realtime:brain] channel status:", status);
+    }
+  });
+  return () => {
+    void s.removeChannel(ch);
+  };
+}
+
 // ===========================================================================
 // Mutations (manager-gated by RLS). UI types in → DB columns out. Each returns
 // the new/updated row id where relevant. Callers re-hydrate via realtime.

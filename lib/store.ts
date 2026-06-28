@@ -36,6 +36,7 @@ import {
 import { createClient } from "./supabase/client";
 import {
   loadBrain,
+  subscribeBrain,
   updateProfileDb,
   updateAiToneDb,
   addBranchDb,
@@ -63,6 +64,10 @@ import {
 export const newId = (prefix: string) =>
   `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
+// LIVE0 L2 — debounce timer for the brain realtime reload (module-level, mirrors
+// the order-store's reloadTimer).
+let brainReloadTimer: ReturnType<typeof setTimeout> | undefined;
+
 const fire = (p: PromiseLike<unknown>) =>
   void Promise.resolve(p).then(undefined, (e) => console.error("[brain:db]", e));
 
@@ -81,7 +86,7 @@ interface RestaurantState {
   _sb: SupabaseClient | null;
   _rid: string | null;
   dbReady: boolean;
-  initFromDb: (restaurantId: string) => Promise<void>;
+  initFromDb: (restaurantId: string) => Promise<(() => void) | undefined>;
   refreshBrain: () => Promise<void>;
 
   updateProfile: (patch: Partial<RestaurantProfile>) => void;
@@ -141,10 +146,17 @@ export const useRestaurantStore = create<RestaurantState>()(
 
       initFromDb: async (restaurantId) => {
         const sb = createClient();
-        if (!sb) return;
+        if (!sb) return undefined;
         set({ _sb: sb, _rid: restaurantId });
         await get().refreshBrain();
         set({ dbReady: true });
+        // LIVE0 L2 — subscribe so another operator's menu/86 change reloads the
+        // brain here. Debounced (200ms, mirrors the order-store cadence); the
+        // acting operator's optimistic flip in setItemAvailability is unaffected.
+        return subscribeBrain(sb, restaurantId, () => {
+          clearTimeout(brainReloadTimer);
+          brainReloadTimer = setTimeout(() => fire(get().refreshBrain()), 200);
+        });
       },
 
       refreshBrain: async () => {
