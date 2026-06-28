@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRole } from "@/lib/use-role";
+import { runActionOutcome } from "@/lib/console-toast";
 import { Truck, Plus, Loader2, Link2, Check } from "lucide-react";
 
 interface Driver { id: string; name: string; phone: string; vehicle: string | null; active: boolean }
@@ -88,47 +89,66 @@ export function DeliveriesClient() {
     };
   }, []);
 
+  // R8 — surface the COMPOSITE assignment result: assigned vs failed, and (if
+  // assigned) the WhatsApp dispatch sub-status. A failed assign never shows as
+  // assigned. assigned-but-link-failed/skipped is a neutral warning so the operator
+  // knows to share the link manually. Dispatch logic itself is unchanged.
   async function assign(deliveryId: string) {
     const driverId = pick[deliveryId];
     if (!driverId) return;
     setAssigning(deliveryId);
-    try {
+    await runActionOutcome("جارٍ الإسناد…", async () => {
       const r = await fetch(`/api/deliveries/${deliveryId}/assign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ driverId }),
       });
-      const j = await r.json();
-      if (r.ok) {
-        setLinks((x) => ({ ...x, [deliveryId]: { driverLink: j.driverLink, customerLink: j.customerLink, whatsapp: j.whatsapp } }));
-        await loadDeliveries();
+      const j = (await r.json().catch(() => ({}))) as { driverLink?: string; customerLink?: string; whatsapp?: string; error?: string };
+      if (!r.ok) {
+        return { state: "failed" as const, message: `تعذّر الإسناد: ${j.error ?? `HTTP ${r.status}`}`, retry: true };
       }
-    } finally {
-      setAssigning(null);
-    }
+      // Assigned → store the links (so the operator can share manually) + refresh.
+      setLinks((x) => ({ ...x, [deliveryId]: { driverLink: j.driverLink ?? "", customerLink: j.customerLink ?? "", whatsapp: j.whatsapp ?? "" } }));
+      await loadDeliveries();
+      const wa = String(j.whatsapp ?? "");
+      if (wa === "sent") return { state: "success" as const, message: "تم الإسناد وإرسال لينك واتساب للسائق" };
+      if (wa === "failed") return { state: "info" as const, message: "الإسناد تم — لكن تعذّر إرسال لينك واتساب. شاركه مع السائق يدويًا." };
+      return { state: "info" as const, message: "الإسناد تم — لينك واتساب متخطّى. شاركه مع السائق يدويًا." };
+    });
+    setAssigning(null);
   }
 
   async function addDriver() {
     if (!form.name.trim() || !form.phone.trim()) return;
     setAdding(true);
-    try {
+    await runActionOutcome("جارٍ إضافة المندوب…", async () => {
       const r = await fetch("/api/drivers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (r.ok) {
-        setForm({ name: "", phone: "", vehicle: "" });
-        await loadDrivers();
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { message?: string; error?: string };
+        return { state: "failed" as const, message: `تعذّر إضافة المندوب: ${j.message ?? j.error ?? `HTTP ${r.status}`}`, retry: true };
       }
-    } finally {
-      setAdding(false);
-    }
+      setForm({ name: "", phone: "", vehicle: "" }); // reset ONLY on real success
+      await loadDrivers();
+      return { state: "success" as const, message: "تم إضافة المندوب" };
+    });
+    setAdding(false);
   }
 
   async function toggleDriver(d: Driver) {
-    await fetch(`/api/drivers/${d.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !d.active }) });
-    loadDrivers();
+    // No optimistic flip — loadDrivers reflects the TRUE state only on success.
+    await runActionOutcome(d.active ? "جارٍ إيقاف المندوب…" : "جارٍ تفعيل المندوب…", async () => {
+      const r = await fetch(`/api/drivers/${d.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !d.active }) });
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { message?: string; error?: string };
+        return { state: "failed" as const, message: `تعذّر تحديث حالة المندوب: ${j.message ?? j.error ?? `HTTP ${r.status}`}`, retry: true };
+      }
+      await loadDrivers();
+      return { state: "success" as const, message: d.active ? "تم إيقاف المندوب" : "تم تفعيل المندوب" };
+    });
   }
 
   function startEdit(d: Driver) {
@@ -138,16 +158,21 @@ export function DeliveriesClient() {
   async function saveEdit(id: string) {
     if (!editForm.name.trim() || !editForm.phone.trim() || savingEdit) return;
     setSavingEdit(true);
-    try {
+    await runActionOutcome("جارٍ حفظ التعديل…", async () => {
       const r = await fetch(`/api/drivers/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: editForm.name, phone: editForm.phone, vehicle: editForm.vehicle }),
       });
-      if (r.ok) { setEditId(null); await loadDrivers(); }
-    } finally {
-      setSavingEdit(false);
-    }
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { message?: string; error?: string };
+        return { state: "failed" as const, message: `تعذّر حفظ التعديل: ${j.message ?? j.error ?? `HTTP ${r.status}`}`, retry: true };
+      }
+      setEditId(null); // close the inline editor ONLY on real success
+      await loadDrivers();
+      return { state: "success" as const, message: "تم حفظ التعديل" };
+    });
+    setSavingEdit(false);
   }
 
   const activeDrivers = drivers.filter((d) => d.active);
