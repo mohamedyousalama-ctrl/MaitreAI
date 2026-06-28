@@ -114,6 +114,7 @@ export default function OrdersPage() {
   const hydrated = useHasHydrated();
   const orders = useOrderStore((s) => s.orders);
   const updateOrderStatus = useOrderStore((s) => s.updateOrderStatus);
+  const reloadOrders = useOrderStore((s) => s.reload);
   const conversations = useConversationStore((s) => s.conversations);
 
   const query = useConsoleUi((s) => s.query);
@@ -281,6 +282,12 @@ export default function OrdersPage() {
       },
     );
     if (!ok && code === "no_driver") setNoDriverBlock(o.id);
+    // MO2 — optimistic-concurrency conflict: another operator already advanced this
+    // order. The store reverted to DB truth; tell the operator to refresh (no clobber).
+    if (!ok && code === "status_conflict") {
+      void runActionOutcome("", async () => ({ state: "info", message: "الطلب اتحدّث من حد تاني، حدّث الصفحة" }));
+      void reloadOrders();
+    }
 
     // R2 — receipt-on-confirm: only after a CONFIRMED status advance; three outcomes.
     if (ok && isConfirm) {

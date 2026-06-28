@@ -29,6 +29,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const status = String(body.status ?? "");
   if (!ORDER_STATUSES.has(status)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+  // MO2 — optimistic concurrency: the client sends the status it BELIEVES is current.
+  // When provided, the write is conditional on it (see the conditional UPDATE below),
+  // so a stale advance (another operator already moved the order) is rejected, not
+  // clobbered. Optional → omitted callers keep the prior unconditional behavior.
+  const expectedStatus = typeof body.expectedStatus === "string" ? body.expectedStatus : null;
 
   // R3b — AUTHORITATIVE driver guard on the delivered transition. A COD (or
   // unspecified-method) delivery order cannot be booked "delivered" without an
@@ -63,12 +68,33 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
   }
 
-  // Tenant-scoped write: id AND restaurant_id (admin bypasses RLS).
-  const { error } = await admin
+  // Tenant-scoped write: id AND restaurant_id (admin bypasses RLS). MO2 — when an
+  // expectedStatus is supplied, the WHERE also pins order_status=:expectedStatus so
+  // the write is atomic optimistic-concurrency: 1 row → we advanced it; 0 rows → the
+  // order already moved (another operator) or doesn't exist. R3b driver guard above
+  // is unchanged and still runs first.
+  let q = admin
     .from("orders")
     .update({ order_status: status, updated_at: new Date().toISOString() })
     .eq("id", params.id)
     .eq("restaurant_id", tenant.restaurantId);
+  if (expectedStatus) q = q.eq("order_status", expectedStatus);
+  const { data: updated, error } = await q.select("id");
   if (error) return NextResponse.json({ error: "update_failed" }, { status: 502 });
+
+  if (expectedStatus && (!updated || updated.length === 0)) {
+    // 0 rows under OCC: distinguish "moved by someone else" from "not found".
+    const { data: cur } = await admin
+      .from("orders")
+      .select("order_status")
+      .eq("id", params.id)
+      .eq("restaurant_id", tenant.restaurantId)
+      .maybeSingle();
+    if (!cur) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "status_conflict", currentStatus: (cur as { order_status: string }).order_status },
+      { status: 409 }
+    );
+  }
   return NextResponse.json({ ok: true });
 }
