@@ -9,10 +9,11 @@
 // Styling uses the Kivo token system (var(--kv-*)); logic is unchanged.
 // ============================================================================
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useRole } from "@/lib/use-role";
+import { useCodStore } from "@/lib/cod-store";
 import { runAction } from "@/lib/console-toast";
 import { Wallet, HandCoins, AlertTriangle, Banknote, ChevronDown, Loader2 } from "lucide-react";
 
@@ -75,36 +76,20 @@ function timeAr(iso: string | null): string {
 
 export function CodLedgerClient() {
   const isManager = useRole() === "manager";
-  const [drivers, setDrivers] = useState<DriverLedgerRow[]>([]);
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [items, setItems] = useState<HeldOrderItem[]>([]);
-  const [settlements, setSettlements] = useState<SettlementRow[]>([]);
+  // LIVE0 L3 — read the ledger from the SHARED COD store (DB-backed + realtime), so
+  // a settle by another manager reflects here live. `load` re-pulls the store.
+  const drivers = useCodStore((s) => s.drivers) as DriverLedgerRow[];
+  const summary = useCodStore((s) => s.summary) as Summary | null;
+  const items = useCodStore((s) => s.items) as HeldOrderItem[];
+  const settlements = useCodStore((s) => s.settlements) as SettlementRow[];
+  const loaded = useCodStore((s) => s.loaded);
+  const load = useCodStore((s) => s.reload);
+  const loading = !loaded;
   const [showHistory, setShowHistory] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [settling, setSettling] = useState<string | null>(null);
   // R6 — driver pending settlement confirmation (dialog open when non-null).
   const [confirmDriver, setConfirmDriver] = useState<DriverLedgerRow | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/cod/ledger");
-      if (res.ok) {
-        const j = await res.json();
-        setDrivers(j.drivers ?? []);
-        setSummary(j.summary ?? null);
-        setItems(j.items ?? []);
-        setSettlements(j.settlements ?? []);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   // R6 — settle only AFTER the manager confirms in the dialog. Feedback flows
   // through the R1 primitive: pending → success/failed(+retry). NO optimistic

@@ -10,14 +10,14 @@
 // recomputed client-side.
 // ============================================================================
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Calculator, Printer } from "lucide-react";
 import { runActionOutcome } from "@/lib/console-toast";
 import { useRiseIn } from "@/components/kivo";
+import { useCodStore } from "@/lib/cod-store";
 
 interface DriverRow { driverId: string | null; driverName: string; expected: number; collected: number; outstanding: number; discrepancy: number; unsettledCount: number }
 interface SettlementRow { id: string; driverName: string | null; totalAmount: number; orderCount: number; note: string | null; createdAt: string }
-interface Ledger { drivers: DriverRow[]; settlements: SettlementRow[] }
 
 const AR = "٠١٢٣٤٥٦٧٨٩";
 const toAr = (s: string | number) => String(s).replace(/[0-9]/g, (d) => AR[+d]);
@@ -25,23 +25,16 @@ const money = (n: number) => `${toAr(Math.round(Number(n || 0)).toLocaleString("
 const fmtDate = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? "—" : `${toAr(d.getFullYear())}/${toAr(String(d.getMonth() + 1).padStart(2, "0"))}/${toAr(String(d.getDate()).padStart(2, "0"))}`; };
 
 export function CloseShiftClient() {
-  const [ledger, setLedger] = useState<Ledger | null>(null);
+  // LIVE0 L3 — read from the SHARED COD store (DB-backed + realtime) so a settle by
+  // another manager reflects here live; `load` re-pulls the store.
+  const drivers = useCodStore((s) => s.drivers) as DriverRow[];
+  const settlements = useCodStore((s) => s.settlements) as SettlementRow[];
+  const loaded = useCodStore((s) => s.loaded);
+  const load = useCodStore((s) => s.reload);
   const [busy, setBusy] = useState(false);
   const head = useRiseIn(0);
   const body = useRiseIn(1);
 
-  const load = useCallback(async () => {
-    try {
-      const r = await fetch("/api/cod/ledger", { cache: "no-store" });
-      const j = r.ok ? await r.json() : null;
-      setLedger({ drivers: (j?.drivers ?? []) as DriverRow[], settlements: (j?.settlements ?? []) as SettlementRow[] });
-    } catch {
-      setLedger({ drivers: [], settlements: [] });
-    }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
-
-  const drivers = ledger?.drivers ?? [];
   const settleable = drivers.filter((d) => d.driverId && d.outstanding > 0);
   const shiftTotal = drivers.reduce((s, d) => s + d.outstanding, 0);
   const settleableTotal = settleable.reduce((s, d) => s + d.outstanding, 0);
@@ -83,7 +76,7 @@ export function CloseShiftClient() {
         </div>
         <div style={{ marginInlineStart: "auto", textAlign: "left" }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--kv-faint)" }}>إجمالي معلّق</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-primary)" }}>{ledger ? money(shiftTotal) : "…"}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-primary)" }}>{loaded ? money(shiftTotal) : "…"}</div>
         </div>
       </header>
 
@@ -96,7 +89,7 @@ export function CloseShiftClient() {
               {busy ? "..." : `قفّل الكل (${toAr(settleable.length)})`}
             </button>
           </div>
-          {!ledger ? (
+          {!loaded ? (
             <div style={{ padding: "40px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 12.5, fontWeight: 600 }}>بنحمّل…</div>
           ) : drivers.length === 0 ? (
             <div style={{ padding: "40px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 12.5, fontWeight: 600 }}>مفيش كاش معلّق — الوردية مقفولة.</div>
@@ -122,10 +115,10 @@ export function CloseShiftClient() {
         </div>
 
         {/* Recent settlements with printable slips */}
-        {ledger && ledger.settlements.length > 0 && (
+        {loaded && settlements.length > 0 && (
           <div style={{ borderRadius: 16, background: "var(--kv-card)", border: "1px solid var(--kv-border)", boxShadow: "var(--kv-shadow-panel)", overflow: "hidden" }}>
             <div style={{ padding: "13px 18px", borderBottom: "1px solid var(--kv-border)", fontSize: 14, fontWeight: 800 }}>تسويات سابقة</div>
-            {ledger.settlements.map((s) => (
+            {settlements.map((s) => (
               <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: "1px solid var(--kv-border)" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 800 }}>{s.driverName || "غير معيّن"}</div>
