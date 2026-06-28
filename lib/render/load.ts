@@ -21,11 +21,26 @@ interface RawItem {
 export async function loadReceiptData(client: SupabaseClient, orderId: string): Promise<ReceiptData | null> {
   const { data: o } = await client
     .from("orders")
-    .select("*, customers(name,phone), branches(name), restaurants(name,currency,tax_registration_no)")
+    .select("*, customers(name,phone), branches(name), restaurants(name,currency,tax_registration_no), conversations(is_safety_hold,ownership_state), delivery_zones(name)")
     .eq("id", orderId)
     .single();
   if (!o) return null;
   const row = o as Record<string, unknown>;
+
+  // Best-effort driver name (if a delivery row with an assigned driver exists).
+  // Read-only + isolated so a missing/!exists relationship never breaks the load.
+  let driverName: string | undefined;
+  try {
+    const { data: del } = await client
+      .from("deliveries")
+      .select("drivers(name)")
+      .eq("order_id", orderId)
+      .maybeSingle();
+    const dn = (del as { drivers?: { name?: string } | null } | null)?.drivers?.name;
+    if (dn) driverName = String(dn);
+  } catch {
+    /* no delivery row / no driver — leave undefined */
+  }
 
   const rawItems = Array.isArray(row.items) ? (row.items as RawItem[]) : [];
   const items: ReceiptItem[] = rawItems.map((it) => ({
@@ -41,7 +56,11 @@ export async function loadReceiptData(client: SupabaseClient, orderId: string): 
   const rest = (row.restaurants as { name?: string; currency?: string; tax_registration_no?: string } | null) ?? {};
   const cust = (row.customers as { name?: string; phone?: string } | null) ?? {};
   const branch = (row.branches as { name?: string } | null) ?? {};
+  const conv = (row.conversations as { is_safety_hold?: boolean; ownership_state?: string } | null) ?? {};
+  const zone = (row.delivery_zones as { name?: string } | null) ?? {};
   const orderNumber = String(row.order_number ?? "");
+  // Allergy/safety hold = the linked conversation is currently held for review.
+  const safetyHold = conv.is_safety_hold === true || conv.ownership_state === "SYSTEM_HOLD";
 
   return {
     restaurantName: rest.name ?? "",
@@ -57,9 +76,14 @@ export async function loadReceiptData(client: SupabaseClient, orderId: string): 
     total: Number(row.total ?? 0),
     currency: String(row.currency ?? rest.currency ?? "ر.س"),
     paymentStatus: row.payment_status ? String(row.payment_status) : undefined,
+    paymentMethod: row.payment_method ? String(row.payment_method) : undefined,
+    source: row.source ? String(row.source) : undefined,
+    safetyHold,
     customerName: cust.name ?? undefined,
     customerPhone: cust.phone ?? undefined,
     address: row.address ? String(row.address) : undefined,
+    zoneName: zone.name ?? undefined,
+    driverName,
     branchName: branch.name ?? undefined,
     createdAt: row.created_at ? String(row.created_at) : undefined,
   };
