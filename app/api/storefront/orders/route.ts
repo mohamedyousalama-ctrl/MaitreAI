@@ -25,6 +25,8 @@ type CheckoutPayload = {
   customerName?: string;
   customerPhone?: string;
   address?: string;
+  lat?: number | null;
+  lng?: number | null;
   notes?: string;
   paymentMethod?: string;
 };
@@ -106,6 +108,21 @@ export async function POST(req: NextRequest) {
       ? (payload.paymentMethod as ValidMethod)
       : "cod";
 
+  // DLV6b — real picked coordinates, server-side range-validated. A bad pin is
+  // worse than none, so out-of-range / non-finite values are IGNORED (stored null)
+  // rather than persisted. Only kept for delivery orders; the address text stays
+  // authoritative for display/receipts regardless.
+  const validCoord = (v: unknown, lim: number): number | null => {
+    const n = typeof v === "number" ? v : NaN;
+    return Number.isFinite(n) && Math.abs(n) <= lim ? n : null;
+  };
+  const latV = fulfillment === "delivery" ? validCoord(payload.lat, 90) : null;
+  const lngV = fulfillment === "delivery" ? validCoord(payload.lng, 180) : null;
+  // Both-or-neither: a lone coordinate is meaningless → keep a pair or nothing.
+  // Spread into the upsert ONLY when a valid pair exists, so no-coords orders never
+  // reference the columns (also safe if code deploys before the migration applies).
+  const coordFields = latV !== null && lngV !== null ? { lat: latV, lng: lngV } : {};
+
   const customerId = await ensureCustomerId(admin, restaurantId, customerPhone, customerName);
   const notes = clean(payload.notes) || null;
   const fingerprint = JSON.stringify({
@@ -145,6 +162,7 @@ export async function POST(req: NextRequest) {
         payment_status: "unpaid",
         payment_method: paymentMethod,
         address,
+        ...coordFields,
         zone_id: priced.deliveryZone?.id ?? null,
         notes,
       },

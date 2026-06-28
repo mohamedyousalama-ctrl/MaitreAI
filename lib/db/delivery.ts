@@ -216,7 +216,7 @@ export async function listDeliveries(db: SupabaseClient, restaurantId: string) {
 async function loadOrderSummary(admin: SupabaseClient, orderId: string) {
   const { data: o } = await admin
     .from("orders")
-    .select("order_number,items,total,currency,address,zone_id,fulfillment,conversation_id,customer_id,restaurant_id")
+    .select("order_number,items,total,currency,address,lat,lng,zone_id,fulfillment,conversation_id,customer_id,restaurant_id")
     .eq("id", orderId)
     .single();
   if (!o) return null;

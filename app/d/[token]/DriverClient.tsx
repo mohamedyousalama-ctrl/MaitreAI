@@ -15,6 +15,8 @@ interface OrderInfo {
   total: number | null;
   currency: string;
   address: string | null;
+  lat: number | null;
+  lng: number | null;
   customerPhone: string | null;
 }
 
@@ -86,7 +88,17 @@ export function DriverClient({ token, status: initial, order }: { token: string;
   }, [gpsOn, token]);
 
   const idx = ORDER.indexOf(status);
-  const mapsHref = order.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.address)}` : null;
+  // DLV6b — exact pin from real picked coordinates when present; otherwise fall
+  // back to the address text-search (WhatsApp + typed-address web orders). Hide
+  // only when there's neither coords nor address.
+  const hasCoords =
+    typeof order.lat === "number" && typeof order.lng === "number" &&
+    Math.abs(order.lat) <= 90 && Math.abs(order.lng) <= 180;
+  const mapsHref = hasCoords
+    ? `https://www.google.com/maps/search/?api=1&query=${order.lat},${order.lng}`
+    : order.address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.address)}`
+    : null;
   const waHref = order.customerPhone ? `https://wa.me/${order.customerPhone.replace(/[^\d]/g, "")}` : null;
 
   if (status === "delivered") {
