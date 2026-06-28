@@ -27,6 +27,7 @@ import { CountUp, useRiseIn } from "@/components/kivo";
 import { useConsoleUi } from "@/components/console/console-ui-store";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { runAction, runActionOutcome } from "@/lib/console-toast";
+import { useRole } from "@/lib/use-role";
 import type { LocalOrder, OrderStatusKey } from "@/lib/types";
 
 // ── helpers (Arabic digits + money; money is display-only, value from the row) ─
@@ -237,32 +238,41 @@ export default function OrdersPage() {
   // touches the capture/money path. Only blocks when a delivery row EXISTS without
   // a driver (historical orders with no delivery row aren't strandable here).
   const [noDriverBlock, setNoDriverBlock] = useState<string | null>(null);
-  const advance = async (o: LocalOrder) => {
-    const n = nextStatus(o);
-    if (!n) return;
-    if (ENABLE_DELIVERY_TRACKING && n === "delivered" && o.fulfillmentType === "delivery") {
-      try {
-        const res = await fetch("/api/deliveries", { cache: "no-store" });
-        if (res.ok) {
-          const rows = ((await res.json()).deliveries ?? []) as Array<{ driver_id: string | null; orders: { order_number: string | null } | null }>;
-          const row = rows.find((x) => String(x.orders?.order_number ?? "") === String(o.orderNumber));
-          if (row && !row.driver_id) { setNoDriverBlock(o.id); return; } // delivery row exists, unassigned → block
-        }
-      } catch { /* fail-open on network error — never strand the operator */ }
+  const isManager = useRole() === "manager";
+  // R3 — pending "driver-check failed" prompt (retry / audited manager override).
+  const [driverCheckFailed, setDriverCheckFailed] = useState<LocalOrder | null>(null);
+
+  // R3 — the driver-check, returning an EXPLICIT three-way result. A network/HTTP
+  // error is "failed" (NOT a silent proceed) so a cash-safety guard can't be
+  // bypassed by an error. Only WhatsApp-tracking delivery orders are checked.
+  const checkDriver = async (o: LocalOrder): Promise<"proceed" | "no_driver" | "failed"> => {
+    if (!(ENABLE_DELIVERY_TRACKING && o.fulfillmentType === "delivery")) return "proceed";
+    try {
+      const res = await fetch("/api/deliveries", { cache: "no-store" });
+      if (!res.ok) return "failed";
+      const rows = ((await res.json()).deliveries ?? []) as Array<{ driver_id: string | null; orders: { order_number: string | null } | null }>;
+      const row = rows.find((x) => String(x.orders?.order_number ?? "") === String(o.orderNumber));
+      if (row && !row.driver_id) return "no_driver"; // delivery row exists, unassigned
+      return "proceed"; // driver present, or no delivery row (not strandable)
+    } catch {
+      return "failed"; // R3 — do NOT fail open on a cash-safety check
     }
+  };
+
+  // The actual status transition + receipt feedback (post-guard). Factored so the
+  // audited override can run it without re-running the guard.
+  const commitAdvance = async (o: LocalOrder, n: OrderStatusKey) => {
     setNoDriverBlock(null);
     const isConfirm = ["pending_confirmation", "pending_payment", "paid"].includes(o.orderStatus) && n === "preparing";
 
     // R2 — surface the REAL status-write result; on failure updateOrderStatus reverts
-    // the optimistic change, and the toast offers retry. The board never keeps an
-    // advanced status the server rejected.
+    // the optimistic change, and the toast offers retry.
     const ok = await runAction(
       { pending: "جارٍ التحديث…", success: "تم تحديث الحالة", error: "تعذّر تحديث الحالة", retry: true },
       () => updateOrderStatus(o.id, n, "human"),
     );
 
-    // R2 — receipt-on-confirm: only after a CONFIRMED status advance, and surface the
-    // real send result with three distinct outcomes (skipped ≠ success).
+    // R2 — receipt-on-confirm: only after a CONFIRMED status advance; three outcomes.
     if (ok && isConfirm) {
       void runActionOutcome("جارٍ إرسال الإيصال…", async () => {
         const res = await fetch(`/api/orders/${o.id}/send-receipt`, { method: "POST" });
@@ -273,6 +283,36 @@ export default function OrdersPage() {
         return { state: "failed", message: "تعذّر إرسال الإيصال", retry: true };
       });
     }
+  };
+
+  const advance = async (o: LocalOrder) => {
+    const n = nextStatus(o);
+    if (!n) return;
+    // R3 — guard ONLY the delivered transition of a delivery order. Three cases:
+    if (n === "delivered") {
+      const check = await checkDriver(o);
+      if (check === "no_driver") { setNoDriverBlock(o.id); return; } // unchanged block
+      if (check === "failed") { setDriverCheckFailed(o); return; }   // prompt, never silent-proceed
+    }
+    await commitAdvance(o, n);
+  };
+
+  // R3 — audited manager override after a failed driver-check: write the trace
+  // first; only proceed to delivered if the audit succeeded (must leave a trace).
+  const overrideDeliverNoDriver = async (o: LocalOrder) => {
+    setDriverCheckFailed(null);
+    const audited = await runAction(
+      { pending: "جارٍ التأكيد…", success: "تم التسليم بدون مندوب (مسجّل)", error: "تعذّر تسجيل التأكيد", retry: true },
+      async () => {
+        const res = await fetch(`/api/orders/${o.id}/driver-override`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderNumber: o.orderNumber, conversationId: o.conversationId ?? null }),
+        });
+        return res; // 403 for non-managers (defense-in-depth), 200 on audited
+      },
+    );
+    if (audited) await commitAdvance(o, "delivered");
   };
 
   const COL = "64px 1.4fr 70px 88px 90px";
@@ -408,6 +448,89 @@ export default function OrdersPage() {
           {selected ? <OrderDrawer key={selected.id} o={selected} escalated={isEscalated(selected)} onAdvance={advance} blockedNoDriver={noDriverBlock === selected.id} /> : (
             <div style={{ padding: "56px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 13, fontWeight: 600 }}>اختر طلب لعرض تفاصيله</div>
           )}
+        </div>
+      </div>
+
+      {/* R3 — driver-check failed prompt: retry, or audited manager override. */}
+      {driverCheckFailed && (
+        <DriverCheckFailedDialog
+          order={driverCheckFailed}
+          isManager={isManager}
+          onCancel={() => setDriverCheckFailed(null)}
+          onRetry={() => { const o = driverCheckFailed; setDriverCheckFailed(null); void advance(o); }}
+          onOverride={() => { void overrideDeliverNoDriver(driverCheckFailed); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// R3 — shown when the driver-check could not be verified (network/error). NEVER a
+// silent proceed: the operator must retry, or a MANAGER must confirm an audited
+// "deliver without driver" override (non-managers can retry but not override).
+// Accessible: role="dialog" + aria-modal, primary action focused, Escape closes.
+function DriverCheckFailedDialog({
+  order,
+  isManager,
+  onCancel,
+  onRetry,
+  onOverride,
+}: {
+  order: LocalOrder;
+  isManager: boolean;
+  onCancel: () => void;
+  onRetry: () => void;
+  onOverride: () => void;
+}) {
+  const retryRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    retryRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" dir="rtl">
+      <div className="absolute inset-0" style={{ background: "rgba(13,52,38,.45)" }} onClick={onCancel} aria-hidden />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="driver-check-title"
+        className="relative w-full max-w-sm rounded-[16px] p-5"
+        style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)", boxShadow: "var(--kv-shadow-panel)" }}
+      >
+        <h2 id="driver-check-title" className="text-base font-bold" style={{ color: "var(--kv-text)" }}>
+          تعذّر التأكد من المندوب
+        </h2>
+        <p className="mt-1.5 text-xs leading-relaxed" style={{ color: "var(--kv-muted)" }}>
+          ما قدرناش نتحقق إن في مندوب متعيّن لطلب #{order.orderNumber}. لو الطلب كاش، تسليمه بدون مندوب معناه إن النقدية مش هتتنسب لحد. جرّب تاني، أو سلّمه بتأكيد مدير (هيتسجّل).
+        </p>
+        <div className="mt-5 flex flex-col gap-2">
+          <button
+            ref={retryRef}
+            onClick={onRetry}
+            className="w-full rounded-xl px-4 py-2.5 text-sm font-bold text-white"
+            style={{ background: "var(--kv-grad-brand)" }}
+          >
+            أعد المحاولة
+          </button>
+          {isManager ? (
+            <button
+              onClick={onOverride}
+              className="w-full rounded-xl border px-4 py-2.5 text-sm font-semibold"
+              style={{ borderColor: "rgba(192,73,47,.34)", color: "#c0492f", background: "rgba(192,73,47,.06)" }}
+            >
+              سلّم بدون مندوب (تأكيد مدير)
+            </button>
+          ) : (
+            <div className="w-full rounded-xl border px-4 py-2.5 text-center text-xs font-semibold" style={{ borderColor: "var(--kv-border)", color: "var(--kv-faint)" }}>
+              محتاج تأكيد مدير للتسليم بدون مندوب
+            </div>
+          )}
+          <button onClick={onCancel} className="w-full rounded-xl px-4 py-2 text-sm font-semibold" style={{ color: "var(--kv-muted)" }}>
+            إلغاء
+          </button>
         </div>
       </div>
     </div>
