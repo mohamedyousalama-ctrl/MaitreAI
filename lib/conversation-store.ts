@@ -71,6 +71,10 @@ interface ConversationState {
   commitAiTurn: (convId: string, aiMessage: ChatMessage, patch: Partial<Conversation>, history: IntentHistoryEntry) => void;
   takeoverToHuman: (convId: string) => void;
   returnToAi: (convId: string, note?: string) => void;
+  // R5 — return-to-Karim chooser: park with the team (HUMAN_IDLE) / close (CLOSED).
+  // Return the REAL server result so the caller can surface it via R1.
+  setConversationIdle: (convId: string) => Promise<boolean>;
+  closeConversation: (convId: string) => Promise<boolean>;
   resetConversations: () => void;
 }
 
@@ -321,6 +325,71 @@ export const useConversationStore = create<ConversationState>()(
             fire(setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null, is_safety_hold: false } }));
             fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: sysText }));
           }
+        },
+
+        // R5 — «استنى»: park the thread with the team (HUMAN_IDLE) — human still owns,
+        // Karim stays paused. Write FIRST (setOwnershipState validates the transition;
+        // SYSTEM_HOLD→HUMAN_IDLE is illegal and would throw), then update local state +
+        // log a system note — so a failed write never leaves a false "waiting" state.
+        setConversationIdle: async (convId) => {
+          const conv = get().conversations.find((c) => c.id === convId);
+          if (!conv) return false;
+          const id = msgId();
+          const text = "المحادثة مستنية مع الفريق — كريم متوقف.";
+          // The «مستنية» label is derived from ownershipState=HUMAN_IDLE (page ownLabel);
+          // the status column keeps a valid ConversationStatus ("تم التحويل لموظف").
+          const apply = () =>
+            set((s) => ({
+              conversations: patchConv(s.conversations, convId, (c) => ({
+                ...c,
+                owner: "human",
+                ownershipState: "HUMAN_IDLE",
+                status: "تم التحويل لموظف",
+                aiTyping: false,
+                messages: [...c.messages, { id, sender: "system", text, time: nowTime() }],
+              })),
+            }));
+          const { _sb, _rid } = get();
+          if (!_sb || !_rid) { apply(); return true; } // demo: local-only
+          try {
+            await setOwnershipState(_sb, convId, "HUMAN_IDLE", { extra: { owner: "human", status: "تم التحويل لموظف" } });
+          } catch {
+            return false; // illegal/failed write → no local change, no false state
+          }
+          apply();
+          fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text }));
+          return true;
+        },
+
+        // R5 — «اقفل المحادثة»: CLOSED. Write FIRST, then local + system note. (The UI
+        // only offers this from a human-owned thread, never a SYSTEM_HOLD, so a safety
+        // hold can't be closed-around; setOwnershipState also enforces legality.)
+        closeConversation: async (convId) => {
+          const conv = get().conversations.find((c) => c.id === convId);
+          if (!conv) return false;
+          const id = msgId();
+          const text = "تم إقفال المحادثة.";
+          // The «مقفولة» label is derived from ownershipState=CLOSED (page ownLabel/view);
+          // status keeps its existing valid ConversationStatus value.
+          const apply = () =>
+            set((s) => ({
+              conversations: patchConv(s.conversations, convId, (c) => ({
+                ...c,
+                ownershipState: "CLOSED",
+                aiTyping: false,
+                messages: [...c.messages, { id, sender: "system", text, time: nowTime() }],
+              })),
+            }));
+          const { _sb, _rid } = get();
+          if (!_sb || !_rid) { apply(); return true; } // demo: local-only
+          try {
+            await setOwnershipState(_sb, convId, "CLOSED", { extra: {} });
+          } catch {
+            return false;
+          }
+          apply();
+          fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text }));
+          return true;
         },
 
         resetConversations: () =>
