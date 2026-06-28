@@ -44,6 +44,7 @@ interface OrderRowJoined extends Record<string, unknown> {
   total: number;
   currency: string;
   source?: string | null;
+  is_test?: boolean | null;
   order_status: string;
   payment_status: string;
   payment_method: string | null;
@@ -81,6 +82,9 @@ function mapOrder(r: OrderRowJoined): LocalOrder {
     paymentMethod: r.payment_method ?? null,
     orderStatus,
     kitchenStatus: kitchenFromOrderStatus(orderStatus),
+    // UI4 — test marker. loadOrders selects "*", so this is null/absent (→ false)
+    // until migration 0044 is applied — deploy-safe with or without the column.
+    isTest: r.is_test === true,
     notes: r.notes ?? undefined,
     createdAt,
     updatedAt: new Date(r.updated_at).getTime(),

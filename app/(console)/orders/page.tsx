@@ -19,7 +19,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Printer, MessageCircle, X } from "lucide-react";
+import { ArrowLeft, Printer, MessageCircle, X, FlaskConical, ClipboardList } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { useOrderStore } from "@/lib/order-store";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useHasHydrated } from "@/lib/store";
@@ -146,21 +147,28 @@ export default function OrdersPage() {
     [orders, hydrated, dateScope] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  // UI4 — the LIST shows every order (test ones get a «طلب تجريبي» badge), but the
+  // real-numbers surfaces (header stats, pipeline counts, daily payments) EXCLUDE
+  // staff-marked test orders so they never inflate revenue/counts. COD money is
+  // already test-free at the source (captureCodOnDelivered skips test orders).
+  const realScoped = useMemo(() => scoped.filter((o) => !o.isTest), [scoped]);
+  const realOrders = useMemo(() => orders.filter((o) => !o.isTest), [orders]);
+
   // ── header stats (real) ──
-  const activeCount = scoped.filter((o) => ACTIVE.includes(o.orderStatus)).length;
-  const needHuman = scoped.filter((o) => isEscalated(o) && ACTIVE.includes(o.orderStatus)).length;
-  const doneToday = orders.filter((o) => o.orderStatus === "delivered" && deliveredAt(o) >= since).length;
+  const activeCount = realScoped.filter((o) => ACTIVE.includes(o.orderStatus)).length;
+  const needHuman = realScoped.filter((o) => isEscalated(o) && ACTIVE.includes(o.orderStatus)).length;
+  const doneToday = realOrders.filter((o) => o.orderStatus === "delivered" && deliveredAt(o) >= since).length;
   const avgMin = useMemo(() => {
-    const done = scoped.filter((o) => o.orderStatus === "delivered");
+    const done = realScoped.filter((o) => o.orderStatus === "delivered");
     const durs = done.map((o) => (deliveredAt(o) - o.createdAt) / 60000).filter((m) => m > 0 && m < 24 * 60);
     if (!durs.length) return null;
     return Math.round(durs.reduce((a, b) => a + b, 0) / durs.length);
-  }, [scoped]);
+  }, [realScoped]);
 
   // ── pipeline counts (real) ──
   const pipeCounts = PIPE.map((p) => ({
     ...p,
-    n: scoped.filter((o) => p.statuses.includes(o.orderStatus) && (!p.todayOnly || deliveredAt(o) >= since)).length,
+    n: realScoped.filter((o) => p.statuses.includes(o.orderStatus) && (!p.todayOnly || deliveredAt(o) >= since)).length,
   }));
 
   // ── daily payments summary ──
@@ -186,8 +194,8 @@ export default function OrdersPage() {
   // Today's orders (count + value + method split) — real, from the loaded store
   // (cancelled excluded). Method split uses the new per-order paymentMethod field.
   const todayOrders = useMemo(
-    () => (hydrated ? orders.filter((o) => o.createdAt >= since && o.orderStatus !== "cancelled") : []),
-    [orders, hydrated] // eslint-disable-line react-hooks/exhaustive-deps
+    () => (hydrated ? realOrders.filter((o) => o.createdAt >= since && o.orderStatus !== "cancelled") : []),
+    [realOrders, hydrated] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const todayCount = todayOrders.length;
   const todayValue = todayOrders.reduce((s, o) => s + Number(o.total || 0), 0);
@@ -321,6 +329,21 @@ export default function OrdersPage() {
     }
   };
 
+  // UI4 — manager-only: mark/unmark an order as a test. Server-set only
+  // (POST /api/orders/[id]/test, manager-gated); the store reloads so the badge
+  // and every test-excluded count update together. UI gate is convenience —
+  // the route is the real guard (403 for non-managers).
+  const markTest = async (o: LocalOrder, isTest: boolean) => {
+    await runActionOutcome(isTest ? "جارٍ التعليم كتجريبي…" : "جارٍ شيل العلامة…", async () => {
+      const res = await fetch(`/api/orders/${o.id}/test`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isTest }),
+      });
+      if (res.ok) { await reloadOrders(); return { state: "success", message: isTest ? "اتعلّم كطلب تجريبي" : "اتشالت علامة التجريبي" }; }
+      if (res.status === 403) return { state: "failed", message: "للمدير فقط" };
+      return { state: "failed", message: "تعذّر تحديث العلامة", retry: false };
+    });
+  };
+
   const advance = async (o: LocalOrder) => {
     const n = nextStatus(o);
     if (!n) return;
@@ -435,9 +458,16 @@ export default function OrdersPage() {
           {/* rows */}
           <div className="kv-scroll" style={{ maxHeight: 430, overflowY: "auto" }}>
             {!hydrated || list.length === 0 ? (
-              <div style={{ padding: "56px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 13, fontWeight: 600 }}>
-                {hydrated ? "مفيش طلبات في النطاق ده لسه" : "بنحمّل…"}
-              </div>
+              !hydrated ? (
+                <div style={{ padding: "56px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 13, fontWeight: 600 }}>بنحمّل…</div>
+              ) : orders.length === 0 ? (
+                // UI4 — genuinely no orders yet → actionable empty-state. When orders
+                // exist but the current tab/search hides them, show the honest plain
+                // line below instead (no misleading "send a test order" affordance).
+                <OrdersEmpty />
+              ) : (
+                <div style={{ padding: "56px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 13, fontWeight: 600 }}>مفيش طلبات في النطاق ده لسه</div>
+              )
             ) : (
               list.map((o) => {
                 const sel = o.id === selectedId;
@@ -457,6 +487,7 @@ export default function OrdersPage() {
                       <span style={{ display: "block", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.customerName}</span>
                       <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                         <SourceTag source={o.source} />
+                        {o.isTest && <TestBadge />}
                         <span style={{ fontSize: 9.5, color: "var(--kv-faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{itemsSummary}</span>
                       </span>
                     </span>
@@ -484,7 +515,7 @@ export default function OrdersPage() {
 
         {/* DRAWER */}
         <div style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: 16, boxShadow: "var(--kv-shadow-card)", overflow: "hidden", position: "sticky", top: 0 }}>
-          {selected ? <OrderDrawer key={selected.id} o={selected} escalated={isEscalated(selected)} onAdvance={advance} blockedNoDriver={noDriverBlock === selected.id} /> : (
+          {selected ? <OrderDrawer key={selected.id} o={selected} escalated={isEscalated(selected)} onAdvance={advance} blockedNoDriver={noDriverBlock === selected.id} isManager={isManager} onMarkTest={markTest} /> : (
             <div style={{ padding: "56px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 13, fontWeight: 600 }}>اختر طلب لعرض تفاصيله</div>
           )}
         </div>
@@ -576,6 +607,42 @@ function DriverCheckFailedDialog({
   );
 }
 
+// UI4 — actionable empty-state shown ONLY when there are no orders at all. The
+// «ابعت طلب تجريبي» action opens the public storefront (the place an order is
+// created); staff can then mark that order «طلب تجريبي» in the drawer so it stays
+// out of real reports. Slug comes from /api/settings/ops; if it isn't available
+// the action is hidden (no broken link) and the honest message still shows.
+function OrdersEmpty() {
+  const [slug, setSlug] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/settings/ops", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive && typeof j?.slug === "string") setSlug(j.slug); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return (
+    <EmptyState
+      icon={ClipboardList}
+      title="مفيش طلبات لسه"
+      description="أول ما يوصل طلب من كريم أو من الموقع هيظهر هنا. تحب تجرّب؟ ابعت طلب تجريبي من الموقع وبعدين علّمه «طلب تجريبي» من تفاصيل الطلب عشان مايتحسبش في الأرقام."
+      action={
+        slug ? (
+          <a
+            href={`/order/${slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 40, padding: "0 18px", borderRadius: 12, background: "var(--kv-grad-brand)", color: "#fff", fontSize: 12.5, fontWeight: 800, textDecoration: "none" }}
+          >
+            <FlaskConical size={15} /> ابعت طلب تجريبي
+          </a>
+        ) : undefined
+      }
+    />
+  );
+}
+
 // ── pieces ──
 function StatTile({ label, value, suffix = "", primary, urgent, placeholder }: { label: string; value: number | null; suffix?: string; primary?: boolean; urgent?: boolean; placeholder?: string }) {
   const color = urgent ? "var(--kv-red)" : primary ? "var(--kv-primary)" : "var(--kv-text)";
@@ -618,6 +685,16 @@ function Pill({ label, dot, bg, fg }: { label: string; dot: string; bg: string; 
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", borderRadius: 99, background: bg, color: fg, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>
       <span style={{ width: 6, height: 6, borderRadius: "50%", background: dot, flex: "none" }} />
       {label}
+    </span>
+  );
+}
+
+// UI4 — test/synthetic-order marker (amber, distinct from real-status pills) so a
+// staff test order is never mistaken for a real one — in the list row and drawer.
+function TestBadge() {
+  return (
+    <span style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 4, height: 18, padding: "0 8px", borderRadius: 99, background: "rgba(201,138,31,.16)", color: "#9a6a14", fontSize: 9.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+      <FlaskConical size={11} /> طلب تجريبي
     </span>
   );
 }
@@ -762,7 +839,7 @@ function DriverAssign({ o }: { o: LocalOrder }) {
 }
 
 const RANK: Record<string, number> = { pending_confirmation: 0, pending_payment: 0, paid: 1, preparing: 2, ready: 3, out_for_delivery: 4, delivered: 5 };
-function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver }: { o: LocalOrder; escalated: boolean; onAdvance: (o: LocalOrder) => void; blockedNoDriver?: boolean }) {
+function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMarkTest }: { o: LocalOrder; escalated: boolean; onAdvance: (o: LocalOrder) => void; blockedNoDriver?: boolean; isManager: boolean; onMarkTest: (o: LocalOrder, isTest: boolean) => void }) {
   const m = statusMeta(o.orderStatus);
   const n = nextStatus(o);
   const rank = RANK[o.orderStatus] ?? 0;
@@ -787,6 +864,7 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver }: { o: LocalOrd
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <span style={{ fontSize: 18, fontWeight: 800 }}>طلب #{toAr(o.orderNumber)}</span>
           {escalated ? <Pill label="تدخّل" dot="var(--kv-red)" bg="rgba(192,73,47,.12)" fg="#c0492f" /> : <Pill label={m.label} dot={m.dot} bg={m.bg} fg={m.fg} />}
+          {o.isTest && <TestBadge />}
         </div>
         <div style={{ fontSize: 12, color: "var(--kv-faint)", fontWeight: 600, marginTop: 6 }}>
           {o.customerId ? <Link href={`/customers?c=${o.customerId}`} style={{ color: "var(--kv-deep)", fontWeight: 700, textDecoration: "none" }}>{o.customerName}</Link> : o.customerName}
@@ -906,6 +984,16 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver }: { o: LocalOrd
             </span>
           )}
         </div>
+        {/* UI4 — manager-only test marker. Marking removes the order from all real
+            reports (revenue/counts/source/COD). Server-gated (403 for non-managers). */}
+        {isManager && (
+          <button
+            onClick={() => onMarkTest(o, !o.isTest)}
+            style={{ height: 38, borderRadius: 12, border: "1px solid " + (o.isTest ? "rgba(201,138,31,.4)" : "var(--kv-border)"), background: o.isTest ? "rgba(201,138,31,.10)" : "var(--kv-card)", color: o.isTest ? "#9a6a14" : "var(--kv-muted)", fontSize: 12, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
+          >
+            <FlaskConical size={15} /> {o.isTest ? "شيل علامة «طلب تجريبي»" : "علّم كطلب تجريبي"}
+          </button>
+        )}
       </div>
     </div>
   );
