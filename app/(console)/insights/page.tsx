@@ -29,7 +29,7 @@
 // message createdAtMs when present, else count all (demo fallback).
 // ============================================================================
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOrderStore } from "@/lib/order-store";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useHasHydrated } from "@/lib/store";
@@ -60,6 +60,57 @@ function convTime(c: Conversation): number | undefined {
 // intent/cart signal without a completed order (best-effort, real fields only)
 function hasOpenIntent(c: Conversation): boolean {
   return !!(c.draftOrder || c.linkedOrderId || c.status === "طلب قيد البناء" || c.status === "بانتظار الدفع");
+}
+
+// SRC2 — order-source breakdown. Reads the RAW orders.source column server-side
+// (/api/insights/order-sources, tenant-scoped) so unknown/future values are
+// counted honestly as «غير محدد» — never folded into whatsapp by the client model.
+function OrderSourcesCard() {
+  const [data, setData] = useState<{ web: number; whatsapp: number; unknown: number; total: number } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/insights/order-sources", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive && j?.sources) setData(j.sources); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoaded(true); });
+    return () => { alive = false; };
+  }, []);
+
+  const rows: { label: string; n: number; fg: string; bg: string }[] = data
+    ? [
+        { label: "من الموقع", n: data.web, fg: "#1d6f8e", bg: "rgba(43,143,181,.12)" },
+        { label: "من واتساب", n: data.whatsapp, fg: "#0a8a5f", bg: "rgba(14,159,110,.10)" },
+        ...(data.unknown > 0 ? [{ label: "غير محدد", n: data.unknown, fg: "#51637a", bg: "rgba(100,116,139,.14)" }] : []),
+      ]
+    : [];
+
+  return (
+    <section style={{ borderRadius: 16, padding: "15px 18px", background: "var(--kv-card)", border: "1px solid var(--kv-border)", boxShadow: "var(--kv-shadow-panel)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 800, margin: 0 }}>مصدر الطلبات</h3>
+        <span style={{ height: 18, display: "inline-flex", alignItems: "center", padding: "0 8px", borderRadius: 99, background: "rgba(14,159,110,.1)", color: "var(--kv-deep)", fontSize: 9, fontWeight: 800 }}>حقائق</span>
+        {data && <span style={{ marginInlineStart: "auto", fontSize: 10, fontWeight: 700, color: "var(--kv-faint)" }}>{toAr(data.total)} طلب</span>}
+      </div>
+      {!loaded ? (
+        <div style={{ fontSize: 11, color: "var(--kv-faint)", fontWeight: 600 }}>بنحمّل…</div>
+      ) : !data ? (
+        <div style={{ display: "inline-flex", padding: "2px 8px", borderRadius: 99, border: "1px dashed rgba(100,116,139,.35)", color: "#6b7a88", fontSize: 10, fontWeight: 800 }}>قيد التجميع</div>
+      ) : data.total === 0 ? (
+        <div style={{ fontSize: 11, color: "var(--kv-faint)", fontWeight: 600 }}>مفيش طلبات لسه.</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${rows.length}, 1fr)`, gap: 12 }}>
+          {rows.map((r) => (
+            <div key={r.label} style={{ borderRadius: 12, background: r.bg, padding: "11px 13px" }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: r.fg }}>{toAr(r.n)}</div>
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: r.fg, marginTop: 3 }}>{r.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 export default function InsightsPage() {
@@ -178,6 +229,9 @@ export default function InsightsPage() {
         <KpiTile label="طلبات مكتملة عبر Kivo" value={m.deliveredCount} delta={m.deliveredDelta} />
         <KpiTile label="طلبات مش مكتملة" value={m.incomplete} />
       </section>
+
+      {/* SRC2 — order-source breakdown (honest: raw orders.source, unknowns shown) */}
+      <OrderSourcesCard />
 
       {/* GOAL / MOMENTUM / MILESTONE */}
       <section style={{ ...rGoal.style, display: "grid", gridTemplateColumns: "1.05fr 1fr 1.25fr", gap: 13 }}>

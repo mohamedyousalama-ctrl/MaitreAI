@@ -442,7 +442,10 @@ export default function OrdersPage() {
                     <span style={{ fontSize: 13.5, fontWeight: 800, color: sel ? "var(--kv-deep)" : "var(--kv-text)" }}>#{toAr(o.orderNumber)}</span>
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: "block", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.customerName}</span>
-                      <span style={{ display: "block", fontSize: 9.5, color: "var(--kv-faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{itemsSummary}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                        <SourceTag source={o.source} />
+                        <span style={{ fontSize: 9.5, color: "var(--kv-faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{itemsSummary}</span>
+                      </span>
                     </span>
                     <span style={{ fontSize: 12.5, fontWeight: 800 }}>{money(o.total)}</span>
                     <span><PaymentPill o={o} /></span>
@@ -606,6 +609,22 @@ function Pill({ label, dot, bg, fg }: { label: string; dot: string; bg: string; 
   );
 }
 
+// SRC1 — per-order source tag (display-only; data already on the loaded order).
+// Covers BOTH channels; anything unexpected shows «غير محدد», never a guess.
+function SourceTag({ source }: { source?: string }) {
+  const s =
+    source === "web"
+      ? { label: "الموقع", bg: "rgba(43,143,181,.12)", fg: "#1d6f8e" }
+      : source === "whatsapp"
+      ? { label: "واتساب", bg: "rgba(14,159,110,.10)", fg: "#0a8a5f" }
+      : { label: "غير محدد", bg: "rgba(100,116,139,.14)", fg: "#51637a" };
+  return (
+    <span style={{ flex: "none", height: 15, display: "inline-flex", alignItems: "center", padding: "0 6px", borderRadius: 99, background: s.bg, color: s.fg, fontSize: 8, fontWeight: 800 }}>
+      {s.label}
+    </span>
+  );
+}
+
 function PaymentPill({ o }: { o: LocalOrder }) {
   // Vodafone Cash is a distinct method — show it apart from COD (red brand tint).
   if (o.paymentMethod === "vodafone_cash") return <Pill label="فودافون كاش" dot="#e60000" bg="rgba(230,0,0,.10)" fg="#c40000" />;
@@ -759,7 +778,7 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver }: { o: LocalOrd
         <div style={{ fontSize: 12, color: "var(--kv-faint)", fontWeight: 600, marginTop: 6 }}>
           {o.customerId ? <Link href={`/customers?c=${o.customerId}`} style={{ color: "var(--kv-deep)", fontWeight: 700, textDecoration: "none" }}>{o.customerName}</Link> : o.customerName}
           {area ? ` · ${area}` : ""}
-          {o.source === "whatsapp" ? " · من محادثة واتساب" : ""}
+          {o.source === "web" ? " · من الموقع" : o.source === "whatsapp" ? " · من محادثة واتساب" : o.source ? " · غير محدد المصدر" : ""}
         </div>
       </div>
 
