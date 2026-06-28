@@ -344,3 +344,92 @@ export function renderKitchenTicketPng(d: ReceiptData, width: ReceiptWidth = "st
   const { svg, width: w } = buildKitchenTicketSvg(d, width);
   return rasterize(svg, w);
 }
+
+// --- UI2 — COD end-of-shift settlement slip ---------------------------------
+// Per-driver cash-reconciliation slip (printable proof of a handed-in settlement).
+// Reuses the SAME render pipeline (layout/money/rasterize/fonts) — no duplication.
+// Every figure comes from the settled ledger rows (server-side), never the client.
+export interface SettlementSlipData {
+  restaurantName: string;
+  driverName: string;
+  dateLabel: string; // settlement date / window
+  currency: string;
+  expected: number;
+  collected: number;
+  discrepancy: number; // collected - expected (negative = short)
+  orderCount: number;
+  items: { orderNumber: string; amount: number }[];
+  settledBy?: string; // role label
+  note?: string;
+}
+
+export function buildSettlementSlipSvg(d: SettlementSlipData, width: ReceiptWidth = "standard"): { svg: string; width: number } {
+  const { W, s, PAD, tRight, tLeft, tMid, rule } = layout(width);
+  const parts: string[] = [];
+  let y = s(80);
+  parts.push(tMid(y, d.restaurantName, 38, "#2a211b", 600));
+  y += s(34);
+  parts.push(tMid(y, "تقفيل وردية — تحصيل كاش", 20, "#b5502e", 500));
+  y += s(26);
+  parts.push(tMid(y, d.dateLabel, 18, "#9b8b7c"));
+  y += s(28);
+  parts.push(rule(y));
+  y += s(36);
+
+  parts.push(tRight(y, "المندوب", 22, "#6a5c4e"));
+  parts.push(tLeft(y, d.driverName, 24, "#2a211b", 600));
+  y += s(36);
+  parts.push(tRight(y, "عدد الطلبات", 22, "#6a5c4e"));
+  parts.push(tLeft(y, ltr(String(d.orderCount)), 22, "#2a211b"));
+  y += s(34);
+  parts.push(rule(y));
+  y += s(34);
+
+  for (const it of d.items) {
+    parts.push(tRight(y, `طلب ${ltr(it.orderNumber)}`, 22, "#2a211b"));
+    parts.push(tLeft(y, money(it.amount, d.currency), 22, "#2a211b"));
+    y += s(30);
+  }
+
+  y += s(6);
+  parts.push(rule(y));
+  y += s(36);
+  const row = (label: string, amount: string, color = "#6a5c4e", bold = false) => {
+    parts.push(tRight(y, label, bold ? 28 : 22, bold ? "#2a211b" : "#6a5c4e", bold ? 600 : 400));
+    parts.push(tLeft(y, amount, bold ? 28 : 22, color, bold ? 600 : 400));
+    y += bold ? s(40) : s(32);
+  };
+  row("المتوقّع", money(d.expected, d.currency));
+  row("المحصّل", money(d.collected, d.currency), "#b5502e", true);
+  const disc = d.discrepancy;
+  const discColor = disc === 0 ? "#3c7a52" : disc < 0 ? "#a8432a" : "#9a6a14";
+  const discText = disc === 0 ? "مطابق ✓" : disc < 0 ? `عجز ${money(Math.abs(disc), d.currency)}` : `زيادة ${money(disc, d.currency)}`;
+  row("الفرق", discText, discColor, true);
+
+  y += s(6);
+  parts.push(rule(y));
+  y += s(34);
+  if (d.settledBy) {
+    parts.push(tRight(y, "أقفلها", 20, "#6a5c4e"));
+    parts.push(tLeft(y, d.settledBy, 20, "#2a211b"));
+    y += s(30);
+  }
+  if (d.note) {
+    parts.push(tRight(y, `ملاحظة: ${d.note}`, 18, "#9b8b7c"));
+    y += s(28);
+  }
+  y += s(10);
+
+  const H = y + PAD;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+<rect width="${W}" height="${H}" fill="#faf6ef"/>
+<rect x="0" y="0" width="${W}" height="${s(10)}" fill="#b5502e"/>
+${parts.join("\n")}
+</svg>`;
+  return { svg, width: W };
+}
+
+export function renderSettlementSlipPng(d: SettlementSlipData, width: ReceiptWidth = "standard"): Buffer {
+  const { svg, width: w } = buildSettlementSlipSvg(d, width);
+  return rasterize(svg, w);
+}

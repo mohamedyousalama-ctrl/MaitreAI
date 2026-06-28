@@ -15,6 +15,7 @@
 
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SettlementSlipData } from "@/lib/render/receipt";
 
 export type SettlementStatus = "pending" | "held_by_driver" | "settled";
 
@@ -486,4 +487,91 @@ export async function settleDriver(
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// --- UI2 — end-of-shift: settle every held driver (reuses settleDriver) -------
+/**
+ * Settle ALL drivers who currently hold unsettled cash. Reuses settleDriver per
+ * driver (no reimplementation). IDEMPOTENT: only `held_by_driver` cash is settled,
+ * so a second call settles nothing (driverLedger returns no held drivers) — never
+ * double-settles, never errors. Unassigned cash (driver_id null, «غير معيّن») is
+ * skipped (it can't be attributed to a driver to hand in) and reported separately.
+ */
+export async function settleAllHeldDrivers(
+  db: SupabaseClient,
+  restaurantId: string,
+  args: { settledBy?: string | null; settledByRole?: string | null; note?: string | null }
+): Promise<{ settledCount: number; total: number; skippedUnassigned: number; results: Array<{ driverId: string; driverName: string; total: number; orderCount: number; settlementId: string }> }> {
+  const ledger = await driverLedger(db, restaurantId);
+  const results: Array<{ driverId: string; driverName: string; total: number; orderCount: number; settlementId: string }> = [];
+  let total = 0;
+  let skippedUnassigned = 0;
+  for (const d of ledger) {
+    if (!d.driverId) { skippedUnassigned += d.unsettledCount; continue; }
+    const r = await settleDriver(db, restaurantId, { driverId: d.driverId, settledBy: args.settledBy, settledByRole: args.settledByRole, note: args.note });
+    if (r.ok) {
+      results.push({ driverId: d.driverId, driverName: d.driverName, total: r.total ?? 0, orderCount: r.orderCount ?? 0, settlementId: r.settlementId ?? "" });
+      total += r.total ?? 0;
+    }
+  }
+  return { settledCount: results.length, total: round2(total), skippedUnassigned, results };
+}
+
+// --- UI2 — printable settlement slip data (per cod_settlements row) ----------
+const ROLE_AR: Record<string, string> = { manager: "مدير", operation: "موظف" };
+function slipDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Build the slip payload for a settled batch. Tenant-scoped; figures from the
+ *  settled ledger rows (collected = the settlement total, expected = sum of the
+ *  settled collections' expected_cash). Returns null if not found in this tenant. */
+export async function loadSettlementSlip(
+  db: SupabaseClient,
+  restaurantId: string,
+  settlementId: string
+): Promise<SettlementSlipData | null> {
+  const { data: st } = await db
+    .from("cod_settlements")
+    .select("driver_name,total_amount,order_count,settled_by_role,note,created_at")
+    .eq("id", settlementId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (!st) return null;
+  const s = st as { driver_name: string | null; total_amount: number; order_count: number; settled_by_role: string | null; note: string | null; created_at: string };
+
+  const { data: cols } = await db
+    .from("cod_collections")
+    .select("expected_cash,cash_collected,orders(order_number)")
+    .eq("settlement_id", settlementId)
+    .eq("restaurant_id", restaurantId);
+  const rows = (cols ?? []) as unknown as Array<{ expected_cash: number; cash_collected: number | null; orders: { order_number: string | null } | { order_number: string | null }[] | null }>;
+  const orderNo = (o: { order_number: string | null } | { order_number: string | null }[] | null): string => {
+    const rec = Array.isArray(o) ? o[0] : o;
+    return String(rec?.order_number ?? "—");
+  };
+  const items = rows.map((r) => ({ orderNumber: orderNo(r.orders), amount: round2(Number(r.cash_collected ?? 0)) }));
+  const expected = round2(rows.reduce((a, r) => a + Number(r.expected_cash ?? 0), 0));
+  const collected = round2(Number(s.total_amount));
+
+  const { data: rest } = await db.from("restaurants").select("name,currency").eq("id", restaurantId).maybeSingle();
+  const r = (rest as { name?: string; currency?: string } | null) ?? {};
+
+  return {
+    restaurantName: r.name ?? "",
+    driverName: s.driver_name ?? "غير معيّن",
+    dateLabel: slipDate(s.created_at),
+    currency: r.currency || "ج.م",
+    expected,
+    collected,
+    discrepancy: round2(collected - expected),
+    orderCount: s.order_count,
+    items,
+    settledBy: s.settled_by_role ? ROLE_AR[s.settled_by_role] ?? s.settled_by_role : undefined,
+    note: s.note ?? undefined,
+  };
 }

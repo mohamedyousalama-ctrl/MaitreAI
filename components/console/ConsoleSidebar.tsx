@@ -22,6 +22,7 @@ import {
   UtensilsCrossed,
   Truck,
   UserCog,
+  Calculator,
   type LucideIcon,
 } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
@@ -233,6 +234,7 @@ export function ConsoleSidebar() {
       <GroupLabel>تشغيل</GroupLabel>
       <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         {isManager && <NavLink href="/cod" icon={Wallet} label="الكاش والتحصيل" active={is("/cod")} />}
+        {isManager && <NavLink href="/cod/close" icon={Calculator} label="تقفيل وردية" active={is("/cod/close")} />}
         {/* «التوصيل» renders only when delivery tracking is enabled — same flag the
             /deliveries page gates on (notFound() when off), so the nav can't link
             to a 404. Flag is ON by default, so this is currently shown as before. */}
