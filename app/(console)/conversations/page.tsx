@@ -36,6 +36,7 @@ import { isEscalated, countEscalations } from "@/lib/escalation";
 import { useConsoleUi } from "@/components/console/console-ui-store";
 import { runAction, runActionOutcome } from "@/lib/console-toast";
 import { StatePill, KvSkeletonBlock, useRiseIn } from "@/components/kivo";
+import { useConversationPresence, presenceLabel } from "@/lib/realtime/use-conversation-presence";
 import type { Conversation, ChannelKey } from "@/lib/types";
 
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -304,6 +305,10 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
   latestOrder: ReturnType<ReturnType<typeof useOrderStore.getState>["getLatestOrderByConversation"]> | undefined;
 }) {
   const [draft, setDraft] = useState("");
+  // MO3 — ephemeral operator presence for THIS conversation (realtime, no DB).
+  // Advisory only; never gates actions (MO2's claim is the authority).
+  const { others, setTyping } = useConversationPresence(c.id);
+  const presence = presenceLabel(others);
   const view = ownView(c);
   const humanOwns = view === "HUMAN";
   const canTakeover = view !== "HUMAN";
@@ -328,6 +333,13 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
           <div style={{ fontSize: 9.5, color: "var(--kv-faint)", fontWeight: 700, marginTop: 2 }}>
             {CHANNEL_AR[c.channel] ?? c.channel} · {ownerLine(c)}{orderNo ? ` · طلب #${toAr(orderNo)}` : ""}{reason ? ` · السبب: ${reason}` : ""}
           </div>
+          {/* MO3 — other operators present on this conversation (ephemeral). */}
+          {presence && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, height: 18, padding: "0 8px", borderRadius: 99, background: "rgba(124,92,208,.1)", color: "#6243b0", fontSize: 9.5, fontWeight: 800 }}>
+              <span className="kv-pulse" style={{ width: 6, height: 6, borderRadius: "50%", background: "#7c5cd0", flex: "none" }} />
+              {presence}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 7 }}>
           {/* assign-to-team → takeover (HUMAN_IDLE assign isn't exposed; TODO) */}
@@ -372,7 +384,7 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
       <div style={{ padding: "11px 14px", borderTop: "1px solid #eef2f0", background: "rgba(255,255,255,.6)" }}>
         {humanOwns ? (
           <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 12, border: "1px solid var(--kv-border)", background: "#fff", padding: "7px 9px 7px 13px" }}>
-            <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="اكتب ردّ الفريق… كريم متوقّف عن الرد لحد ما تحلّ التصعيد أو ترجّعها له" style={{ flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: "var(--kv-text)" }} />
+            <input value={draft} onChange={(e) => { setDraft(e.target.value); setTyping(true); }} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="اكتب ردّ الفريق… كريم متوقّف عن الرد لحد ما تحلّ التصعيد أو ترجّعها له" style={{ flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: "var(--kv-text)" }} />
             <button onClick={submit} aria-label="إرسال" style={{ width: 32, height: 32, borderRadius: 10, border: 0, background: "var(--kv-primary)", color: "#fff", display: "grid", placeItems: "center", cursor: "pointer", flex: "none" }}><Send size={15} /></button>
           </div>
         ) : view === "HOLD" ? (
