@@ -26,6 +26,7 @@ import { useHasHydrated } from "@/lib/store";
 import { CountUp, useRiseIn } from "@/components/kivo";
 import { useConsoleUi } from "@/components/console/console-ui-store";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
+import { runAction, runActionOutcome } from "@/lib/console-toast";
 import type { LocalOrder, OrderStatusKey } from "@/lib/types";
 
 // ── helpers (Arabic digits + money; money is display-only, value from the row) ─
@@ -251,8 +252,27 @@ export default function OrdersPage() {
     }
     setNoDriverBlock(null);
     const isConfirm = ["pending_confirmation", "pending_payment", "paid"].includes(o.orderStatus) && n === "preparing";
-    updateOrderStatus(o.id, n, "human"); // existing handler → DB write-through (+COD capture on delivered)
-    if (isConfirm) void fetch(`/api/orders/${o.id}/send-receipt`, { method: "POST" }).catch(() => {});
+
+    // R2 — surface the REAL status-write result; on failure updateOrderStatus reverts
+    // the optimistic change, and the toast offers retry. The board never keeps an
+    // advanced status the server rejected.
+    const ok = await runAction(
+      { pending: "جارٍ التحديث…", success: "تم تحديث الحالة", error: "تعذّر تحديث الحالة", retry: true },
+      () => updateOrderStatus(o.id, n, "human"),
+    );
+
+    // R2 — receipt-on-confirm: only after a CONFIRMED status advance, and surface the
+    // real send result with three distinct outcomes (skipped ≠ success).
+    if (ok && isConfirm) {
+      void runActionOutcome("جارٍ إرسال الإيصال…", async () => {
+        const res = await fetch(`/api/orders/${o.id}/send-receipt`, { method: "POST" });
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        const st = String(data.status ?? (res.ok ? "" : "failed"));
+        if (st === "sent") return { state: "success", message: "تم إرسال الإيصال" };
+        if (st === "skipped" || st === "no_phone") return { state: "info", message: "الإيصال متخطّى" };
+        return { state: "failed", message: "تعذّر إرسال الإيصال", retry: true };
+      });
+    }
   };
 
   const COL = "64px 1.4fr 70px 88px 90px";
