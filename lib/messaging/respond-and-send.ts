@@ -278,8 +278,14 @@ export async function respondAndSendWhatsApp(
   // operator's. Human turns stay role:"assistant" (a valid LLM role) but their
   // content is prefixed with a marker carrying the staff name, resolved server-side
   // from meta.author_member_id (stamped by /api/whatsapp/send). ai/customer turns
-  // are unchanged. System notes are HX2's job — left as-is here.
-  const histRows = rows.slice(0, lastCustomerIdx).filter((m) => m.text);
+  // are unchanged.
+  // HX2 — exclude sender:"system" rows: they are INTERNAL operator-facing timeline
+  // notes (handoff/escalation/stuck/receipt/send-error), NEVER customer dialogue and
+  // never sent to the customer — so they must not pollute Karim's prompt. They stay
+  // persisted for the operator UI (this only drops them from the LLM context). The
+  // 40-window fetch and lastCustomerIdx (the message-to-answer) are unchanged; we
+  // only filter what's fed into `history`.
+  const histRows = rows.slice(0, lastCustomerIdx).filter((m) => m.text && m.sender !== "system");
   const authorIds = histRows
     .filter((m) => m.sender === "human")
     .map((m) => (m.meta as { author_member_id?: string } | null)?.author_member_id);
