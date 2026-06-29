@@ -33,8 +33,11 @@ interface MsgRow {
   sender: string;
   text: string;
   created_at: string;
+  status: string | null;
   meta: Record<string, unknown> | null;
 }
+
+const MESSAGE_STATUSES = new Set(["sending", "sent", "delivered", "read", "failed"]);
 
 function toMessage(m: MsgRow): ChatMessage {
   const meta = m.meta ?? {};
@@ -43,6 +46,10 @@ function toMessage(m: MsgRow): ChatMessage {
     sender: m.sender as MessageSender,
     text: m.text,
     time: fmtTime(m.created_at),
+    // T8 — surface the real send status so the bubble can show sending/sent/
+    // failed honestly. Only pass known values through (legacy/null ⇒ undefined ⇒
+    // no indicator). The bubble decides to show it only on outbound messages.
+    status: m.status && MESSAGE_STATUSES.has(m.status) ? (m.status as ChatMessage["status"]) : undefined,
     createdAtMs: m.created_at ? new Date(m.created_at).getTime() : undefined,
     confidence: meta.confidence as number | undefined,
     intent: meta.intent as ChatMessage["intent"],
@@ -56,7 +63,7 @@ function toMessage(m: MsgRow): ChatMessage {
 export async function loadConversations(s: SupabaseClient, restaurantId: string): Promise<Conversation[]> {
   const [{ data: convs }, { data: msgs }] = await Promise.all([
     s.from("conversations").select("*, customers(name, phone)").eq("restaurant_id", restaurantId).order("updated_at", { ascending: false }),
-    s.from("messages").select("id, conversation_id, sender, text, created_at, meta").eq("restaurant_id", restaurantId).order("created_at", { ascending: true }),
+    s.from("messages").select("id, conversation_id, sender, text, created_at, status, meta").eq("restaurant_id", restaurantId).order("created_at", { ascending: true }),
   ]);
 
   const byConv = new Map<string, ChatMessage[]>();
@@ -142,6 +149,12 @@ export async function insertMessageDb(
   msg: { id: string; sender: MessageSender; text: string; meta?: Record<string, unknown> }
 ): Promise<void> {
   const direction = msg.sender === "customer" ? "inbound" : "outbound";
+  // T8 — a human operator reply actually goes over the WhatsApp wire and is
+  // reconciled to sent/failed by the send route, so it must start as "sending"
+  // (not a premature "sent"). Inbound customer + local system notes keep "sent"
+  // (they don't traverse a wire whose result we await). The send logic itself is
+  // unchanged — only this initial value is made honest.
+  const status = msg.sender === "human" ? "sending" : "sent";
   await s.from("messages").insert({
     id: msg.id,
     restaurant_id: restaurantId,
@@ -150,7 +163,7 @@ export async function insertMessageDb(
     sender: msg.sender,
     text: msg.text,
     meta: msg.meta ?? {},
-    status: "sent",
+    status,
   });
   await s.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
 }

@@ -196,7 +196,10 @@ export const useConversationStore = create<ConversationState>()(
           set((s) => ({
             conversations: patchConv(s.conversations, convId, (c) => ({
               ...c,
-              messages: [...c.messages, { id, sender: "human", text, time }],
+              // T8 — optimistic render stays instant; status starts "sending" so a
+              // failed wire send no longer looks identical to a delivered one. The
+              // realtime reload then reflects the real sent/failed from the DB.
+              messages: [...c.messages, { id, sender: "human", text, time, status: "sending" }],
               lastMessage: `موظف: ${text}`,
               lastTime: time,
             })),
