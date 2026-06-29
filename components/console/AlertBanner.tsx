@@ -33,6 +33,7 @@ const TYPE_LABEL: Record<string, string> = {
   cod_capture_failed: "فشل تسجيل تحصيل الكاش (COD)",
   operator_send_failed: "فشل إرسال رسالة الموظف عبر واتساب",
   delivered_without_driver_override: "تسليم بدون مندوب (تأكيد مدير — تحقّق فشل)",
+  payment_unspecified: "طلب بدون طريقة دفع محددة (مطلوب تحديد الدفع)",
 };
 
 const POLL_MS = 30000;
