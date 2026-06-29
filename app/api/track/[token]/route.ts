@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getDeliveryByCustomerToken } from "@/lib/db/delivery";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 // Polled live — every request must hit the DB (no Next.js GET route caching),
@@ -18,8 +19,22 @@ export const dynamic = "force-dynamic";
 // Only surface a live dot if the last point is fresh (driver page open & sharing).
 const LOCATION_FRESH_MS = 30 * 1000;
 
+// T5 — abuse throttle. Legit customer polling is 1/5s = 12/min; cap at 60/min
+// per token (5× headroom), so refreshing never throttles but scraping does.
+const RATE_LIMIT = 60;
+const RATE_WINDOW_MS = 60 * 1000;
+
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   if (!ENABLE_DELIVERY_TRACKING) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  const rl = rateLimit(`track:${params.token}`, RATE_LIMIT, RATE_WINDOW_MS);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      { status: 429, headers: { "retry-after": String(rl.retryAfterSec) } },
+    );
+  }
+
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
