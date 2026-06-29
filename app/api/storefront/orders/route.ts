@@ -7,6 +7,7 @@ import { ensureCustomerId } from "@/lib/db/orders";
 import { nextOrderNumber, uuidFromHash } from "@/lib/db/orders-create";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
 import { ensureDeliveryRowForOrder } from "@/lib/db/delivery";
+import { normalizePaymentConfig, DEFAULT_PAYMENT_CONFIG } from "@/lib/payments/config";
 
 type CheckoutLine = {
   itemId: string;
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
 
   const { data: restaurant, error: restaurantError } = await admin
     .from("restaurants")
-    .select("id, name, currency, active, is_open")
+    .select("id, name, currency, active, is_open, payment_config")
     .ilike("slug", slug)
     .maybeSingle();
   if (restaurantError) return bad("تعذر تحميل المطعم.", 500);
@@ -101,12 +102,21 @@ export async function POST(req: NextRequest) {
     return bad(err instanceof Error ? err.message : "تعذر حساب الطلب.");
   }
 
-  const VALID_METHODS = ["cod", "vodafone_cash"] as const;
-  type ValidMethod = (typeof VALID_METHODS)[number];
-  const paymentMethod: ValidMethod =
-    VALID_METHODS.includes(payload.paymentMethod as ValidMethod)
-      ? (payload.paymentMethod as ValidMethod)
-      : "cod";
+  // S2 — payment method is server-authoritative: the acceptable set is what THIS
+  // restaurant actually has enabled in payment_config, not a hardcoded list. The
+  // client can't submit a method the restaurant hasn't enabled, regardless of what
+  // the UI showed. A method enabled-but-unconfigured (VF on with no number) is NOT
+  // acceptable — we never take a payment the restaurant can't fulfill.
+  const payConfig = normalizePaymentConfig((restaurant as { payment_config?: unknown }).payment_config ?? DEFAULT_PAYMENT_CONFIG);
+  const acceptableMethods = new Set<string>();
+  if (payConfig.cod_enabled) acceptableMethods.add("cod");
+  if (payConfig.vodafone_cash.enabled && (payConfig.vodafone_cash.number ?? "").trim()) acceptableMethods.add("vodafone_cash");
+  // Default a missing/blank method to COD (the UI's default) — then validate it
+  // against the enabled set just like an explicit choice. Unknown/disabled → reject.
+  const paymentMethod = clean(payload.paymentMethod) || "cod";
+  if (!acceptableMethods.has(paymentMethod)) {
+    return bad("طريقة الدفع دي مش متاحة.");
+  }
 
   // DLV6b — real picked coordinates, server-side range-validated. A bad pin is
   // worse than none, so out-of-range / non-finite values are IGNORED (stored null)
