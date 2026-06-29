@@ -28,6 +28,14 @@ import { recordCriticalAlert } from "@/lib/alerts/record";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// V1-pii — never write raw customer PII (phone, name, message content) to logs.
+// Mask a phone to its last 4 digits so a log line is still useful for debugging
+// (which sender, roughly) without storing identifying data. Empty → "unknown".
+function maskPhone(p: string | undefined | null): string {
+  const s = (p ?? "").replace(/\D/g, "");
+  return s.length >= 4 ? `…${s.slice(-4)}` : "unknown";
+}
+
 // --- GET: verification handshake -------------------------------------------
 export async function GET(req: NextRequest) {
   const env = readWhatsAppEnv();
@@ -288,9 +296,16 @@ export async function POST(req: NextRequest) {
       console.warn("[whatsapp:webhook] no restaurant to attach inbound messages to");
     }
   } else if (messages.length > 0) {
+    // V1-pii — REDACTED test-mode log: no raw phone/name/message content. Log the
+    // masked sender, the message kind, and the text LENGTH only — enough to debug
+    // "a text message from …6312 arrived" without persisting PII to logs.
     console.log(
-      `[whatsapp:webhook] received ${messages.length} message(s)`,
-      messages.map((m) => ({ from: m.from, name: m.customerName, text: m.text }))
+      `[whatsapp:webhook] received ${messages.length} message(s) (test mode, not persisted)`,
+      messages.map((m) => ({
+        from: maskPhone(m.from),
+        kind: m.audioId ? "voice" : m.interactiveId ? "interactive" : "text",
+        textLen: m.text?.length ?? 0,
+      }))
     );
   }
 
