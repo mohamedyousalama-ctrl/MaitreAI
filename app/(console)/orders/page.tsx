@@ -49,6 +49,16 @@ const LATE_MS = 30 * 60 * 1000;
 const ACTIVE: OrderStatusKey[] = ["pending_confirmation", "pending_payment", "paid", "preparing", "ready", "out_for_delivery"];
 const DONE: OrderStatusKey[] = ["delivered", "cancelled"];
 
+// WB1 — POS hand-off eligibility: only a genuinely-confirmed, non-test order needs
+// to reach the Deyafa kitchen. MIRRORS the server allowlist in /api/orders/[id]/pos
+// (server is authoritative; this hides the badge + controls for ineligible orders
+// so they never even show). Ineligible: draft / pending_confirmation /
+// pending_payment / cancelled / is_test.
+const POS_ELIGIBLE_STATUS: OrderStatusKey[] = ["paid", "preparing", "ready", "out_for_delivery", "delivered"];
+function posEligible(o: LocalOrder): boolean {
+  return !o.isTest && POS_ELIGIBLE_STATUS.includes(o.orderStatus);
+}
+
 function minutesAgo(ms: number): string {
   const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
   if (m < 1) return "الآن";
@@ -353,7 +363,15 @@ export default function OrdersPage() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, reference }),
       });
       if (res.ok) { await reloadOrders(); return { state: "success", message: status === "entered" ? "اتسجّل إدخاله في Deyafa" : "اترسل للمطبخ" }; }
-      if (res.status === 409) return { state: "failed", message: "تحويل غير صالح" };
+      // 409 = ineligible order OR a concurrent/stale change. Mirror the status_conflict
+      // path: refresh the drawer from DB truth (not just a toast) so stale state clears.
+      if (res.status === 409) {
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        void reloadOrders();
+        const msg = data.error === "order_not_eligible" ? "الطلب مش مؤكد — مايتسجّلش في Deyafa"
+          : "حالة Deyafa اتغيّرت من حد تاني، حدّثنا الصفحة";
+        return { state: "info", message: msg };
+      }
       return { state: "failed", message: "تعذّر تحديث حالة Deyafa", retry: false };
     });
   };
@@ -504,7 +522,7 @@ export default function OrdersPage() {
                         {o.isTest && <TestBadge />}
                         {/* WB1 — needs-POS-entry warning so a Kivo-confirmed order isn't
                             mistaken for one the kitchen has. */}
-                        {!o.isTest && o.orderStatus !== "cancelled" && (o.posStatus ?? "not_entered") === "not_entered" && <PosBadge status="not_entered" />}
+                        {posEligible(o) && (o.posStatus ?? "not_entered") === "not_entered" && <PosBadge status="not_entered" />}
                         <span style={{ fontSize: 9.5, color: "var(--kv-faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{itemsSummary}</span>
                       </span>
                     </span>
@@ -910,7 +928,7 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMa
           <span style={{ fontSize: 18, fontWeight: 800 }}>طلب #{toAr(o.orderNumber)}</span>
           {escalated ? <Pill label="تدخّل" dot="var(--kv-red)" bg="rgba(192,73,47,.12)" fg="#c0492f" /> : <Pill label={m.label} dot={m.dot} bg={m.bg} fg={m.fg} />}
           {o.isTest && <TestBadge />}
-          {!o.isTest && o.orderStatus !== "cancelled" && <PosBadge status={posStatus} />}
+          {posEligible(o) && <PosBadge status={posStatus} />}
         </div>
         <div style={{ fontSize: 12, color: "var(--kv-faint)", fontWeight: 600, marginTop: 6 }}>
           {o.customerId ? <Link href={`/customers?c=${o.customerId}`} style={{ color: "var(--kv-deep)", fontWeight: 700, textDecoration: "none" }}>{o.customerName}</Link> : o.customerName}
@@ -1002,8 +1020,9 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMa
 
       {/* WB1 — POS (Deyafa) hand-off control. SEPARATE from order status: marking
           this never advances the order. The amber state makes "not yet in the
-          kitchen" unmistakable; any operator records the entry. */}
-      {!o.isTest && o.orderStatus !== "cancelled" && (
+          kitchen" unmistakable; any operator records the entry. Shown ONLY for
+          eligible (confirmed, non-test) orders — mirrors the server gate. */}
+      {posEligible(o) && (
         <div style={{ padding: 18, borderBottom: "1px solid var(--kv-border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 12, fontWeight: 800 }}>إدخال Deyafa (POS)</span>
@@ -1015,7 +1034,7 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMa
                 الطلب متأكد في Kivo بس لسه ماتسجّلش في Deyafa — المطبخ لسه ماستلمهوش. سجّله في Deyafa وبعدين علّم هنا.
               </div>
               <input
-                value={posRef} onChange={(e) => setPosRef(e.target.value)}
+                value={posRef} onChange={(e) => setPosRef(e.target.value)} maxLength={80}
                 placeholder="رقم الطلب في Deyafa (اختياري)" aria-label="رقم الطلب في Deyafa"
                 style={{ height: 36, padding: "0 10px", borderRadius: 10, border: "1px solid var(--kv-border)", background: "var(--kv-card-soft)", fontSize: 12.5, fontWeight: 700, color: "var(--kv-text)", fontFamily: "inherit" }}
               />
