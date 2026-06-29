@@ -350,6 +350,15 @@ export interface Conversation {
   // still carries the order's own status on the order. Set server-side only via
   // POST /api/conversations/[id]/stage (validated + audited).
   stage?: ConversationStage;
+  // WB3 — Meta click-to-message AD referral context, captured on the first inbound
+  // from an ad (organic conversations leave these undefined). Preserved so staff
+  // know which ad/campaign drove the lead; campaign analytics is deferred (P2).
+  adSourceType?: string | null; // "ad" | "post"
+  adSourceId?: string | null;   // the ad / post id
+  adHeadline?: string | null;
+  adBody?: string | null;
+  adReferrerUrl?: string | null;
+  adCtwaClid?: string | null;
 }
 
 /** WB2 — conversation sales-lifecycle stage; independent of ownership + order status. */

@@ -28,7 +28,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Search, ArrowLeft, Send, AlertTriangle, Lock, Sparkles, UserPlus, CornerUpLeft, UserCheck } from "lucide-react";
+import { Search, ArrowLeft, Send, AlertTriangle, Lock, Sparkles, UserPlus, CornerUpLeft, UserCheck, Megaphone } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useOrderStore } from "@/lib/order-store";
 import { useMembersStore, membersNameMap } from "@/lib/members-store";
@@ -340,6 +340,8 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
             <span style={{ fontSize: 13.5, fontWeight: 800 }}>{c.customer}</span>
             {/* WB2 — sales stage badge (separate from ownership + order status). */}
             <StageBadge stage={c.stage} />
+            {/* WB3 — light «من إعلان» marker when the lead arrived via a Meta ad. */}
+            <AdBadge c={c} />
           </div>
           <div style={{ fontSize: 9.5, color: "var(--kv-faint)", fontWeight: 700, marginTop: 2 }}>
             {CHANNEL_AR[c.channel] ?? c.channel} · {ownerLine(c)}{orderNo ? ` · طلب #${toAr(orderNo)}` : ""}{reason ? ` · السبب: ${reason}` : ""}
@@ -618,6 +620,20 @@ function StageBadge({ stage }: { stage?: ConversationStage }) {
   return (
     <span style={{ flex: "none", display: "inline-flex", alignItems: "center", height: 18, padding: "0 8px", borderRadius: 99, background: "rgba(124,92,208,.12)", color: "#6243b0", fontSize: 9.5, fontWeight: 800, whiteSpace: "nowrap" }}>
       {CONVERSATION_STAGE_LABELS[s]}
+    </span>
+  );
+}
+// WB3 — «من إعلان» marker: shown ONLY when the conversation carries Meta ad
+// referral context (organic conversations render nothing — never false-tagged).
+// Light indicator only; campaign analytics is deferred (P2). Tooltip shows the ad
+// headline when present so staff have context without a heavy panel.
+function AdBadge({ c }: { c: Conversation }) {
+  const fromAd = !!(c.adSourceType || c.adSourceId);
+  if (!fromAd) return null;
+  const tip = c.adHeadline || c.adBody || c.adReferrerUrl || "إعلان Meta";
+  return (
+    <span title={tip} style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 4, height: 18, padding: "0 8px", borderRadius: 99, background: "rgba(37,99,235,.12)", color: "#2563eb", fontSize: 9.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+      <Megaphone size={11} /> من إعلان
     </span>
   );
 }
