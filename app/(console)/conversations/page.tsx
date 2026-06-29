@@ -628,7 +628,11 @@ function StageBadge({ stage }: { stage?: ConversationStage }) {
 // Light indicator only; campaign analytics is deferred (P2). Tooltip shows the ad
 // headline when present so staff have context without a heavy panel.
 function AdBadge({ c }: { c: Conversation }) {
-  const fromAd = !!(c.adSourceType || c.adSourceId);
+  // Mirror the backend sentinel (lib/db/messages.ts): a Meta referral can lack
+  // source_id and carry only ctwa_clid / headline / url, so consider the lead
+  // ad-originated if ANY of the six ad fields is set. Organic (all six null) stays
+  // un-badged — never false-tagged.
+  const fromAd = !!(c.adSourceType || c.adSourceId || c.adHeadline || c.adBody || c.adReferrerUrl || c.adCtwaClid);
   if (!fromAd) return null;
   const tip = c.adHeadline || c.adBody || c.adReferrerUrl || "إعلان Meta";
   return (

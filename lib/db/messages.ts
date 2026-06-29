@@ -82,12 +82,19 @@ export async function persistInboundMessage(
   // conversation isn't already attributed — never clobber the original ad. Organic
   // inbounds (no referral) touch nothing.
   if (adFields) {
+    // Read ALL six ad columns (tenant-scoped): a Meta referral can lack source_id
+    // and carry only ctwa_clid / url / headline, so keying the "already attributed"
+    // guard on source_id alone would let a SECOND ad overwrite a first ad that had
+    // no source_id. Treat the conversation as attributed if ANY ad field is set →
+    // true first-ad-wins.
     const { data: cur, error: readErr } = await admin
       .from("conversations")
-      .select("ad_source_id")
+      .select("ad_source_type, ad_source_id, ad_headline, ad_body, ad_referrer_url, ad_ctwa_clid")
       .eq("id", conversationId)
+      .eq("restaurant_id", restaurantId)
       .maybeSingle();
-    if (!readErr && cur && !(cur as { ad_source_id?: string | null }).ad_source_id) {
+    const alreadyAttributed = !!cur && Object.values(cur as Record<string, unknown>).some((v) => v != null);
+    if (!readErr && cur && !alreadyAttributed) {
       await admin.from("conversations").update(adFields).eq("id", conversationId).eq("restaurant_id", restaurantId);
     }
   }
