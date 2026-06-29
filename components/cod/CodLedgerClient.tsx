@@ -413,6 +413,7 @@ function OrderCashRow({ it, canEdit, onSaved }: { it: HeldOrderItem; canEdit: bo
           <input
             type="number"
             inputMode="decimal"
+            aria-label="النقدية الفعلية المُحصّلة"
             min={0}
             step="0.01"
             value={val}

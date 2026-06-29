@@ -24,6 +24,7 @@ import Link from "next/link";
 import { MessageCircle, ShieldCheck, CreditCard, FileText, Sparkles, Bot } from "lucide-react";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { useConsoleOps } from "@/lib/console-ops-store";
+import { runAction } from "@/lib/console-toast";
 import { useRiseIn, StatePill } from "@/components/kivo";
 
 type Ops = { isOpen: boolean; assistantOn: boolean };
@@ -111,6 +112,15 @@ export default function SettingsPage() {
     [health.v?.lastInboundAt, health.v?.lastOutboundAt].filter(Boolean).sort().slice(-1)[0] ?? null;
   const recentActivity = !!lastActivityIso && Date.now() - new Date(lastActivityIso).getTime() < ACTIVITY_WINDOW_MS;
   const codEnabled = pay.v?.cod_enabled ?? false;
+  // L1.4 — VF availability copy must reflect the REAL saved config, using the same
+  // "enabled AND a number is set" rule the storefront enforces server-side (S2/M1.4)
+  // — never a static «متاح» claim. Reads pay.v (saved), not the editable draft.
+  const vfEnabled = pay.v?.vodafone_cash?.enabled ?? false;
+  const vfHasNumber = (pay.v?.vodafone_cash?.number ?? "").trim().length > 0;
+  const vfAvailable = vfEnabled && vfHasNumber;
+  const paymentsSub = `${codEnabled ? "الدفع عند الاستلام شغّال" : "الدفع عند الاستلام موقوف"} · ${
+    vfAvailable ? "فودافون كاش متاح" : vfEnabled ? "فودافون كاش مفعّل بدون رقم" : "فودافون كاش غير مفعّل"
+  }`;
   const dialect = persona.v?.dialect ? (DIALECT_AR[persona.v.dialect] ?? persona.v.dialect) : null;
 
   const activeItems = hydrated ? menuItems.filter((m) => m.available).length : 0;
@@ -157,9 +167,20 @@ export default function SettingsPage() {
     if (!pay.ok || busy) return;
     const next = !codEnabled;
     setBusy(true);
+    // Optimistic flip stays; H1.3/R9 — on a save FAILURE, surface a failure toast
+    // (the established runAction primitive) instead of silently snapping back with
+    // no explanation, so the operator knows the change didn't persist. Save logic
+    // and the server route are unchanged — this only adds visible feedback.
     setPay((s) => ({ ...s, v: s.v ? { ...s.v, cod_enabled: next } : s.v }));
-    const r = await fetch("/api/settings/payment", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cod_enabled: next }) });
-    if (!r.ok) setPay((s) => ({ ...s, v: s.v ? { ...s.v, cod_enabled: !next } : s.v }));
+    const ok = await runAction(
+      {
+        pending: next ? "جارٍ تفعيل الدفع عند الاستلام…" : "جارٍ إيقاف الدفع عند الاستلام…",
+        success: next ? "تم تفعيل الدفع عند الاستلام" : "تم إيقاف الدفع عند الاستلام",
+        error: "تعذّر حفظ إعداد الدفع — لم يُحفظ التغيير",
+      },
+      () => fetch("/api/settings/payment", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cod_enabled: next }) })
+    );
+    if (!ok) setPay((s) => ({ ...s, v: s.v ? { ...s.v, cod_enabled: !next } : s.v }));
     setBusy(false);
   }
 
@@ -250,7 +271,7 @@ export default function SettingsPage() {
 
           {/* Payments */}
           <Card>
-            <Row icon={<CreditCard size={19} color="#0a8a5f" />} title="طرق الدفع" sub="الدفع عند الاستلام شغّال · فودافون كاش متاح" />
+            <Row icon={<CreditCard size={19} color="#0a8a5f" />} title="طرق الدفع" sub={pay.loaded ? paymentsSub : "…"} />
             <ToggleRow title="الدفع عند الاستلام (COD)" on={codEnabled} disabled={!pay.ok || busy} onToggle={toggleCod} />
             {/* Vodafone Cash — functional */}
             <div style={{ padding: "11px 0", borderBottom: "1px solid #eef2f0" }}>
@@ -271,7 +292,8 @@ export default function SettingsPage() {
               </div>
               <div style={{ marginTop: 10 }}>
                 <input
-                  type="tel" dir="ltr" placeholder="رقم فودافون كاش (مثلاً 01007636312)"
+                  type="tel" dir="ltr" placeholder="مثلاً 01007636312"
+                  aria-label="رقم فودافون كاش"
                   value={vcDraft?.number ?? ""}
                   disabled={!pay.ok || vcSaving}
                   onChange={(e) => { setVcDraft((d) => d ? { ...d, number: e.target.value } : d); setVcError(null); }}
