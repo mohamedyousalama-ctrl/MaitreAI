@@ -22,6 +22,7 @@ import { resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/resta
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
 import { withConversationLock } from "@/lib/db/conversation-lock";
 import { transcribeWhatsAppVoice } from "@/lib/messaging/voice";
+import { getSttAdapter, mockSttAllowed } from "@/lib/ai/stt";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 
 export const runtime = "nodejs";
@@ -209,9 +210,18 @@ export async function POST(req: NextRequest) {
           // IS the stored message text — the operator sees exactly what the AI heard.
           let stt: { adapter: string; model: string; costUsd: number } | null = null;
           if (m.audioId && !m.text) {
-            const t = await transcribeWhatsAppVoice(m.audioId, m.audioMime);
-            m.text = t.text || "[رسالة صوتية — تعذّر التفريغ]";
-            stt = { adapter: t.adapter, model: t.model, costUsd: t.costUsd };
+            // S7 — never let the MOCK adapter's FABRICATED transcript become the
+            // customer's words in prod. If the resolved adapter is mock and mock
+            // isn't allowed here, skip transcription and ask the customer to type —
+            // an honest fallback, never a fake order (and never silent). A real
+            // adapter (openai/groq), or dev/test, transcribes exactly as before.
+            if (getSttAdapter().name === "mock" && !mockSttAllowed()) {
+              m.text = "[رسالة صوتية — التفريغ الصوتي غير متاح حاليًا. اطلب من العميل بلطف يكتب طلبه نصيًا.]";
+            } else {
+              const t = await transcribeWhatsAppVoice(m.audioId, m.audioMime);
+              m.text = t.text || "[رسالة صوتية — تعذّر التفريغ]";
+              stt = { adapter: t.adapter, model: t.model, costUsd: t.costUsd };
+            }
           }
           const r = await persistInboundMessage(admin, restaurantId, m);
           if (r.inserted) {
