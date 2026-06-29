@@ -1,7 +1,7 @@
 // ============================================================================
 // MaitreAI — Payment settings route (Payment Sprint 1) — SERVER ONLY
 // Per-tenant manual-wallet payment config (restaurants.payment_config, migration
-// 0021). GET any member; POST manager-only. Config storage only — COD stays the
+// 0021). GET + POST manager-only (T4/M2.2). Config storage only — COD stays the
 // default-on path and no order/checkout behavior changes here. A partial POST
 // merges over the stored config so a single toggle never drops other fields.
 // ============================================================================
@@ -23,6 +23,8 @@ export async function GET() {
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // T4/M2.2 — payment_config is manager-only; operations members must not read it.
+  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const { data } = await supabase
     .from("restaurants")
