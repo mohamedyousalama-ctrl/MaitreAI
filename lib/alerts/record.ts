@@ -38,6 +38,29 @@ export interface CriticalAlertInput {
   context?: Record<string, unknown>;
 }
 
+// T9 — dedupe key. Two alerts are "the same" iff they share (restaurant_id, type)
+// AND the same ENTITY. The entity is derived from whichever identifying field the
+// caller already provides (no schema change): an order, a message, a sender, a
+// driver — else the conversation, else null (a tenant-level alert). The key name
+// is prefixed so e.g. an orderId "123" never collides with a conversationId "123".
+// Per type today: payment_unspecified/cod/order alerts → per ORDER (orderId);
+// whatsapp_send_failed/operator_send_failed/agent_error → per CONVERSATION;
+// inbound_persist_failed → per SENDER (context.from); a null entity → per TYPE.
+const ENTITY_KEYS = ["orderId", "orderNumber", "messageId", "wamid", "from", "driverId"] as const;
+
+function dedupeEntity(
+  conversationId: string | null | undefined,
+  context: Record<string, unknown> | null | undefined
+): string | null {
+  const ctx = context ?? {};
+  for (const k of ENTITY_KEYS) {
+    const v = ctx[k];
+    if (v != null && v !== "") return `${k}:${String(v)}`;
+  }
+  if (conversationId) return `conv:${conversationId}`;
+  return null; // tenant-level alert → dedupe on (restaurant_id, type) alone.
+}
+
 /**
  * Record a critical failure. Never throws. Inserts the alert row (banner source)
  * and triggers the email scaffold. Failures here are logged, not propagated.
@@ -47,6 +70,60 @@ export async function recordCriticalAlert(
   input: CriticalAlertInput
 ): Promise<void> {
   const at = new Date().toISOString();
+
+  // T9 — DEDUPE: suppress a duplicate of an alert that is still ACTIVE (undismissed)
+  // so each distinct issue shows once instead of spamming the banner. Active-state
+  // (not a time window): once the operator dismisses/handles it, a genuine
+  // recurrence re-alerts. Best-effort and FAIL-OPEN — any error in the check falls
+  // through to a normal insert (better a possible duplicate than a lost alert). The
+  // race (two concurrent inserts both passing the check) is accepted at pilot scale.
+  let suppressedDuplicate = false;
+  if (admin) {
+    try {
+      const entity = dedupeEntity(input.conversationId, input.context);
+      const { data: actives, error } = await admin
+        .from("system_alerts")
+        .select("id, conversation_id, context")
+        .eq("restaurant_id", input.restaurantId)
+        .eq("type", input.type)
+        .is("dismissed_at", null);
+      if (!error && actives && actives.length) {
+        const dup = actives.find(
+          (a) =>
+            dedupeEntity(
+              (a as { conversation_id?: string | null }).conversation_id ?? null,
+              (a as { context?: Record<string, unknown> | null }).context ?? null
+            ) === entity
+        );
+        if (dup) {
+          suppressedDuplicate = true;
+          // Bump a recurrence count on the existing active alert so the operator
+          // can see it's recurring — without stacking a second banner row.
+          const ctx = ((dup as { context?: Record<string, unknown> | null }).context ?? {}) as Record<string, unknown>;
+          const count = typeof ctx.recurrenceCount === "number" ? ctx.recurrenceCount : 1;
+          try {
+            await admin
+              .from("system_alerts")
+              .update({ context: { ...ctx, recurrenceCount: count + 1, lastSeenAt: at } })
+              .eq("id", (dup as { id: string }).id)
+              .eq("restaurant_id", input.restaurantId);
+          } catch (e) {
+            console.error("[alerts] failed to bump recurrence count", input.type, e);
+          }
+        }
+      }
+    } catch (e) {
+      // Fail-OPEN: never suppress on uncertainty — continue to the normal insert.
+      console.error("[alerts] dedupe check failed (continuing to insert)", input.type, e);
+    }
+  }
+
+  // A suppressed duplicate stops here: the banner already shows this active issue,
+  // and we also skip the duplicate email/WhatsApp notification below. Note: this is
+  // a record-time dedupe only — it does NOT touch the fail-loud read path
+  // (/api/alerts still returns alertSystemStatus:"degraded" on infra failure).
+  if (suppressedDuplicate) return;
+
   try {
     if (admin) {
       await admin.from("system_alerts").insert({
