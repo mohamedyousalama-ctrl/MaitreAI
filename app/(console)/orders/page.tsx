@@ -29,7 +29,7 @@ import { useConsoleUi } from "@/components/console/console-ui-store";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { runAction, runActionOutcome } from "@/lib/console-toast";
 import { useRole } from "@/lib/use-role";
-import type { LocalOrder, OrderStatusKey } from "@/lib/types";
+import type { LocalOrder, OrderStatusKey, PosStatus } from "@/lib/types";
 
 // ── helpers (Arabic digits + money; money is display-only, value from the row) ─
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -48,6 +48,16 @@ const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); retur
 const LATE_MS = 30 * 60 * 1000;
 const ACTIVE: OrderStatusKey[] = ["pending_confirmation", "pending_payment", "paid", "preparing", "ready", "out_for_delivery"];
 const DONE: OrderStatusKey[] = ["delivered", "cancelled"];
+
+// WB1 — POS hand-off eligibility: only a genuinely-confirmed, non-test order needs
+// to reach the Deyafa kitchen. MIRRORS the server allowlist in /api/orders/[id]/pos
+// (server is authoritative; this hides the badge + controls for ineligible orders
+// so they never even show). Ineligible: draft / pending_confirmation /
+// pending_payment / cancelled / is_test.
+const POS_ELIGIBLE_STATUS: OrderStatusKey[] = ["paid", "preparing", "ready", "out_for_delivery", "delivered"];
+function posEligible(o: LocalOrder): boolean {
+  return !o.isTest && POS_ELIGIBLE_STATUS.includes(o.orderStatus);
+}
 
 function minutesAgo(ms: number): string {
   const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
@@ -344,6 +354,28 @@ export default function OrdersPage() {
     });
   };
 
+  // WB1 — POS (Deyafa) hand-off. Any operator can record it (they do the entry);
+  // the route stamps the actor/time server-side + validates the transition. POS
+  // status is SEPARATE from order status — this never advances the order itself.
+  const markPos = async (o: LocalOrder, status: "entered" | "sent_to_kitchen", reference?: string) => {
+    await runActionOutcome(status === "entered" ? "جارٍ تسجيل الإدخال في Deyafa…" : "جارٍ التحديث…", async () => {
+      const res = await fetch(`/api/orders/${o.id}/pos`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, reference }),
+      });
+      if (res.ok) { await reloadOrders(); return { state: "success", message: status === "entered" ? "اتسجّل إدخاله في Deyafa" : "اترسل للمطبخ" }; }
+      // 409 = ineligible order OR a concurrent/stale change. Mirror the status_conflict
+      // path: refresh the drawer from DB truth (not just a toast) so stale state clears.
+      if (res.status === 409) {
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        void reloadOrders();
+        const msg = data.error === "order_not_eligible" ? "الطلب مش مؤكد — مايتسجّلش في Deyafa"
+          : "حالة Deyafa اتغيّرت من حد تاني، حدّثنا الصفحة";
+        return { state: "info", message: msg };
+      }
+      return { state: "failed", message: "تعذّر تحديث حالة Deyafa", retry: false };
+    });
+  };
+
   const advance = async (o: LocalOrder) => {
     const n = nextStatus(o);
     if (!n) return;
@@ -488,6 +520,9 @@ export default function OrdersPage() {
                       <span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                         <SourceTag source={o.source} />
                         {o.isTest && <TestBadge />}
+                        {/* WB1 — needs-POS-entry warning so a Kivo-confirmed order isn't
+                            mistaken for one the kitchen has. */}
+                        {posEligible(o) && (o.posStatus ?? "not_entered") === "not_entered" && <PosBadge status="not_entered" />}
                         <span style={{ fontSize: 9.5, color: "var(--kv-faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{itemsSummary}</span>
                       </span>
                     </span>
@@ -515,7 +550,7 @@ export default function OrdersPage() {
 
         {/* DRAWER */}
         <div style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: 16, boxShadow: "var(--kv-shadow-card)", overflow: "hidden", position: "sticky", top: 0 }}>
-          {selected ? <OrderDrawer key={selected.id} o={selected} escalated={isEscalated(selected)} onAdvance={advance} blockedNoDriver={noDriverBlock === selected.id} isManager={isManager} onMarkTest={markTest} /> : (
+          {selected ? <OrderDrawer key={selected.id} o={selected} escalated={isEscalated(selected)} onAdvance={advance} blockedNoDriver={noDriverBlock === selected.id} isManager={isManager} onMarkTest={markTest} onMarkPos={markPos} /> : (
             <div style={{ padding: "56px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 13, fontWeight: 600 }}>اختر طلب لعرض تفاصيله</div>
           )}
         </div>
@@ -699,6 +734,32 @@ function TestBadge() {
   );
 }
 
+// WB1 — POS (Deyafa) hand-off badge. The amber «لم يدخل Deyafa بعد» is the SAFETY
+// signal: a Kivo-confirmed order is NOT in the kitchen until it's entered in
+// Deyafa, so staff can't mistake "confirmed in Kivo" for "the kitchen has it".
+function PosBadge({ status }: { status?: PosStatus }) {
+  if (status === "entered") {
+    return (
+      <span style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 4, height: 18, padding: "0 8px", borderRadius: 99, background: "rgba(14,159,110,.12)", color: "#0a8a5f", fontSize: 9.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+        <ClipboardList size={11} /> في Deyafa
+      </span>
+    );
+  }
+  if (status === "sent_to_kitchen") {
+    return (
+      <span style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 4, height: 18, padding: "0 8px", borderRadius: 99, background: "rgba(14,159,110,.16)", color: "#0a7a54", fontSize: 9.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+        <ClipboardList size={11} /> في المطبخ
+      </span>
+    );
+  }
+  // not_entered → the warning state.
+  return (
+    <span style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 4, height: 18, padding: "0 8px", borderRadius: 99, background: "rgba(201,138,31,.16)", color: "#9a6a14", fontSize: 9.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+        <ClipboardList size={11} /> لم يدخل Deyafa بعد
+    </span>
+  );
+}
+
 // SRC1 — per-order source tag (display-only; data already on the loaded order).
 // Covers BOTH channels; anything unexpected shows «غير محدد», never a guess.
 function SourceTag({ source }: { source?: string }) {
@@ -839,7 +900,9 @@ function DriverAssign({ o }: { o: LocalOrder }) {
 }
 
 const RANK: Record<string, number> = { pending_confirmation: 0, pending_payment: 0, paid: 1, preparing: 2, ready: 3, out_for_delivery: 4, delivered: 5 };
-function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMarkTest }: { o: LocalOrder; escalated: boolean; onAdvance: (o: LocalOrder) => void; blockedNoDriver?: boolean; isManager: boolean; onMarkTest: (o: LocalOrder, isTest: boolean) => void }) {
+function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMarkTest, onMarkPos }: { o: LocalOrder; escalated: boolean; onAdvance: (o: LocalOrder) => void; blockedNoDriver?: boolean; isManager: boolean; onMarkTest: (o: LocalOrder, isTest: boolean) => void; onMarkPos: (o: LocalOrder, status: "entered" | "sent_to_kitchen", reference?: string) => void }) {
+  const posStatus: PosStatus = o.posStatus ?? "not_entered";
+  const [posRef, setPosRef] = useState(o.posReference ?? "");
   const m = statusMeta(o.orderStatus);
   const n = nextStatus(o);
   const rank = RANK[o.orderStatus] ?? 0;
@@ -865,6 +928,7 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMa
           <span style={{ fontSize: 18, fontWeight: 800 }}>طلب #{toAr(o.orderNumber)}</span>
           {escalated ? <Pill label="تدخّل" dot="var(--kv-red)" bg="rgba(192,73,47,.12)" fg="#c0492f" /> : <Pill label={m.label} dot={m.dot} bg={m.bg} fg={m.fg} />}
           {o.isTest && <TestBadge />}
+          {posEligible(o) && <PosBadge status={posStatus} />}
         </div>
         <div style={{ fontSize: 12, color: "var(--kv-faint)", fontWeight: 600, marginTop: 6 }}>
           {o.customerId ? <Link href={`/customers?c=${o.customerId}`} style={{ color: "var(--kv-deep)", fontWeight: 700, textDecoration: "none" }}>{o.customerName}</Link> : o.customerName}
@@ -953,6 +1017,48 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMa
           </div>
         )}
       </div>
+
+      {/* WB1 — POS (Deyafa) hand-off control. SEPARATE from order status: marking
+          this never advances the order. The amber state makes "not yet in the
+          kitchen" unmistakable; any operator records the entry. Shown ONLY for
+          eligible (confirmed, non-test) orders — mirrors the server gate. */}
+      {posEligible(o) && (
+        <div style={{ padding: 18, borderBottom: "1px solid var(--kv-border)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 800 }}>إدخال Deyafa (POS)</span>
+            <PosBadge status={posStatus} />
+          </div>
+          {posStatus === "not_entered" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 11, color: "#9a6a14", fontWeight: 700, lineHeight: 1.5 }}>
+                الطلب متأكد في Kivo بس لسه ماتسجّلش في Deyafa — المطبخ لسه ماستلمهوش. سجّله في Deyafa وبعدين علّم هنا.
+              </div>
+              <input
+                value={posRef} onChange={(e) => setPosRef(e.target.value)} maxLength={80}
+                placeholder="رقم الطلب في Deyafa (اختياري)" aria-label="رقم الطلب في Deyafa"
+                style={{ height: 36, padding: "0 10px", borderRadius: 10, border: "1px solid var(--kv-border)", background: "var(--kv-card-soft)", fontSize: 12.5, fontWeight: 700, color: "var(--kv-text)", fontFamily: "inherit" }}
+              />
+              <button onClick={() => onMarkPos(o, "entered", posRef.trim() || undefined)}
+                style={{ height: 40, borderRadius: 12, border: 0, background: "var(--kv-grad-brand)", color: "#fff", fontSize: 12.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                <ClipboardList size={15} /> تم إدخال الطلب في Deyafa
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 11.5, color: "var(--kv-muted)", fontWeight: 700 }}>
+                {o.posReference ? `رقم Deyafa: ${o.posReference}` : "اتسجّل في Deyafa"}
+                {o.posEnteredAt ? ` · ${minutesAgo(o.posEnteredAt)}` : ""}
+              </div>
+              {posStatus === "entered" && (
+                <button onClick={() => onMarkPos(o, "sent_to_kitchen")}
+                  style={{ height: 38, borderRadius: 12, border: "1px solid var(--kv-border)", background: "var(--kv-card)", color: "var(--kv-deep)", fontSize: 12, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                  <ClipboardList size={15} /> تم إرساله للمطبخ
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* actions */}
       <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
