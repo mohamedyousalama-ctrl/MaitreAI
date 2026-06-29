@@ -45,8 +45,21 @@ export interface InboundMessage {
   audioId?: string;
   /** MIME type of the voice note (e.g. audio/ogg). */
   audioMime?: string;
+  /** WB3 — Meta click-to-message ad referral, when this inbound arrived via a
+   *  click-to-WhatsApp ad. Undefined for organic messages. Captured as data only. */
+  referral?: AdReferral;
   /** Original raw payload fragment, kept for debugging only. */
   raw?: unknown;
+}
+
+/** WB3 — ad/campaign referral context from a Meta click-to-message ad. */
+export interface AdReferral {
+  sourceType?: string; // "ad" | "post"
+  sourceId?: string;   // the ad / post id
+  headline?: string;
+  body?: string;
+  sourceUrl?: string;  // fb.me/… referral url
+  ctwaClid?: string;   // click-to-WhatsApp click id
 }
 
 /** What kind of outbound content we are sending (affects logging + formatting). */

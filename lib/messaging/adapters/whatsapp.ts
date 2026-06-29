@@ -11,6 +11,7 @@
 // ============================================================================
 
 import type {
+  AdReferral,
   InboundMessage,
   MessagingAdapter,
   OutboundMessage,
@@ -48,6 +49,16 @@ interface WaMessage {
   };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
   voice?: { id?: string; mime_type?: string };
+  // WB3 — Meta click-to-message ad referral: present on the FIRST inbound message
+  // after a customer taps a click-to-WhatsApp ad. Absent for organic messages.
+  referral?: {
+    source_url?: string;
+    source_type?: string; // "ad" | "post"
+    source_id?: string;   // the ad / post id
+    headline?: string;
+    body?: string;
+    ctwa_clid?: string;   // click-to-WhatsApp click id
+  };
 }
 // Outbound delivery-status callback Meta sends in the SAME webhook (separately
 // from messages[]). Each carries the wamid of an outbound message we sent.
@@ -139,6 +150,31 @@ export function normalizeWhatsAppStatuses(payload: unknown): WhatsAppStatusUpdat
   return out;
 }
 
+// WB3 — bound + sanitize a referral string (data only; never a command). Trims
+// and length-caps so a hostile/oversized ad payload can't bloat storage.
+function adStr(v: unknown, max: number): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  return s ? s.slice(0, max) : undefined;
+}
+
+/** WB3 — parse Meta's click-to-message ad referral into a bounded AdReferral.
+ *  Returns undefined for organic messages (no referral, or no usable fields). */
+function parseReferral(m: WaMessage): AdReferral | undefined {
+  const r = m.referral;
+  if (!r) return undefined;
+  const ref: AdReferral = {
+    sourceType: adStr(r.source_type, 20),
+    sourceId: adStr(r.source_id, 120),
+    headline: adStr(r.headline, 200),
+    body: adStr(r.body, 400),
+    sourceUrl: adStr(r.source_url, 500),
+    ctwaClid: adStr(r.ctwa_clid, 256),
+  };
+  // Only treat it as an ad referral if at least one identifying field survived.
+  return Object.values(ref).some((v) => v != null) ? ref : undefined;
+}
+
 export function normalizeWhatsAppInbound(payload: unknown): InboundMessage[] {
   const data = (payload ?? {}) as WaWebhookPayload;
   const out: InboundMessage[] = [];
@@ -169,6 +205,7 @@ export function normalizeWhatsAppInbound(payload: unknown): InboundMessage[] {
           interactiveId: extractInteractiveId(m),
           audioId,
           audioMime: audio?.mime_type,
+          referral: parseReferral(m),
           timestamp: m.timestamp ? Number(m.timestamp) * 1000 : Date.now(),
           raw: m,
         });

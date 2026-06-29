@@ -38,6 +38,19 @@ export async function persistInboundMessage(
   if (cErr) throw cErr;
   const customerId = cust.id as string;
 
+  // WB3 — ad referral fields (only when Meta sent click-to-message referral
+  // context). DB columns are nullable; absent → conversation stays organic.
+  const adFields = msg.referral
+    ? {
+        ad_source_type: msg.referral.sourceType ?? null,
+        ad_source_id: msg.referral.sourceId ?? null,
+        ad_headline: msg.referral.headline ?? null,
+        ad_body: msg.referral.body ?? null,
+        ad_referrer_url: msg.referral.sourceUrl ?? null,
+        ad_ctwa_clid: msg.referral.ctwaClid ?? null,
+      }
+    : null;
+
   // 2. Conversation — reuse the latest for this customer+channel, else create.
   let conversationId: string;
   const { data: existing } = await admin
@@ -60,6 +73,30 @@ export async function persistInboundMessage(
       .single();
     if (convErr) throw convErr;
     conversationId = conv.id as string;
+  }
+
+  // WB3 — best-effort ad attribution. Separate + guarded so a pre-migration column
+  // absence (code deployed before 0053) NEVER breaks the inbound persist path: the
+  // select/update return an error object (not a throw) which we simply skip.
+  // First-ad-wins: stamp only when this inbound carries a referral AND the
+  // conversation isn't already attributed — never clobber the original ad. Organic
+  // inbounds (no referral) touch nothing.
+  if (adFields) {
+    // Read ALL six ad columns (tenant-scoped): a Meta referral can lack source_id
+    // and carry only ctwa_clid / url / headline, so keying the "already attributed"
+    // guard on source_id alone would let a SECOND ad overwrite a first ad that had
+    // no source_id. Treat the conversation as attributed if ANY ad field is set →
+    // true first-ad-wins.
+    const { data: cur, error: readErr } = await admin
+      .from("conversations")
+      .select("ad_source_type, ad_source_id, ad_headline, ad_body, ad_referrer_url, ad_ctwa_clid")
+      .eq("id", conversationId)
+      .eq("restaurant_id", restaurantId)
+      .maybeSingle();
+    const alreadyAttributed = !!cur && Object.values(cur as Record<string, unknown>).some((v) => v != null);
+    if (!readErr && cur && !alreadyAttributed) {
+      await admin.from("conversations").update(adFields).eq("id", conversationId).eq("restaurant_id", restaurantId);
+    }
   }
 
   // 3. Message — idempotent on channel_message_id (ignore duplicate redeliveries).

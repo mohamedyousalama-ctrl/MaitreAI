@@ -103,6 +103,14 @@ export async function loadConversations(s: SupabaseClient, restaurantId: string)
       // WB2 — sales-lifecycle stage. select("*") carries it; absent (pre-migration
       // 0052) → defaults to "new" so the UI is deploy-safe with or without it.
       stage: (c.stage as Conversation["stage"]) ?? "new",
+      // WB3 — ad referral context (null/absent for organic; select("*") carries it,
+      // deploy-safe pre-migration 0053).
+      adSourceType: (c.ad_source_type as string | null) ?? null,
+      adSourceId: (c.ad_source_id as string | null) ?? null,
+      adHeadline: (c.ad_headline as string | null) ?? null,
+      adBody: (c.ad_body as string | null) ?? null,
+      adReferrerUrl: (c.ad_referrer_url as string | null) ?? null,
+      adCtwaClid: (c.ad_ctwa_clid as string | null) ?? null,
     } as Conversation;
   });
 }
