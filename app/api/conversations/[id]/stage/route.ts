@@ -42,9 +42,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!cur) return NextResponse.json({ error: "conversation_not_found" }, { status: 404 });
   const from = ((cur as { stage?: string }).stage ?? "new") as ConversationStage;
 
+  // WB2 fix — do NOT set updated_at here: conversations.updated_at is the SLA/wait
+  // clock that stuck-detection keys on for SYSTEM_HOLD + human-no-response alerts.
+  // A label-only stage edit must not reset that clock (it could postpone/suppress a
+  // safety alert). The conversations trigger (migration 0054) skips the updated_at
+  // bump for a stage-only change, so persisting just `stage` leaves the clock intact;
+  // any real activity still bumps it.
   const { data: updated, error } = await admin
     .from("conversations")
-    .update({ stage, updated_at: new Date().toISOString() })
+    .update({ stage })
     .eq("id", params.id)
     .eq("restaurant_id", tenant.restaurantId)
     .select("id, stage");
