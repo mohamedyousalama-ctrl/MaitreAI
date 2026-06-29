@@ -100,6 +100,9 @@ export async function loadConversations(s: SupabaseClient, restaurantId: string)
       isSafetyHold: (c.is_safety_hold as boolean | null) ?? false,
       // MO1 — named ownership (resolved to a display name via GET /api/members).
       assignedMemberId: (c.assigned_member_id as string | null) ?? null,
+      // WB2 — sales-lifecycle stage. select("*") carries it; absent (pre-migration
+      // 0052) → defaults to "new" so the UI is deploy-safe with or without it.
+      stage: (c.stage as Conversation["stage"]) ?? "new",
     } as Conversation;
   });
 }

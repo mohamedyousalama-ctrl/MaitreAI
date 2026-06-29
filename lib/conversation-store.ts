@@ -10,7 +10,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { ChannelKey, ChatMessage, Conversation, IntentHistoryEntry } from "./types";
+import type { ChannelKey, ChatMessage, Conversation, ConversationStage, IntentHistoryEntry } from "./types";
 import { conversations as seedConversations } from "./mock-data";
 import { newId } from "./store";
 import { createClient } from "./supabase/client";
@@ -75,6 +75,7 @@ interface ConversationState {
   addHumanMessage: (convId: string, text: string) => void;
   addSystemMessage: (convId: string, text: string) => void;
   setStatus: (convId: string, status: Conversation["status"]) => void;
+  setStage: (convId: string, stage: ConversationStage) => Promise<boolean>;
   attachOrder: (convId: string, orderId: string) => void;
   setTyping: (convId: string, value: boolean) => void;
   commitAiTurn: (convId: string, aiMessage: ChatMessage, patch: Partial<Conversation>, history: IntentHistoryEntry) => void;
@@ -230,6 +231,27 @@ export const useConversationStore = create<ConversationState>()(
           set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, status })) }));
           const { _sb } = get();
           if (_sb) fire(updateConversationDb(_sb, convId, { status }));
+        },
+
+        // WB2 — set the conversation sales stage via the validated server route
+        // (NOT a direct DB write — the route validates + audits who/when). Optimistic
+        // local set; revert on failure. Returns ok so callers can show feedback.
+        setStage: async (convId, stage) => {
+          const prev = get().conversations.find((c) => c.id === convId)?.stage;
+          set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, stage })) }));
+          try {
+            const res = await fetch(`/api/conversations/${convId}/stage`, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }),
+            });
+            if (!res.ok) {
+              set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, stage: prev })) }));
+              return false;
+            }
+            return true;
+          } catch {
+            set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, stage: prev })) }));
+            return false;
+          }
         },
 
         attachOrder: (convId, orderId) => {

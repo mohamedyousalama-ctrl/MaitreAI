@@ -332,7 +332,42 @@ export interface Conversation {
   // conversation. Set on takeover, cleared on return-to-AI / close. Written ONLY via
   // the server route (member resolved from the authenticated session, never the client).
   assignedMemberId?: string | null;
+  // WB2 — sales-lifecycle STAGE (Be-On parity). A SEPARATE axis from ownership
+  // (ownershipState) and from order status (orders.order_status, a different
+  // table): a conversation can be no_answer with no order; an ordered conversation
+  // still carries the order's own status on the order. Set server-side only via
+  // POST /api/conversations/[id]/stage (validated + audited).
+  stage?: ConversationStage;
 }
+
+/** WB2 — conversation sales-lifecycle stage; independent of ownership + order status. */
+export type ConversationStage =
+  | "new"
+  | "asking_offer"
+  | "taking_order"
+  | "follow_up"
+  | "no_answer"
+  | "handed_to_human"
+  | "ordered"
+  | "closed"
+  | "lost";
+
+export const CONVERSATION_STAGES: ConversationStage[] = [
+  "new", "asking_offer", "taking_order", "follow_up",
+  "no_answer", "handed_to_human", "ordered", "closed", "lost",
+];
+
+export const CONVERSATION_STAGE_LABELS: Record<ConversationStage, string> = {
+  new: "جديد",
+  asking_offer: "يسأل عن عرض",
+  taking_order: "جاري أخذ الطلب",
+  follow_up: "محتاج متابعة",
+  no_answer: "لا يرد",
+  handed_to_human: "تم التحويل",
+  ordered: "تم الطلب",
+  closed: "مغلق",
+  lost: "خاسر",
+};
 
 // ---------------------------------------------------------------------------
 // Menu
