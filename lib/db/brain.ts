@@ -375,7 +375,9 @@ export async function deleteBranchDb(s: SupabaseClient, id: string) {
 }
 
 // --- categories (resolve UI category name → id) ---
-async function ensureCategoryId(s: SupabaseClient, restaurantId: string, name: string): Promise<string | null> {
+// Exported so the chat-admin add_item path reuses the SAME name→id resolution as
+// addMenuItemDb (S3) — never writing a non-existent `category` column. Logic unchanged.
+export async function ensureCategoryId(s: SupabaseClient, restaurantId: string, name: string): Promise<string | null> {
   if (!name) return null;
   const { data } = await s.from("menu_categories").select("id").eq("restaurant_id", restaurantId).eq("name", name).limit(1).maybeSingle();
   if (data) return data.id as string;
