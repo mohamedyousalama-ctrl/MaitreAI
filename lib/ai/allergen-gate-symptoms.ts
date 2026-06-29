@@ -1,10 +1,23 @@
 // ============================================================================
 // MaitreAI — Allergen SYMPTOM / CONDITION detector (additive layer, pure, no I/O)
 //
-// ⚠️  HUMAN REVIEW REQUIRED before enabling allergen_symptom_detection for Wesaya.
-//     These Arabic term lists need validation by a native Egyptian-Arabic speaker
-//     familiar with medical / food-allergy terminology. Recall is the design goal —
-//     over-escalation is safe; under-escalation is dangerous.
+// ⚠️  REVIEW STATUS: PENDING HUMAN/MEDICAL REVIEW — see docs/ALLERGEN_SYMPTOM_REVIEW.md
+//     The Arabic term lists below need validation by a native Egyptian-Arabic speaker
+//     familiar with food-allergy terminology. That review is tracked (with the exact
+//     terms + a sign-off checklist) in docs/ALLERGEN_SYMPTOM_REVIEW.md — NOT buried here.
+//
+//     The `allergen_symptom_detection` flag is currently ON in prod for Wesaya. This
+//     is SAFE pending review because of the FAIL-SAFE CONTRACT below; the review
+//     improves recall + reduces over-escalation, it does not gate a safety regression.
+//
+//     FAIL-SAFE CONTRACT (do not weaken): this layer is ADDITIVE and may ONLY cause a
+//     conservative escalation to a human. A match → escalate_to_human (no order
+//     confirmed, nothing marked "safe", nothing auto-cleared — see
+//     customer-turn.ts forcedAllergenSafetyResult). A miss → falls back to the base
+//     gate + the never-say-safe output guard, i.e. never worse than the flag being
+//     OFF. Recall is the design goal: over-escalation is safe; under-escalation is
+//     dangerous. The base gate (lib/ai/allergen-gate.ts) is a separate, reviewed
+//     layer and stays byte-identical + ON.
 //
 // This module is a SEPARATE layer from lib/ai/allergen-gate.ts (which stays
 // byte-identical). It fires on independent signal classes the base gate misses
