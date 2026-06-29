@@ -5,7 +5,7 @@
 // client, AFTER verifying the caller's membership (auth/cookie client). Secrets
 // are WRITE-ONLY: the GET never returns the token/app-secret — only booleans for
 // "a value exists". On save the two secrets are encrypted at rest (encryptSecret).
-// GET: any member of the restaurant. POST: manager-only (matches tax/print).
+// GET + POST: manager-only (T4/M2.2; matches tax/print/payment).
 // ============================================================================
 
 import { NextResponse } from "next/server";
@@ -19,6 +19,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // T4/M2.2 — WhatsApp routing/creds config is manager-only (operations members
+  // must not read phone/WABA ids, verify token, or the "secret exists" booleans).
+  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 

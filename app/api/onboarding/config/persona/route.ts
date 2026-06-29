@@ -1,7 +1,7 @@
 // ============================================================================
 // MaitreAI — Onboarding Step 3: persona + tone config
 //
-// GET  /api/onboarding/config/persona  — any member of restaurant
+// GET  /api/onboarding/config/persona  — manager only (T4/M2.2)
 // PUT  /api/onboarding/config/persona  — manager only
 //
 // Covers three restaurants columns:
@@ -47,6 +47,8 @@ export async function GET() {
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const tenant = await getServerTenant();
   if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // T4/M2.2 — persona/tone config is manager-only; operations members can't read it.
+  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const { data, error } = await supabase
     .from("restaurants")
