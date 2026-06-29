@@ -13,7 +13,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerTenant } from "@/lib/db/tenant-server";
-import { setItemAvailabilityDb } from "@/lib/db/brain";
+import { setItemAvailabilityDb, ensureCategoryId } from "@/lib/db/brain";
 import { getAdapter, modelFor, costUsd } from "@/lib/ai/llm";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
@@ -125,7 +125,13 @@ export async function POST(req: Request) {
         const price = Number(confirm.params.price);
         const category = String(confirm.params.category ?? "").trim();
         if (!name || !Number.isFinite(price)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
-        await supabase.from("menu_items").insert({ restaurant_id: restaurantId, name, price, category: category || null, available: true });
+        // S3 — write the REAL FK column `category_id` (menu_items has no `category`
+        // column, so the old write was silently dropped → broken category link).
+        // Reuse the proven addMenuItemDb resolver: a known category name → its id, a
+        // new name → created + linked, blank/garbage → null (uncategorized), never a
+        // silent broken link.
+        const categoryId = await ensureCategoryId(supabase, restaurantId, category);
+        await supabase.from("menu_items").insert({ restaurant_id: restaurantId, name, price, category_id: categoryId, available: true });
         result = `تمت إضافة «${name}» للمنيو بسعر ${price}.`;
       } else if (confirm.intent === "remove_item") {
         const id = String(confirm.params.id ?? "");
