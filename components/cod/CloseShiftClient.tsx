@@ -11,7 +11,7 @@
 // ============================================================================
 
 import { useState } from "react";
-import { Calculator, Printer } from "lucide-react";
+import { Calculator, Printer, Download } from "lucide-react";
 import { runActionOutcome } from "@/lib/console-toast";
 import { useRiseIn } from "@/components/kivo";
 import { useCodStore } from "@/lib/cod-store";
@@ -38,6 +38,27 @@ export function CloseShiftClient() {
   const settleable = drivers.filter((d) => d.driverId && d.outstanding > 0);
   const shiftTotal = drivers.reduce((s, d) => s + d.outstanding, 0);
   const settleableTotal = settleable.reduce((s, d) => s + d.outstanding, 0);
+
+  // C2.1 — settle ONE driver individually (not only settle-all). Reuses the
+  // existing manager-gated /api/cod/settle (→ settleDriver), which is idempotent:
+  // a double-click settles only still-held cash, so the second call is a no-op.
+  const settleOne = (driverId: string, driverName: string, amount: number) => {
+    if (busy) return;
+    if (!window.confirm(`تأكيد تسوية ${driverName}: ${money(amount)}؟`)) return;
+    setBusy(true);
+    void runActionOutcome("جارٍ التسوية…", async () => {
+      const res = await fetch("/api/cod/settle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ driverId }) });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      setBusy(false);
+      if (res.ok) {
+        await load();
+        return { state: "success", message: `تمت تسوية ${driverName} · ${money(Number(data.total ?? 0))}` };
+      }
+      if (res.status === 403) return { state: "failed", message: "للمدير فقط" };
+      if (data.error === "nothing_to_settle") return { state: "info", message: "مفيش كاش معلّق لهذا المندوب" };
+      return { state: "failed", message: "تعذّرت التسوية" };
+    });
+  };
 
   const settleAll = () => {
     if (!settleable.length) return;
@@ -84,6 +105,11 @@ export function CloseShiftClient() {
         <div style={{ borderRadius: 16, background: "var(--kv-card)", border: "1px solid var(--kv-border)", boxShadow: "var(--kv-shadow-card)", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: "1px solid var(--kv-border)" }}>
             <span style={{ fontSize: 14, fontWeight: 800, flex: 1 }}>المندوبون — كاش معلّق</span>
+            {/* C2.3 — read-only CSV export of the COD ledger (no settle side-effect). */}
+            <button onClick={() => window.open("/api/cod/export", "_blank")}
+              style={{ height: 38, padding: "0 14px", border: "1px solid var(--kv-border)", borderRadius: 11, background: "var(--kv-card)", color: "var(--kv-muted)", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Download size={14} /> تصدير CSV
+            </button>
             <button onClick={settleAll} disabled={busy || settleable.length === 0}
               style={{ height: 38, padding: "0 16px", border: 0, borderRadius: 11, background: busy || !settleable.length ? "var(--kv-card-soft)" : "var(--kv-grad-brand)", color: busy || !settleable.length ? "var(--kv-faint)" : "#fff", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, cursor: busy || !settleable.length ? "default" : "pointer" }}>
               {busy ? "..." : `قفّل الكل (${toAr(settleable.length)})`}
@@ -106,8 +132,17 @@ export function CloseShiftClient() {
                   <div style={{ fontSize: 9, fontWeight: 700, color: "var(--kv-faint)" }}>الفرق</div>
                   <div style={{ fontSize: 12, fontWeight: 800, color: discColor(d.discrepancy), marginTop: 2 }}>{discLabel(d.discrepancy)}</div>
                 </div>
-                <div style={{ textAlign: "left", fontSize: 9, fontWeight: 700, color: !d.driverId ? "#c0492f" : "var(--kv-faint)" }}>
-                  {!d.driverId ? "محتاج تعيين" : "جاهز"}
+                <div style={{ textAlign: "left" }}>
+                  {d.driverId && d.outstanding > 0 ? (
+                    <button onClick={() => settleOne(d.driverId as string, d.driverName, d.outstanding)} disabled={busy}
+                      style={{ height: 30, padding: "0 12px", border: "1px solid var(--kv-border)", borderRadius: 9, background: busy ? "var(--kv-card-soft)" : "var(--kv-card)", color: busy ? "var(--kv-faint)" : "var(--kv-deep)", fontFamily: "inherit", fontSize: 11, fontWeight: 800, cursor: busy ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                      قفّل
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 9, fontWeight: 700, color: !d.driverId ? "#c0492f" : "var(--kv-faint)" }}>
+                      {!d.driverId ? "محتاج تعيين" : "—"}
+                    </span>
+                  )}
                 </div>
               </div>
             ))
