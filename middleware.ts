@@ -22,6 +22,19 @@ import { updateSession } from "@/lib/supabase/middleware";
 import { hostMapping } from "@/lib/domains";
 
 export async function middleware(request: NextRequest) {
+  // T2 — FAIL CLOSED in production. Demo mode (Supabase not configured) is a
+  // LOCAL-DEV convenience; in prod, missing Supabase env means auth can't be
+  // enforced — the no-op below would serve the whole console with NO authentication.
+  // A prod deploy with missing env is a deploy ERROR: refuse loudly (503) for every
+  // matched route rather than silently running unauthenticated. Dev/test are
+  // unaffected (the guard is prod-only); configured prod never reaches this.
+  if (process.env.NODE_ENV === "production" && !isSupabaseConfigured()) {
+    return new NextResponse("Service not configured.", {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+
   const mapping = hostMapping(request.headers.get("host"));
 
   // Storefront host: serve the tenant's public storefront at the root path by
