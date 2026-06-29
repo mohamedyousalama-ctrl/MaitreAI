@@ -8,10 +8,13 @@
 // it renders ONLY real recorded failures — it never invents a test alert.
 // ============================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, X } from "lucide-react";
 import { useRole } from "@/lib/use-role";
+import { useConversationStore } from "@/lib/conversation-store";
+import { useOrderStore } from "@/lib/order-store";
+import { useCodStore } from "@/lib/cod-store";
 
 interface Alert {
   id: string;
@@ -74,6 +77,27 @@ export function AlertBanner() {
     const t = setInterval(() => alive && load(), POLL_MS);
     return () => { alive = false; clearInterval(t); };
   }, [role]);
+
+  // LIVE0 L5b — FAST PATH (piggyback). system_alerts is RLS deny-all, so we can't
+  // member-subscribe to it directly without a new RLS policy. Instead we ride the
+  // EXISTING realtime stores: the failures that create alerts coincide with live
+  // conversation / order / COD activity, so when those stores update (via their
+  // own realtime — incl. reconnect-reload), refetch /api/alerts immediately
+  // instead of waiting up to 30s. The 30s poll above STAYS as the guaranteed
+  // floor; this only makes surfacing faster, never replaces the safety-net poll.
+  const conversations = useConversationStore((s) => s.conversations);
+  const orders = useOrderStore((s) => s.orders);
+  const codDrivers = useCodStore((s) => s.drivers);
+  const piggybackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const piggybackPrimed = useRef(false);
+  useEffect(() => {
+    if (role !== "manager") return;
+    // Skip the first run — the poll effect's initial load() already covers it.
+    if (!piggybackPrimed.current) { piggybackPrimed.current = true; return; }
+    if (piggybackTimer.current) clearTimeout(piggybackTimer.current);
+    piggybackTimer.current = setTimeout(() => { void load(); }, 300); // debounce
+    return () => { if (piggybackTimer.current) clearTimeout(piggybackTimer.current); };
+  }, [conversations, orders, codDrivers, role]);
 
   async function dismiss(id: string) {
     setBusy(id);
