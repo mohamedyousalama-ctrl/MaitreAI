@@ -31,3 +31,6 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# Emergency tenant data exports (PII) — never commit (S8)
+exports/
