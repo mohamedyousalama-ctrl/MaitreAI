@@ -10,6 +10,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
+import { routeInteractive } from "@/lib/messaging/interactive-router";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
@@ -270,7 +271,16 @@ export async function respondAndSendWhatsApp(
   const rows = ([...(msgs ?? [])] as { sender: string; text: string | null; created_at: string; meta: Record<string, unknown> | null }[]).reverse();
   const lastCustomerIdx = rows.map((m) => m.sender).lastIndexOf("customer");
   if (lastCustomerIdx < 0) return { status: "skipped_no_customer_msg" };
-  const userMessage = (rows[lastCustomerIdx].text ?? "").trim();
+  const rawText = (rows[lastCustomerIdx].text ?? "").trim();
+  // S6 — deterministic interactive routing: if the last inbound was a tap on a
+  // control WE minted (meta.interactiveId ∈ known set), resolve it to an explicit
+  // canonical directive so the tap routes by the controlled id, NOT by the title
+  // text the LLM could misread. Unknown ids / item:<…> / free text fall through to
+  // rawText. This only disambiguates the input — it still flows through the SAME
+  // gated agent (allergen input+output gate in runCustomerTurn/respond; SYSTEM_HOLD
+  // / ownership / mode already gated above), so no safety rule is bypassed.
+  const lastInteractiveId = (rows[lastCustomerIdx].meta as { interactiveId?: string } | null)?.interactiveId;
+  const userMessage = routeInteractive(lastInteractiveId, rawText).text;
   if (!userMessage) return { status: "skipped_no_customer_msg" };
   const lastInboundAtMs = new Date(rows[lastCustomerIdx].created_at).getTime();
 
