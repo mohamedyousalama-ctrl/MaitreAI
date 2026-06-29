@@ -22,4 +22,14 @@ export function getSttAdapter(): SttAdapter {
   return mockSttAdapter;
 }
 
+// S7 — the MOCK adapter returns a FABRICATED transcript (a fake order). It must
+// never reach the agent as the customer's real words in production. Mock transcripts
+// are allowed ONLY in dev/test, or when explicitly opted in for a demo
+// (ENABLE_MOCK_STT=true) — safe-by-default in prod, mirroring the S1
+// ENABLE_MOCK_PAYMENTS pattern. Real adapters (openai/groq) are unaffected; callers
+// gate on this only when the resolved adapter is "mock".
+export function mockSttAllowed(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.ENABLE_MOCK_STT === "true";
+}
+
 export type { SttAdapter, SttResult } from "./types";
