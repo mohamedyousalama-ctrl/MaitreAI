@@ -20,7 +20,8 @@ export type AuditAction =
   | "conversation_closed"
   | "order_status_changed"
   | "order_test_marked"
-  | "conversation_stage_changed";
+  | "conversation_stage_changed"
+  | "order_pos_marked";
 
 export interface AuditInput {
   restaurantId: string;

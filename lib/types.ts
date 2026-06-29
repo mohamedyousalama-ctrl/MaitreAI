@@ -107,11 +107,23 @@ export interface LocalOrder {
    *  (insights, order counts, source breakdown, COD); shown in the list with a
    *  «طلب تجريبي» badge so it's never confused for a real order. */
   isTest?: boolean;
+  /** WB1 — Deyafa POS hand-off state, SEPARATE from orderStatus. During the Kivo
+   *  cutover staff re-enter confirmed orders into the Deyafa POS for the kitchen;
+   *  until then an order is NOT in the kitchen. not_entered = needs POS entry
+   *  (warning), entered = in Deyafa (posReference = Deyafa #), sent_to_kitchen =
+   *  handed to the kitchen. Stamped server-side (POST /api/orders/[id]/pos). */
+  posStatus?: PosStatus;
+  posReference?: string | null;
+  posEnteredBy?: string | null;
+  posEnteredAt?: number;
   notes?: string;
   createdAt: number;
   updatedAt: number;
   events: OrderEvent[];
 }
+
+/** WB1 — POS (Deyafa) hand-off state; separate from OrderStatusKey. */
+export type PosStatus = "not_entered" | "entered" | "sent_to_kitchen";
 
 // ---------------------------------------------------------------------------
 // Payment sessions (Sprint 5) — local mock provider simulation

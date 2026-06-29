@@ -45,6 +45,10 @@ interface OrderRowJoined extends Record<string, unknown> {
   currency: string;
   source?: string | null;
   is_test?: boolean | null;
+  pos_status?: string | null;
+  pos_reference?: string | null;
+  pos_entered_by?: string | null;
+  pos_entered_at?: string | null;
   order_status: string;
   payment_status: string;
   payment_method: string | null;
@@ -85,6 +89,12 @@ function mapOrder(r: OrderRowJoined): LocalOrder {
     // UI4 — test marker. loadOrders selects "*", so this is null/absent (→ false)
     // until migration 0044 is applied — deploy-safe with or without the column.
     isTest: r.is_test === true,
+    // WB1 — POS hand-off. loadOrders selects "*", so these are absent (→ defaults)
+    // until migration 0051 is applied — deploy-safe with or without the columns.
+    posStatus: (r.pos_status as LocalOrder["posStatus"]) ?? "not_entered",
+    posReference: r.pos_reference ?? null,
+    posEnteredBy: r.pos_entered_by ?? null,
+    posEnteredAt: r.pos_entered_at ? new Date(r.pos_entered_at).getTime() : undefined,
     notes: r.notes ?? undefined,
     createdAt,
     updatedAt: new Date(r.updated_at).getTime(),
