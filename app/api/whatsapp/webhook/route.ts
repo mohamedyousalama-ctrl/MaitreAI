@@ -12,7 +12,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
-import { extractInboundPhoneNumberId, markWhatsAppRead, normalizeWhatsAppInbound, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
+import { extractInboundPhoneNumberId, markWhatsAppRead, normalizeWhatsAppInbound, normalizeWhatsAppStatuses, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { isWhatsAppConfigured, readWhatsAppEnv, type WhatsAppEnv } from "@/lib/messaging/config";
 import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
@@ -147,6 +147,7 @@ export async function POST(req: NextRequest) {
   let deduped = 0;
   let responded = 0;
   let persistFailed = 0;
+  let statusUpdated = 0;
   let resolvedBy: "phone_number_id" | "env_fallback" = "env_fallback";
   if (admin && messages.length > 0) {
     // Strict per-tenant routing. Three cases:
@@ -293,6 +294,74 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // T3 — ingest OUTBOUND delivery-status callbacks (sent/delivered/read/failed).
+  // Meta sends these in statuses[], separately from messages[] (a webhook may carry
+  // either or both). We match each by the wamid we stored on the outbound row
+  // (channel_message_id) and update messages.status, so "sent" is CONFIRMED, not
+  // assumed, and a failed delivery is visible. Runs AFTER + independently of inbound
+  // processing (never blocks it); the whole block fails quietly.
+  if (admin) {
+    try {
+      const statuses = normalizeWhatsAppStatuses(payload);
+      if (statuses.length > 0) {
+        // Tenant scope mirrors inbound: prefer the phone_number_id tenant; an
+        // unresolved phone_number_id is skipped (can't scope safely); no
+        // phone_number_id → env fallback (legacy single-tenant path).
+        const statusRid = tenant?.restaurantId ?? (phoneNumberId ? null : await resolveWebhookRestaurantId(admin));
+        if (statusRid) {
+          for (const s of statuses) {
+            try {
+              if (s.status === "failed") {
+                // Set failed only on a real transition (not already read/failed) so a
+                // webhook RETRY doesn't re-alert. A failed delivery = the customer did
+                // NOT receive it → record a Phase-Q alert with the reason.
+                const { data: rows } = await admin
+                  .from("messages")
+                  .update({ status: "failed" })
+                  .eq("restaurant_id", statusRid)
+                  .eq("direction", "outbound")
+                  .eq("channel_message_id", s.messageId)
+                  .not("status", "in", "(read,failed)")
+                  .select("id, conversation_id");
+                if (rows && rows.length > 0) {
+                  statusUpdated += rows.length;
+                  await recordCriticalAlert(admin, {
+                    type: "whatsapp_send_failed",
+                    restaurantId: statusRid,
+                    conversationId: (rows[0] as { conversation_id?: string | null }).conversation_id ?? null,
+                    detail: `فشل توصيل رسالة واتساب: ${s.error ?? "سبب غير معروف"}`,
+                  });
+                }
+              } else {
+                // Advance-only (never downgrade): delivered←sent, read←sent/delivered,
+                // sent←sending. Unknown status string → skip. Unknown wamid → 0 rows.
+                const allowedFrom =
+                  s.status === "read" ? ["sent", "delivered"]
+                  : s.status === "delivered" ? ["sent"]
+                  : s.status === "sent" ? ["sending"]
+                  : null;
+                if (!allowedFrom) continue;
+                const { data: rows } = await admin
+                  .from("messages")
+                  .update({ status: s.status })
+                  .eq("restaurant_id", statusRid)
+                  .eq("direction", "outbound")
+                  .eq("channel_message_id", s.messageId)
+                  .in("status", allowedFrom)
+                  .select("id");
+                if (rows) statusUpdated += rows.length;
+              }
+            } catch (e) {
+              console.warn("[whatsapp:webhook] status update error (non-blocking)", e);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[whatsapp:webhook] statuses parse error (non-blocking)", e);
+    }
+  }
+
   // If any inbound message failed to persist, return 5xx so Meta redelivers
   // the entire batch. Already-persisted messages in the batch are safe:
   // channel_message_id dedup (ignoreDuplicates upsert in persistInboundMessage)
@@ -312,6 +381,7 @@ export async function POST(req: NextRequest) {
     persisted,
     deduped,
     responded,
+    statusUpdated,
     resolvedBy,
   });
 }

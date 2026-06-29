@@ -49,10 +49,20 @@ interface WaMessage {
   audio?: { id?: string; mime_type?: string; voice?: boolean };
   voice?: { id?: string; mime_type?: string };
 }
+// Outbound delivery-status callback Meta sends in the SAME webhook (separately
+// from messages[]). Each carries the wamid of an outbound message we sent.
+interface WaStatus {
+  id?: string; // wamid — matches the stored messages.channel_message_id of our outbound row
+  status?: string; // "sent" | "delivered" | "read" | "failed"
+  timestamp?: string;
+  recipient_id?: string;
+  errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[];
+}
 interface WaChange {
   value?: {
     contacts?: WaContact[];
     messages?: WaMessage[];
+    statuses?: WaStatus[];
     metadata?: { display_phone_number?: string; phone_number_id?: string };
   };
   field?: string;
@@ -91,6 +101,42 @@ export function extractInboundPhoneNumberId(payload: unknown): string | null {
     }
   }
   return null;
+}
+
+/** T3 — an outbound message's delivery-status callback, normalized for the webhook
+ *  to update messages.status. `messageId` is the wamid (= our stored
+ *  channel_message_id on the outbound row). Pure parse; ignores entries without an
+ *  id/status. Never reads/affects messages[] processing. */
+export interface WhatsAppStatusUpdate {
+  messageId: string;
+  status: string; // sent | delivered | read | failed
+  timestamp: number;
+  recipientId?: string;
+  error?: string; // populated on "failed"
+}
+
+export function normalizeWhatsAppStatuses(payload: unknown): WhatsAppStatusUpdate[] {
+  const data = (payload ?? {}) as WaWebhookPayload;
+  const out: WhatsAppStatusUpdate[] = [];
+  for (const entry of data.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      for (const s of change.value?.statuses ?? []) {
+        if (!s.id || !s.status) continue;
+        const err = s.errors?.[0];
+        const error = err
+          ? [err.code, err.title, err.message, err.error_data?.details].filter(Boolean).join(" · ") || undefined
+          : undefined;
+        out.push({
+          messageId: String(s.id),
+          status: String(s.status),
+          timestamp: s.timestamp ? Number(s.timestamp) * 1000 : Date.now(),
+          recipientId: s.recipient_id,
+          error,
+        });
+      }
+    }
+  }
+  return out;
 }
 
 export function normalizeWhatsAppInbound(payload: unknown): InboundMessage[] {
