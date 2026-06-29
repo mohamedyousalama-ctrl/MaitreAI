@@ -1,7 +1,36 @@
 import { cn } from "@/lib/utils";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, MessageStatus } from "@/lib/types";
 import { AIConfidenceBadge } from "@/components/ui/AIConfidenceBadge";
-import { Bot, Headset, BookOpen, ChevronLeft, List } from "lucide-react";
+import { Bot, Headset, BookOpen, ChevronLeft, List, Check, CheckCheck, Clock, AlertCircle } from "lucide-react";
+
+/** T8 — small, unobtrusive send-status indicator for OUTBOUND messages. The
+ *  must-have is honesty: a failed send reads «لم تُرسل» in red (never a silent
+ *  false "sent"), and an in-flight send shows «جارٍ الإرسال» rather than looking
+ *  delivered. sent/delivered/read mirror WhatsApp tick semantics. */
+function SendStatus({ status }: { status: MessageStatus }) {
+  if (status === "failed") {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[#c0492f]">
+        <AlertCircle className="h-3 w-3" /> لم تُرسل
+      </span>
+    );
+  }
+  if (status === "sending") {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[10px] text-[#b9a892]">
+        <Clock className="h-3 w-3" /> جارٍ الإرسال
+      </span>
+    );
+  }
+  if (status === "read") {
+    return <CheckCheck className="h-3.5 w-3.5 text-[#3b82f6]" aria-label="تمت القراءة" />;
+  }
+  if (status === "delivered") {
+    return <CheckCheck className="h-3.5 w-3.5 text-[#b9a892]" aria-label="تم التسليم" />;
+  }
+  // sent
+  return <Check className="h-3.5 w-3.5 text-[#b9a892]" aria-label="تم الإرسال" />;
+}
 
 type Row = { id: string; title: string; description?: string };
 type Presentation =
@@ -101,6 +130,8 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
         <div className={cn("mt-1 flex items-center gap-2", isCustomer ? "justify-end" : "justify-start")}>
           <span className="text-[10px] text-[#b9a892]">{message.time}</span>
           {isAi && typeof message.confidence === "number" && <AIConfidenceBadge value={message.confidence} />}
+          {/* T8 — outbound (operator + AI) send status; inbound customer bubbles never show it. */}
+          {!isCustomer && message.status && <SendStatus status={message.status} />}
         </div>
       </div>
     </div>

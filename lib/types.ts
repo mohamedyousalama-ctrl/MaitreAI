@@ -279,11 +279,18 @@ export interface IntentHistoryEntry {
   createdAt: number;
 }
 
+/** Per-message delivery status for OUTBOUND messages (T8). Mirrors WhatsApp
+ *  semantics: sending (in flight) → sent → delivered → read; failed = not sent.
+ *  Sourced from messages.status (send route sets sent/failed; T3 ingests
+ *  delivered/read). Undefined for inbound/legacy rows (no indicator shown). */
+export type MessageStatus = "sending" | "sent" | "delivered" | "read" | "failed";
+
 export interface ChatMessage {
   id: string;
   sender: MessageSender;
   text: string;
   time: string;
+  status?: MessageStatus; // T8 — outbound send status (undefined ⇒ no indicator)
   createdAtMs?: number; // epoch ms, for day separators
   confidence?: number; // AI confidence 0-100 for ai messages
   intent?: IntentType;
