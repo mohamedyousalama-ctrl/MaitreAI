@@ -38,7 +38,8 @@ import { useConsoleUi } from "@/components/console/console-ui-store";
 import { runAction, runActionOutcome } from "@/lib/console-toast";
 import { StatePill, KvSkeletonBlock, useRiseIn } from "@/components/kivo";
 import { useConversationPresence, presenceLabel } from "@/lib/realtime/use-conversation-presence";
-import type { Conversation, ChannelKey } from "@/lib/types";
+import type { Conversation, ChannelKey, ConversationStage } from "@/lib/types";
+import { CONVERSATION_STAGES, CONVERSATION_STAGE_LABELS } from "@/lib/types";
 
 const AR = "٠١٢٣٤٥٦٧٨٩";
 const toAr = (n: number | string) => String(n).replace(/[0-9]/g, (d) => AR[+d]);
@@ -91,6 +92,7 @@ export default function ConversationsPage() {
   const returnToAi = useConversationStore((s) => s.returnToAi);
   const setConversationIdle = useConversationStore((s) => s.setConversationIdle);
   const closeConversation = useConversationStore((s) => s.closeConversation);
+  const setStage = useConversationStore((s) => s.setStage);
   const addHumanMessage = useConversationStore((s) => s.addHumanMessage);
   const getLatestOrderByConversation = useOrderStore((s) => s.getLatestOrderByConversation);
 
@@ -278,7 +280,7 @@ export default function ConversationsPage() {
         )}
 
         {/* ACTION RAIL */}
-        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={handleTakeover} onReturn={returnToAi} onWait={setConversationIdle} onClose={closeConversation} latestOrder={getLatestOrderByConversation(selected.id)} ownerName={ownerNameFor(selected)} /> : <div />}
+        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={handleTakeover} onReturn={returnToAi} onWait={setConversationIdle} onClose={closeConversation} onSetStage={setStage} latestOrder={getLatestOrderByConversation(selected.id)} ownerName={ownerNameFor(selected)} /> : <div />}
       </section>
     </div>
   );
@@ -334,7 +336,11 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: "1px solid #eef2f0", background: "rgba(255,255,255,.6)" }}>
         <span style={{ width: 38, height: 38, borderRadius: 12, flex: "none", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 14, color: "#fff", background: c.avatarColor || "var(--kv-primary)" }}>{c.customer.trim().charAt(0) || "ع"}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800 }}>{c.customer}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 800 }}>{c.customer}</span>
+            {/* WB2 — sales stage badge (separate from ownership + order status). */}
+            <StageBadge stage={c.stage} />
+          </div>
           <div style={{ fontSize: 9.5, color: "var(--kv-faint)", fontWeight: 700, marginTop: 2 }}>
             {CHANNEL_AR[c.channel] ?? c.channel} · {ownerLine(c)}{orderNo ? ` · طلب #${toAr(orderNo)}` : ""}{reason ? ` · السبب: ${reason}` : ""}
           </div>
@@ -411,12 +417,13 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
   );
 }
 
-function Rail({ c, onTakeover, onReturn, onWait, onClose, latestOrder, ownerName }: {
+function Rail({ c, onTakeover, onReturn, onWait, onClose, onSetStage, latestOrder, ownerName }: {
   c: Conversation;
   onTakeover: (id: string) => void;
   onReturn: (id: string, note?: string) => void;
   onWait: (id: string) => Promise<boolean>;
   onClose: (id: string) => Promise<boolean>;
+  onSetStage: (id: string, stage: ConversationStage) => Promise<boolean>;
   latestOrder: ReturnType<ReturnType<typeof useOrderStore.getState>["getLatestOrderByConversation"]> | undefined;
   ownerName?: string;
 }) {
@@ -468,6 +475,14 @@ function Rail({ c, onTakeover, onReturn, onWait, onClose, latestOrder, ownerName
     else if (key === "ask") onReturn(c.id, "اسأل عن الناقص");
   };
 
+  // WB2 — quick-set a sales stage with R1 feedback (separate from ownership).
+  const quickStage = (stage: ConversationStage) => {
+    void runAction(
+      { pending: "جارٍ تحديث المرحلة…", success: `المرحلة: ${CONVERSATION_STAGE_LABELS[stage]}`, error: "تعذّر تحديث المرحلة", retry: true },
+      () => onSetStage(c.id, stage),
+    );
+  };
+
   return (
     <div className="kv-scroll" style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
       {/* ownership */}
@@ -495,6 +510,38 @@ function Rail({ c, onTakeover, onReturn, onWait, onClose, latestOrder, ownerName
             </div>
           </div>
         )}
+      </Card>
+
+      {/* WB2 — conversation sales STAGE (separate axis from ownership above and
+          from the order's status below). Manual control + the high-value Be-On
+          quick-actions. Setting a stage never changes ownership or order status. */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <CardLabel noMargin>مرحلة المحادثة</CardLabel>
+          <StageBadge stage={c.stage} />
+        </div>
+        <select
+          value={c.stage ?? "new"} aria-label="مرحلة المحادثة"
+          onChange={(e) => {
+            const next = e.target.value as ConversationStage;
+            void runAction(
+              { pending: "جارٍ تحديث المرحلة…", success: `المرحلة: ${CONVERSATION_STAGE_LABELS[next]}`, error: "تعذّر تحديث المرحلة", retry: true },
+              () => onSetStage(c.id, next),
+            );
+          }}
+          style={{ width: "100%", height: 38, padding: "0 10px", borderRadius: 12, border: "1px solid var(--kv-border)", background: "var(--kv-card)", color: "var(--kv-text)", fontSize: 12, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}
+        >
+          {CONVERSATION_STAGES.map((s) => (
+            <option key={s} value={s}>{CONVERSATION_STAGE_LABELS[s]}</option>
+          ))}
+        </select>
+        {/* Explicit quick-actions for the high-value Be-On stages. */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
+          <StageQuickBtn label="لا يرد" active={c.stage === "no_answer"} onClick={() => quickStage("no_answer")} />
+          <StageQuickBtn label="متابعة" active={c.stage === "follow_up"} onClick={() => quickStage("follow_up")} />
+          <StageQuickBtn label="مغلق" active={c.stage === "closed"} onClick={() => quickStage("closed")} />
+          <StageQuickBtn label="إعادة فتح" active={c.stage === "new"} onClick={() => quickStage("new")} />
+        </div>
       </Card>
 
       {/* order state */}
@@ -564,6 +611,22 @@ function CardLabel({ children, noMargin }: { children: React.ReactNode; noMargin
 }
 function ChooserBtn({ children, onClick, disabled, title }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; title?: string }) {
   return <button onClick={onClick} disabled={disabled} title={title} style={{ height: 32, border: "1px solid var(--kv-border)", borderRadius: 9, background: disabled ? "var(--kv-card-soft)" : "#fff", color: disabled ? "var(--kv-faint)" : "var(--kv-text)", fontSize: 10.5, fontWeight: 800, fontFamily: "inherit", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.6 : 1 }}>{children}</button>;
+}
+// WB2 — sales-stage badge (amber chip; distinct from ownership + order pills).
+function StageBadge({ stage }: { stage?: ConversationStage }) {
+  const s = stage ?? "new";
+  return (
+    <span style={{ flex: "none", display: "inline-flex", alignItems: "center", height: 18, padding: "0 8px", borderRadius: 99, background: "rgba(124,92,208,.12)", color: "#6243b0", fontSize: 9.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+      {CONVERSATION_STAGE_LABELS[s]}
+    </span>
+  );
+}
+function StageQuickBtn({ label, active, onClick }: { label: string; active?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{ height: 32, border: "1px solid " + (active ? "rgba(124,92,208,.4)" : "var(--kv-border)"), borderRadius: 9, background: active ? "rgba(124,92,208,.1)" : "#fff", color: active ? "#6243b0" : "var(--kv-muted)", fontSize: 10.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>
+      {label}
+    </button>
+  );
 }
 function primaryBtn(disabled?: boolean): React.CSSProperties {
   return { height: 31, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "0 13px", borderRadius: 10, border: 0, background: disabled ? "#cdd9d2" : "var(--kv-primary)", color: "#fff", fontSize: 10.5, fontWeight: 800, fontFamily: "inherit", cursor: disabled ? "default" : "pointer", boxShadow: disabled ? "none" : "0 14px 26px -16px rgba(14,159,110,.7)" };
