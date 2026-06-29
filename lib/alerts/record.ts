@@ -24,7 +24,11 @@ export type CriticalAlertType =
   | "operator_send_failed"
   // R3 — audited manager override: delivered without a confirmed driver after the
   // driver-check failed (COD cash attribution risk consciously accepted).
-  | "delivered_without_driver_override";
+  | "delivered_without_driver_override"
+  // T7 — an order was persisted without a determined payment method (the draft was
+  // finalized with no set_payment_method). It's still stored (not lost) but is
+  // flagged for resolution instead of silently presented as a cash (COD) order.
+  | "payment_unspecified";
 
 export interface CriticalAlertInput {
   restaurantId: string;

@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OrderDraft } from "@/lib/ai/tools";
 import { loadBrain } from "@/lib/db/brain";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
+import { recordCriticalAlert } from "@/lib/alerts/record";
 
 /** Deterministic UUID from a string (stable id ⇒ idempotent insert). */
 export function uuidFromHash(input: string): string {
@@ -214,6 +215,11 @@ export async function persistOrderFromDraft(
         // cancelled WhatsApp orders aren't born NULL (uncapturable later). Sources the
         // customer's chosen method from the draft (set_payment_method); falls back to
         // "cod" (the default-on path, mirroring the web path) when none was chosen.
+        // T7 — the "cod" fallback is RETAINED here deliberately (downstream COD
+        // capture/reconciliation already treats null AND "cod" identically, so this
+        // value is the safe non-null default), but the unspecified case is no longer
+        // SILENT: a payment_unspecified alert fires below so the operator resolves the
+        // real method instead of it just looking like a cash order.
         payment_method: verifiedDraft.paymentMethod ?? "cod",
       },
       { onConflict: "id", ignoreDuplicates: true }
@@ -224,6 +230,21 @@ export async function persistOrderFromDraft(
   const created = (data?.length ?? 0) > 0;
   if (created) {
     await admin.from("conversations").update({ status: "بانتظار التأكيد" }).eq("id", conversationId);
+
+    // T7 — make an UNDETERMINED payment method visible instead of letting the "cod"
+    // fallback silently present it as a cash order. Only on a genuinely-created row
+    // (never on an idempotent no-op/double-tap), so a retry doesn't re-alert. The
+    // order is NOT lost — it's persisted and flagged for the operator to resolve.
+    if (!verifiedDraft.paymentMethod) {
+      await recordCriticalAlert(admin, {
+        restaurantId,
+        type: "payment_unspecified",
+        detail: `طلب رقم ${orderNumber} اتسجّل من غير طريقة دفع محددة — محتاج تحديد طريقة الدفع.`,
+        conversationId,
+        context: { orderId: id, orderNumber, storedFallback: "cod" },
+      });
+    }
+
     return { created: true, orderId: id, orderNumber };
   }
 
