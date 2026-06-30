@@ -432,10 +432,16 @@ function Rail({ c, onTakeover, onReturn, onWait, onClose, onSetStage, onSetStaff
   ownerName?: string;
 }) {
   const [chooser, setChooser] = useState(false);
-  // WB-FIX-1 — internal staff-note draft (Rail is keyed by conversation id, so this
-  // resets per conversation).
+  // WB-FIX-1 — internal staff-note draft. `noteDirty` tracks whether the operator is
+  // mid-edit. When the persisted value changes externally (initial DB load replacing
+  // the optimistic conversation, OR another operator's edit via realtime) AND the
+  // field is NOT dirty, sync the draft so it never shows stale text; if the operator
+  // IS typing, their in-progress text is left untouched.
   const [noteDraft, setNoteDraft] = useState(c.staffNotes ?? "");
-  const noteDirty = (noteDraft.trim() || "") !== ((c.staffNotes ?? "").trim() || "");
+  const [noteDirty, setNoteDirty] = useState(false);
+  useEffect(() => {
+    if (!noteDirty) setNoteDraft(c.staffNotes ?? "");
+  }, [c.staffNotes, noteDirty]);
   const view = ownView(c);
   const hold = resolveHold(c, latestOrder?.notes);
   const canTakeover = view !== "HUMAN";
@@ -606,17 +612,21 @@ function Rail({ c, onTakeover, onReturn, onWait, onClose, onSetStage, onSetStaff
         </div>
         <textarea
           value={noteDraft}
-          onChange={(e) => setNoteDraft(e.target.value)}
+          onChange={(e) => { setNoteDraft(e.target.value); setNoteDirty(true); }}
           maxLength={2000}
           placeholder="اكتب ملاحظة داخلية عن المحادثة…"
           rows={3}
           style={{ width: "100%", resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--kv-border)", background: "var(--kv-card-soft)", fontSize: 12, fontWeight: 600, color: "var(--kv-text)", fontFamily: "inherit", boxSizing: "border-box" }}
         />
         <button
-          onClick={() => void runAction(
-            { pending: "جارٍ الحفظ…", success: "اتسجّلت الملاحظة", error: "تعذّر حفظ الملاحظة", retry: true },
-            () => onSetStaffNote(c.id, noteDraft),
-          )}
+          onClick={async () => {
+            const ok = await runAction(
+              { pending: "جارٍ الحفظ…", success: "اتسجّلت الملاحظة", error: "تعذّر حفظ الملاحظة", retry: true },
+              () => onSetStaffNote(c.id, noteDraft),
+            );
+            // On success, clear dirty so future external (realtime) updates re-sync.
+            if (ok) setNoteDirty(false);
+          }}
           disabled={!noteDirty}
           style={{ marginTop: 8, height: 34, width: "100%", borderRadius: 10, border: 0, background: noteDirty ? "var(--kv-grad-brand)" : "var(--kv-card-soft)", color: noteDirty ? "#fff" : "var(--kv-faint)", fontSize: 11.5, fontWeight: 800, fontFamily: "inherit", cursor: noteDirty ? "pointer" : "default" }}
         >
