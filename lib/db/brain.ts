@@ -6,6 +6,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { canonicalToArLabel } from "@/lib/ai/allergen-vocab";
 import type {
   Branch,
   DeliveryArea,
@@ -144,7 +145,16 @@ function toMenuItem(
     imageUrl: r.image_url ?? "",
     modifierIds,
     ingredients: r.ingredients ?? [],
-    allergens: r.allergens ?? [],
+    // WB-ALLERGEN-3 (display fix) — the DB stores CANONICAL keys (tree_nut, dairy…)
+    // for the future gate cross-reference (WB-ALLERGEN-4), but Karim speaks Arabic
+    // to customers, so the Brain/prompt representation must show the ARABIC label
+    // (مكسرات، ألبان…) — prompt.ts:168 prints these. Map each stored key → its Arabic
+    // label here in the LOAD path; an unmappable/legacy value (not a canonical key)
+    // passes through AS-IS so an allergen is never hidden. Storage is unchanged.
+    allergens: (r.allergens ?? []).map((a) => canonicalToArLabel(a) ?? a),
+    // WB-ALLERGEN-3 — surface review state for the editor badge (read-only; the
+    // prompt/gate don't consume it). Absent (pre-0055) → null = unreviewed.
+    allergensReviewedAt: r.allergens_reviewed_at ?? null,
     variants,
     choiceGroups,
   };

@@ -96,6 +96,22 @@ export default function MenuMemoryPage() {
     });
   };
 
+  // WB-ALLERGEN-3 — confirm an item's reviewed allergens: persists the selected
+  // canonical keys + stamps reviewed_at/by server-side (manager-gated route), then
+  // refreshes so the badge flips green.
+  const markReviewed = async (itemId: string, allergenKeys: string[]) => {
+    await runAction(
+      { pending: "جارٍ تأكيد مسببات الحساسية…", success: "تمت مراجعة مسببات الحساسية", error: "تعذّر تأكيد المراجعة", retry: false },
+      async () => {
+        const res = await fetch(`/api/menu/${itemId}/allergens-review`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ allergens: allergenKeys }),
+        });
+        if (res.ok) { await s.refreshBrain(); }
+        return res;
+      },
+    );
+  };
+
   if (!hydrated) return <div className="h-[calc(100vh-8rem)] animate-pulse rounded-2xl border" style={{ borderColor: "var(--kv-border)", background: "var(--kv-card)" }} />;
 
   const C = 351.8, ringOff = C * (1 - overall / 100);
@@ -153,7 +169,15 @@ export default function MenuMemoryPage() {
                           <button onClick={() => { setEditingItem(it); setItemForm(true); }} className="truncate text-right text-[14px] font-bold" style={{ color: "var(--kv-text)" }}>{it.name}</button>
                           <span className="text-[14px] font-bold" style={{ color: "var(--kv-primary)" }}>{toAr(it.price)}</span>
                         </div>
-                        <div className="mt-0.5 text-[11px]" style={{ color: "var(--kv-muted)" }}>{it.category || "—"}</div>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px]" style={{ color: "var(--kv-muted)" }}>
+                          <span className="truncate">{it.category || "—"}</span>
+                          {/* WB-ALLERGEN-3 — allergen review coverage at a glance. */}
+                          {it.allergensReviewedAt ? (
+                            <span className="inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9.5px] font-bold" style={{ background: "rgba(14,159,110,.12)", color: "#0a8a5f" }}>تمت المراجعة</span>
+                          ) : (
+                            <span className="inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9.5px] font-bold" style={{ background: "rgba(201,138,31,.16)", color: "#9a6a14" }}>لم تُراجع</span>
+                          )}
+                        </div>
                         <div className="mt-2.5 flex items-center justify-between pt-2.5" style={{ borderTop: "1px solid var(--kv-border)" }}>
                           <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: it.available ? "var(--kv-primary)" : "var(--kv-faint)" }}>
                             <span className="h-1.5 w-1.5 rounded-full" style={{ background: it.available ? "var(--kv-primary)" : "var(--kv-border)" }} />{it.available ? "متاح" : "غير متوفر"}
@@ -259,6 +283,7 @@ export default function MenuMemoryPage() {
       {/* ===== existing form modals (reused, persist) ===== */}
       <MenuItemForm open={itemForm} initial={editingItem} categories={categories.filter((c) => c !== "الكل")} modifiers={s.modifiers}
         onClose={() => setItemForm(false)}
+        onMarkReviewed={editingItem ? (keys) => markReviewed(editingItem.id, keys) : undefined}
         onSubmit={(v: MenuItemFormValues) => { if (editingItem) s.updateMenuItem(editingItem.id, v); else s.addMenuItem(v); setItemForm(false); }} />
       <ModifierManager open={modOpen} onClose={() => setModOpen(false)} />
       <DeliveryAreaForm open={zoneForm} initial={editingZone} branches={s.branches} currency={s.profile.currency} defaultBranchId={s.branches[0]?.id}

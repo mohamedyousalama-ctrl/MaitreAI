@@ -75,6 +75,9 @@ export interface MenuItemRow {
   unavailable_until: string | null;
   ingredients: string[];
   allergens: string[];
+  // WB-ALLERGEN-2/3 — allergen review state (nullable; loaded via select("*")).
+  allergens_reviewed_at?: string | null;
+  allergens_reviewed_by?: string | null;
   image_kind: "real" | "illustrative" | "card";
   image_status: "approved" | "pending" | "rejected";
 }
