@@ -76,6 +76,7 @@ interface ConversationState {
   addSystemMessage: (convId: string, text: string) => void;
   setStatus: (convId: string, status: Conversation["status"]) => void;
   setStage: (convId: string, stage: ConversationStage) => Promise<boolean>;
+  setStaffNote: (convId: string, note: string) => Promise<boolean>;
   attachOrder: (convId: string, orderId: string) => void;
   setTyping: (convId: string, value: boolean) => void;
   commitAiTurn: (convId: string, aiMessage: ChatMessage, patch: Partial<Conversation>, history: IntentHistoryEntry) => void;
@@ -92,6 +93,10 @@ const patchConv = (list: Conversation[], id: string, fn: (c: Conversation) => Co
   list.map((c) => (c.id === id ? fn(c) : c));
 
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+
+// WB-FIX-1 — per-conversation monotonic sequence for staff-note saves, so a stale
+// (superseded) request's failure rollback can never revert a newer save's state.
+const staffNoteSeq = new Map<string, number>();
 
 export const useConversationStore = create<ConversationState>()(
   persist(
@@ -250,6 +255,34 @@ export const useConversationStore = create<ConversationState>()(
             return true;
           } catch {
             set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, stage: prev })) }));
+            return false;
+          }
+        },
+
+        // WB-FIX-1 — internal staff note. Staff-only; persisted via the server route
+        // (never customer/Karim-facing). Optimistic local set; revert on failure —
+        // but ONLY if this is still the most-recent in-flight save for the
+        // conversation, so an out-of-order/superseded failure can't clobber a newer
+        // save (or a newer realtime value).
+        setStaffNote: async (convId, note) => {
+          const prev = get().conversations.find((c) => c.id === convId)?.staffNotes ?? null;
+          const next = note.trim() || null;
+          const mySeq = (staffNoteSeq.get(convId) ?? 0) + 1;
+          staffNoteSeq.set(convId, mySeq);
+          set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, staffNotes: next })) }));
+          // Revert to prev ONLY when this request is still the latest one in flight.
+          const rollbackIfCurrent = () => {
+            if (staffNoteSeq.get(convId) !== mySeq) return; // a newer save superseded us
+            set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, staffNotes: prev })) }));
+          };
+          try {
+            const res = await fetch(`/api/conversations/${convId}/notes`, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }),
+            });
+            if (!res.ok) { rollbackIfCurrent(); return false; }
+            return true;
+          } catch {
+            rollbackIfCurrent();
             return false;
           }
         },

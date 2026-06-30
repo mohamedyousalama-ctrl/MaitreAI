@@ -21,6 +21,7 @@ export type AuditAction =
   | "order_status_changed"
   | "order_test_marked"
   | "conversation_stage_changed"
+  | "conversation_note_edited"
   | "order_pos_marked";
 
 export interface AuditInput {

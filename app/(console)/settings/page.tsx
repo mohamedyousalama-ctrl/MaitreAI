@@ -235,17 +235,8 @@ export default function SettingsPage() {
           <Card>
             <Row icon={<Bot size={20} color="#0a8a5f" />} title="تحكّم كريم" sub="شغّل/أوقف الوكيل وحدّد سلوك التصعيد" />
             <ToggleRow title="كريم شغّال" sub={ops.ok ? "بيرد على العملاء على واتساب" : "محتاج ربط الباك عشان يتفعّل"} on={assistantOn} disabled={!ops.ok || busy} onToggle={toggleKarim} />
-            {/* escalation timeout: no real field exists yet → disabled + TODO (don't fake) */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 0", borderBottom: "1px solid #eef2f0" }}>
-              <div>
-                <div style={{ fontSize: 12.5, fontWeight: 800 }}>مهلة التصعيد للفريق</div>
-                <div style={{ fontSize: 10, color: "var(--kv-faint)", fontWeight: 600, marginTop: 2 }}>لسه مفيش إعداد حقيقي للمهلة — هيتفعّل قريّب</div>
-              </div>
-              {/* TODO: wire to a real escalation-timeout field when it exists */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, opacity: 0.45 }}>
-                <Stepper sign="−" /><span style={{ fontSize: 13, fontWeight: 800, minWidth: 54, textAlign: "center" }}>—</span><Stepper sign="+" />
-              </div>
-            </div>
+            {/* WB-FIX-2 — the escalation-timeout stepper was an inert, disabled control
+                (no real field) — removed so there's no visible-but-dead surface. */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 0" }}>
               <div>
                 <div style={{ fontSize: 12.5, fontWeight: 800 }}>لهجة كريم</div>
@@ -431,9 +422,6 @@ function MiniBig({ value, label, valueColor }: { value: string; label: string; v
       <div style={{ fontSize: 9.5, color: "var(--kv-faint)", fontWeight: 700, marginTop: 2 }}>{label}</div>
     </div>
   );
-}
-function Stepper({ sign }: { sign: string }) {
-  return <span style={{ width: 28, height: 28, borderRadius: 9, border: "1px solid var(--kv-border)", background: "var(--kv-card)", display: "grid", placeItems: "center", fontSize: 15, fontWeight: 800, color: "var(--kv-muted)" }}>{sign}</span>;
 }
 function ToggleRow({ title, sub, on, disabled, onToggle }: { title: string; sub?: string; on: boolean; disabled?: boolean; onToggle: () => void }) {
   return (

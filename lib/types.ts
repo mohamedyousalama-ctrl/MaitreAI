@@ -350,6 +350,10 @@ export interface Conversation {
   // still carries the order's own status on the order. Set server-side only via
   // POST /api/conversations/[id]/stage (validated + audited).
   stage?: ConversationStage;
+  /** WB-FIX-1 — internal STAFF-ONLY note. Never sent to the customer, never read
+   *  into Karim's prompt. Distinct from handover_note (the return-to-Karim summary
+   *  that IS prompt-facing). Any staff member may add/edit. */
+  staffNotes?: string | null;
   // WB3 — Meta click-to-message AD referral context, captured on the first inbound
   // from an ad (organic conversations leave these undefined). Preserved so staff
   // know which ad/campaign drove the lead; campaign analytics is deferred (P2).
