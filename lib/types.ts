@@ -407,6 +407,10 @@ export interface MenuItem {
   modifierIds: string[]; // references Modifier.id
   ingredients: string[];
   allergens: string[];
+  /** WB-ALLERGEN-3 — when the kitchen last CONFIRMED this item's allergens (null =
+   *  not yet reviewed = unknown). Set server-side via /api/menu/[id]/allergens-review;
+   *  read-only here (the editor shows a reviewed/unreviewed badge from it). */
+  allergensReviewedAt?: string | null;
   variants?: MenuItemVariant[];
   choiceGroups?: MenuItemChoiceGroup[];
 }

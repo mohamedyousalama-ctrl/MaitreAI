@@ -145,6 +145,9 @@ function toMenuItem(
     modifierIds,
     ingredients: r.ingredients ?? [],
     allergens: r.allergens ?? [],
+    // WB-ALLERGEN-3 — surface review state for the editor badge (read-only; the
+    // prompt/gate don't consume it). Absent (pre-0055) → null = unreviewed.
+    allergensReviewedAt: r.allergens_reviewed_at ?? null,
     variants,
     choiceGroups,
   };
