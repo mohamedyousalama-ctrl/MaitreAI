@@ -76,6 +76,7 @@ interface ConversationState {
   addSystemMessage: (convId: string, text: string) => void;
   setStatus: (convId: string, status: Conversation["status"]) => void;
   setStage: (convId: string, stage: ConversationStage) => Promise<boolean>;
+  setStaffNote: (convId: string, note: string) => Promise<boolean>;
   attachOrder: (convId: string, orderId: string) => void;
   setTyping: (convId: string, value: boolean) => void;
   commitAiTurn: (convId: string, aiMessage: ChatMessage, patch: Partial<Conversation>, history: IntentHistoryEntry) => void;
@@ -250,6 +251,27 @@ export const useConversationStore = create<ConversationState>()(
             return true;
           } catch {
             set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, stage: prev })) }));
+            return false;
+          }
+        },
+
+        // WB-FIX-1 — internal staff note. Staff-only; persisted via the server route
+        // (never customer/Karim-facing). Optimistic local set; revert on failure.
+        setStaffNote: async (convId, note) => {
+          const prev = get().conversations.find((c) => c.id === convId)?.staffNotes ?? null;
+          const next = note.trim() || null;
+          set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, staffNotes: next })) }));
+          try {
+            const res = await fetch(`/api/conversations/${convId}/notes`, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }),
+            });
+            if (!res.ok) {
+              set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, staffNotes: prev })) }));
+              return false;
+            }
+            return true;
+          } catch {
+            set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, staffNotes: prev })) }));
             return false;
           }
         },

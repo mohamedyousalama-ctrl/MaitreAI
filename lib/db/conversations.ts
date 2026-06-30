@@ -103,6 +103,9 @@ export async function loadConversations(s: SupabaseClient, restaurantId: string)
       // WB2 — sales-lifecycle stage. select("*") carries it; absent (pre-migration
       // 0052) → defaults to "new" so the UI is deploy-safe with or without it.
       stage: (c.stage as Conversation["stage"]) ?? "new",
+      // WB-FIX-1 — internal staff note (select("*") carries it; absent pre-0056 →
+      // null). UI-store only — NEVER read into the agent prompt.
+      staffNotes: (c.staff_notes as string | null) ?? null,
       // WB3 — ad referral context (null/absent for organic; select("*") carries it,
       // deploy-safe pre-migration 0053).
       adSourceType: (c.ad_source_type as string | null) ?? null,

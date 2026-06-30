@@ -14,7 +14,7 @@
 //    wording; a safety hold shows a locked marker and is released only by the
 //    deliberate return-to-AI action (the chooser) — the UI never auto-resumes.
 //
-// Truth-states: «كريم يقترح ردّ» = coming-soon (not wired). «قراءة كريم» summary
+// Truth-states: «قراءة كريم» summary
 // isn't exposed client-side → neutral last-message snippet (never invented).
 // «متوسط زمن الرد» isn't reliably derivable client-side → gathering skeleton.
 // Triage + nav counts are live (countEscalations) — no hardcoded ٤/٣٦.
@@ -28,7 +28,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Search, ArrowLeft, Send, AlertTriangle, Lock, Sparkles, UserPlus, CornerUpLeft, UserCheck, Megaphone } from "lucide-react";
+import { Search, ArrowLeft, Send, AlertTriangle, Lock, UserPlus, CornerUpLeft, UserCheck, Megaphone } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useOrderStore } from "@/lib/order-store";
 import { useMembersStore, membersNameMap } from "@/lib/members-store";
@@ -36,7 +36,7 @@ import { useHasHydrated } from "@/lib/store";
 import { isEscalated, countEscalations } from "@/lib/escalation";
 import { useConsoleUi } from "@/components/console/console-ui-store";
 import { runAction, runActionOutcome } from "@/lib/console-toast";
-import { StatePill, KvSkeletonBlock, useRiseIn } from "@/components/kivo";
+import { KvSkeletonBlock, useRiseIn } from "@/components/kivo";
 import { useConversationPresence, presenceLabel } from "@/lib/realtime/use-conversation-presence";
 import type { Conversation, ChannelKey, ConversationStage } from "@/lib/types";
 import { CONVERSATION_STAGES, CONVERSATION_STAGE_LABELS } from "@/lib/types";
@@ -93,6 +93,7 @@ export default function ConversationsPage() {
   const setConversationIdle = useConversationStore((s) => s.setConversationIdle);
   const closeConversation = useConversationStore((s) => s.closeConversation);
   const setStage = useConversationStore((s) => s.setStage);
+  const setStaffNote = useConversationStore((s) => s.setStaffNote);
   const addHumanMessage = useConversationStore((s) => s.addHumanMessage);
   const getLatestOrderByConversation = useOrderStore((s) => s.getLatestOrderByConversation);
 
@@ -280,7 +281,7 @@ export default function ConversationsPage() {
         )}
 
         {/* ACTION RAIL */}
-        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={handleTakeover} onReturn={returnToAi} onWait={setConversationIdle} onClose={closeConversation} onSetStage={setStage} latestOrder={getLatestOrderByConversation(selected.id)} ownerName={ownerNameFor(selected)} /> : <div />}
+        {selected ? <Rail key={`r-${selected.id}`} c={selected} onTakeover={handleTakeover} onReturn={returnToAi} onWait={setConversationIdle} onClose={closeConversation} onSetStage={setStage} onSetStaffNote={setStaffNote} latestOrder={getLatestOrderByConversation(selected.id)} ownerName={ownerNameFor(selected)} /> : <div />}
       </section>
     </div>
   );
@@ -419,17 +420,22 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
   );
 }
 
-function Rail({ c, onTakeover, onReturn, onWait, onClose, onSetStage, latestOrder, ownerName }: {
+function Rail({ c, onTakeover, onReturn, onWait, onClose, onSetStage, onSetStaffNote, latestOrder, ownerName }: {
   c: Conversation;
   onTakeover: (id: string) => void;
   onReturn: (id: string, note?: string) => void;
   onWait: (id: string) => Promise<boolean>;
   onClose: (id: string) => Promise<boolean>;
   onSetStage: (id: string, stage: ConversationStage) => Promise<boolean>;
+  onSetStaffNote: (id: string, note: string) => Promise<boolean>;
   latestOrder: ReturnType<ReturnType<typeof useOrderStore.getState>["getLatestOrderByConversation"]> | undefined;
   ownerName?: string;
 }) {
   const [chooser, setChooser] = useState(false);
+  // WB-FIX-1 — internal staff-note draft (Rail is keyed by conversation id, so this
+  // resets per conversation).
+  const [noteDraft, setNoteDraft] = useState(c.staffNotes ?? "");
+  const noteDirty = (noteDraft.trim() || "") !== ((c.staffNotes ?? "").trim() || "");
   const view = ownView(c);
   const hold = resolveHold(c, latestOrder?.notes);
   const canTakeover = view !== "HUMAN";
@@ -591,15 +597,32 @@ function Rail({ c, onTakeover, onReturn, onWait, onClose, onSetStage, latestOrde
       {/* customer memory — real /api/customer-memory (honest-empty) */}
       <MemoryCard customerId={c.customerId} />
 
-      {/* suggest reply — COMING SOON (not wired) */}
-      <div style={{ position: "relative", overflow: "hidden", borderRadius: 16, border: "1.5px dashed rgba(100,116,139,.35)", background: "repeating-linear-gradient(135deg,rgba(100,116,139,.035),rgba(100,116,139,.035) 11px,transparent 11px,transparent 22px),#fbfcfc", padding: "14px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Sparkles size={15} color="#6b7a88" />
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: "#51637a" }}>كريم يقترح ردّ</span>
-          <span style={{ marginInlineStart: "auto" }}><StatePill state="coming" /></span>
+      {/* WB-FIX-1 — internal staff note. Staff-only: NEVER shown to the customer and
+          NEVER read into Karim's prompt. Distinct from the return-to-Karim note. */}
+      <Card>
+        <CardLabel>ملاحظات داخلية للفريق</CardLabel>
+        <div style={{ fontSize: 9.5, color: "var(--kv-faint)", fontWeight: 700, marginBottom: 8 }}>
+          🔒 داخلي للفريق فقط — مش بيظهر للعميل ولا بيوصل لكريم.
         </div>
-        <div style={{ fontSize: 10, color: "var(--kv-faint)", fontWeight: 600, marginTop: 7, lineHeight: 1.5 }}>كريم هيقترح ردّ جاهز للفريق وقت التصعيد. لسه على خريطة الطريق.</div>
-      </div>
+        <textarea
+          value={noteDraft}
+          onChange={(e) => setNoteDraft(e.target.value)}
+          maxLength={2000}
+          placeholder="اكتب ملاحظة داخلية عن المحادثة…"
+          rows={3}
+          style={{ width: "100%", resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--kv-border)", background: "var(--kv-card-soft)", fontSize: 12, fontWeight: 600, color: "var(--kv-text)", fontFamily: "inherit", boxSizing: "border-box" }}
+        />
+        <button
+          onClick={() => void runAction(
+            { pending: "جارٍ الحفظ…", success: "اتسجّلت الملاحظة", error: "تعذّر حفظ الملاحظة", retry: true },
+            () => onSetStaffNote(c.id, noteDraft),
+          )}
+          disabled={!noteDirty}
+          style={{ marginTop: 8, height: 34, width: "100%", borderRadius: 10, border: 0, background: noteDirty ? "var(--kv-grad-brand)" : "var(--kv-card-soft)", color: noteDirty ? "#fff" : "var(--kv-faint)", fontSize: 11.5, fontWeight: 800, fontFamily: "inherit", cursor: noteDirty ? "pointer" : "default" }}
+        >
+          حفظ الملاحظة
+        </button>
+      </Card>
     </div>
   );
 }
