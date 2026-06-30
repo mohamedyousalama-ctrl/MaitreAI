@@ -11,6 +11,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { routeInteractive } from "@/lib/messaging/interactive-router";
+import { evaluateTesterAllowlist } from "@/lib/messaging/tester-allowlist";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
@@ -29,6 +30,7 @@ export type RespondAndSendStatus =
   | "responded"
   | "skipped_takeover"
   | "skipped_mode"
+  | "skipped_not_allowlisted"
   | "skipped_no_customer_msg"
   | "skipped_not_found"
   | "send_failed"
@@ -248,11 +250,46 @@ export async function respondAndSendWhatsApp(
   // auto-reply — while test/live (and closed) reply normally. The stored
   // agent_mode (setup|test|live|paused) maps onto SystemMode; a missing value
   // defaults to live so the existing reply path is unchanged.
-  const { data: rest } = await admin.from("restaurants").select("agent_mode").eq("id", restaurantId).single();
+  const { data: rest, error: restErr } = await admin
+    .from("restaurants")
+    .select("agent_mode, country, tester_allowlist, tester_allowlist_mode")
+    .eq("id", restaurantId)
+    .single();
   const agentMode = ((rest?.agent_mode as string) || "live") as SystemMode;
   if (!modeAllowsAgentReply(agentMode)) return { status: "skipped_mode" };
 
   const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
+
+  // DRYRUN-1 tester allowlist — UPSTREAM recipient filter (purely subtractive).
+  // When tester_allowlist_mode is ON, Karim auto-responds ONLY to numbers in
+  // tester_allowlist; every other inbound is held for human handling. This sits
+  // BEFORE runCustomerTurn, so it only decides whether Karim engages at all — it
+  // never touches, weakens, or reorders the deterministic allergen gate that runs
+  // INSIDE runCustomerTurn for everyone Karim does answer.
+  //
+  // FAIL-SAFE = HOLD: the gate responds ONLY if the number is explicitly
+  // allowlisted (never block-only-if-denied). If the restaurants row failed to
+  // read while it was needed, or the mode flag is indeterminate, we cannot prove
+  // the number is allowed → HOLD. An empty/NULL allowlist with mode on holds
+  // everyone. The default-false column means an unset tenant is fully inert.
+  const allowlistDecision = evaluateTesterAllowlist({
+    testerAllowlistMode: rest?.tester_allowlist_mode as boolean | null | undefined,
+    testerAllowlist: rest?.tester_allowlist as string[] | null | undefined,
+    country: rest?.country as string | null | undefined,
+    phone,
+    readError: Boolean(restErr),
+    hasRow: Boolean(rest),
+  });
+  if (!allowlistDecision.allow) {
+    await noteToTimeline(
+      admin,
+      restaurantId,
+      conversationId,
+      "🔒 محتجز للمراجعة البشرية — الرقم خارج قائمة التجربة (وضع التجربة مفعّل).",
+      { kind: "held_not_allowlisted" }
+    );
+    return { status: "skipped_not_allowlisted" };
+  }
 
   // 2. History + the customer message to answer (last inbound), from the DB —
   //    the inbound was already persisted by the webhook, so we derive both here
