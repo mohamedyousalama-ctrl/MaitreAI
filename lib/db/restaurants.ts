@@ -27,6 +27,62 @@ export interface ResolvedTenant {
 }
 
 /**
+ * Shared decrypt: turn a restaurants row's WhatsApp `_enc` columns into a usable
+ * WhatsAppEnv, or null when the tenant is not fully configured / a ciphertext is
+ * missing / decryption fails. The single crypto path for BOTH the webhook's
+ * phone_number_id resolution and the console-initiated by-id resolution — so the
+ * decrypt rules (configured + token present + decryptable) live in ONE place.
+ */
+interface WaCredsRow {
+  wa_phone_number_id?: string | null;
+  wa_verify_token?: string | null;
+  wa_access_token_enc?: string | null;
+  wa_app_secret_enc?: string | null;
+  wa_configured_at?: string | null;
+}
+function rowToWhatsAppEnv(row: WaCredsRow, fallbackPnid: string): WhatsAppEnv | null {
+  if (!row.wa_configured_at || !row.wa_access_token_enc) return null;
+  const accessToken = decryptSecret(row.wa_access_token_enc);
+  if (!accessToken) return null;
+  // App secret is optional (only needed once per-tenant signature checks land).
+  const appSecret = row.wa_app_secret_enc ? decryptSecret(row.wa_app_secret_enc) : "";
+  return {
+    accessToken,
+    phoneNumberId: (row.wa_phone_number_id as string) || fallbackPnid,
+    verifyToken: (row.wa_verify_token as string) ?? "",
+    appSecret,
+  };
+}
+
+/**
+ * DRYRUN-2 — resolve a tenant's decrypted WhatsApp creds BY restaurant_id (for
+ * console-initiated sends: manual staff reply, resume-to-Karim, receipt image).
+ * Returns null to signal "fall back to env" whenever the tenant has no usable
+ * per-tenant credentials — so a tenant that hasn't configured its own number
+ * stays byte-identical to today's global-env behavior. Reads the service-role
+ * `_enc` columns, so `admin` MUST be a service-role client. NEVER throws: any
+ * lookup/decrypt failure is swallowed into a null return (fall back to env).
+ */
+export async function resolveTenantWhatsAppEnvById(
+  admin: SupabaseClient,
+  restaurantId: string
+): Promise<WhatsAppEnv | null> {
+  const id = (restaurantId ?? "").trim();
+  if (!id) return null;
+  try {
+    const { data } = await admin
+      .from("restaurants")
+      .select("wa_phone_number_id, wa_verify_token, wa_access_token_enc, wa_app_secret_enc, wa_configured_at")
+      .eq("id", id)
+      .maybeSingle();
+    if (!data) return null;
+    return rowToWhatsAppEnv(data as WaCredsRow, (data.wa_phone_number_id as string) ?? "");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve a tenant by the inbound WhatsApp `phone_number_id` and return its
  * decrypted credentials, or null to signal "fall back to env". Reads the
  * service-role-only `_enc` columns (admin client required). All failures —
@@ -48,23 +104,9 @@ export async function resolveWebhookTenant(
       .maybeSingle();
 
     if (!data) return null;
-    // Must be explicitly configured and carry a token ciphertext to be usable.
-    if (!data.wa_configured_at || !data.wa_access_token_enc) return null;
-
-    const accessToken = decryptSecret(data.wa_access_token_enc as string);
-    if (!accessToken) return null;
-    // App secret is optional (only needed once per-tenant signature checks land).
-    const appSecret = data.wa_app_secret_enc ? decryptSecret(data.wa_app_secret_enc as string) : "";
-
-    return {
-      restaurantId: data.id as string,
-      env: {
-        accessToken,
-        phoneNumberId: (data.wa_phone_number_id as string) || pnid,
-        verifyToken: (data.wa_verify_token as string) ?? "",
-        appSecret,
-      },
-    };
+    const env = rowToWhatsAppEnv(data as WaCredsRow, pnid);
+    if (!env) return null;
+    return { restaurantId: data.id as string, env };
   } catch {
     // Lookup or decryption failed → fall back to env (never drop the message).
     return null;
