@@ -144,7 +144,7 @@ Nothing from this document gets built before the pilot runs, because **the pilot
 - ☐ Bahaa full rehearsal: console operator + WhatsApp customer + driver/dispatch + real Vodafone Cash transfer
 - ☐ A3.1 allergy hard-test 211/211 green before any live order (standing rule)
 - ☐ Adversarial harness 191/191 green
-- ☐ WhatsApp number cutover from Be-On (Meta test number → real 01007636312)
+- ☐ WhatsApp number cutover from Be-On (Meta test number → real Wesaya number, 0100XXXXXXX)
 - ☐ 2–4 weeks of real Wesaya order volume
 **Exit gate:** Wesaya running real daily orders with zero safety incidents and stable COD reconciliation.
 ### Phase 1 — Structured Truth (the keystone build — small, ~1 sprint)
