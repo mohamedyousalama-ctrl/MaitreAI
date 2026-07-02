@@ -55,7 +55,20 @@ function rowToWhatsAppEnv(row: WaCredsRow, fallbackPnid: string): WhatsAppEnv | 
   const phoneNumberId = ((row.wa_phone_number_id as string) || fallbackPnid || "").trim();
   if (!phoneNumberId) return null;
   // App secret is optional (only needed once per-tenant signature checks land).
-  const appSecret = row.wa_app_secret_enc ? decryptSecret(row.wa_app_secret_enc) : "";
+  // Guard its decrypt SEPARATELY: a malformed optional app-secret ciphertext must
+  // NOT collapse an otherwise-valid tenant env (valid token + phone_number_id) to
+  // null. If the whole resolver fell through to env fallback here, that tenant
+  // would silently send from the GLOBAL creds — the cross-tenant bug. So on an
+  // app-secret decrypt failure we treat it as an empty optional secret and keep
+  // the tenant env. Access-token failures stay fatal (handled above → null).
+  let appSecret = "";
+  if (row.wa_app_secret_enc) {
+    try {
+      appSecret = decryptSecret(row.wa_app_secret_enc);
+    } catch {
+      appSecret = "";
+    }
+  }
   return {
     accessToken,
     phoneNumberId,

@@ -97,6 +97,27 @@ async function run() {
   );
   check("(A2) undecryptable token → override null (env fallback, never throws)", observed4 === null);
 
+  // ---- (A4) valid token + PNID but MALFORMED optional app secret -------------
+  // The optional app-secret decrypt must NOT collapse an otherwise-valid tenant
+  // env to null (which would silently send from GLOBAL creds — cross-tenant bug).
+  // Tenant creds STILL bind, with an empty appSecret.
+  let observedBadSecret: unknown = "UNSET";
+  await runWithTenantWhatsAppCreds(
+    fakeAdmin({
+      id: "rest-1",
+      wa_configured_at: "2026-01-01T00:00:00Z",
+      wa_access_token_enc: encryptSecret("GOOD_TOKEN"),
+      wa_phone_number_id: "PNID_TENANT",
+      wa_app_secret_enc: "not-a-valid-ciphertext",
+    }),
+    "rest-1",
+    async () => { observedBadSecret = getWhatsAppCredsOverride(); }
+  );
+  const bs = observedBadSecret as { accessToken?: string; phoneNumberId?: string; appSecret?: string } | null;
+  check("(A4) malformed app secret → tenant creds STILL bind (not env fallback)",
+    !!bs && bs.accessToken === "GOOD_TOKEN" && bs.phoneNumberId === "PNID_TENANT");
+  check("(A4) malformed app secret → appSecret degrades to empty string", !!bs && bs.appSecret === "");
+
   // ---- (A3) outside any wrapper the override is null (baseline) -------------
   check("(A3) no wrapper → override null (baseline env behavior)", getWhatsAppCredsOverride() === null);
 
