@@ -77,6 +77,17 @@ async function run() {
   });
   check("(A2) missing row → override null (env pass-through)", observed3 === null);
 
+  // Case: partially configured (token + configured_at present, but NO
+  // wa_phone_number_id) → unusable → override null (env fallback), NOT a non-null
+  // env with empty phoneNumberId that would suppress the send as "test-mode".
+  let observedNoPnid: unknown = "UNSET";
+  await runWithTenantWhatsAppCreds(
+    fakeAdmin({ id: "rest-1", wa_configured_at: "2026-01-01T00:00:00Z", wa_access_token_enc: encryptSecret("TOK"), wa_phone_number_id: null }),
+    "rest-1",
+    async () => { observedNoPnid = getWhatsAppCredsOverride(); }
+  );
+  check("(A2) configured but no phone_number_id → override null (env fallback, no silent-skip)", observedNoPnid === null);
+
   // Case: configured flag set but token ciphertext is garbage → decrypt fails → null.
   let observed4: unknown = "UNSET";
   await runWithTenantWhatsAppCreds(

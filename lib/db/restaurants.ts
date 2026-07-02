@@ -44,11 +44,21 @@ function rowToWhatsAppEnv(row: WaCredsRow, fallbackPnid: string): WhatsAppEnv | 
   if (!row.wa_configured_at || !row.wa_access_token_enc) return null;
   const accessToken = decryptSecret(row.wa_access_token_enc);
   if (!accessToken) return null;
+  // A usable env REQUIRES a non-empty phone_number_id. For the webhook path the
+  // fallback is the inbound phone_number_id (always present); for the by-id path
+  // there is no inbound PNID, so a partially-configured row (token + configured_at
+  // set but PNID missing) must be treated as UNUSABLE → null, NOT returned with an
+  // empty phoneNumberId. Otherwise readWhatsAppEnv would prefer this non-null
+  // override, isWhatsAppConfigured() would go false, and the send would be
+  // "skipped" (test-mode) instead of falling back to the global env creds —
+  // silently suppressing a console-initiated send.
+  const phoneNumberId = ((row.wa_phone_number_id as string) || fallbackPnid || "").trim();
+  if (!phoneNumberId) return null;
   // App secret is optional (only needed once per-tenant signature checks land).
   const appSecret = row.wa_app_secret_enc ? decryptSecret(row.wa_app_secret_enc) : "";
   return {
     accessToken,
-    phoneNumberId: (row.wa_phone_number_id as string) || fallbackPnid,
+    phoneNumberId,
     verifyToken: (row.wa_verify_token as string) ?? "",
     appSecret,
   };
