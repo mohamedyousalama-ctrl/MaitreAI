@@ -9,6 +9,8 @@
 **First milestone:** Launch Wesaya Fried Chicken with V1 Kivo  
 **Current maturity:** Pre-pilot — real backend and agent infrastructure; not yet commercially proven
 
+> **North star:** see [`docs/KIVO_UPGRADED_CONCEPT_ROADMAP.md`](docs/KIVO_UPGRADED_CONCEPT_ROADMAP.md) (adopted 2 Jul 2026). **KSA plan:** [`docs/KIVO_SAUDIZATION_ROADMAP.md`](docs/KIVO_SAUDIZATION_ROADMAP.md).
+
 ---
 
 ## Strategic direction
@@ -244,6 +246,19 @@ customer ownership, retention, and intelligence in one system.
 **Milestone name:** Launch Wesaya Fried Chicken with V1 Kivo
 
 **Purpose:** Prove that Kivo can operate a real restaurant-owned WhatsApp ordering flow safely. This is the first real proof point of the company.
+
+**Current status (2 Jul 2026) — Phase 0 (Wesaya live & stable) in progress.** Per the [north-star roadmap](docs/KIVO_UPGRADED_CONCEPT_ROADMAP.md), Phase 0 is the gate for everything downstream.
+
+Merged and in production:
+- S-series / T-series sprints, cutover P1 (WB1/WB2/WB3), allergen foundation (#271–#273), console audit + WB-FIX (#274), **DRYRUN-1 tester allowlist (#275, migration 0057 applied to prod)**, **DRYRUN-2 tenant-creds on all 5 console-initiated send sites (#276)** — all merged.
+- A3.1 allergy hard-test: **211/211 passing**.
+- Wesaya data loaded: **47 menu items priced**, **25 delivery zones**.
+- Migrations **0051–0057** applied in prod.
+
+Remaining Phase-0 items before "live & stable" is reached:
+- Bahaa full rehearsal (console operator + WhatsApp customer + driver/dispatch) — **Meta test number pending**.
+- Real-number cutover from Be-On.
+- 2–4 weeks of real live order volume.
 
 **V1 acceptance criteria:**
 
