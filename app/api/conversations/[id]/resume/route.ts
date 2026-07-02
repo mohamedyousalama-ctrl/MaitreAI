@@ -20,6 +20,7 @@ import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
+import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
 import { withConversationLock } from "@/lib/db/conversation-lock";
 
 export const runtime = "nodejs";
@@ -61,7 +62,12 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     if ((last as { sender?: string } | null)?.sender !== "customer") {
       return { skipped: "no_pending" as const };
     }
-    const r = await respondAndSendWhatsApp(admin, tenant.restaurantId, params.id);
+    // DRYRUN-2 (F1): bind the tenant's own WhatsApp creds for the resume turn's
+    // sends (respondAndSendWhatsApp's outbound layer reads the bound override).
+    // Null override when unconfigured → env fallback, byte-identical to today.
+    const r = await runWithTenantWhatsAppCreds(admin, tenant.restaurantId, () =>
+      respondAndSendWhatsApp(admin, tenant.restaurantId, params.id)
+    );
     return { triggered: true as const, status: r.status };
   });
 

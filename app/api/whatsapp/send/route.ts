@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
+import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 
@@ -99,7 +100,13 @@ export async function POST(req: Request) {
     .maybeSingle();
   const lastInboundAtMs = lastIn?.created_at ? new Date(lastIn.created_at as string).getTime() : null;
 
-  const send = await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
+  // DRYRUN-2 (F1): send from the TENANT's own WhatsApp number when configured.
+  // Falls back to global env when the tenant has no per-tenant creds (admin
+  // unavailable or unconfigured) → byte-identical to today for Wesaya.
+  const credsAdmin = createAdminClient();
+  const send = credsAdmin
+    ? await runWithTenantWhatsAppCreds(credsAdmin, restaurantId, () => sendWhatsAppText({ to: phone, text, lastInboundAtMs }))
+    : await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
 
   if (send.status === "sent") {
     if (messageId) {

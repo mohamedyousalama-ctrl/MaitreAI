@@ -11,6 +11,7 @@ import "server-only";
 import { randomBytes } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
+import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
 import { captureCodOnDelivered } from "@/lib/db/cod";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 
@@ -283,7 +284,12 @@ export async function assignDriver(
       (s?.customerPhone ? `هاتف العميل: ${s.customerPhone}\n` : "") +
       `التحصيل عند الاستلام: ${cod}\n\n` +
       `افتح صفحة التوصيل وحدّث الحالة وشارك موقعك:\n${driverLink}`;
-    const res = await sendWhatsAppText({ to: String(driver.phone), text: body });
+    // DRYRUN-2 (F1): dispatch from the TENANT's own WhatsApp number when
+    // configured; env fallback (null override) when unconfigured → byte-identical
+    // to today. Partial config (no phone_number_id) also falls back, not skips.
+    const res = await runWithTenantWhatsAppCreds(admin, restaurantId, () =>
+      sendWhatsAppText({ to: String(driver.phone), text: body })
+    );
     whatsapp = res.status;
   } catch (e) {
     console.error("[delivery] driver link send error", e);
@@ -406,10 +412,14 @@ export async function updateDeliveryStatusByToken(
       const s = await loadOrderSummary(admin, d.order_id as string);
       if (s?.customerPhone) {
         const link = `${appBaseUrl()}/t/${d.customer_token}`;
-        await sendWhatsAppText({
-          to: String(s.customerPhone),
-          text: `🛵 طلبك في الطريق إليك!\nتابع التوصيل مباشرةً من هنا:\n${link}`,
-        });
+        // DRYRUN-2 (F1): customer track-link goes out from the TENANT's number
+        // when configured; env fallback when unconfigured/partial → unchanged.
+        await runWithTenantWhatsAppCreds(admin, d.restaurant_id as string, () =>
+          sendWhatsAppText({
+            to: String(s.customerPhone),
+            text: `🛵 طلبك في الطريق إليك!\nتابع التوصيل مباشرةً من هنا:\n${link}`,
+          })
+        );
       }
     } catch (e) {
       console.error("[delivery] customer track link send error", e);
