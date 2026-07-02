@@ -250,15 +250,30 @@ export async function respondAndSendWhatsApp(
   // auto-reply — while test/live (and closed) reply normally. The stored
   // agent_mode (setup|test|live|paused) maps onto SystemMode; a missing value
   // defaults to live so the existing reply path is unchanged.
-  const { data: rest, error: restErr } = await admin
-    .from("restaurants")
-    .select("agent_mode, country, tester_allowlist, tester_allowlist_mode")
-    .eq("id", restaurantId)
-    .single();
+  const { data: rest } = await admin.from("restaurants").select("agent_mode").eq("id", restaurantId).single();
   const agentMode = ((rest?.agent_mode as string) || "live") as SystemMode;
   if (!modeAllowsAgentReply(agentMode)) return { status: "skipped_mode" };
 
   const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
+
+  // DRYRUN-1 allowlist config — read the tester columns SEPARATELY so this is
+  // deploy-safe: our process applies migration 0057 BEFORE merge, but if the code
+  // ever runs before the columns exist, a missing-column read must mean "feature
+  // not deployed → inert" (byte-identical to today), NOT "hold everyone". A
+  // GENUINE read failure while the columns DO exist stays indeterminate → the
+  // fail-safe HOLD below still fires. We distinguish the two by the Postgres
+  // undefined-column signal (code 42703 / "does not exist").
+  const { data: alRow, error: alErr } = await admin
+    .from("restaurants")
+    .select("country, tester_allowlist, tester_allowlist_mode")
+    .eq("id", restaurantId)
+    .single();
+  const columnsMissing =
+    !!alErr && (alErr.code === "42703" || /column .* does not exist|does not exist/i.test(alErr.message ?? ""));
+  // Feature not deployed → inert: force mode-off + no read error so the decision
+  // helper falls straight through (allow). Otherwise pass the real row/error and
+  // let the fail-safe (indeterminate → hold) govern.
+  const allowlistReadError = !!alErr && !columnsMissing;
 
   // DRYRUN-1 tester allowlist — UPSTREAM recipient filter (purely subtractive).
   // When tester_allowlist_mode is ON, Karim auto-responds ONLY to numbers in
@@ -273,14 +288,35 @@ export async function respondAndSendWhatsApp(
   // the number is allowed → HOLD. An empty/NULL allowlist with mode on holds
   // everyone. The default-false column means an unset tenant is fully inert.
   const allowlistDecision = evaluateTesterAllowlist({
-    testerAllowlistMode: rest?.tester_allowlist_mode as boolean | null | undefined,
-    testerAllowlist: rest?.tester_allowlist as string[] | null | undefined,
-    country: rest?.country as string | null | undefined,
+    testerAllowlistMode: columnsMissing ? false : (alRow?.tester_allowlist_mode as boolean | null | undefined),
+    testerAllowlist: alRow?.tester_allowlist as string[] | null | undefined,
+    country: alRow?.country as string | null | undefined,
     phone,
-    readError: Boolean(restErr),
-    hasRow: Boolean(rest),
+    readError: allowlistReadError,
+    hasRow: Boolean(alRow),
   });
   if (!allowlistDecision.allow) {
+    // Hold means HAND TO A HUMAN, not silently drop: flip the conversation into
+    // the human queue (HUMAN_ACTIVE → Karim stays silent, a person picks it up)
+    // so the customer isn't left with no reply and no owner. At this point the
+    // state is AI_ACTIVE (takeover/hold/closed were all resolved above), so
+    // AI_ACTIVE→HUMAN_ACTIVE is a legal transition. Dual-writes owner='human' +
+    // an escalation reason for the queue, and advances the wait clock to the
+    // customer's just-arrived message. Best-effort: a flip failure must not throw
+    // the whole webhook — we still hold (never auto-answer). The allergen gate is
+    // untouched: this path never reaches runCustomerTurn.
+    try {
+      await setOwnershipState(admin, conversationId, "HUMAN_ACTIVE", {
+        extra: {
+          owner: "human",
+          status: "بانتظار موظف",
+          escalation_reason: "tester_allowlist_hold",
+          updated_at: new Date().toISOString(),
+        },
+      });
+    } catch (e) {
+      console.error("[allowlist] hold ownership flip failed (still holding):", e);
+    }
     await noteToTimeline(
       admin,
       restaurantId,

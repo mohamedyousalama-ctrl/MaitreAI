@@ -85,14 +85,37 @@ check("src: hold returns skipped_not_allowlisted",
   ras.includes('return { status: "skipped_not_allowlisted" }'));
 check("src: hold writes an operator hold-note (held_not_allowlisted)",
   ras.includes("held_not_allowlisted") && ras.includes("noteToTimeline"));
-check("src: selects the two new columns alongside agent_mode + country",
-  /\.select\(\s*"agent_mode, country, tester_allowlist, tester_allowlist_mode"\s*\)/.test(ras));
+// Deploy-safe (P1): the mode gate reads agent_mode ONLY (byte-unchanged, never
+// errors on a missing tester column); the tester columns are read SEPARATELY.
+check("src: mode gate reads agent_mode only (deploy-safe, unchanged)",
+  /\.select\("agent_mode"\)/.test(ras));
+check("src: tester columns read separately",
+  /\.select\(\s*"country, tester_allowlist, tester_allowlist_mode"\s*\)/.test(ras));
+check("src: missing-column (pre-migration) treated as feature-off, not hold",
+  ras.includes("columnsMissing") && ras.includes("42703") && ras.includes("does not exist"));
+check("src: columnsMissing forces mode=false (inert), genuine error → readError (hold)",
+  /columnsMissing\s*\?\s*false/.test(ras) && ras.includes("allowlistReadError = !!alErr && !columnsMissing"));
 // ORDERING: gate must sit AFTER the mode gate and BEFORE runCustomerTurn.
 const idxMode = ras.indexOf("skipped_mode");
 const idxGate = ras.indexOf("evaluateTesterAllowlist({");
 const idxRun = ras.indexOf("runCustomerTurn(");
 check("src: gate is AFTER mode gate", idxMode > 0 && idxGate > idxMode);
 check("src: gate is BEFORE runCustomerTurn (upstream of the agent path)", idxRun > 0 && idxGate < idxRun);
+
+// ---- (P2) held non-allowlisted inbound flips into the HUMAN queue -----------
+// A hold must hand the conversation to a human (HUMAN_ACTIVE, Karim silent) — not
+// silently drop it. The flip must happen on the hold path, before the return.
+const idxHoldReturn = ras.indexOf('return { status: "skipped_not_allowlisted" }');
+const idxFlip = ras.indexOf('setOwnershipState(admin, conversationId, "HUMAN_ACTIVE"');
+check("(P2) hold path flips ownership to HUMAN_ACTIVE", idxFlip > 0);
+check("(P2) flip carries owner=human + tester_allowlist_hold reason",
+  ras.includes('owner: "human"') && ras.includes('escalation_reason: "tester_allowlist_hold"'));
+check("(P2) flip happens BEFORE the skipped_not_allowlisted return", idxFlip > 0 && idxHoldReturn > idxFlip);
+check("(P2) flip is best-effort (a failure does not throw the webhook)",
+  /catch\s*\(e\)\s*{\s*\n?\s*console\.error\("\[allowlist\] hold ownership flip failed/.test(ras));
+// The flip stays UPSTREAM of runCustomerTurn — the allergen gate never runs on a held turn.
+check("(P2) held path still returns before runCustomerTurn (allergen path not reached)",
+  idxHoldReturn > 0 && idxRun > idxHoldReturn);
 
 // ---- (e) allergen-gate invocation in customer-turn.ts is UNCHANGED -----------
 const ct = readFileSync(join(ROOT, "lib/ai/customer-turn.ts"), "utf8");
