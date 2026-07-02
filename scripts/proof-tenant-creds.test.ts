@@ -115,6 +115,20 @@ async function run() {
   check("(B) receipt wraps sendReceiptToCustomer in runWithTenantWhatsAppCreds",
     receipt.includes("runWithTenantWhatsAppCreds(") && receipt.includes("sendReceiptToCustomer(supabase, params.id)"));
 
+  // Driver-dispatch sends (delivery.ts:286 driver link, :409 customer track link)
+  // wrapped with the SAME helper — so they inherit the (A) runtime proofs:
+  // tenant creds when present, env fallback when absent, partial-config (no PNID)
+  // falls back rather than silently skipping.
+  const delivery = readFileSync(join(ROOT, "lib/db/delivery.ts"), "utf8");
+  check("(B) delivery imports the tenant-creds helper",
+    delivery.includes('from "@/lib/messaging/tenant-creds"'));
+  check("(B) driver-link dispatch wraps sendWhatsAppText in runWithTenantWhatsAppCreds(admin, restaurantId",
+    /runWithTenantWhatsAppCreds\(admin, restaurantId, \(\) =>\s*\n?\s*sendWhatsAppText\(\{ to: String\(driver\.phone\)/.test(delivery));
+  check("(B) customer track-link wraps sendWhatsAppText in runWithTenantWhatsAppCreds(admin, d.restaurant_id",
+    /runWithTenantWhatsAppCreds\(admin, d\.restaurant_id as string, \(\) =>/.test(delivery));
+  check("(B) no bare `await sendWhatsAppText(` left in delivery.ts (both dispatch sites wrapped)",
+    !delivery.includes("await sendWhatsAppText("));
+
   // Webhook binding UNCHANGED (still binds perTenantEnv the original way).
   const webhook = readFileSync(join(ROOT, "app/api/whatsapp/webhook/route.ts"), "utf8");
   check("(B) webhook still binds via runWithWhatsAppCreds(perTenantEnv, …) — unchanged",
