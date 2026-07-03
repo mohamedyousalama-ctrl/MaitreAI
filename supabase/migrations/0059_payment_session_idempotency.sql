@@ -15,14 +15,20 @@
 -- a prior one resolves (e.g. after expiry); "already paid" is handled in app
 -- code, not by this index.
 --
--- APPLY PRECONDITION (when eventually applied, off-peak, propose→approve): verify
--- no existing (restaurant_id, order_id) currently has >1 active session, or the
--- CREATE UNIQUE INDEX will fail. This index also constrains legacy mock sessions
--- on the same table; that is intended (one active session per order, globally).
---
--- Validation (run manually, NOT applied) — additive DDL inside BEGIN…ROLLBACK.
+-- APPLY (when eventually applied, off-peak, propose→approve), run MANUALLY —
+-- built with CREATE UNIQUE INDEX CONCURRENTLY so the build does NOT take a write
+-- lock on the live payment_sessions table. Notes for the operator:
+--   • CONCURRENTLY cannot run inside a transaction block — apply it on its own,
+--     NOT wrapped in BEGIN…COMMIT (and not via a migration runner that wraps
+--     each file in a transaction).
+--   • PRECONDITION: first verify no existing (restaurant_id, order_id) has >1
+--     active session, or the unique build fails (leaving an INVALID index that
+--     IF NOT EXISTS would then skip — drop it before retrying). See the apply
+--     plan for the exact dedup check.
+--   • This index also constrains legacy mock sessions on the same table; that is
+--     intended (one active session per order, globally).
 -- ============================================================================
 
-create unique index if not exists payment_sessions_active_order_uniq
+create unique index concurrently if not exists payment_sessions_active_order_uniq
   on public.payment_sessions (restaurant_id, order_id)
   where status in ('created', 'link_sent', 'opened');
