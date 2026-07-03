@@ -21,6 +21,8 @@ import { persistInboundMessage } from "@/lib/db/messages";
 import { resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/restaurants";
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
 import { withConversationLock } from "@/lib/db/conversation-lock";
+import { loadStaffNumbers, handleStaffCommand } from "@/lib/staff/command-channel";
+import { normalizePhone } from "@/lib/messaging/phone";
 import { transcribeWhatsAppVoice } from "@/lib/messaging/voice";
 import { getSttAdapter, mockSttAllowed } from "@/lib/ai/stt";
 import { recordCriticalAlert } from "@/lib/alerts/record";
@@ -198,13 +200,39 @@ export async function POST(req: NextRequest) {
       // follows (every agent turn is >1.5s) and auto-dismisses on send — there is
       // NO artificial delay. Dial: cadence_level="fast" → read-only (no typing).
       // Best-effort, non-blocking: a failed read/typing NEVER blocks the reply.
+      // Read the tenant's flags ONCE — shared by the WO-2 staff channel and the
+      // cadence indicator below (one read, as before; +country for phone matching).
+      const { data: rRow } = await admin.from("restaurants").select("feature_flags, country").eq("id", restaurantId).single();
+      const flags = (rRow?.feature_flags as Record<string, unknown> | null) ?? null;
+      const tenantCountry = (rRow?.country as string | null) ?? null;
+
+      // WO-2 STAFF COMMAND CHANNEL — a SECOND lane with absolute supremacy over the
+      // customer lane. FIRST statement is the flag gate: OFF → this whole branch is
+      // skipped, no staff query, no partition → the webhook is byte-equivalent to
+      // today. ON → a message from a REGISTERED staff number is diverted to the
+      // deterministic command handler and NEVER enters the customer lane (no persist,
+      // no conversation, no Brain). A staff command's only effects are its own.
+      let isStaffMsg: (m: { from?: string | null }) => boolean = () => false;
+      if (isFeatureExplicitlyEnabled("staff_command_channel", flags)) {
+        try {
+          const staff = await loadStaffNumbers(admin, restaurantId, tenantCountry);
+          if (staff.size > 0) {
+            isStaffMsg = (m) => staff.has(normalizePhone(m.from ?? "", tenantCountry));
+            for (const m of messages) {
+              const row = staff.get(normalizePhone(m.from ?? "", tenantCountry));
+              if (row) await handleStaffCommand(admin, restaurantId, row, m.text ?? "", m.from ?? "");
+            }
+          }
+        } catch (e) {
+          console.error("[whatsapp:webhook] staff command channel error (non-blocking)", e);
+        }
+      }
+
       try {
-        const { data: rRow } = await admin.from("restaurants").select("feature_flags").eq("id", restaurantId).single();
-        const flags = (rRow?.feature_flags as Record<string, unknown> | null) ?? null;
         if (isFeatureExplicitlyEnabled("cadence", flags)) {
           const typing = String(flags?.cadence_level ?? "balanced") !== "fast";
           await Promise.all(
-            messages.filter((m) => m.externalMessageId).map((m) => markWhatsAppRead(m.externalMessageId as string, { typing }))
+            messages.filter((m) => m.externalMessageId && !isStaffMsg(m)).map((m) => markWhatsAppRead(m.externalMessageId as string, { typing }))
           );
         }
       } catch (e) {
@@ -214,6 +242,10 @@ export async function POST(req: NextRequest) {
       // Persist first (dedupe on redelivery), collecting NEW conversations to answer.
       const toAnswer = new Set<string>();
       for (const m of messages) {
+        // SUPREMACY: a staff-lane message NEVER enters the customer lane — no
+        // persist, no conversation row, no Brain. (Skipped only when the flag is
+        // on AND the number is registered; otherwise isStaffMsg is always false.)
+        if (isStaffMsg(m)) continue;
         try {
           // S9-6: a voice note is transcribed BEFORE persisting, so the transcript
           // IS the stored message text — the operator sees exactly what the AI heard.
