@@ -14,18 +14,14 @@ import { Printer } from "lucide-react";
 
 type Width = "58mm" | "80mm";
 
-// Keep the print width in sync with the rendered ticket (CSS var) AND the @page
-// box, so the preview and the actual print match the chosen paper.
+// Set the printed roll width by driving the ticket element's own width (CSS var,
+// border-box). We deliberately do NOT emit `@page { size: <w> auto }` — a length
+// paired with `auto` is not a valid @page size and strict browsers drop it, and
+// pinning an explicit page height would eject blank thermal roll. The element
+// width is the single source of truth for how wide the ticket prints.
 function applyWidth(w: Width) {
   const root = document.getElementById("kitchen-ticket");
   if (root) root.style.setProperty("--kt-width", w);
-  let pageStyle = document.getElementById("kt-page-style");
-  if (!pageStyle) {
-    pageStyle = document.createElement("style");
-    pageStyle.id = "kt-page-style";
-    document.head.appendChild(pageStyle);
-  }
-  pageStyle.textContent = `@page { size: ${w} auto; margin: 3mm; }`;
 }
 
 export function PrintTicketButton({ orderId }: { orderId: string }) {

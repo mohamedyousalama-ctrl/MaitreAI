@@ -95,9 +95,13 @@ export default async function KitchenTicketPage({ params }: { params: { id: stri
       }}
     >
       {/* Print isolation + paper sizing. #kitchen-ticket is the ONLY visible node
-          in print; the console shell + control bar are hidden. */}
+          in print; the console shell + control bar are hidden. The printed width
+          is governed by the element's own width (--kt-width, border-box) — NOT by
+          `@page size`: there is no spec-valid token for fixed-width + auto-feed
+          height, and pinning an explicit page height would eject blank thermal
+          roll. So @page carries margins only; the roll width is the element's. */}
       <style>{`
-        @page { size: 80mm auto; margin: 3mm; }
+        @page { margin: 3mm; }
         @media print {
           .kt-no-print { display: none !important; }
           body * { visibility: hidden !important; }
@@ -119,6 +123,9 @@ export default async function KitchenTicketPage({ params }: { params: { id: stri
         style={{
           width: "var(--kt-width, 80mm)",
           maxWidth: "100%",
+          // border-box so the horizontal padding sits INSIDE the selected roll
+          // width (58/80mm) instead of adding to it (which would overflow the roll).
+          boxSizing: "border-box",
           background: "#fff",
           color: "#000",
           padding: "14px 16px",
