@@ -19,10 +19,12 @@
 
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PaymentSessionStatus } from "@/lib/types";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { getPaymentProvider } from "@/lib/payments/provider";
 import { toHalalas } from "@/lib/payments/providers/moyasar";
 import { decryptSecret } from "@/lib/crypto/secrets";
+import { ACTIVE_STATUSES, DEFAULT_EXPIRY_MS, decideSessionAction } from "@/lib/payments";
 
 export interface CreateMoyasarSessionParams {
   restaurantId: string;
@@ -34,7 +36,7 @@ export interface CreateMoyasarSessionParams {
 }
 
 export type CreateMoyasarSessionResult =
-  | { ok: true; sessionId: string; payUrl: string; providerRef: string }
+  | { ok: true; sessionId: string; payUrl: string; providerRef: string; reused?: boolean }
   | { ok: false; error: string };
 
 export async function createMoyasarSession(
@@ -47,6 +49,46 @@ export async function createMoyasarSession(
   }
 
   const { restaurantId, orderId, callbackUrl } = params;
+  const nowMs = Date.now();
+
+  // ── IDEMPOTENCY pre-check (WO-3b): reuse an active session, refuse if the
+  //    order is already paid, else fall through to create. Scoped by
+  //    (restaurant_id, order_id), so the same order_id under a different tenant
+  //    is a different key set — cross-tenant sessions stay independent.
+  const { data: existing, error: existErr } = await admin
+    .from("payment_sessions")
+    .select("id, status, link, provider_ref, expires_at")
+    .eq("restaurant_id", restaurantId)
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: false });
+  if (existErr) return { ok: false, error: "session_lookup_failed" };
+  const rows = (existing ?? []).map((r) => {
+    const link = ((r.link as string | null) ?? "").trim();
+    return {
+      id: r.id as string,
+      status: r.status as PaymentSessionStatus,
+      link,
+      providerRef: (r.provider_ref as string | null) ?? "",
+      expiresAtMs: r.expires_at ? new Date(r.expires_at as string).getTime() : null,
+      hasLink: !!link,
+    };
+  });
+  const decision = decideSessionAction(rows, nowMs);
+  if (decision.action === "already_paid") return { ok: false, error: "order_already_paid" };
+  // An active session exists but its checkout link isn't populated yet (a
+  // concurrent request is mid-flight between insert and the PSP call). Tell the
+  // caller to retry rather than hand back an empty payUrl.
+  if (decision.action === "pending") return { ok: false, error: "session_pending" };
+  if (decision.action === "reuse") {
+    const s = decision.session;
+    if (decision.refreshExpiry) {
+      await admin
+        .from("payment_sessions")
+        .update({ expires_at: new Date(nowMs + DEFAULT_EXPIRY_MS).toISOString(), updated_at: new Date(nowMs).toISOString() })
+        .eq("id", s.id);
+    }
+    return { ok: true, sessionId: s.id, payUrl: s.link, providerRef: s.providerRef, reused: true };
+  }
 
   // 1) Per-tenant PSP config (psp_* columns — reached ONLY past the gate).
   const { data: rest, error: restErr } = await admin
@@ -69,13 +111,16 @@ export async function createMoyasarSession(
   // 2) SERVER-PRICED amount — order total from the DB, never client input.
   const { data: order, error: orderErr } = await admin
     .from("orders")
-    .select("id, total, currency, restaurant_id")
+    .select("id, total, currency, restaurant_id, payment_status")
     .eq("id", orderId)
     .maybeSingle();
   if (orderErr || !order) return { ok: false, error: "order_not_found" };
   if ((order.restaurant_id as string) !== restaurantId) {
     return { ok: false, error: "order_tenant_mismatch" };
   }
+  // Authoritative paid guard: if the ORDER itself is already paid (via any path —
+  // PSP, COD, another session), never open a new payable session for it.
+  if ((order.payment_status as string) === "paid") return { ok: false, error: "order_already_paid" };
   const total = Number(order.total);
   const displayCurrency = (order.currency as string) || "ر.س";
   let amountMinor: number;
@@ -97,10 +142,41 @@ export async function createMoyasarSession(
       amount: total,
       currency: displayCurrency,
       status: "created",
+      expires_at: new Date(nowMs + DEFAULT_EXPIRY_MS).toISOString(),
     })
     .select("id")
     .single();
-  if (insErr || !sess) return { ok: false, error: "session_insert_failed" };
+  if (insErr || !sess) {
+    // Concurrency: the partial UNIQUE index (0059) on (restaurant_id, order_id)
+    // over ACTIVE statuses means a request that raced us already created the
+    // active session. The DB arbitrated (no read-then-write race) — reuse the
+    // winner instead of minting a duplicate invoice.
+    if ((insErr as { code?: string } | null)?.code === "23505") {
+      const { data: raced } = await admin
+        .from("payment_sessions")
+        .select("id, link, provider_ref")
+        .eq("restaurant_id", restaurantId)
+        .eq("order_id", orderId)
+        .in("status", ACTIVE_STATUSES as readonly string[])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (raced?.id) {
+        const racedLink = ((raced.link as string | null) ?? "").trim();
+        // The winner may still be mid-flight ('created', no link). Don't hand
+        // back an empty payUrl — tell the caller to retry.
+        if (!racedLink) return { ok: false, error: "session_pending" };
+        return {
+          ok: true,
+          sessionId: raced.id as string,
+          payUrl: racedLink,
+          providerRef: (raced.provider_ref as string | null) ?? "",
+          reused: true,
+        };
+      }
+    }
+    return { ok: false, error: "session_insert_failed" };
+  }
   const sessionId = sess.id as string;
 
   // 4) Create the hosted payment at the PSP.

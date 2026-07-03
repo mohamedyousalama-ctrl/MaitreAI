@@ -71,8 +71,12 @@ export async function POST(req: NextRequest) {
       "amount_invalid",
       "amount_nonpositive",
     ]);
-    const status = result.error === "psp_disabled" ? 403 : CLIENT_ERRORS.has(result.error) ? 400 : 502;
+    // 409 = conflict/retry states (already paid; or an active session is mid-
+    // flight — retry shortly for its link). 403 feature-off, 400 client/order, else 502.
+    const CONFLICT_ERRORS = new Set(["order_already_paid", "session_pending"]);
+    const status =
+      result.error === "psp_disabled" ? 403 : CONFLICT_ERRORS.has(result.error) ? 409 : CLIENT_ERRORS.has(result.error) ? 400 : 502;
     return NextResponse.json({ ok: false, error: result.error }, { status });
   }
-  return NextResponse.json({ ok: true, sessionId: result.sessionId, payUrl: result.payUrl });
+  return NextResponse.json({ ok: true, sessionId: result.sessionId, payUrl: result.payUrl, reused: !!result.reused });
 }
