@@ -1,6 +1,6 @@
 // WO-3a unit tests for the Moyasar adapter (flag-gated-OFF, branch-only).
-//   • toHalalas: SAR→integer-halalas single-site conversion + round-trip guard,
-//     with float-edge behavior pinned (mirrors test-order-pricing's money() pins).
+//   • toHalalas: SAR→integer-halalas single-site conversion — STRICT (rejects
+//     >2-decimal inputs; tolerates only IEEE-754 float noise on real 2dp values).
 //   • mapMoyasarStatus: Moyasar→internal status table, incl. fail-closed default.
 //   • flag-OFF inertness: isFeatureExplicitlyEnabled("psp_payments", …) is the
 //     EXACT predicate createMoyasarSession checks first (returning psp_disabled
@@ -35,13 +35,18 @@ eq("100 SAR → 10000 halalas", toHalalas(100), 10000);
 eq("199.99 SAR → 19999 halalas", toHalalas(199.99), 19999);
 eq("1,000,000 SAR → 100,000,000 halalas", toHalalas(1_000_000), 100_000_000);
 
-// ── 2. .005 / .x5 float edges — PIN actual JS rounding (not idealized) ─────────
-eq("0.005 → 1 (0.5 rounds up)", toHalalas(0.005), 1);
-eq("1.005 → 100 (float quirk: 100.4999… rounds DOWN)", toHalalas(1.005), 100);
-eq("2.675 → 268 (267.5 rounds up)", toHalalas(2.675), 268);
-eq("10.005 → 1001 (1000.5000…1 rounds up)", toHalalas(10.005), 1001);
-eq("12.345 → 1235", toHalalas(12.345), 1235);
-eq("(0.1+0.2) → 30 (float 0.30000…4 → 30)", toHalalas(0.1 + 0.2), 30);
+// ── 2. sub-halala precision (>2 decimals) is REJECTED, not silently rounded ────
+// (strict contract: silently rounding a mis-priced amount could change the charge)
+throws("0.005 rejected", () => toHalalas(0.005), "not representable");
+throws("1.005 rejected", () => toHalalas(1.005), "not representable");
+throws("2.675 rejected", () => toHalalas(2.675), "not representable");
+throws("10.005 rejected", () => toHalalas(10.005), "not representable");
+throws("12.345 rejected", () => toHalalas(12.345), "not representable");
+// …but a legit 2-dp value carrying only IEEE-754 float NOISE still passes:
+eq("(0.1+0.2) → 30 (float 0.30000…4 is really 0.30)", toHalalas(0.1 + 0.2), 30);
+eq("8.87 → 887 (float 886.9999… tolerated)", toHalalas(8.87), 887);
+eq("4.35 → 435 (float 434.9999… tolerated)", toHalalas(4.35), 435);
+eq("99999999.99 → 9999999999 (max numeric(10,2), float error < 1e-4)", toHalalas(99999999.99), 9999999999);
 
 // ── 3. round-trip guard holds for every clean 2-dp amount (no false throws) ────
 {

@@ -23,30 +23,47 @@ import type {
 } from "@/lib/payments/provider";
 
 const MOYASAR_BASE = "https://api.moyasar.com/v1";
+const MOYASAR_TIMEOUT_MS = 15000;
+
+/**
+ * `fetch` bounded by a hard timeout so a slow/hung Moyasar can't pin the request
+ * worker indefinitely. A timeout or transport failure is converted into a clear
+ * provider error (the caller's create-session try/catch maps it to a failure).
+ */
+async function moyasarFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(MOYASAR_TIMEOUT_MS) });
+  } catch (e) {
+    const name = e instanceof Error ? e.name : "Error";
+    throw new Error(`moyasar_unreachable: ${name}`);
+  }
+}
 
 // ── Money: the SINGLE site that converts SAR → integer halalas (design §5) ──
 /**
  * Convert a SAR major amount (2-decimal money) to integer halalas, the minor
  * unit Moyasar charges in (1 SAR = 100 halalas). This is the ONLY place the
- * conversion happens. A round-trip assertion guards float integrity: the
- * computed integer halalas must map back to the same 2-decimal SAR figure, so a
- * sub-halala/precision slip can never silently move money by the wrong amount.
- * Throws on a non-finite, negative, or non-representable amount rather than
- * charging a wrong value.
+ * conversion happens.
+ *
+ * STRICT: the input must already be a whole number of halalas (≤ 2 decimals).
+ * An amount with sub-halala precision (e.g. 1.005) is REJECTED, not silently
+ * rounded — silent rounding could change the charged amount if a caller ever
+ * passed a non-2dp value. (The `EPSILON` tolerance only absorbs IEEE-754 float
+ * error from `sar * 100`, which stays well under 1e-4 across the full
+ * numeric(10,2) range; a real 3rd-decimal digit is off by ≥ 0.1 halala and so
+ * always trips.) Throws on non-finite, negative, or non-representable amounts
+ * rather than charging a wrong value.
  */
+const HALALA_EPSILON = 1e-4;
 export function toHalalas(sar: number): number {
   if (typeof sar !== "number" || !Number.isFinite(sar)) {
     throw new Error(`toHalalas: amount must be a finite number, got ${sar}`);
   }
   if (sar < 0) throw new Error(`toHalalas: amount must be >= 0, got ${sar}`);
-  const halalas = Math.round(sar * 100);
-  if (!Number.isInteger(halalas)) {
-    throw new Error(`toHalalas: computed non-integer halalas (${halalas}) from ${sar}`);
-  }
-  // Round-trip assertion — integer halalas back to 2-dp SAR must match.
-  const back = halalas / 100;
-  if (Math.round(back * 100) !== halalas) {
-    throw new Error(`toHalalas: round-trip mismatch ${sar} SAR -> ${halalas} halalas -> ${back} SAR`);
+  const scaled = sar * 100;
+  const halalas = Math.round(scaled);
+  if (Math.abs(scaled - halalas) > HALALA_EPSILON) {
+    throw new Error(`toHalalas: ${sar} SAR is not representable in whole halalas (max 2 decimals)`);
   }
   return halalas;
 }
@@ -96,7 +113,7 @@ export const moyasarProvider: PaymentProvider = {
     if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) {
       throw new Error(`moyasar.createPayment: amountMinor must be a positive integer, got ${input.amountMinor}`);
     }
-    const res = await fetch(`${MOYASAR_BASE}/invoices`, {
+    const res = await moyasarFetch(`${MOYASAR_BASE}/invoices`, {
       method: "POST",
       headers: {
         Authorization: basicAuth(input.secretKey),
@@ -106,9 +123,11 @@ export const moyasarProvider: PaymentProvider = {
         amount: input.amountMinor,
         currency: input.currency,
         description: input.description,
-        callback_url: input.callbackUrl,
-        success_url: input.callbackUrl,
-        back_url: input.callbackUrl,
+        // Redirect fields are UX-only AND caller-sanitized (same-origin). Omit
+        // them entirely when empty rather than sending blank URLs to the PSP.
+        ...(input.callbackUrl
+          ? { callback_url: input.callbackUrl, success_url: input.callbackUrl, back_url: input.callbackUrl }
+          : {}),
         metadata: input.metadata,
       }),
     });
@@ -122,7 +141,7 @@ export const moyasarProvider: PaymentProvider = {
   },
 
   async fetchPayment(providerRef: string, secretKey: string): Promise<FetchPaymentResult> {
-    const res = await fetch(`${MOYASAR_BASE}/invoices/${encodeURIComponent(providerRef)}`, {
+    const res = await moyasarFetch(`${MOYASAR_BASE}/invoices/${encodeURIComponent(providerRef)}`, {
       headers: { Authorization: basicAuth(secretKey) },
     });
     if (!res.ok) throw new Error(`moyasar_fetch_failed status=${res.status}`);

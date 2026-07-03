@@ -23,9 +23,11 @@ import { getPaymentProvider } from "@/lib/payments/provider";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Returns the tenant's feature_flags, or `error:true` on a DB failure so callers
+// can 5xx instead of masking an infra fault as "feature disabled".
 async function loadFlags(admin: NonNullable<ReturnType<typeof createAdminClient>>, restaurantId: string) {
-  const { data } = await admin.from("restaurants").select("feature_flags").eq("id", restaurantId).maybeSingle();
-  return (data?.feature_flags as Record<string, unknown> | null) ?? null;
+  const { data, error } = await admin.from("restaurants").select("feature_flags").eq("id", restaurantId).maybeSingle();
+  return { flags: (data?.feature_flags as Record<string, unknown> | null) ?? null, error: !!error };
 }
 
 export async function GET() {
@@ -35,7 +37,8 @@ export async function GET() {
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
-  const flags = await loadFlags(admin, tenant.restaurantId);
+  const { flags, error: flagsErr } = await loadFlags(admin, tenant.restaurantId);
+  if (flagsErr) return NextResponse.json({ error: "db_error" }, { status: 503 });
   // Flag OFF ⇒ report an honest "disabled" shape without touching psp_* columns.
   if (!isFeatureExplicitlyEnabled("psp_payments", flags)) {
     return NextResponse.json({
@@ -72,7 +75,8 @@ export async function POST(req: Request) {
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
-  const flags = await loadFlags(admin, tenant.restaurantId);
+  const { flags, error: flagsErr } = await loadFlags(admin, tenant.restaurantId);
+  if (flagsErr) return NextResponse.json({ error: "db_error" }, { status: 503 });
   if (!isFeatureExplicitlyEnabled("psp_payments", flags)) {
     return NextResponse.json({ error: "psp_disabled" }, { status: 403 });
   }
@@ -115,7 +119,9 @@ export async function POST(req: Request) {
   const willHaveProvider = !!(("psp_provider" in patch ? patch.psp_provider : cur?.psp_provider));
   const willHaveSecret = !!patch.psp_secret_key_enc || !!cur?.psp_secret_key_enc;
   const configured = willHaveProvider && willHaveSecret;
-  if (configured) patch.psp_configured_at = new Date().toISOString();
+  // Stamp when configured; CLEAR when not (e.g. provider cleared) so a later GET
+  // can't read a stale timestamp and report configured:true inconsistently.
+  patch.psp_configured_at = configured ? new Date().toISOString() : null;
 
   const { error } = await admin.from("restaurants").update(patch).eq("id", tenant.restaurantId);
   if (error) return NextResponse.json({ error: "update_failed", detail: error.message }, { status: 502 });

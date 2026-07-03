@@ -133,7 +133,22 @@ export async function createMoyasarSession(
       updated_at: new Date().toISOString(),
     })
     .eq("id", sessionId);
-  if (updErr) return { ok: false, error: "session_update_failed" };
+  if (updErr) {
+    // The PSP invoice exists but we couldn't persist its ref/link. Leaving the
+    // row 'created' would make it look ACTIVE with no checkout URL (a stranded
+    // session). Best-effort demote to 'failed' so it isn't treated as payable;
+    // the invoice still carries our {sessionId,…} metadata for later webhook
+    // reconciliation (WO-3b). Swallow a secondary failure — we already error out.
+    try {
+      await admin
+        .from("payment_sessions")
+        .update({ status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", sessionId);
+    } catch {
+      /* best-effort demote; the primary failure is already being returned */
+    }
+    return { ok: false, error: "session_update_failed" };
+  }
 
   return { ok: true, sessionId, payUrl: created.payUrl, providerRef: created.providerRef };
 }
