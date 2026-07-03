@@ -34,6 +34,8 @@ export interface RestaurantRow {
   feature_flags?: Record<string, unknown>;
   /** Manual-wallet payment configuration (migration 0021). See lib/payments/config. */
   payment_config?: import("@/lib/payments/config").PaymentConfig;
+  /** R4: alert routing preferences (migration 0064). Default {}. See lib/settings/alerts. */
+  alert_routing?: Record<string, unknown>;
 }
 
 export interface MemberRow {
