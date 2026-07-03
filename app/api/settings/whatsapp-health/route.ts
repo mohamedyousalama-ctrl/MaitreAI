@@ -12,11 +12,19 @@
 //   • lastOutboundAt       — latest outbound WhatsApp message
 //   • lastFailedOutboundAt — latest outbound message with status='failed'
 //   • lastFailedReason     — short reason for that failure (meta/text), if any
+//
+// R2 — TRUTH SPLIT: the same facts (plus the credential presence booleans and the
+// tenant's agent_mode) also feed 8 INDEPENDENT probes so the console can say
+// exactly which facet is broken instead of one opaque "healthy?" verdict. The four
+// legacy fields above are kept additively so the existing settings card is
+// unchanged; `probes` + `rollup` + `mode` are the new truth surface.
 // ============================================================================
 
 import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { readWhatsAppEnv, whatsAppEnvStatus, whatsAppMode } from "@/lib/messaging/config";
+import { buildWhatsAppProbes, rollUpProbes } from "@/lib/messaging/whatsapp-health";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,11 +62,36 @@ export async function GET() {
         (failed.text ? String(failed.text).slice(0, 120) : "send_failed")
       : null;
 
-    return NextResponse.json({
-      lastInboundAt: inbound?.created_at ?? null,
-      lastOutboundAt: outbound?.created_at ?? null,
-      lastFailedOutboundAt: failed?.created_at ?? null,
+    const lastInboundAt = inbound?.created_at ?? null;
+    const lastOutboundAt = outbound?.created_at ?? null;
+    const lastFailedOutboundAt = failed?.created_at ?? null;
+
+    // R2 — the tenant's stored agent intent (independent of transport). Best-effort:
+    // a missing/unreadable value → "setup" (probe reports "unknown", never a false green).
+    const { data: rest } = await admin
+      .from("restaurants").select("agent_mode").eq("id", rid).maybeSingle();
+    const agentMode = String((rest as { agent_mode?: string } | null)?.agent_mode ?? "setup");
+
+    const probes = buildWhatsAppProbes({
+      creds: whatsAppEnvStatus(readWhatsAppEnv()),
+      lastInboundAt,
+      lastOutboundAt,
+      lastFailedOutboundAt,
       lastFailedReason: failedReason,
+      agentMode,
+      nowMs: Date.now(),
+    });
+
+    return NextResponse.json({
+      // Legacy facts (unchanged — existing settings card).
+      lastInboundAt,
+      lastOutboundAt,
+      lastFailedOutboundAt,
+      lastFailedReason: failedReason,
+      // R2 truth split.
+      probes,
+      rollup: rollUpProbes(probes),
+      mode: whatsAppMode(),
     });
   } catch (e) {
     // Health is best-effort facts; never hard-fail the settings page.
