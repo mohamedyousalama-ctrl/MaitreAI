@@ -47,10 +47,14 @@ function makeAdmin(store: Record<string, Row[]>) {
 }
 
 // A session paying 50.00 SAR = 5000 halalas.
-function seed(over: { sessionStatus?: string; flags?: Row; orderStatus?: string } = {}) {
+function seed(over: { sessionStatus?: string; flags?: Row; orderStatus?: string; pspCurrency?: string | null } = {}) {
   return {
     payment_sessions: [{
-      id: "sess-1", restaurant_id: "A", order_id: "ord-1", amount: 50, currency: "SAR",
+      id: "sess-1", restaurant_id: "A", order_id: "ord-1", amount: 50,
+      // REAL display glyph (as create-session stores it) — the webhook must NOT
+      // compare the ISO event currency against this. psp_currency is the ISO.
+      currency: "ر.س",
+      psp_currency: over.pspCurrency !== undefined ? over.pspCurrency : "SAR",
       status: over.sessionStatus ?? "opened", provider_ref: "inv_1",
       orders: { order_number: "W-100", customers: { phone: "966500000001" } },
     }],
@@ -160,7 +164,33 @@ async function run() {
   {
     const store = seed(); const alerts: string[] = [];
     const r = await handleMoyasarWebhook(makeAdmin(store), body({ currency: "USD" }), {}, deps({ alerts }));
-    check("currency mismatch → held + alert", r.outcome === "amount_mismatch_held" && alerts[0] === "payment_amount_mismatch");
+    check("currency mismatch (USD vs SAR) → held + alert", r.outcome === "amount_mismatch_held" && alerts[0] === "payment_amount_mismatch");
+  }
+
+  // ---- currency: event ISO 'SAR' vs session DISPLAY glyph must NOT false-hold --
+  // (Regression guard for the glyph-vs-ISO bug: psp_currency='SAR' is the source
+  //  of truth; the 'ر.س' display glyph must never be compared against 'SAR'.)
+  {
+    const store = seed(); // currency='ر.س', psp_currency='SAR'
+    const r = await handleMoyasarWebhook(makeAdmin(store), body({ currency: "SAR" }), {}, deps());
+    check("event SAR vs session glyph 'ر.س'+psp_currency SAR → paid (not false-held)",
+      r.outcome === "paid" && store.orders[0].payment_status === "paid");
+  }
+
+  // ---- currency: legacy row with NULL psp_currency → glyph→ISO fallback --------
+  {
+    const store = seed({ pspCurrency: null }); // legacy: only the 'ر.س' glyph, no ISO
+    const r = await handleMoyasarWebhook(makeAdmin(store), body({ currency: "SAR" }), {}, deps());
+    check("legacy null psp_currency → 'ر.س'→SAR fallback matches → paid",
+      r.outcome === "paid" && store.payment_sessions[0].status === "paid");
+  }
+
+  // ---- currency: MISSING/empty in payload → fail closed (held) ----------------
+  {
+    const store = seed(); const alerts: string[] = [];
+    const r = await handleMoyasarWebhook(makeAdmin(store), body({ currency: "" }), {}, deps({ alerts }));
+    check("missing currency → held + alert (fail closed)",
+      r.outcome === "amount_mismatch_held" && alerts[0] === "payment_amount_mismatch" && store.orders[0].payment_status === "unpaid");
   }
 
   // ---- tenant isolation: order stamp scoped to the session's own tenant ------

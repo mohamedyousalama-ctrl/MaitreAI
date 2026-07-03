@@ -35,7 +35,8 @@ export interface MoyasarWebhookResult {
   httpStatus: number;
   outcome:
     | "invalid_json" | "no_provider_ref" | "unknown_session" | "invalid_signature"
-    | "flag_off" | "duplicate_event" | "noop_terminal" | "amount_mismatch_held"
+    | "flag_off" | "duplicate_event" | "retry_later" | "noop_terminal"
+    | "amount_mismatch_held" | "order_stamp_failed"
     | "paid" | "paid_noop" | "failed" | "expired" | "ignored";
 }
 
@@ -44,9 +45,14 @@ interface SessionRow {
   restaurant_id: string;
   order_id: string;
   amount: number;
-  currency: string;
+  currency: string; // DISPLAY glyph (e.g. 'ر.س') — NOT what the PSP uses
+  psp_currency: string | null; // ISO the session was created with at the PSP (e.g. 'SAR')
   status: string;
 }
+
+// Tiny, explicit glyph→ISO fallback for legacy rows created before psp_currency
+// existed (null). Deliberately minimal — the source of truth is psp_currency.
+const GLYPH_TO_ISO: Record<string, string> = { "ر.س": "SAR", "ج.م": "EGP" };
 
 export interface MoyasarWebhookDeps {
   verify?: (rawBody: string, headers: Record<string, string | undefined>, secret: string) => WebhookVerification;
@@ -93,12 +99,12 @@ export async function handleMoyasarWebhook(
   // 2. Resolve the session BY provider_ref (the only pre-verify read — it decides
   //    whose secret to verify against). HARDENING (guardian ruling 1): select ONLY
   //    the columns needed for verification/routing (id, restaurant_id, order_id,
-  //    amount, currency, status) — NEVER PII (customer phone / order_number). Those
-  //    are loaded ONLY AFTER the signature passes, on the paid notify path.
-  //    Unknown session → swallow 200 (never leak).
+  //    amount, currency, psp_currency, status) — all verification data, NEVER PII
+  //    (customer phone / order_number). Those are loaded ONLY AFTER the signature
+  //    passes, on the paid notify path. Unknown session → swallow 200 (never leak).
   const { data: sessionRaw } = await admin
     .from("payment_sessions")
-    .select("id, restaurant_id, order_id, amount, currency, status")
+    .select("id, restaurant_id, order_id, amount, currency, psp_currency, status")
     .eq("provider_ref", providerRef)
     .maybeSingle();
   const session = sessionRaw as SessionRow | null;
@@ -133,33 +139,49 @@ export async function handleMoyasarWebhook(
     return { httpStatus: 410, outcome: "flag_off" };
   }
 
-  // 6. EVENT DEDUP (layer 1) — insert-first; a re-delivered event → 200 no-op.
+  // 6. EVENT DEDUP (layer 1) — CHECK first (read-only). The event is RECORDED only
+  //    AFTER its durable effect (markProcessed, below), so a failed transition can
+  //    never consume the event and strand a session. A dedup-LOOKUP infrastructure
+  //    error (e.g. the table missing because the route went live before the
+  //    migration applied) FAILS LOUD (503) so Moyasar retries and the gap is
+  //    visible — a missing table must never silently eat payments.
   const eventId =
     typeof payload.id === "string" && payload.id
       ? payload.id
       : `${verification.event ?? "event"}:${providerRef}:${verification.status ?? ""}`;
-  const { error: dedupErr } = await admin.from("processed_payment_events").insert({
-    restaurant_id: restaurantId,
-    provider: "moyasar",
-    event_id: eventId,
-    session_id: session.id,
-    event_status: verification.status ?? null,
-  });
-  if (dedupErr) {
-    if ((dedupErr as { code?: string }).code === "23505") {
-      console.log(`[moyasar:webhook] duplicate event ${maskRef(eventId)} — no-op`);
-      return { httpStatus: 200, outcome: "duplicate_event" };
+  const { data: seen, error: seenErr } = await admin
+    .from("processed_payment_events")
+    .select("event_id")
+    .eq("provider", "moyasar")
+    .eq("restaurant_id", restaurantId)
+    .eq("event_id", eventId)
+    .maybeSingle();
+  if (seenErr) {
+    console.error("[moyasar:webhook] dedup lookup failed — failing loud:", (seenErr as { message?: string }).message);
+    return { httpStatus: 503, outcome: "retry_later" };
+  }
+  if (seen) {
+    console.log(`[moyasar:webhook] duplicate event ${maskRef(eventId)} — no-op`);
+    return { httpStatus: 200, outcome: "duplicate_event" };
+  }
+
+  // Record the event as processed — call ONLY after a durable effect. 23505 (a
+  // concurrent delivery already recorded it) is fine: the transitions are
+  // idempotent. Any other error is logged, not fatal (effect already durable).
+  async function markProcessed(eventStatus: string | null | undefined): Promise<void> {
+    const { error } = await admin.from("processed_payment_events").insert({
+      restaurant_id: restaurantId, provider: "moyasar", event_id: eventId,
+      session_id: session!.id, event_status: eventStatus ?? null,
+    });
+    if (error && (error as { code?: string }).code !== "23505") {
+      console.error("[moyasar:webhook] processed-event record failed (effect already durable):", (error as { message?: string }).message);
     }
-    // A dedup-insert failure that ISN'T a duplicate: do not process money on an
-    // uncertain guard — swallow 200 (provider retries; markPaid is still atomic).
-    console.error("[moyasar:webhook] dedup insert failed (non-duplicate):", (dedupErr as { message?: string }).message);
-    return { httpStatus: 200, outcome: "ignored" };
   }
 
   const status = verification.status;
 
   // 7. TERMINAL-STATE no-op (layer 2) — an out-of-order failed/expired AFTER paid
-  //    must not regress a settled session.
+  //    must not regress a settled session. (No effect → no event recorded.)
   if ((status === "failed" || status === "expired" || status === "cancelled") && session.status === "paid") {
     console.log(`[moyasar:webhook] ${status} after paid for session ${session.id} — no-op`);
     return { httpStatus: 200, outcome: "noop_terminal" };
@@ -167,31 +189,54 @@ export async function handleMoyasarWebhook(
 
   // 8. TRANSITIONS.
   if (status === "paid") {
-    // AMOUNT VERIFICATION: the charged minor amount MUST equal the session amount
-    // (the engine value at create time). Mismatch → alert + HOLD; never mark paid.
+    // VERIFY amount + currency against the SESSION. Amount: charged minor units ==
+    // the engine value at create time. Currency: compared against psp_currency —
+    // the ISO the session was created with at the PSP (e.g. 'SAR') — NOT the
+    // display glyph, with a tiny glyph→ISO fallback for legacy null rows. A
+    // missing/mismatched currency or amount → alert + HOLD; never mark paid.
     let expectedMinor: number | null = null;
     try { expectedMinor = toHalalas(Number(session.amount)); } catch { expectedMinor = null; }
     const actualMinor = typeof data.amount === "number" ? data.amount : Number(data.amount);
-    const currencyOk = !data.currency || String(data.currency).toUpperCase() === String(session.currency).toUpperCase();
+    const sessionIso = (session.psp_currency || GLYPH_TO_ISO[session.currency] || "").toUpperCase();
+    const payloadCurrency = typeof data.currency === "string" ? data.currency.trim().toUpperCase() : "";
+    const currencyOk = payloadCurrency !== "" && sessionIso !== "" && payloadCurrency === sessionIso;
     if (expectedMinor === null || actualMinor !== expectedMinor || !currencyOk) {
       await recordAlert(admin, {
         restaurantId,
         type: "payment_amount_mismatch",
-        detail: `Moyasar paid amount ${actualMinor} ${String(data.currency ?? "")} != session ${expectedMinor} ${session.currency} (session ${session.id}) — held, NOT marked paid`,
+        detail: `Moyasar paid ${actualMinor} ${payloadCurrency || "?"} != session ${expectedMinor} ${sessionIso || session.currency} (session ${session.id}) — held, NOT marked paid`,
         context: { sessionId: session.id, orderId: session.order_id, providerRef },
       });
+      await markProcessed(status); // durable hold decision — don't re-alert on every retry
       return { httpStatus: 200, outcome: "amount_mismatch_held" };
     }
 
-    const { changed } = await markPaymentSessionPaid(admin, session.id);
-    if (!changed) {
-      // Already paid (out-of-order / retry that slipped past dedup) → no double notify.
-      return { httpStatus: 200, outcome: "paid_noop" };
+    // Stamp the order paid FIRST and confirm a row was actually stamped. If none
+    // (e.g. the order is gone) → alert + HOLD: do NOT mark the session paid, do
+    // NOT notify, and do NOT consume the event, so a retry can still complete it.
+    const { data: stamped } = await admin
+      .from("orders")
+      .update({ payment_status: "paid" })
+      .eq("id", session.order_id)
+      .eq("restaurant_id", restaurantId)
+      .select("id");
+    if (!Array.isArray(stamped) || stamped.length === 0) {
+      await recordAlert(admin, {
+        restaurantId,
+        type: "payment_stamp_failed",
+        detail: `Moyasar paid but order ${session.order_id} not stamped (0 rows) — session NOT marked paid, held (session ${session.id})`,
+        context: { sessionId: session.id, orderId: session.order_id, providerRef },
+      });
+      return { httpStatus: 200, outcome: "order_stamp_failed" };
     }
-    // Stamp the order paid (engine value from the verified session amount).
-    await admin.from("orders").update({ payment_status: "paid" }).eq("id", session.order_id).eq("restaurant_id", restaurantId);
-    // Customer notify — once, tenant-bound, deterministic. Best-effort. PII
-    // (order_number + phone) is loaded HERE, post-verify, NOT in the pre-verify read.
+
+    // Order stamped → mark the session paid (atomic/idempotent) and record the event.
+    const { changed } = await markPaymentSessionPaid(admin, session.id);
+    await markProcessed(status);
+    // Notify ONCE — only when THIS delivery flipped the session (changed guard →
+    // no double-notify on a retry/out-of-order). Best-effort. PII (order_number +
+    // phone) is loaded HERE, post-verify, NOT in the pre-verify read.
+    if (!changed) return { httpStatus: 200, outcome: "paid_noop" };
     const { data: notifyRow } = await admin
       .from("payment_sessions")
       .select("orders(order_number, customers(phone))")
@@ -208,11 +253,19 @@ export async function handleMoyasarWebhook(
   }
 
   if (status === "failed" || status === "expired") {
-    await admin
+    // Persist the terminal state FIRST; record the event as processed only after
+    // the update is durable. A DB error → fail loud (503, retriable) rather than
+    // consume the event with the session left non-terminal.
+    const { error: updErr } = await admin
       .from("payment_sessions")
       .update({ status, updated_at: new Date().toISOString() })
       .eq("id", session.id)
       .neq("status", "paid"); // never overwrite a paid session
+    if (updErr) {
+      console.error(`[moyasar:webhook] ${status} update failed — failing loud:`, (updErr as { message?: string }).message);
+      return { httpStatus: 503, outcome: "retry_later" };
+    }
+    await markProcessed(status);
     return { httpStatus: 200, outcome: status };
   }
 
