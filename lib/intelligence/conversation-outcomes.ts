@@ -1,35 +1,37 @@
 // ============================================================================
 // MaitreAI — WO-1: conversation_outcomes writer (the keystone) — SERVER ONLY
-// At a conversation's terminal state, emit exactly ONE written-once outcome row.
+// Emitted at ONE point only: the TRUE close of a conversation (ownership_state
+// → CLOSED, via POST /api/conversations/[id]/close) — the SAME event the
+// outcome_coverage view counts. One WRITTEN-ONCE row per conversation.
 //
-//   • DETERMINISTIC SPINE — system-known facts only: conversation_id, customer_id,
-//     order_id, order_value (the ENGINE order total, read from orders — never
-//     recomputed here), duration, handled_by + human_names (derived from
-//     messages.sender + operator identity), ad_source (from the stored referral).
-//   • MODEL-CLASSIFIED LAYER — ONE cheap LLM read fills outcome, intent,
-//     lost_reason, objection_quote (≤120 chars, verbatim customer text only),
-//     items_mentioned, sentiment. Labeled via classifier='llm_v1'.
+//   • DETERMINISTIC SPINE — system-known facts only, all self-fetched here:
+//     customer_id, order_id + order_value (the ENGINE order total, read from the
+//     orders row — never recomputed), duration (from the conversation's own
+//     timestamps), handled_by + human_names (from messages.sender + operator
+//     identity), ad_source (from the stored referral). restaurant_id is derived
+//     from the conversation row (never trusted from the caller) so a caller bug
+//     can't misattribute a row across tenants (RLS keys on restaurant_id).
+//   • MODEL-CLASSIFIED LAYER — ONE cheap LLM read (retry x3) fills outcome,
+//     intent, lost_reason, objection_quote (<=120, verbatim customer text only),
+//     items_mentioned, sentiment. Labeled classifier='llm_v1'.
 //
-// WRITTEN-ONCE LAW: the DB has unique(conversation_id); this code is INSERT-ONLY
-// and never updates an existing row (a double-emit is a logged no-op).
+// WRITTEN-ONCE LAW: unique(conversation_id); insert-only; a re-close of a
+// reopened conversation is a logged no-op (the reopen-after-close edge is out of
+// scope — see the PR body). FAIL-OPEN: classifier failure after all retries → NO
+// row (a gap) + system_alerts, never an invented outcome.
 //
-// FAIL-OPEN: if the classifier fails after all retries we DO NOT write a row with
-// a guessed/null outcome — a missing row is a gap. We alert system_alerts so the
-// gap is visible and can be re-run. Missing rows are gaps, never invented.
-//
-// Flag-gated INDEPENDENTLY on the strict `conversation_outcomes` feature (default
-// OFF for ALL tenants, not implied by tier='pro') — so it can be enabled and
-// verified on one dev tenant first. Self-contained + NEVER throws.
+// GATE FIRST: the flag read+check is the literal FIRST statement — zero other
+// queries (no messages/orders/LLM) run before it. So with the flag OFF the close
+// path does exactly one feature-flag read and nothing else. Never throws.
 // ============================================================================
 
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getAdapter, modelFor } from "@/lib/ai/llm";
+import { getAdapter } from "@/lib/ai/llm";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { resolveMemberNames } from "@/lib/db/member-names";
 import { recordCriticalAlert } from "@/lib/alerts/record";
-import type { EmitReportArgs } from "./conversation-report";
 
 const MAX_CLASSIFY_ATTEMPTS = 3;
 const OBJECTION_MAX = 120;
@@ -40,8 +42,6 @@ const SENTIMENTS = ["positive", "neutral", "negative"] as const;
 
 export type OutcomeValue = (typeof OUTCOMES)[number];
 
-/** The model-classified fields (a READ, never a fact). `outcome` is required — a
- *  classification with no valid outcome is a failure, not a row. */
 export interface OutcomeClassification {
   outcome: OutcomeValue;
   intent: string | null;
@@ -51,15 +51,14 @@ export interface OutcomeClassification {
   sentiment: (typeof SENTIMENTS)[number] | null;
 }
 
-type MsgRow = { sender: string | null; meta: Record<string, unknown> | null };
+type MsgRow = { sender: string | null; meta: Record<string, unknown> | null; text?: string | null; created_at?: string | null };
 
 // ---------------------------------------------------------------------------
 // PURE HELPERS (exported for tests)
 // ---------------------------------------------------------------------------
 
-/** Derive handled_by from the message senders. 'mixed' when both the AI and a
- *  human replied; 'human' when only a human replied; 'karim' otherwise. System
- *  notes and customer messages are ignored (they aren't "handling"). */
+/** handled_by from message senders: 'mixed' when both AI and human replied,
+ *  'human' when only a human, 'karim' otherwise. Customer/system are ignored. */
 export function deriveHandledBy(messages: MsgRow[]): "karim" | "human" | "mixed" {
   let hasAi = false;
   let hasHuman = false;
@@ -72,7 +71,7 @@ export function deriveHandledBy(messages: MsgRow[]): "karim" | "human" | "mixed"
   return "karim";
 }
 
-/** Distinct operator member ids that authored a human turn (from meta.author_member_id). */
+/** Distinct operator member ids that authored a human turn (meta.author_member_id). */
 export function humanMemberIds(messages: MsgRow[]): string[] {
   const ids = new Set<string>();
   for (const m of messages) {
@@ -83,9 +82,8 @@ export function humanMemberIds(messages: MsgRow[]): string[] {
   return [...ids];
 }
 
-/** Parse + validate the classifier's JSON. Returns null unless a VALID enum
- *  `outcome` is present (a missing/invalid outcome is a classification failure,
- *  not a row). objection_quote is truncated to ≤120 chars. */
+/** Parse + validate the classifier's JSON. Null unless a VALID enum `outcome` is
+ *  present. objection_quote truncated to <=120 chars. */
 export function parseOutcomeClassification(raw: string): OutcomeClassification | null {
   try {
     const start = raw.indexOf("{");
@@ -116,24 +114,22 @@ export function parseOutcomeClassification(raw: string): OutcomeClassification |
   }
 }
 
+/** Build the LLM transcript (oldest→newest) from the conversation's messages:
+ *  customer → user, ai/human → assistant, system notes dropped. */
+export function buildTranscript(messages: MsgRow[]): LlmMessage[] {
+  return messages
+    .filter((m) => (m.sender === "customer" || m.sender === "ai" || m.sender === "human") && (m.text ?? "").trim())
+    .map((m) => ({ role: m.sender === "customer" ? ("user" as const) : ("assistant" as const), content: (m.text ?? "").trim() }));
+}
+
 // ---------------------------------------------------------------------------
 // LLM CLASSIFIER (one attempt) — injectable for tests via deps.classify
 // ---------------------------------------------------------------------------
 
-function plainText(content: LlmMessage["content"]): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((b) => (b && typeof b === "object" && "text" in b ? String((b as { text?: string }).text ?? "") : ""))
-      .join(" ");
-  }
-  return "";
-}
-
 function renderTranscript(transcript: LlmMessage[]): string {
   return transcript
     .slice(-40)
-    .map((m) => ({ who: m.role === "user" ? "العميل" : "كريم", text: plainText(m.content).slice(0, 600).trim() }))
+    .map((m) => ({ who: m.role === "user" ? "العميل" : "كريم", text: (typeof m.content === "string" ? m.content : "").slice(0, 600).trim() }))
     .filter((m) => m.text.length > 0)
     .map((m) => `${m.who}: ${m.text}`)
     .join("\n");
@@ -168,37 +164,45 @@ export async function classifyOutcome(transcript: LlmMessage[]): Promise<Outcome
 }
 
 // ---------------------------------------------------------------------------
-// EMITTER
+// EMITTER — called ONLY from the close route, after the CLOSED transition is durable
 // ---------------------------------------------------------------------------
 
+export interface OutcomeEmitArgs {
+  /** The authenticated tenant (asserted against the conversation's own restaurant_id). */
+  restaurantId: string;
+  conversationId: string;
+}
+
 export interface OutcomeEmitDeps {
-  /** Injectable classifier (defaults to the real one-attempt LLM read). */
   classify?: (transcript: LlmMessage[]) => Promise<OutcomeClassification | null>;
-  /** Injectable member-name resolver (defaults to the real one). */
   resolveNames?: (admin: SupabaseClient, ids: (string | null | undefined)[]) => Promise<Map<string, string>>;
 }
 
 /**
- * Emit exactly one written-once conversation_outcomes row for a terminal
- * conversation. Independently gated on the strict `conversation_outcomes` flag.
- * Never throws (self-contained; the customer turn is never affected).
+ * Emit exactly one written-once conversation_outcomes row for a just-closed
+ * conversation. NEVER throws — an emit failure must never fail the close.
  */
 export async function emitConversationOutcome(
   admin: SupabaseClient,
-  args: EmitReportArgs,
+  args: OutcomeEmitArgs,
   deps: OutcomeEmitDeps = {}
 ): Promise<void> {
-  // Strict gate — default OFF for ALL tenants (not implied by tier='pro').
-  if (!isFeatureExplicitlyEnabled("conversation_outcomes", (args.features ?? null) as Record<string, unknown> | null)) return;
-
   const classify = deps.classify ?? classifyOutcome;
   const resolveNames = deps.resolveNames ?? resolveMemberNames;
 
   try {
-    const { restaurantId, conversationId } = args;
+    // GATE FIRST — read ONLY the tenant's flags and check. Zero other queries run
+    // before this: with the flag OFF the close path does exactly this one read.
+    const { data: flagRow } = await admin
+      .from("restaurants")
+      .select("feature_flags")
+      .eq("id", args.restaurantId)
+      .single();
+    if (!isFeatureExplicitlyEnabled("conversation_outcomes", (flagRow?.feature_flags ?? null) as Record<string, unknown> | null)) return;
 
-    // WRITTEN-ONCE pre-check: if a row already exists, do nothing + log (and skip
-    // the LLM cost). The unique constraint is the atomic backstop for races below.
+    const { conversationId } = args;
+
+    // WRITTEN-ONCE pre-check: a row already exists → do nothing + log (skip LLM).
     const { data: existing } = await admin
       .from("conversation_outcomes")
       .select("id")
@@ -209,17 +213,29 @@ export async function emitConversationOutcome(
       return;
     }
 
-    // ---- DETERMINISTIC SPINE ----
+    // ---- DETERMINISTIC SPINE (self-fetched) ----
     const { data: conv } = await admin
       .from("conversations")
-      .select("customer_id, created_at, ad_source_id, ad_source_type")
+      .select("restaurant_id, customer_id, created_at, updated_at, ad_source_id, ad_source_type")
       .eq("id", conversationId)
       .single();
+    if (!conv) return;
+
+    // SECURITY (cross-tenant guard): the row's tenant is the CONVERSATION's own
+    // restaurant_id, never the caller's claim. Abort on mismatch — RLS keys on
+    // restaurant_id, so a wrong value would leak the row to another tenant.
+    const restaurantId = conv.restaurant_id as string;
+    if (restaurantId !== args.restaurantId) {
+      console.error(`[outcomes] restaurant_id mismatch (caller=${args.restaurantId} conv=${restaurantId}) — aborting`);
+      return;
+    }
 
     const { data: msgRows } = await admin
       .from("messages")
-      .select("sender, meta")
-      .eq("conversation_id", conversationId);
+      .select("sender, meta, text, created_at")
+      .eq("conversation_id", conversationId)
+      .eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: true });
     const messages = (msgRows ?? []) as MsgRow[];
 
     const handledBy = deriveHandledBy(messages);
@@ -227,38 +243,43 @@ export async function emitConversationOutcome(
     const nameMap = memberIds.length ? await resolveNames(admin, memberIds) : new Map<string, string>();
     const humanNames = memberIds.map((id) => nameMap.get(id)).filter((n): n is string => !!n);
 
-    const startedAt = (conv?.created_at as string | null) ?? null;
-    const durationSeconds = startedAt
-      ? Math.max(0, Math.round((Date.now() - Date.parse(startedAt)) / 1000))
-      : null;
+    // duration = (updated_at at close) − created_at — DB-sourced, reproducible, and
+    // aligned with outcome_coverage which groups by date(updated_at). The close
+    // transition was committed just before this, so updated_at is the close time.
+    const startedAt = (conv.created_at as string | null) ?? null;
+    const endedAt = (conv.updated_at as string | null) ?? null;
+    const durationSeconds =
+      startedAt && endedAt ? Math.max(0, Math.round((Date.parse(endedAt) - Date.parse(startedAt)) / 1000)) : null;
 
-    // order_value: the ENGINE order total, read straight from the orders row —
-    // never recomputed here. Null when there is no order.
-    const orderId = args.order?.id ?? null;
-    let orderValue: number | null = null;
-    if (orderId) {
-      const { data: ord } = await admin.from("orders").select("total").eq("id", orderId).maybeSingle();
-      orderValue = (ord?.total as number | null) ?? null;
-    }
+    // order_value: the ENGINE order total, read straight from the latest order row
+    // for this conversation — never recomputed. Null when there is no order.
+    const { data: ord } = await admin
+      .from("orders")
+      .select("id, total")
+      .eq("conversation_id", conversationId)
+      .eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const orderId = (ord?.id as string | null) ?? null;
+    const orderValue = (ord?.total as number | null) ?? null;
 
-    const adSource =
-      (conv?.ad_source_id as string | null) ?? (conv?.ad_source_type as string | null) ?? null;
+    const adSource = (conv.ad_source_id as string | null) ?? (conv.ad_source_type as string | null) ?? null;
 
     // ---- MODEL-CLASSIFIED (retry up to MAX_CLASSIFY_ATTEMPTS) ----
+    const transcript = buildTranscript(messages);
     let classification: OutcomeClassification | null = null;
     for (let attempt = 1; attempt <= MAX_CLASSIFY_ATTEMPTS && !classification; attempt++) {
-      classification = await classify(args.transcript);
+      classification = await classify(transcript);
     }
 
-    // FAIL-OPEN: no valid classification → do NOT write a guessed row. Log the gap
-    // to system_alerts (visible + re-runnable). Missing rows are gaps, never invented.
+    // FAIL-OPEN: no valid classification → NO row (a gap). Log to system_alerts.
     if (!classification) {
       await recordCriticalAlert(admin, {
         restaurantId,
         type: "outcome_classify_failed",
         detail: `outcome classifier failed after ${MAX_CLASSIFY_ATTEMPTS} attempts — no outcome row written (gap)`,
         conversationId,
-        context: { terminalTrigger: args.terminalTrigger },
       });
       return;
     }
@@ -266,8 +287,7 @@ export async function emitConversationOutcome(
     const row = {
       restaurant_id: restaurantId,
       conversation_id: conversationId,
-      customer_id: (conv?.customer_id as string | null) ?? null,
-      // model-classified (labeled by classifier)
+      customer_id: (conv.customer_id as string | null) ?? null,
       outcome: classification.outcome,
       intent: classification.intent,
       lost_reason: classification.lost_reason,
@@ -275,7 +295,6 @@ export async function emitConversationOutcome(
       items_mentioned: classification.items_mentioned,
       sentiment: classification.sentiment,
       classifier: "llm_v1",
-      // deterministic spine
       order_id: orderId,
       order_value: orderValue,
       ad_source: adSource,
@@ -284,9 +303,8 @@ export async function emitConversationOutcome(
       duration_seconds: durationSeconds,
     };
 
-    // INSERT-ONLY. The unique(conversation_id) constraint makes a concurrent
-    // double-emit fail with 23505 — caught and logged as a written-once no-op,
-    // never an update.
+    // INSERT-ONLY. unique(conversation_id) makes a concurrent double-emit fail with
+    // 23505 — caught and logged as a written-once no-op, never an update.
     const { error } = await admin.from("conversation_outcomes").insert(row);
     if (error) {
       if ((error as { code?: string }).code === "23505") {
@@ -296,7 +314,6 @@ export async function emitConversationOutcome(
       }
     }
   } catch (e) {
-    // Emission must NEVER break the conversation. Swallow silently.
     console.error("[outcomes] emit threw (swallowed):", e);
   }
 }

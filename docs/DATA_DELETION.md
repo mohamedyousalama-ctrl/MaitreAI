@@ -39,6 +39,7 @@ are required to retain (stripped of personal identifiers).
 | `conversations` | `customer_id` (link only) | `SET NULL` | **Delete** (removes the thread; cascades messages) |
 | `messages` | `text` (message **content**), `channel_message_id` | via conversation `CASCADE` | **Delete** (by deleting the conversation) |
 | `conversation_reports` | `customer_id`, narrative text | `SET NULL` | **Delete** (rows for this customer) |
+| `conversation_outcomes` | `customer_id`, `objection_quote` (verbatim), derived fields | `SET NULL` (customer); `conversation_id` `CASCADE` | **Delete** (rows for this customer) |
 | `conversation_signals` | conversation-linked | via conversation | Deleted with the conversation |
 | `agent_runs` | `input`/`output` may hold message text, `conversation_id` | — | **Delete** (rows for the customer's conversations) |
 | `orders` | `customer_id`, `address`, `notes`, `items`/meta | `SET NULL` | **Anonymize** (retain totals; strip PII) |
@@ -95,6 +96,14 @@ delete from public.agent_runs
                             where restaurant_id = :restaurant_id and customer_id = :customer_id);
 
 delete from public.conversation_reports
+  where restaurant_id = :restaurant_id and customer_id = :customer_id;
+
+-- WO-1: conversation_outcomes carries verbatim customer text (objection_quote) +
+-- derived fields. Hard-delete the customer's rows, same as conversation_reports.
+-- (conversation_outcomes.conversation_id → conversations is ON DELETE CASCADE, so
+-- the conversations delete below is also a backstop; this explicit delete keeps
+-- the flow consistent and covers any row whose conversation is deleted out of order.)
+delete from public.conversation_outcomes
   where restaurant_id = :restaurant_id and customer_id = :customer_id;
 
 delete from public.conversations            -- CASCADE deletes messages + conversation_signals

@@ -503,7 +503,10 @@ export const useConversationStore = create<ConversationState>()(
           const { _sb, _rid } = get();
           if (!_sb || !_rid) { apply(); return true; } // demo: local-only
           try {
-            await setOwnershipState(_sb, convId, "CLOSED", { extra: {} });
+            // WO-1: close is now a server action (commits → CLOSED, then emits the
+            // outcome). Replaces the direct client-side setOwnershipState write.
+            const res = await fetch(`/api/conversations/${convId}/close`, { method: "POST" });
+            if (!res.ok) return false;
           } catch {
             return false;
           }

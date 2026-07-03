@@ -39,7 +39,10 @@ create table if not exists public.conversation_outcomes (
   intent text,
   lost_reason text
     check (lost_reason in ('price','out_of_stock','delivery_time','zone_unavailable','payment','no_response','other')),
-  objection_quote text,
+  -- objection_quote is a verbatim customer quote, contract-capped at 120 chars.
+  -- Enforced at the DB boundary (not just in the writer) so the schema is the
+  -- authoritative guardrail for any future writer path.
+  objection_quote text check (objection_quote is null or char_length(objection_quote) <= 120),
   items_mentioned text[] not null default '{}',
   sentiment text
     check (sentiment in ('positive','neutral','negative')),

@@ -20,7 +20,6 @@ import { getAdapter, modelFor } from "@/lib/ai/llm";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 import { isFeatureEnabled, type Tier } from "@/lib/tenant/tier";
 import { updateCustomerMemory } from "./customer-memory";
-import { emitConversationOutcome } from "./conversation-outcomes";
 
 export type TerminalTrigger = "finalized" | "escalated" | "abandoned";
 type Outcome = "order_placed" | "escalated" | "abandoned" | "answered" | "no_outcome";
@@ -161,13 +160,6 @@ export async function emitConversationReport(
   admin: SupabaseClient,
   args: EmitReportArgs
 ): Promise<void> {
-  // WO-1 — the keystone conversation_outcomes row is emitted from the SAME terminal
-  // moment, but gated INDEPENDENTLY on the strict `conversation_outcomes` flag (so it
-  // can be enabled/verified on one tenant even while conversation_intelligence is off,
-  // and vice-versa). Self-gated + never throws; runs before the intelligence gate so
-  // it isn't skipped by the conversation_intelligence early-return below.
-  await emitConversationOutcome(admin, args);
-
   // GATE — the isolation guarantee. Emit only when this tenant has the
   // conversation_intelligence feature (explicit narrow flag, or full 'pro').
   // Otherwise return before ANY DB read or LLM call — zero added cost/latency.
