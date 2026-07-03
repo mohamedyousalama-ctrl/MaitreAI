@@ -31,7 +31,9 @@ export type AuditAction =
   | "settings_hours_updated"
   | "settings_identity_updated"
   | "settings_flag_flipped"
-  | "settings_alerts_updated";
+  | "settings_alerts_updated"
+  // R3 — a kitchen ticket / receipt was printed for an order (hand-off evidence).
+  | "order_printed";
 
 export interface AuditInput {
   restaurantId: string;
