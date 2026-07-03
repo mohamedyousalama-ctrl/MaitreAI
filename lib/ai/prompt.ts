@@ -28,6 +28,11 @@ import { dialectProfile } from "./dialect";
 import { MODE_LABELS_AR, modeAllowsOrders, type SystemMode } from "./modes";
 import type { OrderDraft } from "./tools";
 import type { PaymentConfig } from "@/lib/payments/config";
+import {
+  buildStandingInstructionsSection,
+  type StandingInstruction,
+  type TonightNote,
+} from "@/lib/ai/standing-instructions";
 
 export interface BrainContext {
   profile: Pick<RestaurantProfile, "name" | "currency" | "timezone" | "businessType">;
@@ -76,6 +81,14 @@ export interface BrainContext {
    *  runs the never-say-safe OUTPUT GUARD (Fix 3) — an allergen-safety assertion on
    *  unknown data is replaced with an escalate-safe reply. Default off → no guard. */
   deterministicAllergenSafety?: boolean;
+  /** Item 9 (flag `standing_instructions`, default OFF): when true, inject the
+   *  operator's active standing instructions + tonight's notes as a SUBORDINATE
+   *  prompt section (escaped, safety-framed). Off → no section, prompt byte-identical. */
+  standingInstructions?: boolean;
+  /** Active standing instruction rules (durable). Rendered only when the flag is on. */
+  standingInstructionRules?: StandingInstruction[];
+  /** Tonight-only notes (non-expired). Rendered only when the flag is on. */
+  tonightNotes?: TonightNote[];
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------
@@ -424,5 +437,9 @@ ${zonesBlock(ctx.deliveryAreas, currency)}
 ${policiesBlock(ctx.policies)}
 
 ### FAQ
-${faqBlock(ctx.faqs)}`;
+${faqBlock(ctx.faqs)}${
+  ctx.standingInstructions
+    ? buildStandingInstructionsSection(ctx.standingInstructionRules ?? [], ctx.tonightNotes ?? [])
+    : ""
+}`;
 }

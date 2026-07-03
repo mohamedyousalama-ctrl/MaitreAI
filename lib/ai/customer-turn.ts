@@ -17,6 +17,7 @@ import { deriveSystemMode } from "@/lib/ai/modes";
 import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
+import type { StandingInstruction, TonightNote } from "@/lib/ai/standing-instructions";
 import { normalizePaymentConfig } from "@/lib/payments/config";
 import { type Tier, isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { isSafetyHold } from "@/lib/tenant/handoff";
@@ -219,6 +220,43 @@ export async function runCustomerTurn(
   }
 
   const dialect = String(row.dialect ?? "egyptian");
+
+  // Item 9 (flag `standing_instructions`, default OFF): fetch the operator's ACTIVE
+  // standing instructions + non-expired tonight's notes to inject as a subordinate,
+  // escaped prompt section. Fail-open: any read error → no section (never breaks a
+  // customer turn, and never a pre-migration crash). Off → we don't even query.
+  const standingInstructionsOn = isFeatureExplicitlyEnabled("standing_instructions", tenantFeatures);
+  let standingInstructionRules: StandingInstruction[] = [];
+  let tonightNotes: TonightNote[] = [];
+  if (standingInstructionsOn) {
+    try {
+      const nowIso = new Date().toISOString();
+      const [{ data: si }, { data: tn }] = await Promise.all([
+        admin
+          .from("standing_instructions")
+          .select("id, version, body")
+          .eq("restaurant_id", restaurantId)
+          .eq("active", true)
+          .is("retired_at", null)
+          // Governance (Codex P2): only APPROVED instructions inject — an active but
+          // unapproved row (approved_by NULL) is never surfaced to Karim's prompt.
+          .not("approved_by", "is", null)
+          .order("version", { ascending: true }),
+        admin
+          .from("tonight_notes")
+          .select("id, body")
+          .eq("restaurant_id", restaurantId)
+          .gt("expires_at", nowIso)
+          .order("created_at", { ascending: true }),
+      ]);
+      standingInstructionRules = (si ?? []) as StandingInstruction[];
+      tonightNotes = (tn ?? []) as TonightNote[];
+    } catch {
+      standingInstructionRules = [];
+      tonightNotes = [];
+    }
+  }
+
   const ctx: BrainContext = {
     profile: {
       name: String(row.name ?? ""),
@@ -257,6 +295,10 @@ export async function runCustomerTurn(
     currentDraft: initialDraft,
     // Allergen-safety (flag-gated): enables the never-say-safe OUTPUT GUARD in respond.ts.
     deterministicAllergenSafety: isFeatureExplicitlyEnabled("deterministic_allergen_safety", tenantFeatures),
+    // Item 9 — subordinate operator guidance (escaped, safety-framed). Flag-gated.
+    standingInstructions: standingInstructionsOn,
+    standingInstructionRules,
+    tonightNotes,
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
