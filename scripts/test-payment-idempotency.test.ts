@@ -32,7 +32,8 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.lo
 
 const ALL_STATUSES = ["created", "link_sent", "opened", "paid", "failed", "expired", "cancelled", "refunded"] as const;
 const NOW = 1_000_000_000_000; // fixed epoch ms (tests must not read the clock)
-const row = (status: string, expiresAtMs: number | null = NOW + 10 * 60 * 1000) => ({ status, expiresAtMs } as { status: string; expiresAtMs: number | null });
+const row = (status: string, expiresAtMs: number | null = NOW + 10 * 60 * 1000, hasLink = true) =>
+  ({ status, expiresAtMs, hasLink } as { status: string; expiresAtMs: number | null; hasLink: boolean });
 
 // ── 1. ACTIVE_STATUSES ↔ isSessionActive / isTerminalStatus consistency ───────
 eq("ACTIVE_STATUSES is exactly [created,link_sent,opened]", ACTIVE_STATUSES.join(","), "created,link_sent,opened");
@@ -56,34 +57,38 @@ for (const s of ALL_STATUSES) {
 }
 
 // ── 3. decideSessionAction — the per-request decision (a)–(d) ─────────────────
-// (a) concurrent → one: a 2nd caller that sees the 1st's active session reuses it.
+// (a) concurrent → one: a 2nd caller that sees the 1st's link-ready active session reuses it.
 {
   const d = decideSessionAction([row("link_sent")], NOW);
-  eq("(a) active present → reuse", d.action, "reuse");
+  eq("(a) active + link → reuse", d.action, "reuse");
   ok("(a) reuse not refreshed when >5min left", d.action === "reuse" && d.refreshExpiry === false);
 }
+// (a') active but NO link yet (concurrent mid-flight 'created') → pending, NOT an
+//      empty-link reuse (Qodo #1).
+eq("(a') active without link → pending", decideSessionAction([row("created", NOW + 10 * 60 * 1000, false)], NOW).action, "pending");
 // (b) after success → no new session.
-{
-  const d = decideSessionAction([row("paid", null)], NOW);
-  eq("(b) paid present, no active → already_paid", d.action, "already_paid");
-}
-// (c) expired → new session allowed.
-eq("(c) only expired → create", decideSessionAction([row("expired")], NOW).action, "create");
+eq("(b) paid, no active → already_paid", decideSessionAction([row("paid", null)], NOW).action, "already_paid");
+// (b') paid dominates even if an active session also exists (inconsistent data) —
+//      never hand back a payable link for a paid order (Qodo #3).
+eq("(b') active + paid → already_paid (paid precedence)", decideSessionAction([row("link_sent"), row("paid", null)], NOW).action, "already_paid");
+// (c) expired STATUS → new session allowed.
+eq("(c) only expired status → create", decideSessionAction([row("expired")], NOW).action, "create");
+// (c') active STATUS but expiry ELAPSED → treated as expired → create (Qodo #2).
+eq("(c') active status, expiry elapsed → create", decideSessionAction([row("link_sent", NOW - 1000)], NOW).action, "create");
 // (d) cross-tenant independence: caller scopes by restaurant_id, so the other
 //     tenant's rows are simply not in the array → this tenant decides on its own.
 eq("(d) empty (other tenant's order) → create", decideSessionAction([], NOW).action, "create");
 ok("(d) same order_id, this tenant active → reuse (independent of other tenant)",
   decideSessionAction([row("link_sent")], NOW).action === "reuse");
 
-// active precedence + refresh threshold
+// refresh threshold
 {
   const near = decideSessionAction([row("opened", NOW + 2 * 60 * 1000)], NOW); // 2min left < 5min
   ok("reuse with <5min left → refreshExpiry true", near.action === "reuse" && near.refreshExpiry === true);
 }
 ok("reuse with null expiry → no refresh (never-expiring)",
-  (() => { const d = decideSessionAction([row("created", null)], NOW); return d.action === "reuse" && d.refreshExpiry === false; })());
-eq("active wins even when a terminal row is newer", decideSessionAction([row("expired"), row("opened")], NOW).action, "reuse");
-eq("paid wins over other terminals when no active", decideSessionAction([row("failed"), row("paid", null)], NOW).action, "already_paid");
+  (() => { const d = decideSessionAction([row("opened", null)], NOW); return d.action === "reuse" && d.refreshExpiry === false; })());
+eq("active (non-expired) wins over a non-paid terminal row", decideSessionAction([row("expired"), row("opened")], NOW).action, "reuse");
 eq("only failed/cancelled → create (retry allowed)", decideSessionAction([row("failed"), row("cancelled")], NOW).action, "create");
 eq("EXPIRY_REFRESH_THRESHOLD_MS is 5 minutes", EXPIRY_REFRESH_THRESHOLD_MS, 5 * 60 * 1000);
 

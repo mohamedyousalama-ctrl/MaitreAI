@@ -62,15 +62,23 @@ export async function createMoyasarSession(
     .eq("order_id", orderId)
     .order("created_at", { ascending: false });
   if (existErr) return { ok: false, error: "session_lookup_failed" };
-  const rows = (existing ?? []).map((r) => ({
-    id: r.id as string,
-    status: r.status as PaymentSessionStatus,
-    link: (r.link as string | null) ?? "",
-    providerRef: (r.provider_ref as string | null) ?? "",
-    expiresAtMs: r.expires_at ? new Date(r.expires_at as string).getTime() : null,
-  }));
+  const rows = (existing ?? []).map((r) => {
+    const link = ((r.link as string | null) ?? "").trim();
+    return {
+      id: r.id as string,
+      status: r.status as PaymentSessionStatus,
+      link,
+      providerRef: (r.provider_ref as string | null) ?? "",
+      expiresAtMs: r.expires_at ? new Date(r.expires_at as string).getTime() : null,
+      hasLink: !!link,
+    };
+  });
   const decision = decideSessionAction(rows, nowMs);
   if (decision.action === "already_paid") return { ok: false, error: "order_already_paid" };
+  // An active session exists but its checkout link isn't populated yet (a
+  // concurrent request is mid-flight between insert and the PSP call). Tell the
+  // caller to retry rather than hand back an empty payUrl.
+  if (decision.action === "pending") return { ok: false, error: "session_pending" };
   if (decision.action === "reuse") {
     const s = decision.session;
     if (decision.refreshExpiry) {
@@ -103,13 +111,16 @@ export async function createMoyasarSession(
   // 2) SERVER-PRICED amount — order total from the DB, never client input.
   const { data: order, error: orderErr } = await admin
     .from("orders")
-    .select("id, total, currency, restaurant_id")
+    .select("id, total, currency, restaurant_id, payment_status")
     .eq("id", orderId)
     .maybeSingle();
   if (orderErr || !order) return { ok: false, error: "order_not_found" };
   if ((order.restaurant_id as string) !== restaurantId) {
     return { ok: false, error: "order_tenant_mismatch" };
   }
+  // Authoritative paid guard: if the ORDER itself is already paid (via any path —
+  // PSP, COD, another session), never open a new payable session for it.
+  if ((order.payment_status as string) === "paid") return { ok: false, error: "order_already_paid" };
   const total = Number(order.total);
   const displayCurrency = (order.currency as string) || "ر.س";
   let amountMinor: number;
@@ -151,10 +162,14 @@ export async function createMoyasarSession(
         .limit(1)
         .maybeSingle();
       if (raced?.id) {
+        const racedLink = ((raced.link as string | null) ?? "").trim();
+        // The winner may still be mid-flight ('created', no link). Don't hand
+        // back an empty payUrl — tell the caller to retry.
+        if (!racedLink) return { ok: false, error: "session_pending" };
         return {
           ok: true,
           sessionId: raced.id as string,
-          payUrl: (raced.link as string | null) ?? "",
+          payUrl: racedLink,
           providerRef: (raced.provider_ref as string | null) ?? "",
           reused: true,
         };

@@ -61,34 +61,47 @@ export interface SessionRowLike {
   status: PaymentSessionStatus;
   /** expires_at as epoch ms, or null when unset (treated as no-expiry). */
   expiresAtMs: number | null;
+  /** true when the row has a usable checkout link (provider link populated). */
+  hasLink: boolean;
 }
 
 export type SessionAction<T> =
   | { action: "reuse"; session: T; refreshExpiry: boolean }
+  | { action: "pending"; session: T }
   | { action: "already_paid"; session: T }
   | { action: "create" };
 
 /**
  * Decide what a create-session request should do given the order's EXISTING
  * sessions (already scoped by restaurant_id + order_id — cross-tenant rows must
- * never be passed in, which is how same-order-id stays independent per tenant):
- *  • an ACTIVE session exists → reuse it (refresh its expiry if it's nearly up);
- *  • else a PAID session exists → the order is already paid, do NOT create;
- *  • else (none, or only expired/failed/cancelled/refunded) → create a new one.
- * The DB partial-unique index is what makes the reuse race-safe under
- * concurrency; this function is the single-request decision.
+ * never be passed in, which is how same-order-id stays independent per tenant).
+ * Precedence, most-authoritative first:
+ *  • a PAID session exists → the order is already paid, never create/reuse;
+ *  • else a LINK-READY active, non-expired session → reuse it (refresh expiry if
+ *    it's nearly up);
+ *  • else an active, non-expired session that has NO link yet (a concurrent
+ *    request is mid-flight between insert and the PSP call) → 'pending' (retry),
+ *    NOT a reuse with an empty link;
+ *  • else (none, or only expired/failed/cancelled/refunded — incl. an active row
+ *    whose expiry has already elapsed) → create a new one.
+ * The DB partial-unique index makes reuse race-safe under concurrency; this is
+ * the single-request decision. An order's authoritative paid state
+ * (orders.payment_status) is enforced separately by the caller.
  */
 export function decideSessionAction<T extends SessionRowLike>(
   existing: readonly T[],
   nowMs: number
 ): SessionAction<T> {
-  const active = existing.find((s) => isSessionActive(s.status));
-  if (active) {
-    const remaining = active.expiresAtMs == null ? Infinity : active.expiresAtMs - nowMs;
-    return { action: "reuse", session: active, refreshExpiry: remaining < EXPIRY_REFRESH_THRESHOLD_MS };
-  }
   const paid = existing.find((s) => s.status === "paid");
   if (paid) return { action: "already_paid", session: paid };
+  // Active AND not past expiry (a status still 'active' but whose expires_at has
+  // elapsed is treated as expired → not reusable, so we mint a fresh session).
+  const active = existing.find((s) => isSessionActive(s.status) && (s.expiresAtMs == null || s.expiresAtMs > nowMs));
+  if (active) {
+    if (!active.hasLink) return { action: "pending", session: active };
+    const remaining = active.expiresAtMs == null ? Infinity : active.expiresAtMs - nowMs;
+    return { action: "reuse", session: active, refreshExpiry: remaining > 0 && remaining < EXPIRY_REFRESH_THRESHOLD_MS };
+  }
   return { action: "create" };
 }
 
