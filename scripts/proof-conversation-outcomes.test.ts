@@ -152,6 +152,16 @@ async function run() {
     check("(D) alert type outcome_classify_failed", store.system_alerts[0]?.type === "outcome_classify_failed");
   }
 
+  // ---- (D') empty transcript → no classify, no row, no misleading alert ------
+  {
+    const { admin, store } = makeFakeAdmin({ featureFlags: ON, conv: convRow(), messages: [{ sender: "system", text: "note" }] });
+    let classifyCalled = false;
+    await emitConversationOutcome(admin as never, args, { classify: async () => { classifyCalled = true; return goodClass; }, resolveNames: async () => new Map() });
+    check("(D') empty transcript → classifier NOT called", classifyCalled === false);
+    check("(D') empty transcript → no outcome row (not a gap-worthy failure)", store.conversation_outcomes.length === 0);
+    check("(D') empty transcript → NO outcome_classify_failed alert (honest signal)", store.system_alerts.length === 0);
+  }
+
   // ---- (E) FLAG OFF → Wesaya close invariant --------------------------------
   {
     const { admin, store } = makeFakeAdmin({ featureFlags: {}, conv: convRow(), messages: [{ sender: "ai", text: "hi" }] });

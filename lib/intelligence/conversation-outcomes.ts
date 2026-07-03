@@ -268,6 +268,14 @@ export async function emitConversationOutcome(
 
     // ---- MODEL-CLASSIFIED (retry up to MAX_CLASSIFY_ATTEMPTS) ----
     const transcript = buildTranscript(messages);
+    // No user/assistant text at all → there is nothing to classify. This is NOT a
+    // classifier failure, so we do NOT run the loop and do NOT raise
+    // outcome_classify_failed (that would be a misleading operator signal). A
+    // content-less closed conversation simply has no outcome — no row, no alert.
+    if (transcript.length === 0) {
+      console.log(`[outcomes] no transcript content for conversation ${conversationId} — no outcome (not a classifier failure)`);
+      return;
+    }
     let classification: OutcomeClassification | null = null;
     for (let attempt = 1; attempt <= MAX_CLASSIFY_ATTEMPTS && !classification; attempt++) {
       classification = await classify(transcript);
