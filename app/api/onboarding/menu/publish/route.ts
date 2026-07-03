@@ -5,27 +5,24 @@
 //
 // Calls the publish_menu_draft() SQL function which atomically:
 //   1. Locks the draft row (validates ownership + status='draft')
-//   2. Deletes the restaurant's existing live menu
-//   3. Inserts categories, items, variants, choice groups, options, modifiers
-//      from the draft payload in one transaction
-//   4. Marks the draft as 'published'; supersedes any prior published draft
+//   2. UPSERTS categories + items BY NAME, preserving surviving item ids AND their
+//      `available` flag (0050); rebuilds stateless children; deletes items absent
+//      from the new draft. Marks the draft 'published'.
 //
 // After this call, loadBrain() (which the agent calls on every turn) will read
 // the new menu immediately — no further action needed.
 //
-// AVAILABILITY RESET WARNING (required, not optional):
-//   Publishing replaces the entire live menu. All new items start as
-//   available=true regardless of the prior state. Items that were 86'd —
-//   including for SAFETY reasons (contamination, allergen batch issue) — will
-//   come back as available. The response always includes:
-//     availabilityReset: true (always, if there was an existing live menu)
-//     itemsPreviouslyUnavailable: N (count of items that were available=false)
-//   The UI MUST surface a warning when itemsPreviouslyUnavailable > 0 so the
-//   operator is making an informed choice, not silently re-enabling held items.
-//
-//   // TODO: V2 — preserve 86 state across re-publish (menu versioning).
-//   //   Match items by name/id and carry over available + unavailable_until
-//   //   so safety-holds survive a menu update. Tracked in roadmap.
+// PRESERVE-86 (item 10 — 0036 gap, closed by 0050):
+//   A re-publish PRESERVES the `available` flag of every SURVIVING item (matched
+//   by name). A sold-out / safety-held item stays 86'd across a menu update — it
+//   is NOT silently re-enabled. The ONLY way a 86 is lost is if the item was
+//   RENAMED or REMOVED from the draft (0050's documented limitation: a rename =
+//   remove-old + add-new). So the reset warning must fire ONLY for those items,
+//   not on every publish. We compute the truth by diffing the 86'd item NAMES
+//   before vs after (lib/menu/publish-availability):
+//     availabilityReset=true ONLY when a 86 was actually lost (rename/removal)
+//     preservedUnavailable: names that were 86'd and STAYED 86'd
+//     lostUnavailable: names whose 86 was dropped (renamed/removed) — warn on these
 //
 // Allergen data on items is informational operator-entered content. The
 // deterministic allergen gate (#87) operates independently on customer message
@@ -33,12 +30,13 @@
 //
 // Auth: manager of the target restaurant.
 // Body: { restaurantId: string, draftId: string }
-// Response: { ok: true, availabilityReset: true, itemsPreviouslyUnavailable: number }
+// Response: { ok, availabilityReset, preservedUnavailable[], lostUnavailable[], itemsPreviouslyUnavailable }
 // ============================================================================
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { diffUnavailable } from "@/lib/menu/publish-availability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -93,17 +91,18 @@ export async function POST(req: Request) {
     );
   }
 
-  // Count currently-unavailable items BEFORE the publish so the UI can warn
-  // the operator that publishing will reset them to available=true. This is a
-  // REQUIRED safety signal — items 86'd for contamination/allergen batch issues
-  // must not be silently re-enabled without an explicit operator acknowledgement.
-  const { count: unavailableCount } = await admin
+  // Snapshot the NAMES of currently-86'd items BEFORE the publish. Names (not a
+  // bare count) let us prove, after the publish, which 86'd items SURVIVED (stayed
+  // 86'd) vs which lost their flag via a rename/removal — the only real reset case.
+  const { data: beforeRows } = await admin
     .from("menu_items")
-    .select("id", { count: "exact", head: true })
+    .select("name")
     .eq("restaurant_id", restaurantId)
     .eq("available", false);
+  const beforeNames = (beforeRows ?? []).map((r) => String((r as { name: string }).name));
 
-  // Atomic publish via SQL function (single transaction).
+  // Atomic publish via SQL function (single transaction). 0050 preserves each
+  // surviving item's `available` by upserting by name.
   const { error: rpcErr } = await admin.rpc("publish_menu_draft", {
     p_restaurant_id: restaurantId,
     p_draft_id: draftId,
@@ -113,12 +112,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "publish_failed", detail: rpcErr.message }, { status: 502 });
   }
 
-  // Always return availabilityReset: true — publish replaces the full live menu
-  // and all items return as available=true. The UI must show a warning when
-  // itemsPreviouslyUnavailable > 0 (safety-held items are coming back).
+  // Snapshot 86'd names AFTER, then diff: preserved = stayed 86'd (the fix
+  // working); lost = its 86 was dropped (renamed/removed). Warn ONLY on lost.
+  const { data: afterRows } = await admin
+    .from("menu_items")
+    .select("name")
+    .eq("restaurant_id", restaurantId)
+    .eq("available", false);
+  const afterNames = (afterRows ?? []).map((r) => String((r as { name: string }).name));
+
+  const diff = diffUnavailable(beforeNames, afterNames);
   return NextResponse.json({
     ok: true,
-    availabilityReset: true,
-    itemsPreviouslyUnavailable: unavailableCount ?? 0,
+    // Honest: fires ONLY when a 86 was actually lost (rename/removal), not on every publish.
+    availabilityReset: diff.availabilityReset,
+    preservedUnavailable: diff.preserved,
+    lostUnavailable: diff.lost,
+    itemsPreviouslyUnavailable: beforeNames.length,
   });
 }
