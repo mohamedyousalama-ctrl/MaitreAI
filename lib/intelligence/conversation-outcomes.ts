@@ -34,7 +34,24 @@ import { resolveMemberNames } from "@/lib/db/member-names";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 
 const MAX_CLASSIFY_ATTEMPTS = 3;
+const CLASSIFY_TIMEOUT_MS = 10_000; // per-attempt cap so the close can NEVER hang
 const OBJECTION_MAX = 120;
+
+/**
+ * Race a promise against a timeout, resolving to `onTimeout` if it doesn't settle
+ * in `ms`. The timer is cleared on settle so it never keeps the process alive. A
+ * rejection also resolves to `onTimeout` (the caller treats null as a failed
+ * attempt). This is the guard that stops a slow LLM call from hanging the close.
+ */
+export function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const t = setTimeout(() => resolve(onTimeout), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      () => { clearTimeout(t); resolve(onTimeout); }
+    );
+  });
+}
 
 const OUTCOMES = ["confirmed", "lost", "abandoned", "complaint", "info_only"] as const;
 const LOST_REASONS = ["price", "out_of_stock", "delivery_time", "zone_unavailable", "payment", "no_response", "other"] as const;
@@ -175,6 +192,8 @@ export interface OutcomeEmitArgs {
 
 export interface OutcomeEmitDeps {
   classify?: (transcript: LlmMessage[]) => Promise<OutcomeClassification | null>;
+  /** Per-attempt classify timeout (defaults to CLASSIFY_TIMEOUT_MS). */
+  classifyTimeoutMs?: number;
   resolveNames?: (admin: SupabaseClient, ids: (string | null | undefined)[]) => Promise<Map<string, string>>;
 }
 
@@ -276,9 +295,13 @@ export async function emitConversationOutcome(
       console.log(`[outcomes] no transcript content for conversation ${conversationId} — no outcome (not a classifier failure)`);
       return;
     }
+    // Each attempt is capped at classifyTimeoutMs so a slow/hung LLM can NEVER
+    // hang the (synchronous) close — a timeout counts as a failed attempt and is
+    // retried; all attempts exhausted → fail-open (alert + no row) below.
+    const timeoutMs = deps.classifyTimeoutMs ?? CLASSIFY_TIMEOUT_MS;
     let classification: OutcomeClassification | null = null;
     for (let attempt = 1; attempt <= MAX_CLASSIFY_ATTEMPTS && !classification; attempt++) {
-      classification = await classify(transcript);
+      classification = await withTimeout(classify(transcript), timeoutMs, null);
     }
 
     // FAIL-OPEN: no valid classification → NO row (a gap). Log to system_alerts.

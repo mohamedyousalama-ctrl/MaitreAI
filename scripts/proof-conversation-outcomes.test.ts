@@ -152,6 +152,20 @@ async function run() {
     check("(D) alert type outcome_classify_failed", store.system_alerts[0]?.type === "outcome_classify_failed");
   }
 
+  // ---- (D'') hung classify → per-attempt timeout → fail-open (close never hangs)
+  {
+    const { admin, store } = makeFakeAdmin({ featureFlags: ON, conv: convRow(), messages: [{ sender: "customer", text: "hi" }] });
+    let calls = 0;
+    const hung = { classify: () => { calls++; return new Promise<OutcomeClassification | null>(() => {}); }, resolveNames: async () => new Map(), classifyTimeoutMs: 5 };
+    const t0 = Date.now();
+    await emitConversationOutcome(admin as never, args, hung);
+    const elapsed = Date.now() - t0;
+    check("(D'') hung classify → each attempt times out (3 attempts)", calls === 3);
+    check("(D'') hung classify → returns fast, close never hangs (<1s)", elapsed < 1000);
+    check("(D'') hung classify → fail-open: no row", store.conversation_outcomes.length === 0);
+    check("(D'') hung classify → outcome_classify_failed alerted", store.system_alerts.length === 1 && store.system_alerts[0]?.type === "outcome_classify_failed");
+  }
+
   // ---- (D') empty transcript → no classify, no row, no misleading alert ------
   {
     const { admin, store } = makeFakeAdmin({ featureFlags: ON, conv: convRow(), messages: [{ sender: "system", text: "note" }] });
