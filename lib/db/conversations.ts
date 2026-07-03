@@ -134,6 +134,10 @@ export async function ensureConversationDb(
   // (restaurant_id, phone) unique key dedups against the canonical form.
   const { data: rc } = await s.from("restaurants").select("country").eq("id", restaurantId).maybeSingle();
   const phone = normalizePhone(args.phone, (rc?.country as string | null) ?? null);
+  // Launch rule: ensure the customers row + link customer_id (same
+  // (restaurant_id, phone) key the canonical ensureCustomerId helper uses; kept
+  // inline here because this module is client-reachable and can't import the
+  // server-only helper).
   const { data: cust } = await s
     .from("customers")
     .upsert(

@@ -9,6 +9,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { InboundMessage } from "@/lib/messaging/types";
+import { ensureCustomerId } from "@/lib/db/ensure-customer";
 
 export interface PersistResult {
   inserted: boolean; // false = duplicate redelivery (idempotent no-op)
@@ -21,22 +22,10 @@ export async function persistInboundMessage(
   restaurantId: string,
   msg: InboundMessage
 ): Promise<PersistResult> {
-  // 1. Customer — upsert on (restaurant_id, phone).
-  const { data: cust, error: cErr } = await admin
-    .from("customers")
-    .upsert(
-      {
-        restaurant_id: restaurantId,
-        phone: msg.from,
-        ...(msg.customerName ? { name: msg.customerName } : {}),
-        last_seen_at: new Date().toISOString(),
-      },
-      { onConflict: "restaurant_id,phone" }
-    )
-    .select("id")
-    .single();
-  if (cErr) throw cErr;
-  const customerId = cust.id as string;
+  // 1. Customer — the launch rule: ensure a customers row on (restaurant_id, phone)
+  // via the single canonical helper, so every conversation/order path resolves the
+  // SAME customer_id. Behavior-identical to the prior inline upsert.
+  const customerId = await ensureCustomerId(admin, restaurantId, msg.from, msg.customerName);
 
   // WB3 — ad referral fields (only when Meta sent click-to-message referral
   // context). DB columns are nullable; absent → conversation stays organic.
