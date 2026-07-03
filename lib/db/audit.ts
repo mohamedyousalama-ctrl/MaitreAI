@@ -26,7 +26,12 @@ export type AuditAction =
   // R6 — outbound authorship: a console member sent a WhatsApp message the
   // customer receives. metadata carries the resolved member name.
   | "operator_message_sent"
-  | "receipt_sent";
+  | "receipt_sent"
+  // R4 — audited settings writes (every settings write records WHO changed WHAT).
+  | "settings_hours_updated"
+  | "settings_identity_updated"
+  | "settings_flag_flipped"
+  | "settings_alerts_updated";
 
 export interface AuditInput {
   restaurantId: string;
@@ -34,7 +39,7 @@ export interface AuditInput {
   userId: string;
   role?: string | null;
   action: AuditAction;
-  entityType: "conversation" | "order";
+  entityType: "conversation" | "order" | "restaurant";
   entityId: string;
   /** Pre-resolved actor members.id (optional — resolved from userId when absent). */
   memberId?: string | null;
