@@ -15,6 +15,8 @@ import { sendWhatsAppText } from "@/lib/messaging/outbound";
 import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { recordCriticalAlert } from "@/lib/alerts/record";
+import { recordAuditEvent } from "@/lib/db/audit";
+import { resolveMemberNames } from "@/lib/db/member-names";
 
 export const runtime = "nodejs";
 
@@ -67,6 +69,7 @@ export async function POST(req: Request) {
   // the authenticated session (members row for THIS tenant) — never client-supplied.
   // Karim's history builder reads meta.author_member_id to label the human turn with
   // the staff name. Runs for every channel (incl. test mode) so the label is reliable.
+  let authorMemberId: string | null = null;
   if (messageId) {
     const { data: mem } = await supabase
       .from("members")
@@ -74,11 +77,13 @@ export async function POST(req: Request) {
       .eq("user_id", tenant.userId)
       .eq("restaurant_id", restaurantId)
       .maybeSingle();
-    const authorMemberId = (mem as { id?: string } | null)?.id ?? null;
+    authorMemberId = (mem as { id?: string } | null)?.id ?? null;
     if (authorMemberId) {
+      // R6 — Attribution Law: stamp sent_by_member_id (the human who AUTHORED this
+      // outbound message). meta.author_member_id is kept for HX1's history labeling.
       await supabase
         .from("messages")
-        .update({ meta: { author_member_id: authorMemberId } })
+        .update({ meta: { author_member_id: authorMemberId }, sent_by_member_id: authorMemberId })
         .eq("id", messageId)
         .eq("conversation_id", conversationId);
     }
@@ -114,6 +119,19 @@ export async function POST(req: Request) {
         .from("messages")
         .update({ status: "sent", channel_message_id: send.externalMessageId ?? null })
         .eq("id", messageId);
+    }
+    // R6 — outbound authorship audit: record WHO (member + resolved name) sent this
+    // operator message to the customer. Best-effort (never blocks the response).
+    if (authorMemberId) {
+      const auditAdmin = credsAdmin ?? createAdminClient();
+      if (auditAdmin) {
+        const names = await resolveMemberNames(auditAdmin, [authorMemberId]);
+        await recordAuditEvent(auditAdmin, {
+          restaurantId, userId: tenant.userId, role: tenant.role,
+          action: "operator_message_sent", entityType: "conversation", entityId: conversationId,
+          memberId: authorMemberId, metadata: { member_name: names.get(authorMemberId) ?? null, messageId },
+        });
+      }
     }
     return NextResponse.json({ ok: true, status: "sent" });
   }

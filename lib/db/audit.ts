@@ -22,7 +22,11 @@ export type AuditAction =
   | "order_test_marked"
   | "conversation_stage_changed"
   | "conversation_note_edited"
-  | "order_pos_marked";
+  | "order_pos_marked"
+  // R6 — outbound authorship: a console member sent a WhatsApp message the
+  // customer receives. metadata carries the resolved member name.
+  | "operator_message_sent"
+  | "receipt_sent";
 
 export interface AuditInput {
   restaurantId: string;

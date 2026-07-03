@@ -32,7 +32,8 @@ async function recordReceiptTimeline(
   conversationId: string,
   orderId: string,
   note: string,
-  sendStatus: string
+  sendStatus: string,
+  sentByMemberId: string | null
 ): Promise<void> {
   await client.from("messages").insert({
     restaurant_id: restaurantId,
@@ -42,10 +43,21 @@ async function recordReceiptTimeline(
     text: note,
     status: "sent",
     meta: { kind: "receipt", orderId, sendStatus },
+    // R6 — the operator who sent this receipt authored this outbound message.
+    sent_by_member_id: sentByMemberId,
   });
 }
 
-export async function sendReceiptToCustomer(client: SupabaseClient, orderId: string): Promise<SendReceiptResult> {
+/**
+ * @param sentByMemberId  The console member who triggered the receipt send (R6
+ *   Attribution Law — stamped on the receipt timeline message). Null for
+ *   system/order-confirm-triggered sends (= not a human author).
+ */
+export async function sendReceiptToCustomer(
+  client: SupabaseClient,
+  orderId: string,
+  sentByMemberId: string | null = null
+): Promise<SendReceiptResult> {
   const data = await loadReceiptData(client, orderId);
   if (!data) return { status: "order_not_found" };
   if (!data.customerPhone) return { status: "no_phone" };
@@ -108,7 +120,8 @@ export async function sendReceiptToCustomer(client: SupabaseClient, orderId: str
         conversationId,
         orderId,
         `تم تجهيز إيصال الطلب ${data.orderNumber} — نافذة واتساب مقفولة، ${PRINTABLE}.`,
-        "skipped"
+        "skipped",
+        sentByMemberId
       );
     }
     return { status: "skipped", reason: "no_window", message: `نافذة واتساب مقفولة — ${PRINTABLE}.` };
@@ -131,7 +144,7 @@ export async function sendReceiptToCustomer(client: SupabaseClient, orderId: str
         : send.status === "skipped"
         ? `تم تجهيز إيصال الطلب ${data.orderNumber} (الوضع التجريبي — لم يُرسل فعلياً).`
         : `تعذّر إرسال إيصال الطلب ${data.orderNumber}: ${send.error ?? "خطأ"}.`;
-    await recordReceiptTimeline(client, restaurantId, conversationId, orderId, note, send.status);
+    await recordReceiptTimeline(client, restaurantId, conversationId, orderId, note, send.status, sentByMemberId);
   }
 
   if (send.status === "sent") return { status: "sent" };
