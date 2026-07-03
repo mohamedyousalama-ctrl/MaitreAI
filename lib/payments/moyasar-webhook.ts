@@ -46,7 +46,6 @@ interface SessionRow {
   amount: number;
   currency: string;
   status: string;
-  orders?: { order_number?: string | null; customers?: { phone?: string | null } | null } | null;
 }
 
 export interface MoyasarWebhookDeps {
@@ -92,10 +91,14 @@ export async function handleMoyasarWebhook(
   if (!providerRef) return { httpStatus: 400, outcome: "no_provider_ref" };
 
   // 2. Resolve the session BY provider_ref (the only pre-verify read — it decides
-  //    whose secret to verify against). Unknown session → swallow 200 (never leak).
+  //    whose secret to verify against). HARDENING (guardian ruling 1): select ONLY
+  //    the columns needed for verification/routing (id, restaurant_id, order_id,
+  //    amount, currency, status) — NEVER PII (customer phone / order_number). Those
+  //    are loaded ONLY AFTER the signature passes, on the paid notify path.
+  //    Unknown session → swallow 200 (never leak).
   const { data: sessionRaw } = await admin
     .from("payment_sessions")
-    .select("id, restaurant_id, order_id, amount, currency, status, orders(order_number, customers(phone))")
+    .select("id, restaurant_id, order_id, amount, currency, status")
     .eq("provider_ref", providerRef)
     .maybeSingle();
   const session = sessionRaw as SessionRow | null;
@@ -187,9 +190,16 @@ export async function handleMoyasarWebhook(
     }
     // Stamp the order paid (engine value from the verified session amount).
     await admin.from("orders").update({ payment_status: "paid" }).eq("id", session.order_id).eq("restaurant_id", restaurantId);
-    // Customer notify — once, tenant-bound, deterministic. Best-effort.
-    const phone = session.orders?.customers?.phone ?? "";
-    const orderNumber = session.orders?.order_number ?? "";
+    // Customer notify — once, tenant-bound, deterministic. Best-effort. PII
+    // (order_number + phone) is loaded HERE, post-verify, NOT in the pre-verify read.
+    const { data: notifyRow } = await admin
+      .from("payment_sessions")
+      .select("orders(order_number, customers(phone))")
+      .eq("id", session.id)
+      .maybeSingle();
+    const orders = (notifyRow as { orders?: { order_number?: string | null; customers?: { phone?: string | null } | null } | null } | null)?.orders ?? null;
+    const phone = orders?.customers?.phone ?? "";
+    const orderNumber = orders?.order_number ?? "";
     if (phone) {
       try { await notify(admin, restaurantId, phone, paidConfirmationText(orderNumber)); }
       catch (e) { console.error("[moyasar:webhook] paid notify failed (non-blocking):", e); }
