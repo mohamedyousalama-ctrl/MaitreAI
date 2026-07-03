@@ -20,7 +20,7 @@ let pass = 0, fail = 0;
 const check = (name: string, cond: boolean) => { if (cond) pass++; else { fail++; console.error("  ✗ FAIL:", name); } };
 
 // ---- Migration: the column + FK + partial index ----------------------------
-const mig = read("supabase/migrations/0061_message_sent_by_member.sql");
+const mig = read("supabase/migrations/0063_message_sent_by_member.sql");
 check("migration adds messages.sent_by_member_id",
   /add column if not exists sent_by_member_id uuid references public\.members\(id\) on delete set null/.test(mig));
 const addColStmt = (mig.match(/add column[^;]*sent_by_member_id[^;]*/i) ?? [""])[0];
