@@ -71,8 +71,9 @@ export async function POST(req: NextRequest) {
       "amount_invalid",
       "amount_nonpositive",
     ]);
-    const status = result.error === "psp_disabled" ? 403 : CLIENT_ERRORS.has(result.error) ? 400 : 502;
+    const status =
+      result.error === "psp_disabled" ? 403 : result.error === "order_already_paid" ? 409 : CLIENT_ERRORS.has(result.error) ? 400 : 502;
     return NextResponse.json({ ok: false, error: result.error }, { status });
   }
-  return NextResponse.json({ ok: true, sessionId: result.sessionId, payUrl: result.payUrl });
+  return NextResponse.json({ ok: true, sessionId: result.sessionId, payUrl: result.payUrl, reused: !!result.reused });
 }
