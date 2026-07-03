@@ -140,7 +140,8 @@ export async function createMoyasarSession(
       order_id: orderId,
       provider: provider.id, // 'moyasar'
       amount: total,
-      currency: displayCurrency,
+      currency: displayCurrency, // DISPLAY glyph (e.g. 'ر.س')
+      psp_currency: "SAR", // ISO currency actually sent to Moyasar (createPayment below) — the webhook verifies against THIS, not the glyph
       status: "created",
       expires_at: new Date(nowMs + DEFAULT_EXPIRY_MS).toISOString(),
     })

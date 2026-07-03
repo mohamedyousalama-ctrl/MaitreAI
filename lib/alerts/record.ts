@@ -33,7 +33,13 @@ export type CriticalAlertType =
   // conversation. No conversation_outcomes row is written (a missing row is a
   // logged gap, never an invented outcome); the operator is alerted so the gap
   // is visible and can be re-run.
-  | "outcome_classify_failed";
+  | "outcome_classify_failed"
+  // WO-3c — a Moyasar webhook reported 'paid' but the charged amount did NOT match
+  // the session amount. The order is NOT marked paid (held); a human must reconcile.
+  | "payment_amount_mismatch"
+  // WO-3c — a verified 'paid' webhook could not stamp the order (0 rows — e.g. the
+  // order is missing). The session is NOT marked paid (held); a human reconciles.
+  | "payment_stamp_failed";
 
 export interface CriticalAlertInput {
   restaurantId: string;
