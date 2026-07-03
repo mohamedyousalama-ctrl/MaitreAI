@@ -25,7 +25,11 @@ create table if not exists public.standing_instructions (
   restaurant_id uuid not null references public.restaurants(id) on delete cascade,
   version       integer not null default 1,
   body          text not null check (char_length(body) <= 2000 and char_length(btrim(body)) > 0),
-  active        boolean not null default true,
+  -- Governance (Codex P2): a new row is INACTIVE by default — it must be
+  -- deliberately activated AFTER approval, so an unapproved draft can never inject
+  -- into Karim's prompt merely by being created. The runtime fetch additionally
+  -- requires approved_by IS NOT NULL (belt & suspenders — see customer-turn.ts).
+  active        boolean not null default false,
   created_by    uuid,
   approved_by   uuid,
   created_at    timestamptz not null default now(),

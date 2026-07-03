@@ -238,6 +238,9 @@ export async function runCustomerTurn(
           .eq("restaurant_id", restaurantId)
           .eq("active", true)
           .is("retired_at", null)
+          // Governance (Codex P2): only APPROVED instructions inject — an active but
+          // unapproved row (approved_by NULL) is never surfaced to Karim's prompt.
+          .not("approved_by", "is", null)
           .order("version", { ascending: true }),
         admin
           .from("tonight_notes")

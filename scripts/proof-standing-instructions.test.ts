@@ -59,6 +59,8 @@ check("standing_instructions fetch is active + not-retired only",
   /\.eq\("active", true\)[\s\S]*\.is\("retired_at", null\)/.test(turn));
 check("tonight_notes fetch filters expired (expires_at > now)", /\.gt\("expires_at", nowIso\)/.test(turn));
 check("fetch fails open (try/catch → empty lists)", turn.includes("catch {") && turn.includes("standingInstructionRules = []"));
+// Governance (Codex P2): only APPROVED instructions inject.
+check("standing_instructions fetch requires approved_by IS NOT NULL", /\.not\("approved_by", "is", null\)/.test(turn));
 check("ctx passes the three item-9 fields", turn.includes("standingInstructions: standingInstructionsOn") && turn.includes("standingInstructionRules,") && turn.includes("tonightNotes,"));
 
 // ---- Source: prompt injects the section only when the flag is on -----------
@@ -74,6 +76,7 @@ const si = read("supabase/migrations/0065_standing_instructions.sql");
 check("standing: versioned", /version\s+integer not null/.test(si));
 check("standing: active + retire-not-delete (retired_at, no hard delete semantics)",
   /active\s+boolean not null/.test(si) && /retired_at\s+timestamptz/.test(si));
+check("standing: new rows INACTIVE by default (approval-gated — Codex P2)", /active\s+boolean not null default false/.test(si));
 check("standing: created_by + approved_by", si.includes("created_by") && si.includes("approved_by"));
 check("standing: body bounded <= 2000", /char_length\(body\) <= 2000/.test(si));
 check("standing: RLS member read", si.includes("is_member_of(restaurant_id)"));
