@@ -28,7 +28,12 @@ export type CriticalAlertType =
   // T7 — an order was persisted without a determined payment method (the draft was
   // finalized with no set_payment_method). It's still stored (not lost) but is
   // flagged for resolution instead of silently presented as a cash (COD) order.
-  | "payment_unspecified";
+  | "payment_unspecified"
+  // WO-1 — the outcome classifier failed after all retries for a terminal
+  // conversation. No conversation_outcomes row is written (a missing row is a
+  // logged gap, never an invented outcome); the operator is alerted so the gap
+  // is visible and can be re-run.
+  | "outcome_classify_failed";
 
 export interface CriticalAlertInput {
   restaurantId: string;
