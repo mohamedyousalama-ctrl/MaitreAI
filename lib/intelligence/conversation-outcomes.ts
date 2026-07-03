@@ -32,6 +32,7 @@ import type { LlmMessage } from "@/lib/ai/llm/types";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { resolveMemberNames } from "@/lib/db/member-names";
 import { recordCriticalAlert } from "@/lib/alerts/record";
+import { enqueueRetryJob } from "@/lib/jobs/retry-queue";
 
 const MAX_CLASSIFY_ATTEMPTS = 3;
 const CLASSIFY_TIMEOUT_MS = 10_000; // per-attempt cap so the close can NEVER hang
@@ -304,13 +305,21 @@ export async function emitConversationOutcome(
       classification = await withTimeout(classify(transcript), timeoutMs, null);
     }
 
-    // FAIL-OPEN: no valid classification → NO row (a gap). Log to system_alerts.
+    // FAIL-OPEN: no valid classification → NO row (a gap). Log to system_alerts AND
+    // enqueue a DURABLE retry job (item 11) so the gap is later filled by the cron
+    // instead of dying with this close. Both are best-effort; a re-run is idempotent
+    // (unique(conversation_id)). The enqueue happens ONCE here — the cron drains it.
     if (!classification) {
       await recordCriticalAlert(admin, {
         restaurantId,
         type: "outcome_classify_failed",
-        detail: `outcome classifier failed after ${MAX_CLASSIFY_ATTEMPTS} attempts — no outcome row written (gap)`,
+        detail: `outcome classifier failed after ${MAX_CLASSIFY_ATTEMPTS} attempts — no outcome row written (gap); durable retry enqueued`,
         conversationId,
+      });
+      await enqueueRetryJob(admin, {
+        kind: "outcome_emit",
+        payload: { restaurantId, conversationId },
+        restaurantId,
       });
       return;
     }
