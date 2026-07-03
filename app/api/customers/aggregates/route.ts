@@ -23,16 +23,36 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const atRiskDays = Math.min(Math.max(Number(url.searchParams.get("atRiskDays")) || 30, 1), 365);
   const topN = Math.min(Math.max(Number(url.searchParams.get("topN")) || 10, 1), 50);
+  const atRiskLimit = Math.min(Math.max(Number(url.searchParams.get("atRiskLimit")) || 100, 1), 500);
+
+  // Exact tenant customer count (head-only) — authoritative even if the row fetch
+  // below is capped, so totals are never SILENTLY wrong.
+  const ROW_CAP = 10_000;
+  const { count: exactCount, error: countErr } = await admin
+    .from("customers")
+    .select("id", { count: "exact", head: true })
+    .eq("restaurant_id", tenant.restaurantId);
+  if (countErr) {
+    console.error("[customers/aggregates] count failed:", countErr.message);
+    return NextResponse.json({ error: "read_failed" }, { status: 502 });
+  }
 
   const { data, error } = await admin
     .from("customers")
     .select("id, name, phone, orders_count, ltv, last_seen_at")
     .eq("restaurant_id", tenant.restaurantId)
-    .limit(5000);
-  if (error) return NextResponse.json({ error: "read_failed", detail: error.message }, { status: 502 });
+    .limit(ROW_CAP);
+  if (error) {
+    // Never leak the raw DB message to the client — log it, return a generic detail.
+    console.error("[customers/aggregates] read failed:", error.message);
+    return NextResponse.json({ error: "read_failed" }, { status: 502 });
+  }
 
-  const aggregates = computeCustomerAggregates((data ?? []) as CustomerAggInput[], {
-    nowMs: Date.now(), atRiskDays, topN,
-  });
-  return NextResponse.json(aggregates);
+  const rows = (data ?? []) as CustomerAggInput[];
+  const aggregates = computeCustomerAggregates(rows, { nowMs: Date.now(), atRiskDays, topN, atRiskLimit });
+  // Honest incompleteness: when the tenant has more customers than we fetched, the
+  // segment/list aggregates are computed over the fetched page — flag it so the UI
+  // never presents a capped result as complete. (Never hit at pilot scale.)
+  const capped = typeof exactCount === "number" && exactCount > rows.length;
+  return NextResponse.json({ ...aggregates, totalCustomersExact: exactCount ?? aggregates.facts.totalCustomers, capped });
 }

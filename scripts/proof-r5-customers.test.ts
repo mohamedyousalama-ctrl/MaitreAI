@@ -71,13 +71,27 @@ const route = read("app/api/customers/aggregates/route.ts");
 check("endpoint tenant-scoped", route.includes('.eq("restaurant_id", tenant.restaurantId)'));
 check("endpoint read-only (no writes)", !/\.update\(|\.insert\(|\.upsert\(/.test(route));
 check("endpoint delegates to the pure aggregator", route.includes("computeCustomerAggregates("));
+// CodeRabbit R5: the endpoint must not leak the raw DB error to the client, and must
+// signal incompleteness rather than silently return capped totals.
+check("endpoint does NOT leak raw DB error.message to the client", !/detail: error\.message/.test(route) && !/detail: countErr\.message/.test(route));
+check("endpoint flags capped results (honest incompleteness)", route.includes("capped") && route.includes("totalCustomersExact"));
 
-// ---- Source: launch rule centralized ---------------------------------------
+// ---- at-risk list is bounded (CodeRabbit R5 nitpick #3) --------------------
+{
+  const many = Array.from({ length: 250 }, (_, i) => ({
+    id: `c${i}`, name: null, phone: null, orders_count: 3, ltv: 10, last_seen_at: ago(100),
+  }));
+  const capped = computeCustomerAggregates(many, { nowMs: NOW, atRiskDays: 30, atRiskLimit: 100 });
+  check("atRisk is capped to atRiskLimit", capped.atRisk.length === 100);
+}
+
+// ---- Source: launch rule centralized (whitespace/format-tolerant per CodeRabbit) ---
 const helper = read("lib/db/ensure-customer.ts");
-check("ensureCustomerId upserts on (restaurant_id, phone)", /onConflict: "restaurant_id,phone"/.test(helper));
-check("ensureCustomerId returns the id", /return data\.id as string/.test(helper));
+check("ensureCustomerId upserts on (restaurant_id, phone)", /onConflict:\s*"restaurant_id,phone"/.test(helper));
+check("ensureCustomerId returns the id", /return\s+data\.id/.test(helper));
 const inbound = read("lib/db/messages.ts");
-check("inbound path uses the canonical ensureCustomerId", /const customerId = await ensureCustomerId\(admin, restaurantId, msg\.from, msg\.customerName\)/.test(inbound));
+check("inbound path uses the canonical ensureCustomerId with its args",
+  /await\s+ensureCustomerId\(/.test(inbound) && inbound.includes("msg.from") && inbound.includes("msg.customerName"));
 check("inbound path links customer_id on the conversation",
   inbound.includes("customer_id: customerId"));
 

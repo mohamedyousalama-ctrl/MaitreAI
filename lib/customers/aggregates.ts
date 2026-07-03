@@ -54,10 +54,11 @@ export function segmentFor(ordersCount: number): Segment {
 
 export function computeCustomerAggregates(
   rows: CustomerAggInput[],
-  opts: { nowMs: number; atRiskDays?: number; topN?: number } = { nowMs: 0 },
+  opts: { nowMs: number; atRiskDays?: number; topN?: number; atRiskLimit?: number } = { nowMs: 0 },
 ): CustomerAggregates {
   const atRiskDays = opts.atRiskDays ?? 30;
   const topN = opts.topN ?? 10;
+  const atRiskLimit = opts.atRiskLimit ?? 100;
 
   let totalOrders = 0;
   let totalRevenue = 0;
@@ -91,7 +92,8 @@ export function computeCustomerAggregates(
       days_since: Math.floor((opts.nowMs - new Date(r.last_seen_at as string).getTime()) / DAY_MS),
     }))
     .filter((r) => Number.isFinite(r.days_since) && r.days_since >= atRiskDays)
-    .sort((a, b) => b.days_since - a.days_since);
+    .sort((a, b) => b.days_since - a.days_since)
+    .slice(0, atRiskLimit); // bounded like topBySpend so the payload can't grow unbounded
 
   return {
     facts,
