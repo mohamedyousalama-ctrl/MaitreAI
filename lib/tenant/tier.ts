@@ -20,7 +20,10 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
  *  - customer_memory (P2): build per-customer memory + operator card from those
  *    reports. Operator-read DATA only; customer-facing surfacing is a later,
  *    separately-gated step. NOT implied by tier='pro' or by P1. */
-export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions";
+// kitchen_ticket: the operator-facing money-stripped kitchen print view
+// (/(console)/orders/[id]/ticket). Default-OFF, opt-in per tenant — the route
+// 404s and the audit endpoint 410s unless this flag is explicitly enabled.
+export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket";
 
 /** A feature is ON when the tenant explicitly enabled THAT feature (narrow,
  *  default-off opt-in) OR the tenant is full 'pro' (gets everything). Keeping a
