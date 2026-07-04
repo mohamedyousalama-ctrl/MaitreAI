@@ -94,11 +94,18 @@ export async function POST(req: Request) {
   // Snapshot the NAMES of currently-86'd items BEFORE the publish. Names (not a
   // bare count) let us prove, after the publish, which 86'd items SURVIVED (stayed
   // 86'd) vs which lost their flag via a rename/removal — the only real reset case.
-  const { data: beforeRows } = await admin
+  // A snapshot READ error must NOT be swallowed into an empty list: an empty
+  // `beforeNames` would make the post-publish diff mislabel preserved 86s. Fail
+  // BEFORE publishing so the operator retries against a clean read.
+  const { data: beforeRows, error: beforeErr } = await admin
     .from("menu_items")
     .select("name")
     .eq("restaurant_id", restaurantId)
     .eq("available", false);
+  if (beforeErr) {
+    console.error("[menu/publish] pre-publish snapshot failed:", beforeErr.message);
+    return NextResponse.json({ error: "snapshot_failed" }, { status: 502 });
+  }
   const beforeNames = (beforeRows ?? []).map((r) => String((r as { name: string }).name));
 
   // Atomic publish via SQL function (single transaction). 0050 preserves each
@@ -109,16 +116,25 @@ export async function POST(req: Request) {
   });
 
   if (rpcErr) {
-    return NextResponse.json({ error: "publish_failed", detail: rpcErr.message }, { status: 502 });
+    // Don't leak the raw RPC error to the client — log it, return a generic detail.
+    console.error("[menu/publish] publish_menu_draft failed:", rpcErr.message);
+    return NextResponse.json({ error: "publish_failed" }, { status: 502 });
   }
 
   // Snapshot 86'd names AFTER, then diff: preserved = stayed 86'd (the fix
   // working); lost = its 86 was dropped (renamed/removed). Warn ONLY on lost.
-  const { data: afterRows } = await admin
+  // The publish ALREADY succeeded, so an after-snapshot read error can't fail the
+  // request — instead we report the diff as UNAVAILABLE rather than emit a
+  // misleading availabilityReset computed from a corrupted (empty) snapshot.
+  const { data: afterRows, error: afterErr } = await admin
     .from("menu_items")
     .select("name")
     .eq("restaurant_id", restaurantId)
     .eq("available", false);
+  if (afterErr) {
+    console.error("[menu/publish] post-publish snapshot failed:", afterErr.message);
+    return NextResponse.json({ ok: true, availabilityDiffUnavailable: true });
+  }
   const afterNames = (afterRows ?? []).map((r) => String((r as { name: string }).name));
 
   const diff = diffUnavailable(beforeNames, afterNames);

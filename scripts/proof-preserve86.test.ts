@@ -46,6 +46,14 @@ check("route snapshots 86'd NAMES before AND after publish",
   /beforeRows[\s\S]*\.eq\("available", false\)/.test(route) && /afterRows[\s\S]*\.eq\("available", false\)/.test(route));
 check("route returns preserved + lost lists", route.includes("preservedUnavailable: diff.preserved") && route.includes("lostUnavailable: diff.lost"));
 check("stale 'V2 preserve 86' TODO removed", !route.includes("V2 — preserve 86"));
+// CodeRabbit: a snapshot READ error must not be swallowed into an empty list (which
+// would mislabel preserved 86s). Pre-publish error → fail before publishing;
+// post-publish error → report diff unavailable (publish already happened).
+check("route handles pre-publish snapshot error (fails before publish)",
+  /beforeErr[\s\S]*status: 502[\s\S]*snapshot_failed|snapshot_failed[\s\S]*status: 502/.test(route) && route.includes("if (beforeErr)"));
+check("route handles post-publish snapshot error (diff unavailable, publish kept)",
+  route.includes("if (afterErr)") && route.includes("availabilityDiffUnavailable: true"));
+check("route no longer leaks raw rpcErr.message to the client", !/detail: rpcErr\.message/.test(route));
 
 // ---- Source: 0050 migration preserves available on UPDATE ------------------
 const mig = read("supabase/migrations/0050_menu_publish_upsert.sql");
