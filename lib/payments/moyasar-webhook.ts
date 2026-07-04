@@ -25,6 +25,7 @@ import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { recordCriticalAlert, type CriticalAlertInput } from "@/lib/alerts/record";
 import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
+import { enqueueRetryJob } from "@/lib/jobs/retry-queue";
 
 /** Deterministic Arabic confirmation sent to the customer on a confirmed payment. */
 export function paidConfirmationText(orderNumber: string): string {
@@ -246,8 +247,20 @@ export async function handleMoyasarWebhook(
     const phone = orders?.customers?.phone ?? "";
     const orderNumber = orders?.order_number ?? "";
     if (phone) {
-      try { await notify(admin, restaurantId, phone, paidConfirmationText(orderNumber)); }
-      catch (e) { console.error("[moyasar:webhook] paid notify failed (non-blocking):", e); }
+      const text = paidConfirmationText(orderNumber);
+      try {
+        await notify(admin, restaurantId, phone, text);
+      } catch (e) {
+        // Non-blocking, but no longer silently lost: enqueue a DURABLE retry job
+        // (item 11) so the customer's paid confirmation is re-attempted by the cron
+        // with backoff instead of dying with this webhook delivery.
+        console.error("[moyasar:webhook] paid notify failed (durable retry enqueued):", e);
+        await enqueueRetryJob(admin, {
+          kind: "paid_notify",
+          payload: { restaurantId, to: phone, text },
+          restaurantId,
+        });
+      }
     }
     return { httpStatus: 200, outcome: "paid" };
   }
