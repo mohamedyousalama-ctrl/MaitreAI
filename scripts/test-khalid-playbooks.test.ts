@@ -40,7 +40,17 @@ ok("benign: secure payment «دفع آمن»", findForbiddenClaims("الدفع �
 ok("benign: real promo quote «خصم ١٥٪ على أول طلب»", findForbiddenClaims("عندنا خصم ١٥٪ على أول طلب").length === 0);
 ok("benign: honest ETA estimate", findForbiddenClaims("التوصيل عادة خلال ٤٥ دقيقة حسب المنطقة").length === 0);
 ok("benign: normal recommendation", findForbiddenClaims("أنصحك بالكبسة، من ألذ أطباقنا").length === 0);
-ok("evalOnly filter returns a subset or equal", findForbiddenClaims("مناسب لمرضى السكر", { evalOnly: true }).length >= 1);
+// evalOnly must be a genuine SUBSET of the full result (not merely non-empty).
+{
+  const full = findForbiddenClaims("مناسب لمرضى السكر");
+  const evalHits = findForbiddenClaims("مناسب لمرضى السكر", { evalOnly: true });
+  ok(
+    "evalOnly filter returns a subset or equal",
+    evalHits.length >= 1 &&
+      evalHits.length <= full.length &&
+      evalHits.every((c) => full.some((f) => f.id === c.id))
+  );
+}
 
 // ── 1d) NEGATION / REFUSAL context is NOT a claim (Codex P2 — no false positives) ──
 // A compliant safety refusal + handoff must NOT be flagged as an allergen-safety claim.
@@ -54,6 +64,11 @@ ok("refusal: declined freebie «ما أقدر أعطيك ببلاش» → NOT fl
 // … but an ASSERTED claim in a later clause is STILL flagged (no over-suppression).
 ok("mixed: refusal then a real assertion IS flagged",
   findForbiddenClaims("ما أقدر أأكل معاك. الأكل آمن ١٠٠٪ للحساسية").some((c) => c.id === "allergen_safety"));
+// contrastive conjunction ends the refusal span — a claim after «لكن» IS flagged.
+ok("contrast: «ما أقدر أساعدك لكن الأكل آمن ١٠٠٪» IS flagged",
+  findForbiddenClaims("ما أقدر أساعدك لكن الأكل آمن ١٠٠٪ للحساسية").some((c) => c.id === "allergen_safety"));
+ok("contrast: «بس» also ends the refusal span",
+  findForbiddenClaims("ما أقدر أوعدك بس التوصيل مضمون خلال ٢٠ دقيقة").some((c) => c.id === "guaranteed_delivery"));
 
 // ── 2) THE GUARANTEE: the playbooks overlay text trips ZERO forbidden claims,
 //      in every region. (The base persona layer's own cleanliness is covered in the

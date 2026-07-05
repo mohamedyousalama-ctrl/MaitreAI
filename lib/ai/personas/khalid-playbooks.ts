@@ -18,15 +18,15 @@
 // ============================================================================
 
 // Standalone leaf: NO import from khalid.ts (this PR is independent of the persona-
-// layer PR). The region union mirrors khalid.ts KsaRegion; the wiring composes the two
-// overlays at injection time.
-type KsaRegion = "najd" | "hijaz" | "asir" | "eastern";
+// layer PR). The region set mirrors khalid.ts KsaRegion; the wiring composes the two
+// overlays at injection time. Single source: the type derives from the array, so the
+// runtime membership check can never drift from the union.
+const KSA_REGIONS = ["najd", "hijaz", "asir", "eastern"] as const;
+type KsaRegion = (typeof KSA_REGIONS)[number];
 
 /** Local region resolver (Najdi default). */
 function resolveRegion(r: string | null | undefined): KsaRegion {
-  return (["najd", "hijaz", "asir", "eastern"] as const).includes(r as KsaRegion)
-    ? (r as KsaRegion)
-    : "najd";
+  return (KSA_REGIONS as readonly string[]).includes(r ?? "") ? (r as KsaRegion) : "najd";
 }
 
 export interface KhalidPlaybooksCtx {
