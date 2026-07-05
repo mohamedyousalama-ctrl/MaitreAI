@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createMoyasarSession } from "@/lib/payments/create-session";
 import { checkOrderSafetyHold } from "@/lib/db/safety-hold-guard";
@@ -35,8 +35,11 @@ function sanitizeCallbackUrl(raw: unknown, origin: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  // R1 gate (item 15) — preserves this route's { ok:false, error } contract while
+  // getting the 401 (unauthenticated) / 403 (no active tenant) split from requireTenant.
+  const gate = await requireTenant();
+  if (!gate.ok) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: gate.response.status });
+  const tenant = gate.tenant;
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
 
