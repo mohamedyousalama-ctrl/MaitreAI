@@ -201,6 +201,22 @@ body {
   .kv-pulse, .kv-urgent, .kv-skeleton { animation: none !important; }
 }
 
+/* console_v2 §5 MOTION GRAMMAR (Kivo_Color_System.md §5 — motion is a word).
+   Layer-2 only. The ACT-NOW fast pulse (1.2s) is the ONLY fast motion and is
+   reserved for awaiting-handoff-over-threshold + safety events — nothing else.
+   Good news BREATHES (3s), never shouts. Budget is enforced at the call site
+   (max one moving element per card, ~3 per viewport). reduced-motion kills all
+   console_v2 motion EXCEPT the ACT-NOW dot, which drops to a static solid dot. */
+@keyframes kvc-actnow { 0%,100% { transform: scale(1); opacity: 1 } 50% { transform: scale(1.5); opacity: .35 } }
+.kvc-actnow { animation: kvc-actnow 1.2s ease-in-out infinite; }
+@keyframes kvc-breathe { 0%,100% { opacity: .55 } 50% { opacity: .95 } }
+.kvc-breathe { animation: kvc-breathe 3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  /* ACT-NOW stays visible as a static dot (no scale/opacity swing); breathe stops. */
+  .kvc-actnow { animation: none !important; transform: none; opacity: 1; }
+  .kvc-breathe { animation: none !important; opacity: 1; }
+}
+
 /* §10 Thin emerald scrollbar for console scroll regions. */
 .kv-scroll { scrollbar-width: thin; scrollbar-color: rgba(14,159,110,.3) transparent; }
 .kv-scroll::-webkit-scrollbar { width: 7px; height: 7px; }

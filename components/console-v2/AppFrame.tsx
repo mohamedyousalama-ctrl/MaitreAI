@@ -10,8 +10,28 @@
 // ============================================================================
 
 import type { ReactNode } from "react";
+import { DataBootstrap } from "@/components/DataBootstrap";
+import { useConsoleDataStore, isConsoleDataPresentable } from "@/lib/console-data-state";
+import { useT } from "@/lib/i18n/lang";
 import { Rail } from "./Rail";
 import type { ConsoleRole } from "@/lib/console-v2/nav";
+
+// Gate the page content on real tenant data being present, mirroring the old
+// ConsoleLayout's ConsoleGate: DataBootstrap hydrates asynchronously, so until the
+// store is DB_READY (or DEMO) we must NOT render the page — otherwise /c/shift can
+// flash seed data or a previous tenant's persisted orders before the swap. The rail
+// (chrome) still renders; only the main content waits.
+function GatedMain({ children }: { children: ReactNode }) {
+  const t = useT();
+  const state = useConsoleDataStore((s) => s.state);
+  if (isConsoleDataPresentable(state)) return <>{children}</>;
+  const msg = state === "NO_TENANT" ? t("console.noTenant") : state === "DB_FAILED" ? t("console.dataFailed") : t("auth.loading");
+  return (
+    <div style={{ display: "grid", placeItems: "center", height: "100%", color: "var(--kv-muted)", fontSize: 13, fontWeight: 700 }}>
+      {msg}
+    </div>
+  );
+}
 
 export function AppFrame({
   tenantName,
@@ -34,12 +54,15 @@ export function AppFrame({
         color: "var(--kv-text)",
       }}
     >
+      {/* Hydrate the per-tenant DB stores + realtime for every authed console_v2
+          page (no-op in demo mode, where seed data stays). */}
+      <DataBootstrap />
       <Rail tenantName={tenantName} role={role} />
       <main
         className="kv-scroll"
         style={{ flex: 1, minWidth: 0, height: "100%", overflowY: "auto", padding: "24px 28px" }}
       >
-        {children}
+        <GatedMain>{children}</GatedMain>
       </main>
     </div>
   );

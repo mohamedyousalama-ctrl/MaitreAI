@@ -39,30 +39,29 @@ function assertNever(x: never): never {
 }
 
 // ---------------------------------------------------------------------------
-// Tone — the shared visual semantics every display state resolves to. Pages map
-// a tone to color via TONE_TOKENS below; components never pick colors ad-hoc.
-// NOTE the deliberate absence of a generic "error"/"danger" tone: `safety` is
-// the ONLY red, so red can only ever mean a safety hold ("red = safety only").
+// Tone — the shared visual semantics every display state resolves to. Each tone
+// IS a Kivo_Color_System.md §2 Layer-1 identity color — pages map a tone to color
+// via TONE_TOKENS; components never pick colors ad-hoc. Reconciliation ruling #4
+// (CANON WINS): the hexes below are the canon palette EXACTLY; any hex outside it
+// is a defect. Ruling #3: there is no `delivery` tone — deliveries are out of V1
+// scope, so delivery-ish states render `slate`. `safety` is the ONLY red, so red
+// can only ever mean a safety hold ("red = safety only").
 // ---------------------------------------------------------------------------
 export type Tone =
-  | "neutral"  // slate — inert / done / cancelled (cancelled is NOT an alarm)
-  | "info"     // blue  — waiting on someone / handed over
-  | "active"   // emerald — live work in flight (AI replying, kitchen cooking)
-  | "success"  // deep emerald — money in / delivered
-  | "warning"  // amber — needs a human's attention (not-in-POS, failed payment)
-  | "delivery" // purple — out on the road
-  | "safety";  // RED — safety hold only. The single red in the system.
+  | "slate"   // §2 Slate  — system / neutral / no-claim / done / cancelled
+  | "blue"    // §2 Blue    — Karim / AI-sourced / informational / an order Karim is building
+  | "emerald" // §2 Emerald — Kivo affirmative: confirmed / committed / money-in
+  | "amber"   // §2 Amber   — human-sourced / waiting-on-human (handoff queue, human-held)
+  | "safety"; // §2 Red     — safety hold only. The single red in the system.
 
-/** Tone → CSS-var color tokens (foreground + tinted background). The values are
- *  the ratified §2 Kivo palette; `safety` is the only entry that resolves red. */
+/** Tone → color tokens (foreground + tinted background), the canon §2 hexes
+ *  verbatim. `safety` is the only entry that resolves red (#ff6b5e). */
 export const TONE_TOKENS: Record<Tone, { fg: string; bg: string }> = {
-  neutral: { fg: "var(--kv-slate)", bg: "rgba(100,116,139,.12)" },
-  info: { fg: "var(--kv-ready)", bg: "rgba(43,143,181,.12)" },
-  active: { fg: "var(--kv-deep)", bg: "rgba(14,159,110,.12)" },
-  success: { fg: "var(--kv-deep)", bg: "rgba(14,159,110,.16)" },
-  warning: { fg: "var(--kv-amber)", bg: "rgba(216,151,43,.14)" },
-  delivery: { fg: "var(--kv-delivery)", bg: "rgba(124,92,208,.14)" },
-  safety: { fg: "var(--kv-red)", bg: "rgba(192,73,47,.12)" },
+  slate: { fg: "#5b6b7a", bg: "rgba(154,167,184,.16)" }, // Slate #9aa7b8
+  blue: { fg: "#3a6fd8", bg: "rgba(75,139,255,.14)" }, // Blue #4b8bff
+  emerald: { fg: "#0A8A5F", bg: "rgba(14,159,110,.14)" }, // Emerald #0E9F6E
+  amber: { fg: "#b9822a", bg: "rgba(232,180,90,.18)" }, // Amber #e8b45a
+  safety: { fg: "#e0483a", bg: "rgba(255,107,94,.14)" }, // Red #ff6b5e
 };
 
 /** The uniform shape every derivation returns: a display token, its tone, and the
@@ -91,23 +90,26 @@ export type OrderDisplayState =
 
 export function deriveOrderDisplay(status: OrderStatusKey): DisplayState<OrderDisplayState> {
   switch (status) {
+    // Building — Karim is composing the order (blue, §6 "blue building").
     case "draft":
     case "pending_confirmation":
-      return { state: "incoming", tone: "warning", labelKey: "state.order.incoming" };
+      return { state: "incoming", tone: "blue", labelKey: "state.order.incoming" };
     case "pending_payment":
-      return { state: "awaiting_payment", tone: "info", labelKey: "state.order.awaiting_payment" };
+      return { state: "awaiting_payment", tone: "blue", labelKey: "state.order.awaiting_payment" };
+    // Confirmed / committed — money in, in the kitchen, ready (emerald, §6 "emerald confirmed").
     case "paid":
-      return { state: "confirmed", tone: "success", labelKey: "state.order.confirmed" };
+      return { state: "confirmed", tone: "emerald", labelKey: "state.order.confirmed" };
     case "preparing":
-      return { state: "in_kitchen", tone: "active", labelKey: "state.order.in_kitchen" };
+      return { state: "in_kitchen", tone: "emerald", labelKey: "state.order.in_kitchen" };
     case "ready":
-      return { state: "ready", tone: "info", labelKey: "state.order.ready" };
+      return { state: "ready", tone: "emerald", labelKey: "state.order.ready" };
+    // Past Kivo's surface (deliveries out of V1 scope, ruling #3) → neutral slate.
     case "out_for_delivery":
-      return { state: "on_the_way", tone: "delivery", labelKey: "state.order.on_the_way" };
+      return { state: "on_the_way", tone: "slate", labelKey: "state.order.on_the_way" };
     case "delivered":
-      return { state: "completed", tone: "neutral", labelKey: "state.order.completed" };
+      return { state: "completed", tone: "slate", labelKey: "state.order.completed" };
     case "cancelled":
-      return { state: "cancelled", tone: "neutral", labelKey: "state.order.cancelled" };
+      return { state: "cancelled", tone: "slate", labelKey: "state.order.cancelled" };
     default:
       return assertNever(status);
   }
@@ -122,12 +124,13 @@ export type PosDisplayState = "needs_pos" | "entered" | "sent_to_kitchen";
 
 export function derivePosDisplay(pos: PosStatus): DisplayState<PosDisplayState> {
   switch (pos) {
+    // needs_pos = AWAITING HANDOFF — the amber alarm identity (§6).
     case "not_entered":
-      return { state: "needs_pos", tone: "warning", labelKey: "state.pos.needs_pos" };
+      return { state: "needs_pos", tone: "amber", labelKey: "state.pos.needs_pos" };
     case "entered":
-      return { state: "entered", tone: "info", labelKey: "state.pos.entered" };
+      return { state: "entered", tone: "blue", labelKey: "state.pos.entered" };
     case "sent_to_kitchen":
-      return { state: "sent_to_kitchen", tone: "active", labelKey: "state.pos.sent_to_kitchen" };
+      return { state: "sent_to_kitchen", tone: "emerald", labelKey: "state.pos.sent_to_kitchen" };
     default:
       return assertNever(pos);
   }
@@ -143,15 +146,16 @@ export type PaymentDisplayState = "unpaid" | "link_sent" | "paid" | "failed" | "
 export function derivePaymentDisplay(status: PaymentStatusKey): DisplayState<PaymentDisplayState> {
   switch (status) {
     case "unpaid":
-      return { state: "unpaid", tone: "neutral", labelKey: "state.pay.unpaid" };
+      return { state: "unpaid", tone: "slate", labelKey: "state.pay.unpaid" };
     case "payment_link_sent":
-      return { state: "link_sent", tone: "info", labelKey: "state.pay.link_sent" };
+      return { state: "link_sent", tone: "blue", labelKey: "state.pay.link_sent" };
     case "paid":
-      return { state: "paid", tone: "success", labelKey: "state.pay.paid" };
+      return { state: "paid", tone: "emerald", labelKey: "state.pay.paid" };
     case "failed":
-      return { state: "failed", tone: "warning", labelKey: "state.pay.failed" };
+      // A failed payment is a problem, not a SAFETY event — amber, never red.
+      return { state: "failed", tone: "amber", labelKey: "state.pay.failed" };
     case "refunded":
-      return { state: "refunded", tone: "neutral", labelKey: "state.pay.refunded" };
+      return { state: "refunded", tone: "slate", labelKey: "state.pay.refunded" };
     default:
       return assertNever(status);
   }
@@ -186,14 +190,16 @@ export function deriveConversationDisplay(input: {
     return { state: "safety_hold", tone: "safety", labelKey: "state.conv.safety_hold" };
   }
   switch (input.ownershipState) {
+    // Karim's stage is blue (§6 conversation monitor).
     case "AI_ACTIVE":
-      return { state: "ai_active", tone: "active", labelKey: "state.conv.ai_active" };
+      return { state: "ai_active", tone: "blue", labelKey: "state.conv.ai_active" };
+    // Human-held is amber (§6 hall pill "amber (human-held)").
     case "HUMAN_ACTIVE":
-      return { state: "human_active", tone: "info", labelKey: "state.conv.human_active" };
+      return { state: "human_active", tone: "amber", labelKey: "state.conv.human_active" };
     case "HUMAN_IDLE":
-      return { state: "human_idle", tone: "neutral", labelKey: "state.conv.human_idle" };
+      return { state: "human_idle", tone: "slate", labelKey: "state.conv.human_idle" };
     case "CLOSED":
-      return { state: "closed", tone: "neutral", labelKey: "state.conv.closed" };
+      return { state: "closed", tone: "slate", labelKey: "state.conv.closed" };
     // SYSTEM_HOLD is returned by the safety branch above, so the type is narrowed
     // to exclude it here; the default stays a compile-time exhaustiveness guard.
     default:
@@ -215,12 +221,12 @@ export function deriveAttribution(
 ): DisplayState<AttributionKind> | null {
   switch (sender) {
     case "ai":
-      return { state: "ai", tone: "active", labelKey: "attr.ai" };
+      return { state: "ai", tone: "blue", labelKey: "attr.ai" }; // 🤖 Karim — blue
     case "agent":
     case "human":
-      return { state: "human", tone: "info", labelKey: "attr.human" };
+      return { state: "human", tone: "amber", labelKey: "attr.human" }; // ✋ human — amber
     case "system":
-      return { state: "system", tone: "neutral", labelKey: "attr.system" };
+      return { state: "system", tone: "slate", labelKey: "attr.system" };
     case "customer":
       return null; // inbound customer turn — nothing to attribute
     default:
