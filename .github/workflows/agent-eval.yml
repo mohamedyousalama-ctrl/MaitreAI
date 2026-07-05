@@ -155,6 +155,14 @@ jobs:
       - name: Retry-policy unit tests
         run: node --experimental-strip-types --test lib/messaging/retry-policy.test.ts
 
+      # ── Blocking gate 7b: WhatsApp capacity (WO-6) ────────────────────────
+      # 22 cases: tier→limit map, tier/quality normalizers, remaining_est
+      # (never negative, null when the tier has no finite cap), and the
+      # best-effort send ledger (never throws). Pure logic (type-only imports),
+      # so strip-types-safe like the other gates.
+      - name: WhatsApp capacity unit tests
+        run: node --experimental-strip-types scripts/proof-wa-capacity.test.ts
+
       # ── Blocking gate 8: Khalid persona-layer contract ────────────────────
       # 35 cases: region resolution (Najdi default), name fallback, and the
       # persona-layer contract — the overlay defers to the engine on

@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireManager } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizeTier, normalizeQuality, TIER_LIMITS } from "@/lib/messaging/capacity";
 
@@ -15,9 +15,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const gate = await requireManager();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 

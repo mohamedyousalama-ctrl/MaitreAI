@@ -11,7 +11,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireManager } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { WHATSAPP_GRAPH_VERSION } from "@/lib/messaging/config";
 import { resolveTenantWhatsAppEnvById } from "@/lib/db/restaurants";
@@ -23,9 +23,9 @@ export const dynamic = "force-dynamic";
 const META_TIMEOUT_MS = 15000;
 
 export async function POST() {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const gate = await requireManager();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
