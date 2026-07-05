@@ -3,11 +3,17 @@
 // POST: pull this tenant's templates from the Meta message_templates API and
 // upsert name/language/category/status/quality into message_templates.
 //
-// DOCUMENTED MANUAL FALLBACK: template management needs a WhatsApp Business
-// Account (WABA) id + access token. When either is absent, or the Graph call
-// fails, this route does NOT error and does NOT touch existing rows — it returns
-// { synced:false, fallback:"manual", reason } so the operator maintains the
-// registry by hand via POST /api/settings/templates (same category-truth guard).
+// PER-TENANT CREDS: template management uses THIS tenant's own WhatsApp Business
+// Account (WABA) id + decrypted access token (restaurants.wa_waba_id /
+// wa_access_token_enc, resolved via resolveTenantTemplateCreds). We deliberately
+// do NOT fall back to a global-env WABA — that would fetch another account's
+// templates and upsert them under this tenant's restaurant_id (cross-tenant
+// contamination). No usable per-tenant creds ⇒ the documented manual fallback.
+//
+// DOCUMENTED MANUAL FALLBACK: when the tenant has no usable WABA creds, or the
+// Graph call fails, this route does NOT error and does NOT touch existing rows —
+// it returns { synced:false, fallback:"manual", reason } so the operator
+// maintains the registry by hand via POST /api/settings/templates (same guard).
 //
 // CATEGORY-TRUTH LAW on sync: Meta is authoritative for status/quality, but if a
 // synced template's CONTENT is promotional while Meta labels it utility/auth, we
@@ -18,7 +24,8 @@
 import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { readWhatsAppEnv, WHATSAPP_GRAPH_VERSION } from "@/lib/messaging/config";
+import { WHATSAPP_GRAPH_VERSION } from "@/lib/messaging/config";
+import { resolveTenantTemplateCreds } from "@/lib/db/restaurants";
 import {
   assertCategoryTruth,
   mapMetaCategory,
@@ -32,13 +39,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const META_TIMEOUT_MS = 15000;
-
-// The WABA (business-account) id is a template-management credential distinct
-// from phone_number_id. Read from env (no per-tenant column yet); absence → the
-// documented manual fallback.
-function wabaId(): string {
-  return (process.env.WHATSAPP_WABA_ID ?? process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? "").trim();
-}
 
 interface MetaTemplate {
   name?: string;
@@ -61,24 +61,24 @@ export async function POST() {
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
-  const token = readWhatsAppEnv().accessToken;
-  const waba = wabaId();
-  // ── MANUAL FALLBACK: credentials absent → no sync, no mutation, clear signal.
-  if (!token || !waba) {
+  // ── PER-TENANT creds only. No usable WABA id / token ⇒ manual fallback.
+  const creds = await resolveTenantTemplateCreds(admin, tenant.restaurantId);
+  if (!creds) {
     return NextResponse.json({
       synced: false,
       fallback: "manual",
-      reason: !token ? "access_token_missing" : "waba_id_missing",
-      hint: "أضِف القوالب يدويًا عبر POST /api/settings/templates حتى تتوفّر بيانات اعتماد WABA.",
+      reason: "waba_not_configured",
+      hint: "اربط رقم واتساب المطعم (WABA) أو أضِف القوالب يدويًا عبر POST /api/settings/templates.",
     });
   }
 
-  // ── Fetch from Meta. Any transport/HTTP failure → manual fallback (no mutation).
+  // ── Fetch this tenant's templates from Meta with THIS tenant's WABA + token.
+  //    Any transport/HTTP failure → manual fallback (no mutation).
   let payload: { data?: MetaTemplate[] };
   try {
-    const url = `https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${waba}/message_templates?fields=name,language,category,status,quality_score,components&limit=200`;
+    const url = `https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${creds.wabaId}/message_templates?fields=name,language,category,status,quality_score,components&limit=200`;
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${creds.accessToken}` },
       signal: AbortSignal.timeout(META_TIMEOUT_MS),
     });
     if (!res.ok) {

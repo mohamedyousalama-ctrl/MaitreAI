@@ -105,6 +105,42 @@ export async function resolveTenantWhatsAppEnvById(
   }
 }
 
+export interface TenantTemplateCreds {
+  wabaId: string;
+  accessToken: string;
+}
+
+/**
+ * WO-5 — resolve a tenant's WhatsApp Business Account (WABA) id + decrypted
+ * access token for TEMPLATE MANAGEMENT (message_templates sync), by restaurant_id.
+ * Returns null when the tenant has no usable per-tenant WABA creds — the sync
+ * route then falls back to MANUAL entry rather than ever calling a GLOBAL WABA
+ * (which would upsert another account's templates under this tenant's id — the
+ * cross-tenant bug). Reuses the ONE decrypt path (decryptSecret); reads a
+ * service-role `_enc` column, so `admin` MUST be a service-role client. NEVER
+ * throws: any lookup/decrypt failure is swallowed into a null return.
+ */
+export async function resolveTenantTemplateCreds(
+  admin: SupabaseClient,
+  restaurantId: string
+): Promise<TenantTemplateCreds | null> {
+  const id = (restaurantId ?? "").trim();
+  if (!id) return null;
+  try {
+    const { data } = await admin
+      .from("restaurants")
+      .select("wa_waba_id, wa_access_token_enc, wa_configured_at")
+      .eq("id", id)
+      .maybeSingle();
+    if (!data?.wa_configured_at || !data.wa_waba_id || !data.wa_access_token_enc) return null;
+    const accessToken = decryptSecret(data.wa_access_token_enc as string);
+    if (!accessToken) return null;
+    return { wabaId: String(data.wa_waba_id), accessToken };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve a tenant by the inbound WhatsApp `phone_number_id` and return its
  * decrypted credentials, or null to signal "fall back to env". Reads the
