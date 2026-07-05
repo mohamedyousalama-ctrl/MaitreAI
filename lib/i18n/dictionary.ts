@@ -112,6 +112,8 @@ export const DICTIONARY = {
     "truth.gathering": "جاري جمع البيانات",
     "truth.degraded": "خدمة متعثّرة",
     "truth.soon": "قريباً",
+    "truth.pro": "Pro",
+    "truth.wo": "قيد التطوير",
   },
   en: {
     "nav.conversations": "Conversations",
@@ -197,6 +199,8 @@ export const DICTIONARY = {
     "truth.gathering": "Gathering data",
     "truth.degraded": "Degraded",
     "truth.soon": "Soon",
+    "truth.pro": "PRO",
+    "truth.wo": "WO",
   },
 } as const;
 

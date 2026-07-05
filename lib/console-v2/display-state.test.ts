@@ -45,14 +45,15 @@ test("orders — specific lifecycle mappings", () => {
   assert.equal(deriveOrderDisplay("paid").state, "confirmed");
   assert.equal(deriveOrderDisplay("preparing").state, "in_kitchen");
   assert.equal(deriveOrderDisplay("out_for_delivery").state, "on_the_way");
-  assert.equal(deriveOrderDisplay("out_for_delivery").tone, "delivery");
+  assert.equal(deriveOrderDisplay("out_for_delivery").tone, "slate"); // deliveries out of scope (#3)
+  assert.equal(deriveOrderDisplay("pending_confirmation").tone, "blue"); // building = blue (#2)
   assert.equal(deriveOrderDisplay("delivered").state, "completed");
   assert.equal(deriveOrderDisplay("cancelled").state, "cancelled");
 });
 
 test("pos — WB1 hand-off mappings", () => {
   assert.equal(derivePosDisplay("not_entered").state, "needs_pos");
-  assert.equal(derivePosDisplay("not_entered").tone, "warning");
+  assert.equal(derivePosDisplay("not_entered").tone, "amber"); // AWAITING HANDOFF alarm
   assert.equal(derivePosDisplay("entered").state, "entered");
   assert.equal(derivePosDisplay("sent_to_kitchen").state, "sent_to_kitchen");
 });
@@ -62,7 +63,7 @@ test("payments — every payment_status derives a display state", () => {
     const d = derivePaymentDisplay(s);
     assert.ok(d.state && d.labelKey && TONE_TOKENS[d.tone], `${s} maps`);
   }
-  assert.equal(derivePaymentDisplay("paid").tone, "success");
+  assert.equal(derivePaymentDisplay("paid").tone, "emerald");
 });
 
 // ---------------------------------------------------------------------------
@@ -118,8 +119,8 @@ test("law — red (safety tone) never appears outside safety holds", () => {
 });
 
 test("law — cancelled + failed payment are muted, not red", () => {
-  assert.equal(deriveOrderDisplay("cancelled").tone, "neutral");
-  assert.equal(derivePaymentDisplay("failed").tone, "warning");
+  assert.equal(deriveOrderDisplay("cancelled").tone, "slate");
+  assert.equal(derivePaymentDisplay("failed").tone, "amber");
 });
 
 // ---------------------------------------------------------------------------

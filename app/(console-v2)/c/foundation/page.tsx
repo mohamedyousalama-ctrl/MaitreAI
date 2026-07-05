@@ -13,7 +13,7 @@ import {
   type ConversationOwnershipState,
 } from "@/lib/console-v2/display-state";
 import type { OrderStatusKey, PaymentStatusKey, PosStatus } from "@/lib/types";
-import { AppFrame, StateChip, TruthChip, AttributionChip, type TruthState } from "@/components/console-v2";
+import { AppFrame, StateChip, TruthChip, AttributionChip, ActNowDot, type TruthState } from "@/components/console-v2";
 import type { AttributableSender } from "@/lib/console-v2/display-state";
 
 const ORDER_STATUSES: OrderStatusKey[] = [
@@ -25,7 +25,7 @@ const PAY_STATUSES: PaymentStatusKey[] = ["unpaid", "payment_link_sent", "paid",
 const CONV_STATES: ConversationOwnershipState[] = [
   "AI_ACTIVE", "HUMAN_ACTIVE", "HUMAN_IDLE", "SYSTEM_HOLD", "CLOSED",
 ];
-const TRUTH_STATES: TruthState[] = ["live", "gathering", "degraded", "soon"];
+const TRUTH_STATES: TruthState[] = ["live", "gathering", "degraded", "soon", "pro", "wo"];
 const SENDERS: AttributableSender[] = ["ai", "human", "system"];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -80,10 +80,19 @@ export default function FoundationPage() {
         ))}
       </Section>
 
-      <Section title="حالة الحقيقة · truth-state chips">
+      <Section title="حالة الحقيقة · truth-state chips (LIVE·GATHERING·DEGRADED·SOON·PRO·WO)">
         {TRUTH_STATES.map((s) => (
           <TruthChip key={s} state={s} />
         ))}
+      </Section>
+
+      <Section title="حركة ACT-NOW · §5 motion (fast-pulse: awaiting-handoff · safety only)">
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--kv-muted)" }}>
+          <ActNowDot kind="handoff" /> awaiting handoff
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--kv-muted)" }}>
+          <ActNowDot kind="safety" /> safety
+        </span>
       </Section>
     </div>
     </AppFrame>
