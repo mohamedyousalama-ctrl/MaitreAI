@@ -39,7 +39,11 @@ export type CriticalAlertType =
   | "payment_amount_mismatch"
   // WO-3c — a verified 'paid' webhook could not stamp the order (0 rows — e.g. the
   // order is missing). The session is NOT marked paid (held); a human reconciles.
-  | "payment_stamp_failed";
+  | "payment_stamp_failed"
+  // WO-SAFE-1 — a payment settled on an order whose conversation is under an active
+  // safety hold. Money truth stands (not blocked); SAFE-1 holds it from the kitchen;
+  // a human must review before fulfilment.
+  | "paid_while_safety_held";
 
 export interface CriticalAlertInput {
   restaurantId: string;

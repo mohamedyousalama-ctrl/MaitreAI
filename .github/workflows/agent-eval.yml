@@ -121,6 +121,11 @@ jobs:
       - name: Safety-hold order guard unit tests
         run: node --experimental-strip-types scripts/proof-wo-safe-1.test.ts
 
+      # WO-SAFE-2 — the base allergen gate + output guard are UNCONDITIONAL in code
+      # (child safety never depends on a flag row); symptom layer stays flagged.
+      - name: Unconditional allergen base-gate assertions
+        run: node --experimental-strip-types scripts/proof-wo-safe-2.test.ts
+
       # ── Blocking gate 4: Ownership-state transition map ───────────────────
       # 27 cases: legal transitions, #87 SYSTEM_HOLD enforcement, self-loops,
       # illegal-path throws. No DB.

@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { loadBrain } from "@/lib/db/brain";
 import { respond } from "@/lib/ai/respond";
+import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { deriveSystemMode } from "@/lib/ai/modes";
 import { dialectProfile } from "@/lib/ai/dialect";
 import { seedAiTone } from "@/lib/seed-data";
@@ -65,6 +66,25 @@ export async function POST(req: Request) {
   const userMessage = override || (lastCustomerIdx >= 0 ? rows[lastCustomerIdx].text ?? "" : "");
   if (!userMessage.trim()) {
     return NextResponse.json({ error: "no_customer_message" }, { status: 400 });
+  }
+
+  // WO-SAFE-2: the deterministic BASE allergen gate runs on the suggestion path too.
+  // A draft for an allergy/avoidance message must carry SAFETY context (escalate to
+  // the kitchen), NEVER a reassuring sales reply — so an operator never one-taps a
+  // "it's safe" draft for a held/allergy conversation. Deterministic, no LLM.
+  {
+    const hit = detectAllergenAvoidance(userMessage);
+    if (hit.fired) {
+      const term = hit.term && hit.term !== "الحساسية" ? `«${hit.term}»` : "الحساسية";
+      return NextResponse.json({
+        suggestion: `خدت بالي إنك ذكرت ${term} 🙏 صحتك أهم حاجة — مش هقدر أأكد سلامة الأصناف من غير ما المطبخ يتأكد. هحوّلك لفريق المطعم يساعدوك تختار بأمان.`,
+        escalate: true,
+        escalationReason: `سلامة الحساسية (بوابة حتمية): العميل ذكر تجنّب/مشكلة مع ${hit.term ?? "الطعام"} — يحتاج تأكيد المطبخ على الأصناف الآمنة`,
+        draft: null,
+        model: "deterministic_allergen_gate",
+        adapter: "mock",
+      });
+    }
   }
 
   // Prior turns (everything before that customer message) as context.
