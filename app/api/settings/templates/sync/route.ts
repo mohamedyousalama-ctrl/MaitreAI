@@ -22,7 +22,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { WHATSAPP_GRAPH_VERSION } from "@/lib/messaging/config";
 import { resolveTenantTemplateCreds } from "@/lib/db/restaurants";
@@ -55,8 +55,9 @@ function bodyOf(t: MetaTemplate): string {
 }
 
 export async function POST() {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
