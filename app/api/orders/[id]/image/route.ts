@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { loadReceiptData } from "@/lib/render/load";
 import { renderReceiptPng, renderKitchenTicketPng, toReceiptWidth } from "@/lib/render/receipt";
 
@@ -17,8 +17,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   const supabase = createClient();
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
 
   const data = await loadReceiptData(supabase, params.id);
   if (!data) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
