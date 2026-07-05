@@ -156,6 +156,7 @@ jobs:
         run: node --experimental-strip-types --test lib/messaging/retry-policy.test.ts
 
 <<<<<<< HEAD
+<<<<<<< HEAD
       # ── Blocking gate 8: Khalid persona-layer contract ────────────────────
       # 35 cases: region resolution (Najdi default), name fallback, and the
       # persona-layer contract — the overlay defers to the engine on
@@ -172,6 +173,15 @@ jobs:
       - name: KSA allergen-dialect coverage (informational until ratified)
         run: node --experimental-strip-types scripts/test-allergen-gate-ksa.test.ts
 >>>>>>> 1bbb4b0 (feat(safety): KSA allergen-dialect review — coverage report + proposed vocab additions (ratified-path, PM sign-off required))
+=======
+      # ── Blocking gate 8: Khalid playbooks + forbidden-claims constant ─────
+      # 31 cases: the FORBIDDEN_CLAIMS detector fires on known-bad strings and
+      # stays quiet on benign ones, and the playbooks overlay text (every region)
+      # contains ZERO forbidden claims. Pure TS. The same list gates live outputs
+      # in scripts/eval-scenarios.mjs.
+      - name: Khalid playbooks unit tests
+        run: node --experimental-strip-types scripts/test-khalid-playbooks.test.ts
+>>>>>>> f96c588 (feat(ai): Khalid persona playbooks + testable FORBIDDEN_CLAIMS constant (overlay discipline, flag OFF))
 
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
