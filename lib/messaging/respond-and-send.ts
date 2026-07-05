@@ -14,6 +14,9 @@ import { routeInteractive } from "@/lib/messaging/interactive-router";
 import { evaluateTesterAllowlist } from "@/lib/messaging/tester-allowlist";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
+import { decideMediaSend, type MediaZeroReason } from "./media-guard";
+import { isSafetyHeld } from "@/lib/db/safety-hold";
+import { appBaseUrl } from "@/lib/db/delivery";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
 import { readHandoffConfig, isSafetyHold, isIdleBeyond } from "@/lib/tenant/handoff";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
@@ -100,15 +103,121 @@ async function realertOperator(
   await noteToTimeline(admin, restaurantId, conversationId, text, { kind: "handoff_idle_alert", safety });
 }
 
+/** Send the full web-menu link once — the budget-exhaustion fallback (browse the
+ *  menu with photos on the web instead of the bot sending more images). */
+async function sendMenuLinkFallback(
+  admin: SupabaseClient,
+  restaurantId: string,
+  conversationId: string,
+  phone: string,
+  lastInboundAtMs: number
+): Promise<void> {
+  const { data: r } = await admin.from("restaurants").select("slug").eq("id", restaurantId).maybeSingle();
+  const slug = (r as { slug?: string | null } | null)?.slug ?? null;
+  const url = slug ? `${appBaseUrl()}/order/${slug}` : appBaseUrl();
+  const text = `تقدر تتصفّح المنيو كامل بالصور من هنا 👇\n${url}`;
+  const send = await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
+  await admin.from("messages").insert({
+    restaurant_id: restaurantId,
+    conversation_id: conversationId,
+    direction: "outbound",
+    sender: "ai",
+    text,
+    // "skipped" = test mode (no creds): the reply is persisted, just not transmitted.
+    status: send.status === "failed" ? "failed" : "sent",
+    channel_message_id: send.externalMessageId ?? null,
+    meta: { kind: "media_budget_menu_link" },
+  });
+}
+
+/**
+ * WO-MEDIA-GUARD — dispose of the agent's requested photos through the deterministic
+ * media guard: hard-zero while safety-held / complaint-open / payment-pending; else
+ * cap at 3/message within a 6/conversation budget; offer the web menu when spent.
+ */
 async function sendRequestedPhotos(
   admin: SupabaseClient,
   restaurantId: string,
   conversationId: string,
   phone: string,
   photoRequests: { imageUrl: string; caption: string; name: string }[],
-  lastInboundAtMs: number
+  lastInboundAtMs: number,
+  conv: { ownership_state: string | null; escalation_reason: string | null }
 ): Promise<void> {
-  for (const photo of photoRequests.slice(0, 4)) {
+  // ── Deterministic HARD-ZERO (fail-closed): never intrude media on a safety hold,
+  //    an open complaint, or a pending payment. ownership_state is already in scope;
+  //    is_safety_hold is read best-effort (its column exists in prod).
+  let hardZero = false;
+  let hardZeroReason: MediaZeroReason | null = null;
+  let isSafetyHoldFlag: boolean | null = null;
+  {
+    const { data: sh } = await admin.from("conversations").select("is_safety_hold").eq("id", conversationId).maybeSingle();
+    isSafetyHoldFlag = (sh as { is_safety_hold?: boolean | null } | null)?.is_safety_hold ?? null;
+  }
+  if (isSafetyHeld({ ownership_state: conv.ownership_state, is_safety_hold: isSafetyHoldFlag })) {
+    hardZero = true;
+    hardZeroReason = "safety_hold";
+  } else if (/شكو[ىي]/.test(conv.escalation_reason ?? "")) {
+    // Deterministic complaint marker — the engine stamps «شكوى عميل …» as the reason.
+    hardZero = true;
+    hardZeroReason = "complaint_open";
+  } else {
+    // payment-pending: a linked order with an outstanding payment link (awaiting pay).
+    const { data: pend } = await admin
+      .from("orders")
+      .select("id")
+      .eq("conversation_id", conversationId)
+      .eq("payment_status", "payment_link_sent")
+      .limit(1)
+      .maybeSingle();
+    if ((pend as { id?: string } | null)?.id) {
+      hardZero = true;
+      hardZeroReason = "payment_pending";
+    }
+  }
+
+  // ── Deploy-safe budget-counter read: images_sent lands with migration 0070. Until
+  //    it applies, a missing-column read (42703) means "budget not deployed" → treat
+  //    as 0 and skip counter writes; the 3/message cap + hard-zero still fully apply.
+  let imagesAlreadySent = 0;
+  let counterDeployed = true;
+  {
+    const { data: cRow, error: cErr } = await admin
+      .from("conversations")
+      .select("images_sent")
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (cErr && (cErr.code === "42703" || /does not exist/i.test(cErr.message ?? ""))) {
+      counterDeployed = false;
+    } else {
+      imagesAlreadySent = Number((cRow as { images_sent?: number } | null)?.images_sent ?? 0);
+    }
+  }
+
+  const decision = decideMediaSend({
+    requested: photoRequests.length,
+    imagesAlreadySent,
+    hardZero,
+    hardZeroReason,
+  });
+
+  if (decision.allowed === 0) {
+    if (hardZero) {
+      await noteToTimeline(
+        admin,
+        restaurantId,
+        conversationId,
+        "🚫 لم تُرسَل صور — المحادثة عليها حالة (سلامة/شكوى/دفع معلّق) تمنع إرسال الوسائط.",
+        { kind: "media_suppressed", reason: hardZeroReason }
+      );
+    } else if (decision.fallbackToMenuLink) {
+      await sendMenuLinkFallback(admin, restaurantId, conversationId, phone, lastInboundAtMs);
+    }
+    return;
+  }
+
+  let sent = 0;
+  for (const photo of photoRequests.slice(0, decision.allowed)) {
     const send = await sendWhatsAppImageLink({
       to: phone,
       imageUrl: photo.imageUrl,
@@ -123,7 +232,17 @@ async function sendRequestedPhotos(
         `تعذّر إرسال صورة ${photo.name} عبر واتساب: ${send.error ?? "خطأ غير معروف"}.`,
         { kind: "photo_send_error", itemName: photo.name, imageUrl: photo.imageUrl, attempts: send.attempts }
       );
+    } else if (send.status === "sent") {
+      sent++;
     }
+  }
+
+  // Persist the conversation budget counter (best-effort; only when deployed).
+  if (counterDeployed && sent > 0) {
+    await admin
+      .from("conversations")
+      .update({ images_sent: imagesAlreadySent + sent, last_media_at: new Date().toISOString() })
+      .eq("id", conversationId);
   }
 }
 
@@ -567,7 +686,7 @@ export async function respondAndSendWhatsApp(
 
   if (send.status === "sent") {
     if (outcome.photoRequests.length) {
-      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs);
+      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null });
     }
     if (outcome.replyMessageId) {
       await admin
@@ -581,7 +700,7 @@ export async function respondAndSendWhatsApp(
   if (send.status === "skipped") {
     // Test mode (no credentials): the reply is persisted, just not transmitted.
     if (outcome.photoRequests.length) {
-      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs);
+      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null });
     }
     return { status: "responded", reply: outcome.reply, escalate: outcome.escalate, sendStatus: "skipped" };
   }
