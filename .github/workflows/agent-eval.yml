@@ -64,6 +64,7 @@ on:
       # Proof + unit test scripts (changes to test harness itself trigger re-run)
       - "scripts/test-*.test.ts"
       - "scripts/proof-*.mjs"
+      - "scripts/proof-*.test.ts"
 
 jobs:
   agent-eval:
@@ -98,11 +99,32 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
 
       # ── Blocking gate 3: Pure allergen-safety unit tests ─────────────────
-      # 34 cases: deterministic input gate, euphemisms, Arabic boundary
-      # matching, term naming, assertsAllergenSafety output guard,
-      # shouldEscalateOnSafetyClaim. No LLM, no DB, no network.
+      # The "211-case allergy hard-test" (the sacred gate) is split across three
+      # pure harnesses. Gate 3a (34) + 3b (85) run here as pure ESM. The third,
+      # proof-allergen-symptom-detector (the allergen_symptom_detection layer),
+      # uses require()-based module stubbing and is NOT yet pure-ESM — tracked as
+      # a follow-up to bring it under this gate too (see PR body). Until then it is
+      # the documented manual pre-merge step for symptom-layer changes.
+      # 3a — 34 cases: deterministic input gate, euphemisms, Arabic boundary
+      # matching, term naming, assertsAllergenSafety output guard.
       - name: Allergen gate unit tests
         run: node --experimental-strip-types scripts/test-allergen-gate.test.ts
+
+      # 3b — 85 cases: allergen VOCABULARY coverage (terms, euphemisms, boundaries).
+      # Was NOT gated in CI before; part of the sacred allergy hard-test.
+      - name: Allergen vocab unit tests
+        run: node --experimental-strip-types scripts/test-allergen-vocab.test.ts
+
+      # ── Blocking gate 3c: WO-SAFE-1 order/payment safety-hold guard ──────
+      # 17 cases: an order linked to a SYSTEM_HOLD conversation cannot be advanced
+      # to a committed status (paid/preparing/…); fail-closed. Pure.
+      - name: Safety-hold order guard unit tests
+        run: node --experimental-strip-types scripts/proof-wo-safe-1.test.ts
+
+      # WO-SAFE-2 — the base allergen gate + output guard are UNCONDITIONAL in code
+      # (child safety never depends on a flag row); symptom layer stays flagged.
+      - name: Unconditional allergen base-gate assertions
+        run: node --experimental-strip-types scripts/proof-wo-safe-2.test.ts
 
       # ── Blocking gate 4: Ownership-state transition map ───────────────────
       # 27 cases: legal transitions, #87 SYSTEM_HOLD enforcement, self-loops,

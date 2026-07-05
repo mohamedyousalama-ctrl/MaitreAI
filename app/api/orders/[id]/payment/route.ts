@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { checkOrderSafetyHold } from "@/lib/db/safety-hold-guard";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,24 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const paymentStatus = String(body.paymentStatus ?? "");
   if (!PAYMENT_STATUSES.has(paymentStatus)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+
+  // WO-SAFE-1 — block marking an order PAID while its linked conversation is under
+  // an active safety hold (paid also flips order_status→paid, a commitment). Release
+  // = resolve the safety hold on the conversation, then retry. Fail-closed.
+  if (paymentStatus === "paid") {
+    const hold = await checkOrderSafetyHold(admin, tenant.restaurantId, params.id);
+    if (hold.held) {
+      return NextResponse.json(
+        {
+          error: "safety_hold_active",
+          reason: hold.reason,
+          detail: "الطلب مربوط بمحادثة عليها تنبيه سلامة/حساسية لم يُحَل — لازم تُحلّ أولاً قبل تعليم الدفع.",
+          conversationId: hold.conversationId,
+        },
+        { status: 409 },
+      );
+    }
+  }
 
   // markPaid parity: paying also advances order_status to "paid".
   const patch: { payment_status: string; order_status?: string; updated_at: string } = {

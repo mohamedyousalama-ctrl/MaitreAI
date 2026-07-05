@@ -26,6 +26,7 @@ import { recordCriticalAlert, type CriticalAlertInput } from "@/lib/alerts/recor
 import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
 import { enqueueRetryJob } from "@/lib/jobs/retry-queue";
+import { checkOrderSafetyHold } from "@/lib/db/safety-hold-guard";
 
 /** Deterministic Arabic confirmation sent to the customer on a confirmed payment. */
 export function paidConfirmationText(orderNumber: string): string {
@@ -238,6 +239,26 @@ export async function handleMoyasarWebhook(
     // no double-notify on a retry/out-of-order). Best-effort. PII (order_number +
     // phone) is loaded HERE, post-verify, NOT in the pre-verify read.
     if (!changed) return { httpStatus: 200, outcome: "paid_noop" };
+
+    // WO-SAFE-1 companion (ruling): money truth stands — the order is already stamped
+    // paid (Moyasar settled) and SAFE-1 blocks the OPERATOR from advancing it to
+    // preparing. But a paid webhook landing on an order whose conversation is under an
+    // active safety hold needs a human's eyes → raise a system alert (best-effort, on
+    // the flip only). We do NOT block the payment (would strand real money).
+    try {
+      const hold = await checkOrderSafetyHold(admin, restaurantId, session.order_id);
+      if (hold.held) {
+        await recordAlert(admin, {
+          restaurantId,
+          type: "paid_while_safety_held",
+          detail: `Payment settled on order ${session.order_id} while its conversation is under an active safety hold — order held from kitchen (SAFE-1); needs review before fulfilment.`,
+          context: { sessionId: session.id, orderId: session.order_id, conversationId: hold.conversationId, providerRef },
+        });
+      }
+    } catch (e) {
+      console.error("[moyasar:webhook] safety-hold alert check failed (non-blocking):", e);
+    }
+
     const { data: notifyRow } = await admin
       .from("payment_sessions")
       .select("orders(order_number, customers(phone))")

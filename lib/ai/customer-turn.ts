@@ -310,11 +310,16 @@ export async function runCustomerTurn(
   // BEFORE the model — a customer avoidance/medical intent toward a food/allergen
   // term (incl. euphemisms like «اتعب لو اكلت بندق», NOT only «حساسية») FORCES a
   // safety escalation, so safety never depends on a lucky LLM read. Off → never fires.
-  const allergenSafetyOn = ctx.deterministicAllergenSafety === true;
-  const allergenHit = allergenSafetyOn ? detectAllergenAvoidance(input.userMessage) : { fired: false, term: null };
-  // Additive symptom/condition/English layer — only evaluated when the base gate
-  // did NOT fire and the tenant has allergen_symptom_detection explicitly enabled.
-  const symptomDetectionOn = allergenSafetyOn && isFeatureExplicitlyEnabled("allergen_symptom_detection", tenantFeatures);
+  // WO-SAFE-2: the BASE allergen euphemism gate runs UNCONDITIONALLY — child safety
+  // must NEVER depend on a feature-flag row being present (a new/misconfigured tenant
+  // without the flag would otherwise have no allergen floor). Behavior-UNCHANGED for
+  // every tenant that already had deterministic_allergen_safety ON (all current
+  // tenants): the gate ran then and runs now. The flag remains ONLY for the symptom
+  // EXTENSION below.
+  const allergenHit = detectAllergenAvoidance(input.userMessage);
+  // Additive symptom/condition/English layer — evaluated when the base gate did NOT
+  // fire and the tenant has allergen_symptom_detection explicitly enabled (still flagged).
+  const symptomDetectionOn = isFeatureExplicitlyEnabled("allergen_symptom_detection", tenantFeatures);
   const symptomHit = (!allergenHit.fired && symptomDetectionOn)
     ? detectAllergenSymptom(input.userMessage)
     : { fired: false, term: null };
@@ -427,18 +432,17 @@ export async function runCustomerTurn(
       escalation_reason: result.escalationReason,
       updated_at: escalatedAt,
     };
-    // Fix 2 (flag-gated): set a STRUCTURED is_safety_hold at escalation time — the
-    // deterministic source of truth for the #84 carve-out, so "is this a safety
-    // hold?" is never re-derived from the model's free-text reason. Only written
-    // when the flag is on → Wesaya (flag off) never references the new column, so
-    // this is safe even before the additive migration is applied.
-    if (allergenSafetyOn) {
-      flipPatch.is_safety_hold =
-        allergenHit.fired ||
-        isSafetyHold(result.escalationReason) ||
-        perception?.risk === "allergy" ||
-        perception?.risk === "safety";
-    }
+    // WO-SAFE-2: set a STRUCTURED is_safety_hold at escalation time UNCONDITIONALLY —
+    // the deterministic source of truth for the #84 carve-out, so "is this a safety
+    // hold?" is never re-derived from the model's free-text reason. Previously
+    // flag-gated (for pre-migration column safety); the 0028 column is applied, and
+    // the safety hold must land regardless of flag so the SYSTEM_HOLD + the WO-SAFE-1
+    // order guard trigger even for a flag-absent tenant. Unchanged for ON tenants.
+    flipPatch.is_safety_hold =
+      allergenHit.fired ||
+      isSafetyHold(result.escalationReason) ||
+      perception?.risk === "allergy" ||
+      perception?.risk === "safety";
     // Ownership axis (spine Step 1): a safety hold lands in SYSTEM_HOLD (never
     // auto-returns), every other escalation in HUMAN_ACTIVE. Dual-writes the legacy
     // owner/status/reason fields via `extra` so existing readers are unaffected.

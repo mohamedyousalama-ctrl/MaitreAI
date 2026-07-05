@@ -337,11 +337,13 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       text = safeNonMenuReply(input.brain.dialect);
     }
   }
-  // Allergen-safety OUTPUT GUARD (Fix 3, flag-gated): NEVER let the agent certify an
-  // item is allergen-safe («مفيهوش بندق» / «آمن» / nut-free) — there is no operator-
-  // verified allergen data, so any such claim is unsafe. Replace it with an escalate-
-  // safe reply and hand to a human. Safety beats the sale, always. Off → no-op.
-  if (text.trim() && input.brain.deterministicAllergenSafety && assertsAllergenSafety(text)) {
+  // Allergen-safety OUTPUT GUARD (Fix 3) — WO-SAFE-2: now UNCONDITIONAL (was
+  // flag-gated). NEVER let the agent certify an item is allergen-safe («مفيهوش بندق»
+  // / «آمن» / nut-free) — there is no operator-verified allergen data, so any such
+  // claim is unsafe. Replace it with an escalate-safe reply and hand to a human.
+  // Safety beats the sale, always. Behavior-unchanged for tenants that had the flag
+  // ON (all current tenants); now also protects a flag-absent tenant + agent/suggest.
+  if (text.trim() && assertsAllergenSafety(text)) {
     // ALWAYS block the unverifiable allergen-safety claim. ESCALATE to a human only
     // on a genuine avoidance/allergy signal (stated this turn OR an active safety
     // hold) — a benign "without X" filter is answered honestly, no handoff.
