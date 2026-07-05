@@ -14,7 +14,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret } from "@/lib/crypto/secrets";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
@@ -31,8 +31,9 @@ async function loadFlags(admin: NonNullable<ReturnType<typeof createAdminClient>
 }
 
 export async function GET() {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
@@ -69,8 +70,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });

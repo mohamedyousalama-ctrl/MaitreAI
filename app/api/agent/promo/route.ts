@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { loadBrain } from "@/lib/db/brain";
 import { getAdapter } from "@/lib/ai/llm";
 import { dialectProfile } from "@/lib/ai/dialect";
@@ -28,8 +28,9 @@ export async function POST(req: Request) {
   // lockdown; its inserts go through the service-role client (best-effort, never a
   // member write). Auth + promotion writes stay on the member client unchanged.
   const admin = createAdminClient();
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   const restaurantId = tenant.restaurantId;
 
   const body = (await req.json().catch(() => ({}))) as { action?: string; draft?: PromoDraft };

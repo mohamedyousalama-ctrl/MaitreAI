@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { sendReceiptToCustomer } from "@/lib/messaging/send-receipt";
 import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
 import { recordAuditEvent } from "@/lib/db/audit";
@@ -19,8 +19,9 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   const supabase = createClient();
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
 
   // R6 — Attribution Law: resolve the acting member so the receipt message it
   // authors is stamped with sent_by_member_id. Server-resolved from the session.

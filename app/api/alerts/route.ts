@@ -13,7 +13,7 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,8 +23,9 @@ function degraded(reason: string) {
 }
 
 export async function GET() {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const admin = createAdminClient();
   if (!admin) return degraded("admin_client_unavailable");

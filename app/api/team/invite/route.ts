@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 
 export const runtime = "nodejs";
 
@@ -36,8 +36,9 @@ async function findAuthUserByEmail(admin: ReturnType<typeof createAdminClient>, 
 export async function POST(req: Request) {
   const supabase = createClient();
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const admin = createAdminClient();
