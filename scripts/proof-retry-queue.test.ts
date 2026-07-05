@@ -30,7 +30,9 @@ check("attempts<1 floored to 1", computeNextAtMs(0, NOW) === NOW + MIN);
 
 // ---- Cron: secret-guarded, atomic claim, per-job isolation -----------------
 const cron = read("app/api/cron/retry-jobs/route.ts");
-check("cron closed when CRON_SECRET unset", /if \(!secret \|\| req\.headers\.get\("x-cron-secret"\) !== secret\)/.test(cron));
+check("cron closed by default when CRON_SECRET unset", /const secret = process\.env\.CRON_SECRET;\s*\n\s*if \(!secret\) return false;/.test(cron));
+check("cron accepts Vercel Bearer auth AND x-cron-secret", /Bearer \$\{secret\}/.test(cron) && cron.includes('x-cron-secret'));
+check("cron exposes GET (Vercel cron) + POST (manual), both authorized", /export async function GET\(req: Request\)[\s\S]*authorized\(req\)/.test(cron) && /export async function POST\(req: Request\)[\s\S]*authorized\(req\)/.test(cron));
 check("cron atomically claims each job before running", cron.includes("await claimJob(admin, job.id)") && cron.includes("skipped++"));
 check("cron never lets one bad job abort the drain (per-job try/catch)", /try \{[\s\S]*dispatchRetryJob[\s\S]*\} catch/.test(cron));
 check("cron backs off failures via failJob", cron.includes("failJob(admin, job,"));
