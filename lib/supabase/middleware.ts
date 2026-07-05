@@ -18,7 +18,11 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
 // "/order" is the public customer storefront (/order/[slug]).
 // "/d" (driver page) and "/t" (customer tracking) are token-scoped public pages —
 // the one-time token IS the auth, so they must be reachable without a session.
-const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/auth", "/checkout", "/order", "/api", "/d", "/t"];
+// "/c/login" is console_v2's login (the whole /c group is env-gated, so this only
+// exists where console_v2 is deployed); without it a signed-out user is bounced to
+// the OLD /login and the new magic-link page is unreachable. Only /c/login is
+// public — every other /c route stays protected.
+const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/c/login", "/auth", "/checkout", "/order", "/api", "/d", "/t"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
@@ -59,8 +63,9 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   };
 
   if (isPublic(pathname)) {
-    // Already signed in and hitting /login → send to the app.
+    // Already signed in and hitting a login page → send to the app.
     if (user && pathname === "/login") return redirectTo("/dashboard");
+    if (user && pathname === "/c/login") return redirectTo("/c");
     return response;
   }
 

@@ -22,7 +22,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { isFeatureEnabled } from "@/lib/tenant/tier";
+import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { HOME_HREF } from "@/lib/feature-flags";
 import { AppFrame } from "@/components/console-v2";
 
@@ -44,16 +44,19 @@ export default async function ConsoleV2AppLayout({ children }: { children: React
   const tenant = await getServerTenant();
   if (!tenant) redirect("/c/select");
 
-  // 4. Layer-2: this restaurant must have console_v2 enabled, else it hasn't cut
-  //    over — keep it on the old console.
+  // 4. Layer-2: this restaurant must EXPLICITLY have console_v2 enabled, else it
+  //    hasn't cut over — keep it on the old console. Use the STRICT per-flag gate,
+  //    NOT isFeatureEnabled: console_v2 is a deliberate, per-tenant cutover switch
+  //    that must NOT be implied by tier='pro' (a Pro tenant does not get the new
+  //    console until console_v2 is turned on for it).
   const admin = createAdminClient();
   const { data: r } = admin
-    ? await admin.from("restaurants").select("name, tier, feature_flags").eq("id", tenant.restaurantId).maybeSingle()
+    ? await admin.from("restaurants").select("name, feature_flags").eq("id", tenant.restaurantId).maybeSingle()
     : { data: null };
-  const enabled = isFeatureEnabled("console_v2", {
-    tier: (r as { tier?: string } | null)?.tier ?? null,
-    features: (r as { feature_flags?: Record<string, unknown> } | null)?.feature_flags ?? null,
-  });
+  const enabled = isFeatureExplicitlyEnabled(
+    "console_v2",
+    (r as { feature_flags?: Record<string, unknown> } | null)?.feature_flags ?? null
+  );
   if (!enabled) redirect(HOME_HREF);
 
   // 5. Render the authed shell with the real workspace + role.

@@ -28,10 +28,14 @@ async function endSession(request: Request) {
   }
   // 303 → the browser issues a GET to the post-signout page (hard navigation,
   // fresh request). Defaults to the old console's /login; console_v2 passes
-  // ?next=/c/login so sign-out lands back on the new login. Only same-origin
-  // relative paths are honored (never an open redirect).
+  // ?next=/c/login so sign-out lands back on the new login. Only a SAME-ORIGIN
+  // relative path is honored: it must start with a single "/" and not "//" or
+  // "/\" (both of which new URL() would treat as a protocol-relative EXTERNAL
+  // host) — otherwise a crafted logout link becomes an open redirect.
   const nextParam = new URL(request.url).searchParams.get("next");
-  const next = nextParam && nextParam.startsWith("/") ? nextParam : "/login";
+  const isSafe =
+    !!nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") && !nextParam.startsWith("/\\");
+  const next = isSafe ? nextParam : "/login";
   return NextResponse.redirect(new URL(next, request.url), { status: 303 });
 }
 
