@@ -8,7 +8,10 @@
 // Each job is atomically claimed (pending→processing) so concurrent ticks never
 // double-run one, then dispatched by kind: success → done; failure → backoff (or
 // 'dead' after max_attempts). Never throws per-job — one bad job can't abort the drain.
-// Scheduled by vercel.json (crons) every 5 minutes.
+// Scheduled by vercel.json (crons). NOTE: the Vercel Hobby plan caps cron at
+// once-per-day (per-hour / */5 expressions fail at deploy), so vercel.json uses
+// a daily schedule ("0 3 * * *"). Under Pro, change it to "*/5 * * * *" to run
+// the durable-queue drain every 5 minutes as intended.
 // ============================================================================
 
 import { NextResponse } from "next/server";
