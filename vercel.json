@@ -2,8 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
+      "//": "Hobby plan caps cron at once-per-day (per-hour/5-min expressions fail at deploy). Under Pro, restore the durable-queue cadence: change schedule to \"*/5 * * * *\" (every 5 min).",
       "path": "/api/cron/retry-jobs",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }
