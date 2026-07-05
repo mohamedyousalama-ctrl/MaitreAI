@@ -23,6 +23,11 @@ export type AuditAction =
   | "conversation_stage_changed"
   | "conversation_note_edited"
   | "order_pos_marked"
+  // Item 14 — standing instructions + tonight notes authoring (governance).
+  | "standing_instruction_created"
+  | "standing_instruction_published"
+  | "standing_instruction_retired"
+  | "tonight_note_created"
   // R6 — outbound authorship: a console member sent a WhatsApp message the
   // customer receives. metadata carries the resolved member name.
   | "operator_message_sent"
