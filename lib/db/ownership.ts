@@ -62,6 +62,35 @@ export function assertLegalTransition(from: OwnershipState | null | undefined, t
   }
 }
 
+// ---------------------------------------------------------------------------
+// MO2 claim authorization (takeover-at-SEND). The assignee route performs a SINGLE
+// atomic conditional UPDATE; `canClaim` is the PURE mirror of its TOTAL contract
+// (the atomic WHERE + the 0-row fallback), so the same authorization is unit-testable.
+// ---------------------------------------------------------------------------
+
+/** States the atomic claim UPDATE can transition FROM (the assignee route's WHERE).
+ *  HUMAN_ACTIVE is intentionally EXCLUDED from the atomic set: an already-active
+ *  conversation is either the caller's own (idempotent success — resolved without a
+ *  state change or a duplicate audit) or a teammate's (conflict). Adding it would
+ *  audit a "claim" on every message send. */
+export const CLAIMABLE_FROM: readonly OwnershipState[] = ["AI_ACTIVE", "HUMAN_IDLE", "SYSTEM_HOLD"];
+
+/** Pure predicate: may member `me` claim / send-into this conversation? True when it
+ *  is NOT owned by someone else AND either it sits in a claimable predecessor state
+ *  OR it is already this member's HUMAN_ACTIVE (idempotent). Teammate-owned → false
+ *  (conflict); CLOSED and unassigned-HUMAN_ACTIVE → false. This is the send-time
+ *  ownership proof — the client must pass the server claim before sending, never
+ *  trust local `owner === "human"`. */
+export function canClaim(
+  row: { ownershipState: OwnershipState | null | undefined; assignedMemberId: string | null | undefined },
+  me: string
+): boolean {
+  const { ownershipState, assignedMemberId } = row;
+  if (assignedMemberId && assignedMemberId !== me) return false; // someone else owns it → conflict
+  if (ownershipState === "HUMAN_ACTIVE") return assignedMemberId === me; // idempotent only if already mine
+  return !!ownershipState && CLAIMABLE_FROM.includes(ownershipState);
+}
+
 export interface SetOwnershipResult {
   from: OwnershipState | null;
   to: OwnershipState;
