@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import { Target, TrendingDown, Percent } from "lucide-react";
-import { TruthChip } from "@/components/console-v2";
+import { TruthChip, toneColor } from "@/components/console-v2";
 import { useT } from "@/lib/i18n/lang";
 import type { DictKey } from "@/lib/i18n/dictionary";
 
@@ -37,11 +37,11 @@ export default function OutcomesPage() {
 
       {/* Summary cards — LOST (with est. value) + CONVERSION. Both GATHERING. */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 14, marginBottom: 20 }}>
-        <SummaryCard icon={<TrendingDown size={16} />} label={t("out.lost")} tone="#b9822a">
+        <SummaryCard icon={<TrendingDown size={16} />} label={t("out.lost")} tone={toneColor("amber").fg}>
           {/* When live, the lost VALUE is an estimate → <Est>. For now: gathering. */}
           <GatheringRows />
         </SummaryCard>
-        <SummaryCard icon={<Percent size={16} />} label={t("out.conversion")} tone="#0A8A5F">
+        <SummaryCard icon={<Percent size={16} />} label={t("out.conversion")} tone={toneColor("emerald").fg}>
           <GatheringRows />
         </SummaryCard>
       </div>
@@ -49,7 +49,7 @@ export default function OutcomesPage() {
       {/* Filter tabs (render, inert until data). */}
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
         {FILTERS.map((k, i) => (
-          <button key={k} onClick={() => setFilter(i)} style={{ height: 32, padding: "0 13px", borderRadius: "var(--kv-r-pill)", border: filter === i ? 0 : "1px solid var(--kv-border)", background: filter === i ? "var(--kv-grad-brand)" : "var(--kv-card)", color: filter === i ? "#fff" : "var(--kv-muted)", fontFamily: "var(--kv-font)", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>
+          <button key={k} onClick={() => setFilter(i)} aria-pressed={filter === i} style={{ height: 32, padding: "0 13px", borderRadius: "var(--kv-r-pill)", border: filter === i ? 0 : "1px solid var(--kv-border)", background: filter === i ? "var(--kv-grad-brand)" : "var(--kv-card)", color: filter === i ? "#fff" : "var(--kv-muted)", fontFamily: "var(--kv-font)", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>
             {t(k)}
           </button>
         ))}

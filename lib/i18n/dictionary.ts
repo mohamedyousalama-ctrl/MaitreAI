@@ -137,7 +137,7 @@ export const DICTIONARY = {
     "out.filter.lost": "مفقودة",
     "out.filter.questions": "أسئلة",
     "out.filter.complaints": "شكاوى",
-    "out.gatheringTitle": "لسه بنجمع النتائج",
+    "out.gatheringTitle": "لا تزال النتائج قيد التجميع",
     "out.gatheringBody": "جدول النتائج لم يُفعَّل بعد لهذا المطعم — لا أرقام تُعرض حتى تتدفق بيانات حقيقية. كل محادثة مغلقة ستُنتج سطر نتيجة واحدًا.",
     "out.est": "تقديري",
     "out.covDoctrineTitle": "قانون التغطية",
