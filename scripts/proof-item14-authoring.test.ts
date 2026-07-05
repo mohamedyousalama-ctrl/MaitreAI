@@ -35,6 +35,7 @@ check("(standing) manager-only on GET and POST",
 check("(standing) create inserts a DRAFT (active:false, created_by)", /active: false, created_by: memberId/.test(si));
 check("(standing) create auto-increments version", si.includes("nextVersion") && /version: nextVersion/.test(si));
 check("(standing) publish = approve + activate together", /update\(\{ active: true, approved_by: memberId, retired_at: null \}\)/.test(si));
+check("(standing) publish requires a resolvable approver (no ghost-active row)", /if \(!memberId\) return NextResponse\.json\(\{ error: "no_member"/.test(si));
 check("(standing) retire = retire-not-delete (active:false + retired_at)", /update\(\{ active: false, retired_at: new Date\(\)\.toISOString\(\) \}\)/.test(si));
 check("(standing) all three actions audit", si.includes('"standing_instruction_created"') && si.includes('"standing_instruction_published"') && si.includes('"standing_instruction_retired"'));
 check("(standing) writes are tenant-scoped", (si.match(/\.eq\("restaurant_id", rid\)/g) ?? []).length >= 3);

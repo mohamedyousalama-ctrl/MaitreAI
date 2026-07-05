@@ -83,6 +83,10 @@ export async function POST(req: Request) {
   if (!id) return NextResponse.json({ error: "bad_request", detail: "missing id" }, { status: 400 });
 
   if (action === "publish") {
+    // Publish REQUIRES a resolvable approver: activating with approved_by=null would
+    // create an "active but unapproved" row that the runtime gate silently drops
+    // (active AND approved_by NOT NULL). Fail loudly instead of a ghost-live row.
+    if (!memberId) return NextResponse.json({ error: "no_member", detail: "approver could not be resolved" }, { status: 403 });
     // Approve + activate together, scoped to this tenant. Records the approver.
     const { data: updated, error } = await admin
       .from("standing_instructions")
