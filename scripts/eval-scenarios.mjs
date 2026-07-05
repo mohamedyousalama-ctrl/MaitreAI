@@ -32,6 +32,12 @@
 import { writeFile, mkdir, appendFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+// Persona-layer FORBIDDEN CLAIMS — a cross-cutting honesty gate applied to EVERY
+// scenario's live reply (independent of the per-scenario check). If Khalid (or any
+// persona) ever outputs a forbidden claim — allergen-safety guarantee, guaranteed
+// delivery time, medical suitability, invented discount, competitor attack — the case
+// FAILS regardless of its own criteria. Single source: lib/ai/personas.
+import { findForbiddenClaims } from "../lib/ai/personas/khalid-forbidden-claims.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -1159,14 +1165,23 @@ async function runCase(restaurantId, dialect, c, phone) {
   }
 
   const verdict = c.check(lastOut, { menuNames, requestedItem: item?.name || "" });
+  // Cross-cutting FORBIDDEN-CLAIMS gate over EVERY assistant reply in the scenario
+  // (multi-turn — a forbidden claim on turn 1 must fail the case even if the final
+  // turn passes c.check). The transcript already records each reply.
+  const forbidden = transcript.flatMap((t, i) =>
+    findForbiddenClaims(t.reply || "", { evalOnly: true }).map((f) => ({ ...f, turn: i + 1 }))
+  );
+  const forbiddenNote = forbidden.length
+    ? ` · ⛔ forbidden-claim: ${forbidden.map((f) => `t${f.turn}:${f.id}`).join(", ")}`
+    : "";
   return {
     id: c.id,
     dialect,
     title: c.title,
-    status: verdict.pass ? "pass" : "fail",
+    status: verdict.pass && forbidden.length === 0 ? "pass" : "fail",
     coverage: c.coverage || "full",
     transcript,
-    notes: verdict.notes,
+    notes: verdict.notes + forbiddenNote,
     model: lastOut.model,
     escalate: lastOut.escalate,
     usage: lastOut.usage,
