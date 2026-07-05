@@ -99,12 +99,13 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
 
       # ── Blocking gate 3: Pure allergen-safety unit tests ─────────────────
-      # The "211-case allergy hard-test" (the sacred gate) is split across three
-      # pure harnesses. Gate 3a (34) + 3b (85) run here as pure ESM. The third,
-      # proof-allergen-symptom-detector (the allergen_symptom_detection layer),
-      # uses require()-based module stubbing and is NOT yet pure-ESM — tracked as
-      # a follow-up to bring it under this gate too (see PR body). Until then it is
-      # the documented manual pre-merge step for symptom-layer changes.
+      # The allergy hard-test (the sacred gate) is split across pure harnesses,
+      # ALL now blocking as pure ESM: 3a (34) + 3b (85) + 3d (169 symptom).
+      # WO-SAFE-3 brought the symptom layer (3d) under this gate: its runtime
+      # integration half (which imported the server-only + @/-aliased customer-turn
+      # graph and needed require()-based stubbing) was split into the tsx-only
+      # informational proof scripts/proof-allergen-symptom-integration.ts; the pure
+      # detector/flag/wiring assertions now run bare-node like every other gate.
       # 3a — 34 cases: deterministic input gate, euphemisms, Arabic boundary
       # matching, term naming, assertsAllergenSafety output guard.
       - name: Allergen gate unit tests
@@ -114,6 +115,16 @@ jobs:
       # Was NOT gated in CI before; part of the sacred allergy hard-test.
       - name: Allergen vocab unit tests
         run: node --experimental-strip-types scripts/test-allergen-vocab.test.ts
+
+      # 3d — 169 assertions: the allergen_symptom_detection layer. Section A
+      # (wiring source-asserts on customer-turn.ts), Section B (flag-gate logic),
+      # Section C (153 detector positives/negatives). Pure ESM (WO-SAFE-3).
+      # The --import loader adds extensionless-relative → .ts resolution so this
+      # pure harness can import the production detector module (whose internal
+      # imports are extensionless per the repo's bundler resolution). See
+      # scripts/ts-ext-hooks.mjs — no production/tsconfig change.
+      - name: Allergen symptom detector unit tests
+        run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-allergen-symptom-detector.test.ts
 
       # ── Blocking gate 3c: WO-SAFE-1 order/payment safety-hold guard ──────
       # 17 cases: an order linked to a SYSTEM_HOLD conversation cannot be advanced

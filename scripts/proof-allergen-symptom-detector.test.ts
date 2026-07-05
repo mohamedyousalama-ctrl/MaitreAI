@@ -1,23 +1,35 @@
-#!/usr/bin/env npx tsx
 // ============================================================================
 // Proof: allergen-gate-symptoms.ts — imports the REAL production module.
-// Run: npx tsx scripts/proof-allergen-symptom-detector.ts
+// Run (pure ESM, CI-blocking): node --experimental-strip-types \
+//   scripts/proof-allergen-symptom-detector.test.ts
 //
-// Four proof sections:
-//   A. Wiring assertions (source-code analysis of customer-turn.ts)
+// WO-SAFE-3: this is the PURE-ESM, CI-BLOCKING half of the symptom hard-test.
+// It has NO require()-based module stubbing and imports NOTHING that pulls in
+// `server-only` or `@/` path aliases, so it runs under `node
+// --experimental-strip-types` exactly like the other agent-eval gates — which
+// makes the full symptom detector suite a blocking CI gate.
+//
+// Three proof sections (169 assertions):
+//   A. Wiring assertions (source-code analysis of customer-turn.ts as TEXT)
 //      — escalate:true, forcedAllergenSafetyResult, respond() in else-branch,
 //        BOTH flags required, absent flag = OFF
 //   B. Flag-gate unit tests (isFeatureExplicitlyEnabled logic)
 //   C. Detector unit tests — positives + negatives (real module, not a copy)
-//   D. Runtime integration test — calls real runCustomerTurn() with a mocked
-//      Supabase admin client; asserts escalate:true / zero-token / no-LLM path
-//      when both flags ON, and that the absent-flag path falls through to LLM.
+//
+// The former Section D (runtime integration calling runCustomerTurn() with a
+// mocked Supabase admin) imported customer-turn.ts — which pulls the whole
+// `server-only` + `@/`-aliased server graph — and so required require()-based
+// `server-only` stubbing that only works under `npx tsx`, never bare-node ESM.
+// It now lives in scripts/proof-allergen-symptom-integration.ts (run via tsx).
+// Its 3 runtime checks are already covered here by Section A (source-asserts the
+// escalate:true wiring) and by scripts/proof-wo-safe-2.test.ts (unconditional
+// base gate), so no safety coverage is lost by keeping it out of this gate.
 // ============================================================================
 
 import { readFileSync } from "fs";
 import { resolve } from "path";
-import { detectAllergenSymptom } from "../lib/ai/allergen-gate-symptoms";
-import { isFeatureExplicitlyEnabled } from "../lib/tenant/tier";
+import { detectAllergenSymptom } from "../lib/ai/allergen-gate-symptoms.ts";
+import { isFeatureExplicitlyEnabled } from "../lib/tenant/tier.ts";
 
 // ============================================================
 // Harness
@@ -69,13 +81,17 @@ assertSrc(
   "imports detectAllergenSymptom from allergen-gate-symptoms",
   /import\s*\{[^}]*detectAllergenSymptom[^}]*\}\s*from.*allergen-gate-symptoms/
 );
+// WO-SAFE-2: the base euphemism gate is UNCONDITIONAL — child safety never
+// depends on a flag row, so detectAllergenAvoidance runs with no flag guard.
 assertSrc(
-  "allergenSafetyOn gates on deterministicAllergenSafety === true",
-  /allergenSafetyOn\s*=\s*ctx\.deterministicAllergenSafety\s*===\s*true/
+  "base allergen gate runs UNCONDITIONALLY (WO-SAFE-2, no flag guard)",
+  /const\s+allergenHit\s*=\s*detectAllergenAvoidance\s*\(\s*input\.userMessage\s*\)/
 );
+// WO-SAFE-2: symptomDetectionOn is now a STANDALONE explicit-flag check (it no
+// longer requires the base flag as a prerequisite — the base gate is always on).
 assertSrc(
-  "symptomDetectionOn requires allergenSafetyOn (base flag) as prerequisite",
-  /symptomDetectionOn\s*=\s*allergenSafetyOn\s*&&/
+  "symptomDetectionOn is a standalone allergen_symptom_detection flag check",
+  /symptomDetectionOn\s*=\s*isFeatureExplicitlyEnabled\s*\(\s*["']allergen_symptom_detection["']/
 );
 assertSrc(
   "symptomDetectionOn checks allergen_symptom_detection flag explicitly",
@@ -363,159 +379,14 @@ check("بيورملي standalone fires (intended)", "ايدي بيورملي ب�
 
 
 // ============================================================
-// SECTION D — Runtime integration test
-// Calls the real runCustomerTurn() with a mocked Supabase admin
-// client.  No Anthropic API key required for the allergen-gate
-// path (respond() is never called when the gate fires).
+// Summary
 // ============================================================
-console.log("\n── D: Runtime integration (runCustomerTurn with mock admin) ──");
-
-// ---------------------------------------------------------------------------
-// Mock Supabase admin builder
-// A fluent chain that:
-//   • resolves to { data: listData, error: null } when awaited directly
-//   • resolves to { data: singleData, error: null } on .single()
-//   • returns itself on select / eq / order / limit / insert / update
-// ---------------------------------------------------------------------------
-function buildChain(singleData: unknown, listData: unknown = []) {
-  const listPromise = Promise.resolve({ data: listData, error: null });
-  const singlePromise = Promise.resolve({ data: singleData, error: null });
-
-  const chain: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "order", "limit", "insert", "update"]) {
-    chain[m] = () => chain;
-  }
-  chain["single"] = () => singlePromise;
-  // Thenable so `await admin.from("conversation_signals").insert(...)` resolves
-  chain["then"] = (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => listPromise.then(res, rej);
-  chain["catch"] = (rej: (e: unknown) => unknown) => listPromise.catch(rej);
-  return chain;
+console.log(`\n══════════════════════════════════`);
+console.log(`  Results: ${pass} passed, ${fail} failed (${pass + fail} total)`);
+if (errors.length) {
+  console.log(`\n  Failed tests:`);
+  errors.forEach((e) => console.log(`    • ${e}`));
 }
-
-function createMockAdmin(featureFlags: Record<string, unknown>) {
-  // Row returned by both customer-turn.ts restaurants query AND loadBrain restaurants query.
-  const restaurantRow = {
-    agent_mode: "active", is_open: true, ai_tone: null, dialect: "egyptian",
-    name: "Test Restaurant", currency: "EGP", timezone: "Africa/Cairo",
-    business_type: "restaurant", tier: "standard", feature_flags: featureFlags,
-    auto_accept_orders: false, agent_persona_name: null, tax_mode: "inclusive", tax_rate: 0,
-    logo_url: null, phone: null, email: null, default_language: "ar",
-  };
-
-  return {
-    from: (table: string) => {
-      if (table === "restaurants") return buildChain(restaurantRow);
-      if (table === "agent_runs") return buildChain({ id: "mock-run-id" });
-      // branches, menu_items, modifiers, etc. → empty list
-      return buildChain(null, []);
-    },
-  } as unknown;
-}
-
-// Dangerous symptom phrase — would normally fire detectAllergenSymptom
-const SYMPTOM_MSG = "دخلت الطوارئ بعد السوداني";
-const RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
-
-async function runIntegrationTests(): Promise<void> {
-  // Polyfill `server-only` for Node.js/tsx: the package always throws outside Next.js.
-  // We intercept the require() call and return an empty module instead.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-  const Module = require("module") as { _load: (...a: any[]) => unknown };
-  const orig = Module._load;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  Module._load = function (request: string, ...args: any[]) {
-    if (request === "server-only") return {};
-    return orig.call(Module, request, ...args);
-  };
-
-  // Import here so tsx resolves path aliases at runtime
-  const { runCustomerTurn, CustomerTurnError } =
-    await import("../lib/ai/customer-turn");
-
-  // ─── Test D1: BOTH flags ON → deterministic gate fires, respond() not called ──
-  const bothFlagsAdmin = createMockAdmin({
-    deterministic_allergen_safety: true,
-    allergen_symptom_detection: true,
-  });
-  try {
-    const outcome = await runCustomerTurn(bothFlagsAdmin as never, {
-      restaurantId: RESTAURANT_ID,
-      conversationId: null,
-      history: [],
-      userMessage: SYMPTOM_MSG,
-      persistReply: false,
-    });
-    ok("D1: escalate=true (gate fired)", outcome.escalate === true);
-    ok("D1: model=deterministic_allergen_gate", outcome.model === "deterministic_allergen_gate");
-    ok("D1: adapter=mock (no LLM)", outcome.adapter === "mock");
-    ok("D1: inputTokens=0 (no LLM call)", outcome.usage.inputTokens === 0);
-    ok("D1: outputTokens=0 (no LLM call)", outcome.usage.outputTokens === 0);
-  } catch (e) {
-    ok("D1: should NOT throw for allergen gate path", false,
-      `unexpected throw: ${e instanceof Error ? e.message : String(e)}`);
-  }
-
-  // ─── Test D2: base flag OFF → symptom detector never evaluated → falls through to LLM ──
-  // NOTE: when ANTHROPIC_API_KEY is absent, the system uses a mock LLM adapter that
-  // returns successfully (no throw). So "falls through" means model ≠ deterministic_allergen_gate.
-  const baseFlagOffAdmin = createMockAdmin({
-    // deterministic_allergen_safety: absent (false by default)
-    allergen_symptom_detection: true, // irrelevant when base is off
-  });
-  try {
-    const outcome = await runCustomerTurn(baseFlagOffAdmin as never, {
-      restaurantId: RESTAURANT_ID,
-      conversationId: null,
-      history: [],
-      userMessage: SYMPTOM_MSG,
-      persistReply: false,
-    });
-    ok("D2: absent base flag → falls through to LLM (model ≠ allergen_gate)",
-      outcome.model !== "deterministic_allergen_gate",
-      `got model: ${outcome.model}`);
-    ok("D2: absent base flag → escalate should be false (LLM, not gate)",
-      outcome.escalate === false,
-      `got escalate: ${outcome.escalate}`);
-  } catch (e) {
-    ok("D2: unexpected throw (flag-off should succeed via LLM mock)", false,
-      `got: ${e instanceof Error ? `${e.constructor.name}: ${e.message}` : String(e)}`);
-  }
-
-  // ─── Test D3: base ON but symptom flag OFF → same fall-through ──
-  const symptomFlagOffAdmin = createMockAdmin({
-    deterministic_allergen_safety: true,
-    allergen_symptom_detection: false,
-  });
-  try {
-    const outcome = await runCustomerTurn(symptomFlagOffAdmin as never, {
-      restaurantId: RESTAURANT_ID,
-      conversationId: null,
-      history: [],
-      userMessage: SYMPTOM_MSG,
-      persistReply: false,
-    });
-    ok("D3: symptom flag OFF → falls through to LLM (model ≠ allergen_gate)",
-      outcome.model !== "deterministic_allergen_gate",
-      `got model: ${outcome.model}`);
-  } catch (e) {
-    ok("D3: unexpected throw (symptom-flag-off should succeed via LLM mock)", false,
-      `got: ${e instanceof Error ? `${e.constructor.name}: ${e.message}` : String(e)}`);
-  }
-}
-
-// Wrap in async IIFE — top-level await not available in cjs output
-(async () => {
-  await runIntegrationTests();
-  // ============================================================
-  // Summary (moved inside so it prints after async tests complete)
-  // ============================================================
-  console.log(`\n══════════════════════════════════`);
-  console.log(`  Results: ${pass} passed, ${fail} failed (${pass + fail} total)`);
-  if (errors.length) {
-    console.log(`\n  Failed tests:`);
-    errors.forEach((e) => console.log(`    • ${e}`));
-  }
-  console.log(`══════════════════════════════════`);
-  if (fail > 0) process.exit(1);
-})();
+console.log(`══════════════════════════════════`);
+if (fail > 0) process.exit(1);
 
