@@ -155,6 +155,13 @@ jobs:
       - name: Retry-policy unit tests
         run: node --experimental-strip-types --test lib/messaging/retry-policy.test.ts
 
+      # ── Blocking gate 8: Khalid persona-layer contract ────────────────────
+      # 35 cases: region resolution (Najdi default), name fallback, and the
+      # persona-layer contract — the overlay defers to the engine on
+      # truth/safety/money and gates every pairing on real menu truth. Pure TS.
+      - name: Khalid persona-layer unit tests
+        run: node --experimental-strip-types scripts/test-khalid-persona.test.ts
+
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
       # included here so that IF a CI Supabase secret is ever wired up, they
