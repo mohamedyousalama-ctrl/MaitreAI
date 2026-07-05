@@ -137,6 +137,10 @@ function ConversationView({ conv }: { conv: Conversation }) {
   const hold = isHold(conv);
   const closed = own === "CLOSED";
   const humanOwned = own === "HUMAN_ACTIVE";
+  // Close is a terminal, outcome-emitting action — only for human-handled chats.
+  // Closing a live AI_ACTIVE thread would cut Karim off and emit a verdict while the
+  // customer may still be active (Codex P1); safety holds are rejected server-side.
+  const canClose = own === "HUMAN_ACTIVE" || own === "HUMAN_IDLE";
 
   async function send() {
     const text = draft.trim();
@@ -182,9 +186,11 @@ function ConversationView({ conv }: { conv: Conversation }) {
                 <CornerUpLeft size={14} /> {t("conv.returnKarim")}
               </button>
             )}
-            <button onClick={doClose} disabled={busy} style={ghostBtn}>
-              <CheckCircle2 size={14} /> {t("conv.close")}
-            </button>
+            {canClose && (
+              <button onClick={doClose} disabled={busy} style={ghostBtn}>
+                <CheckCircle2 size={14} /> {t("conv.close")}
+              </button>
+            )}
           </>
         )}
       </div>
