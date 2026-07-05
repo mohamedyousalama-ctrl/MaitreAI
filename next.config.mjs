@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // console_v2 PR 1 adds an .eslintrc.json (to activate the local Arabic-bidi
+  // rule) where before there was none. `next build` auto-lints when a config is
+  // present, so keep the build's lint behavior EXACTLY as it was — off — rather
+  // than newly gating CI on next/core-web-vitals across the whole mature tree.
+  // Lint is run on demand via `npm run lint`; the local rule ships as "warn".
+  eslint: { ignoreDuringBuilds: true },
   // react-leaflet + @react-leaflet/core are ESM-only; transpile them so the
   // storefront map (client-only, dynamically imported) bundles cleanly.
   transpilePackages: ["react-leaflet", "@react-leaflet/core"],
