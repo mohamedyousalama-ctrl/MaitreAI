@@ -1165,10 +1165,15 @@ async function runCase(restaurantId, dialect, c, phone) {
   }
 
   const verdict = c.check(lastOut, { menuNames, requestedItem: item?.name || "" });
-  // Cross-cutting FORBIDDEN-CLAIMS gate over the final reply (precise/evalOnly set).
-  // Overrides a per-scenario pass — a forbidden claim is never acceptable output.
-  const forbidden = findForbiddenClaims(lastOut.reply || "", { evalOnly: true });
-  const forbiddenNote = forbidden.length ? ` · ⛔ forbidden-claim: ${forbidden.map((f) => f.id).join(", ")}` : "";
+  // Cross-cutting FORBIDDEN-CLAIMS gate over EVERY assistant reply in the scenario
+  // (multi-turn — a forbidden claim on turn 1 must fail the case even if the final
+  // turn passes c.check). The transcript already records each reply.
+  const forbidden = transcript.flatMap((t, i) =>
+    findForbiddenClaims(t.reply || "", { evalOnly: true }).map((f) => ({ ...f, turn: i + 1 }))
+  );
+  const forbiddenNote = forbidden.length
+    ? ` · ⛔ forbidden-claim: ${forbidden.map((f) => `t${f.turn}:${f.id}`).join(", ")}`
+    : "";
   return {
     id: c.id,
     dialect,
