@@ -22,6 +22,7 @@ import { UtensilsCrossed, Store } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { useConsoleOps } from "@/lib/console-ops-store";
+import { useRole } from "@/lib/use-role";
 import {
   deriveOrderDisplay,
   derivePosDisplay,
@@ -44,6 +45,9 @@ const posOf = (o: LocalOrder): PosStatus => o.posStatus ?? "not_entered";
 export default function LiveShiftPage() {
   const t = useT();
   const hydrated = useHasHydrated();
+  // Pause posts to the manager-only /api/settings/ops — only a confirmed manager
+  // sees the control (demo resolves to manager). Operators never see a 403 switch.
+  const isManager = useRole() === "manager";
   const orders = useOrderStore((s) => s.orders);
   const menuItems = useRestaurantStore((s) => s.menuItems);
   const setItemAvailability = useRestaurantStore((s) => s.setItemAvailability);
@@ -65,13 +69,17 @@ export default function LiveShiftPage() {
     [orders]
   );
   const awaitingHandoff = useMemo(
-    () => orders.filter((o) => POS_ELIGIBLE.includes(o.orderStatus) && posOf(o) === "not_entered" && !stamped.has(o.id)),
+    // Test orders are rejected by the POS route + excluded by the R3 board, so they
+    // must NOT inflate the sole alarm (they still show in the active list, badged).
+    () => orders.filter((o) => !o.isTest && POS_ELIGIBLE.includes(o.orderStatus) && posOf(o) === "not_entered" && !stamped.has(o.id)),
     [orders, stamped]
   );
 
-  // Payment mix — PASSIVE, non-test only, order truth (counts, not derived money).
+  // Payment mix — PASSIVE, "today" only (the store loads full history), non-test,
+  // excluding cancelled. Order truth (counts, not derived money).
   const mix = useMemo(() => {
-    const real = orders.filter((o) => !o.isTest);
+    const startOfToday = new Date().setHours(0, 0, 0, 0);
+    const real = orders.filter((o) => !o.isTest && o.orderStatus !== "cancelled" && o.createdAt >= startOfToday);
     const paid = real.filter((o) => o.paymentStatus === "paid").length;
     const cod = real.filter((o) => o.paymentMethod === "cod").length;
     return { paid, cod };
@@ -107,16 +115,18 @@ export default function LiveShiftPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-text)", margin: 0, flex: 1 }}>{t("shift.title")}</h1>
         <PaymentMixChip codLabel={t("shift.cod")} paidLabel={t("shift.paidCount")} cod={mix.cod} paid={mix.paid} mixLabel={t("shift.paymentMix")} />
-        <PauseControl
-          on={opsLoaded && assistantOn}
-          loading={!opsLoaded}
-          busy={pauseBusy}
-          onToggle={togglePause}
-          activeLabel={t("shift.karimActive")}
-          pausedLabel={t("shift.karimPaused")}
-          loadingLabel={t("shift.karimLoading")}
-          ariaLabel={t("shift.pause")}
-        />
+        {isManager && (
+          <PauseControl
+            on={opsLoaded && assistantOn}
+            loading={!opsLoaded}
+            busy={pauseBusy}
+            onToggle={togglePause}
+            activeLabel={t("shift.karimActive")}
+            pausedLabel={t("shift.karimPaused")}
+            loadingLabel={t("shift.karimLoading")}
+            ariaLabel={t("shift.pause")}
+          />
+        )}
       </div>
       {pauseError && (
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-red)", marginBottom: 14 }}>{t("shift.pauseError")}</div>

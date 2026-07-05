@@ -75,6 +75,8 @@ export const DICTIONARY = {
     "role.operator": "موظف",
     "home.title": "مساحة العمل",
     "home.arriving": "أسطح الكونسول الجديدة في الطريق — كل صفحة تُفعَّل مع إصدارها.",
+    "console.noTenant": "لا مطعم مرتبط بهذا الحساب",
+    "console.dataFailed": "تعذّر تحميل بيانات المطعم، حدّث الصفحة.",
     // Live Shift (item 5)
     "shift.title": "الوردية المباشرة",
     "shift.awaitingHandoff": "بانتظار التسليم لنقاط البيع",
@@ -192,6 +194,8 @@ export const DICTIONARY = {
     "role.operator": "OPERATOR",
     "home.title": "Workspace",
     "home.arriving": "The new console surfaces are on the way — each page turns on as it ships.",
+    "console.noTenant": "No restaurant linked to this account",
+    "console.dataFailed": "Couldn’t load restaurant data, refresh the page.",
     "shift.title": "Live Shift",
     "shift.awaitingHandoff": "Awaiting POS handoff",
     "shift.awaitingHandoffEmpty": "All orders are entered in the POS",
