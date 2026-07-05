@@ -69,7 +69,7 @@ export const RAIL_SECTIONS: { section: RailSection; labelKey: DictKey }[] = [
 export const RAIL_ITEMS: RailItem[] = [
   // MAIN — the live operating surfaces. Shift + Conversations are the OPERATION
   // surfaces an operator may reach; Outcomes is manager-only.
-  { key: "live-shift", labelKey: "nav.liveShift", icon: Radio, section: "main", href: "/c/shift", ready: false, managerOnly: false },
+  { key: "live-shift", labelKey: "nav.liveShift", icon: Radio, section: "main", href: "/c/shift", ready: true, managerOnly: false },
   { key: "conversations", labelKey: "nav.conversations", icon: MessagesSquare, section: "main", href: "/c/conversations", ready: false, managerOnly: false },
   { key: "outcomes", labelKey: "nav.outcomes", icon: Target, section: "main", href: "/c/outcomes", ready: false, managerOnly: true },
   // MODULES — supporting tools (manager-only)

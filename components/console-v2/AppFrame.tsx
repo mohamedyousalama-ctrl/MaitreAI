@@ -10,6 +10,7 @@
 // ============================================================================
 
 import type { ReactNode } from "react";
+import { DataBootstrap } from "@/components/DataBootstrap";
 import { Rail } from "./Rail";
 import type { ConsoleRole } from "@/lib/console-v2/nav";
 
@@ -34,6 +35,9 @@ export function AppFrame({
         color: "var(--kv-text)",
       }}
     >
+      {/* Hydrate the per-tenant DB stores + realtime for every authed console_v2
+          page (no-op in demo mode, where seed data stays). */}
+      <DataBootstrap />
       <Rail tenantName={tenantName} role={role} />
       <main
         className="kv-scroll"
