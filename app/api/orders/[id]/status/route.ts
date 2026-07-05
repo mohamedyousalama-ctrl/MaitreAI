@@ -12,6 +12,7 @@ import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { orderHasAssignedDriver } from "@/lib/db/delivery";
 import { recordAuditEvent } from "@/lib/db/audit";
+import { checkOrderSafetyHold, isCommittedStatus } from "@/lib/db/safety-hold-guard";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,28 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // so a stale advance (another operator already moved the order) is rejected, not
   // clobbered. Optional → omitted callers keep the prior unconditional behavior.
   const expectedStatus = typeof body.expectedStatus === "string" ? body.expectedStatus : null;
+
+  // WO-SAFE-1 — SAFETY-HOLD GUARD. An order linked to a conversation under an
+  // active SYSTEM_HOLD (unresolved allergy/safety concern) must NOT be committed
+  // to money/kitchen/customer. Block any advance INTO a committed status
+  // (paid/preparing/ready/out_for_delivery/delivered) with 409 + reason. Release is
+  // an explicit operator next-action: resolve the safety hold on the conversation,
+  // then retry. Fail-closed (a check error is treated as held). Cancelling/pending
+  // moves are unaffected.
+  if (isCommittedStatus(status)) {
+    const hold = await checkOrderSafetyHold(admin, tenant.restaurantId, params.id);
+    if (hold.held) {
+      return NextResponse.json(
+        {
+          error: "safety_hold_active",
+          reason: hold.reason,
+          detail: "الطلب مربوط بمحادثة عليها تنبيه سلامة/حساسية لم يُحَل — لازم تُحلّ أولاً قبل تأكيد/تجهيز الطلب.",
+          conversationId: hold.conversationId,
+        },
+        { status: 409 },
+      );
+    }
+  }
 
   // R3b — AUTHORITATIVE driver guard on the delivered transition. A COD (or
   // unspecified-method) delivery order cannot be booked "delivered" without an
