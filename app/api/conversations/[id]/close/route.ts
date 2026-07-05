@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { emitConversationOutcome } from "@/lib/intelligence/conversation-outcomes";
@@ -27,8 +27,9 @@ export const runtime = "nodejs";
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
 
   // Tenant-scoped read (code carries the isolation).
   const { data: conv, error: readErr } = await admin
