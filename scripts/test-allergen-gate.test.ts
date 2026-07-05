@@ -43,5 +43,29 @@ ok("block-AND-escalate: same turn but «عندي حساسية من البندق�
 ok("block-AND-escalate: benign msg but convo already is_safety_hold", shouldEscalateOnSafetyClaim("عندكم ايه من غير بندق", true) === true);
 ok("escalate: euphemism «اتعب لو اكلت بندق»", shouldEscalateOnSafetyClaim("اتعب لو اكلت بندق", false) === true);
 ok("no-escalate: «عايز صنف فيه بندق» (positive, no hold)", shouldEscalateOnSafetyClaim("عايز صنف فيه بندق", false) === false);
+
+// ── KSA ratified-path additions (docs/KSA_ALLERGEN_DIALECT_REVIEW.md §2b/§3) ──
+// The 10 Najdi/Hijazi base-gap phrasings — all MUST now fire (permanent must-fire).
+ok("ksa-1: أنا حساس من الفول السوداني (adjective)", detectAllergenAvoidance("أنا حساس من الفول السوداني").fired);
+ok("ksa-2: أنا حساسة من البيض (fem adjective)", detectAllergenAvoidance("أنا حساسة من البيض").fired);
+ok("ksa-3: أتحسس من الحليب (reaction verb)", detectAllergenAvoidance("أتحسس من الحليب").fired);
+ok("ksa-4: يجيني تحسس من الفستق (reaction noun)", detectAllergenAvoidance("يجيني تحسس من الفستق").fired);
+ok("ksa-5: ألرجيا من البيض (transliteration)", detectAllergenAvoidance("ألرجيا من البيض").fired);
+ok("ksa-6: عندي الرجي من الجلوتين (transliteration)", detectAllergenAvoidance("عندي الرجي من الجلوتين").fired);
+ok("ksa-7: مو قادر آكل جمبري (Najdi negation)", detectAllergenAvoidance("مو قادر آكل جمبري").fired);
+ok("ksa-8: ما يصير آكل لبن (Najdi negation)", detectAllergenAvoidance("ما يصير آكل لبن").fired);
+ok("ksa-9: المكسرات تأذيني (harm verb fem/3rd)", detectAllergenAvoidance("المكسرات تأذيني").fired);
+ok("ksa-10: ما أتحمل اللاكتوز (intolerance + new term)", detectAllergenAvoidance("ما أتحمل اللاكتوز").fired);
+// New-term naming (لاكتوز→dairy display; طحينة normalized طحينه).
+ok("ksa-name: لاكتوز", term("ما أتحمل اللاكتوز") === "لاكتوز");
+ok("ksa-name: حساس من الطحينة → طحينه", term("أنا حساس من الطحينة") === "طحينه");
+// False-positive traps — MUST NOT fire (high-precision explicit patterns hold).
+ok("ksa-neg: موضوع حساس (sensitive topic)", !detectAllergenAvoidance("الموضوع ده حساس شوية").fired);
+ok("ksa-neg: إحساس جميل (feeling)", !detectAllergenAvoidance("عندي احساس جميل النهاردة").fired);
+ok("ksa-neg: رجيم (diet)", !detectAllergenAvoidance("أنا بعمل رجيم").fired);
+ok("ksa-neg: الرجيم (diet, article)", !detectAllergenAvoidance("الرجيم صعب").fired);
+ok("ksa-neg: الراجل (the man)", !detectAllergenAvoidance("الراجل ده طلب بيتزا").fired);
+ok("ksa-neg: الرجل (leg/man)", !detectAllergenAvoidance("الرجل تعبانة").fired);
+
 console.log(`\nALLERGEN-GATE UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

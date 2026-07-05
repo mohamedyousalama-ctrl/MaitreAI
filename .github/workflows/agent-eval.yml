@@ -170,14 +170,14 @@ jobs:
       - name: Khalid playbooks unit tests
         run: node --experimental-strip-types scripts/test-khalid-playbooks.test.ts
 
-      # ── KSA allergen-dialect coverage (regression-blocking; gaps informational)
-      # Guards the KSA phrasings the base gate ALREADY covers (hard-fail on
-      # regression) + negatives, and REPORTS the Najdi/Hijazi gaps proposed in
-      # docs/KSA_ALLERGEN_DIALECT_REVIEW.md. Exits 0 today (gaps informational
-      # pre-PM-sign-off). After the ratified vocab merge, this flips to blocking
-      # via KSA_GATE_RATIFIED=1 (see the review doc's ratified-path checklist).
-      - name: KSA allergen-dialect coverage (informational until ratified)
-        run: node --experimental-strip-types scripts/test-allergen-gate-ksa.test.ts
+      # ── Blocking gate 10: KSA allergen-dialect coverage (RATIFIED) ─────────
+      # The ratified vocab additions (docs/KSA_ALLERGEN_DIALECT_REVIEW.md §3) closed
+      # all 10 base-gaps, so this flips to BLOCKING via KSA_GATE_RATIFIED=1: the KSA
+      # phrasings the base gate covers must not regress AND every ratified base-gap
+      # must show CLOSED (exit non-zero otherwise). Symptom-class gaps stay routed to
+      # the symptom-layer review (informational within the harness).
+      - name: KSA allergen-dialect coverage (ratified — blocking)
+        run: KSA_GATE_RATIFIED=1 node --experimental-strip-types scripts/test-allergen-gate-ksa.test.ts
 
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are

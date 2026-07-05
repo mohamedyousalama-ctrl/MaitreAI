@@ -20,6 +20,8 @@ const eq = (a: unknown, b: unknown, m: string) => t(JSON.stringify(a) === JSON.s
 const GATE_ALLERGEN_TERMS = [
   "بندق", "فستق", "لوز", "كاجو", "عين جمل", "جوز", "مكسرات", "فول سوداني", "سوداني",
   "لبن", "البان", "حليب", "جلوتين", "قمح", "بيض", "سمسم", "صويا", "ماكولات بحريه", "بحريات", "سمك", "جمبري", "قشريات",
+  // KSA ratified-path additions (docs/KSA_ALLERGEN_DIALECT_REVIEW.md §3c).
+  "لاكتوز", "طحينه",
 ];
 
 // 1) Nine canonical keys, each with arLabel + non-empty gateTerms.
@@ -51,6 +53,8 @@ eq(mapAllergenValue("قمح"), "gluten", "قمح → gluten");
 eq(mapAllergenValue("جمبري"), "shellfish", "جمبري → shellfish");
 eq(mapAllergenValue("قشريات"), "shellfish", "قشريات → shellfish");
 eq(mapAllergenValue("سمك"), "fish", "سمك → fish");
+eq(mapAllergenValue("لاكتوز"), "dairy", "لاكتوز → dairy (KSA gateTerm)");
+eq(mapAllergenValue("طحينة"), "sesame", "طحينة → sesame (KSA gateTerm, normalized طحينه)");
 
 // 4) normalizeAllergenArray migrates the CURRENT MenuItemForm free-text suggestions.
 const formSuggestions = ["جلوتين", "ألبان", "بيض", "مكسرات", "فول صويا", "أسماك"];
