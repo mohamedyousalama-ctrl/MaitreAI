@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { setDriverActive, updateDriver } from "@/lib/db/delivery";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 
@@ -17,8 +17,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!ENABLE_DELIVERY_TRACKING) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const supabase = createClient();
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
