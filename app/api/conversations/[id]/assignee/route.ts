@@ -23,7 +23,6 @@
 
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getServerTenant } from "@/lib/db/tenant-server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAuditEvent } from "@/lib/db/audit";

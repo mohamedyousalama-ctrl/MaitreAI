@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret } from "@/lib/crypto/secrets";
 
@@ -17,8 +17,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   // T4/M2.2 — WhatsApp routing/creds config is manager-only (operations members
   // must not read phone/WABA ids, verify token, or the "secret exists" booleans).
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -44,8 +45,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });

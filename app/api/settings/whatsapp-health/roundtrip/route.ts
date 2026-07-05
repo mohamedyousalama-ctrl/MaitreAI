@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getServerTenant } from "@/lib/db/tenant-server";
+import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
 import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
@@ -27,8 +27,9 @@ export const runtime = "nodejs";
 const DEFAULT_TEXT = "اختبار اتصال واتساب من لوحة كيفو ✅";
 
 export async function POST(req: Request) {
-  const tenant = await getServerTenant();
-  if (!tenant) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
   // Privileged: only a manager may fire a real outbound test.
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden_role" }, { status: 403 });
 
