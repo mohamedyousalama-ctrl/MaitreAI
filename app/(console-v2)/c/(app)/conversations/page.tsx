@@ -72,7 +72,7 @@ export default function ConversationsPage() {
 
       {/* RIGHT — conversation view */}
       <section style={{ flex: 1, minWidth: 0, background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-lg)", boxShadow: "var(--kv-shadow-panel)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-        {selected ? <ConversationView conv={selected} /> : (
+        {selected ? <ConversationView key={selected.id} conv={selected} /> : (
           <div style={{ flex: 1, display: "grid", placeItems: "center", color: "var(--kv-faint)", fontSize: 13, fontWeight: 700 }}>{t("conv.select")}</div>
         )}
       </section>
@@ -132,6 +132,11 @@ function ConversationView({ conv }: { conv: Conversation }) {
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Conversations whose server ownership claim we've WON this session. The first send
+  // always claims (the atomic server proof — never trust local ownership state, or a
+  // teammate's HUMAN_ACTIVE chat could be sent into); once won, subsequent sends skip
+  // the round-trip (a teammate can't steal it back while it's ours).
+  const [claimed, setClaimed] = useState<Set<string>>(new Set());
 
   const own = ownOf(conv);
   const hold = isHold(conv);
@@ -147,14 +152,17 @@ function ConversationView({ conv }: { conv: Conversation }) {
     if (!text || busy) return;
     setBusy(true); setConflict(null); setErr(null);
     try {
-      // takeover-at-SEND — claim first unless I already own it.
-      if (!humanOwned) {
+      // takeover-at-SEND — the FIRST send claims through the atomic server proof
+      // (works for AI/idle/held, and 409s if a teammate owns it). We do NOT trust
+      // `humanOwned` (local state) to skip: a teammate's HUMAN_ACTIVE reads the same.
+      if (!claimed.has(conv.id)) {
         const res = await takeover(conv.id);
         if (!res.ok) {
-          if (res.conflictName) setConflict(res.conflictName);
+          if (res.conflictName) setConflict(res.conflictName); // composer stays blocked, draft kept
           else setErr(t("conv.sendError"));
           return;
         }
+        setClaimed((s) => new Set(s).add(conv.id));
       }
       addHuman(conv.id, text);
       setDraft("");
@@ -234,9 +242,10 @@ function ConversationView({ conv }: { conv: Conversation }) {
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
               placeholder={humanOwned ? t("conv.composerHuman") : t("conv.composerArmed")}
               rows={1}
-              style={{ flex: 1, resize: "none", minHeight: 42, maxHeight: 120, borderRadius: "var(--kv-r-md)", border: "1.5px solid var(--kv-border)", background: "var(--kv-card-soft)", padding: "11px 13px", fontSize: 13.5, fontFamily: "var(--kv-font)", color: "var(--kv-text)", lineHeight: 1.5 }}
+              disabled={!!conflict}
+              style={{ flex: 1, resize: "none", minHeight: 42, maxHeight: 120, borderRadius: "var(--kv-r-md)", border: "1.5px solid var(--kv-border)", background: "var(--kv-card-soft)", padding: "11px 13px", fontSize: 13.5, fontFamily: "var(--kv-font)", color: "var(--kv-text)", lineHeight: 1.5, opacity: conflict ? 0.6 : 1 }}
             />
-            <button onClick={send} disabled={busy || !draft.trim()} aria-label={t("conv.send")} style={{ ...primaryBtn, opacity: busy || !draft.trim() ? 0.5 : 1, height: 42, width: 46, padding: 0, display: "grid", placeItems: "center" }}>
+            <button onClick={send} disabled={busy || !draft.trim() || !!conflict} aria-label={t("conv.send")} style={{ ...primaryBtn, opacity: busy || !draft.trim() || conflict ? 0.5 : 1, height: 42, width: 46, padding: 0, display: "grid", placeItems: "center" }}>
               <Send size={17} strokeWidth={2.3} />
             </button>
           </div>

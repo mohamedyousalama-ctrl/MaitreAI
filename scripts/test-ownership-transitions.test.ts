@@ -1,6 +1,6 @@
 // Unit tests for the conversation ownership-state transition map (pure, no DB).
 // Run: node --experimental-strip-types scripts/test-ownership-transitions.test.ts
-import { isLegalTransition, assertLegalTransition, OWNERSHIP_STATES } from "../lib/db/ownership.ts";
+import { isLegalTransition, assertLegalTransition, OWNERSHIP_STATES, canClaim } from "../lib/db/ownership.ts";
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.log("  ❌", n); } };
 
@@ -48,6 +48,28 @@ ok("assert throws on illegal CLOSED → HUMAN_ACTIVE", threw);
 threw = false;
 try { assertLegalTransition("AI_ACTIVE", "HUMAN_ACTIVE"); } catch { threw = true; }
 ok("assert does NOT throw on legal AI_ACTIVE → HUMAN_ACTIVE", !threw);
+
+// --- MO2 claim authorization (takeover-at-SEND): canClaim mirrors the assignee
+//     route's TOTAL contract (atomic WHERE + 0-row fallback). Concurrency cases. ---
+ok("claim own HUMAN_ACTIVE = idempotent success", canClaim({ ownershipState: "HUMAN_ACTIVE", assignedMemberId: "m1" }, "m1"));
+ok("claim teammate's HUMAN_ACTIVE = conflict (not claimable)", !canClaim({ ownershipState: "HUMAN_ACTIVE", assignedMemberId: "m2" }, "m1"));
+ok("claim unassigned HUMAN_ACTIVE = not claimable (route 409s)", !canClaim({ ownershipState: "HUMAN_ACTIVE", assignedMemberId: null }, "m1"));
+ok("claim AI_ACTIVE (unowned) = claimable", canClaim({ ownershipState: "AI_ACTIVE", assignedMemberId: null }, "m1"));
+ok("claim HUMAN_IDLE (unowned) = claimable", canClaim({ ownershipState: "HUMAN_IDLE", assignedMemberId: null }, "m1"));
+ok("claim SYSTEM_HOLD (unowned) = claimable", canClaim({ ownershipState: "SYSTEM_HOLD", assignedMemberId: null }, "m1"));
+ok("claim SYSTEM_HOLD already mine = claimable (idempotent)", canClaim({ ownershipState: "SYSTEM_HOLD", assignedMemberId: "m1" }, "m1"));
+ok("claim CLOSED = not claimable", !canClaim({ ownershipState: "CLOSED", assignedMemberId: null }, "m1"));
+
+// Two operators racing the SAME claimable conversation → exactly one winner. Model
+// the DB's atomic serialization: the winner's claim flips ownership to them, so the
+// loser then sees a teammate-owned row and canClaim returns false.
+for (const s of ["HUMAN_IDLE", "SYSTEM_HOLD"] as const) {
+  let row: { ownershipState: typeof s | "HUMAN_ACTIVE"; assignedMemberId: string | null } = { ownershipState: s, assignedMemberId: null };
+  const m1Wins = canClaim(row, "m1");
+  if (m1Wins) row = { ownershipState: "HUMAN_ACTIVE", assignedMemberId: "m1" }; // atomic UPDATE serialized m1 first
+  const m2After = canClaim(row, "m2");
+  ok(`race on ${s}: exactly one winner (m1 wins, m2 conflicts)`, m1Wins && !m2After);
+}
 
 console.log(`\nOWNERSHIP-TRANSITIONS UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

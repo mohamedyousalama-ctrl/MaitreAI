@@ -333,11 +333,15 @@ export const useConversationStore = create<ConversationState>()(
         },
 
         takeoverToHuman: async (convId) => {
-          // Idempotent: if already human-owned in local state (e.g. operator double-click
-          // while the Brain's automatic escalation already flipped ownership), skip the
-          // duplicate "تم تحويل" message and DB write. A genuinely new takeover on an
-          // AI-owned conversation still goes through normally.
-          if (get().conversations.find((c) => c.id === convId)?.owner === "human") return { ok: true };
+          // A GENUINE takeover is one where we're not already the active human owner.
+          // We must NOT trust local `owner === "human"` as proof of ownership: a
+          // teammate-held (HUMAN_ACTIVE) or parked (HUMAN_IDLE) conversation also reads
+          // owner==="human" locally, and the old shortcut let the caller bypass the
+          // server claim — so two operators could both "own" it and both send. The
+          // server claim is the ONLY ownership proof now (a teammate's chat 409s). We
+          // still skip the duplicate "تم تحويل" system message on an idempotent
+          // re-claim of our OWN already-active conversation (genuine === false).
+          const genuine = get().conversations.find((c) => c.id === convId)?.ownershipState !== "HUMAN_ACTIVE";
           const id = msgId();
           const applyLocal = () =>
             set((s) => ({
@@ -347,7 +351,9 @@ export const useConversationStore = create<ConversationState>()(
                 status: "تم التحويل لموظف",
                 ownershipState: "HUMAN_ACTIVE",
                 aiTyping: false,
-                messages: [...c.messages, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف", time: nowTime() }],
+                ...(genuine
+                  ? { messages: [...c.messages, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف", time: nowTime() }] }
+                  : {}),
               })),
             }));
           const { _sb, _rid } = get();
@@ -376,7 +382,9 @@ export const useConversationStore = create<ConversationState>()(
             if (j.assignedMemberId) {
               set((s) => ({ conversations: patchConv(s.conversations, convId, (c) => ({ ...c, assignedMemberId: j.assignedMemberId })) }));
             }
-            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف" }));
+            // Persist the system takeover message only on a genuine takeover (not on an
+            // idempotent re-claim of our own already-active conversation).
+            if (genuine) fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: "تم تحويل المحادثة إلى موظف" }));
             return { ok: true };
           }
           // Lost the race / not claimable → refresh to show the REAL current owner and
