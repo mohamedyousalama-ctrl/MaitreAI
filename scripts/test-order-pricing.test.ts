@@ -140,9 +140,19 @@ eq("qty 99-clamp total 100*99", run({ lines: [{ itemId: "burger", quantity: 200 
   eq("tax added: taxRate echoed", r.taxRate, 14);
   eq("tax added: total subtotal+tax", r.total, 114);
 }
+// WO-VAT-1: delivery is part of the taxable supply → the VAT base is
+// subtotal + deliveryFee, so the delivery charge bears the rate too.
 {
   const r = run({ lines: [{ itemId: "burger" }], fulfillment: "delivery", deliveryZoneId: "z1", taxMode: "added", taxRate: 14 });
-  eq("tax added + delivery: total 100+30+14", r.total, 144);
+  // base = 100 + 30 = 130; tax = 130 * 14% = 18.2; total = 100 + 30 + 18.2.
+  eq("tax added + delivery: taxAmount 14% of (100+30)", r.taxAmount, 18.2);
+  eq("tax added + delivery: total 100+30+18.2", r.total, 148.2);
+}
+// KSA 15%, added, with delivery.
+{
+  const r = run({ lines: [{ itemId: "burger" }], fulfillment: "delivery", deliveryZoneId: "z1", taxMode: "added", taxRate: 15 });
+  eq("KSA 15% added + delivery: taxAmount", r.taxAmount, 19.5); // 130 * 15%
+  eq("KSA 15% added + delivery: total", r.total, 149.5);
 }
 
 // ── 12. tax: "inclusive" mode (tax NOT added to total; informational only) ─────
@@ -150,6 +160,26 @@ eq("qty 99-clamp total 100*99", run({ lines: [{ itemId: "burger", quantity: 200 
   const r = run({ lines: [{ itemId: "burger" }], taxMode: "inclusive", taxRate: 14 });
   eq("tax inclusive: taxAmount 100*14/114", r.taxAmount, 12.28);
   eq("tax inclusive: total NOT increased", r.total, 100);
+}
+// WO-VAT-1: inclusive base also includes delivery; total stays subtotal+delivery.
+{
+  const r = run({ lines: [{ itemId: "burger" }], fulfillment: "delivery", deliveryZoneId: "z1", taxMode: "inclusive", taxRate: 14 });
+  // base = 130; embedded VAT = 130*14/114 = 15.9649… → 15.96 (halala rounding).
+  eq("tax inclusive + delivery: taxAmount 130*14/114 rounded", r.taxAmount, 15.96);
+  eq("tax inclusive + delivery: total = subtotal+delivery", r.total, 130);
+}
+// KSA 15%, inclusive, with delivery — rounding at halala precision.
+{
+  const r = run({ lines: [{ itemId: "burger" }], fulfillment: "delivery", deliveryZoneId: "z1", taxMode: "inclusive", taxRate: 15 });
+  // 130*15/115 = 16.9565… → 16.96 (rounds up at the 3rd decimal).
+  eq("KSA 15% inclusive + delivery: taxAmount rounded to halala", r.taxAmount, 16.96);
+  eq("KSA 15% inclusive + delivery: total unchanged", r.total, 130);
+}
+// Zero-rate (EG) unaffected — even with delivery, no tax, total = subtotal+fee.
+{
+  const r = run({ lines: [{ itemId: "burger" }], fulfillment: "delivery", deliveryZoneId: "z1", taxRate: 0 });
+  eq("tax rate 0 + delivery: taxAmount 0", r.taxAmount, 0);
+  eq("tax rate 0 + delivery: total = subtotal+fee only", r.total, 130);
 }
 {
   const r = run({ lines: [{ itemId: "burger" }], taxRate: 0 });
