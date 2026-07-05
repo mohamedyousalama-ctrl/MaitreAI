@@ -12,6 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createMoyasarSession } from "@/lib/payments/create-session";
+import { checkOrderSafetyHold } from "@/lib/db/safety-hold-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +54,14 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as { orderId?: string; callbackUrl?: string };
   const orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
   if (!orderId) return NextResponse.json({ ok: false, error: "bad_request", detail: "orderId required" }, { status: 400 });
+
+  // WO-SAFE-1 (Codex): a held order must not be CHARGED either — block creating/
+  // reusing a hosted PSP session while the linked conversation is under an active
+  // safety hold (else settlement would strand the concern). Same 409 + fail-closed.
+  const hold = await checkOrderSafetyHold(admin, tenant.restaurantId, orderId);
+  if (hold.held) {
+    return NextResponse.json({ ok: false, error: "safety_hold_active", reason: hold.reason, conversationId: hold.conversationId }, { status: 409 });
+  }
 
   const result = await createMoyasarSession(admin, {
     restaurantId: tenant.restaurantId,

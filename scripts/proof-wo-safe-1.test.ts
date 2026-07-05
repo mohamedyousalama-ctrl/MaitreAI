@@ -45,15 +45,28 @@ const status = read("app/api/orders/[id]/status/route.ts");
 check("(status) guards committed transitions via isCommittedStatus", /if \(isCommittedStatus\(status\)\) \{/.test(status));
 check("(status) blocks with 409 safety_hold_active + reason",
   /error: "safety_hold_active"[\s\S]*status: 409/.test(status));
-check("(status) guard runs BEFORE the write (checkOrderSafetyHold precedes .update)",
-  status.indexOf("checkOrderSafetyHold") < status.indexOf('.update({ order_status'));
+// Codex: assert on the concrete CALL (with args), not the bare name — the import at
+// the top would satisfy indexOf even if the actual guard call were removed.
+const STATUS_CALL = 'checkOrderSafetyHold(admin, tenant.restaurantId, params.id)';
+check("(status) the actual guard CALL is present", status.includes(STATUS_CALL));
+check("(status) guard CALL runs BEFORE the write",
+  status.indexOf(STATUS_CALL) > 0 && status.indexOf(STATUS_CALL) < status.indexOf('.update({ order_status'));
 
 // ---- Payment route: blocks marking paid ------------------------------------
 const payment = read("app/api/orders/[id]/payment/route.ts");
-check("(payment) guards the paid transition", /if \(paymentStatus === "paid"\) \{[\s\S]*checkOrderSafetyHold/.test(payment));
+const PAY_CALL = 'checkOrderSafetyHold(admin, tenant.restaurantId, params.id)';
+check("(payment) guards the paid transition (call inside the paid block)", /if \(paymentStatus === "paid"\) \{[\s\S]*checkOrderSafetyHold\(admin, tenant\.restaurantId, params\.id\)/.test(payment));
 check("(payment) blocks with 409 safety_hold_active",
   /error: "safety_hold_active"[\s\S]*status: 409/.test(payment));
-check("(payment) guard runs BEFORE the write", payment.indexOf("checkOrderSafetyHold") < payment.indexOf(".update(patch)"));
+check("(payment) the actual guard CALL runs BEFORE the write",
+  payment.indexOf(PAY_CALL) > 0 && payment.indexOf(PAY_CALL) < payment.indexOf(".update(patch)"));
+
+// ---- PSP session-create also guards a held order (Codex) --------------------
+const psp = read("app/api/payments/psp/create/route.ts");
+check("(psp create) guards before creating the session", psp.includes("checkOrderSafetyHold(admin, tenant.restaurantId, orderId)"));
+check("(psp create) guard CALL runs BEFORE createMoyasarSession",
+  psp.indexOf("checkOrderSafetyHold(admin, tenant.restaurantId, orderId)") < psp.indexOf("createMoyasarSession(admin"));
+check("(psp create) blocks with 409 safety_hold_active", /error: "safety_hold_active"[\s\S]*status: 409/.test(psp));
 
 console.log(`\nWO-SAFE-1 PROOF: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
