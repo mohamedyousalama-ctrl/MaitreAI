@@ -155,12 +155,23 @@ jobs:
       - name: Retry-policy unit tests
         run: node --experimental-strip-types --test lib/messaging/retry-policy.test.ts
 
+<<<<<<< HEAD
       # ── Blocking gate 8: Khalid persona-layer contract ────────────────────
       # 35 cases: region resolution (Najdi default), name fallback, and the
       # persona-layer contract — the overlay defers to the engine on
       # truth/safety/money and gates every pairing on real menu truth. Pure TS.
       - name: Khalid persona-layer unit tests
         run: node --experimental-strip-types scripts/test-khalid-persona.test.ts
+=======
+      # ── KSA allergen-dialect coverage (regression-blocking; gaps informational)
+      # Guards the KSA phrasings the base gate ALREADY covers (hard-fail on
+      # regression) + negatives, and REPORTS the Najdi/Hijazi gaps proposed in
+      # docs/KSA_ALLERGEN_DIALECT_REVIEW.md. Exits 0 today (gaps informational
+      # pre-PM-sign-off). After the ratified vocab merge, this flips to blocking
+      # via KSA_GATE_RATIFIED=1 (see the review doc's ratified-path checklist).
+      - name: KSA allergen-dialect coverage (informational until ratified)
+        run: node --experimental-strip-types scripts/test-allergen-gate-ksa.test.ts
+>>>>>>> 1bbb4b0 (feat(safety): KSA allergen-dialect review — coverage report + proposed vocab additions (ratified-path, PM sign-off required))
 
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
