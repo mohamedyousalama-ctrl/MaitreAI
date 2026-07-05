@@ -49,6 +49,10 @@ export interface RailItem {
   href?: string;
   /** False until the page's PR lands — renders as a non-navigating SOON row. */
   ready: boolean;
+  /** Manager-only surface. Operators (operation role) see ONLY the operation
+   *  surfaces (Live Shift + Conversations, per OPERATION_HREFS); every other rail
+   *  item is manager-only and hidden from an operator's rail (item 4). */
+  managerOnly: boolean;
 }
 
 /** Section header dictionary keys, in render order (MAIN → MODULES → CRM → ADMIN). */
@@ -63,27 +67,42 @@ export const RAIL_SECTIONS: { section: RailSection; labelKey: DictKey }[] = [
 // item is ready:false in PR 1; each page PR flips its own entry to ready:true when
 // the page ships at its href. hrefs are declared now as the canonical target.
 export const RAIL_ITEMS: RailItem[] = [
-  // MAIN — the live operating surfaces
-  { key: "live-shift", labelKey: "nav.liveShift", icon: Radio, section: "main", href: "/c/shift", ready: false },
-  { key: "conversations", labelKey: "nav.conversations", icon: MessagesSquare, section: "main", href: "/c/conversations", ready: false },
-  { key: "outcomes", labelKey: "nav.outcomes", icon: Target, section: "main", href: "/c/outcomes", ready: false },
-  // MODULES — supporting tools
-  { key: "knowledge", labelKey: "nav.knowledge", icon: BookOpen, section: "modules", href: "/c/knowledge", ready: false },
-  { key: "insights", labelKey: "nav.insights", icon: BarChart3, section: "modules", href: "/c/insights", ready: false },
-  { key: "campaigns", labelKey: "nav.campaigns", icon: Megaphone, section: "modules", href: "/c/campaigns", ready: false },
-  { key: "approvals", labelKey: "nav.approvals", icon: CheckCircle2, section: "modules", href: "/c/approvals", ready: false },
+  // MAIN — the live operating surfaces. Shift + Conversations are the OPERATION
+  // surfaces an operator may reach; Outcomes is manager-only.
+  { key: "live-shift", labelKey: "nav.liveShift", icon: Radio, section: "main", href: "/c/shift", ready: false, managerOnly: false },
+  { key: "conversations", labelKey: "nav.conversations", icon: MessagesSquare, section: "main", href: "/c/conversations", ready: false, managerOnly: false },
+  { key: "outcomes", labelKey: "nav.outcomes", icon: Target, section: "main", href: "/c/outcomes", ready: false, managerOnly: true },
+  // MODULES — supporting tools (manager-only)
+  { key: "knowledge", labelKey: "nav.knowledge", icon: BookOpen, section: "modules", href: "/c/knowledge", ready: false, managerOnly: true },
+  { key: "insights", labelKey: "nav.insights", icon: BarChart3, section: "modules", href: "/c/insights", ready: false, managerOnly: true },
+  { key: "campaigns", labelKey: "nav.campaigns", icon: Megaphone, section: "modules", href: "/c/campaigns", ready: false, managerOnly: true },
+  { key: "approvals", labelKey: "nav.approvals", icon: CheckCircle2, section: "modules", href: "/c/approvals", ready: false, managerOnly: true },
   // Ask Kivo is a GLOBAL overlay within the /c group (one command brain, two doors —
   // item 14), not a page route, so it carries no href; the rail entry opens the overlay.
-  { key: "ask-kivo", labelKey: "nav.askKivo", icon: Sparkles, section: "modules", ready: false },
-  // CRM — customer relationships
-  { key: "customers", labelKey: "nav.customers", icon: Users, section: "crm", href: "/c/customers", ready: false },
-  // ADMIN — configuration + people
-  { key: "settings", labelKey: "nav.settings", icon: Settings, section: "admin", href: "/c/settings", ready: false },
-  { key: "team", labelKey: "nav.team", icon: UserCog, section: "admin", href: "/c/team", ready: false },
-  { key: "onboarding", labelKey: "nav.onboarding", icon: Rocket, section: "admin", href: "/c/onboarding", ready: false },
+  { key: "ask-kivo", labelKey: "nav.askKivo", icon: Sparkles, section: "modules", ready: false, managerOnly: true },
+  // CRM — customer relationships (manager-only)
+  { key: "customers", labelKey: "nav.customers", icon: Users, section: "crm", href: "/c/customers", ready: false, managerOnly: true },
+  // ADMIN — configuration + people (manager-only)
+  { key: "settings", labelKey: "nav.settings", icon: Settings, section: "admin", href: "/c/settings", ready: false, managerOnly: true },
+  { key: "team", labelKey: "nav.team", icon: UserCog, section: "admin", href: "/c/team", ready: false, managerOnly: true },
+  { key: "onboarding", labelKey: "nav.onboarding", icon: Rocket, section: "admin", href: "/c/onboarding", ready: false, managerOnly: true },
 ];
 
-/** Items for a section, in declaration order. */
-export function railItemsFor(section: RailSection): RailItem[] {
-  return RAIL_ITEMS.filter((i) => i.section === section);
+export type ConsoleRole = "manager" | "operation";
+
+/** Items for a section a given role may see, in declaration order. Operators get
+ *  only the operation surfaces (managerOnly:false); managers get everything. */
+export function railItemsFor(section: RailSection, role: ConsoleRole): RailItem[] {
+  return RAIL_ITEMS.filter((i) => i.section === section && (role === "manager" || !i.managerOnly));
+}
+
+/** The role-aware landing target after login + workspace pick. Both roles land on
+ *  Live Shift (manager with the full rail, operator on the floor). Returns the rail
+ *  item so the caller can honor `ready`: while Shift is unbuilt the /c home renders
+ *  a placeholder; the moment item 5 flips live-shift.ready, /c forwards to it — no
+ *  code change at the call site, and never a redirect to a 404. */
+export function landingItem(_role: ConsoleRole): RailItem {
+  const shift = RAIL_ITEMS.find((i) => i.key === "live-shift");
+  if (!shift) throw new Error("console_v2 nav: live-shift item missing");
+  return shift;
 }
