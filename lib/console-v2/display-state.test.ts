@@ -13,6 +13,7 @@ import {
   derivePaymentDisplay,
   deriveConversationDisplay,
   deriveAttribution,
+  displayState,
   TONE_TOKENS,
   type Tone,
 } from "./display-state.ts";
@@ -119,4 +120,27 @@ test("law — red (safety tone) never appears outside safety holds", () => {
 test("law — cancelled + failed payment are muted, not red", () => {
   assert.equal(deriveOrderDisplay("cancelled").tone, "neutral");
   assert.equal(derivePaymentDisplay("failed").tone, "warning");
+});
+
+// ---------------------------------------------------------------------------
+// Canonical composition: displayState(order, conversation) returns three axes as
+// one object (Design_Handoff line 43) without merging them into one badge.
+// ---------------------------------------------------------------------------
+test("displayState — composes the three axes + payment, agreeing with per-axis fns", () => {
+  const axes = displayState(
+    { orderStatus: "preparing", posStatus: "not_entered", paymentStatus: "paid" },
+    { ownershipState: "AI_ACTIVE" }
+  );
+  assert.equal(axes.order.state, deriveOrderDisplay("preparing").state);
+  assert.equal(axes.pos?.state, derivePosDisplay("not_entered").state);
+  assert.equal(axes.payment?.state, derivePaymentDisplay("paid").state);
+  assert.equal(axes.conversation?.state, "ai_active");
+});
+
+test("displayState — omitted axes are null, present axes render", () => {
+  const axes = displayState({ orderStatus: "paid" }); // no pos/payment/conversation
+  assert.equal(axes.order.state, "confirmed");
+  assert.equal(axes.pos, null);
+  assert.equal(axes.payment, null);
+  assert.equal(axes.conversation, null);
 });

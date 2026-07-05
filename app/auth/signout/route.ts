@@ -26,8 +26,17 @@ async function endSession(request: Request) {
   if (supabase) {
     await supabase.auth.signOut();
   }
-  // 303 → the browser issues a GET to /login (hard navigation, fresh request).
-  return NextResponse.redirect(new URL("/login", request.url), { status: 303 });
+  // 303 → the browser issues a GET to the post-signout page (hard navigation,
+  // fresh request). Defaults to the old console's /login; console_v2 passes
+  // ?next=/c/login so sign-out lands back on the new login. Only a SAME-ORIGIN
+  // relative path is honored: it must start with a single "/" and not "//" or
+  // "/\" (both of which new URL() would treat as a protocol-relative EXTERNAL
+  // host) — otherwise a crafted logout link becomes an open redirect.
+  const nextParam = new URL(request.url).searchParams.get("next");
+  const isSafe =
+    !!nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") && !nextParam.startsWith("/\\");
+  const next = isSafe ? nextParam : "/login";
+  return NextResponse.redirect(new URL(next, request.url), { status: 303 });
 }
 
 export async function POST(request: Request) {

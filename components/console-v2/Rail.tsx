@@ -10,9 +10,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogOut } from "lucide-react";
 import { KivoMark } from "@/components/brand/KivoLogo";
 import { useT } from "@/lib/i18n/lang";
-import { RAIL_SECTIONS, railItemsFor, type RailItem } from "@/lib/console-v2/nav";
+import { RAIL_SECTIONS, railItemsFor, type RailItem, type ConsoleRole } from "@/lib/console-v2/nav";
 import { TruthChip } from "./TruthChip";
 
 function RailRow({ item, active }: { item: RailItem; active: boolean }) {
@@ -70,7 +71,7 @@ function RailRow({ item, active }: { item: RailItem; active: boolean }) {
   );
 }
 
-export function Rail({ tenantName }: { tenantName?: string }) {
+export function Rail({ tenantName, role = "manager" }: { tenantName?: string; role?: ConsoleRole }) {
   const t = useT();
   const pathname = usePathname() ?? "";
   const isActive = (item: RailItem) =>
@@ -128,7 +129,7 @@ export function Rail({ tenantName }: { tenantName?: string }) {
       </div>
 
       {RAIL_SECTIONS.map(({ section, labelKey }) => {
-        const items = railItemsFor(section);
+        const items = railItemsFor(section, role);
         if (items.length === 0) return null;
         return (
           <div key={section}>
@@ -145,6 +146,33 @@ export function Rail({ tenantName }: { tenantName?: string }) {
           </div>
         );
       })}
+
+      {/* Sign out — a real form POST to the server route (clears auth cookies),
+          then a hard nav to /c/login. Sits at the rail foot. */}
+      <form action="/auth/signout?next=/c/login" method="post" style={{ marginTop: "auto", paddingTop: 16 }}>
+        <button
+          type="submit"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 11,
+            width: "100%",
+            height: 40,
+            padding: "0 12px",
+            borderRadius: 13,
+            border: 0,
+            background: "transparent",
+            color: "var(--kv-muted)",
+            fontFamily: "var(--kv-font)",
+            fontSize: 13.5,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          <LogOut size={18} strokeWidth={2.1} style={{ flex: "none" }} />
+          <span style={{ flex: 1, textAlign: "start" }}>{t("action.signOut")}</span>
+        </button>
+      </form>
     </aside>
   );
 }

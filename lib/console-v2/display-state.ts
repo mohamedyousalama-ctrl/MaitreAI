@@ -227,3 +227,45 @@ export function deriveAttribution(
       return assertNever(sender);
   }
 }
+
+// ---------------------------------------------------------------------------
+// displayState(order, conversation) — the CANONICAL composition (Design_Handoff
+// line 43: "order status, conversation ownership, POS handoff are three axes —
+// never one badge. One displayState(order, conversation) function maps them.").
+//
+// The per-axis derive*() functions above stay the pure, individually-tested units;
+// this is the single entry that maps a row's three axes AT ONCE and returns them
+// as one object — three separate axis displays, never merged into a single badge.
+// Payment is included as its own axis (Part 4's passive payment chip), kept
+// distinct from the three lifecycle axes. Any field the row doesn't carry yields
+// null for that axis, so a page renders only the axes it has.
+// ---------------------------------------------------------------------------
+export interface OrderAxes {
+  orderStatus: OrderStatusKey;
+  posStatus?: PosStatus | null;
+  paymentStatus?: PaymentStatusKey | null;
+}
+
+export interface ConversationAxes {
+  ownershipState: ConversationOwnershipState;
+  isSafetyHold?: boolean;
+}
+
+export interface DisplayAxes {
+  order: DisplayState<OrderDisplayState>;
+  pos: DisplayState<PosDisplayState> | null;
+  payment: DisplayState<PaymentDisplayState> | null;
+  conversation: DisplayState<ConversationDisplayState> | null;
+}
+
+export function displayState(
+  order: OrderAxes,
+  conversation?: ConversationAxes | null
+): DisplayAxes {
+  return {
+    order: deriveOrderDisplay(order.orderStatus),
+    pos: order.posStatus != null ? derivePosDisplay(order.posStatus) : null,
+    payment: order.paymentStatus != null ? derivePaymentDisplay(order.paymentStatus) : null,
+    conversation: conversation ? deriveConversationDisplay(conversation) : null,
+  };
+}

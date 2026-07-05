@@ -1,7 +1,9 @@
-// console_v2 — foundation styleguide (PR 1 verification surface). Renders every
-// display state the mapping table produces plus the truth/attribution chips, so
-// the foundation is provable at a glance and future page PRs have a living
-// reference. Reachable only when CONSOLE_V2 is on (the group layout gates it).
+// console_v2 — foundation styleguide (the living law-verification surface). Renders
+// every display state the mapping table produces plus the truth/attribution chips,
+// so the foundation is provable at a glance and future page PRs have a reference.
+// A DESIGN reference with no tenant data, so it sits OUTSIDE the authed (app) gate:
+// reachable whenever CONSOLE_V2 is on (Layer-1), and it renders its own <AppFrame>
+// (rail) with a static workspace label rather than resolving a real tenant.
 
 import {
   deriveOrderDisplay,
@@ -11,7 +13,7 @@ import {
   type ConversationOwnershipState,
 } from "@/lib/console-v2/display-state";
 import type { OrderStatusKey, PaymentStatusKey, PosStatus } from "@/lib/types";
-import { StateChip, TruthChip, AttributionChip, type TruthState } from "@/components/console-v2";
+import { AppFrame, StateChip, TruthChip, AttributionChip, type TruthState } from "@/components/console-v2";
 import type { AttributableSender } from "@/lib/console-v2/display-state";
 
 const ORDER_STATUSES: OrderStatusKey[] = [
@@ -37,6 +39,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function FoundationPage() {
   return (
+    <AppFrame tenantName="Kivo · styleguide" role="manager">
     <div style={{ maxWidth: 860 }}>
       <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-text)", margin: "0 0 4px" }}>
         أساس الكونسول ‏· console_v2 foundation
@@ -83,5 +86,6 @@ export default function FoundationPage() {
         ))}
       </Section>
     </div>
+    </AppFrame>
   );
 }
