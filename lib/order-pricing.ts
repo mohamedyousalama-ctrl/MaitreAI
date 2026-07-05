@@ -187,11 +187,16 @@ function resolveDeliveryZone(args: RecomputeOrderPricingInput, subtotal: number)
   return zone;
 }
 
-function computeTax(subtotal: number, taxMode: PricingTaxMode | null | undefined, rawRate: number | null | undefined) {
+// WO-VAT-1: the VAT base is subtotal + deliveryFee. A delivery charge the
+// restaurant bills the customer is part of the taxable supply under KSA VAT, so
+// it bears the rate too (the pass-through exemption fits agency arrangements we
+// don't have). delivery taxable per PM ruling 5 Jul — tenant accountant may
+// confirm at onboarding. EG tenants (rate 0) are unaffected.
+function computeTax(base: number, taxMode: PricingTaxMode | null | undefined, rawRate: number | null | undefined) {
   const rate = Number(rawRate ?? 0);
   if (!Number.isFinite(rate) || rate <= 0) return { taxAmount: 0, taxRate: 0 };
-  if (taxMode === "added") return { taxAmount: money(subtotal * (rate / 100)), taxRate: rate };
-  return { taxAmount: money(subtotal * (rate / (100 + rate))), taxRate: rate };
+  if (taxMode === "added") return { taxAmount: money(base * (rate / 100)), taxRate: rate };
+  return { taxAmount: money(base * (rate / (100 + rate))), taxRate: rate };
 }
 
 export function recomputeOrderPricing(args: RecomputeOrderPricingInput): RecomputedOrderPricing {
@@ -244,7 +249,9 @@ export function recomputeOrderPricing(args: RecomputeOrderPricingInput): Recompu
   const subtotal = money(lines.reduce((sum, line) => sum + line.lineTotal, 0));
   const deliveryZone = resolveDeliveryZone(args, subtotal);
   const deliveryFee = args.fulfillment === "delivery" && deliveryZone ? money(deliveryZone.deliveryFee) : 0;
-  const { taxAmount, taxRate } = computeTax(subtotal, args.taxMode, args.taxRate);
+  // WO-VAT-1: delivery is part of the taxable supply → the VAT base includes it.
+  const taxBase = money(subtotal + deliveryFee);
+  const { taxAmount, taxRate } = computeTax(taxBase, args.taxMode, args.taxRate);
   const total =
     args.taxMode === "added"
       ? money(subtotal + deliveryFee + taxAmount)
