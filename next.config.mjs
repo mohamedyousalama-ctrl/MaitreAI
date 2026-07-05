@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Item 16: an .eslintrc.json now exists (to wire the custom local-rules plugin).
+  // Keep `next build` from newly gating on ESLint — lint runs as its own step
+  // (`next lint` / CI), so a pre-existing lint finding never breaks a deploy.
+  eslint: { ignoreDuringBuilds: true },
   // react-leaflet + @react-leaflet/core are ESM-only; transpile them so the
   // storefront map (client-only, dynamically imported) bundles cleanly.
   transpilePackages: ["react-leaflet", "@react-leaflet/core"],
