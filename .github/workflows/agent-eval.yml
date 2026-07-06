@@ -179,6 +179,13 @@ jobs:
       - name: KSA allergen-dialect coverage (ratified — blocking)
         run: KSA_GATE_RATIFIED=1 node --experimental-strip-types scripts/test-allergen-gate-ksa.test.ts
 
+      # ── Blocking gate 11: Smart-menu conversation playbook ────────────────
+      # 37 cases: the photo-request judgment classifier (specific=1/category=3/
+      # full-menu=0-first/more=+3→link), media-pause states, and the overlay
+      # contract (all six intent behaviours + media rules, both dialects). Pure TS.
+      - name: Menu playbook unit tests
+        run: node --experimental-strip-types scripts/test-menu-playbook.test.ts
+
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
       # included here so that IF a CI Supabase secret is ever wired up, they
