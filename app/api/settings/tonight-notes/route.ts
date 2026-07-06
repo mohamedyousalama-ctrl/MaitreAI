@@ -14,6 +14,7 @@ import { recordAuditEvent } from "@/lib/db/audit";
 import { TONIGHT_MAX } from "@/lib/ai/standing-instructions";
 import { computeTonightExpiryMs } from "@/lib/settings/tonight-expiry";
 import { WEEK_DAYS } from "@/lib/settings/hours";
+import { effectiveHours, type RestaurantHoursFields } from "@/lib/settings/effective-hours";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,8 +98,13 @@ export async function POST(req: Request) {
   }
 
   // Expiry from today's service window (tenant tz), bounded [now+1h, now+18h].
-  const { data: rest } = await admin.from("restaurants").select("hours, timezone").eq("id", rid).maybeSingle();
-  const hours = ((rest as { hours?: Record<string, unknown> } | null)?.hours) ?? null;
+  // Ramadan-aware: effectiveHours resolves ramadan_hours when the mode is on.
+  const { data: rest } = await admin
+    .from("restaurants")
+    .select("hours, ramadan_mode, ramadan_hours, timezone")
+    .eq("id", rid)
+    .maybeSingle();
+  const hours = (effectiveHours(rest as RestaurantHoursFields | null) as Record<string, unknown> | null) ?? null;
   const timezone = String((rest as { timezone?: string } | null)?.timezone ?? "Africa/Cairo");
   const nowMs = Date.now();
   const expiresAt = new Date(computeTonightExpiryMs(nowMs, todayCloseMs(hours, timezone, nowMs))).toISOString();
