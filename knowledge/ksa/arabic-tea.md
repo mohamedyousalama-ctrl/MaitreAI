@@ -8,6 +8,7 @@ regions: [najd, hijaz, asir, eastern, all]
 default_pairings: [saudi-sweets, dates, mutabbaq]
 menu_join_hint: "Red tea (often with mint or saffron), served sweet. Offer only if the tenant sells tea. Match the real variants the item lists (mint/na'na, saffron, plain)."
 allergens_note: "The tea itself is low-risk, but it is served WITH sweets/nuts and sometimes with milk (Adani/Hijazi milk tea = dairy). Cultural caution only; safety from the item's data + the gate."
+inject_summary: "شاهي أحمر دافئ ومحلّى، بالنعناع المنعش أو الزعفران الذهبي؛ رفيق الجلسة بعد القهوة وطبق الحلا."
 version: 1
 ---
 

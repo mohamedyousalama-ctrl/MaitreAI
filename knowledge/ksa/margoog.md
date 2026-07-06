@@ -8,6 +8,7 @@ regions: [najd, all]
 default_pairings: [gahwa, dates, laban]
 menu_join_hint: "Margoog is a Najdi dough-and-vegetable stew. Offer only if the tenant sells it. Related to jareesh/qursan/matazeez — keep them distinct per the menu."
 allergens_note: "Built on thin WHEAT dough discs simmered in the stew — inherently GLUTEN-heavy. Cultural caution only; the item's allergens data + the gate decide safety."
+inject_summary: "عجين قمح طري بمرق الخضار واللحم الكثيف؛ أكلة نجدية دافئة ومشبعة، راحة الشتاء أكثر من كونها طبق استعراض."
 version: 1
 ---
 

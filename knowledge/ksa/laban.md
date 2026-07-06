@@ -8,6 +8,7 @@ regions: [najd, eastern, all]
 default_pairings: [kabsa, mandi, jareesh, margoog]
 menu_join_hint: "Laban is the classic savoury drink alongside rice/meat meals. Offer only if the tenant sells it (as a drink or side). Distinct from sweet flavoured milk; do not substitute."
 allergens_note: "Laban is a DAIRY product (cultured milk/buttermilk) — an outright dairy allergen. Never offer it to a customer with a dairy allergy. Cultural caution only; safety from the item's data + the gate."
+inject_summary: "لبن رايب بارد، حامض خفيف ومالح، يقطع دسم الرز والمشوي؛ المشروب المالح الكلاسيكي جنب الكبسة والمندي."
 version: 1
 ---
 
