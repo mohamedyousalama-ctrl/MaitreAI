@@ -83,3 +83,54 @@ export function rankKsaEntries(entries: readonly KsaEntry[], region: string, cui
 export function selectKsaEntries(region: string, cuisineTags: readonly string[]): KsaEntry[] {
   return rankKsaEntries(KSA_ENTRIES, region, cuisineTags);
 }
+
+// ── RENDER half (spec §3) ───────────────────────────────────────────────────
+/** Static framing line so the model never mistakes the block for orderable menu. */
+export const ENCYCLOPEDIA_BLOCK_HEADER = "ثقافة السوق (معرفة فقط، ليست منيو):";
+
+/** UTF-8 byte length (portable, no Buffer dependency). */
+const byteLen = (s: string): number => new TextEncoder().encode(s).length;
+
+/** Truncate to ≤ maxBytes UTF-8 bytes at a word boundary, appending «…». Deterministic.
+ *  The pack's menu_join_hint is long guidance prose, so most lines exceed the 480-byte
+ *  per-line cap (spec §3) and are trimmed here — the curated inject_summary + the
+ *  «تُقترح فقط لو كانت ضمن منيو المطعم» clause carry the menu-gated meaning regardless. */
+export function capLineBytes(s: string, maxBytes: number): string {
+  if (byteLen(s) <= maxBytes) return s;
+  let end = s.length;
+  while (end > 0 && byteLen(s.slice(0, end)) > maxBytes - 3) end--; // room for «…»
+  const lastSpace = s.lastIndexOf(" ", end);
+  if (lastSpace > 0) end = lastSpace;
+  return s.slice(0, end).replace(/\s+$/, "") + "…";
+}
+
+/**
+ * Render ONE entry to the compact line (spec §3), capped to MAX_INJECT_LINE_BYTES.
+ * Built from frontmatter ONLY (no body). NO price, NO allergens_note (§3/§10) — the
+ * allergens_note is caution-only background and is never surfaced as a sell line.
+ */
+export function renderKsaEntryLine(e: KsaEntry): string {
+  const summary = e.injectSummary ?? "";
+  const line = `• ${e.nameAr} (${e.nameEn}) — ${summary}. تُقترح فقط لو كانت ضمن منيو المطعم. ${e.menuJoinHint}`.trim();
+  return capLineBytes(line, MAX_INJECT_LINE_BYTES);
+}
+
+/**
+ * Build the full encyclopedia block for injection (spec §3). Selects (§2), renders
+ * each line, then enforces the block byte cap with the §3 DROP ORDER: pop from the
+ * TAIL — which is Tier-B bottom (lowest score, ties id DESC) then the optional spine
+ * (arabic-tea) — but NEVER below the two-entry core spine (gahwa, dates). Whole-entry
+ * drops only. Returns "" only if nothing selected (spine always injects when flag ON).
+ */
+export function buildKsaEncyclopediaBlock(region: string, cuisineTags: readonly string[]): string {
+  const list = selectKsaEntries(region, cuisineTags);
+  if (!list.length) return "";
+  const render = (es: KsaEntry[]) => `\n\n## ${ENCYCLOPEDIA_BLOCK_HEADER}\n${es.map(renderKsaEntryLine).join("\n")}`;
+  let block = render(list);
+  // Core spine (gahwa, dates) sit at positions 0-1, so stopping at length 2 protects them.
+  while (list.length > 2 && byteLen(block) > MAX_ENCYCLOPEDIA_BYTES) {
+    list.pop();
+    block = render(list);
+  }
+  return block;
+}
