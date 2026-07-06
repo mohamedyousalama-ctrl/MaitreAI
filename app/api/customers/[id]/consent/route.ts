@@ -38,7 +38,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     granted,
     source: "operator",
   });
-  if (!res.ok) return NextResponse.json({ error: "write_failed" }, { status: 500 });
+  if (!res.ok) {
+    // Zero-row (stale/cross-tenant id) → 404 so we never audit a change that
+    // didn't happen; a real DB error → 500.
+    const status = res.error === "customer_not_found" ? 404 : 500;
+    return NextResponse.json({ error: res.error ?? "write_failed" }, { status });
+  }
 
   // Audit the lawful-basis change (best-effort; never blocks the write result).
   await recordAuditEvent(admin, {
