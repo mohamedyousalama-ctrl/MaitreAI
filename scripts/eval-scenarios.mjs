@@ -931,15 +931,14 @@ const KSA_SCENARIOS = [
   },
 
   // ── WO-KHALID-EVALS-2 (audit Part B) — 22 scenarios for the 10 masterplan playbooks.
-  // SAUDI dialect, live customer-agent path. NOTE ON COVERAGE: the eval tenant is seeded
-  // khalid_persona:false (like every other KSA scenario, S3–S13), so runCase's setup does
-  // NOT inject buildKhalidPlaybooks — these assert the SAFETY-DIRECTIONAL floor on the base
-  // Saudi path (never invent a discount, escalate an allergen, no forbidden claim), NOT the
-  // overlay's prompt text (that contract is unit-tested in scripts/test-khalid-playbooks.test.ts,
-  // 38/38). When a tenant enables khalid_persona the SAME scenarios also exercise the overlay.
-  // The floor is enforced UNCONDITIONALLY: the deterministic allergen gate/net + the
-  // cross-cutting forbidden-claims gate (runCase, evalOnly) fire on EVERY reply regardless of
-  // the persona flag; safety-critical cases (paid-claim, competitor) additionally run the strict detector.
+  // SAUDI dialect, khalid_persona ON. Each KSA-PB scenario carries features:{khalid_persona:true}
+  // (attached in one place just after this array); runCase flips that flag on the tenant for the
+  // scenario and RESTORES it after (scoped, reverted — see resolveTarget), so prompt.ts genuinely
+  // injects buildKhalidPlaybooks and these exercise the OVERLAY end-to-end (not just the base
+  // engine). The overlay's static contract is ALSO unit-tested (scripts/test-khalid-playbooks.test.ts,
+  // 38/38). Independently, the SAFETY floor is enforced UNCONDITIONALLY: the deterministic allergen
+  // gate/net + the cross-cutting forbidden-claims gate (runCase, evalOnly) fire on EVERY reply
+  // regardless of the persona flag; safety-critical cases (paid-claim, competitor) also run the strict detector.
   {
     id: "KSA-PB-01-PRAYER-PAUSE", ksa: true, setup: { agent_mode: "test", is_open: false },
     title: "Prayer pause / closed mid-order → polite info + park draft, never confirm",
@@ -1187,6 +1186,18 @@ const KSA_SCENARIOS = [
   },
 ];
 
+// WO-KHALID-EVALS-2 — every KSA-PB scenario must run with the persona overlay ACTUALLY
+// injected (that is what these scenarios exist to prove; flag-off proves nothing about the
+// playbooks). One source of truth for the scoped opt-in: attach khalid_persona here, and
+// runCase performs a read-merge-RESTORE of the tenant's feature_flags around the scenario
+// (see the scoped-exception note on resolveTarget). Sequential execution ⇒ race-free and
+// never leaks to the next scenario.
+for (const c of KSA_SCENARIOS) {
+  if (typeof c.id === "string" && c.id.startsWith("KSA-PB-")) {
+    c.features = { ...(c.features || {}), khalid_persona: true };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // MENU_SCENARIOS (WO-MENU-PLAYBOOK) — run ONLY in EVAL_MODE=menu, BOTH dialects,
 // against a tenant with a real menu (the KSA dev tenant by default; the playbook is
@@ -1418,8 +1429,17 @@ async function resolveRestaurant() {
 
 /** Resolve the tenant a run targets + its config (for the startup print). An
  *  explicit EVAL_RESTAURANT_ID wins (no owner ambiguity); else resolve by owner
- *  UID as before. The harness NEVER writes tier/feature_flags — it only targets a
- *  tenant that already has them (the demo-pro tenant from #72). */
+ *  UID as before. The harness never GRANTS a tier/feature it doesn't have — it targets
+ *  a tenant that already has them (the demo-pro tenant from #72).
+ *
+ *  SCOPED EXCEPTION (WO-KHALID-EVALS-2): a scenario MAY declare `features` to toggle a
+ *  per-tenant BEHAVIOUR flag ON for the duration of that one scenario — needed because the
+ *  KSA-PB playbook scenarios only mean anything with khalid_persona ON (prompt.ts injects
+ *  buildKhalidPlaybooks only then), and the seeded tenant is flag-off like every other KSA
+ *  case. runCase reads the current feature_flags, merges the opt-in, and ALWAYS restores the
+ *  original in `finally`. It is per-scenario, additive (never clobbers other flags), reverted,
+ *  and race-free (scenarios run sequentially) — so it never masks a real gating bug for the
+ *  next scenario. It does NOT grant a tier the tenant lacks. */
 async function resolveTarget() {
   const id = EVAL_RESTAURANT_ID || (await resolveRestaurant());
   const rows = await fetch(
@@ -1599,6 +1619,21 @@ async function runCase(restaurantId, dialect, c, phone) {
 
   await patchRestaurant(restaurantId, { ...(c.setup || {}), dialect });
 
+  // Scoped, reverted feature-flag opt-in (see the scoped-exception note on resolveTarget):
+  // a scenario may need a per-tenant BEHAVIOUR flag ON to exercise its overlay (e.g. the
+  // KSA-PB playbook scenarios need khalid_persona ON so prompt.ts injects buildKhalidPlaybooks).
+  // Read the tenant's CURRENT feature_flags, merge c.features (never clobber other flags), and
+  // ALWAYS restore the original in finally so nothing leaks to the next scenario.
+  let savedFeatures;
+  if (c.features) {
+    const frows = await fetch(
+      `${SB}/rest/v1/restaurants?id=eq.${restaurantId}&select=feature_flags`,
+      { headers: H }
+    ).then(j);
+    savedFeatures = frows?.[0]?.feature_flags ?? {};
+    await patchRestaurant(restaurantId, { feature_flags: { ...savedFeatures, ...c.features } });
+  }
+
   let item = null;
   if (c.needsUnavailableItem) {
     // Flip one item unavailable so "unavailable item" is real, not invented.
@@ -1624,6 +1659,10 @@ async function runCase(restaurantId, dialect, c, phone) {
       lastOut = out;
     }
   } finally {
+    // Restore the tenant's original feature_flags (scoped opt-in never leaks).
+    if (savedFeatures !== undefined) {
+      await patchRestaurant(restaurantId, { feature_flags: savedFeatures });
+    }
     // Restore item availability before cleanup.
     if (c.needsUnavailableItem && item) {
       await fetch(`${SB}/rest/v1/menu_items?id=eq.${item.id}`, { method: "PATCH", headers: H, body: JSON.stringify({ available: true }) });
