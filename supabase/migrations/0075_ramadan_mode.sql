@@ -1,5 +1,5 @@
 -- ============================================================================
--- Kivo (KSA) — WO-RAMADAN-MODE (0074). Seasonal hours override.
+-- Kivo (KSA) — WO-RAMADAN-MODE (0075). Seasonal hours override.
 -- Additive + idempotent. PREPARE-ONLY: NOT applied (joins an off-peak batch).
 --
 -- ramadan_mode + ramadan_hours let a tenant flip to Ramadan operating hours for
