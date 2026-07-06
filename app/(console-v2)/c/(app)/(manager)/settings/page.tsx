@@ -25,14 +25,16 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   MessageSquare, Flag, Building2, Clock3, Power, Rocket, Pencil,
-  Check, AlertTriangle, Clock, Lock,
+  Check, AlertTriangle, Clock, Lock, Printer,
 } from "lucide-react";
-import { TruthChip } from "@/components/console-v2";
+import { TruthChip, type TruthState } from "@/components/console-v2";
 import { useConsoleOps } from "@/lib/console-ops-store";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi } from "@/components/kivo";
 import type { DictKey } from "@/lib/i18n/dictionary";
 import type { Probe, ProbeStatus, WhatsAppProbeId } from "@/lib/messaging/whatsapp-health";
+import { parsePrinterConfig, PRINT_WIDTHS, type PrinterConfig, type PrintWidth } from "@/lib/print/printer-config";
+import { connectQz, listQzPrinters, type QzStatus } from "@/lib/print/qz-client";
 
 // Canon §2 hexes — proven=emerald, failing=amber (alarm, NOT red), unobserved=slate.
 const PROBE_TONE: Record<ProbeStatus, { fg: string; bg: string }> = {
@@ -113,6 +115,7 @@ export default function SettingsPage() {
         <FeatureFlags flags={flags} onChanged={load} />
         <Identity identity={identity} onSaved={load} />
         <Hours hours={hours} />
+        <QzPrinter />
         <Emergency />
       </div>
 
@@ -519,6 +522,103 @@ function GateRow({ label, children }: { label: string; children: React.ReactNode
 // ---------------------------------------------------------------------------
 // shared bits
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WO-QZ-PRINT — silent-print config. Flag-gated (qz_print); the route reports
+// enabled:false with the flag off. Connection state uses the truth vocabulary:
+// connected→LIVE (proven), not-yet→GATHERING (not proven), failed→DEGRADED
+// (amber alarm, never red — red is safety only). Browser print is always the
+// fallback, so a not-proven connection is never an error state on its own.
+// ---------------------------------------------------------------------------
+const QZ_CONN_STATE: Record<QzStatus, TruthState> = { connected: "live", disconnected: "gathering", error: "degraded" };
+const QZ_CONN_LABEL: Record<QzStatus, DictKey> = {
+  connected: "set.printer.conn.connected",
+  disconnected: "set.printer.conn.notproven",
+  error: "set.printer.conn.failed",
+};
+
+function QzPrinter() {
+  const t = useT();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [config, setConfig] = useState<PrinterConfig>({ name: "", width: "80mm", auto_print: false });
+  const [printers, setPrinters] = useState<string[]>([]);
+  const [conn, setConn] = useState<QzStatus>("disconnected");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/settings/printer")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive) return;
+        if (!d) { setEnabled(false); return; }
+        setEnabled(!!d.enabled);
+        if (d.enabled && d.config) setConfig(parsePrinterConfig(d.config));
+      })
+      .catch(() => { if (alive) setEnabled(false); });
+    return () => { alive = false; };
+  }, []);
+
+  async function scan() {
+    setConn("disconnected");
+    const s = await connectQz();
+    setConn(s);
+    if (s === "connected") setPrinters(await listQzPrinters());
+  }
+  async function save(patch: Partial<PrinterConfig>) {
+    const next = { ...config, ...patch };
+    setConfig(next);
+    setSaving(true);
+    try {
+      await fetch("/api/settings/printer", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: next.name, width: next.width, auto_print: next.auto_print }),
+      });
+    } catch { /* best-effort */ } finally { setSaving(false); }
+  }
+
+  if (enabled === null) return null; // loading — render nothing (no fabricated state)
+
+  return (
+    <section style={card}>
+      <SectionHead icon={<Printer size={16} />} title={t("set.printer.title")} sub={t("set.printer.sub")}>
+        {enabled ? <TruthChip state={QZ_CONN_STATE[conn]} label={t(QZ_CONN_LABEL[conn])} /> : null}
+      </SectionHead>
+      {!enabled ? (
+        <p style={{ fontSize: 12.5, color: "var(--kv-faint)" }}>{t("set.printer.off")}</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <button onClick={scan} style={ghostBtn}>{t("set.printer.scan")}</button>
+          <label style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-muted)" }}>
+            {t("set.printer.printer")}
+            <select value={config.name} onChange={(e) => save({ name: e.target.value })} style={{ ...input, display: "block", marginTop: 6, width: "100%" }}>
+              <option value="">{t("set.printer.pick")}</option>
+              {config.name && !printers.includes(config.name) ? <option value={config.name}>{config.name}</option> : null}
+              {printers.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {(PRINT_WIDTHS as readonly PrintWidth[]).map((w) => (
+              <button key={w} onClick={() => save({ width: w })} aria-pressed={config.width === w}
+                style={{ ...pill, cursor: "pointer", border: "1.5px solid var(--kv-border)",
+                  background: config.width === w ? "var(--kv-grad-brand)" : "var(--kv-card)",
+                  color: config.width === w ? "#fff" : "var(--kv-muted)" }}>
+                {t(w === "58mm" ? "set.printer.w58" : "set.printer.w80")}
+              </button>
+            ))}
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, fontWeight: 700, color: "var(--kv-text)", cursor: "pointer" }}>
+            <input type="checkbox" checked={config.auto_print} onChange={(e) => save({ auto_print: e.target.checked })} />
+            {t("set.printer.autoprint")}
+          </label>
+          <span style={{ fontSize: 11.5, color: "var(--kv-faint)", lineHeight: 1.6 }}>
+            {saving ? t("set.printer.saving") : t("set.printer.help")}
+          </span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SectionHead({ icon, title, sub, tone, children }: { icon: React.ReactNode; title: string; sub?: string; tone?: string; children?: React.ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
