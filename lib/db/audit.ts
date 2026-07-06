@@ -38,7 +38,12 @@ export type AuditAction =
   | "settings_flag_flipped"
   | "settings_alerts_updated"
   // R3 — a kitchen ticket / receipt was printed for an order (hand-off evidence).
-  | "order_printed";
+  | "order_printed"
+  // Item 10 — knowledge change-request pipeline (the signing folder). Every
+  // transition records WHO did WHAT; apply additionally names the truth write.
+  | "knowledge_change_proposed"
+  | "knowledge_change_reviewed"
+  | "knowledge_change_applied";
 
 export interface AuditInput {
   restaurantId: string;
