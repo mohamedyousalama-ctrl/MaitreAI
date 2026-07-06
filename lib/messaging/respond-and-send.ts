@@ -17,6 +17,7 @@ import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink, sendW
 import { decideVoiceSend, voiceHardZeroReason, voiceNotesPerDay } from "./voice-budget";
 import { shouldOfferVoiceReply } from "@/lib/ai/voice-reply-trigger";
 import { synthesizeVoiceReply } from "@/lib/ai/tts";
+import { buildPhotoThreadCaptions } from "./photo-thread";
 import { decideMediaSend, CONVERSATION_MEDIA_BUDGET, type MediaZeroReason } from "./media-guard";
 import { isSafetyHeld } from "@/lib/db/safety-hold";
 import { appBaseUrl } from "@/lib/db/delivery";
@@ -323,12 +324,20 @@ async function sendRequestedPhotos(
     return;
   }
 
+  // WO-PHOTO-THREAD — reshape ONLY the images that passed the caps into a compact
+  // captioned sequence: image 0 carries a lead caption naming the set, each image
+  // keeps its own name—price tag. Presentation-only — the slice (which/how many)
+  // is decided above by decideMediaSend and is unchanged.
+  const shown = photoRequests.slice(0, decision.allowed);
+  const captions = buildPhotoThreadCaptions(shown);
+
   let sent = 0;
-  for (const photo of photoRequests.slice(0, decision.allowed)) {
+  for (let i = 0; i < shown.length; i++) {
+    const photo = shown[i];
     const send = await sendWhatsAppImageLink({
       to: phone,
       imageUrl: photo.imageUrl,
-      caption: photo.caption,
+      caption: captions[i],
       lastInboundAtMs,
     });
     if (send.status === "failed") {

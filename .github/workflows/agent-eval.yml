@@ -296,6 +296,15 @@ jobs:
       - name: Voice-2 outbound decision unit tests
         run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-voice-2.test.ts
 
+      # ── Blocking gate 17: WO-PHOTO-THREAD compact captioned photo sequence ─
+      # Mohamed's note 4 ("small thread moving"): 2+ dish photos read as one set —
+      # a lead caption names the items, each image keeps its name/price. Asserts the
+      # captions (lead naming, per-image name/price, order, single-image unchanged)
+      # AND that it reshapes only the post-cap slice, so caps/budget/hard-zero all
+      # still bind (presentation within the cap).
+      - name: Photo-thread sequencing unit tests
+        run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-photo-thread.test.ts
+
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
       # included here so that IF a CI Supabase secret is ever wired up, they
