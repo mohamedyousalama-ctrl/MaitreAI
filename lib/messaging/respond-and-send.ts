@@ -496,6 +496,10 @@ export async function respondAndSendWhatsApp(
   const lastInteractiveId = (rows[lastCustomerIdx].meta as { interactiveId?: string } | null)?.interactiveId;
   const userMessage = routeInteractive(lastInteractiveId, rawText).text;
   if (!userMessage) return { status: "skipped_no_customer_msg" };
+  // WO-VOICE-1: carry the transcribed voice note's STT confidence (persisted in meta
+  // by the webhook) into the turn so the fail-closed net's SECONDARY tripwire can read
+  // it. Undefined for typed messages → the tripwire is inert (pipeline unchanged).
+  const sttConfidence = (rows[lastCustomerIdx].meta as { stt_confidence?: number } | null)?.stt_confidence;
   const lastInboundAtMs = new Date(rows[lastCustomerIdx].created_at).getTime();
 
   // HX1 — label human-authored turns so Karim distinguishes its own words from the
@@ -554,7 +558,7 @@ export async function respondAndSendWhatsApp(
   //    human on escalation. Any failure hands the thread to a human + notes it.
   let outcome;
   try {
-    outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage });
+    outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage, sttConfidence });
   } catch (e) {
     // Fix B: surface the REAL message (was discarding it → «agent_error: agent_error»).
     const detail = e instanceof CustomerTurnError ? (e.message || e.code) : e instanceof Error ? e.message : String(e);

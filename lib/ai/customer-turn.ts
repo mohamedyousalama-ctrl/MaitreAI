@@ -24,6 +24,7 @@ import { isSafetyHold } from "@/lib/tenant/handoff";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
+import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
 import { detectCallbackRequest } from "@/lib/ai/callback-trigger";
 import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
@@ -51,6 +52,10 @@ export interface CustomerTurnInput {
   userMessage: string;
   /** Persist the AI reply as a message row (default true when conversationId is set). */
   persistReply?: boolean;
+  /** WO-VOICE-1: STT confidence when this turn was a transcribed voice note
+   *  (undefined for typed text). Feeds ONLY the fail-closed net's secondary
+   *  confidence tripwire; the pipeline is otherwise unchanged. */
+  sttConfidence?: number | null;
 }
 
 export interface CustomerTurnOutcome {
@@ -95,7 +100,9 @@ function forcedAllergenSafetyResult(
   term: string | null,
   dialect: string,
   initialDraft: OrderDraft | null,
-  currency: string
+  currency: string,
+  source: "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" = "allergen_gate",
+  netReason: string | null = null
 ): RespondResult {
   const t = term && term !== "الحساسية" ? `«${term}»` : "الحساسية";
   const reply =
@@ -108,7 +115,7 @@ function forcedAllergenSafetyResult(
     draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
     escalate: true,
     escalationReason: reason,
-    signals: [{ type: "escalation", detail: { reason, source: "allergen_gate", term } }],
+    signals: [{ type: "escalation", detail: { reason, source, term, ...(netReason ? { netReason } : {}) } }],
     presentation: null,
     photoRequests: [],
     usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
@@ -344,7 +351,23 @@ export async function runCustomerTurn(
   const symptomHit = (!allergenHit.fired && symptomDetectionOn)
     ? detectAllergenSymptom(input.userMessage)
     : { fired: false, term: null };
-  const combinedAllergenHit = allergenHit.fired ? allergenHit : symptomHit;
+  // WO-VOICE-1 (item-38, binding) — the FAIL-CLOSED PHONETIC NET runs UNCONDITIONALLY
+  // (never flag-gated, like the base gate): a near-match/garble/allergy-context on the
+  // transcript (or typed text) that the exact vocabulary gate missed forces the same
+  // deterministic hold. The 0.66 STT-confidence floor is a SECONDARY tripwire only.
+  // Evaluated last (only when the exact gates did not already fire) so a hold decision
+  // is reached before perception/LLM.
+  const phoneticHit = (!allergenHit.fired && !symptomHit.fired)
+    ? detectPhoneticSafetyNet(input.userMessage, { sttConfidence: input.sttConfidence })
+    : { fired: false, term: null, reason: null as string | null };
+  const combinedAllergenHit = allergenHit.fired ? allergenHit : (symptomHit.fired ? symptomHit : phoneticHit);
+  // Distinct source for observability (net-trip vs vocabulary-hit) — carried into the
+  // escalation signal metadata so the live net false-positive rate is watchable.
+  const holdSource = allergenHit.fired
+    ? "allergen_gate"
+    : symptomHit.fired
+      ? "allergen_symptom"
+      : "phonetic_safety_net";
 
   // P3 perception — skip the Haiku read entirely when the deterministic gate already
   // fired (the decision is made; no LLM needed). Otherwise unchanged.
@@ -358,7 +381,10 @@ export async function runCustomerTurn(
   let result: RespondResult;
   if (combinedAllergenHit.fired) {
     // Deterministic safety escalation — no LLM call, draft preserved.
-    result = forcedAllergenSafetyResult(combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency);
+    result = forcedAllergenSafetyResult(
+      combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency,
+      holdSource, holdSource === "phonetic_safety_net" ? phoneticHit.reason : null
+    );
   } else {
     try {
       result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive });
@@ -461,6 +487,7 @@ export async function runCustomerTurn(
     // order guard trigger even for a flag-absent tenant. Unchanged for ON tenants.
     flipPatch.is_safety_hold =
       allergenHit.fired ||
+      phoneticHit.fired ||
       isSafetyHold(result.escalationReason) ||
       perception?.risk === "allergy" ||
       perception?.risk === "safety";

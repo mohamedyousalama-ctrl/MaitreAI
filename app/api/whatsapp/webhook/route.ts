@@ -261,6 +261,11 @@ export async function POST(req: NextRequest) {
             } else {
               const t = await transcribeWhatsAppVoice(m.audioId, m.audioMime);
               m.text = t.text || "[رسالة صوتية — تعذّر التفريغ]";
+              // WO-VOICE-1: keep the STT provenance so the audio ref + confidence land
+              // in messages.meta and the fail-closed net's secondary tripwire can read
+              // the confidence downstream.
+              m.sttModel = t.model;
+              if (typeof t.confidence === "number") m.sttConfidence = t.confidence;
               stt = { adapter: t.adapter, model: t.model, costUsd: t.costUsd };
             }
           }

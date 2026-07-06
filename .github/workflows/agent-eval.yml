@@ -271,6 +271,15 @@ jobs:
       - name: Callback trigger unit tests
         run: node --experimental-strip-types scripts/proof-callback.test.ts
 
+      # ── Blocking gate 15: WO-VOICE-1 fail-closed phonetic safety net ──────
+      # Consumes #338's eval set (scripts/voice/khalid-voice-eval-set.json) offline
+      # (no OpenAI key, no spend): every mustFlag STT item fires the net, the clean
+      # control (STT-20) does NOT, curated garbled allergy transcripts still fire,
+      # phonetic near-match coverage ≥ floor, and the module lexicon ⊇ the ratified
+      # safety lexicon (drift guard). The voice equivalent of the allergen hard-test.
+      - name: Voice phonetic safety net unit tests
+        run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-voice-safety-net.test.ts
+
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
       # included here so that IF a CI Supabase secret is ever wired up, they
