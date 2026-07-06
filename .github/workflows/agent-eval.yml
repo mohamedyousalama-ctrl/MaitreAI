@@ -163,6 +163,13 @@ jobs:
       - name: WhatsApp capacity unit tests
         run: node --experimental-strip-types scripts/proof-wa-capacity.test.ts
 
+      # ── Blocking gate 7c: pay-link customer message (WO-PAYLINK-MSG) ───────
+      # 10 cases: the verbatim customer pay-link template — order #, VAT-inclusive
+      # total in ر.س, the 15-min expiry line, and the anti-phishing safety line,
+      # all in Arabic digits. Pure composer (no imports), strip-types-safe.
+      - name: Pay-link message unit tests
+        run: node --experimental-strip-types scripts/proof-paylink.test.ts
+
       # ── Blocking gate 8: Khalid persona-layer contract ────────────────────
       # 35 cases: region resolution (Najdi default), name fallback, and the
       # persona-layer contract — the overlay defers to the engine on

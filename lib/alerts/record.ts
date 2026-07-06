@@ -40,6 +40,10 @@ export type CriticalAlertType =
   // WO-3c — a verified 'paid' webhook could not stamp the order (0 rows — e.g. the
   // order is missing). The session is NOT marked paid (held); a human reconciles.
   | "payment_stamp_failed"
+  // WO-PAYLINK-EXPIRY — a 'paid' webhook settled a session that had already EXPIRED
+  // (the customer paid a stale link). Money truth stands: we record paid + stamp the
+  // order, NEVER refuse — but raise this so a human reconciles a possible double-link.
+  | "paid_after_expiry"
   // WO-SAFE-1 — a payment settled on an order whose conversation is under an active
   // safety hold. Money truth stands (not blocked); SAFE-1 holds it from the kitchen;
   // a human must review before fulfilment.

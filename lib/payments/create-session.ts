@@ -131,6 +131,11 @@ export async function createMoyasarSession(
   }
   if (amountMinor <= 0) return { ok: false, error: "amount_nonpositive" };
 
+  // WO-PAYLINK-EXPIRY — ONE expiry instant for both our session row AND the
+  // provider invoice (createPayment below), so the hosted link dies at Moyasar
+  // exactly when our session expires.
+  const expiresAtIso = new Date(nowMs + DEFAULT_EXPIRY_MS).toISOString();
+
   // 3) Create the session row FIRST (status 'created') so provider metadata can
   //    carry a real sessionId before we call the PSP.
   const { data: sess, error: insErr } = await admin
@@ -143,7 +148,7 @@ export async function createMoyasarSession(
       currency: displayCurrency, // DISPLAY glyph (e.g. 'ر.س')
       psp_currency: "SAR", // ISO currency actually sent to Moyasar (createPayment below) — the webhook verifies against THIS, not the glyph
       status: "created",
-      expires_at: new Date(nowMs + DEFAULT_EXPIRY_MS).toISOString(),
+      expires_at: expiresAtIso,
     })
     .select("id")
     .single();
@@ -190,6 +195,7 @@ export async function createMoyasarSession(
       callbackUrl,
       metadata: { sessionId, restaurantId, orderId },
       secretKey,
+      expiresAt: expiresAtIso, // WO-PAYLINK-EXPIRY — provider dead-links at session expiry
     });
   } catch {
     // A failed create must NOT present as link_sent. Mark failed, report back.

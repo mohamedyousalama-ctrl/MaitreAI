@@ -140,6 +140,16 @@ async function run() {
     check("failed after paid → session stays paid", store.payment_sessions[0].status === "paid");
   }
 
+  // ---- WO-PAYLINK-EXPIRY: paid on an EXPIRED session → settle, never refuse, alert
+  {
+    const store = seed({ sessionStatus: "expired" }); const alerts: string[] = []; const notifies: string[] = [];
+    const r = await handleMoyasarWebhook(makeAdmin(store), body({ eventId: "evt_exp" }), {}, deps({ alerts, notifies }));
+    check("paid on expired → 200 paid (money truth, NEVER refused)",
+      r.httpStatus === 200 && r.outcome === "paid" && store.orders[0].payment_status === "paid" && store.payment_sessions[0].status === "paid");
+    check("paid on expired → paid_after_expiry alert raised", alerts.includes("paid_after_expiry"));
+    check("paid on expired → customer still notified once", notifies.length === 1);
+  }
+
   // ---- failed (fresh) → session failed, order untouched ----------------------
   {
     const store = seed();
