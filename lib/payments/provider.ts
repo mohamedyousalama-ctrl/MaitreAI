@@ -30,6 +30,10 @@ export interface CreatePaymentInput {
   metadata: Record<string, string>;
   /** Decrypted secret key (sk_…). Passed in; never read from env here. */
   secretKey: string;
+  /** WO-PAYLINK-EXPIRY — ISO 8601 provider-side invoice expiry (= our session
+   *  expiry). When set, the PSP itself dead-links the hosted page after this
+   *  instant so a stale link can't be paid. Optional; omitted ⇒ no provider expiry. */
+  expiresAt?: string;
 }
 
 export interface CreatePaymentResult {

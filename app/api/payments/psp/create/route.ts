@@ -12,6 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createMoyasarSession } from "@/lib/payments/create-session";
+import { sendPayLink } from "@/lib/payments/paylink";
 import { checkOrderSafetyHold } from "@/lib/db/safety-hold-guard";
 
 export const runtime = "nodejs";
@@ -90,5 +91,22 @@ export async function POST(req: NextRequest) {
       result.error === "psp_disabled" ? 403 : CONFLICT_ERRORS.has(result.error) ? 409 : CLIENT_ERRORS.has(result.error) ? 400 : 502;
     return NextResponse.json({ ok: false, error: result.error }, { status });
   }
-  return NextResponse.json({ ok: true, sessionId: result.sessionId, payUrl: result.payUrl, reused: !!result.reused });
+  // WO-PAYLINK-MSG — on a FRESH session, send the customer the pay-link message
+  // (order #, VAT-inclusive total in ر.س, 15-min expiry, anti-phishing line).
+  // Best-effort: a send failure never fails link creation. We do NOT message on
+  // REUSE (Codex P2): the "valid 15 min" line would be false for a link partway
+  // through its (unchanged, provider-hard) expiry, and the customer already
+  // received it when the session was first created.
+  const paylink: { sent: boolean; reason?: string } = result.reused
+    ? { sent: false, reason: "reused_no_message" }
+    : await sendPayLink(admin, tenant.restaurantId, orderId, result.payUrl);
+
+  return NextResponse.json({
+    ok: true,
+    sessionId: result.sessionId,
+    payUrl: result.payUrl,
+    reused: !!result.reused,
+    messaged: paylink.sent,
+    ...(paylink.reason ? { messageReason: paylink.reason } : {}),
+  });
 }

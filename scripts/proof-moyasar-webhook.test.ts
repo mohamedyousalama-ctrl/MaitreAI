@@ -47,7 +47,7 @@ function makeAdmin(store: Record<string, Row[]>) {
 }
 
 // A session paying 50.00 SAR = 5000 halalas.
-function seed(over: { sessionStatus?: string; flags?: Row; orderStatus?: string; pspCurrency?: string | null } = {}) {
+function seed(over: { sessionStatus?: string; flags?: Row; orderStatus?: string; pspCurrency?: string | null; expiresAt?: string } = {}) {
   return {
     payment_sessions: [{
       id: "sess-1", restaurant_id: "A", order_id: "ord-1", amount: 50,
@@ -56,6 +56,8 @@ function seed(over: { sessionStatus?: string; flags?: Row; orderStatus?: string;
       currency: "ر.س",
       psp_currency: over.pspCurrency !== undefined ? over.pspCurrency : "SAR",
       status: over.sessionStatus ?? "opened", provider_ref: "inv_1",
+      // Default expiry FAR in the future so a normal paid event is not stale.
+      expires_at: over.expiresAt ?? "2999-01-01T00:00:00.000Z",
       orders: { order_number: "W-100", customers: { phone: "966500000001" } },
     }],
     restaurants: [{ id: "A", psp_webhook_secret_enc: "SECRET", feature_flags: over.flags ?? { psp_payments: true } }],
@@ -138,6 +140,31 @@ async function run() {
     const r = await handleMoyasarWebhook(makeAdmin(store), body({ eventId: "evt_late", status: "failed" }), {}, deps());
     check("failed after paid → 200 noop_terminal", r.outcome === "noop_terminal");
     check("failed after paid → session stays paid", store.payment_sessions[0].status === "paid");
+  }
+
+  // ---- WO-PAYLINK-EXPIRY: paid on an EXPIRED session → settle, never refuse, alert
+  {
+    const store = seed({ sessionStatus: "expired" }); const alerts: string[] = []; const notifies: string[] = [];
+    const r = await handleMoyasarWebhook(makeAdmin(store), body({ eventId: "evt_exp" }), {}, deps({ alerts, notifies }));
+    check("paid on expired → 200 paid (money truth, NEVER refused)",
+      r.httpStatus === 200 && r.outcome === "paid" && store.orders[0].payment_status === "paid" && store.payment_sessions[0].status === "paid");
+    check("paid on expired → paid_after_expiry alert raised", alerts.includes("paid_after_expiry"));
+    check("paid on expired → customer still notified once", notifies.length === 1);
+  }
+
+  // ---- WO-PAYLINK-EXPIRY: stale by expires_at (status still active) → alert too --
+  {
+    const store = seed({ sessionStatus: "link_sent", expiresAt: "2000-01-01T00:00:00.000Z" });
+    const alerts: string[] = [];
+    const r = await handleMoyasarWebhook(makeAdmin(store), body({ eventId: "evt_stale" }), {}, deps({ alerts }));
+    check("paid after expires_at (status still link_sent) → paid + paid_after_expiry alert",
+      r.outcome === "paid" && store.orders[0].payment_status === "paid" && alerts.includes("paid_after_expiry"));
+  }
+  // ---- fresh (future expiry) paid → NO paid_after_expiry alert ----------------
+  {
+    const store = seed(); const alerts: string[] = [];
+    await handleMoyasarWebhook(makeAdmin(store), body({ eventId: "evt_fresh" }), {}, deps({ alerts }));
+    check("fresh paid (future expiry) → no paid_after_expiry alert", !alerts.includes("paid_after_expiry"));
   }
 
   // ---- failed (fresh) → session failed, order untouched ----------------------

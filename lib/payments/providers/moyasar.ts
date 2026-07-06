@@ -128,6 +128,10 @@ export const moyasarProvider: PaymentProvider = {
         ...(input.callbackUrl
           ? { callback_url: input.callbackUrl, success_url: input.callbackUrl, back_url: input.callbackUrl }
           : {}),
+        // WO-PAYLINK-EXPIRY — provider-side invoice expiry (ISO 8601). Moyasar
+        // stops accepting payment on the hosted page after this instant, so a
+        // stale link dies at the provider, not just in our session row.
+        ...(input.expiresAt ? { expired_at: input.expiresAt } : {}),
         metadata: input.metadata,
       }),
     });

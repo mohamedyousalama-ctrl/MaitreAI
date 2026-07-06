@@ -50,6 +50,7 @@ interface SessionRow {
   currency: string; // DISPLAY glyph (e.g. 'ر.س') — NOT what the PSP uses
   psp_currency: string | null; // ISO the session was created with at the PSP (e.g. 'SAR')
   status: string;
+  expires_at: string | null; // when the link/invoice lapses (may pass before status flips)
 }
 
 // Tiny, explicit glyph→ISO fallback for legacy rows created before psp_currency
@@ -106,7 +107,7 @@ export async function handleMoyasarWebhook(
   //    passes, on the paid notify path. Unknown session → swallow 200 (never leak).
   const { data: sessionRaw } = await admin
     .from("payment_sessions")
-    .select("id, restaurant_id, order_id, amount, currency, psp_currency, status")
+    .select("id, restaurant_id, order_id, amount, currency, psp_currency, status, expires_at")
     .eq("provider_ref", providerRef)
     .maybeSingle();
   const session = sessionRaw as SessionRow | null;
@@ -191,6 +192,15 @@ export async function handleMoyasarWebhook(
 
   // 8. TRANSITIONS.
   if (status === "paid") {
+    // WO-PAYLINK-EXPIRY — capture the pre-settlement "was this a stale link?" signal
+    // NOW (before any transition mutates it). Detect staleness by expires_at PASSING
+    // too (Codex P2): a stale link is usually still 'link_sent'/'opened' — status
+    // only flips to 'expired' if the checkout API is hit or an expired webhook lands,
+    // so a paid webhook arriving after expiry but before that flip would otherwise
+    // miss the alert.
+    const expiryMs = session.expires_at ? Date.parse(session.expires_at) : NaN;
+    const wasExpired =
+      session.status === "expired" || (Number.isFinite(expiryMs) && expiryMs < Date.now());
     // VERIFY amount + currency against the SESSION. Amount: charged minor units ==
     // the engine value at create time. Currency: compared against psp_currency —
     // the ISO the session was created with at the PSP (e.g. 'SAR') — NOT the
@@ -239,6 +249,23 @@ export async function handleMoyasarWebhook(
     // no double-notify on a retry/out-of-order). Best-effort. PII (order_number +
     // phone) is loaded HERE, post-verify, NOT in the pre-verify read.
     if (!changed) return { httpStatus: 200, outcome: "paid_noop" };
+
+    // WO-PAYLINK-EXPIRY (ruling): if the paid event settled a session that had
+    // already EXPIRED (customer paid a stale link), money truth stands — we've
+    // recorded paid + stamped the order above, NEVER refused — but raise an alert
+    // so a human reconciles a possible double-link. Best-effort, on the flip only.
+    if (wasExpired) {
+      try {
+        await recordAlert(admin, {
+          restaurantId,
+          type: "paid_after_expiry",
+          detail: `Moyasar settled an EXPIRED session ${session.id} (stale link paid) — order ${session.order_id} recorded paid (money truth); reconcile for a possible duplicate link.`,
+          context: { sessionId: session.id, orderId: session.order_id, providerRef },
+        });
+      } catch (e) {
+        console.error("[moyasar:webhook] paid_after_expiry alert failed (non-blocking):", e);
+      }
+    }
 
     // WO-SAFE-1 companion (ruling): money truth stands — the order is already stamped
     // paid (Moyasar settled) and SAFE-1 blocks the OPERATOR from advancing it to
