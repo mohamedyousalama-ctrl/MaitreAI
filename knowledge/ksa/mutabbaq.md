@@ -8,6 +8,7 @@ regions: [hijaz]
 default_pairings: [arabic-tea, laban, ramadan-drinks]
 menu_join_hint: "Mutabbaq is a Hijazi stuffed folded pastry (savoury meat/egg, or sweet banana). Offer only if the tenant sells it, and only the fillings the item lists."
 allergens_note: "WHEAT dough (gluten); savoury filling includes EGG and meat; sweet version has banana; cooked on a greased griddle. Cultural caution only; safety from the item's data + the gate."
+inject_summary: "معجنة حجازية ذهبية مقرمشة من الخارج؛ الحشو المالح متبّل بالبيض واللحم، والموز الحلو طري — لقمة يدوية من أكل الشارع."
 version: 1
 ---
 

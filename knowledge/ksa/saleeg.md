@@ -8,6 +8,7 @@ regions: [hijaz]
 default_pairings: [gahwa, dukkah, shatta]
 menu_join_hint: "Saleeg is a Hijazi/Taif specialty — creamy rice with chicken. Offer only if the tenant sells it. It is distinct from kabsa/mandi; do not substitute silently."
 allergens_note: "Rice cooked in milk/broth (dairy) and often finished with ghee (سمن), sometimes a cream/butter drizzle. DAIRY-forward by nature — a real caution for a dairy allergy, but the clearance still comes from the item's allergens data + the gate, never this file."
+inject_summary: "رز طائفي كريمي طري بالدجاج، هادئ ومريح، والشطة الجانبية تعطيه الحرارة — تخصص حجازي أصيل يختلف عن الكبسة والمندي."
 version: 1
 ---
 

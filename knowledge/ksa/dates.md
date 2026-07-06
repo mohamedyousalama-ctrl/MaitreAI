@@ -8,6 +8,7 @@ regions: [eastern, najd, all]
 default_pairings: [gahwa, arabic-tea, laban]
 menu_join_hint: "Dates are the universal companion to gahwa. Offer only if the tenant sells dates (as an item or a side). Named varieties (Ajwa, Sukkari, Khalas...) only if the tenant lists them."
 allergens_note: "Dates are commonly STUFFED with nuts (almonds/walnuts) or served with nut-garnished sweets — a real nut caution. Some are rolled in sesame. Cultural caution only; safety from the item's data + the gate."
+inject_summary: "حلاوة الترحاب ورفيقة القهوة؛ من السكري المقرمش إلى الخلاص الطري والعجوة الداكنة — بها يُفتتح المجلس."
 version: 1
 ---
 

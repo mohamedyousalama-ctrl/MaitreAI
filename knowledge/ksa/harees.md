@@ -8,6 +8,7 @@ regions: [hijaz, eastern, all]
 default_pairings: [gahwa, dates, arabic-tea]
 menu_join_hint: "Harees is a smooth wheat-and-meat porridge, big in Ramadan. Offer only if the tenant sells it. Smoother than jareesh; do not conflate."
 allergens_note: "Whole/crushed WHEAT blended with meat — gluten by nature; sometimes finished with ghee/butter (dairy) and sugar/cinnamon variants. Cultural caution only; safety from the item's data + the gate."
+inject_summary: "هريس ناعم حريري من القمح واللحم، غني القوام بلا قشطة؛ خفيف على النفس ومشبع — من كلاسيكيات مائدة الإفطار."
 version: 1
 ---
 
