@@ -94,10 +94,33 @@ const CASES: KsaCase[] = [
   { text: "ما أتحمل اللاكتوز", expectFire: true, currentlyCovered: false, region: "all", category: "GAP:condition-lactose", symptomLayerMitigates: false },
   { text: "عندي أنيميا الفول", expectFire: true, currentlyCovered: false, region: "all", category: "GAP:condition-favism", symptomLayerMitigates: true },
 
+  // ── WO-KHALID audit v2 (PROPOSAL — held for PM named sign-off; informational until
+  //    KSA_GATE_RATIFIED=1). Parent-frame (a caregiver reports a CHILD's allergy/avoidance),
+  //    elderly + intolerance, all context-anchored on a co-occurring allergen term. ──────
+  { text: "ابني يتحسس من المكسرات", expectFire: true, currentlyCovered: false, region: "all", category: "GAP:parent-child-تحسس", symptomLayerMitigates: false },
+  { text: "بنتي ما تاكل بيض أبد", expectFire: true, currentlyCovered: false, region: "all", category: "GAP:parent-child-avoid", symptomLayerMitigates: false },
+  { text: "عيالي ما ياكلون فول سوداني", expectFire: true, currentlyCovered: false, region: "najd", category: "GAP:parent-child-avoid", symptomLayerMitigates: false },
+  { text: "أنا كبير وما أتحمل اللاكتوز", expectFire: true, currentlyCovered: false, region: "all", category: "GAP:elderly-intolerance", symptomLayerMitigates: false },
+  { text: "كبير بالسن وما يناسبني القمح", expectFire: true, currentlyCovered: false, region: "all", category: "GAP:elderly-intolerance", symptomLayerMitigates: false },
+
   // ── NEGATIVES — must NOT fire (positive intent, no avoidance) ─────────────
   { text: "أبغى صنف فيه مكسرات", expectFire: false, currentlyCovered: false, region: "all", category: "neg-wants-it" },
   { text: "أحب اللوز مره", expectFire: false, currentlyCovered: false, region: "najd", category: "neg-likes-it" },
   { text: "عطني كبسة بالمكسرات", expectFire: false, currentlyCovered: false, region: "najd", category: "neg-wants-it" },
+  // audit v2 anchor-safety: a parent-frame avoidance with NO allergen term must NOT fire
+  // (proves the proposed §3d third-person frame stays anchored on a co-occurring allergen).
+  { text: "ابني ما ياكل خضار", expectFire: false, currentlyCovered: false, region: "all", category: "neg-no-allergen" },
+  { text: "أنا ما آكل إلا المكسرات", expectFire: false, currentlyCovered: false, region: "all", category: "neg-only-eats (1st-person, not avoidance)" },
+  // Mohamed's named trap words — «حساس» (non-allergy sense), «الرجيم» (diet), «الراجل» (the man).
+  { text: "عندي موضوع حساس بخصوص الطلب", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-موضوع-حساس" },
+  { text: "أنا على الرجيم وأبغى شي خفيف", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-الرجيم" },
+  { text: "وين الراجل اللي ياخذ الطلب", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-الراجل" },
+  // PM sign-off condition (#354): «حساسة الموقف» / «الموقف حساس» — the adjective «حساس(ة)»
+  // in its NON-allergy "sensitive (situation)" sense. EXPLICIT_ALLERGY_RE binds «حساس» to a
+  // following preposition (من/تجاه/ضد/علي); here a NOUN follows, so it must NOT fire. Locked
+  // here so a future regex edit can't silently break the non-fire (was proven only by probe).
+  { text: "حساسة الموقف", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-حساسة-الموقف" },
+  { text: "الموقف حساس شوي", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-الموقف-حساس" },
 ];
 
 const RATIFIED = process.env.KSA_GATE_RATIFIED === "1";

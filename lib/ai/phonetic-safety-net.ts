@@ -56,6 +56,7 @@ const SYMPTOM_SINGLE = ["ينتفخ", "تورم", "طفح", "حكه", "كتمه"
 const PHRASES = [
   // avoidance_markers
   "ما اقدر اكل", "مو قادر اكل", "مب قادر اكل", "ما يصير اكل", "ما ينفع اكل",
+  "معادر اكل", // WO-KHALID audit v2 (4b) — elided Najdi «مو قادر»→«معادر»
   "ما اتحمل", "ممنوع علي", "الدكتور منع",
   // symptom phrases
   "ضيق نفس", "ما اقدر اتنفس", "حلقي يضيق", "انيميا الفول",
@@ -98,6 +99,14 @@ export function stripAffix(tok: string): string {
   // optional definite article
   if (t.length > 3 && t.startsWith("ال")) t = t.slice(2);
   return t;
+}
+
+/** WO-KHALID audit v2 (item 4b) — collapse the Saudi ASR confusable consonants
+ *  (ث/ص → س, ذ/ظ → ز) so a garble like «تحصّص» folds onto «تحسس» before distance.
+ *  Applied ONLY inside the near-matcher (both token and lexicon term), never to the
+ *  raw text, so it cannot change what the exact vocabulary gate sees. */
+function phoneticFold(s: string): string {
+  return s.replace(/[ثص]/g, "س").replace(/[ذظ]/g, "ز");
 }
 
 /** Levenshtein edit distance (iterative, O(n·m)). */
@@ -157,9 +166,10 @@ export interface PhoneticNetOptions {
  *  (where a naive strip would wrongly eat the stem's leading ل/ب). */
 function bestDist(rawNorm: string, term: string): number {
   const stripped = stripAffix(rawNorm);
-  const d1 = levenshtein(rawNorm, term);
+  const t = phoneticFold(term);
+  const d1 = Math.min(levenshtein(rawNorm, term), levenshtein(phoneticFold(rawNorm), t));
   if (stripped === rawNorm) return d1;
-  return Math.min(d1, levenshtein(stripped, term));
+  return Math.min(d1, levenshtein(stripped, term), levenshtein(phoneticFold(stripped), t));
 }
 
 /** Return the nearest single safety term to a token within the length-scaled

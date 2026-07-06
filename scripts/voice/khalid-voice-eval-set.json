@@ -526,13 +526,11 @@
       "firing_today_locked_in_test": [
         "جلوتين→بلوتين",
         "لبن→النبن",
-        "symptom near: وجهي ينتفخ / طفح+سمق"
+        "تحسس→تحصّص (item 4b matcher fold ث/ص→س)",
+        "مو قادر→معادر (item 4b phrase)",
+        "symptom near"
       ],
-      "HELD_for_signoff_matcher_gap": {
-        "تحسس→تحصّص": "needs ص↔س phonetic colour OR len-4 budget=2 in phonetic-safety-net.ts (safety code)",
-        "مو قادر→معادر (elided)": "needs phrase-NEAR (matcher does exact substring only) in phonetic-safety-net.ts",
-        "note": "these MISS on the current net (verified); fixing touches the safety matcher → PROPOSAL, holds for PM named sign-off (not flipped to blocking here)."
-      }
+      "matcher_change_ref": "lib/ai/phonetic-safety-net.ts — phoneticFold(ث/ص→س, ذ/ظ→ز) in bestDist + «معادر اكل» phrase (WO-KHALID item 4b; holds for PM sign-off on #354)."
     }
   }
 }

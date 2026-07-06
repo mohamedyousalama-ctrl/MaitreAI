@@ -137,6 +137,36 @@ Applying 3a–3c: **10/10 base gaps close · 9/9 existing must-fire still fire �
 stay silent** (incl. every false-positive trap). The symptom-class gaps are unaffected (they are
 the symptom layer's responsibility).
 
+### 3d. WO-KHALID audit v2 — parent-frame avoidance (PROPOSAL — held for PM named sign-off) 🔴
+
+The Saudi-behavior audit adds parent/elderly/intolerance phrasings. Measured against **today's** gate
+(via the new cases in `scripts/test-allergen-gate-ksa.test.ts`), most already fire — only the
+**third-person / child-subject avoidance** frame misses:
+
+| Audit phrasing | Today | Note |
+|---|---|---|
+| «ابني يتحسس من المكسرات» | ✅ CLOSED | verb `تحسس` (3a) already covers it, any subject |
+| «أنا كبير وما أتحمل اللاكتوز» | ✅ CLOSED | `ما أتحمل` + `لاكتوز` (3b/3c) |
+| «كبير بالسن وما يناسبني القمح» | ✅ CLOSED | `ما يناسبني` + allergen |
+| **«بنتي ما تاكل بيض أبد»** | 🔴 **GAP** | third-person negation `ما تاكل` not an avoidance marker |
+| **«عيالي ما ياكلون فول سوداني»** | 🔴 **GAP** | plural third-person `ما ياكلون` |
+
+**Proposed (context-anchored, safe by construction — fires ONLY with a co-occurring allergen term,
+exactly like §3b):** extend `AVOIDANCE_INTENT_RE` with the third-person negated-eat frame —
+`ما\s+(ت|ي)أكل(ون|ين|ها)?` / `ما\s+ياكل` — **requiring** an `ALLERGEN_TERMS` co-occurrence in the
+same turn. The allergen co-occurrence is the anchor (per the PM ruling in §4b), so a bare «ابني ما
+ياكل خضار» does **not** trip. Elderly + intolerance need **no** new pattern (already covered).
+
+**Status: PROPOSAL only.** No `lib/ai/allergen-gate*.ts` change here. Rides the SAME ratified path and
+conditions as §3 (full 211-eval + KSA regression green in one run · `KSA_GATE_RATIFIED=1` flipped to
+blocking · **PM named sign-off** at merge). The v2 cases are in the KSA eval harness as informational
+gaps today; they become blocking under `KSA_GATE_RATIFIED=1` alongside the §3 additions.
+
+> Also recorded for the same sign-off (from the voice audit, item 4b): two phonetic-net garble gaps —
+> `تحسس→تحصّص` (needs ص↔س colour / len-4 budget) and `مو قادر→معادر` (needs phrase-near) in
+> `lib/ai/phonetic-safety-net.ts` (`scripts/voice/khalid-voice-eval-set.json` →
+> `auditConfusionPairs_v2.HELD_for_signoff_matcher_gap`). Safety-matcher change → same held path.
+
 ---
 
 ## 4. The ratified path — checklist for the (separate) merge PR

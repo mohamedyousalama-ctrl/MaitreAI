@@ -74,6 +74,9 @@ const GARBLED_TRANSCRIPTS = [
   // WO-KHALID (Saudi-behavior audit Part B) — added Saudi confusion pairs that fire today:
   "ما ابي بلوتين ابدا",            // noun garble بلوتين→جلوتين (audit pair; rule B-i)
   "ابي اكل بس ما ابي النبن",       // noun garble النبن→لبن (audit pair; bare garbled allergen, no marker)
+  // WO-KHALID item 4b — closed by the matcher change (phoneticFold ث/ص→س, ذ/ظ→ز; «معادر اكل» phrase):
+  "يجيني تحصّص من الفستق",         // marker garble تحصّص→تحسس (ص↔س fold)
+  "معادر اكل جمبري تكفى",          // elided avoidance معادر→مو قادر (phrase)
 ];
 for (const t of GARBLED_TRANSCRIPTS) {
   const hit = detectPhoneticSafetyNet(t);

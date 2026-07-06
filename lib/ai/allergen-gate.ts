@@ -101,6 +101,11 @@ const AVOIDANCE_INTENT_RE = new RegExp(
     "ما ?يصير ?اكل|ما ?يجوز ?اكل", // ما يصير/يجوز آكل (not permissible to eat)
     "تاذي|تضر", // feminine/3rd-person harm (تأذيني/تضرني)
     "ما ?اتحمل|مااتحمل", // ما أتحمل (intolerance)
+    // WO-KHALID audit v2 — parent-frame 3rd-person negated-eat «بنتي ما تاكل بيض» /
+    // «عيالي ما ياكلون فول سوداني». Matches ت/ي-initial (3rd-person) ONLY, so 1st-person
+    // «ما آكل» (→«ما اكل», no ت/ي) can't fire «ما آكل إلا المكسرات» (I only eat nuts).
+    // Still allergen-anchored (intent && hasAllergen), so «ابني ما ياكل خضار» never trips.
+    "ما ?(?:ت|ي)اكل(?:ون|ين|ها|ه)?",
   ].join("|")
 );
 
