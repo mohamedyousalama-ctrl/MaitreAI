@@ -89,7 +89,8 @@ export async function POST(req: NextRequest) {
     const CONFLICT_ERRORS = new Set(["order_already_paid", "session_pending"]);
     const status =
       result.error === "psp_disabled" ? 403 : CONFLICT_ERRORS.has(result.error) ? 409 : CLIENT_ERRORS.has(result.error) ? 400 : 502;
-    return NextResponse.json({ ok: false, error: result.error }, { status });
+    // DIAGNOSTIC (one-off): pass through the provider's raw rejection detail.
+    return NextResponse.json({ ok: false, error: result.error, ...(result.detail ? { detail: result.detail } : {}) }, { status });
   }
   // WO-PAYLINK-MSG — on a FRESH session, send the customer the pay-link message
   // (order #, VAT-inclusive total in ر.س, 15-min expiry, anti-phishing line).

@@ -37,7 +37,7 @@ export interface CreateMoyasarSessionParams {
 
 export type CreateMoyasarSessionResult =
   | { ok: true; sessionId: string; payUrl: string; providerRef: string; reused?: boolean }
-  | { ok: false; error: string };
+  | { ok: false; error: string; detail?: string };
 
 export async function createMoyasarSession(
   admin: SupabaseClient,
@@ -196,13 +196,17 @@ export async function createMoyasarSession(
       secretKey,
       expiresAt: expiresAtIso, // WO-PAYLINK-EXPIRY — provider dead-links at session expiry
     });
-  } catch {
+  } catch (e) {
+    // DIAGNOSTIC (one-off): surface Moyasar's raw rejection body (moyasar.ts throws
+    // `moyasar_create_failed status=<code> <body>`), previously swallowed here.
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("[psp/create] moyasar_create_failed:", detail);
     // A failed create must NOT present as link_sent. Mark failed, report back.
     await admin
       .from("payment_sessions")
       .update({ status: "failed", updated_at: new Date().toISOString() })
       .eq("id", sessionId);
-    return { ok: false, error: "provider_create_failed" };
+    return { ok: false, error: "provider_create_failed", detail };
   }
 
   // 5) Persist provider_ref + link and advance → link_sent.
