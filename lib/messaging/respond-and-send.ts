@@ -14,7 +14,7 @@ import { routeInteractive } from "@/lib/messaging/interactive-router";
 import { evaluateTesterAllowlist } from "@/lib/messaging/tester-allowlist";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
-import { decideMediaSend, type MediaZeroReason } from "./media-guard";
+import { decideMediaSend, CONVERSATION_MEDIA_BUDGET, type MediaZeroReason } from "./media-guard";
 import { isSafetyHeld } from "@/lib/db/safety-hold";
 import { appBaseUrl } from "@/lib/db/delivery";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
@@ -196,8 +196,20 @@ async function sendRequestedPhotos(
       .select("images_sent")
       .eq("id", conversationId)
       .maybeSingle();
-    if (cErr && (cErr.code === "42703" || /does not exist/i.test(cErr.message ?? ""))) {
-      counterDeployed = false;
+    if (cErr) {
+      if (cErr.code === "42703" || /does not exist/i.test(cErr.message ?? "")) {
+        // Column not deployed yet (pre-0070) → budget inert; the 3/message cap +
+        // hard-zero still fully apply. A KNOWN not-a-failure state, not an error.
+        counterDeployed = false;
+      } else {
+        // TRANSIENT read failure (network / RLS / timeout) → FAIL SAFE: treat the
+        // budget as fully consumed so we send NO images and offer the web menu
+        // instead. NEVER fall through to 0 (= full budget), which would silently
+        // un-count and over-send on a flaky read. Leave counterDeployed=false so we
+        // never persist a counter computed over unknown state.
+        imagesAlreadySent = CONVERSATION_MEDIA_BUDGET;
+        counterDeployed = false;
+      }
     } else {
       imagesAlreadySent = Number((cRow as { images_sent?: number } | null)?.images_sent ?? 0);
     }

@@ -30,13 +30,12 @@ export const LEGACY_MAX_IMAGES = 4;
 /** Why the guard sent zero (or fewer) images than requested. */
 export type MediaZeroReason = "safety_hold" | "complaint_open" | "payment_pending";
 
-export type MediaDecisionReason =
+/** Reasons where images DO go out (or the legacy path) — never a menu link. */
+type SendReason =
   | "disabled" // media_guard flag OFF → legacy slice(0,4), no budget, no hard-zero
   | "ok" // sent exactly what was requested
   | "capped_per_message" // trimmed by the 3-per-message cap
-  | "budget_capped" // trimmed because fewer than the cap remained in the budget
-  | "budget_exhausted" // budget fully spent → 0 images, offer the menu link
-  | MediaZeroReason; // hard-zero state
+  | "budget_capped"; // trimmed because fewer than the cap remained in the budget
 
 export interface MediaGuardInput {
   /** The media_guard feature flag (explicit-only). OFF → byte-identical legacy path:
@@ -52,13 +51,21 @@ export interface MediaGuardInput {
   hardZeroReason?: MediaZeroReason | null;
 }
 
-export interface MediaGuardDecision {
-  /** Number of images to actually send (0..MAX_IMAGES_PER_MESSAGE). */
-  allowed: number;
-  /** Send the full web-menu link instead of images (budget spent, non-hard-zero). */
-  fallbackToMenuLink: boolean;
-  reason: MediaDecisionReason;
-}
+/**
+ * Discriminated union — the shape is tied to the outcome so illegal states are
+ * unrepresentable: a hard-zero or send outcome can NEVER carry a menu link, and a
+ * link is offered ONLY on budget exhaustion (and only when something was requested).
+ */
+export type MediaGuardDecision =
+  // Images go out (or the legacy path). 0..3 for the guard; up to 4 when disabled.
+  | { allowed: number; fallbackToMenuLink: false; reason: SendReason }
+  // Budget fully spent → zero images; the web-menu link is offered iff requested > 0.
+  | { allowed: 0; fallbackToMenuLink: boolean; reason: "budget_exhausted" }
+  // Hard-zero (safety/complaint/payment) → zero images, NEVER a link.
+  | { allowed: 0; fallbackToMenuLink: false; reason: MediaZeroReason };
+
+/** Every reason the guard can report (derived from the decision union). */
+export type MediaDecisionReason = MediaGuardDecision["reason"];
 
 /** Clamp to a non-negative integer (defends against NaN / floats / negatives). */
 function nonNegInt(n: number): number {
@@ -94,7 +101,7 @@ export function decideMediaSend(input: MediaGuardInput): MediaGuardDecision {
   }
 
   const allowed = Math.min(requested, MAX_IMAGES_PER_MESSAGE, remaining);
-  let reason: MediaDecisionReason = "ok";
+  let reason: SendReason = "ok";
   if (allowed < requested) {
     // Distinguish "the 3-cap trimmed it" from "the budget had fewer than 3 left".
     reason = remaining < MAX_IMAGES_PER_MESSAGE && remaining === allowed ? "budget_capped" : "capped_per_message";

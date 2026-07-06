@@ -83,6 +83,24 @@ eqd("budget spent but agent wanted 0 → 0, NO link (nothing to fall back to)",
 eqd("already 3, wants 3 → 3 (exactly fits remaining, ok)",
   decideMediaSend({ enabled: true, requested: 3, imagesAlreadySent: 3, hardZero: false }),
   { allowed: 3, fallbackToMenuLink: false, reason: "ok" });
+// ── TIE BOUNDARY: remaining === MAX_IMAGES_PER_MESSAGE (3). At the tie, the cap —
+//    not the budget — is what trims, so the reason is capped_per_message, NOT
+//    budget_capped. (budget_capped is strictly for remaining < 3.) ──
+eqd("TIE already 3 (remaining=3), wants 5 → 3, capped_per_message (NOT budget_capped)",
+  decideMediaSend({ enabled: true, requested: 5, imagesAlreadySent: 3, hardZero: false }),
+  { allowed: 3, fallbackToMenuLink: false, reason: "capped_per_message" });
+eqd("TIE already 3 (remaining=3), wants 4 → 3, capped_per_message",
+  decideMediaSend({ enabled: true, requested: 4, imagesAlreadySent: 3, hardZero: false }),
+  { allowed: 3, fallbackToMenuLink: false, reason: "capped_per_message" });
+eqd("just past tie: already 4 (remaining=2), wants 4 → 2, budget_capped",
+  decideMediaSend({ enabled: true, requested: 4, imagesAlreadySent: 4, hardZero: false }),
+  { allowed: 2, fallbackToMenuLink: false, reason: "budget_capped" });
+// ── TRANSIENT READ fail-safe (representation): the wiring, on a transient counter-read
+//    failure, sets imagesAlreadySent = CONVERSATION_MEDIA_BUDGET → the guard sends ZERO
+//    and offers the menu link. It must NEVER reset to 0 (= full budget, over-send). ──
+eqd("transient-read fail-safe: already = full budget → 0 + menu link (never over-send)",
+  decideMediaSend({ enabled: true, requested: 3, imagesAlreadySent: CONVERSATION_MEDIA_BUDGET, hardZero: false }),
+  { allowed: 0, fallbackToMenuLink: true, reason: "budget_exhausted" });
 
 // ── requested 0 / degenerate & hostile inputs (clamped), flag ON ──
 eqd("requested 0, fresh → 0, no link",
