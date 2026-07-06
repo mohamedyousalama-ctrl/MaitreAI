@@ -68,5 +68,36 @@ check("(psp create) guard CALL runs BEFORE createMoyasarSession",
   psp.indexOf("checkOrderSafetyHold(admin, tenant.restaurantId, orderId)") < psp.indexOf("createMoyasarSession(admin"));
 check("(psp create) blocks with 409 safety_hold_active", /error: "safety_hold_active"[\s\S]*status: 409/.test(psp));
 
+// ---- WO-SAFE-4: the MOCK payments route also guards the paid write ----------
+// This surface is mock-env-gated (prod-inert), but "mitigated by a flag" is exactly
+// the pattern we reject for safety — the hold guard must be STRUCTURAL, not a flag.
+const mock = read("app/api/payments/[sessionId]/route.ts");
+const MOCK_CALL = "checkOrderSafetyHold(admin, view.restaurantId, view.orderId)";
+check("(mock pay) imports the guard", mock.includes('from "@/lib/db/safety-hold-guard"'));
+check("(mock pay) the actual guard CALL is present", mock.includes(MOCK_CALL));
+check("(mock pay) guard CALL is inside the success branch, BEFORE the paid write",
+  mock.indexOf(MOCK_CALL) > mock.indexOf('body.action === "success"') &&
+  mock.indexOf(MOCK_CALL) < mock.indexOf('payment_status: "paid"'));
+check("(mock pay) blocks with 409 safety_hold_active", /error: "safety_hold_active"[\s\S]*status: 409/.test(mock));
+
+// ---- INVARIANT: EVERY paid-writer surface carries the hold guard ------------
+// The proven set of routes that flip an order to a paid/committed state. Adding a
+// new paid-writer without the guard fails this gate — "all paid-writers guarded"
+// becomes a CI-enforced invariant, not a review-time hope.
+const PAID_WRITERS = [
+  "app/api/orders/[id]/status/route.ts",
+  "app/api/orders/[id]/payment/route.ts",
+  "app/api/payments/psp/create/route.ts",
+  "app/api/payments/[sessionId]/route.ts",
+];
+for (const p of PAID_WRITERS) {
+  const src = read(p);
+  check(`(invariant) ${p} calls checkOrderSafetyHold`, src.includes("checkOrderSafetyHold("));
+  check(`(invariant) ${p} returns 409 safety_hold_active`, /error: "safety_hold_active"[\s\S]*status: 409/.test(src));
+}
+// The Moyasar webhook is the settled-payment reconciler (money truth stands, held
+// orders are flagged not blocked) — it's covered by its own WO-SAFE-1 webhook path,
+// so it is intentionally NOT in the pre-write-block set above.
+
 console.log(`\nWO-SAFE-1 PROOF: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
