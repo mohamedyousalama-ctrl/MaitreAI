@@ -91,10 +91,15 @@ export async function POST(req: NextRequest) {
       result.error === "psp_disabled" ? 403 : CONFLICT_ERRORS.has(result.error) ? 409 : CLIENT_ERRORS.has(result.error) ? 400 : 502;
     return NextResponse.json({ ok: false, error: result.error }, { status });
   }
-  // WO-PAYLINK-MSG — on success, send the customer the pay-link message (order #,
-  // VAT-inclusive total in ر.س, 15-min expiry, anti-phishing line). Best-effort:
-  // a send failure never fails link creation — the payUrl is already returned.
-  const paylink = await sendPayLink(admin, tenant.restaurantId, orderId, result.payUrl);
+  // WO-PAYLINK-MSG — on a FRESH session, send the customer the pay-link message
+  // (order #, VAT-inclusive total in ر.س, 15-min expiry, anti-phishing line).
+  // Best-effort: a send failure never fails link creation. We do NOT message on
+  // REUSE (Codex P2): the "valid 15 min" line would be false for a link partway
+  // through its (unchanged, provider-hard) expiry, and the customer already
+  // received it when the session was first created.
+  const paylink: { sent: boolean; reason?: string } = result.reused
+    ? { sent: false, reason: "reused_no_message" }
+    : await sendPayLink(admin, tenant.restaurantId, orderId, result.payUrl);
 
   return NextResponse.json({
     ok: true,

@@ -81,12 +81,11 @@ export async function createMoyasarSession(
   if (decision.action === "pending") return { ok: false, error: "session_pending" };
   if (decision.action === "reuse") {
     const s = decision.session;
-    if (decision.refreshExpiry) {
-      await admin
-        .from("payment_sessions")
-        .update({ expires_at: new Date(nowMs + DEFAULT_EXPIRY_MS).toISOString(), updated_at: new Date(nowMs).toISOString() })
-        .eq("id", s.id);
-    }
+    // WO-PAYLINK-EXPIRY (Codex P2): do NOT extend the LOCAL expiry on reuse. The
+    // Moyasar invoice now hard-expires at its ORIGINAL expired_at (set at create),
+    // so extending payment_sessions.expires_at past it would keep handing back a
+    // provider-dead URL and mis-report it as fresh. Local expiry stays aligned
+    // with the provider; once it lapses, decideSessionAction mints a fresh link.
     return { ok: true, sessionId: s.id, payUrl: s.link, providerRef: s.providerRef, reused: true };
   }
 

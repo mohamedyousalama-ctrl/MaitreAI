@@ -50,6 +50,7 @@ interface SessionRow {
   currency: string; // DISPLAY glyph (e.g. 'ر.س') — NOT what the PSP uses
   psp_currency: string | null; // ISO the session was created with at the PSP (e.g. 'SAR')
   status: string;
+  expires_at: string | null; // when the link/invoice lapses (may pass before status flips)
 }
 
 // Tiny, explicit glyph→ISO fallback for legacy rows created before psp_currency
@@ -106,7 +107,7 @@ export async function handleMoyasarWebhook(
   //    passes, on the paid notify path. Unknown session → swallow 200 (never leak).
   const { data: sessionRaw } = await admin
     .from("payment_sessions")
-    .select("id, restaurant_id, order_id, amount, currency, psp_currency, status")
+    .select("id, restaurant_id, order_id, amount, currency, psp_currency, status, expires_at")
     .eq("provider_ref", providerRef)
     .maybeSingle();
   const session = sessionRaw as SessionRow | null;
@@ -191,10 +192,15 @@ export async function handleMoyasarWebhook(
 
   // 8. TRANSITIONS.
   if (status === "paid") {
-    // WO-PAYLINK-EXPIRY — capture the pre-settlement session status NOW (before any
-    // transition mutates it) so the "paid on an expired link" signal is snapshot at
-    // read time, not re-read after markPaymentSessionPaid has flipped it to 'paid'.
-    const wasExpired = session.status === "expired";
+    // WO-PAYLINK-EXPIRY — capture the pre-settlement "was this a stale link?" signal
+    // NOW (before any transition mutates it). Detect staleness by expires_at PASSING
+    // too (Codex P2): a stale link is usually still 'link_sent'/'opened' — status
+    // only flips to 'expired' if the checkout API is hit or an expired webhook lands,
+    // so a paid webhook arriving after expiry but before that flip would otherwise
+    // miss the alert.
+    const expiryMs = session.expires_at ? Date.parse(session.expires_at) : NaN;
+    const wasExpired =
+      session.status === "expired" || (Number.isFinite(expiryMs) && expiryMs < Date.now());
     // VERIFY amount + currency against the SESSION. Amount: charged minor units ==
     // the engine value at create time. Currency: compared against psp_currency —
     // the ISO the session was created with at the PSP (e.g. 'SAR') — NOT the
