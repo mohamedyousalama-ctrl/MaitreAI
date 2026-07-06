@@ -94,7 +94,8 @@ export const ALLERGENS: readonly AllergenDef[] = [
     key: "dairy",
     arLabel: "ألبان",
     enLabel: "Dairy",
-    gateTerms: ["لبن", "البان", "حليب"],
+    // «لاكتوز» promoted alias→gateTerm (KSA ratified-path: gate now keys on it too).
+    gateTerms: ["لبن", "البان", "حليب", "لاكتوز"],
     aliases: ["ألبان", "الألبان", "منتجات الألبان", "dairy", "milk", "lactose"],
   },
   {
@@ -115,7 +116,8 @@ export const ALLERGENS: readonly AllergenDef[] = [
     key: "sesame",
     arLabel: "سمسم",
     enLabel: "Sesame",
-    gateTerms: ["سمسم"],
+    // «طحينه» (normalized طحينة) promoted alias→gateTerm (KSA ratified-path).
+    gateTerms: ["سمسم", "طحينه"],
     aliases: ["sesame", "tahini", "طحينة"],
   },
   {

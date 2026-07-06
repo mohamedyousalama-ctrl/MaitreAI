@@ -34,6 +34,11 @@ export function normalizeAr(s: string): string {
 const ALLERGEN_TERMS = [
   "بندق", "فستق", "لوز", "كاجو", "عين جمل", "جوز", "مكسرات", "فول سوداني", "سوداني",
   "لبن", "البان", "حليب", "جلوتين", "قمح", "بيض", "سمسم", "صويا", "ماكولات بحريه", "بحريات", "سمك", "جمبري", "قشريات",
+  // KSA ratified-path additions (docs/KSA_ALLERGEN_DIALECT_REVIEW.md §3c): needed
+  // so «ما أتحمل اللاكتوز» / «حساس من الطحينة» name a real allergen. Mirrored in
+  // allergen-vocab.ts (already aliases; now gateTerms too) — the vocab test asserts it.
+  "لاكتوز", // lactose — dairy
+  "طحينه",  // tahini — sesame (normalizeAr maps ة→ه, so «طحينة»→«طحينه»)
 ];
 const ALLERGEN_TERMS_NORM = ALLERGEN_TERMS.map((t) => normalizeAr(t));
 const ALLERGEN_RE = new RegExp(`(?:${ALLERGEN_TERMS_NORM.join("|")})`);
@@ -63,8 +68,16 @@ function pickAllergenTerm(n: string): string | null {
   return matched[0];
 }
 
-/** Explicit allergy word — fires on its own (escalate to identify the allergen). */
-const EXPLICIT_ALLERGY_RE = /حساسي/; // covers حساسية/حساسيه/حساسيت/حساسي
+/** Explicit allergy word — fires on its own (escalate to identify the allergen).
+ *  KSA ratified-path (docs/KSA_ALLERGEN_DIALECT_REVIEW.md §3a): adds the Najdi/Hijazi
+ *  adjective «حساس/حساسة/حساسين … من/تجاه/ضد/علي» (kept high-precision by binding to the
+ *  preposition, so «موضوع حساس» never fires) and the transliteration «ألرجي/ألرجيا/الرجي»
+ *  (the `(?!م)` + boundary stop «الرجيم» diet, «الرجل/الراجل»). «إحساس» is blocked by the boundary. */
+const EXPLICIT_ALLERGY_RE = new RegExp(
+  "حساسي" + // حساسية/حساسيه/حساسيت/حساسي (existing)
+    "|(?<![ء-ي])حساس(?:ه|ين)? (?:من|تجاه|ضد|علي)" + // «حساس/حساسة/حساسين من/تجاه/ضد/علي»
+    "|(?<![ء-ي])الرجي(?!م)" // «ألرجي/ألرجيا/الرجي» transliteration; NOT «الرجيم» (diet)
+);
 
 /** Avoidance / medical intent markers, INCLUDING euphemisms (the whole point —
  *  these must NOT be limited to the keyword «حساسية»). Co-occur with an allergen
@@ -81,6 +94,13 @@ const AVOIDANCE_INTENT_RE = new RegExp(
     "ممنوع علي", // ممنوع عليا / ممنوعة عليا
     "الدكتور (?:قالي|منعني|قال)",
     "ميصحش ?اكل|ما ?ينفعش ?اكل",
+    // KSA (Najdi/Hijazi) additions (docs/KSA_ALLERGEN_DIALECT_REVIEW.md §3b) — each
+    // fires ONLY with a co-occurring allergen term (that co-occurrence is the anchor):
+    "تحسس", // أتحسس/يتحسس/يجيني تحسس (reaction verb/noun)
+    "(?:مو|مب) ?قادر", // مو قادر / مب قادر (Najdi "can't")
+    "ما ?يصير ?اكل|ما ?يجوز ?اكل", // ما يصير/يجوز آكل (not permissible to eat)
+    "تاذي|تضر", // feminine/3rd-person harm (تأذيني/تضرني)
+    "ما ?اتحمل|مااتحمل", // ما أتحمل (intolerance)
   ].join("|")
 );
 
