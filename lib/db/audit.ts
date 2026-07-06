@@ -43,7 +43,8 @@ export type AuditAction =
   // transition records WHO did WHAT; apply additionally names the truth write.
   | "knowledge_change_proposed"
   | "knowledge_change_reviewed"
-  | "knowledge_change_applied";
+  | "knowledge_change_applied"
+  | "callback_status_updated";
 
 export interface AuditInput {
   restaurantId: string;
@@ -51,7 +52,7 @@ export interface AuditInput {
   userId: string;
   role?: string | null;
   action: AuditAction;
-  entityType: "conversation" | "order" | "restaurant";
+  entityType: "conversation" | "order" | "restaurant" | "callback_request";
   entityId: string;
   /** Pre-resolved actor members.id (optional — resolved from userId when absent). */
   memberId?: string | null;
