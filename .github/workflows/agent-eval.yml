@@ -170,6 +170,13 @@ jobs:
       - name: Pay-link message unit tests
         run: node --experimental-strip-types scripts/proof-paylink.test.ts
 
+      # ── Blocking gate 7g: QZ silent-print decision ────────────────────────
+      # 16 cases: printer_config parse normalization (width fallback, name trim,
+      # strict auto_print) + shouldSilentPrint AND-of-flag/printer/auto_print
+      # (anything missing → browser fallback). Pure (no imports), strip-safe.
+      - name: QZ printer unit tests
+        run: node --experimental-strip-types scripts/proof-printer.test.ts
+
       # ── Blocking gate 7d: CSRF-1 same-origin gate ─────────────────────────
       # 29 cases: safe-method bypass (reads never blocked), Origin match/mismatch,
       # Referer fallback, both-absent fail-closed (PM ruling), "null"/malformed
