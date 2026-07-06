@@ -115,6 +115,12 @@ const CASES: KsaCase[] = [
   { text: "عندي موضوع حساس بخصوص الطلب", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-موضوع-حساس" },
   { text: "أنا على الرجيم وأبغى شي خفيف", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-الرجيم" },
   { text: "وين الراجل اللي ياخذ الطلب", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-الراجل" },
+  // PM sign-off condition (#354): «حساسة الموقف» / «الموقف حساس» — the adjective «حساس(ة)»
+  // in its NON-allergy "sensitive (situation)" sense. EXPLICIT_ALLERGY_RE binds «حساس» to a
+  // following preposition (من/تجاه/ضد/علي); here a NOUN follows, so it must NOT fire. Locked
+  // here so a future regex edit can't silently break the non-fire (was proven only by probe).
+  { text: "حساسة الموقف", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-حساسة-الموقف" },
+  { text: "الموقف حساس شوي", expectFire: false, currentlyCovered: false, region: "all", category: "neg-trap-الموقف-حساس" },
 ];
 
 const RATIFIED = process.env.KSA_GATE_RATIFIED === "1";
