@@ -187,6 +187,14 @@ jobs:
       - name: PDPL consent unit tests
         run: node --experimental-strip-types scripts/proof-consent.test.ts
 
+      # ── Blocking gate 7f: Ramadan hours override ──────────────────────────
+      # 18 cases: effectiveHours precedence (mode ON + ramadan_hours → ramadan),
+      # OFF-invariance (mode off → regular regardless), null/empty ramadan_hours =
+      # regular even with mode on, strict-boolean mode, degenerate inputs, and
+      # cross-midnight windows (allowOvernight accept/reject). Pure.
+      - name: Ramadan hours unit tests
+        run: node --experimental-strip-types scripts/proof-ramadan.test.ts
+
       # ── Blocking gate 8: Khalid persona-layer contract ────────────────────
       # 35 cases: region resolution (Najdi default), name fallback, and the
       # persona-layer contract — the overlay defers to the engine on
