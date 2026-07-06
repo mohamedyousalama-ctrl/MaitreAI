@@ -327,11 +327,14 @@ async function sendRequestedPhotos(
   // WO-PHOTO-THREAD — reshape ONLY the images that passed the caps into a compact
   // captioned sequence: image 0 carries a lead caption naming the set, each image
   // keeps its own name—price tag. Presentation-only — the slice (which/how many) is
-  // decided above by decideMediaSend and is unchanged. GATED behind the same
-  // media_guard flag (standing law: every behavior change ships per-tenant-flaggable,
-  // OFF by default): a flag-OFF tenant keeps byte-identical per-image captions.
+  // decided above by decideMediaSend and is unchanged. GATED behind its OWN
+  // photo_thread flag (default OFF), NOT media_guard: media_guard is opt-in to the
+  // CAPS (a safety/cost control), never to a presentation change — a live tenant
+  // must not inherit a new caption behavior via a flag enabled for another purpose.
+  // photo_thread OFF → byte-identical per-image captions (existing behavior).
   const shown = photoRequests.slice(0, decision.allowed);
-  const captions = mediaGuardOn ? buildPhotoThreadCaptions(shown) : shown.map((p) => p.caption);
+  const photoThreadOn = isFeatureExplicitlyEnabled("photo_thread", features);
+  const captions = photoThreadOn ? buildPhotoThreadCaptions(shown) : shown.map((p) => p.caption);
 
   let sent = 0;
   for (let i = 0; i < shown.length; i++) {

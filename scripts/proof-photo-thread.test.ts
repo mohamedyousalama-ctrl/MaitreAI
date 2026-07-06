@@ -82,10 +82,13 @@ ok("reshapes the post-cap slice (photoRequests.slice(0, decision.allowed))",
   /const shown = photoRequests\.slice\(0, decision\.allowed\)/.test(rs) &&
   /buildPhotoThreadCaptions\(shown\)/.test(rs));
 
-// GATED behind media_guard (standing law: behavior change flaggable, OFF by default):
-// a flag-OFF tenant keeps byte-identical per-image captions.
-ok("reshape is GATED behind media_guard (OFF → per-image captions unchanged)",
-  /const captions = mediaGuardOn \? buildPhotoThreadCaptions\(shown\) : shown\.map\(\(p\) => p\.caption\)/.test(rs));
+// GATED behind its OWN photo_thread flag (default OFF), NOT media_guard — media_guard
+// is opt-in to CAPS only, never to a presentation change (ruling B). photo_thread OFF
+// → byte-identical per-image captions; ON → lead-caption sequencing.
+ok("reshape is GATED behind the photo_thread flag (its own flag, not media_guard)",
+  /const photoThreadOn = isFeatureExplicitlyEnabled\("photo_thread", features\)/.test(rs) &&
+  /const captions = photoThreadOn \? buildPhotoThreadCaptions\(shown\) : shown\.map\(\(p\) => p\.caption\)/.test(rs));
+ok("photo_thread is a typed ProFeature", /"photo_thread"/.test(read("lib/tenant/tier.ts")));
 
 // The hard-zero / budget-exhausted early return happens BEFORE the sequencing, so
 // safety-zero (and complaint/payment) still send nothing and the reshape never runs.
