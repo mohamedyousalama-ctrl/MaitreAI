@@ -1,5 +1,5 @@
 -- ============================================================================
--- Kivo (KSA) — WO-PDPL-CONSENT (0073). PDPL lawful-basis consent on customers.
+-- Kivo (KSA) — WO-PDPL-CONSENT (0074). PDPL lawful-basis consent on customers.
 -- Additive + idempotent. PREPARE-ONLY: NOT applied (joins an off-peak batch).
 --
 -- SEMANTICS (the law, encoded as columns — enforcement lives in lib/privacy):
