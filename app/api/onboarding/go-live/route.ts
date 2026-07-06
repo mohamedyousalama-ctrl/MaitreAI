@@ -69,8 +69,15 @@ interface Checklist {
   whatsapp: ChecklistItem;
   menu: ChecklistItem;
   hours: ChecklistItem;
+  allergyTestDrive: ChecklistItem;
   zones: ChecklistItem;
 }
+
+// WO-GATE-ALLERGY — the allergy test-drive must have PASSED (the deterministic gate
+// fired in the manager test-drive) within this window before go-live. Puts the
+// standing "allergy hint test must pass in test mode before agent_mode flips live"
+// law in the SERVER, not PM discipline.
+const ALLERGY_TEST_DRIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface ReadinessResult {
   checklist: Checklist;
@@ -90,8 +97,11 @@ async function computeReadiness(
 ): Promise<ReadinessResult> {
   if (!admin) throw new Error("admin client unavailable");
 
-  // Single parallel fan-out — four queries, each tight.
-  const [restaurantRes, menuRes, zonesRes] = await Promise.all([
+  // WO-GATE-ALLERGY — a passing allergy test-drive within the last 7 days.
+  const sinceIso = new Date(Date.now() - ALLERGY_TEST_DRIVE_WINDOW_MS).toISOString();
+
+  // Single parallel fan-out — each query tight.
+  const [restaurantRes, menuRes, zonesRes, allergyRes] = await Promise.all([
     admin
       .from("restaurants")
       .select("wa_configured_at, hours, agent_mode, active")
@@ -112,6 +122,14 @@ async function computeReadiness(
       .select("id", { count: "exact", head: true })
       .eq("restaurant_id", restaurantId)
       .eq("active", true),
+
+    // REQUIRED: a passing allergy test-drive (gate fired) recorded in the last 7 days.
+    admin
+      .from("audit_events")
+      .select("id", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId)
+      .eq("action", "onboarding_allergy_test_passed")
+      .gte("created_at", sinceIso),
   ]);
 
   if (restaurantRes.error) throw restaurantRes.error;
@@ -119,6 +137,9 @@ async function computeReadiness(
   const row = restaurantRes.data;
   const publishedMenuCount = menuRes.count ?? 0;
   const activeZoneCount = zonesRes.count ?? 0;
+  // Fail-CLOSED: a query error (never proves it passed) → treat as NOT passed, so a
+  // read failure can never wave a tenant through the safety test-drive gate.
+  const allergyTestDrivePass = !allergyRes.error && (allergyRes.count ?? 0) > 0;
 
   // Hours is considered "set" when the operator has stored any non-empty object.
   const hoursRaw = row.hours;
@@ -143,6 +164,11 @@ async function computeReadiness(
       pass: hoursSet,
       required: true,
       label: "ساعات العمل محددة",
+    },
+    allergyTestDrive: {
+      pass: allergyTestDrivePass,
+      required: true,
+      label: "اختبار الحساسية ناجح (تجربة المدير)",
     },
     zones: {
       pass: activeZoneCount > 0,

@@ -50,7 +50,12 @@ export type AuditAction =
   | "consent_updated"
   // Item 13 — team management (attribution law): manager invites / role changes.
   | "member_invited"
-  | "member_role_changed";
+  | "member_role_changed"
+  // WO-GATE-ALLERGY — the manager ran the onboarding test-drive and the deterministic
+  // allergen gate FIRED (held) on an allergy message. The durable, timestamped proof
+  // the go-live gate requires (the allergy hard-test must pass in test mode before
+  // agent_mode ever flips live). Queried by computeReadiness within a 7-day window.
+  | "onboarding_allergy_test_passed";
 
 export interface AuditInput {
   restaurantId: string;
