@@ -19,6 +19,20 @@ export interface Tenant {
 export const ACTIVE_RESTAURANT_COOKIE = "maitreai_active_rid";
 
 /**
+ * Write the active-restaurant selection cookie (client only). Non-httpOnly so the
+ * browser tenant resolver (getBrowserTenant) can read it; 30-day, path=/, SameSite=Lax
+ * so it also rides the next top-level navigation and the SERVER resolver
+ * (getServerTenant) sees it. This is the ONLY thing a picker/switcher needs to do —
+ * resolveTenant already re-validates membership, so a tampered id is rejected. A host
+ * pin (hostMapping) still takes precedence over this cookie, so a branded operator
+ * subdomain (e.g. console.wesayachicken.com) is never overridden by a stale selection.
+ */
+export function setActiveRestaurantCookie(rid: string): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${ACTIVE_RESTAURANT_COOKIE}=${encodeURIComponent(rid)}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
+}
+
+/**
  * Resolve the signed-in user's active restaurant membership.
  *
  * Resolution order:

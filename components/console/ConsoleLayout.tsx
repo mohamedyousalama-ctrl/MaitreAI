@@ -17,6 +17,7 @@ import { useRole, OPERATION_HREFS } from "@/lib/use-role";
 import { useConsoleDataStore, isConsoleDataPresentable } from "@/lib/console-data-state";
 import { ActionToastHost } from "./ActionToastHost";
 import { ConsoleAlerts } from "./ConsoleAlerts";
+import { TenantPicker } from "./TenantPicker";
 
 // M1.1 — manager-only console surfaces. Operators may reach ONLY the
 // OPERATION_HREFS (conversations/orders/deliveries); every other console route is
@@ -77,7 +78,11 @@ function ConsoleGate({ children }: { children: React.ReactNode }) {
   const dataState = useConsoleDataStore((s) => s.state);
   if (isConsoleDataPresentable(dataState)) return <>{children}</>; // DB_READY or DEMO
   if (dataState === "NO_TENANT")
-    return <ConsoleBlock message="مفيش مطعم مرتبط بالحساب ده" sub="لو عندك أكتر من مطعم، افتح من رابط المطعم المخصص. لو المشكلة مستمرة كلّم الدعم." />;
+    // A "no resolved tenant" here is almost always a MULTI-membership user who hasn't
+    // chosen yet (0-membership users are sent to /onboarding by middleware before they
+    // reach the console). So show the real workspace choices, not a dead-end message —
+    // the picker itself handles the genuine 0-membership case honestly.
+    return <TenantPicker />;
   if (dataState === "DB_FAILED")
     return <ConsoleBlock message="تعذّر تحميل بيانات المطعم" sub="حدّث الصفحة. لو المشكلة مستمرة كلّم الدعم." />;
   return <ConsoleBlock message="جارٍ تحميل بيانات المطعم…" />; // DB_LOADING

@@ -13,6 +13,7 @@ import { useConsoleUi } from "./console-ui-store";
 import { ProfileMenu } from "./ProfileMenu";
 import { AlertSoundToggle } from "./ConsoleAlerts";
 import { GlobalSearch } from "./GlobalSearch";
+import { TenantSwitcher } from "./TenantSwitcher";
 
 export function ConsoleTopbar() {
   const hydrated = useHasHydrated();
@@ -50,6 +51,8 @@ export function ConsoleTopbar() {
       <GlobalSearch />
 
       <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+        {/* WO-LOGIN-CLEANUP — multi-restaurant switcher (renders only for >1 membership). */}
+        <TenantSwitcher />
         {/* Date scope chip — default today; toggles the query scope. */}
         <button
           type="button"
