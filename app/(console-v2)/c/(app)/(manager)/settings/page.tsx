@@ -22,7 +22,7 @@
 //    SOON, never a fabricated «47 items / 25 zones / passed».
 // ============================================================================
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   MessageSquare, Flag, Building2, Clock3, Power, Rocket, Pencil,
   Check, AlertTriangle, Clock, Lock, Printer,
@@ -539,26 +539,33 @@ const QZ_CONN_LABEL: Record<QzStatus, DictKey> = {
 function QzPrinter({ qzFlagOn }: { qzFlagOn: boolean }) {
   const t = useT();
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [config, setConfig] = useState<PrinterConfig>({ name: "", width: "80mm", auto_print: false });
   const [printers, setPrinters] = useState<string[]>([]);
   const [conn, setConn] = useState<QzStatus>("disconnected");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  // Ref holds the latest committed config so rapid successive save() calls derive
+  // `next` from current state (not a stale closure) and the POST body is synchronous.
+  const configRef = useRef<PrinterConfig>(config);
 
   // Re-fetch whenever the qz_print flag changes (a manager can flip it in the
   // FeatureFlags card on THIS page) — the server route is the authority on
   // enabled/config, so an off→on flip re-hydrates the card without a reload.
   useEffect(() => {
     let alive = true;
+    setLoadFailed(false);
     fetch("/api/settings/printer")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!alive) return;
-        if (!d) { setEnabled(false); return; }
+        // Distinguish a real backend failure (null = non-ok) from a genuinely
+        // disabled flag — collapsing both into "off" would lie about the cause.
+        if (!d) { setLoadFailed(true); setEnabled(false); return; }
         setEnabled(!!d.enabled);
-        if (d.enabled && d.config) setConfig(parsePrinterConfig(d.config));
+        if (d.enabled && d.config) { const c = parsePrinterConfig(d.config); setConfig(c); configRef.current = c; }
       })
-      .catch(() => { if (alive) setEnabled(false); });
+      .catch(() => { if (alive) { setLoadFailed(true); setEnabled(false); } });
     return () => { alive = false; };
   }, [qzFlagOn]);
 
@@ -569,9 +576,10 @@ function QzPrinter({ qzFlagOn }: { qzFlagOn: boolean }) {
     if (s === "connected") setPrinters(await listQzPrinters());
   }
   async function save(patch: Partial<PrinterConfig>) {
-    const prev = config;
-    const next = { ...config, ...patch };
+    const prev = configRef.current;
+    const next = { ...configRef.current, ...patch };
     setConfig(next);
+    configRef.current = next; // keep the ref current synchronously for the next call
     setSaving(true);
     setSaveError(false);
     try {
@@ -579,10 +587,10 @@ function QzPrinter({ qzFlagOn }: { qzFlagOn: boolean }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: next.name, width: next.width, auto_print: next.auto_print }),
       });
-      // A non-2xx (flag off, missing column, DB error) must NOT leave an optimistic
-      // config on screen the ticket page won't actually read — revert + surface it.
-      if (!res.ok) { setConfig(prev); setSaveError(true); }
-    } catch { setConfig(prev); setSaveError(true); } finally { setSaving(false); }
+      // A non-2xx (flag off, missing column, DB error, non-manager 403) must NOT
+      // leave an optimistic config the ticket page won't read — revert + surface it.
+      if (!res.ok) { setConfig(prev); configRef.current = prev; setSaveError(true); }
+    } catch { setConfig(prev); configRef.current = prev; setSaveError(true); } finally { setSaving(false); }
   }
 
   if (enabled === null) return null; // loading — render nothing (no fabricated state)
@@ -593,7 +601,9 @@ function QzPrinter({ qzFlagOn }: { qzFlagOn: boolean }) {
         {enabled ? <TruthChip state={QZ_CONN_STATE[conn]} label={t(QZ_CONN_LABEL[conn])} /> : null}
       </SectionHead>
       {!enabled ? (
-        <p style={{ fontSize: 12.5, color: "var(--kv-faint)" }}>{t("set.printer.off")}</p>
+        <p style={{ fontSize: 12.5, color: loadFailed ? "var(--kv-amber)" : "var(--kv-faint)" }}>
+          {loadFailed ? t("set.loadError") : t("set.printer.off")}
+        </p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <button onClick={scan} style={ghostBtn}>{t("set.printer.scan")}</button>
