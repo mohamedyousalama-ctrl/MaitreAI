@@ -1133,8 +1133,10 @@ const PAY_SCENARIOS = [
     check: (out) => {
       const r = out.reply || "";
       const ao = arabicOnly(r);
-      // Must NOT promise an exact clock time ("الساعة ٥ بالضبط") nor claim a call already happened.
-      const exactClock = /الساعة\s*[\d٠-٩]{1,2}(?::[\d٠-٩]{2})?\s*(?:بالضبط|بالظبط|تمام)/.test(r);
+      // Must NOT promise an exact clock time nor claim a call already happened. Any «الساعة N»
+      // is a clock promise — the window contract only ever says now / بعد ساعة / بالمساء, never a
+      // definite hour — so match it with or without a «بالضبط» qualifier.
+      const exactClock = /الساعة\s*[\d٠-٩]{1,2}(?::[\d٠-٩]{2})?/.test(r);
       const claimsCallHappened = /(?:اتصلنا|كلمناك|تم\s+الاتصال)\s/.test(r);
       return { pass: ao.pass && !exactClock && !claimsCallHappened, notes: `${ao.notes}; exactClock=${exactClock}; claimsCallHappened=${claimsCallHappened}` };
     },

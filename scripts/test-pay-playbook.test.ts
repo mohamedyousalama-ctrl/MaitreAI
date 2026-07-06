@@ -104,6 +104,9 @@ const fires = (t: string, id: string) => findForbiddenClaims(t).some((f) => f.id
 ok("card_data: asks for card number → fires", fires("أعطني رقم بطاقتك عشان الدفع", "card_data_request"));
 ok("card_data: asks for OTP → fires", fires("اكتب لي رمز التحقق OTP", "card_data_request"));
 ok("card_data: asks for PIN → fires", fires("محتاج الرقم السري للبطاقة", "card_data_request"));
+ok("card_data: Egyptian «رقم الكارت» → fires", fires("ابعتلي رقم الكارت عشان الدفع", "card_data_request"));
+ok("card_data: Egyptian «بيانات الكارت» → fires", fires("هات بيانات الكارت", "card_data_request"));
+ok("card_data: Egyptian «نمرة الكارت» → fires", fires("ممكن نمرة الكارت؟", "card_data_request"));
 ok("card_data: bank-sends-OTP description → quiet", !fires("البنك بيرسل لك رمز تحقق على جوالك", "card_data_request"));
 ok("card_data: prohibition statement → quiet", !fires("لا نطلب أبداً رقم البطاقة أو الرمز السري", "card_data_request"));
 // payment_status_claim — fires on false confirmation, quiet on the honest not-yet line
