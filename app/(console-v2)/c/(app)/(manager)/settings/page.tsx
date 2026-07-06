@@ -115,7 +115,7 @@ export default function SettingsPage() {
         <FeatureFlags flags={flags} onChanged={load} />
         <Identity identity={identity} onSaved={load} />
         <Hours hours={hours} />
-        <QzPrinter />
+        <QzPrinter qzFlagOn={flags?.flags?.qz_print === true} />
         <Emergency />
       </div>
 
@@ -536,14 +536,18 @@ const QZ_CONN_LABEL: Record<QzStatus, DictKey> = {
   error: "set.printer.conn.failed",
 };
 
-function QzPrinter() {
+function QzPrinter({ qzFlagOn }: { qzFlagOn: boolean }) {
   const t = useT();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [config, setConfig] = useState<PrinterConfig>({ name: "", width: "80mm", auto_print: false });
   const [printers, setPrinters] = useState<string[]>([]);
   const [conn, setConn] = useState<QzStatus>("disconnected");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
+  // Re-fetch whenever the qz_print flag changes (a manager can flip it in the
+  // FeatureFlags card on THIS page) — the server route is the authority on
+  // enabled/config, so an off→on flip re-hydrates the card without a reload.
   useEffect(() => {
     let alive = true;
     fetch("/api/settings/printer")
@@ -556,7 +560,7 @@ function QzPrinter() {
       })
       .catch(() => { if (alive) setEnabled(false); });
     return () => { alive = false; };
-  }, []);
+  }, [qzFlagOn]);
 
   async function scan() {
     setConn("disconnected");
@@ -565,15 +569,20 @@ function QzPrinter() {
     if (s === "connected") setPrinters(await listQzPrinters());
   }
   async function save(patch: Partial<PrinterConfig>) {
+    const prev = config;
     const next = { ...config, ...patch };
     setConfig(next);
     setSaving(true);
+    setSaveError(false);
     try {
-      await fetch("/api/settings/printer", {
+      const res = await fetch("/api/settings/printer", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: next.name, width: next.width, auto_print: next.auto_print }),
       });
-    } catch { /* best-effort */ } finally { setSaving(false); }
+      // A non-2xx (flag off, missing column, DB error) must NOT leave an optimistic
+      // config on screen the ticket page won't actually read — revert + surface it.
+      if (!res.ok) { setConfig(prev); setSaveError(true); }
+    } catch { setConfig(prev); setSaveError(true); } finally { setSaving(false); }
   }
 
   if (enabled === null) return null; // loading — render nothing (no fabricated state)
@@ -610,8 +619,8 @@ function QzPrinter() {
             <input type="checkbox" checked={config.auto_print} onChange={(e) => save({ auto_print: e.target.checked })} />
             {t("set.printer.autoprint")}
           </label>
-          <span style={{ fontSize: 11.5, color: "var(--kv-faint)", lineHeight: 1.6 }}>
-            {saving ? t("set.printer.saving") : t("set.printer.help")}
+          <span style={{ fontSize: 11.5, color: saveError ? "var(--kv-amber)" : "var(--kv-faint)", fontWeight: saveError ? 700 : 400, lineHeight: 1.6 }}>
+            {saving ? t("set.printer.saving") : saveError ? t("set.printer.saveError") : t("set.printer.help")}
           </span>
         </div>
       )}
