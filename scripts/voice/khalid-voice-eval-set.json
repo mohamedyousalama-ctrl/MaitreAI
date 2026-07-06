@@ -467,7 +467,8 @@
       "لبن": [
         "لبان",
         "لبنان",
-        "لبني"
+        "لبني",
+        "النبن"
       ],
       "بيض": [
         "بيظ",
@@ -519,6 +520,19 @@
       "method_note": "errored items count as MISSES not removed-from-denominator (fixed denominator=39 both engines); response_format branches per model (verbose_json whisper / json gpt-4o); affix + tashkeel + alef normalization before matching. See scripts/voice/score_bakeoff.py.",
       "reproducibility": "NOISE_SEED=0 makes the additive-noise mix reproducible; residual variance is transient API errors (counted fail-closed as misses, so true STT recall is marginally higher)."
     },
-    "SAFETY_STT_CONFIDENCE_FLOOR_note": "0.66 kept as the confidence TRIPWIRE (rule B-ii/D); it is NOT the primary safety net (see measuredRun.confidence_signal)."
+    "SAFETY_STT_CONFIDENCE_FLOOR_note": "0.66 kept as the confidence TRIPWIRE (rule B-ii/D); it is NOT the primary safety net (see measuredRun.confidence_signal).",
+    "auditConfusionPairs_v2": {
+      "source": "Saudi-behavior audit Part B — phonetic pairs",
+      "firing_today_locked_in_test": [
+        "جلوتين→بلوتين",
+        "لبن→النبن",
+        "symptom near: وجهي ينتفخ / طفح+سمق"
+      ],
+      "HELD_for_signoff_matcher_gap": {
+        "تحسس→تحصّص": "needs ص↔س phonetic colour OR len-4 budget=2 in phonetic-safety-net.ts (safety code)",
+        "مو قادر→معادر (elided)": "needs phrase-NEAR (matcher does exact substring only) in phonetic-safety-net.ts",
+        "note": "these MISS on the current net (verified); fixing touches the safety matcher → PROPOSAL, holds for PM named sign-off (not flipped to blocking here)."
+      }
+    }
   }
 }
