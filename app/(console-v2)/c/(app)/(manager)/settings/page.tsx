@@ -25,7 +25,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   MessageSquare, Flag, Building2, Clock3, Power, Rocket, Pencil,
-  Check, AlertTriangle, Clock, Lock, Printer,
+  Check, AlertTriangle, Clock, Lock, Printer, CreditCard,
 } from "lucide-react";
 import { TruthChip, type TruthState } from "@/components/console-v2";
 import { useConsoleOps } from "@/lib/console-ops-store";
@@ -115,6 +115,7 @@ export default function SettingsPage() {
         <FeatureFlags flags={flags} onChanged={load} />
         <Identity identity={identity} onSaved={load} />
         <Hours hours={hours} />
+        <PspCredentials pspFlagOn={flags?.flags?.psp_payments === true} />
         <QzPrinter qzFlagOn={flags?.flags?.qz_print === true} />
         <Emergency />
       </div>
@@ -632,6 +633,121 @@ function QzPrinter({ qzFlagOn }: { qzFlagOn: boolean }) {
           <span style={{ fontSize: 11.5, color: saveError ? "var(--kv-amber)" : "var(--kv-faint)", fontWeight: saveError ? 700 : 400, lineHeight: 1.6 }}>
             {saving ? t("set.printer.saving") : saveError ? t("set.printer.saveError") : t("set.printer.help")}
           </span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// R10 — self-serve merchant journey: the tenant's OWN Moyasar keys. Mirrors the
+// WhatsApp-creds discipline: publishable key is editable; secret key + webhook
+// secret are WRITE-ONLY (never fetched back; the card only knows they EXIST) and
+// a blank field leaves the stored ciphertext untouched. All reads/writes go via
+// /api/settings/psp (service role encrypts at rest) — this component never sees a
+// secret. Flag-gated on psp_payments; TruthChip shows the «مُهيأ» ready state.
+// ---------------------------------------------------------------------------
+interface PspResp {
+  enabled: boolean; provider: string | null; publishableKey: string;
+  hasSecretKey: boolean; hasWebhookSecret: boolean; configured: boolean; error?: string;
+}
+
+function PspCredentials({ pspFlagOn }: { pspFlagOn: boolean }) {
+  const t = useT();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [publishableKey, setPublishableKey] = useState("");
+  const [secretKey, setSecretKey] = useState(""); // write-only (blank = keep)
+  const [webhookSecret, setWebhookSecret] = useState(""); // write-only (blank = keep)
+  const [hasSecretKey, setHasSecretKey] = useState(false);
+  const [hasWebhookSecret, setHasWebhookSecret] = useState(false);
+  const [configured, setConfigured] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [errKey, setErrKey] = useState<DictKey | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoadFailed(false);
+    fetch("/api/settings/psp")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: PspResp | null) => {
+        if (!alive) return;
+        if (!d) { setLoadFailed(true); setEnabled(false); return; }
+        setEnabled(!!d.enabled);
+        setPublishableKey(d.publishableKey ?? "");
+        setHasSecretKey(!!d.hasSecretKey);
+        setHasWebhookSecret(!!d.hasWebhookSecret);
+        setConfigured(!!d.configured);
+      })
+      .catch(() => { if (alive) { setLoadFailed(true); setEnabled(false); } });
+    return () => { alive = false; };
+  }, [pspFlagOn]);
+
+  async function save() {
+    setSaving(true); setSaved(false); setErrKey(null);
+    try {
+      const res = await fetch("/api/settings/psp", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "moyasar",
+          publishableKey,
+          ...(secretKey.trim() ? { secretKey } : {}),
+          ...(webhookSecret.trim() ? { webhookSecret } : {}),
+        }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { ok?: boolean; configured?: boolean; error?: string };
+      if (!res.ok || !d.ok) {
+        setErrKey(d.error === "forbidden" ? "set.psp.errForbidden" : d.error === "psp_disabled" ? "set.psp.errDisabled" : "set.psp.errGeneric");
+        return;
+      }
+      if (secretKey.trim()) setHasSecretKey(true);
+      if (webhookSecret.trim()) setHasWebhookSecret(true);
+      setSecretKey(""); setWebhookSecret("");
+      setConfigured(!!d.configured);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {
+      setErrKey("set.psp.errGeneric");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (enabled === null) return null;
+
+  const secretField = (label: DictKey, value: string, set: (v: string) => void, has: boolean, ph: DictKey) => (
+    <label style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-muted)" }}>
+      {t(label)}
+      <input dir="ltr" type="password" autoComplete="off" value={value} onChange={(e) => set(e.target.value)}
+        placeholder={has ? t("set.psp.keep") : t(ph)} style={{ ...input, display: "block", marginTop: 6, width: "100%" }} />
+    </label>
+  );
+
+  return (
+    <section style={card}>
+      <SectionHead icon={<CreditCard size={16} />} title={t("set.psp.title")} sub={t("set.psp.sub")}>
+        {enabled ? <TruthChip state={configured ? "live" : "gathering"} label={t(configured ? "set.psp.configured" : "set.psp.notconfigured")} /> : null}
+      </SectionHead>
+      {!enabled ? (
+        <p style={{ fontSize: 12.5, color: loadFailed ? "var(--kv-amber)" : "var(--kv-faint)" }}>
+          {loadFailed ? t("set.loadError") : t("set.psp.off")}
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-muted)" }}>
+            {t("set.psp.pk")}
+            <input dir="ltr" value={publishableKey} onChange={(e) => setPublishableKey(e.target.value)}
+              placeholder={t("set.psp.pastePk")} style={{ ...input, display: "block", marginTop: 6, width: "100%" }} />
+          </label>
+          {secretField("set.psp.sk", secretKey, setSecretKey, hasSecretKey, "set.psp.pasteSk")}
+          {secretField("set.psp.whsec", webhookSecret, setWebhookSecret, hasWebhookSecret, "set.psp.pasteWh")}
+          <button onClick={save} disabled={saving} style={{ ...primaryBtn, height: 38, opacity: saving ? 0.6 : 1 }}>
+            {saving ? t("set.psp.saving") : t("set.psp.save")}
+          </button>
+          {saved ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-deep)" }}>{t("set.psp.saved")}</span> : null}
+          {errKey ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-amber)" }}>{t(errKey)}</span> : null}
+          <span style={{ fontSize: 11.5, color: "var(--kv-faint)", lineHeight: 1.6 }}>{t("set.psp.note")}</span>
         </div>
       )}
     </section>
