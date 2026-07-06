@@ -43,10 +43,6 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const forward = () => {
     const headers = new Headers(request.headers);
     headers.set("x-kivo-method", request.method);
-    // Stamp the pathname so server layouts can make path-aware decisions (the
-    // cutover-1 old→/c redirect reads this — layouts can't see the pathname
-    // otherwise). Overwritten from the real request each time; never client-trusted.
-    headers.set("x-kivo-pathname", request.nextUrl.pathname);
     return { headers };
   };
 
@@ -84,9 +80,9 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   };
 
   if (isPublic(pathname)) {
-    // Already signed in and hitting a login page → send to the app.
-    if (user && pathname === "/login") return redirectTo("/dashboard");
-    if (user && pathname === "/c/login") return redirectTo("/c");
+    // Already signed in and hitting a login page → send to the app (the one
+    // console: /c). Post-CUTOVER-2 the legacy /dashboard is gone.
+    if (user && (pathname === "/login" || pathname === "/c/login")) return redirectTo("/c");
     return response;
   }
 
