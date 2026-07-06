@@ -17,8 +17,8 @@
 //  • test orders are excluded from the payment-mix count and badged, never hidden.
 // ============================================================================
 
-import { useMemo, useState } from "react";
-import { UtensilsCrossed, Store } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { UtensilsCrossed, Store, Printer } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { useConsoleOps } from "@/lib/console-ops-store";
@@ -63,6 +63,23 @@ export default function LiveShiftPage() {
   const [stamped, setStamped] = useState<Set<string>>(new Set());
   const [posRef, setPosRef] = useState<Record<string, string>>({});
   const [posBusy, setPosBusy] = useState<Set<string>>(new Set());
+
+  // Item 17 — the kitchen-ticket print link is gated on the real `kitchen_ticket`
+  // flag (GET /api/settings/flags): the ticket route 404s when the flag is off, so
+  // we render the link ONLY when the tenant has it on — the rail-never-links-to-a-404
+  // discipline, applied to an action link. Off / unresolved → no link, never a 404.
+  const [kitchenTicket, setKitchenTicket] = useState(false);
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/settings/flags");
+        const j = await res.json();
+        if (!dead && res.ok && j.flags) setKitchenTicket(j.flags.kitchen_ticket === true);
+      } catch { /* stays false → no link */ }
+    })();
+    return () => { dead = true; };
+  }, []);
 
   const active = useMemo(
     () => orders.filter((o) => ACTIVE.includes(o.orderStatus)),
@@ -144,6 +161,7 @@ export default function LiveShiftPage() {
                 <ActNowDot kind="handoff" />
                 <OrderIdentity order={o} test={t("shift.test")} />
                 <div style={{ flex: 1 }} />
+                <TicketPrintLink id={o.id} enabled={kitchenTicket} />
                 <input
                   value={posRef[o.id] ?? ""}
                   onChange={(e) => setPosRef((s) => ({ ...s, [o.id]: e.target.value }))}
@@ -177,6 +195,7 @@ export default function LiveShiftPage() {
                   {/* payment chip is passive */}
                   <StateChip display={derivePaymentDisplay(o.paymentStatus)} dot={false} />
                   <Money total={o.total} currency={o.currency} />
+                  {POS_ELIGIBLE.includes(o.orderStatus) && <TicketPrintLink id={o.id} enabled={kitchenTicket} />}
                 </div>
               </div>
             ))}
@@ -246,6 +265,32 @@ function Eighty6({
 // ---------------------------------------------------------------------------
 // small pieces
 // ---------------------------------------------------------------------------
+
+// Item 17 — kitchen-ticket print link. Opens the audited, money-STRIPPED ticket
+// route (/orders/[id]/ticket) in a new tab; that page owns the print (QZ silent or
+// the browser dialog) and stamps the ticket_printed audit. Rendered ONLY when the
+// tenant's kitchen_ticket flag is on — the route 404s otherwise, so we never link
+// into a dead page.
+function TicketPrintLink({ id, enabled }: { id: string; enabled: boolean }) {
+  const t = useT();
+  if (!enabled) return null;
+  return (
+    <a
+      href={`/orders/${id}/ticket`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={t("shift.printTicket")}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px",
+        borderRadius: 10, border: "1px solid var(--kv-border)", background: "var(--kv-card)",
+        color: "var(--kv-muted)", fontSize: 12, fontWeight: 700, textDecoration: "none", flex: "none",
+      }}
+    >
+      <Printer size={14} /> {t("shift.printTicket")}
+    </a>
+  );
+}
+
 function OrderIdentity({ order, test }: { order: LocalOrder; test: string }) {
   return (
     <div style={{ minWidth: 0 }}>
