@@ -20,8 +20,8 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.lo
 const REGIONS = ["najd", "hijaz", "asir", "eastern"] as const;
 
 // ── 1) forbidden-claims list well-formed ────────────────────────────────────
-ok("5 forbidden-claim classes", FORBIDDEN_CLAIMS.length === 5);
-ok("expected ids present", ["allergen_safety", "guaranteed_delivery", "medical_suitability", "invented_discount", "competitor_attack"].every((id) => FORBIDDEN_CLAIM_IDS.includes(id)));
+ok("7 forbidden-claim classes", FORBIDDEN_CLAIMS.length === 7);
+ok("expected ids present", ["allergen_safety", "guaranteed_delivery", "medical_suitability", "invented_discount", "competitor_attack", "card_data_request", "payment_status_claim"].every((id) => FORBIDDEN_CLAIM_IDS.includes(id)));
 ok("every entry well-formed", FORBIDDEN_CLAIMS.every((c) => c.id && c.label && c.re instanceof RegExp && typeof c.evalAssert === "boolean" && c.rationale));
 
 // ── 1b) detector FIRES on known-bad strings (so the guarantee is real) ───────

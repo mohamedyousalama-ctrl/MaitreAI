@@ -201,6 +201,17 @@ jobs:
       - name: Menu playbook unit tests
         run: node --experimental-strip-types scripts/test-menu-playbook.test.ts
 
+      # ── Blocking gate 13: Payment conversation playbook (WO-PAY-PLAYBOOK) ──
+      # 57 cases: the ask-timing gate (ONE ask only after items+fulfillment+VAT
+      # read-back), payment-status truth (DB-only; paid-ack only after webhook),
+      # method offer (engine truth, never invents), callback windows, overlay
+      # cleanliness under the LIVE gate (both dialects), and the two new forbidden-
+      # claims detectors (card_data_request evalAssert:true; payment_status_claim
+      # evalAssert:false → strict/overlay). Pure TS. The same constant gates live
+      # outputs in scripts/eval-scenarios.mjs (EVAL_MODE=pay).
+      - name: Payment playbook unit tests
+        run: node --experimental-strip-types scripts/test-pay-playbook.test.ts
+
       # ── Blocking gate 12: Khalid-wiring byte-identical snapshot (WO-KHALID-WIRING)
       # THE regression lock on Karim's LIVE prompt: for a flag-OFF tenant,
       # buildCustomerAgentSystemPrompt must be BYTE-IDENTICAL to the committed golden
