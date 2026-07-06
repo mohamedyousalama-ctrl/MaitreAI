@@ -63,6 +63,12 @@ ok("flag-ON differs from flag-OFF", onPrompt !== offPrompt);
 ok("flag-ON is ADDITIVE — starts with the EXACT flag-OFF prompt (nothing above changed)", onPrompt.startsWith(offPrompt));
 ok("flag-ON is strictly longer (content appended)", onPrompt.length > offPrompt.length);
 ok("flag-ON contains the Khalid persona-layer marker", onPrompt.includes("طبقة الشخصية"));
+// ORDER (Khalid-window verified, pinned permanently): the persona layer is injected
+// BEFORE the playbooks — persona@ < playbooks@ in the rendered prompt.
+const personaIdx = onPrompt.indexOf("طبقة الشخصية");
+const playbooksIdx = onPrompt.indexOf("دفاتر خالد");
+ok("flag-ON ORDER: persona layer precedes playbooks (persona@ < playbooks@)",
+  personaIdx >= 0 && playbooksIdx >= 0 && personaIdx < playbooksIdx);
 
 // Region resolution flows through (najd default label present in the ON overlay).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
