@@ -14,6 +14,7 @@ import { DataBootstrap } from "@/components/DataBootstrap";
 import { useConsoleDataStore, isConsoleDataPresentable } from "@/lib/console-data-state";
 import { useT } from "@/lib/i18n/lang";
 import { Rail } from "./Rail";
+import { AskKivoPalette } from "./AskKivoPalette";
 import type { ConsoleRole } from "@/lib/console-v2/nav";
 
 // Gate the page content on real tenant data being present, mirroring the old
@@ -64,6 +65,9 @@ export function AppFrame({
       >
         <GatedMain>{children}</GatedMain>
       </main>
+      {/* Ask Kivo — the global ⌘K command palette (item 14). Mounted once here so
+          its ⌘K/Ctrl+K listener works from every /c screen; renders only when open. */}
+      <AskKivoPalette />
     </div>
   );
 }

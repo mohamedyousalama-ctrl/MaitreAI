@@ -79,7 +79,7 @@ export const RAIL_ITEMS: RailItem[] = [
   { key: "approvals", labelKey: "nav.approvals", icon: CheckCircle2, section: "modules", href: "/c/approvals", ready: true, managerOnly: true },
   // Ask Kivo is a GLOBAL overlay within the /c group (one command brain, two doors —
   // item 14), not a page route, so it carries no href; the rail entry opens the overlay.
-  { key: "ask-kivo", labelKey: "nav.askKivo", icon: Sparkles, section: "modules", ready: false, managerOnly: true },
+  { key: "ask-kivo", labelKey: "nav.askKivo", icon: Sparkles, section: "modules", ready: true, managerOnly: true },
   // CRM — customer relationships (manager-only)
   { key: "customers", labelKey: "nav.customers", icon: Users, section: "crm", href: "/c/customers", ready: true, managerOnly: true },
   // ADMIN — configuration + people (manager-only)

@@ -170,6 +170,10 @@ export async function loadStaffNumbers(
 export interface StaffCommandDeps {
   send?: (to: string, text: string) => Promise<void>;
   now?: () => number;
+  /** Which door issued this command — stamped into the audit metadata. Defaults to
+   *  "staff_whatsapp" (the webhook door). The console ⌘K palette (item 14) passes
+   *  "console_command": ONE command brain, two doors, distinguishable in the trail. */
+  channel?: string;
 }
 
 async function reply(deps: StaffCommandDeps, to: string, text: string): Promise<void> {
@@ -185,7 +189,8 @@ async function auditCommand(
   entityType: string,
   entityId: string,
   result: string,
-  command: string
+  command: string,
+  channel: string
 ): Promise<void> {
   try {
     await admin.from("audit_events").insert({
@@ -196,7 +201,7 @@ async function auditCommand(
       action,
       entity_type: entityType,
       entity_id: entityId,
-      metadata: { command, result, phone: staff.wa_phone, channel: "staff_whatsapp" },
+      metadata: { command, result, phone: staff.wa_phone, channel },
     });
   } catch (e) {
     console.error("[staff] audit insert failed (non-blocking):", e);
@@ -253,6 +258,7 @@ export async function handleStaffCommand(
 ): Promise<void> {
   const now = deps.now ?? (() => Date.now());
   const nowIso = new Date(now()).toISOString();
+  const channel = deps.channel ?? "staff_whatsapp";
   const cmd = parseStaffCommand(text);
 
   try {
@@ -261,7 +267,7 @@ export async function handleStaffCommand(
         const { error } = await admin.from("restaurants").update({ agent_mode: "paused" }).eq("id", restaurantId);
         const ok = !error;
         await reply(deps, fromPhone, ok ? REPLY.pause : REPLY.opFailed);
-        await auditCommand(admin, restaurantId, staff, "staff_agent_mode_changed", "restaurant", restaurantId, ok ? "paused" : "failed", text);
+        await auditCommand(admin, restaurantId, staff, "staff_agent_mode_changed", "restaurant", restaurantId, ok ? "paused" : "failed", text, channel);
         return;
       }
       case "live": {
@@ -271,13 +277,13 @@ export async function handleStaffCommand(
         const { data: r } = await admin.from("restaurants").select("active").eq("id", restaurantId).single();
         if (r?.active !== true) {
           await reply(deps, fromPhone, REPLY.liveRefused);
-          await auditCommand(admin, restaurantId, staff, "staff_agent_mode_changed", "restaurant", restaurantId, "refused_not_activated", text);
+          await auditCommand(admin, restaurantId, staff, "staff_agent_mode_changed", "restaurant", restaurantId, "refused_not_activated", text, channel);
           return;
         }
         const { error } = await admin.from("restaurants").update({ agent_mode: "live" }).eq("id", restaurantId);
         const ok = !error;
         await reply(deps, fromPhone, ok ? REPLY.live : REPLY.opFailed);
-        await auditCommand(admin, restaurantId, staff, "staff_agent_mode_changed", "restaurant", restaurantId, ok ? "live" : "failed", text);
+        await auditCommand(admin, restaurantId, staff, "staff_agent_mode_changed", "restaurant", restaurantId, ok ? "live" : "failed", text, channel);
         return;
       }
       case "eightysix":
@@ -288,17 +294,17 @@ export async function handleStaffCommand(
         if (match.kind === "exact") {
           const ok = await applyAvailability(admin, restaurantId, staff, match.item, available);
           await reply(deps, fromPhone, ok ? (available ? REPLY.restore(match.item.name) : REPLY.eightysix(match.item.name)) : REPLY.opFailed);
-          await auditCommand(admin, restaurantId, staff, "staff_item_availability_changed", "menu_item", match.item.id, ok ? (available ? "restored" : "eightysixed") : "failed", text);
+          await auditCommand(admin, restaurantId, staff, "staff_item_availability_changed", "menu_item", match.item.id, ok ? (available ? "restored" : "eightysixed") : "failed", text, channel);
           return;
         }
         if (match.kind === "fuzzy") {
           await setPending(admin, staff, { kind: cmd.kind, menu_item_id: match.item.id, item_name: match.item.name }, nowIso);
           await reply(deps, fromPhone, REPLY.fuzzy(match.item.name));
-          await auditCommand(admin, restaurantId, staff, "staff_item_availability_changed", "restaurant", restaurantId, "fuzzy_pending", text);
+          await auditCommand(admin, restaurantId, staff, "staff_item_availability_changed", "restaurant", restaurantId, "fuzzy_pending", text, channel);
           return;
         }
         await reply(deps, fromPhone, REPLY.notFound(match.candidates.map((c) => c.name)));
-        await auditCommand(admin, restaurantId, staff, "staff_item_availability_changed", "restaurant", restaurantId, "no_match", text);
+        await auditCommand(admin, restaurantId, staff, "staff_item_availability_changed", "restaurant", restaurantId, "no_match", text, channel);
         return;
       }
       case "confirm": {
@@ -306,14 +312,14 @@ export async function handleStaffCommand(
         const fresh = pending && staff.pending_at && now() - Date.parse(staff.pending_at) <= PENDING_TTL_MS;
         if (!pending || !fresh) {
           await reply(deps, fromPhone, REPLY.noPending);
-          await auditCommand(admin, restaurantId, staff, "staff_command", "restaurant", restaurantId, "confirm_no_pending", text);
+          await auditCommand(admin, restaurantId, staff, "staff_command", "restaurant", restaurantId, "confirm_no_pending", text, channel);
           return;
         }
         const available = pending.kind === "restore";
         const ok = await applyAvailability(admin, restaurantId, staff, { id: pending.menu_item_id, name: pending.item_name }, available);
         await setPending(admin, staff, null, nowIso); // clear
         await reply(deps, fromPhone, ok ? (available ? REPLY.restore(pending.item_name) : REPLY.eightysix(pending.item_name)) : REPLY.opFailed);
-        await auditCommand(admin, restaurantId, staff, "staff_item_availability_changed", "menu_item", pending.menu_item_id, ok ? (available ? "restored_confirmed" : "eightysixed_confirmed") : "failed", text);
+        await auditCommand(admin, restaurantId, staff, "staff_item_availability_changed", "menu_item", pending.menu_item_id, ok ? (available ? "restored_confirmed" : "eightysixed_confirmed") : "failed", text, channel);
         return;
       }
       case "status": {
@@ -327,13 +333,13 @@ export async function handleStaffCommand(
           .from("conversations").select("id", { count: "exact", head: true })
           .eq("restaurant_id", restaurantId).in("ownership_state", ["HUMAN_ACTIVE", "HUMAN_IDLE", "SYSTEM_HOLD"]);
         await reply(deps, fromPhone, REPLY.status(mode, ordersToday ?? 0, awaiting ?? 0));
-        await auditCommand(admin, restaurantId, staff, "staff_command", "restaurant", restaurantId, "status", text);
+        await auditCommand(admin, restaurantId, staff, "staff_command", "restaurant", restaurantId, "status", text, channel);
         return;
       }
       default: {
         // A registered number sending non-command text → help with the vocabulary.
         await reply(deps, fromPhone, REPLY.help);
-        await auditCommand(admin, restaurantId, staff, "staff_command", "restaurant", restaurantId, "help", text);
+        await auditCommand(admin, restaurantId, staff, "staff_command", "restaurant", restaurantId, "help", text, channel);
         return;
       }
     }

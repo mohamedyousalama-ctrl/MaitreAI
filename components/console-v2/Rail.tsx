@@ -14,12 +14,16 @@ import { LogOut } from "lucide-react";
 import { KivoMark } from "@/components/brand/KivoLogo";
 import { useT } from "@/lib/i18n/lang";
 import { RAIL_SECTIONS, railItemsFor, type RailItem, type ConsoleRole } from "@/lib/console-v2/nav";
+import { useAskKivoStore } from "@/lib/console-v2/ask-kivo-store";
 import { TruthChip } from "./TruthChip";
 
 function RailRow({ item, active }: { item: RailItem; active: boolean }) {
   const t = useT();
+  const openAsk = useAskKivoStore((s) => s.setOpen);
   const Icon = item.icon;
   const label = t(item.labelKey);
+  // Ask Kivo is the one rail entry that opens the GLOBAL ⌘K palette, not a route.
+  const isAskKivo = item.key === "ask-kivo";
 
   const inner = (
     <>
@@ -31,7 +35,9 @@ function RailRow({ item, active }: { item: RailItem; active: boolean }) {
       )}
       <Icon size={18} strokeWidth={2.1} style={{ flex: "none" }} />
       <span style={{ flex: 1 }}>{label}</span>
-      {!item.ready && <TruthChip state="soon" />}
+      {isAskKivo ? (
+        <kbd style={{ fontSize: 10, fontWeight: 700, color: "var(--kv-faint)", background: "var(--kv-primary-tint)", border: "1px solid var(--kv-border)", borderRadius: 6, padding: "1px 6px" }}>⌘K</kbd>
+      ) : (!item.ready && <TruthChip state="soon" />)}
     </>
   );
 
@@ -47,6 +53,19 @@ function RailRow({ item, active }: { item: RailItem; active: boolean }) {
     fontWeight: 700,
     textDecoration: "none",
   };
+
+  // Ask Kivo → a button that opens the global palette (no navigation).
+  if (isAskKivo) {
+    return (
+      <button
+        type="button"
+        onClick={() => openAsk(true)}
+        style={{ ...baseStyle, width: "100%", border: 0, background: "transparent", color: "var(--kv-muted)", fontFamily: "var(--kv-font)", fontWeight: 700, cursor: "pointer", textAlign: "start" }}
+      >
+        {inner}
+      </button>
+    );
+  }
 
   // Not-ready → inert row (no href, muted). Ready → real Link.
   if (!item.ready || !item.href) {
