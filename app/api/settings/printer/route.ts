@@ -23,10 +23,12 @@ async function loadFlags(admin: NonNullable<ReturnType<typeof createAdminClient>
 }
 
 export async function GET() {
+  // READ is open to ANY authenticated tenant member: the ticket page (where the
+  // silent-print decision runs) is operator-facing, so a non-manager operator at
+  // the print station must be able to read the config. WRITES stay manager-only.
   const gate = await requireTenant();
   if (!gate.ok) return gate.response;
   const tenant = gate.tenant;
-  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 

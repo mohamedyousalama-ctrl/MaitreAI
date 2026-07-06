@@ -82,16 +82,21 @@ export async function listQzPrinters(): Promise<string[]> {
 }
 
 /**
- * Silent-print an image (the existing ticket PNG at `imageUrl`) to `printer`.
- * Returns true on success; false on ANY failure so the caller falls back to the
- * browser print dialog. `imageUrl` is a same-origin URL to /api/orders/[id]/image.
+ * Silent-print a ticket PNG to `printer` from BASE64 image bytes.
+ *
+ * We send base64 (not a URL) on purpose: QZ Tray fetches a `flavor:"file"` URL
+ * from its OWN desktop process, which has none of the browser's Supabase cookies,
+ * so the tenant-gated /api/orders/[id]/image would 401. The caller fetches the
+ * PNG in the browser WITH credentials and hands us the base64, which QZ prints
+ * directly. Returns true on success; false on ANY failure → browser fallback.
  */
-export async function qzPrintImage(printer: string, imageUrl: string): Promise<boolean> {
+export async function qzPrintImageBase64(printer: string, base64: string): Promise<boolean> {
   try {
+    if (!base64) return false;
     const qz = await loadQz();
     if (!qz.websocket.isActive()) await qz.websocket.connect();
     const config = qz.configs.create(printer);
-    await qz.print(config, [{ type: "pixel", format: "image", flavor: "file", data: imageUrl }]);
+    await qz.print(config, [{ type: "pixel", format: "image", flavor: "base64", data: base64 }]);
     return true;
   } catch {
     return false;

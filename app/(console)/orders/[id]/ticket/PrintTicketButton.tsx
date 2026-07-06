@@ -17,7 +17,7 @@
 import { useEffect, useState } from "react";
 import { Printer } from "lucide-react";
 import { parsePrinterConfig, shouldSilentPrint, type PrinterConfig } from "@/lib/print/printer-config";
-import { connectQz, qzStatus, qzPrintImage, type QzStatus } from "@/lib/print/qz-client";
+import { connectQz, qzStatus, qzPrintImageBase64, type QzStatus } from "@/lib/print/qz-client";
 
 type Width = "58mm" | "80mm";
 
@@ -26,6 +26,27 @@ type Width = "58mm" | "80mm";
 function applyWidth(w: Width) {
   const root = document.getElementById("kitchen-ticket");
   if (root) root.style.setProperty("--kt-width", w);
+}
+
+// Fetch the tenant-gated ticket PNG in the browser (credentials: 'include' so the
+// Supabase session cookie rides along) and return raw base64 (no data: prefix)
+// for QZ. Null on any failure → the caller falls back to the browser dialog.
+async function fetchTicketBase64(orderId: string, width: Width): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/orders/${orderId}/image?kind=ticket&w=${width}`, { credentials: "include" });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onloadend = () => resolve(String(fr.result ?? ""));
+      fr.onerror = () => reject(fr.error);
+      fr.readAsDataURL(blob);
+    });
+    const comma = dataUrl.indexOf(",");
+    return comma >= 0 ? dataUrl.slice(comma + 1) : null; // strip "data:image/png;base64,"
+  } catch {
+    return null;
+  }
 }
 
 export function PrintTicketButton({ orderId }: { orderId: string }) {
@@ -81,8 +102,11 @@ export function PrintTicketButton({ orderId }: { orderId: string }) {
     // SILENT path: flag on + printer named + auto_print → try QZ; on ANY failure
     // fall back to the browser dialog. window.print() is always the safety net.
     if (shouldSilentPrint({ flagOn: qzEnabled, config: qzConfig }) && qzConfig) {
-      const imageUrl = `${window.location.origin}/api/orders/${orderId}/image?kind=ticket&w=${width}`;
-      const ok = await qzPrintImage(qzConfig.name, imageUrl);
+      // Fetch the ticket PNG HERE (browser, WITH the tenant session cookie) and
+      // hand QZ the base64 — QZ's desktop process can't authenticate the
+      // tenant-gated image endpoint itself.
+      const b64 = await fetchTicketBase64(orderId, width);
+      const ok = b64 ? await qzPrintImageBase64(qzConfig.name, b64) : false;
       setQzConn(ok ? "connected" : "error");
       setBusy(false);
       if (ok) return; // printed silently — no dialog
