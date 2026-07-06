@@ -47,7 +47,10 @@ export type AuditAction =
   | "callback_status_updated"
   // WO-PDPL-CONSENT — an operator changed a customer's marketing/health-notes
   // consent (PDPL lawful-basis change; who/what/when is auditable).
-  | "consent_updated";
+  | "consent_updated"
+  // Item 13 — team management (attribution law): manager invites / role changes.
+  | "member_invited"
+  | "member_role_changed";
 
 export interface AuditInput {
   restaurantId: string;
