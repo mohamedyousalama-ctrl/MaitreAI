@@ -7,6 +7,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { SUPABASE_ANON_KEY, SUPABASE_URL, isSupabaseConfigured } from "./env";
+import { laxCookie } from "./cookie-options";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -22,7 +23,7 @@ export function createClient() {
       setAll(cookiesToSet: CookieToSet[]) {
         try {
           cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
+            cookieStore.set(name, value, laxCookie(options))
           );
         } catch {
           // setAll called from a Server Component — safe to ignore; the

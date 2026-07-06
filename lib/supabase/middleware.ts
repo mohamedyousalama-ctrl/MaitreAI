@@ -10,6 +10,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./env";
+import { laxCookie } from "./cookie-options";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -48,7 +49,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({ request: forward });
         cookiesToSet.forEach(({ name, value, options }) =>
-          response.cookies.set(name, value, options)
+          response.cookies.set(name, value, laxCookie(options))
         );
       },
     },
