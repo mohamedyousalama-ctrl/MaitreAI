@@ -86,6 +86,54 @@ CI seed for WO-VOICE-1/2 (re-run on real recordings to lock the production floor
 
 ---
 
+## 0.6 ElevenLabs TTS comparison (paid re-run — the authenticity path)
+
+With a paid ElevenLabs key, the TTS half that the free key blocked was run in full. **STT doctrine is
+untouched** — whisper-1 + the unconditional phonetic net; the TTS vendor choice never touches the safety
+rule. Samples delivered to Mohamed for the A/B ear test, labeled:
+
+| Candidate | What it is |
+| :--- | :--- |
+| **EL-custom-A / -B** | ElevenLabs **Voice Design** — purpose-built from a text prompt: *warm Saudi male, late-30s, deep, unhurried, Najdi host karam, Gulf Arabic*. This is the **authenticity path**. |
+| **EL-library-1 (Adam) / -2 (Daniel)** | EL library male voices via `eleven_multilingual_v2` — generic, **English-native accent** on Arabic (the "off-the-shelf" baseline). |
+| **OpenAI-onyx** | The OpenAI `gpt-4o-mini-tts` reference from §0.5. |
+
+Each candidate speaks two lines: the greeting/karam (`TTS-01`) and the **allergy safety read-out** (`TTS-05`,
+the gated line — clarity + unhurried pace matter most). **Key-scope note:** this key can synthesize and can
+*design* voices, but library *browsing* (`voices_read`) is blocked — so the two "library" candidates are
+generic male voices, not EL's Arabic-native library voices (those need `voices_read`). The **Voice-Design
+custom** is the real Arabic-authenticity route and it works end to end (design → save → synth).
+
+### Cost per message — EL vs OpenAI (pilot volume)
+
+| | ElevenLabs `multilingual_v2` | OpenAI `gpt-4o-mini-tts` |
+| :--- | :--- | :--- |
+| Unit price | 1 credit/char · Creator $22 / 100k credits ⇒ **~$0.00022/char** | ~$0.015/min audio (token-billed) |
+| **~150-char Khalid reply** | **≈ $0.033 / reply** | **≈ $0.003 / reply** |
+| Ratio | **~10× OpenAI** | baseline |
+| 300 voice replies/day (pilot) | ~$10/day (~$300/mo) + plan base; 45k chars/day burns Creator's 100k/mo in ~2 days → needs Pro ($99, 500k) or scale tier | ~$0.90/day (~$27/mo) |
+
+*(`eleven_flash_v2.5` = 0.5 credit/char ⇒ ~$0.016/reply and lower latency — a cheaper/faster EL option at a
+small quality trade.)*
+
+### Latency
+Measured EL `multilingual_v2`, short clips: **~1.5 s/request** (avg over 8 gens). OpenAI `gpt-4o-mini-tts`
+was comparable (~1–2 s) in §0.5. Neither is a blocker for async WhatsApp voice notes; if real-time streaming
+is ever needed, EL `flash_v2.5` (~0.3–0.4 s TTFB) is the low-latency lever.
+
+### Config recommendation
+- **Authenticity is the differentiator.** Off-the-shelf voices (OpenAI onyx, EL library) speak MSA/pan-Arabic
+  with a foreign lilt; the **EL Voice-Design custom** is the only candidate purpose-built for Najdi warmth.
+  For a persona whose *voice is the brand*, that gap is the whole point.
+- **Recommendation:** ship Khalid's production voice on an **EL custom-designed Najdi voice** (pick A or B by
+  Mohamed's ear) **if** the ~10× cost is acceptable at pilot scale; keep **OpenAI onyx** as the budget/
+  high-volume fallback (accepting the accent compromise), and consider **EL `flash_v2.5`** to cut EL cost ~2×
+  and latency if quality holds. Final call = Mohamed's A/B + the budget envelope.
+- The safety read-out (`TTS-05`) must clear the rubric gate (dialect + pace ≥3) on whichever voice wins —
+  verify on the sample before locking.
+
+---
+
 ## 1. TTS bake-off — Khalid speaking (Najdi)
 
 ### 1.1 Candidates (shortlist for the ear test)
@@ -117,7 +165,10 @@ For each shortlisted voice, synthesize all 10 scripts → label files `TTS-<id>_
 Mohamed scores each on the 4 dimensions → weighted totals + the TTS-05 gate decide. Deliver the sample set +
 the filled scoresheet back here for the final recommendation lock.
 
-### 1.4 Preliminary recommendation (pending the ear test)
+### 1.4 Preliminary recommendation — **SUPERSEDED by §0.6** (keyed run done)
+
+> The keyed TTS comparison (OpenAI + paid ElevenLabs Voice-Design custom) has now run — see **§0.6** for the
+> measured cost/latency/config recommendation and the A/B samples. The lean below was the pre-key placeholder.
 
 - **Default: OpenAI `gpt-4o-mini-tts`** — cheapest, steerable ("warm Najdi Saudi host, unhurried, host-like"),
   good multilingual prosody. Best cost/effort for V1 launch.
