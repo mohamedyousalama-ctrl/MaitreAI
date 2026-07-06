@@ -100,8 +100,22 @@ export async function persistInboundMessage(
         text: msg.text,
         channel_message_id: msg.externalMessageId ?? null,
         status: "delivered",
+        // WO-VOICE-1: keep the original audio ref (media id) + STT provenance in meta
+        // (the 🎤 chip renders from meta.voice). All additive to the jsonb — no DDL.
         ...(msg.interactiveId || msg.audioId
-          ? { meta: { ...(msg.interactiveId ? { interactiveId: msg.interactiveId } : {}), ...(msg.audioId ? { voice: true } : {}) } }
+          ? {
+              meta: {
+                ...(msg.interactiveId ? { interactiveId: msg.interactiveId } : {}),
+                ...(msg.audioId
+                  ? {
+                      voice: true,
+                      audio_id: msg.audioId,
+                      ...(msg.sttModel ? { stt_model: msg.sttModel } : {}),
+                      ...(typeof msg.sttConfidence === "number" ? { stt_confidence: msg.sttConfidence } : {}),
+                    }
+                  : {}),
+              },
+            }
           : {}),
       },
       { onConflict: "channel_message_id", ignoreDuplicates: true }

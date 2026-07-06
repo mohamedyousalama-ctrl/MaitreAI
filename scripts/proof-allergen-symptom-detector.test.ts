@@ -102,8 +102,12 @@ assertSrc(
   /!allergenHit\.fired\s*&&\s*symptomDetectionOn/
 );
 assertSrc(
-  "combinedAllergenHit set from allergenHit or symptomHit",
-  /combinedAllergenHit\s*=\s*allergenHit\.fired\s*\?\s*allergenHit\s*:\s*symptomHit/
+  "combinedAllergenHit set from allergenHit, symptomHit, or the phonetic net (WO-VOICE-1)",
+  /combinedAllergenHit\s*=\s*allergenHit\.fired\s*\?\s*allergenHit\s*:\s*\(\s*symptomHit\.fired\s*\?\s*symptomHit\s*:\s*phoneticHit\s*\)/
+);
+assertSrc(
+  "fail-closed phonetic net runs UNCONDITIONALLY (WO-VOICE-1, item-38)",
+  /phoneticHit\s*=\s*\(!allergenHit\.fired\s*&&\s*!symptomHit\.fired\)[\s\S]*?detectPhoneticSafetyNet/
 );
 assertSrc(
   "combinedAllergenHit.fired controls escalation branch",

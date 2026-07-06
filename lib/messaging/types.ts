@@ -45,6 +45,11 @@ export interface InboundMessage {
   audioId?: string;
   /** MIME type of the voice note (e.g. audio/ogg). */
   audioMime?: string;
+  /** WO-VOICE-1: STT confidence + model for a transcribed voice note, stamped by the
+   *  webhook after transcription and persisted into messages.meta (the audio ref is
+   *  kept too). Feeds the fail-closed net's secondary confidence tripwire. */
+  sttConfidence?: number;
+  sttModel?: string;
   /** WB3 — Meta click-to-message ad referral, when this inbound arrived via a
    *  click-to-WhatsApp ad. Undefined for organic messages. Captured as data only. */
   referral?: AdReferral;

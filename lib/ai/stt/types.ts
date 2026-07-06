@@ -22,6 +22,11 @@ export interface SttResult {
   costUsd: number;
   /** Audio duration in seconds when the provider reports it. */
   durationSec?: number;
+  /** WO-VOICE-1: transcription confidence in [0,1] when derivable
+   *  (exp(min segment avg_logprob) for whisper verbose_json), else undefined.
+   *  Feeds ONLY the fail-closed net's SECONDARY confidence tripwire — never the
+   *  primary safety decision (measured garbles were often high-confidence). */
+  confidence?: number;
 }
 
 export interface SttAdapter {
