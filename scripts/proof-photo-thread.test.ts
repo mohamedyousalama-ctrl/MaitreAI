@@ -82,6 +82,11 @@ ok("reshapes the post-cap slice (photoRequests.slice(0, decision.allowed))",
   /const shown = photoRequests\.slice\(0, decision\.allowed\)/.test(rs) &&
   /buildPhotoThreadCaptions\(shown\)/.test(rs));
 
+// GATED behind media_guard (standing law: behavior change flaggable, OFF by default):
+// a flag-OFF tenant keeps byte-identical per-image captions.
+ok("reshape is GATED behind media_guard (OFF → per-image captions unchanged)",
+  /const captions = mediaGuardOn \? buildPhotoThreadCaptions\(shown\) : shown\.map\(\(p\) => p\.caption\)/.test(rs));
+
 // The hard-zero / budget-exhausted early return happens BEFORE the sequencing, so
 // safety-zero (and complaint/payment) still send nothing and the reshape never runs.
 const idxZeroReturn = rs.indexOf("if (decision.allowed === 0)");
