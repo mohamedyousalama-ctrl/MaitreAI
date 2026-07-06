@@ -25,6 +25,67 @@ Everything that can be decided from documented capability, cost, and safety logi
 
 ---
 
+## 0.5 Measured scored run (KEYED — the deferred half, now executed)
+
+Keys were later provided; the scoring half was run via **`scripts/voice/score_bakeoff.py`** (env-keyed,
+reproducible). **Caveats up front:** (a) **ElevenLabs could not be scored** — the supplied key is on a
+**free plan** (`402 paid_plan_required`: "Free users cannot use library voices via the API") and is
+permission-scoped, so the authenticity comparison still needs a paid EL key. (b) **No human recordings
+exist**, so the STT fixtures were **TTS-synthesized** (OpenAI `gpt-4o-mini-tts`, a *different* engine
+than the Whisper STT) and noise-mixed — a **proxy** that exercises the scoring + threshold path end to
+end and yields real numbers, but the production floor must be **re-confirmed on real Saudi recordings**
+(WO-VOICE-1).
+
+### TTS — samples generated (for Mohamed's ear)
+10 Najdi scripts × 3 OpenAI voices (`onyx`, `ash`, `verse`) via `gpt-4o-mini-tts`, steered "warm Saudi
+Najdi male host." Samples delivered to Mohamed. Quality/dialect/warmth remain a **human call** — and the
+known reality holds: off-the-shelf engines render **MSA/pan-Arabic**, not true Najdi; a **voice clone**
+(paid EL or similar) is the authenticity path.
+
+### STT — the safety finding (this is the load-bearing result)
+Affix-normalized safety-term recall on the 20-item set (tashkeel/alef/definite-article normalized; **noise
+actually mixed**; errored items counted as misses over a fixed 39-term denominator — see the method note):
+
+| STT engine | safety-term recall | must-flag notes fully captured | confidence signal |
+| :--- | :--- | :--- | :--- |
+| `whisper-1` | **≈0.69** (27/39) | **9/18** | `avg_logprob` available |
+| `gpt-4o-transcribe` | **≈0.67** (26/39) | **10/18** | none (json-only) |
+
+*(Seeded `NOISE_SEED=0` → the noise mix is reproducible; small residual variance is transient API errors,
+which count fail-closed as misses — so true STT recall is marginally higher. Proxy fixtures either way.)*
+
+**Both engines FAIL the 1.00 safety bar — badly: ~half the must-flag allergy notes lose ≥1 safety term**,
+and the miss sets differ. Every miss was a **phonetic-near garble**, not a total dropout:
+
+- `جلوتين → بلوتين` (gluten), `لبن → النبن` (milk), `أتحسس → تحصّص` (I'm allergic), `بيض → البيت/بيبك` (egg),
+  `مكسرات → المكسّرة`, plus code-switch (`I have allergy → meninphostoc`)
+- noise: babble was tolerated (2/2) but **traffic / child-pitch / code-switch / mild each dropped a term**
+  (and additive noise only *approximates* those — child-pitch/rate aren't truly simulated, so real audio is
+  likely worse)
+
+**Confidence does not save it:** whisper `avg_logprob→prob` — captured items ranged from **0.63**, while
+**missed-term** confidences ran **up to 0.77** (misses were often *more* confident than captures). Confidence
+does **not** separate hits from misses; a confidence-*gated* net would miss them. `gpt-4o-transcribe` returns
+no confidence at all.
+
+### What this changes (folded into the eval set's `failClosedThreshold.measuredRun` + `rule`)
+1. **The fail-closed phonetic net is mandatory** — it is what carries recall from ~0.7 to 1.00. Raw
+   STT → exact-keyword-match in front of the allergen gate is **unsafe**.
+2. **Run phonetic-near matching UNCONDITIONALLY**, not only below the confidence floor (high-confidence
+   garbles were observed). Normalize Arabic **+ strip the definite article/affixes** before Levenshtein.
+3. **Route any allergy-CONTEXT utterance** (حساسية / أتحسس / ما يصير آكل / تأذيني / "allergy") to the
+   deterministic gate + a text-confirm, even when the specific allergen token is garbled.
+4. **`SAFETY_STT_CONFIDENCE_FLOOR = 0.66` is kept as a secondary TRIPWIRE**, not the primary net.
+5. **Vendor:** whisper-1 (≈0.69) edges gpt-4o-transcribe (≈0.67) on this proxy with differing miss sets, and
+   crucially whisper-1 exposes `avg_logprob`/`no_speech_prob` for the tripwire while gpt-4o-transcribe returns
+   no confidence — so **whisper-1 is the pragmatic default** for WO-VOICE-1; either way, lean on the net.
+
+Net: **voice is provably STRICTER on safety than text** only *with* the net; without it, ~1 in 5 spoken
+allergy disclosures would pass silently. The `score_bakeoff.py` harness + the annotated eval set are the
+CI seed for WO-VOICE-1/2 (re-run on real recordings to lock the production floor).
+
+---
+
 ## 1. TTS bake-off — Khalid speaking (Najdi)
 
 ### 1.1 Candidates (shortlist for the ear test)
@@ -123,12 +184,15 @@ Voice's dangerous failure is **under-transcribing an allergy**. The rule (full s
 
 1. **Text path (unchanged gate):** the transcript feeds the existing deterministic allergen gate. A lexicon
    term in the transcript → normal safety-positive. Voice adds no new "safe" path.
-2. **Fail-closed net (new):** treat as a safety-positive (acknowledge + verify/escalate) if **either**
-   - a segment's confidence `< SAFETY_STT_CONFIDENCE_FLOOR (0.66)` **and** it is **phonetically near** a safety
-     lexicon term (Arabic-normalized Levenshtein ≤ 2 — normalize ق↔g, ظ↔ز↔ذ, ث/ص↔س, ة↔ه, ى↔ي, hamza↔ا, doubled
-     letters), **or**
-   - a low-confidence segment co-occurs with a confidently-heard **allergen noun** (an allergy statement may have
-     been garbled *around* the noun).
+2. **Fail-closed net (measured-corrected):** treat as a safety-positive (acknowledge + verify/escalate) if **any**
+   - a transcript token is **phonetically near** a safety lexicon term — Arabic-normalized **+ affix/definite-article
+     stripped**, Levenshtein ≤ 2 (normalize ق↔g, ظ↔ز↔ذ, ث/ص↔س, ة↔ه, ى↔ي, hamza↔ا, doubled letters) — applied
+     **UNCONDITIONALLY, not gated on `SAFETY_STT_CONFIDENCE_FLOOR`** (the measured run saw high-confidence garbles
+     like `جلوتين→بلوتين` at conf 0.71 and affix misses like `الفول السوداني`≠`فول سوداني`), **or**
+   - a low-confidence segment (`< SAFETY_STT_CONFIDENCE_FLOOR`, 0.66 — a secondary tripwire) co-occurs with a
+     confidently-heard **allergen noun** (an allergy statement may have been garbled *around* the noun), **or**
+   - an **allergy-context verb** (حساسية / أتحسس / ما يصير آكل / تأذيني / "allergy") is present even when the
+     specific allergen token is unrecognized → route to the gate + a text-confirm.
 3. **Whole-utterance uncertainty + food context** → ask the customer to re-send as text / confirm; **never
    fabricate an order or an "allergen-safe" claim from a low-confidence voice note** (extends the existing
    mock-STT honesty rule). Over-escalation is acceptable; under-escalation is not.

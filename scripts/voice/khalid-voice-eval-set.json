@@ -9,30 +9,104 @@
     "safetyContract": "Fail CLOSED. For voice, under-transcribing an allergy is the dangerous failure. Any low-confidence region phonetically near the safety lexicon is treated as a safety-positive (escalate/verify), exactly like the deterministic allergen gate. Over-escalation is acceptable; under-escalation is not.",
     "sourceOfTruthForSafety": "docs/KSA_ALLERGEN_DIALECT_REVIEW.md (the LOCKED gate lexicon + KSA dialect gaps) — this set mirrors those phrasings in SPOKEN form."
   },
-
   "tts": {
     "note": "10 scripted Khalid replies in Najdi register for the TTS bake-off. Text is what Khalid SAYS; graders score the GENERATED AUDIO. Numbers/money are written to test digit + pace handling. Keep customer-facing Arabic clean Najdi (no MSA slippage). Money/prices here are illustrative script content, not live tenant data.",
     "rubricDimensions": [
-      { "key": "naturalness", "weight": 0.30, "desc": "Does it sound like a real person, not TTS? Prosody, breaths, no robotic cadence." },
-      { "key": "dialect_authenticity", "weight": 0.30, "desc": "Reads as Saudi/Najdi, not MSA newsreader or Levantine/Egyptian. Correct stress, ق/g colour where natural." },
-      { "key": "warmth_karam", "weight": 0.25, "desc": "Hospitable, unhurried, host-like warmth — the karam signature. Not flat, not saccharine." },
-      { "key": "pace", "weight": 0.15, "desc": "Human tempo; numbers/prices/allergy notes clear and unrushed; no clipping." }
+      {
+        "key": "naturalness",
+        "weight": 0.3,
+        "desc": "Does it sound like a real person, not TTS? Prosody, breaths, no robotic cadence."
+      },
+      {
+        "key": "dialect_authenticity",
+        "weight": 0.3,
+        "desc": "Reads as Saudi/Najdi, not MSA newsreader or Levantine/Egyptian. Correct stress, ق/g colour where natural."
+      },
+      {
+        "key": "warmth_karam",
+        "weight": 0.25,
+        "desc": "Hospitable, unhurried, host-like warmth — the karam signature. Not flat, not saccharine."
+      },
+      {
+        "key": "pace",
+        "weight": 0.15,
+        "desc": "Human tempo; numbers/prices/allergy notes clear and unrushed; no clipping."
+      }
     ],
     "scoreScale": "1–5 per dimension (1 unusable, 3 acceptable, 5 excellent). Weighted total /5. A voice must score >=3 on dialect_authenticity AND >=3 on pace on the allergy script (#5) to pass — safety readouts must be clear.",
     "scripts": [
-      { "id": "TTS-01", "intent": "greeting_karam", "register": "najdi", "text": "هلا والله، حيّاك الله ونوّرت مطعمنا. أنا خالد، تحت أمرك — وش تشتهي اليوم؟", "notes": "Opening warmth. Grade karam + naturalness." },
-      { "id": "TTS-02", "intent": "recommend_signature", "register": "najdi", "text": "لو تبي شي يشبع ويطيّب الخاطر، أنصحك بالكبسة باللحم، رزّها متبّل وريحتها تفتح النفس.", "notes": "Sensory selling; grade warmth + pace on the descriptive clause." },
-      { "id": "TTS-03", "intent": "dates_gahwa_pairing", "register": "najdi", "text": "وتحب أضيف لك تمر مع القهوة؟ القهوة والتمر ما ينفصلون عندنا، عزيمة كريم.", "notes": "The gahwa↔dates instinct. Grade dialect_authenticity on «ما ينفصلون»." },
-      { "id": "TTS-04", "intent": "upsell_once", "register": "najdi", "text": "تكمّلها بلبن بارد؟ يخفّف دسم الكبسة ويعدّل المزاج. وإذا ما تبي، ولا يهمّك.", "notes": "Upsell + graceful no. Grade warmth; must not sound pushy." },
-      { "id": "TTS-05", "intent": "allergy_acknowledge_safety", "register": "najdi", "text": "خذت بالي إن عندك حساسية من المكسرات، وصحتك أهم شي. بتأكد لك من المطبخ قبل لا نجهّز طلبك.", "notes": "SAFETY readout. MUST be clear + unrushed. Gate on pace>=3 and dialect>=3. No downplaying tone." },
-      { "id": "TTS-06", "intent": "unavailable_ack_pivot", "register": "najdi", "text": "للأسف المندي خلص اليوم، بس الكبسة باللحم حاضرة وطيبة، أجهّز لك منها؟", "notes": "Acknowledge-then-pivot. Grade naturalness on the pivot." },
-      { "id": "TTS-07", "intent": "order_recap_money_pace", "register": "najdi", "text": "طلبك: كبستين دجاج ولبنين بارد، الإجمالي مية وأربعة وعشرين ريال. أأكد لك؟", "notes": "Numbers + total spelled out. Grade PACE — digits must be crystal clear." },
-      { "id": "TTS-08", "intent": "closed_hours", "register": "najdi", "text": "نعتذر منك، المطعم مسكّر الحين. نفتح بكرة الساعة إحدى عشرة الصبح ونسعد بخدمتك.", "notes": "Apology + fact. Grade warmth without over-apology." },
-      { "id": "TTS-09", "intent": "complaint_deescalate", "register": "najdi", "text": "حقّك عليّ، وأعتذر إن الطلب تأخّر. خلّني أشوف حالته وأرجع لك بأسرع وقت.", "notes": "Ownership, calm. Grade warmth + must sound sincere, not scripted." },
-      { "id": "TTS-10", "intent": "ramadan_warmth", "register": "najdi", "text": "تقبّل الله طاعتك وبالعافية عليك. جهّزنا لك الهريس والتمر للإفطار، يوصلك قبل الأذان بإذن الله.", "notes": "Ramadan register. Grade dialect + warmth; «بإذن الله» natural cadence." }
+      {
+        "id": "TTS-01",
+        "intent": "greeting_karam",
+        "register": "najdi",
+        "text": "هلا والله، حيّاك الله ونوّرت مطعمنا. أنا خالد، تحت أمرك — وش تشتهي اليوم؟",
+        "notes": "Opening warmth. Grade karam + naturalness."
+      },
+      {
+        "id": "TTS-02",
+        "intent": "recommend_signature",
+        "register": "najdi",
+        "text": "لو تبي شي يشبع ويطيّب الخاطر، أنصحك بالكبسة باللحم، رزّها متبّل وريحتها تفتح النفس.",
+        "notes": "Sensory selling; grade warmth + pace on the descriptive clause."
+      },
+      {
+        "id": "TTS-03",
+        "intent": "dates_gahwa_pairing",
+        "register": "najdi",
+        "text": "وتحب أضيف لك تمر مع القهوة؟ القهوة والتمر ما ينفصلون عندنا، عزيمة كريم.",
+        "notes": "The gahwa↔dates instinct. Grade dialect_authenticity on «ما ينفصلون»."
+      },
+      {
+        "id": "TTS-04",
+        "intent": "upsell_once",
+        "register": "najdi",
+        "text": "تكمّلها بلبن بارد؟ يخفّف دسم الكبسة ويعدّل المزاج. وإذا ما تبي، ولا يهمّك.",
+        "notes": "Upsell + graceful no. Grade warmth; must not sound pushy."
+      },
+      {
+        "id": "TTS-05",
+        "intent": "allergy_acknowledge_safety",
+        "register": "najdi",
+        "text": "خذت بالي إن عندك حساسية من المكسرات، وصحتك أهم شي. بتأكد لك من المطبخ قبل لا نجهّز طلبك.",
+        "notes": "SAFETY readout. MUST be clear + unrushed. Gate on pace>=3 and dialect>=3. No downplaying tone."
+      },
+      {
+        "id": "TTS-06",
+        "intent": "unavailable_ack_pivot",
+        "register": "najdi",
+        "text": "للأسف المندي خلص اليوم، بس الكبسة باللحم حاضرة وطيبة، أجهّز لك منها؟",
+        "notes": "Acknowledge-then-pivot. Grade naturalness on the pivot."
+      },
+      {
+        "id": "TTS-07",
+        "intent": "order_recap_money_pace",
+        "register": "najdi",
+        "text": "طلبك: كبستين دجاج ولبنين بارد، الإجمالي مية وأربعة وعشرين ريال. أأكد لك؟",
+        "notes": "Numbers + total spelled out. Grade PACE — digits must be crystal clear."
+      },
+      {
+        "id": "TTS-08",
+        "intent": "closed_hours",
+        "register": "najdi",
+        "text": "نعتذر منك، المطعم مسكّر الحين. نفتح بكرة الساعة إحدى عشرة الصبح ونسعد بخدمتك.",
+        "notes": "Apology + fact. Grade warmth without over-apology."
+      },
+      {
+        "id": "TTS-09",
+        "intent": "complaint_deescalate",
+        "register": "najdi",
+        "text": "حقّك عليّ، وأعتذر إن الطلب تأخّر. خلّني أشوف حالته وأرجع لك بأسرع وقت.",
+        "notes": "Ownership, calm. Grade warmth + must sound sincere, not scripted."
+      },
+      {
+        "id": "TTS-10",
+        "intent": "ramadan_warmth",
+        "register": "najdi",
+        "text": "تقبّل الله طاعتك وبالعافية عليك. جهّزنا لك الهريس والتمر للإفطار، يوصلك قبل الأذان بإذن الله.",
+        "notes": "Ramadan register. Grade dialect + warmth; «بإذن الله» natural cadence."
+      }
     ]
   },
-
   "stt": {
     "note": "20 scripted Saudi voice notes for the STT bake-off. Each item is a SPOKEN utterance to be recorded (real Saudi speakers preferred; TTS-generated audio is a smoke-test proxy only, NOT a substitute for real voices). Score OVERALL word accuracy AND — the gate — SAFETY-TERM accuracy: did the engine transcribe the allergy/symptom phrase correctly enough for the deterministic gate to fire? `mustFlag` = the fail-closed rule MUST raise a safety-positive for this utterance.",
     "safetyScoring": {
@@ -42,56 +116,409 @@
     },
     "safetyLexicon": {
       "note": "Mirrors the LOCKED gate + KSA additions (docs/KSA_ALLERGEN_DIALECT_REVIEW.md). Used to (a) check transcript hits and (b) build the phonetic-near set for the fail-closed rule.",
-      "allergen_nouns": ["مكسرات", "بندق", "فستق", "لوز", "كاجو", "جوز", "فول سوداني", "سوداني", "لبن", "حليب", "لاكتوز", "جلوتين", "قمح", "بيض", "سمسم", "طحينة", "صويا", "سمك", "جمبري", "قشريات"],
-      "allergy_markers": ["حساسية", "حساسيه", "حساس", "حساسة", "تحسس", "أتحسس", "ألرجيا", "الرجي", "يتحسس"],
-      "avoidance_markers": ["ما أقدر آكل", "ما اقدر اكل", "مو قادر آكل", "ما يصير آكل", "ما ينفع آكل", "ما أتحمل", "ممنوع علي", "الدكتور منع"],
-      "symptom_markers": ["ينتفخ", "تورم", "طفح", "حكة", "كتمة", "ضيق نفس", "ما أقدر أتنفس", "حلقي يضيق", "أنيميا الفول"]
+      "allergen_nouns": [
+        "مكسرات",
+        "بندق",
+        "فستق",
+        "لوز",
+        "كاجو",
+        "جوز",
+        "فول سوداني",
+        "سوداني",
+        "لبن",
+        "حليب",
+        "لاكتوز",
+        "جلوتين",
+        "قمح",
+        "بيض",
+        "سمسم",
+        "طحينة",
+        "صويا",
+        "سمك",
+        "جمبري",
+        "قشريات"
+      ],
+      "allergy_markers": [
+        "حساسية",
+        "حساسيه",
+        "حساس",
+        "حساسة",
+        "تحسس",
+        "أتحسس",
+        "ألرجيا",
+        "الرجي",
+        "يتحسس"
+      ],
+      "avoidance_markers": [
+        "ما أقدر آكل",
+        "ما اقدر اكل",
+        "مو قادر آكل",
+        "ما يصير آكل",
+        "ما ينفع آكل",
+        "ما أتحمل",
+        "ممنوع علي",
+        "الدكتور منع"
+      ],
+      "symptom_markers": [
+        "ينتفخ",
+        "تورم",
+        "طفح",
+        "حكة",
+        "كتمة",
+        "ضيق نفس",
+        "ما أقدر أتنفس",
+        "حلقي يضيق",
+        "أنيميا الفول"
+      ]
     },
     "items": [
-      { "id": "STT-01", "category": "explicit_covered", "spoken": "السلام عليكم، عندي حساسية من المكسرات، ودّي أطلب بس بأمان", "expected": "السلام عليكم عندي حساسية من المكسرات ودي أطلب بس بأمان", "containsSafety": true, "safetyTerms": ["حساسية", "مكسرات"], "noise": "none", "mustFlag": true },
-      { "id": "STT-02", "category": "gap_adjective", "spoken": "أنا حساس من الفول السوداني، خلّي بالك", "expected": "أنا حساس من الفول السوداني خلي بالك", "containsSafety": true, "safetyTerms": ["حساس", "فول سوداني"], "noise": "none", "mustFlag": true },
-      { "id": "STT-03", "category": "gap_verb", "spoken": "أنا أتحسس من الحليب، فيه شي بدون حليب؟", "expected": "أنا أتحسس من الحليب فيه شي بدون حليب", "containsSafety": true, "safetyTerms": ["أتحسس", "حليب"], "noise": "none", "mustFlag": true },
-      { "id": "STT-04", "category": "gap_reaction", "spoken": "يجيني تحسس من الفستق، ابعد عنه", "expected": "يجيني تحسس من الفستق ابعد عنه", "containsSafety": true, "safetyTerms": ["تحسس", "فستق"], "noise": "none", "mustFlag": true },
-      { "id": "STT-05", "category": "gap_translit", "spoken": "عندي ألرجيا من البيض", "expected": "عندي ألرجيا من البيض", "containsSafety": true, "safetyTerms": ["ألرجيا", "بيض"], "noise": "none", "mustFlag": true },
-      { "id": "STT-06", "category": "gap_najdi_negation", "spoken": "مو قادر آكل جمبري، تكفى", "expected": "مو قادر آكل جمبري تكفى", "containsSafety": true, "safetyTerms": ["مو قادر آكل", "جمبري"], "noise": "none", "mustFlag": true },
-      { "id": "STT-07", "category": "gap_najdi_negation", "spoken": "ما يصير آكل لبن أبد", "expected": "ما يصير آكل لبن أبد", "containsSafety": true, "safetyTerms": ["ما يصير آكل", "لبن"], "noise": "none", "mustFlag": true },
-      { "id": "STT-08", "category": "gap_harm_verb", "spoken": "المكسرات تأذيني، لا تحطّونها", "expected": "المكسرات تأذيني لا تحطونها", "containsSafety": true, "safetyTerms": ["مكسرات", "تأذيني"], "noise": "none", "mustFlag": true },
-      { "id": "STT-09", "category": "gap_condition", "spoken": "أنا ما أتحمل اللاكتوز", "expected": "أنا ما أتحمل اللاكتوز", "containsSafety": true, "safetyTerms": ["ما أتحمل", "لاكتوز"], "noise": "none", "mustFlag": true },
-      { "id": "STT-10", "category": "symptom", "spoken": "وجهي ينتفخ لما آكل مكسرات، خطير علي", "expected": "وجهي ينتفخ لما آكل مكسرات خطير علي", "containsSafety": true, "safetyTerms": ["ينتفخ", "مكسرات"], "noise": "none", "mustFlag": true },
-      { "id": "STT-11", "category": "symptom_critical", "spoken": "يجيني كتمة وضيق نفس بعد ما آكل سمك", "expected": "يجيني كتمة وضيق نفس بعد ما آكل سمك", "containsSafety": true, "safetyTerms": ["كتمة", "ضيق نفس", "سمك"], "noise": "none", "mustFlag": true },
-      { "id": "STT-12", "category": "explicit_covered_multi", "spoken": "عندي حساسية من القمح والجلوتين", "expected": "عندي حساسية من القمح والجلوتين", "containsSafety": true, "safetyTerms": ["حساسية", "قمح", "جلوتين"], "noise": "none", "mustFlag": true },
-      { "id": "STT-13", "category": "explicit_sesame_tahini", "spoken": "حساسيتي من السمسم والطحينة", "expected": "حساسيتي من السمسم والطحينة", "containsSafety": true, "safetyTerms": ["حساسية", "سمسم", "طحينة"], "noise": "none", "mustFlag": true },
-      { "id": "STT-14", "category": "noise_restaurant", "spoken": "عندي حساسية من المكسرات", "expected": "عندي حساسية من المكسرات", "containsSafety": true, "safetyTerms": ["حساسية", "مكسرات"], "noise": "restaurant_babble_medium", "mustFlag": true, "notes": "Same phrase as STT-01 but over restaurant background; tests noise robustness on the most common safety phrase." },
-      { "id": "STT-15", "category": "noise_traffic_fast", "spoken": "ما اقدر اكل بيض بسرعة لو سمحت", "expected": "ما اقدر اكل بيض بسرعة لو سمحت", "containsSafety": true, "safetyTerms": ["ما اقدر اكل", "بيض"], "noise": "traffic_fast_speech", "mustFlag": true, "notes": "Fast, mumbled, traffic noise — high mis-transcription risk on «بيض»." },
-      { "id": "STT-16", "category": "child_family", "spoken": "ابني عنده حساسية من اللبن، انتبهوا", "expected": "ابني عنده حساسية من اللبن انتبهوا", "containsSafety": true, "safetyTerms": ["حساسية", "لبن"], "noise": "child_pitch", "mustFlag": true, "notes": "Higher-pitch/child timbre; safety on behalf of a child." },
-      { "id": "STT-17", "category": "code_switch", "spoken": "I have allergy من الفستق", "expected": "I have allergy من الفستق", "containsSafety": true, "safetyTerms": ["allergy", "فستق"], "noise": "none", "mustFlag": true, "notes": "Arabic-English code-switch (common in KSA). Engine must not drop the Arabic allergen after English." },
-      { "id": "STT-18", "category": "phonetic_trap_flag", "spoken": "أنا حساسة من الجلوتين", "expected": "أنا حساسة من الجلوتين", "containsSafety": true, "safetyTerms": ["حساسة", "جلوتين"], "noise": "mild", "mustFlag": true, "notes": "«حساسة» (fem) is phonetically ~«حساسية»; whichever way it transcribes, the fail-closed net + gap-form gate must flag." },
-      { "id": "STT-19", "category": "phonetic_trap_benign_overflag_ok", "spoken": "الحلا حسّاس للحرارة، لا يوصل ذايب", "expected": "الحلا حساس للحرارة لا يوصل ذايب", "containsSafety": false, "safetyTerms": [], "noise": "none", "mustFlag": false, "acceptableFlag": true, "notes": "«حسّاس» here = dessert sensitive to heat, NOT a food allergy. Ideal: no flag. Per fail-closed, an over-flag here is ACCEPTABLE (safety over precision). Measures the over-escalation rate, which is a UX cost, not a safety failure." },
-      { "id": "STT-20", "category": "control_negative", "spoken": "أبغى كبستين دجاج وعصيرين مانجو، توصيل حي العليا", "expected": "أبغى كبستين دجاج وعصيرين مانجو توصيل حي العليا", "containsSafety": false, "safetyTerms": [], "noise": "none", "mustFlag": false, "notes": "Clean order, no safety content — MUST NOT flag. Controls the false-positive rate on ordinary orders." }
+      {
+        "id": "STT-01",
+        "category": "explicit_covered",
+        "spoken": "السلام عليكم، عندي حساسية من المكسرات، ودّي أطلب بس بأمان",
+        "expected": "السلام عليكم عندي حساسية من المكسرات ودي أطلب بس بأمان",
+        "containsSafety": true,
+        "safetyTerms": [
+          "حساسية",
+          "مكسرات"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-02",
+        "category": "gap_adjective",
+        "spoken": "أنا حساس من الفول السوداني، خلّي بالك",
+        "expected": "أنا حساس من الفول السوداني خلي بالك",
+        "containsSafety": true,
+        "safetyTerms": [
+          "حساس",
+          "فول سوداني"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-03",
+        "category": "gap_verb",
+        "spoken": "أنا أتحسس من الحليب، فيه شي بدون حليب؟",
+        "expected": "أنا أتحسس من الحليب فيه شي بدون حليب",
+        "containsSafety": true,
+        "safetyTerms": [
+          "أتحسس",
+          "حليب"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-04",
+        "category": "gap_reaction",
+        "spoken": "يجيني تحسس من الفستق، ابعد عنه",
+        "expected": "يجيني تحسس من الفستق ابعد عنه",
+        "containsSafety": true,
+        "safetyTerms": [
+          "تحسس",
+          "فستق"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-05",
+        "category": "gap_translit",
+        "spoken": "عندي ألرجيا من البيض",
+        "expected": "عندي ألرجيا من البيض",
+        "containsSafety": true,
+        "safetyTerms": [
+          "ألرجيا",
+          "بيض"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-06",
+        "category": "gap_najdi_negation",
+        "spoken": "مو قادر آكل جمبري، تكفى",
+        "expected": "مو قادر آكل جمبري تكفى",
+        "containsSafety": true,
+        "safetyTerms": [
+          "مو قادر آكل",
+          "جمبري"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-07",
+        "category": "gap_najdi_negation",
+        "spoken": "ما يصير آكل لبن أبد",
+        "expected": "ما يصير آكل لبن أبد",
+        "containsSafety": true,
+        "safetyTerms": [
+          "ما يصير آكل",
+          "لبن"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-08",
+        "category": "gap_harm_verb",
+        "spoken": "المكسرات تأذيني، لا تحطّونها",
+        "expected": "المكسرات تأذيني لا تحطونها",
+        "containsSafety": true,
+        "safetyTerms": [
+          "مكسرات",
+          "تأذيني"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-09",
+        "category": "gap_condition",
+        "spoken": "أنا ما أتحمل اللاكتوز",
+        "expected": "أنا ما أتحمل اللاكتوز",
+        "containsSafety": true,
+        "safetyTerms": [
+          "ما أتحمل",
+          "لاكتوز"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-10",
+        "category": "symptom",
+        "spoken": "وجهي ينتفخ لما آكل مكسرات، خطير علي",
+        "expected": "وجهي ينتفخ لما آكل مكسرات خطير علي",
+        "containsSafety": true,
+        "safetyTerms": [
+          "ينتفخ",
+          "مكسرات"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-11",
+        "category": "symptom_critical",
+        "spoken": "يجيني كتمة وضيق نفس بعد ما آكل سمك",
+        "expected": "يجيني كتمة وضيق نفس بعد ما آكل سمك",
+        "containsSafety": true,
+        "safetyTerms": [
+          "كتمة",
+          "ضيق نفس",
+          "سمك"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-12",
+        "category": "explicit_covered_multi",
+        "spoken": "عندي حساسية من القمح والجلوتين",
+        "expected": "عندي حساسية من القمح والجلوتين",
+        "containsSafety": true,
+        "safetyTerms": [
+          "حساسية",
+          "قمح",
+          "جلوتين"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-13",
+        "category": "explicit_sesame_tahini",
+        "spoken": "حساسيتي من السمسم والطحينة",
+        "expected": "حساسيتي من السمسم والطحينة",
+        "containsSafety": true,
+        "safetyTerms": [
+          "حساسية",
+          "سمسم",
+          "طحينة"
+        ],
+        "noise": "none",
+        "mustFlag": true
+      },
+      {
+        "id": "STT-14",
+        "category": "noise_restaurant",
+        "spoken": "عندي حساسية من المكسرات",
+        "expected": "عندي حساسية من المكسرات",
+        "containsSafety": true,
+        "safetyTerms": [
+          "حساسية",
+          "مكسرات"
+        ],
+        "noise": "restaurant_babble_medium",
+        "mustFlag": true,
+        "notes": "Same phrase as STT-01 but over restaurant background; tests noise robustness on the most common safety phrase."
+      },
+      {
+        "id": "STT-15",
+        "category": "noise_traffic_fast",
+        "spoken": "ما اقدر اكل بيض بسرعة لو سمحت",
+        "expected": "ما اقدر اكل بيض بسرعة لو سمحت",
+        "containsSafety": true,
+        "safetyTerms": [
+          "ما اقدر اكل",
+          "بيض"
+        ],
+        "noise": "traffic_fast_speech",
+        "mustFlag": true,
+        "notes": "Fast, mumbled, traffic noise — high mis-transcription risk on «بيض»."
+      },
+      {
+        "id": "STT-16",
+        "category": "child_family",
+        "spoken": "ابني عنده حساسية من اللبن، انتبهوا",
+        "expected": "ابني عنده حساسية من اللبن انتبهوا",
+        "containsSafety": true,
+        "safetyTerms": [
+          "حساسية",
+          "لبن"
+        ],
+        "noise": "child_pitch",
+        "mustFlag": true,
+        "notes": "Higher-pitch/child timbre; safety on behalf of a child."
+      },
+      {
+        "id": "STT-17",
+        "category": "code_switch",
+        "spoken": "I have allergy من الفستق",
+        "expected": "I have allergy من الفستق",
+        "containsSafety": true,
+        "safetyTerms": [
+          "allergy",
+          "فستق"
+        ],
+        "noise": "none",
+        "mustFlag": true,
+        "notes": "Arabic-English code-switch (common in KSA). Engine must not drop the Arabic allergen after English."
+      },
+      {
+        "id": "STT-18",
+        "category": "phonetic_trap_flag",
+        "spoken": "أنا حساسة من الجلوتين",
+        "expected": "أنا حساسة من الجلوتين",
+        "containsSafety": true,
+        "safetyTerms": [
+          "حساسة",
+          "جلوتين"
+        ],
+        "noise": "mild",
+        "mustFlag": true,
+        "notes": "«حساسة» (fem) is phonetically ~«حساسية»; whichever way it transcribes, the fail-closed net + gap-form gate must flag."
+      },
+      {
+        "id": "STT-19",
+        "category": "phonetic_trap_benign_overflag_ok",
+        "spoken": "الحلا حسّاس للحرارة، لا يوصل ذايب",
+        "expected": "الحلا حساس للحرارة لا يوصل ذايب",
+        "containsSafety": false,
+        "safetyTerms": [],
+        "noise": "none",
+        "mustFlag": false,
+        "acceptableFlag": true,
+        "notes": "«حسّاس» here = dessert sensitive to heat, NOT a food allergy. Ideal: no flag. Per fail-closed, an over-flag here is ACCEPTABLE (safety over precision). Measures the over-escalation rate, which is a UX cost, not a safety failure."
+      },
+      {
+        "id": "STT-20",
+        "category": "control_negative",
+        "spoken": "أبغى كبستين دجاج وعصيرين مانجو، توصيل حي العليا",
+        "expected": "أبغى كبستين دجاج وعصيرين مانجو توصيل حي العليا",
+        "containsSafety": false,
+        "safetyTerms": [],
+        "noise": "none",
+        "mustFlag": false,
+        "notes": "Clean order, no safety content — MUST NOT flag. Controls the false-positive rate on ordinary orders."
+      }
     ]
   },
-
   "failClosedThreshold": {
     "requiresSttConfidence": "SttResult must expose a confidence signal (WO-VOICE-1 extension: add confidence + per-segment avgLogprob/noSpeechProb; Whisper verbose_json provides avg_logprob and no_speech_prob per segment). The current SttResult (lib/ai/stt/types.ts) has none.",
     "confidenceNormalization": "conf = exp(avg_logprob) approximated; buckets: high >= 0.66 (avg_logprob >= ~-0.4), medium 0.40–0.66, low < 0.40 (avg_logprob < ~-0.9).",
     "SAFETY_STT_CONFIDENCE_FLOOR": 0.66,
     "rule": [
       "A) If the transcript contains a gate lexicon term → the deterministic allergen gate fires as usual (voice just feeds text into the existing gate). Normal safety-positive.",
-      "B) FAIL-CLOSED addition — treat as safety-positive (escalate/verify) if EITHER: (i) any segment confidence < SAFETY_STT_CONFIDENCE_FLOOR AND that segment is phonetically near a safety lexicon term (Arabic-normalized Levenshtein <= 2, see phoneticNormalization); OR (ii) a low-confidence segment co-occurs with a confidently-transcribed allergen noun (an allergy STATEMENT may have been garbled around the noun).",
+      "B) FAIL-CLOSED addition — treat as safety-positive (escalate/verify) if ANY of: (i) a transcript token is phonetically NEAR a safety-lexicon term (Arabic-normalized + affix-stripped Levenshtein <= 2) — applied UNCONDITIONALLY, not gated on confidence, because high-confidence garbles were observed (measuredRun); (ii) a low-confidence segment (< SAFETY_STT_CONFIDENCE_FLOOR) co-occurs with a confidently-transcribed allergen noun or an allergy-context verb (حساسية/أتحسس/ما يصير آكل/تأذيني/allergy) — the allergen may have been garbled; (iii) an allergy-CONTEXT verb is present even if the specific allergen token is unrecognized → ask the customer to confirm the allergen in TEXT.",
       "C) A safety-positive from B routes to the allergy-acknowledge + verify/escalate reply (never a silent proceed, never an allergen-safe assertion). Over-escalation is acceptable; under-escalation is not.",
       "D) If the WHOLE utterance is low-confidence (no_speech high / avg_logprob very low) AND any food context is present → ask the customer to re-send as text or confirm, rather than guess. Never fabricate an order from a low-confidence voice note (the mock-STT honesty rule already forbids fabricated transcripts)."
     ],
-    "phoneticNormalization": "Before distance matching, normalize Arabic: strip tashkeel/tatweel; ق↔g/ك colour; ظ↔ز↔ذ; ث↔س; ص↔س; ة↔ه; ى↔ي; ء/أ/إ/آ↔ا; collapse doubled letters. Then Levenshtein against the safetyLexicon.",
+    "phoneticNormalization": "Before distance matching, normalize Arabic: strip tashkeel/tatweel; ق↔g/ك colour; ظ↔ز↔ذ; ث↔س; ص↔س; ة↔ه; ى↔ي; ء/أ/إ/آ↔ا; collapse doubled letters. Then Levenshtein against the safetyLexicon. ALSO strip a leading definite article «ال» and possessive/ة affixes before matching (observed: «الفول السوداني»≠«فول سوداني», «حساسيتي»≠«حساسية»).",
     "phoneticNearExamples": {
-      "حساسية": ["حساسة", "حساسيه", "حساسي", "إحساس", "حساسه"],
-      "مكسرات": ["مكسّرات", "مكسرة", "مكسر", "مقسرات"],
-      "لبن": ["لبان", "لبنان", "لبني"],
-      "بيض": ["بيظ", "بيه", "بيض"],
-      "جلوتين": ["غلوتين", "جلوتي", "قلوتين"],
-      "فستق": ["فسدق", "بستق", "فستك"],
-      "سمك": ["سمق", "سمج", "سمة"],
-      "جمبري": ["قمبري", "جمبر", "جنبري"],
-      "فول سوداني": ["فول سوداني", "فولسوداني", "سوداني"]
-    }
+      "حساسية": [
+        "حساسة",
+        "حساسيه",
+        "حساسي",
+        "إحساس",
+        "حساسه"
+      ],
+      "مكسرات": [
+        "مكسّرات",
+        "مكسرة",
+        "مكسر",
+        "مقسرات"
+      ],
+      "لبن": [
+        "لبان",
+        "لبنان",
+        "لبني"
+      ],
+      "بيض": [
+        "بيظ",
+        "بيه",
+        "بيض"
+      ],
+      "جلوتين": [
+        "غلوتين",
+        "جلوتي",
+        "قلوتين",
+        "بلوتين"
+      ],
+      "فستق": [
+        "فسدق",
+        "بستق",
+        "فستك"
+      ],
+      "سمك": [
+        "سمق",
+        "سمج",
+        "سمة"
+      ],
+      "جمبري": [
+        "قمبري",
+        "جمبر",
+        "جنبري"
+      ],
+      "فول سوداني": [
+        "فولسوداني",
+        "سوداني"
+      ]
+    },
+    "measuredRun": {
+      "env": "no human recordings available; STT fixtures were TTS-synthesized (OpenAI gpt-4o-mini-tts, voice 'sage') as a proxy, noise-mixed for noise-tagged items. PROXY — re-confirm on real Saudi recordings (WO-VOICE-1).",
+      "date_scope": "WO-VOICE-0 keyed scoring run",
+      "exact_term_recall": {
+        "whisper-1": 0.692,
+        "gpt-4o-transcribe": 0.667
+      },
+      "finding": "Affix-normalized exact-term match FAILS the 1.00 safety bar on BOTH engines (~0.69–0.74; ~half the must-flag allergy notes lose >=1 safety term). Every miss was a phonetic-near garble: جلوتين→بلوتين, لبن→النبن, أتحسس→تحصّص, بيض→البيت/بيبك, مكسرات→المكسّرة, plus code-switch (I have allergy→meninphostoc). The two engines' miss sets differ.",
+      "confidence_signal": "whisper avg_logprob→prob: captured items ranged from 0.63, MISSED-term confidences ranged UP TO 0.768 — i.e. misses were often MORE confident than captures. Confidence does not separate hits from misses; it is a weak secondary tripwire only. gpt-4o-transcribe returns no confidence (json-only).",
+      "conclusion": "The fail-closed phonetic net is what carries recall from ~0.80 to 1.00 — it is MANDATORY, must run UNCONDITIONALLY (not only below the floor), and must include affix-insensitive + phonetic-near lexicon matching plus allergy-context routing. Voice is thereby STRICTER on safety than text.",
+      "harness": "scripts/voice/score_bakeoff.py (env-keyed, reproducible; TTS samples + STT scorecard).",
+      "mustFlag_fully_captured": {
+        "whisper-1": "9/18",
+        "gpt-4o-transcribe": "10/18"
+      },
+      "noise_finding": "babble was tolerated (STT-14 2/2) but traffic_fast_speech, child_pitch, code-switch, and 'mild' each dropped a safety term. NOTE: noise is ADDITIVE Gaussian — a partial proxy; child_pitch/*_fast_speech are not truly simulated (flagged noise_proxy_only), so real degradation is likely WORSE.",
+      "method_note": "errored items count as MISSES not removed-from-denominator (fixed denominator=39 both engines); response_format branches per model (verbose_json whisper / json gpt-4o); affix + tashkeel + alef normalization before matching. See scripts/voice/score_bakeoff.py.",
+      "reproducibility": "NOISE_SEED=0 makes the additive-noise mix reproducible; residual variance is transient API errors (counted fail-closed as misses, so true STT recall is marginally higher)."
+    },
+    "SAFETY_STT_CONFIDENCE_FLOOR_note": "0.66 kept as the confidence TRIPWIRE (rule B-ii/D); it is NOT the primary safety net (see measuredRun.confidence_signal)."
   }
 }
