@@ -14,6 +14,7 @@ import {
   buildWhatsAppListBody,
   buildWhatsAppImageBody,
   buildWhatsAppImageLinkBody,
+  buildWhatsAppAudioBody,
   buildWhatsAppTemplateBody,
   sendWhatsAppBody,
   uploadWhatsAppMedia,
@@ -193,6 +194,31 @@ export async function sendWhatsAppImageLink(args: SendImageLinkArgs): Promise<Wi
   }
 
   const body = buildWhatsAppImageLinkBody(args.to, args.imageUrl, args.caption);
+  const { result, attempts } = await retrySend(() => sendWhatsAppBody(body as Record<string, unknown>), args.retries ?? 2);
+  return { ...result, windowState: "in_window", attempts };
+}
+
+/** WO-VOICE-2: upload synthesized audio bytes and send them as a WhatsApp voice
+ *  note. Same 24h-window + test-mode gating as images; the text reply is sent
+ *  separately (voice is additive, never a replacement). */
+export async function sendWhatsAppAudio(args: { to: string; audio: Buffer; mime?: string; lastInboundAtMs?: number; retries?: number }): Promise<WindowedSendResult> {
+  const base = { channel: "whatsapp" as const, to: args.to };
+  if (!isWhatsAppConfigured()) {
+    return { ...base, ok: false, status: "skipped", error: "WhatsApp غير مُهيأ (الوضع التجريبي).", windowState: "test_mode", attempts: 0 };
+  }
+  if (args.lastInboundAtMs !== undefined && !within24hWindow(args.lastInboundAtMs)) {
+    return { ...base, ok: false, status: "failed", error: "خارج نافذة الـ24 ساعة — يتطلب قالباً معتمداً.", windowState: "out_of_window", attempts: 0 };
+  }
+  if (!args.audio || args.audio.length === 0) {
+    return { ...base, ok: false, status: "failed", error: "no audio bytes", windowState: "in_window", attempts: 0 };
+  }
+
+  const upload = await uploadWhatsAppMedia(args.audio, args.mime ?? "audio/ogg", "voice.ogg");
+  if (!upload.ok || !upload.mediaId) {
+    return { ...base, ok: false, status: "failed", error: upload.error ?? "media upload failed", windowState: "in_window", attempts: 1 };
+  }
+
+  const body = buildWhatsAppAudioBody(args.to, upload.mediaId);
   const { result, attempts } = await retrySend(() => sendWhatsAppBody(body as Record<string, unknown>), args.retries ?? 2);
   return { ...result, windowState: "in_window", attempts };
 }

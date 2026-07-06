@@ -47,7 +47,11 @@ export type CriticalAlertType =
   // WO-SAFE-1 — a payment settled on an order whose conversation is under an active
   // safety hold. Money truth stands (not blocked); SAFE-1 holds it from the kitchen;
   // a human must review before fulfilment.
-  | "paid_while_safety_held";
+  | "paid_while_safety_held"
+  // WO-VOICE-2 — the primary TTS (ElevenLabs) failed and the outbound voice note fell
+  // back to OpenAI onyx. The customer still got the text + a voice note (never a silent
+  // drop); the alert surfaces the EL outage/quota so it can be checked.
+  | "voice_tts_fallback";
 
 export interface CriticalAlertInput {
   restaurantId: string;

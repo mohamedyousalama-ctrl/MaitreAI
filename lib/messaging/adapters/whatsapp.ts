@@ -431,6 +431,19 @@ export function buildWhatsAppImageLinkBody(to: string, link: string, caption?: s
   };
 }
 
+/** WO-VOICE-2: audio (voice note) message body referencing an uploaded media id.
+ *  WhatsApp voice notes carry no caption — Khalid's text reply is sent separately
+ *  (voice is additive, never a replacement). */
+export function buildWhatsAppAudioBody(to: string, mediaId: string) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "audio",
+    audio: { id: mediaId },
+  };
+}
+
 /** Template message body (the only way to message outside the 24h window). */
 export function buildWhatsAppTemplateBody(
   to: string,
