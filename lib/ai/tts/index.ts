@@ -17,6 +17,7 @@ import { mockTtsAdapter } from "./mock";
 import { elevenlabsTtsAdapter } from "./elevenlabs";
 import { openaiTtsAdapter } from "./openai";
 
+// (agent-eval re-kick: real path-matching change so the paths filter triggers CI.)
 export function getTtsAdapter(): TtsAdapter {
   const sel = (process.env.TTS_ADAPTER || "").toLowerCase();
   if (sel === "elevenlabs") return elevenlabsTtsAdapter;
