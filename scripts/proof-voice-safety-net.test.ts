@@ -71,6 +71,9 @@ const GARBLED_TRANSCRIPTS = [
   "ودي اكل بس عندي حساسيه من البيظ", // noun garble بيظ→بيض
   "ما ابي غلوتين ابدا",            // noun garble غلوتين→جلوتين (bare garbled allergen, rule B-i)
   "يطلع لي طفح لما اكل سمق",       // symptom طفح + noun garble سمق→سمك
+  // WO-KHALID (Saudi-behavior audit Part B) — added Saudi confusion pairs that fire today:
+  "ما ابي بلوتين ابدا",            // noun garble بلوتين→جلوتين (audit pair; rule B-i)
+  "ابي اكل بس ما ابي النبن",       // noun garble النبن→لبن (audit pair; bare garbled allergen, no marker)
 ];
 for (const t of GARBLED_TRANSCRIPTS) {
   const hit = detectPhoneticSafetyNet(t);
