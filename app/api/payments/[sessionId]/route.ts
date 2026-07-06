@@ -8,6 +8,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { checkOrderSafetyHold } from "@/lib/db/safety-hold-guard";
 
 const ACTIVE = new Set(["created", "link_sent", "opened"]);
 
@@ -37,6 +38,7 @@ async function loadView(admin: ReturnType<typeof createAdminClient>, sessionId: 
     currency: row.currency as string,
     expiresAt: row.expires_at ? new Date(row.expires_at).getTime() : 0,
     orderId: row.order_id as string,
+    restaurantId: row.restaurant_id as string,
     orderNumber: row.orders?.order_number ?? "",
     customerName: row.orders?.customers?.name ?? "",
     restaurantName: row.restaurants?.name ?? "",
@@ -82,6 +84,13 @@ export async function POST(req: NextRequest, { params }: { params: { sessionId: 
       view.status = "opened";
     }
   } else if (body.action === "success") {
+    // WO-SAFE-4 — every paid-writer carries the hold guard STRUCTURALLY (not just via
+    // the mock-env flag): a held order must never be flipped to paid, even on this
+    // mock success path, mirroring status/route.ts + psp/create. 409 fail-closed.
+    const hold = await checkOrderSafetyHold(admin, view.restaurantId, view.orderId);
+    if (hold.held) {
+      return NextResponse.json({ ok: false, error: "safety_hold_active", reason: hold.reason, conversationId: hold.conversationId }, { status: 409 });
+    }
     await admin.from("payment_sessions").update({ status: "paid", provider_ref: body.method ?? "mada", updated_at: now }).eq("id", sessionId);
     // F1.7 Fix 4 — an online-paid order's method IS known (the provider): record it
     // so the order carries the real method, not a COD default. Label only — amounts
