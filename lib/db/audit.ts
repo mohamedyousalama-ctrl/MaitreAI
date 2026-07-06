@@ -44,7 +44,10 @@ export type AuditAction =
   | "knowledge_change_proposed"
   | "knowledge_change_reviewed"
   | "knowledge_change_applied"
-  | "callback_status_updated";
+  | "callback_status_updated"
+  // WO-PDPL-CONSENT — an operator changed a customer's marketing/health-notes
+  // consent (PDPL lawful-basis change; who/what/when is auditable).
+  | "consent_updated";
 
 export interface AuditInput {
   restaurantId: string;
@@ -52,7 +55,7 @@ export interface AuditInput {
   userId: string;
   role?: string | null;
   action: AuditAction;
-  entityType: "conversation" | "order" | "restaurant" | "callback_request";
+  entityType: "conversation" | "order" | "restaurant" | "callback_request" | "customer";
   entityId: string;
   /** Pre-resolved actor members.id (optional — resolved from userId when absent). */
   memberId?: string | null;

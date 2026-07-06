@@ -23,6 +23,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isFeatureExplicitlyEnabled, type Tier } from "@/lib/tenant/tier";
+import { gateHealthNotesForMemory } from "@/lib/privacy/consent";
 import type { InferredSoftLayer } from "./conversation-report";
 
 export interface UpdateCustomerMemoryArgs {
@@ -172,6 +173,17 @@ export async function updateCustomerMemory(
       .maybeSingle();
     const prevInferred = (prevRow?.inferred as Record<string, unknown> | null) ?? {};
 
+    // PDPL — persisting allergy/health notes to memory requires the customer's
+    // consent_health_notes. Safety-time processing is unaffected (vital interest;
+    // the deterministic gate never reads this); this ONLY gates long-term storage.
+    const { data: consentRow } = await admin
+      .from("customers")
+      .select("consent_health_notes")
+      .eq("id", customerId)
+      .eq("restaurant_id", restaurantId)
+      .maybeSingle();
+    const consent = { consent_health_notes: (consentRow as { consent_health_notes?: boolean } | null)?.consent_health_notes };
+
     const inf = args.inferred;
     const nowIso = new Date().toISOString();
     const sentimentEntry: SentimentEntry | null =
@@ -183,7 +195,12 @@ export async function updateCustomerMemory(
 
     const inferred = {
       preferences: mergeList(prevInferred.preferences, inf?.notable_preferences ?? []),
-      allergy_notes: mergeList(prevInferred.allergy_notes, inf?.allergy_notes ?? []),
+      // Gated on consent_health_notes: without consent, health content is dropped
+      // (not merged, not carried forward) so memory never stores it.
+      allergy_notes: gateHealthNotesForMemory(
+        mergeList(prevInferred.allergy_notes, inf?.allergy_notes ?? []),
+        consent,
+      ),
       sentiment_history: mergeSentiment(prevInferred.sentiment_history, sentimentEntry),
       notable_flags: mergeList(prevInferred.notable_flags, incomingFlags),
       last_summary: inf?.summary ?? (prevInferred.last_summary as string | null) ?? null,

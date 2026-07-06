@@ -178,6 +178,15 @@ jobs:
       - name: CSRF same-origin unit tests
         run: node --experimental-strip-types scripts/proof-csrf.test.ts
 
+      # ── Blocking gate 7e: PDPL consent enforcement ────────────────────────
+      # 36 cases: source/kind validation, canSendMarketing / canPersistHealthNotes
+      # strict semantics, gateHealthNotesForMemory (drops health without consent),
+      # and the conservative conversational grant/deny detector (deny precedence,
+      # no false grants). Pure (no imports), strip-types-safe. Vital-interest
+      # invariant asserted structurally — none of these is the allergen gate.
+      - name: PDPL consent unit tests
+        run: node --experimental-strip-types scripts/proof-consent.test.ts
+
       # ── Blocking gate 8: Khalid persona-layer contract ────────────────────
       # 35 cases: region resolution (Najdi default), name fallback, and the
       # persona-layer contract — the overlay defers to the engine on

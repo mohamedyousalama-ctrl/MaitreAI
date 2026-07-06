@@ -24,6 +24,13 @@ are required to retain (stripped of personal identifiers).
   scrub those explicitly.
 - **Scope to one tenant.** All customer data is tenant-scoped by `restaurant_id`.
   Always filter by the restaurant the request concerns.
+- **PDPL consent is deleted with the customer.** The `consent_marketing*` and
+  `consent_health_notes*` columns (WO-PDPL-CONSENT, 0073) are lawful-basis records
+  on the `customers` row; they go when the row is deleted/anonymized. Note that
+  `consent_health_notes` gates whether allergy/health notes were ever persisted to
+  `customer_memory` at all — where consent was false, there is no health content
+  to scrub (it was never stored). Safety-time allergen processing keeps no
+  customer-linked record of its own (vital-interest, in-conversation only).
 - **Snapshot first.** Before deleting, run the read-only export
   (`scripts/export-tenant-data.mjs`, S8) or a `SELECT` to confirm exactly what
   exists for this customer — both as a sanity check and a record of fulfillment.
@@ -34,7 +41,7 @@ are required to retain (stripped of personal identifiers).
 
 | Table | PII / customer-linked columns | On `customers` delete | Action |
 |---|---|---|---|
-| `customers` | `phone`, `name`, `notes`, `tags`, `language`, `ltv`, `opt_in_*` | (the row itself) | **Delete or anonymize** (root) |
+| `customers` | `phone`, `name`, `notes`, `tags`, `language`, `ltv`, `opt_in_*`, `consent_marketing*`, `consent_health_notes*` | (the row itself) | **Delete or anonymize** (root) |
 | `customer_memory` | derived facts/labels, `customer_id` | **CASCADE** (auto-deleted) | Deleted automatically |
 | `conversations` | `customer_id` (link only) | `SET NULL` | **Delete** (removes the thread; cascades messages) |
 | `messages` | `text` (message **content**), `channel_message_id` | via conversation `CASCADE` | **Delete** (by deleting the conversation) |
