@@ -6,9 +6,10 @@
 // flag-gated behind `khalid_persona` (default OFF), no facts/prices/availability/
 // allergen clearances declared, everything defers to the ONE engine + ONE gate.
 //
-// This module is a pure leaf — imported by nothing on the live path yet (the wiring
-// appends buildKhalidPlaybooks(...) right after buildKhalidPersonaLayer(...) when the
-// flag is on; see docs/KHALID_PERSONA_WIRING.md).
+// This module is a pure leaf — no I/O, no imports from the engine. It is wired into the
+// prompt by lib/ai/prompt.ts (persona → encyclopedia → playbooks), which appends
+// buildKhalidPlaybooks(...) after buildKhalidPersonaLayer(...) ONLY when the per-tenant
+// `khalid_persona` flag is on (default OFF); see docs/KHALID_PERSONA_WIRING.md.
 //
 // The overlay TEXT is written to never contain a forbidden claim: the proof harness
 // (scripts/test-khalid-playbooks.test.ts) asserts findForbiddenClaims(overlay) === []
