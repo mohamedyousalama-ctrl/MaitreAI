@@ -43,36 +43,39 @@ known reality holds: off-the-shelf engines render **MSA/pan-Arabic**, not true N
 (paid EL or similar) is the authenticity path.
 
 ### STT — the safety finding (this is the load-bearing result)
-Exact safety-term recall on the 20-item set (safety terms present as an exact lexicon match in the
-transcript):
+Affix-normalized safety-term recall on the 20-item set (tashkeel/alef/definite-article normalized; **noise
+actually mixed**; errored items counted as misses over a fixed 39-term denominator — see the method note):
 
-| STT engine | exact safety-term recall | must-flag notes fully captured |
-| :--- | :--- | :--- |
-| `whisper-1` | **0.81** (30/37) | 10/17 |
-| `gpt-4o-transcribe` | **0.80** (31/39) | 11/18 |
+| STT engine | safety-term recall | must-flag notes fully captured | confidence signal |
+| :--- | :--- | :--- | :--- |
+| `whisper-1` | **0.74** (29/39) | **9/18** | `avg_logprob` available |
+| `gpt-4o-transcribe` | **0.69** (27/39) | **10/18** | none (json-only) |
 
-**Both engines FAIL the 1.00 safety bar on exact match, and their miss sets differ.** Every miss was a
-**phonetic-near garble or an affix mismatch**, not a total dropout:
+**Both engines FAIL the 1.00 safety bar — badly: ~half the must-flag allergy notes lose ≥1 safety term**,
+and the miss sets differ. Every miss was a **phonetic-near garble**, not a total dropout:
 
-- `جلوتين → بلوتين` (gluten), `لبن → لذن` (milk), `أتحسس → تحصّص` (I'm allergic), `ألرجيا → ألرجية`
-- affix: `الفول السوداني` vs the lexicon's `فول سوداني`; `حساسيتي` vs `حساسية`
-- plus code-switch (`I have allergy من الفستق`) and child-pitch cases
+- `جلوتين → بلوتين` (gluten), `لبن → النبن` (milk), `أتحسس → تحصّص` (I'm allergic), `بيض → البيت/بيبك` (egg),
+  `مكسرات → المكسّرة`, plus code-switch (`I have allergy → meninphostoc`)
+- noise: babble was tolerated (2/2) but **traffic / child-pitch / code-switch / mild each dropped a term**
+  (and additive noise only *approximates* those — child-pitch/rate aren't truly simulated, so real audio is
+  likely worse)
 
-**Confidence does not save it:** whisper `avg_logprob→prob` clustered **0.60–0.77**; the **missed-term**
-confidences were **0.62–0.73** and overlap the captured items — and **4 of 7 misses sat *above* the 0.66
-floor.** So a confidence-*gated* phonetic net would have missed them.
+**Confidence does not save it:** whisper `avg_logprob→prob` — captured items ranged from **0.63**, while
+**missed-term** confidences ran **up to 0.77** (misses were often *more* confident than captures). Confidence
+does **not** separate hits from misses; a confidence-*gated* net would miss them. `gpt-4o-transcribe` returns
+no confidence at all.
 
 ### What this changes (folded into the eval set's `failClosedThreshold.measuredRun` + `rule`)
-1. **The fail-closed phonetic net is mandatory** — it is what carries recall from ~0.80 to 1.00. Raw
+1. **The fail-closed phonetic net is mandatory** — it is what carries recall from ~0.7 to 1.00. Raw
    STT → exact-keyword-match in front of the allergen gate is **unsafe**.
 2. **Run phonetic-near matching UNCONDITIONALLY**, not only below the confidence floor (high-confidence
    garbles were observed). Normalize Arabic **+ strip the definite article/affixes** before Levenshtein.
 3. **Route any allergy-CONTEXT utterance** (حساسية / أتحسس / ما يصير آكل / تأذيني / "allergy") to the
    deterministic gate + a text-confirm, even when the specific allergen token is garbled.
 4. **`SAFETY_STT_CONFIDENCE_FLOOR = 0.66` is kept as a secondary TRIPWIRE**, not the primary net.
-5. **Vendor:** whisper-1 and gpt-4o-transcribe are ~equivalent on this proxy (~0.80 exact, differing
-   misses) — pick either for WO-VOICE-1 and lean on the net; whisper-1 additionally exposes
-   `avg_logprob`/`no_speech_prob` for the tripwire, so it is the pragmatic default.
+5. **Vendor:** whisper-1 (0.74) edges gpt-4o-transcribe (0.69) on this proxy with differing miss sets, and
+   crucially whisper-1 exposes `avg_logprob`/`no_speech_prob` for the tripwire while gpt-4o-transcribe returns
+   no confidence — so **whisper-1 is the pragmatic default** for WO-VOICE-1; either way, lean on the net.
 
 Net: **voice is provably STRICTER on safety than text** only *with* the net; without it, ~1 in 5 spoken
 allergy disclosures would pass silently. The `score_bakeoff.py` harness + the annotated eval set are the

@@ -505,13 +505,19 @@
       "env": "no human recordings available; STT fixtures were TTS-synthesized (OpenAI gpt-4o-mini-tts, voice 'sage') as a proxy, noise-mixed for noise-tagged items. PROXY — re-confirm on real Saudi recordings (WO-VOICE-1).",
       "date_scope": "WO-VOICE-0 keyed scoring run",
       "exact_term_recall": {
-        "whisper-1": 0.811,
-        "gpt-4o-transcribe": 0.795
+        "whisper-1": 0.744,
+        "gpt-4o-transcribe": 0.692
       },
-      "finding": "EXACT-term match alone FAILS the 1.00 safety bar on BOTH engines (~0.80). Every miss was a phonetic-near garble (جلوتين→بلوتين, أتحسس→تحصّص, لبن→لذن) or an affix mismatch (الفول السوداني vs فول سوداني), plus code-switch (I have allergy) and child-pitch cases. The two engines' miss sets DIFFER.",
-      "confidence_signal": "whisper avg_logprob→prob clustered 0.60–0.77; missed-term confidences were 0.62–0.73 and OVERLAP captured items — confidence does NOT separate hits from misses, and 4/7 misses sat ABOVE the 0.66 floor. Confidence is a weak secondary tripwire, NOT the primary net.",
+      "finding": "Affix-normalized exact-term match FAILS the 1.00 safety bar on BOTH engines (~0.69–0.74; ~half the must-flag allergy notes lose >=1 safety term). Every miss was a phonetic-near garble: جلوتين→بلوتين, لبن→النبن, أتحسس→تحصّص, بيض→البيت/بيبك, مكسرات→المكسّرة, plus code-switch (I have allergy→meninphostoc). The two engines' miss sets differ.",
+      "confidence_signal": "whisper avg_logprob→prob: captured items ranged from 0.63, MISSED-term confidences ranged UP TO 0.768 — i.e. misses were often MORE confident than captures. Confidence does not separate hits from misses; it is a weak secondary tripwire only. gpt-4o-transcribe returns no confidence (json-only).",
       "conclusion": "The fail-closed phonetic net is what carries recall from ~0.80 to 1.00 — it is MANDATORY, must run UNCONDITIONALLY (not only below the floor), and must include affix-insensitive + phonetic-near lexicon matching plus allergy-context routing. Voice is thereby STRICTER on safety than text.",
-      "harness": "scripts/voice/score_bakeoff.py (env-keyed, reproducible; TTS samples + STT scorecard)."
+      "harness": "scripts/voice/score_bakeoff.py (env-keyed, reproducible; TTS samples + STT scorecard).",
+      "mustFlag_fully_captured": {
+        "whisper-1": "9/18",
+        "gpt-4o-transcribe": "10/18"
+      },
+      "noise_finding": "babble was tolerated (STT-14 2/2) but traffic_fast_speech, child_pitch, code-switch, and 'mild' each dropped a safety term. NOTE: noise is ADDITIVE Gaussian — a partial proxy; child_pitch/*_fast_speech are not truly simulated (flagged noise_proxy_only), so real degradation is likely WORSE.",
+      "method_note": "errored items count as MISSES not removed-from-denominator (fixed denominator=39 both engines); response_format branches per model (verbose_json whisper / json gpt-4o); affix + tashkeel + alef normalization before matching. See scripts/voice/score_bakeoff.py."
     },
     "SAFETY_STT_CONFIDENCE_FLOOR_note": "0.66 kept as the confidence TRIPWIRE (rule B-ii/D); it is NOT the primary safety net (see measuredRun.confidence_signal)."
   }
