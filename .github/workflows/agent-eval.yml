@@ -211,6 +211,15 @@ jobs:
       - name: Khalid-wiring flag-OFF snapshot (byte-identical)
         run: node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-khalid-wiring-snapshot.test.ts
 
+      # ── Blocking gate 13: KSA encyclopedia selector (WO-ENCYCLOPEDIA, selection half)
+      # 39 cases: spec §6 properties 1-4 & 7 (determinism · spine invariant · region
+      # gating · tag gating · flag dependency) + score math + a DRIFT GUARD that the
+      # generated const (lib/ai/personas/ksa-entries.ts) stays in sync with the pack
+      # frontmatter. Render/byte-caps/injection land with the curation inject_summary PR.
+      # The --import loader resolves the selector's extensionless ./ksa-entries import.
+      - name: KSA encyclopedia selector unit tests
+        run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-ksa-encyclopedia.test.ts
+
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
       # included here so that IF a CI Supabase secret is ever wired up, they
