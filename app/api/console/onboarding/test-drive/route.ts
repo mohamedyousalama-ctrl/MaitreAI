@@ -22,6 +22,7 @@ import { NextResponse } from "next/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
+import { recordAuditEvent } from "@/lib/db/audit";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export const runtime = "nodejs";
@@ -60,6 +61,20 @@ export async function POST(req: Request) {
     });
     // The deterministic allergen gate stamps this exact model id when it fires.
     const allergenGate = out.model === "deterministic_allergen_gate";
+    // WO-GATE-ALLERGY — when the gate FIRES in the test-drive, record the durable,
+    // timestamped proof the go-live gate requires (the allergy hard-test passed in
+    // test mode). Best-effort (recordAuditEvent never throws); entity = the tenant.
+    if (allergenGate) {
+      await recordAuditEvent(admin, {
+        restaurantId: tenant.restaurantId,
+        userId: tenant.userId,
+        role: tenant.role,
+        action: "onboarding_allergy_test_passed",
+        entityType: "restaurant",
+        entityId: tenant.restaurantId,
+        metadata: { message: text.slice(0, 200), reason: out.escalationReason ?? null },
+      });
+    }
     return NextResponse.json({
       ok: true,
       reply: out.reply,

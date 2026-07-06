@@ -137,6 +137,14 @@ jobs:
       - name: Unconditional allergen base-gate assertions
         run: node --experimental-strip-types scripts/proof-wo-safe-2.test.ts
 
+      # WO-GATE-ALLERGY — the allergy test-drive requirement is STRUCTURAL in the
+      # go-live gate: the manager test-drive records a durable pass event when the
+      # deterministic gate fires, and computeReadiness REQUIRES one within 7 days
+      # (fail-closed). Puts "the allergy test must pass before agent_mode flips live"
+      # in the server, not PM discipline.
+      - name: Go-live allergy test-drive gate assertions
+        run: node --experimental-strip-types scripts/proof-gate-allergy.test.ts
+
       # ── Blocking gate 4: Ownership-state transition map ───────────────────
       # 27 cases: legal transitions, #87 SYSTEM_HOLD enforcement, self-loops,
       # illegal-path throws. No DB.
