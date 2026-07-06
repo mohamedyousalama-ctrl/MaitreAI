@@ -303,6 +303,11 @@ export async function runCustomerTurn(
     ksaRegion: resolveKsaRegion(
       typeof tenantFeatures?.khalid_region === "string" ? (tenantFeatures.khalid_region as string) : null
     ),
+    // WO-ENCYCLOPEDIA (§3/§4): curated culture block, hard-dependent on khalid_persona.
+    ksaEncyclopedia: isFeatureExplicitlyEnabled("ksa_encyclopedia", tenantFeatures),
+    ksaCuisineTags: Array.isArray(tenantFeatures?.cuisine_tags)
+      ? (tenantFeatures.cuisine_tags as unknown[]).filter((t): t is string => typeof t === "string")
+      : [],
     // Item 9 — subordinate operator guidance (escaped, safety-framed). Flag-gated.
     standingInstructions: standingInstructionsOn,
     standingInstructionRules,

@@ -14,7 +14,12 @@ import {
   tagOverlap,
   categoryBonus,
   shouldInjectEncyclopedia,
+  buildKsaEncyclopediaBlock,
+  renderKsaEntryLine,
+  capLineBytes,
   MAX_ENCYCLOPEDIA_ENTRIES,
+  MAX_ENCYCLOPEDIA_BYTES,
+  MAX_INJECT_LINE_BYTES,
   CORE_SPINE_IDS,
   KSA_ENTRIES,
   type KsaEntry,
@@ -106,6 +111,31 @@ ok("P7 both OFF → NO inject", shouldInjectEncyclopedia(false, false) === false
 
 // rankKsaEntries is pure over its entries arg (spec's testable seam).
 ok("rankKsaEntries pure: empty entries → empty", rankKsaEntries([], "najd", ["x"]).length === 0);
+
+// ── RENDER + CAPS (spec §3, property 5) ──
+const BYTES = (s: string) => new TextEncoder().encode(s).length;
+ok("capLineBytes: over-cap string truncated to ≤ cap with ellipsis",
+  BYTES(capLineBytes("• " + "طويلة ".repeat(200), 480)) <= 480 && capLineBytes("• " + "طويلة ".repeat(200), 480).endsWith("…"));
+ok("capLineBytes: under-cap string untouched", capLineBytes("short line", 480) === "short line");
+ok("renderKsaEntryLine: every entry's line ≤ MAX_INJECT_LINE_BYTES",
+  KSA_ENTRIES.every((e) => BYTES(renderKsaEntryLine(e)) <= MAX_INJECT_LINE_BYTES));
+ok("renderKsaEntryLine: uses the curated inject_summary + menu-gated clause, NOT allergens_note",
+  KSA_ENTRIES.every((e) => renderKsaEntryLine(e).includes("تُقترح فقط لو كانت ضمن منيو المطعم")));
+
+const COMBOS: Array<[string, string[]]> = [
+  ["najd", ["rice-dish", "najdi"]], ["hijaz", ["rice-dish", "sweet"]], ["eastern", ["hospitality"]],
+  ["asir", ["comfort", "grain"]], ["najd", []], ["hijaz", ["dessert", "ramadan"]],
+];
+for (const [region, tags] of COMBOS) {
+  const block = buildKsaEncyclopediaBlock(region, tags);
+  ok(`P5 caps [${region}/${tags.join(",")}]: block ≤ ${MAX_ENCYCLOPEDIA_BYTES} bytes`, BYTES(block) <= MAX_ENCYCLOPEDIA_BYTES);
+  ok(`P5 caps [${region}/${tags.join(",")}]: every line ≤ ${MAX_INJECT_LINE_BYTES} bytes`,
+    block.split("\n").every((l) => BYTES(l) <= MAX_INJECT_LINE_BYTES));
+  ok(`P6 core spine survives [${region}/${tags.join(",")}]: gahwa + dates in block`,
+    CORE_SPINE_IDS.every((id) => block.includes(KSA_ENTRIES.find((e) => e.id === id)!.nameAr)));
+  ok(`P10 no currency token in block [${region}/${tags.join(",")}]`, !/ر\.\s?س|ريال|SAR|SR\b|\$|ج\.م/.test(block));
+  ok(`block header present [${region}/${tags.join(",")}]`, block.includes("ثقافة السوق"));
+}
 
 console.log(`\nKSA-ENCYCLOPEDIA SELECTOR: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

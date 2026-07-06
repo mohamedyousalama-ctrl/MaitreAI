@@ -76,5 +76,29 @@ const onHijazi = buildCustomerAgentSystemPrompt(baseCtx({ khalidPersona: true, k
 ok("flag-ON region is honored (najd vs hijaz overlays differ)", onHijazi !== onPrompt);
 ok("flag-ON hijaz still additive over OFF", onHijazi.startsWith(offPrompt));
 
+// ── WO-ENCYCLOPEDIA (spec §5/§6 properties 8, 9, 10) ──
+const SENTINEL = "the eval suite asserts against your outputs.";
+// End-anchor holds even WITHOUT the encyclopedia (persona ON, encyclopedia OFF).
+ok("ENC: persona ON but ksa_encyclopedia OFF → NO encyclopedia block", !onPrompt.includes("ثقافة السوق"));
+ok("ENC end-anchor: prompt ENDS on the forbidden-claims sentinel (no encyclopedia)", onPrompt.trimEnd().endsWith(SENTINEL));
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const onEnc = buildCustomerAgentSystemPrompt(baseCtx({ khalidPersona: true, ksaRegion: "najd", ksaEncyclopedia: true, ksaCuisineTags: ["rice-dish", "najdi"] }) as any);
+const pI = onEnc.indexOf("طبقة الشخصية");
+const eI = onEnc.indexOf("ثقافة السوق");
+const bI = onEnc.indexOf("دفاتر خالد");
+ok("ENC: encyclopedia block present when BOTH flags on", eI >= 0);
+ok("ENC ORDER (§8): persona < encyclopedia < playbooks", pI >= 0 && eI >= 0 && bI >= 0 && pI < eI && eI < bI);
+ok("ENC end-anchor (§8): prompt STILL ENDS on the forbidden-claims sentinel", onEnc.trimEnd().endsWith(SENTINEL));
+ok("ENC additive (§9): flag-ON+encyclopedia still starts with the EXACT flag-OFF prompt", onEnc.startsWith(offPrompt));
+// Property 10 — no price / no clearance in the encyclopedia block (slice enc→playbooks).
+const encBlock = onEnc.slice(eI, bI);
+ok("ENC no-price (§10): encyclopedia block has no currency token", !/ر\.\s?س|ريال|SAR|SR\b|\$|ج\.م/.test(encBlock));
+ok("ENC no-clearance (§10): encyclopedia block never renders allergens_note", !/allergens_note|Cultural note only|حساسية آمن/.test(encBlock));
+// Property 9 — hard dependency: ksa_encyclopedia ON while khalid_persona OFF → byte-identical golden.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const encNoPersona = buildCustomerAgentSystemPrompt(baseCtx({ khalidPersona: false, ksaEncyclopedia: true, ksaCuisineTags: ["rice-dish"] }) as any);
+ok("ENC hard-dependency (§9): encyclopedia ON but persona OFF → prompt byte-identical to golden", encNoPersona === golden);
+
 console.log(`\nKHALID-WIRING SNAPSHOT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

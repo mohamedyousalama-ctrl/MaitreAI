@@ -38,6 +38,9 @@ import {
 // only — they restate no guardrail, and the engine's rules above always win.
 import { buildKhalidPersonaLayer } from "@/lib/ai/personas/khalid";
 import { buildKhalidPlaybooks } from "@/lib/ai/personas/khalid-playbooks";
+// WO-ENCYCLOPEDIA: curated KSA culture block, injected BETWEEN persona and playbooks
+// (spec §5), gated on khalid_persona AND ksa_encyclopedia.
+import { buildKsaEncyclopediaBlock, shouldInjectEncyclopedia } from "@/lib/ai/personas/ksa-encyclopedia";
 
 export interface BrainContext {
   profile: Pick<RestaurantProfile, "name" | "currency" | "timezone" | "businessType">;
@@ -98,6 +101,13 @@ export interface BrainContext {
    *  Khalid persona overlay + playbooks at the END of the prompt (VOICE only). Off/
    *  absent → nothing appended, prompt byte-identical (snapshot-gated). */
   khalidPersona?: boolean;
+  /** WO-ENCYCLOPEDIA (flag `ksa_encyclopedia`, default OFF, hard-dependent on
+   *  khalid_persona): when both on, inject the curated culture block between the
+   *  persona and playbooks. Off/absent → nothing (prompt byte-identical). */
+  ksaEncyclopedia?: boolean;
+  /** Tenant cuisine tags (feature_flags.cuisine_tags) — the Tier-B selection signal
+   *  for the encyclopedia. Empty/absent → spine-only. */
+  ksaCuisineTags?: string[];
   /** Resolved KSA region (najd|hijaz|asir|eastern) for the persona voice. Rendered
    *  only when khalidPersona is on. */
   ksaRegion?: string;
@@ -457,8 +467,16 @@ ${faqBlock(ctx.faqs)}${
   // WO-KHALID-WIRING (§4): flag-gated, additive, appended LAST — after every engine
   // guardrail/data section — so the overlay can never visually "reopen" a rule. OFF/
   // absent → "" → prompt byte-identical (proven by the snapshot gate).
+  // WO-ENCYCLOPEDIA (§5, ratified order): persona → encyclopedia → playbooks. The
+  // encyclopedia (per-tenant culture) sits BETWEEN the persona and the playbooks so the
+  // playbooks' FORBIDDEN_CLAIMS list stays TERMINAL — descriptive culture must never be
+  // the model's last word after a safety prohibition. Encyclopedia is gated on BOTH
+  // khalid_persona AND ksa_encyclopedia (shouldInjectEncyclopedia); either OFF → "".
   ctx.khalidPersona
     ? buildKhalidPersonaLayer({ region: ctx.ksaRegion, personaName: ctx.personaName, restaurantName: ctx.profile.name }) +
+      (shouldInjectEncyclopedia(!!ctx.khalidPersona, !!ctx.ksaEncyclopedia)
+        ? buildKsaEncyclopediaBlock(ctx.ksaRegion ?? "najd", ctx.ksaCuisineTags ?? [])
+        : "") +
       buildKhalidPlaybooks({ region: ctx.ksaRegion })
     : ""
 }`;
