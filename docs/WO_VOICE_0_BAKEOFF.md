@@ -25,6 +25,61 @@ Everything that can be decided from documented capability, cost, and safety logi
 
 ---
 
+## 0.5 Measured scored run (KEYED — the deferred half, now executed)
+
+Keys were later provided; the scoring half was run via **`scripts/voice/score_bakeoff.py`** (env-keyed,
+reproducible). **Caveats up front:** (a) **ElevenLabs could not be scored** — the supplied key is on a
+**free plan** (`402 paid_plan_required`: "Free users cannot use library voices via the API") and is
+permission-scoped, so the authenticity comparison still needs a paid EL key. (b) **No human recordings
+exist**, so the STT fixtures were **TTS-synthesized** (OpenAI `gpt-4o-mini-tts`, a *different* engine
+than the Whisper STT) and noise-mixed — a **proxy** that exercises the scoring + threshold path end to
+end and yields real numbers, but the production floor must be **re-confirmed on real Saudi recordings**
+(WO-VOICE-1).
+
+### TTS — samples generated (for Mohamed's ear)
+10 Najdi scripts × 3 OpenAI voices (`onyx`, `ash`, `verse`) via `gpt-4o-mini-tts`, steered "warm Saudi
+Najdi male host." Samples delivered to Mohamed. Quality/dialect/warmth remain a **human call** — and the
+known reality holds: off-the-shelf engines render **MSA/pan-Arabic**, not true Najdi; a **voice clone**
+(paid EL or similar) is the authenticity path.
+
+### STT — the safety finding (this is the load-bearing result)
+Exact safety-term recall on the 20-item set (safety terms present as an exact lexicon match in the
+transcript):
+
+| STT engine | exact safety-term recall | must-flag notes fully captured |
+| :--- | :--- | :--- |
+| `whisper-1` | **0.81** (30/37) | 10/17 |
+| `gpt-4o-transcribe` | **0.80** (31/39) | 11/18 |
+
+**Both engines FAIL the 1.00 safety bar on exact match, and their miss sets differ.** Every miss was a
+**phonetic-near garble or an affix mismatch**, not a total dropout:
+
+- `جلوتين → بلوتين` (gluten), `لبن → لذن` (milk), `أتحسس → تحصّص` (I'm allergic), `ألرجيا → ألرجية`
+- affix: `الفول السوداني` vs the lexicon's `فول سوداني`; `حساسيتي` vs `حساسية`
+- plus code-switch (`I have allergy من الفستق`) and child-pitch cases
+
+**Confidence does not save it:** whisper `avg_logprob→prob` clustered **0.60–0.77**; the **missed-term**
+confidences were **0.62–0.73** and overlap the captured items — and **4 of 7 misses sat *above* the 0.66
+floor.** So a confidence-*gated* phonetic net would have missed them.
+
+### What this changes (folded into the eval set's `failClosedThreshold.measuredRun` + `rule`)
+1. **The fail-closed phonetic net is mandatory** — it is what carries recall from ~0.80 to 1.00. Raw
+   STT → exact-keyword-match in front of the allergen gate is **unsafe**.
+2. **Run phonetic-near matching UNCONDITIONALLY**, not only below the confidence floor (high-confidence
+   garbles were observed). Normalize Arabic **+ strip the definite article/affixes** before Levenshtein.
+3. **Route any allergy-CONTEXT utterance** (حساسية / أتحسس / ما يصير آكل / تأذيني / "allergy") to the
+   deterministic gate + a text-confirm, even when the specific allergen token is garbled.
+4. **`SAFETY_STT_CONFIDENCE_FLOOR = 0.66` is kept as a secondary TRIPWIRE**, not the primary net.
+5. **Vendor:** whisper-1 and gpt-4o-transcribe are ~equivalent on this proxy (~0.80 exact, differing
+   misses) — pick either for WO-VOICE-1 and lean on the net; whisper-1 additionally exposes
+   `avg_logprob`/`no_speech_prob` for the tripwire, so it is the pragmatic default.
+
+Net: **voice is provably STRICTER on safety than text** only *with* the net; without it, ~1 in 5 spoken
+allergy disclosures would pass silently. The `score_bakeoff.py` harness + the annotated eval set are the
+CI seed for WO-VOICE-1/2 (re-run on real recordings to lock the production floor).
+
+---
+
 ## 1. TTS bake-off — Khalid speaking (Najdi)
 
 ### 1.1 Candidates (shortlist for the ear test)
