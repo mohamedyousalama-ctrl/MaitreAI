@@ -81,7 +81,7 @@ export const RAIL_ITEMS: RailItem[] = [
   // item 14), not a page route, so it carries no href; the rail entry opens the overlay.
   { key: "ask-kivo", labelKey: "nav.askKivo", icon: Sparkles, section: "modules", ready: false, managerOnly: true },
   // CRM — customer relationships (manager-only)
-  { key: "customers", labelKey: "nav.customers", icon: Users, section: "crm", href: "/c/customers", ready: false, managerOnly: true },
+  { key: "customers", labelKey: "nav.customers", icon: Users, section: "crm", href: "/c/customers", ready: true, managerOnly: true },
   // ADMIN — configuration + people (manager-only)
   { key: "settings", labelKey: "nav.settings", icon: Settings, section: "admin", href: "/c/settings", ready: true, managerOnly: true },
   { key: "team", labelKey: "nav.team", icon: UserCog, section: "admin", href: "/c/team", ready: false, managerOnly: true },
