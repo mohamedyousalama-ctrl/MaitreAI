@@ -25,6 +25,7 @@ import { setOwnershipState } from "@/lib/db/ownership";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
 import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
+import { detectCallbackRequest } from "@/lib/ai/callback-trigger";
 import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
@@ -329,6 +330,13 @@ export async function runCustomerTurn(
   // every tenant that already had deterministic_allergen_safety ON (all current
   // tenants): the gate ran then and runs now. The flag remains ONLY for the symptom
   // EXTENSION below.
+  // WO-CALLBACK (§1) — deterministic trigger in the agent turn path: flag-gated detection
+  // of an explicit phone-callback request. Emits an additive SIGNAL only (no reply/prompt
+  // change); the offer→capture→persist→staff-alert flow is playbook-coordinated. Flag OFF
+  // → never evaluated. Safety-held conversations still capture (safety-positive, §5).
+  const callbackOn = isFeatureExplicitlyEnabled("callback_requests", tenantFeatures);
+  const callbackHit = callbackOn ? detectCallbackRequest(input.userMessage) : { fired: false, phrase: null };
+
   const allergenHit = detectAllergenAvoidance(input.userMessage);
   // Additive symptom/condition/English layer — evaluated when the base gate did NOT
   // fire and the tenant has allergen_symptom_detection explicitly enabled (still flagged).
@@ -497,7 +505,9 @@ export async function runCustomerTurn(
     escalate: result.escalate,
     escalationReason: result.escalationReason,
     draft: result.draft,
-    signals: result.signals,
+    signals: callbackHit.fired
+      ? [...result.signals, { type: "callback_requested" as const, detail: { phrase: callbackHit.phrase } }]
+      : result.signals,
     presentation: result.presentation,
     photoRequests: result.photoRequests,
     toolNames: result.toolNames,

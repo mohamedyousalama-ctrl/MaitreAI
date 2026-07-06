@@ -61,7 +61,8 @@ export interface ToolSignal {
     | "escalation"
     | "blocked_escalation"
     | "low_confidence"
-    | "unknown_question";
+    | "unknown_question"
+    | "callback_requested";
   detail: Record<string, unknown>;
 }
 

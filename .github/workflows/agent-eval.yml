@@ -220,6 +220,14 @@ jobs:
       - name: KSA encyclopedia selector unit tests
         run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-ksa-encyclopedia.test.ts
 
+      # ── Blocking gate 14: WO-CALLBACK «اطلب مكالمة» ───────────────────────
+      # 51 cases: deterministic callback-request detection (Egyptian/Gulf/English
+      # dialect variants + negatives), preferred-window parse, HONEST confirm (no
+      # exact time, never claims the call happened), staff-alert content, and the
+      # status machine (open→called/no_answer/cancelled; terminals; no same-state).
+      - name: Callback trigger unit tests
+        run: node --experimental-strip-types scripts/proof-callback.test.ts
+
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
       # included here so that IF a CI Supabase secret is ever wired up, they
