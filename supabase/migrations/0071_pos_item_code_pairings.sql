@@ -27,18 +27,40 @@ create unique index if not exists menu_items_pos_item_code_key
   where pos_item_code is not null;
 
 -- (2) tenant-owned item pairings ----------------------------------------------
+-- The composite FKs below reference menu_items(restaurant_id, id), which needs an
+-- explicit UNIQUE constraint on those columns (id alone is the PK, so this is a
+-- trivially-satisfied redundant unique — but a FK target must be a real unique/PK
+-- CONSTRAINT, not just an index). Idempotent add.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'menu_items_restaurant_id_id_key'
+  ) then
+    alter table public.menu_items
+      add constraint menu_items_restaurant_id_id_key unique (restaurant_id, id);
+  end if;
+end $$;
+
 create table if not exists public.item_pairings (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null references public.restaurants(id) on delete cascade,
-  -- Both endpoints are REAL menu items of this tenant; a deleted item cascades
-  -- its pairings away (a pairing to a gone item is never a dangling suggestion).
-  item_id uuid not null references public.menu_items(id) on delete cascade,
-  paired_item_id uuid not null references public.menu_items(id) on delete cascade,
+  item_id uuid not null,
+  paired_item_id uuid not null,
   sort int not null default 0,
   created_at timestamptz not null default now(),
   -- One pairing per ordered (item → paired_item) within a tenant; no self-pairing.
   unique (restaurant_id, item_id, paired_item_id),
-  constraint item_pairings_no_self check (item_id <> paired_item_id)
+  constraint item_pairings_no_self check (item_id <> paired_item_id),
+  -- TENANT-OWNERSHIP enforced at the DB (Codex P2): a single-column FK to
+  -- menu_items(id) would only prove the item EXISTS, not that it belongs to THIS
+  -- row's restaurant. Composite FKs to menu_items(restaurant_id, id) guarantee
+  -- both endpoints are the SAME tenant's items — so a cross-tenant pairing can
+  -- never be inserted (even by the service role) and leaked via the read policy.
+  -- ON DELETE CASCADE: removing a menu item drops its pairings (no dangling row).
+  constraint item_pairings_item_fk foreign key (restaurant_id, item_id)
+    references public.menu_items(restaurant_id, id) on delete cascade,
+  constraint item_pairings_paired_fk foreign key (restaurant_id, paired_item_id)
+    references public.menu_items(restaurant_id, id) on delete cascade
 );
 
 create index if not exists item_pairings_item_idx
