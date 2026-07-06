@@ -280,6 +280,14 @@ jobs:
       - name: Voice phonetic safety net unit tests
         run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-voice-safety-net.test.ts
 
+      # ── Blocking gate 16: WO-VOICE-2 outbound voice notes ────────────────
+      # Deterministic decision core (offline, no spend): trigger (customer used
+      # voice / asked), hard-zero suppression (safety/money/link/receipt = text-
+      # only, ruling A), daily budget + reset + config-overridable cap, and the
+      # TTS selection + EL→onyx fallback contract.
+      - name: Voice-2 outbound decision unit tests
+        run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-voice-2.test.ts
+
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
       # included here so that IF a CI Supabase secret is ever wired up, they

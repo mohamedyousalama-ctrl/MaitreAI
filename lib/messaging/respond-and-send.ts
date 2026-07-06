@@ -13,7 +13,10 @@ import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { routeInteractive } from "@/lib/messaging/interactive-router";
 import { evaluateTesterAllowlist } from "@/lib/messaging/tester-allowlist";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
-import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink } from "./outbound";
+import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink, sendWhatsAppAudio } from "./outbound";
+import { decideVoiceSend, voiceHardZeroReason, voiceNotesPerDay } from "./voice-budget";
+import { shouldOfferVoiceReply } from "@/lib/ai/voice-reply-trigger";
+import { synthesizeVoiceReply } from "@/lib/ai/tts";
 import { decideMediaSend, CONVERSATION_MEDIA_BUDGET, type MediaZeroReason } from "./media-guard";
 import { isSafetyHeld } from "@/lib/db/safety-hold";
 import { appBaseUrl } from "@/lib/db/delivery";
@@ -127,6 +130,88 @@ async function sendMenuLinkFallback(
     status: send.status === "failed" ? "failed" : "sent",
     channel_message_id: send.externalMessageId ?? null,
     meta: { kind: "media_budget_menu_link" },
+  });
+}
+
+/**
+ * WO-VOICE-2 — send an ADDITIVE voice note alongside the (already-sent) text reply.
+ * Deterministic gate: trigger (customer used voice / asked) → hard-zero suppression
+ * (safety/money/link/receipt = text-only, ruling A) → per-conversation daily budget
+ * (10/day, config-overridable, reset by date). On send: synthesize (EL flash_v2.5 →
+ * onyx fallback + alert, never a silent drop), transmit, bump the daily counter, and
+ * log the per-note cost to agent_runs. Deploy-safe: a missing 0077 counter column
+ * (migration PREPARE-ONLY) makes the whole path inert. Best-effort — never throws.
+ */
+async function maybeSendVoiceNote(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string; conversationId: string; phone: string; replyText: string;
+    inboundWasVoice: boolean; userMessage: string; safetyHold: boolean; isReceipt: boolean;
+    lastInboundAtMs: number;
+  }
+): Promise<void> {
+  const triggered = shouldOfferVoiceReply({ inboundWasVoice: args.inboundWasVoice, userText: args.userMessage });
+
+  // Deploy-safe daily-counter read: the 0077 columns are PREPARE-ONLY. A 42703 /
+  // "does not exist" means the feature isn't deployed → treat as inert (do nothing).
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: cRow, error: readErr } = await admin
+    .from("conversations")
+    .select("voice_notes_day, voice_notes_sent, voice_cost_usd, is_safety_hold")
+    .eq("id", args.conversationId)
+    .maybeSingle();
+  if (readErr) return; // column absent (not deployed) or transient → no voice, text already sent
+  const row = cRow as { voice_notes_day?: string | null; voice_notes_sent?: number | null; voice_cost_usd?: number | null; is_safety_hold?: boolean | null } | null;
+  // Fail-closed: fold the persisted safety-hold flag into the suppression decision
+  // (a safety-held conversation is text-only even if the caller didn't flag it).
+  const safetyHold = args.safetyHold || row?.is_safety_hold === true;
+  const hardZeroReason = voiceHardZeroReason(args.replyText, { safetyHold, isReceipt: args.isReceipt });
+  const sameDay = row?.voice_notes_day === today;
+  const notesSentToday = sameDay ? Number(row?.voice_notes_sent ?? 0) : 0;
+  const costSoFar = sameDay ? Number(row?.voice_cost_usd ?? 0) : 0;
+
+  const decision = decideVoiceSend({ enabled: true, triggered, hardZeroReason, notesSentToday, cap: voiceNotesPerDay() });
+  if (!decision.send) return;
+
+  const tts = await synthesizeVoiceReply(args.replyText);
+  if (!tts) return; // both primary + fallback failed → text-only (already sent)
+  if (tts.fellBack) {
+    void recordCriticalAlert(admin, {
+      type: "voice_tts_fallback",
+      restaurantId: args.restaurantId,
+      conversationId: args.conversationId,
+      detail: `ElevenLabs TTS failed, fell back to OpenAI onyx: ${tts.primaryError ?? "unknown"}`,
+      context: { adapter: tts.result.adapter },
+    });
+  }
+
+  const audioSend = await sendWhatsAppAudio({ to: args.phone, audio: tts.result.audio, mime: tts.result.mime, lastInboundAtMs: args.lastInboundAtMs });
+  if (audioSend.status !== "sent") return; // transmit failed → don't bill/count
+
+  // Bump the daily counter + accumulate cost (best-effort). Also persist a voice
+  // message row + log the per-note synthesis cost to agent_runs (like STT/LLM).
+  await admin.from("conversations")
+    .update({ voice_notes_day: today, voice_notes_sent: notesSentToday + 1, voice_cost_usd: Number((costSoFar + tts.result.costUsd).toFixed(6)) })
+    .eq("id", args.conversationId);
+  await admin.from("messages").insert({
+    restaurant_id: args.restaurantId,
+    conversation_id: args.conversationId,
+    direction: "outbound",
+    sender: "ai",
+    text: args.replyText,
+    status: "sent",
+    channel_message_id: audioSend.externalMessageId ?? null,
+    meta: { kind: "voice_note", voice: true, tts_adapter: tts.result.adapter, tts_model: tts.result.model, tts_cost_usd: tts.result.costUsd },
+  });
+  await admin.from("agent_runs").insert({
+    restaurant_id: args.restaurantId,
+    conversation_id: args.conversationId,
+    trigger: "voice_tts",
+    input: "[voice reply]",
+    output: args.replyText,
+    model: tts.result.model,
+    adapter: tts.result.adapter,
+    cost_usd: tts.result.costUsd,
   });
 }
 
@@ -500,6 +585,8 @@ export async function respondAndSendWhatsApp(
   // by the webhook) into the turn so the fail-closed net's SECONDARY tripwire can read
   // it. Undefined for typed messages → the tripwire is inert (pipeline unchanged).
   const sttConfidence = (rows[lastCustomerIdx].meta as { stt_confidence?: number } | null)?.stt_confidence;
+  // WO-VOICE-2: did the customer open the voice door this turn (sent a voice note)?
+  const inboundWasVoice = (rows[lastCustomerIdx].meta as { voice?: boolean } | null)?.voice === true;
   const lastInboundAtMs = new Date(rows[lastCustomerIdx].created_at).getTime();
 
   // HX1 — label human-authored turns so Karim distinguishes its own words from the
@@ -657,6 +744,24 @@ export async function respondAndSendWhatsApp(
   const send = outcome.presentation
     ? await sendWhatsAppInteractive({ to: phone, body: outcome.reply, presentation: outcome.presentation, lastInboundAtMs })
     : await sendWhatsAppText({ to: phone, text: outcome.reply, lastInboundAtMs });
+
+  // WO-VOICE-2 — ADDITIVE voice note. The text reply above already went (voice is
+  // never a replacement). Flag-gated (voice_notes, default OFF); fires only when the
+  // customer opened the door AND the turn is not a hard-zero category (safety/money/
+  // link/receipt → text-only, ruling A). Best-effort — never blocks the text path.
+  if (send.status === "sent" && conversationId && isFeatureExplicitlyEnabled("voice_notes", outcome.features)) {
+    void maybeSendVoiceNote(admin, {
+      restaurantId,
+      conversationId,
+      phone,
+      replyText: outcome.reply,
+      inboundWasVoice,
+      userMessage,
+      safetyHold: outcome.escalate === true,
+      isReceipt: outcome.resendReceipt === true,
+      lastInboundAtMs,
+    }).catch((e) => console.error("[respond-and-send] voice note error", e));
+  }
 
   // Receipt resend — customer asked «فين الايصال؟» and the model called resend_receipt.
   if (outcome.resendReceipt && conversationId) {
