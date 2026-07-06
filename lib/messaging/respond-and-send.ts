@@ -142,46 +142,55 @@ async function sendRequestedPhotos(
   phone: string,
   photoRequests: { imageUrl: string; caption: string; name: string }[],
   lastInboundAtMs: number,
-  conv: { ownership_state: string | null; escalation_reason: string | null }
+  conv: { ownership_state: string | null; escalation_reason: string | null },
+  features: Record<string, unknown> | null
 ): Promise<void> {
+  // FLAG GATE (standing law): the guard's caps + budget + hard-zero are a behavior
+  // change, so they ship behind the explicit-only `media_guard` flag, OFF by default.
+  // OFF → byte-identical legacy path: min(requested, 4) via decideMediaSend({enabled:
+  // false}), and NONE of the new DB reads below run (no counter/hold/payment queries),
+  // so a flag-off tenant (e.g. Wesaya) is unchanged down to the query set. Flipping the
+  // safety-hold hard-zero ON for a live tenant is its own one-line proposal post-merge.
+  const mediaGuardOn = isFeatureExplicitlyEnabled("media_guard", features);
+
   // ── Deterministic HARD-ZERO (fail-closed): never intrude media on a safety hold,
-  //    an open complaint, or a pending payment. ownership_state is already in scope;
-  //    is_safety_hold is read best-effort (its column exists in prod).
+  //    an open complaint, or a pending payment. Only evaluated when the flag is ON.
   let hardZero = false;
   let hardZeroReason: MediaZeroReason | null = null;
-  let isSafetyHoldFlag: boolean | null = null;
-  {
-    const { data: sh } = await admin.from("conversations").select("is_safety_hold").eq("id", conversationId).maybeSingle();
-    isSafetyHoldFlag = (sh as { is_safety_hold?: boolean | null } | null)?.is_safety_hold ?? null;
-  }
-  if (isSafetyHeld({ ownership_state: conv.ownership_state, is_safety_hold: isSafetyHoldFlag })) {
-    hardZero = true;
-    hardZeroReason = "safety_hold";
-  } else if (/شكو[ىي]/.test(conv.escalation_reason ?? "")) {
-    // Deterministic complaint marker — the engine stamps «شكوى عميل …» as the reason.
-    hardZero = true;
-    hardZeroReason = "complaint_open";
-  } else {
-    // payment-pending: a linked order with an outstanding payment link (awaiting pay).
-    const { data: pend } = await admin
-      .from("orders")
-      .select("id")
-      .eq("conversation_id", conversationId)
-      .eq("payment_status", "payment_link_sent")
-      .limit(1)
-      .maybeSingle();
-    if ((pend as { id?: string } | null)?.id) {
-      hardZero = true;
-      hardZeroReason = "payment_pending";
-    }
-  }
-
-  // ── Deploy-safe budget-counter read: images_sent lands with migration 0070. Until
-  //    it applies, a missing-column read (42703) means "budget not deployed" → treat
-  //    as 0 and skip counter writes; the 3/message cap + hard-zero still fully apply.
   let imagesAlreadySent = 0;
-  let counterDeployed = true;
-  {
+  let counterDeployed = false;
+  if (mediaGuardOn) {
+    let isSafetyHoldFlag: boolean | null = null;
+    {
+      const { data: sh } = await admin.from("conversations").select("is_safety_hold").eq("id", conversationId).maybeSingle();
+      isSafetyHoldFlag = (sh as { is_safety_hold?: boolean | null } | null)?.is_safety_hold ?? null;
+    }
+    if (isSafetyHeld({ ownership_state: conv.ownership_state, is_safety_hold: isSafetyHoldFlag })) {
+      hardZero = true;
+      hardZeroReason = "safety_hold";
+    } else if (/شكو[ىي]/.test(conv.escalation_reason ?? "")) {
+      // Deterministic complaint marker — the engine stamps «شكوى عميل …» as the reason.
+      hardZero = true;
+      hardZeroReason = "complaint_open";
+    } else {
+      // payment-pending: a linked order with an outstanding payment link (awaiting pay).
+      const { data: pend } = await admin
+        .from("orders")
+        .select("id")
+        .eq("conversation_id", conversationId)
+        .eq("payment_status", "payment_link_sent")
+        .limit(1)
+        .maybeSingle();
+      if ((pend as { id?: string } | null)?.id) {
+        hardZero = true;
+        hardZeroReason = "payment_pending";
+      }
+    }
+
+    // ── Deploy-safe budget-counter read: images_sent lands with migration 0070. Until
+    //    it applies, a missing-column read (42703) means "budget not deployed" → treat
+    //    as 0 and skip counter writes; the 3/message cap + hard-zero still fully apply.
+    counterDeployed = true;
     const { data: cRow, error: cErr } = await admin
       .from("conversations")
       .select("images_sent")
@@ -195,6 +204,7 @@ async function sendRequestedPhotos(
   }
 
   const decision = decideMediaSend({
+    enabled: mediaGuardOn,
     requested: photoRequests.length,
     imagesAlreadySent,
     hardZero,
@@ -686,7 +696,7 @@ export async function respondAndSendWhatsApp(
 
   if (send.status === "sent") {
     if (outcome.photoRequests.length) {
-      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null });
+      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null }, outcome.features);
     }
     if (outcome.replyMessageId) {
       await admin
@@ -700,7 +710,7 @@ export async function respondAndSendWhatsApp(
   if (send.status === "skipped") {
     // Test mode (no credentials): the reply is persisted, just not transmitted.
     if (outcome.photoRequests.length) {
-      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null });
+      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null }, outcome.features);
     }
     return { status: "responded", reply: outcome.reply, escalate: outcome.escalate, sendStatus: "skipped" };
   }
