@@ -29,7 +29,15 @@ function isPublic(pathname: string): boolean {
 }
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
-  let response = NextResponse.next({ request });
+  // CSRF-1: stamp the true request method on the FORWARDED request headers so the
+  // same-origin gate in requireTenant can scope enforcement to mutating requests.
+  // An attacker can't strip or spoof this — we overwrite it with the real method,
+  // so a cross-site POST is always seen as a POST downstream.
+  const forwardHeaders = new Headers(request.headers);
+  forwardHeaders.set("x-kivo-method", request.method);
+  const forward = { headers: forwardHeaders };
+
+  let response = NextResponse.next({ request: forward });
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
@@ -38,7 +46,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       },
       setAll(cookiesToSet: CookieToSet[]) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request });
+        response = NextResponse.next({ request: forward });
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options)
         );

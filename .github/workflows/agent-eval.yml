@@ -170,6 +170,14 @@ jobs:
       - name: Pay-link message unit tests
         run: node --experimental-strip-types scripts/proof-paylink.test.ts
 
+      # ── Blocking gate 7d: CSRF-1 same-origin gate ─────────────────────────
+      # 29 cases: safe-method bypass (reads never blocked), Origin match/mismatch,
+      # Referer fallback, both-absent fail-closed (PM ruling), "null"/malformed
+      # Origin, subdomain rejection, default-port normalization. Pure decision
+      # (no imports), strip-types-safe.
+      - name: CSRF same-origin unit tests
+        run: node --experimental-strip-types scripts/proof-csrf.test.ts
+
       # ── Blocking gate 8: Khalid persona-layer contract ────────────────────
       # 35 cases: region resolution (Najdi default), name fallback, and the
       # persona-layer contract — the overlay defers to the engine on
