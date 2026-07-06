@@ -83,7 +83,7 @@ export const RAIL_ITEMS: RailItem[] = [
   // CRM — customer relationships (manager-only)
   { key: "customers", labelKey: "nav.customers", icon: Users, section: "crm", href: "/c/customers", ready: false, managerOnly: true },
   // ADMIN — configuration + people (manager-only)
-  { key: "settings", labelKey: "nav.settings", icon: Settings, section: "admin", href: "/c/settings", ready: false, managerOnly: true },
+  { key: "settings", labelKey: "nav.settings", icon: Settings, section: "admin", href: "/c/settings", ready: true, managerOnly: true },
   { key: "team", labelKey: "nav.team", icon: UserCog, section: "admin", href: "/c/team", ready: false, managerOnly: true },
   { key: "onboarding", labelKey: "nav.onboarding", icon: Rocket, section: "admin", href: "/c/onboarding", ready: false, managerOnly: true },
 ];

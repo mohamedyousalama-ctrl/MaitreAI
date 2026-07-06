@@ -13,10 +13,31 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { recordAuditEvent } from "@/lib/db/audit";
-import { isSafetyFlag } from "@/lib/settings/safety-flags";
+import { isSafetyFlag, SAFETY_FLAGS } from "@/lib/settings/safety-flags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// GET — the current feature-flag truth for this tenant, so the console can render
+// real ON/OFF state (never a fabricated toggle). Returns the stored flags plus the
+// enumerated safety flags (always-on, not flippable) so the UI can lock them
+// exactly as the POST guard does. Tenant-scoped read; no role gate (reading which
+// flags are on is not privileged — flipping one is, and that stays manager-only).
+export async function GET() {
+  const supabase = createClient();
+  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
+
+  const { data } = await supabase.from("restaurants").select("feature_flags").eq("id", tenant.restaurantId).maybeSingle();
+  const flags = { ...((data?.feature_flags as Record<string, unknown>) ?? {}) };
+  // Safety flags are ALWAYS on in truth (migration 0037 forces the default); surface
+  // them as true so the console never renders a safety guard as off.
+  for (const f of SAFETY_FLAGS) flags[f] = true;
+
+  return NextResponse.json({ flags, safety: SAFETY_FLAGS });
+}
 
 export async function POST(req: Request) {
   const supabase = createClient();
