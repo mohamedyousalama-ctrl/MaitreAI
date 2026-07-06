@@ -32,7 +32,9 @@ export async function POST(req: Request) {
     if (body.ramadan_hours === null) {
       patch.ramadan_hours = null; // clear the seasonal set (falls back to regular)
     } else {
-      const parsed = parseWeeklyHours(body.ramadan_hours);
+      // Ramadan windows commonly run post-iftar into suhoor (e.g. 20:00→03:00),
+      // so overnight windows are allowed here (unlike the regular-hours route).
+      const parsed = parseWeeklyHours(body.ramadan_hours, { allowOvernight: true });
       if (!parsed.ok) return NextResponse.json({ error: "bad_hours", detail: parsed.error }, { status: 400 });
       patch.ramadan_hours = parsed.hours;
     }

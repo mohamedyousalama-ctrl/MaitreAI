@@ -42,7 +42,17 @@ function todayCloseMs(hours: Record<string, unknown> | null, timezone: string, n
     // Local wall-time as if UTC, then correct by the tz offset active at nowMs.
     const asUtc = Date.UTC(y, mo - 1, d, ch, cm, 0);
     const offsetMs = tzOffsetMsAt(timezone, nowMs);
-    return asUtc - offsetMs;
+    let closeMs = asUtc - offsetMs;
+    // OVERNIGHT window (close <= open, e.g. Ramadan 20:00→03:00): the close is on
+    // the NEXT calendar day. If today's computed close instant has already passed,
+    // roll it forward 24h so a note created inside the window expires at the real
+    // (next-day) close rather than a past instant.
+    const overnight =
+      typeof day.open === "string" &&
+      Number(day.close.split(":")[0]) * 60 + Number(day.close.split(":")[1]) <=
+        Number(day.open.split(":")[0]) * 60 + Number(day.open.split(":")[1]);
+    if (overnight && closeMs <= nowMs) closeMs += 24 * 60 * 60 * 1000;
+    return closeMs;
   } catch {
     return null;
   }
@@ -98,14 +108,21 @@ export async function POST(req: Request) {
   }
 
   // Expiry from today's service window (tenant tz), bounded [now+1h, now+18h].
-  // Ramadan-aware: effectiveHours resolves ramadan_hours when the mode is on.
-  const { data: rest } = await admin
+  // Base read (always available). The Ramadan columns are read SEPARATELY and
+  // best-effort so this route keeps working BEFORE migration 0074 is applied
+  // (it is PREPARE-ONLY): an unknown-column error must not null the whole row and
+  // regress every tenant's expiry to the default TTL. Pre-migration → regular
+  // hours; post-migration → effectiveHours overlays the Ramadan set when on.
+  const { data: base } = await admin.from("restaurants").select("hours, timezone").eq("id", rid).maybeSingle();
+  const timezone = String((base as { timezone?: string } | null)?.timezone ?? "Africa/Cairo");
+  let rest = (base as RestaurantHoursFields | null) ?? null;
+  const { data: ram, error: ramErr } = await admin
     .from("restaurants")
-    .select("hours, ramadan_mode, ramadan_hours, timezone")
+    .select("ramadan_mode, ramadan_hours")
     .eq("id", rid)
     .maybeSingle();
-  const hours = (effectiveHours(rest as RestaurantHoursFields | null) as Record<string, unknown> | null) ?? null;
-  const timezone = String((rest as { timezone?: string } | null)?.timezone ?? "Africa/Cairo");
+  if (!ramErr && ram && base) rest = { ...(base as object), ...(ram as object) } as RestaurantHoursFields;
+  const hours = (effectiveHours(rest) as Record<string, unknown> | null) ?? null;
   const nowMs = Date.now();
   const expiresAt = new Date(computeTonightExpiryMs(nowMs, todayCloseMs(hours, timezone, nowMs))).toISOString();
 

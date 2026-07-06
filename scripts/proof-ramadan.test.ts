@@ -7,9 +7,24 @@
 // ============================================================================
 
 import { effectiveHours, effectiveHoursSource } from "../lib/settings/effective-hours.ts";
+import { parseWeeklyHours } from "../lib/settings/hours.ts";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean) { if (cond) pass++; else { fail++; console.error("  ✗ FAIL:", name); } }
+
+// ---- cross-midnight Ramadan windows (post-iftar → suhoor) -------------------
+// Regular route keeps same-day semantics; the Ramadan route opts into overnight
+// (open > close). open == close stays rejected either way.
+check("overnight 20:00→03:00 REJECTED by default (regular hours)",
+  !parseWeeklyHours({ monday: { open: "20:00", close: "03:00" } }).ok);
+check("overnight 20:00→03:00 ACCEPTED with allowOvernight (Ramadan)",
+  parseWeeklyHours({ monday: { open: "20:00", close: "03:00" } }, { allowOvernight: true }).ok);
+check("same-day still fine with allowOvernight",
+  parseWeeklyHours({ monday: { open: "12:00", close: "23:00" } }, { allowOvernight: true }).ok);
+check("open == close REJECTED even with allowOvernight (zero-length)",
+  !parseWeeklyHours({ monday: { open: "03:00", close: "03:00" } }, { allowOvernight: true }).ok);
+check("closed day fine with allowOvernight",
+  parseWeeklyHours({ friday: { closed: true } }, { allowOvernight: true }).ok);
 
 const REG = { monday: { open: "12:00", close: "23:00" } };
 const RAM = { monday: { open: "20:00", close: "03:00" }, friday: { closed: true } };

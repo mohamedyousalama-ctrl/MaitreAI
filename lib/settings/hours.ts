@@ -31,10 +31,20 @@ export type HoursParse =
   | { ok: true; hours: WeeklyHours }
   | { ok: false; error: string };
 
+export interface ParseHoursOptions {
+  /** Allow an OVERNIGHT window (open > close, e.g. 20:00→03:00 next day). Off by
+   *  default so regular hours keep same-day semantics; the Ramadan hours route
+   *  turns it on (post-iftar → suhoor windows cross midnight). open == close is
+   *  still rejected either way (a zero-length window is never valid). */
+  allowOvernight?: boolean;
+}
+
 /** Validate + normalize a weekly-hours payload. Every present day must be either
- *  {closed:true} or a valid {open,close} with open < close. Unknown day keys and
- *  malformed times are rejected — never coerced. */
-export function parseWeeklyHours(input: unknown): HoursParse {
+ *  {closed:true} or a valid {open,close}. By default open must be strictly before
+ *  close; with allowOvernight, open > close is accepted as an overnight window
+ *  (only open == close is rejected). Unknown day keys and malformed times are
+ *  rejected — never coerced. */
+export function parseWeeklyHours(input: unknown, opts: ParseHoursOptions = {}): HoursParse {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, error: "hours must be an object keyed by day" };
   }
@@ -54,7 +64,10 @@ export function parseWeeklyHours(input: unknown): HoursParse {
     if (typeof open !== "string" || typeof close !== "string" || !HHMM.test(open) || !HHMM.test(close)) {
       return { ok: false, error: `${day}: open/close must be HH:MM (24h)` };
     }
-    if (toMinutes(open) >= toMinutes(close)) {
+    if (toMinutes(open) === toMinutes(close)) {
+      return { ok: false, error: `${day}: open and close must differ` };
+    }
+    if (!opts.allowOvernight && toMinutes(open) > toMinutes(close)) {
       return { ok: false, error: `${day}: open must be before close` };
     }
     out[day] = { open, close, closed: false };
