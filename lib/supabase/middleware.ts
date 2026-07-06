@@ -34,11 +34,19 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // same-origin gate in requireTenant can scope enforcement to mutating requests.
   // An attacker can't strip or spoof this — we overwrite it with the real method,
   // so a cross-site POST is always seen as a POST downstream.
-  const forwardHeaders = new Headers(request.headers);
-  forwardHeaders.set("x-kivo-method", request.method);
-  const forward = { headers: forwardHeaders };
+  //
+  // REBUILD from `request` each time: Supabase's setAll rotates cookies by
+  // mutating request.cookies (which updates request's Cookie header). We must
+  // forward the MUTATED header set, or a refreshed session's downstream
+  // getUser() would see the pre-rotation cookie and reject its own request. A
+  // stale clone taken before setAll would drop the rotation — so build fresh.
+  const forward = () => {
+    const headers = new Headers(request.headers);
+    headers.set("x-kivo-method", request.method);
+    return { headers };
+  };
 
-  let response = NextResponse.next({ request: forward });
+  let response = NextResponse.next({ request: forward() });
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
@@ -47,7 +55,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       },
       setAll(cookiesToSet: CookieToSet[]) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request: forward });
+        response = NextResponse.next({ request: forward() });
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, laxCookie(options))
         );
