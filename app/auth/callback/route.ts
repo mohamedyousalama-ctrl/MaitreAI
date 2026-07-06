@@ -11,7 +11,8 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
+  // Post-CUTOVER-2 the one console is /c (legacy /dashboard is gone).
+  const next = searchParams.get("next") ?? "/c";
 
   if (code) {
     const supabase = createClient();

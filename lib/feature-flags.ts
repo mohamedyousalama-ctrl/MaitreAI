@@ -17,16 +17,9 @@ export const ENABLE_ADMIN_CHAT_CONSOLE =
 // (the operator's primary working surface) instead.
 export const HOME_HREF = ENABLE_ADMIN_CHAT_CONSOLE ? "/dashboard" : "/conversations";
 
-// CONSOLE_V2 — the whole new operator console (console_v2). This one flag gates
-// the entire new UI: the one-rail app shell, the display-state-driven pages, and
-// everything under app/(console-v2). DEFAULT OFF — the old console (app/(console))
-// stays the live, untouched surface until console_v2 is flipped on per tenant
-// (New-UI-Only law: the old console dies only when this turns on). Code-only flag;
-// set NEXT_PUBLIC_CONSOLE_V2="true" and redeploy to reveal the new UI. Read on both
-// server and client so a route group can notFound() itself when off and the rail
-// never links into an unreachable surface.
-export const CONSOLE_V2 =
-  process.env.NEXT_PUBLIC_CONSOLE_V2 === "true";
+// NOTE (CUTOVER-2): CONSOLE_V2 was retired. The console_v2 kill-switch is gone —
+// /c is the one and only operator console for every authed tenant, and the legacy
+// (console) group is deleted. The static legacy→/c redirects live in next.config.
 
 // ENABLE_DELIVERY_TRACKING — the delivery dispatch + driver flow + customer
 // tracking module (drivers, deliveries, /d/<token> driver page, /t/<token>

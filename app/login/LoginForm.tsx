@@ -95,9 +95,8 @@ export function LoginForm() {
     setLoading(false);
     if (error) return setError(friendlyAuthError(error.message));
     // Existing session is now set; existing middleware resolves the tenant.
-    // Land on the Kivo Home/Control (الرئيسية) at /dashboard — same destination
-    // as the auth-callback default, both now the Kivo console (not old shell).
-    router.push("/dashboard");
+    // Land on the one console (/c) — post-CUTOVER-2 the legacy /dashboard is gone.
+    router.push("/c");
     router.refresh();
   }
 
