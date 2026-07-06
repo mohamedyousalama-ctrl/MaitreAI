@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
+import { recordAuditEvent } from "@/lib/db/audit";
 
 export const runtime = "nodejs";
 
@@ -89,6 +90,13 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ error: "insert_failed", detail: error.message }, { status: 502 });
   }
+
+  // Attribution law — the manager who issued the invite is stamped on it.
+  await recordAuditEvent(admin, {
+    restaurantId: tenant.restaurantId, userId: tenant.userId, role: tenant.role,
+    action: "member_invited", entityType: "restaurant", entityId: tenant.restaurantId,
+    metadata: { invited_user_id: userId, role },
+  });
 
   return NextResponse.json({ ok: true, status: "invited", email, role });
 }

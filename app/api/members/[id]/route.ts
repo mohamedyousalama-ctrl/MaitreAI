@@ -11,7 +11,9 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
+import { recordAuditEvent } from "@/lib/db/audit";
 
 export const runtime = "nodejs";
 
@@ -61,6 +63,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .eq("id", params.id)
     .eq("restaurant_id", tenant.restaurantId);
   if (error) return NextResponse.json({ error: "update_failed" }, { status: 502 });
+
+  // Attribution law — a role change is a mutating action, so it's stamped WHO did it.
+  const admin = createAdminClient();
+  if (admin) {
+    await recordAuditEvent(admin, {
+      restaurantId: tenant.restaurantId, userId: tenant.userId, role: tenant.role,
+      action: "member_role_changed", entityType: "restaurant", entityId: tenant.restaurantId,
+      metadata: { member_id: params.id, from: current, to: role },
+    });
+  }
 
   return NextResponse.json({ ok: true, role });
 }
