@@ -74,7 +74,7 @@ export const RAIL_ITEMS: RailItem[] = [
   { key: "outcomes", labelKey: "nav.outcomes", icon: Target, section: "main", href: "/c/outcomes", ready: true, managerOnly: true },
   // MODULES — supporting tools (manager-only)
   { key: "knowledge", labelKey: "nav.knowledge", icon: BookOpen, section: "modules", href: "/c/knowledge", ready: true, managerOnly: true },
-  { key: "insights", labelKey: "nav.insights", icon: BarChart3, section: "modules", href: "/c/insights", ready: false, managerOnly: true },
+  { key: "insights", labelKey: "nav.insights", icon: BarChart3, section: "modules", href: "/c/insights", ready: true, managerOnly: true },
   { key: "campaigns", labelKey: "nav.campaigns", icon: Megaphone, section: "modules", href: "/c/campaigns", ready: false, managerOnly: true },
   { key: "approvals", labelKey: "nav.approvals", icon: CheckCircle2, section: "modules", href: "/c/approvals", ready: true, managerOnly: true },
   // Ask Kivo is a GLOBAL overlay within the /c group (one command brain, two doors —
