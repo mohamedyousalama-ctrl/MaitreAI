@@ -85,7 +85,7 @@ export const RAIL_ITEMS: RailItem[] = [
   // ADMIN — configuration + people (manager-only)
   { key: "settings", labelKey: "nav.settings", icon: Settings, section: "admin", href: "/c/settings", ready: true, managerOnly: true },
   { key: "team", labelKey: "nav.team", icon: UserCog, section: "admin", href: "/c/team", ready: true, managerOnly: true },
-  { key: "onboarding", labelKey: "nav.onboarding", icon: Rocket, section: "admin", href: "/c/onboarding", ready: false, managerOnly: true },
+  { key: "onboarding", labelKey: "nav.onboarding", icon: Rocket, section: "admin", href: "/c/onboarding", ready: true, managerOnly: true },
 ];
 
 export type ConsoleRole = "manager" | "operation";
