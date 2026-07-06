@@ -194,6 +194,16 @@ jobs:
       - name: Menu playbook unit tests
         run: node --experimental-strip-types scripts/test-menu-playbook.test.ts
 
+      # ── Blocking gate 12: Khalid-wiring byte-identical snapshot (WO-KHALID-WIRING)
+      # THE regression lock on Karim's LIVE prompt: for a flag-OFF tenant,
+      # buildCustomerAgentSystemPrompt must be BYTE-IDENTICAL to the committed golden
+      # (scripts/fixtures/khalid-off-prompt.golden.txt) — so the persona wiring can
+      # never perturb Wesaya's real prompt while khalid_persona is OFF. Flag ON is
+      # proven additive (startsWith OFF). The --import loader stubs `server-only` +
+      # resolves `@/`/extensionless so prompt.ts imports under bare-node ESM.
+      - name: Khalid-wiring flag-OFF snapshot (byte-identical)
+        run: node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-khalid-wiring-snapshot.test.ts
+
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
       # included here so that IF a CI Supabase secret is ever wired up, they

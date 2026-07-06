@@ -24,6 +24,7 @@ import { isSafetyHold } from "@/lib/tenant/handoff";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
+import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
 import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
@@ -295,6 +296,13 @@ export async function runCustomerTurn(
     currentDraft: initialDraft,
     // Allergen-safety (flag-gated): enables the never-say-safe OUTPUT GUARD in respond.ts.
     deterministicAllergenSafety: isFeatureExplicitlyEnabled("deterministic_allergen_safety", tenantFeatures),
+    // WO-KHALID-WIRING (§3): additive persona reads, mirroring the flag flow above.
+    // Default OFF for every tenant (khalid_persona is explicit-only); ON only for
+    // مطعم الديرة today. The overlay is appended at the END of the prompt in prompt.ts.
+    khalidPersona: isFeatureExplicitlyEnabled("khalid_persona", tenantFeatures),
+    ksaRegion: resolveKsaRegion(
+      typeof tenantFeatures?.khalid_region === "string" ? (tenantFeatures.khalid_region as string) : null
+    ),
     // Item 9 — subordinate operator guidance (escaped, safety-framed). Flag-gated.
     standingInstructions: standingInstructionsOn,
     standingInstructionRules,
