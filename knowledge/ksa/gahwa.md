@@ -6,7 +6,7 @@ category: beverage
 cuisine_tags: [saudi, najdi, hijazi, hospitality, hot-drink, coffee, gahwa]
 regions: [najd, hijaz, asir, eastern, all]
 default_pairings: [dates, kleija, maamoul]
-menu_join_hint: "Recommend only if the tenant sells Arabic coffee / قهوة عربية (or a close menu item). Never invent it. If the tenant has dates/تمر AND gahwa on the menu, the gahwa-with-dates pairing is the natural offer; if either is missing, do not imply it exists."
+menu_join_hint: "اعرضها فقط لو المطعم يبيع قهوة عربية، ولا تخترعها."
 allergens_note: "Often served alongside dates and nut-garnished sweets; the coffee itself may be brewed with cardamom, saffron, cloves, ginger. Cultural note only — real allergen truth comes from the tenant item's allergens data, never from this file."
 inject_summary: "روح الكرم السعودي؛ قهوة فاتحة بالهيل والزعفران تُقدَّم مع التمر في فنجان صغير — أول ما يستقبل به الضيف."
 version: 1

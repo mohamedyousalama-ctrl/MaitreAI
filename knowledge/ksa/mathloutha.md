@@ -6,7 +6,7 @@ category: dish
 cuisine_tags: [saudi, najdi, qassim, grain, comfort, heritage, winter]
 regions: [najd]
 default_pairings: [gahwa, laban, dates]
-menu_join_hint: "Mathloutha is a Qassim/Najdi dish that combines three heritage dishes in one bowl (jareesh + margoog + qursan). Offer only if the tenant sells it. Niche — do not invent."
+menu_join_hint: "طبق قصيمي يجمع جريش ومرقوق وقرصان. اعرضه فقط لو المطعم يبيعه. نادر — لا تخترعه."
 allergens_note: "Combines wheat-based dishes — heavily gluten (crushed wheat + dough); often with laban (dairy). Cultural caution only; safety from the item's data + the gate."
 inject_summary: "ثلاث أكلات نجدية في صحن واحد — جريش ومرقوق وقرصان؛ قمة الراحة القصيمية، خشنة وطرية ومشبعة معاً."
 version: 1

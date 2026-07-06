@@ -6,7 +6,7 @@ category: dish
 cuisine_tags: [saudi, najdi, grain, comfort, heritage, wheat]
 regions: [najd]
 default_pairings: [gahwa, laban, dates]
-menu_join_hint: "Jareesh is a Najdi crushed-wheat dish. Offer only if the tenant sells it. Distinct from margoog (dough) and harees (whole wheat, smoother)."
+menu_join_hint: "أكلة قمح مجروش نجدية. اعرضها فقط لو المطعم يبيعها، وميّزها عن المرقوق (عجين) والهريس (أنعم)."
 allergens_note: "Made from crushed WHEAT — inherently gluten. Often cooked with laban/milk and topped with fried onion. Cultural caution only; safety from the item's data + the gate."
 inject_summary: "قمح مجروش يُطبخ حتى يصير كريمياً؛ قوامه خشن لذيذ وطعمه حامض-كريمي مع اللبن، أكلة نجدية بيتية مشبعة."
 version: 1

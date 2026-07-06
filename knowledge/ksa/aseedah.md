@@ -6,7 +6,7 @@ category: dish
 cuisine_tags: [saudi, comfort, heritage, dough, sweet-or-savoury, winter, ramadan]
 regions: [najd, hijaz, asir, all]
 default_pairings: [gahwa, dates, honey, ghee]
-menu_join_hint: "Aseedah is a thick cooked-flour dough, served sweet (with honey/dibs/ghee) or plain. Offer only if the tenant sells it. Clarify sweet vs savoury per the tenant item."
+menu_join_hint: "عجينة دقيق مطبوخة، حلوة (عسل/دبس/سمن) أو سادة. اعرضها فقط لو المطعم يبيعها، ووضّح الحلو من السادة حسب الصنف."
 allergens_note: "Cooked WHEAT flour dough; sweet versions add honey/date syrup and GHEE/butter (dairy). Cultural caution only; safety from the item's data + the gate."
 inject_summary: "عجينة دقيق سميكة مطاطية؛ الحلوة غنية بالعسل والسمن، والسادة هادئة ومشبعة — دفء بيتي على السفرة."
 version: 1

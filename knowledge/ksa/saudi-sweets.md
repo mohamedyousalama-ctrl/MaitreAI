@@ -6,7 +6,7 @@ category: sweet
 cuisine_tags: [saudi, najdi, hijazi, sweet, dessert, eid, ramadan, gahwa-pairing]
 regions: [najd, hijaz, all]
 default_pairings: [gahwa, arabic-tea, dates]
-menu_join_hint: "Covers several sweets (kleija, maamoul, debyazah, luqaimat). Offer only the specific sweets the tenant actually sells, by their real names. Do not present the whole category as available."
+menu_join_hint: "اعرض ما يبيعه المطعم فقط."
 allergens_note: "Most contain WHEAT (gluten) and are filled/topped with NUTS (walnuts, almonds, pistachio) and DATES; maamoul/kleija are butter/ghee rich (DAIRY); some use SESAME/EGG. A real multi-allergen touchpoint. Cultural caution only; safety from the item's data + the gate."
 inject_summary: "حلا سعودي دافئ التوابل: كليجا ومعمول بحشو التمر، دبيازة فاكهية، ولقيمات مقرمشة مغموسة بالقطر — كلها رفيقة القهوة."
 version: 1

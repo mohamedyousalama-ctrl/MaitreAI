@@ -37,7 +37,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "eastern",
       "all"
     ],
-    "menuJoinHint": "Red tea (often with mint or saffron), served sweet. Offer only if the tenant sells tea. Match the real variants the item lists (mint/na'na, saffron, plain).",
+    "menuJoinHint": "شاي أحمر بنعناع أو زعفران، اعرضه فقط لو المطعم يبيعه.",
     "injectSummary": "شاهي أحمر دافئ ومحلّى، بالنعناع المنعش أو الزعفران الذهبي؛ رفيق الجلسة بعد القهوة وطبق الحلا."
   },
   {
@@ -60,7 +60,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "asir",
       "all"
     ],
-    "menuJoinHint": "Aseedah is a thick cooked-flour dough, served sweet (with honey/dibs/ghee) or plain. Offer only if the tenant sells it. Clarify sweet vs savoury per the tenant item.",
+    "menuJoinHint": "عجينة دقيق مطبوخة، حلوة (عسل/دبس/سمن) أو سادة. اعرضها فقط لو المطعم يبيعها، ووضّح الحلو من السادة حسب الصنف.",
     "injectSummary": "عجينة دقيق سميكة مطاطية؛ الحلوة غنية بالعسل والسمن، والسادة هادئة ومشبعة — دفء بيتي على السفرة."
   },
   {
@@ -82,7 +82,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "najd",
       "all"
     ],
-    "menuJoinHint": "Dates are the universal companion to gahwa. Offer only if the tenant sells dates (as an item or a side). Named varieties (Ajwa, Sukkari, Khalas...) only if the tenant lists them.",
+    "menuJoinHint": "التمر رفيق القهوة. اعرضه فقط لو المطعم يبيعه، والأنواع المسمّاة فقط لو مذكورة بالمنيو.",
     "injectSummary": "حلاوة الترحاب ورفيقة القهوة؛ من السكري المقرمش إلى الخلاص الطري والعجوة الداكنة — بها يُفتتح المجلس."
   },
   {
@@ -106,7 +106,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "eastern",
       "all"
     ],
-    "menuJoinHint": "Recommend only if the tenant sells Arabic coffee / قهوة عربية (or a close menu item). Never invent it. If the tenant has dates/تمر AND gahwa on the menu, the gahwa-with-dates pairing is the natural offer; if either is missing, do not imply it exists.",
+    "menuJoinHint": "اعرضها فقط لو المطعم يبيع قهوة عربية، ولا تخترعها.",
     "injectSummary": "روح الكرم السعودي؛ قهوة فاتحة بالهيل والزعفران تُقدَّم مع التمر في فنجان صغير — أول ما يستقبل به الضيف."
   },
   {
@@ -128,7 +128,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "eastern",
       "all"
     ],
-    "menuJoinHint": "Harees is a smooth wheat-and-meat porridge, big in Ramadan. Offer only if the tenant sells it. Smoother than jareesh; do not conflate.",
+    "menuJoinHint": "هريس قمح ولحم ناعم، كثير برمضان. اعرضه فقط لو المطعم يبيعه، وهو أنعم من الجريش فلا تخلط بينهما.",
     "injectSummary": "هريس ناعم حريري من القمح واللحم، غني القوام بلا قشطة؛ خفيف على النفس ومشبع — من كلاسيكيات مائدة الإفطار."
   },
   {
@@ -147,7 +147,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
     "regions": [
       "najd"
     ],
-    "menuJoinHint": "Jareesh is a Najdi crushed-wheat dish. Offer only if the tenant sells it. Distinct from margoog (dough) and harees (whole wheat, smoother).",
+    "menuJoinHint": "أكلة قمح مجروش نجدية. اعرضها فقط لو المطعم يبيعها، وميّزها عن المرقوق (عجين) والهريس (أنعم).",
     "injectSummary": "قمح مجروش يُطبخ حتى يصير كريمياً؛ قوامه خشن لذيذ وطعمه حامض-كريمي مع اللبن، أكلة نجدية بيتية مشبعة."
   },
   {
@@ -169,7 +169,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "eastern",
       "all"
     ],
-    "menuJoinHint": "Kabsa is the KSA national centrepiece — most Saudi restaurants sell a version (kabsa dajaj/laham/robyan). Map the customer's craving to the tenant's real kabsa item(s) and their real variants (chicken/lamb/shrimp, portion sizes). Never invent a protein or size the item doesn't list.",
+    "menuJoinHint": "طابِق رغبة العميل مع كبسة المطعم وأنواعها (دجاج/لحم/روبيان). لا تخترع بروتيناً أو حجماً.",
     "injectSummary": "نجمة المائدة السعودية؛ رز عطري بمرق غني ولمسة لومي حامضة، دجاج أو لحم أو روبيان — طبق الاجتماع والضيافة."
   },
   {
@@ -189,7 +189,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "eastern",
       "all"
     ],
-    "menuJoinHint": "Laban is the classic savoury drink alongside rice/meat meals. Offer only if the tenant sells it (as a drink or side). Distinct from sweet flavoured milk; do not substitute.",
+    "menuJoinHint": "مشروب مالح جنب الرز واللحم. اعرضه فقط لو المطعم يبيعه، ولا تبدّله بالحليب الحلو.",
     "injectSummary": "لبن رايب بارد، حامض خفيف ومالح، يقطع دسم الرز والمشوي؛ المشروب المالح الكلاسيكي جنب الكبسة والمندي."
   },
   {
@@ -211,7 +211,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "asir",
       "all"
     ],
-    "menuJoinHint": "Mandi (chicken or lamb) is a menu staple, especially in Hijaz/Asir. Map to the tenant's real mandi item, its real protein choices and portion sizes. Do not conflate with kabsa or madfoon unless the menu lists them separately.",
+    "menuJoinHint": "طابِق مع مندي المطعم الحقيقي وبروتيناته وأحجامه. لا تخلطه بالكبسة أو المدفون.",
     "injectSummary": "لحم أو دجاج يذوب من العظم ورز خفيف مدخّن بنكهة الشواء؛ ألطف وأكثر تدخيناً من الكبسة — نجم موائد الحجاز وعسير."
   },
   {
@@ -232,7 +232,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "najd",
       "all"
     ],
-    "menuJoinHint": "Margoog is a Najdi dough-and-vegetable stew. Offer only if the tenant sells it. Related to jareesh/qursan/matazeez — keep them distinct per the menu.",
+    "menuJoinHint": "يخنة عجين وخضار نجدية. اعرضها فقط لو المطعم يبيعها، وميّزها عن الجريش والقرصان والمطازيز.",
     "injectSummary": "عجين قمح طري بمرق الخضار واللحم الكثيف؛ أكلة نجدية دافئة ومشبعة، راحة الشتاء أكثر من كونها طبق استعراض."
   },
   {
@@ -252,7 +252,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
     "regions": [
       "najd"
     ],
-    "menuJoinHint": "Mathloutha is a Qassim/Najdi dish that combines three heritage dishes in one bowl (jareesh + margoog + qursan). Offer only if the tenant sells it. Niche — do not invent.",
+    "menuJoinHint": "طبق قصيمي يجمع جريش ومرقوق وقرصان. اعرضه فقط لو المطعم يبيعه. نادر — لا تخترعه.",
     "injectSummary": "ثلاث أكلات نجدية في صحن واحد — جريش ومرقوق وقرصان؛ قمة الراحة القصيمية، خشنة وطرية ومشبعة معاً."
   },
   {
@@ -272,7 +272,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
     "regions": [
       "hijaz"
     ],
-    "menuJoinHint": "Mutabbaq is a Hijazi stuffed folded pastry (savoury meat/egg, or sweet banana). Offer only if the tenant sells it, and only the fillings the item lists.",
+    "menuJoinHint": "معجنة حجازية محشوة (لحم/بيض أو موز). اعرضها فقط لو المطعم يبيعها، وبالحشوات المذكورة بالصنف فقط.",
     "injectSummary": "معجنة حجازية ذهبية مقرمشة من الخارج؛ الحشو المالح متبّل بالبيض واللحم، والموز الحلو طري — لقمة يدوية من أكل الشارع."
   },
   {
@@ -293,7 +293,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "najd",
       "all"
     ],
-    "menuJoinHint": "A category of iftar drinks. Offer only the specific drinks the tenant actually sells (Vimto, sobia, qamar al-din, tamr hindi, jallab). Never present the whole category as available; never invent a flavour.",
+    "menuJoinHint": "قدّم المتوفر فقط.",
     "injectSummary": "مشروبات الإفطار المنعشة: فيمتو التوت، السوبيا الكريمية، قمر الدين المشمشي، التمر هندي والجلاب — حلوة ومبرّدة."
   },
   {
@@ -313,7 +313,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
     "regions": [
       "hijaz"
     ],
-    "menuJoinHint": "Saleeg is a Hijazi/Taif specialty — creamy rice with chicken. Offer only if the tenant sells it. It is distinct from kabsa/mandi; do not substitute silently.",
+    "menuJoinHint": "تخصص حجازي طائفي: رز كريمي بالدجاج. اعرضه فقط لو المطعم يبيعه، ولا تبدّله صامتاً بالكبسة أو المندي.",
     "injectSummary": "رز طائفي كريمي طري بالدجاج، هادئ ومريح، والشطة الجانبية تعطيه الحرارة — تخصص حجازي أصيل يختلف عن الكبسة والمندي."
   },
   {
@@ -336,7 +336,7 @@ export const KSA_ENTRIES: readonly KsaEntry[] = [
       "hijaz",
       "all"
     ],
-    "menuJoinHint": "Covers several sweets (kleija, maamoul, debyazah, luqaimat). Offer only the specific sweets the tenant actually sells, by their real names. Do not present the whole category as available.",
+    "menuJoinHint": "اعرض ما يبيعه المطعم فقط.",
     "injectSummary": "حلا سعودي دافئ التوابل: كليجا ومعمول بحشو التمر، دبيازة فاكهية، ولقيمات مقرمشة مغموسة بالقطر — كلها رفيقة القهوة."
   }
 ] as const;
