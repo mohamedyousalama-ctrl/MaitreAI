@@ -6,7 +6,7 @@ category: dish
 cuisine_tags: [saudi, hijazi, yemeni-origin, rice-dish, main-course, meat, signature]
 regions: [hijaz, asir, all]
 default_pairings: [gahwa, dates, saudi-salad, sahawiq]
-menu_join_hint: "Mandi (chicken or lamb) is a menu staple, especially in Hijaz/Asir. Map to the tenant's real mandi item, its real protein choices and portion sizes. Do not conflate with kabsa or madfoon unless the menu lists them separately."
+menu_join_hint: "طابِق مع مندي المطعم الحقيقي وبروتيناته وأحجامه. لا تخلطه بالكبسة أو المدفون."
 allergens_note: "Rice cooked over/with meat drippings and spices; sometimes served with sahawiq (chili) and nut/raisin garnish. Cultural note only — allergen truth is the item's data + the gate."
 inject_summary: "لحم أو دجاج يذوب من العظم ورز خفيف مدخّن بنكهة الشواء؛ ألطف وأكثر تدخيناً من الكبسة — نجم موائد الحجاز وعسير."
 version: 1

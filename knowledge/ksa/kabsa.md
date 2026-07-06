@@ -6,7 +6,7 @@ category: dish
 cuisine_tags: [saudi, najdi, rice-dish, main-course, meat, hospitality, signature]
 regions: [najd, eastern, all]
 default_pairings: [gahwa, laban, dates, arabic-tea]
-menu_join_hint: "Kabsa is the KSA national centrepiece — most Saudi restaurants sell a version (kabsa dajaj/laham/robyan). Map the customer's craving to the tenant's real kabsa item(s) and their real variants (chicken/lamb/shrimp, portion sizes). Never invent a protein or size the item doesn't list."
+menu_join_hint: "طابِق رغبة العميل مع كبسة المطعم وأنواعها (دجاج/لحم/روبيان). لا تخترع بروتيناً أو حجماً."
 allergens_note: "Commonly garnished with fried nuts (لوز/صنوبر) and raisins; cooked with a spice mix (بهار الكبسة) that may include many spices. Cultural note only — check the tenant item's allergens for any customer with an allergy; never reassure from this file."
 inject_summary: "نجمة المائدة السعودية؛ رز عطري بمرق غني ولمسة لومي حامضة، دجاج أو لحم أو روبيان — طبق الاجتماع والضيافة."
 version: 1

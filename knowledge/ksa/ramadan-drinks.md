@@ -6,7 +6,7 @@ category: beverage
 cuisine_tags: [saudi, hijazi, cold-drink, ramadan, sweet, iftar]
 regions: [hijaz, najd, all]
 default_pairings: [dates, saudi-sweets, mutabbaq, harees]
-menu_join_hint: "A category of iftar drinks. Offer only the specific drinks the tenant actually sells (Vimto, sobia, qamar al-din, tamr hindi, jallab). Never present the whole category as available; never invent a flavour."
+menu_join_hint: "قدّم المتوفر فقط."
 allergens_note: "Sobia is often grain/oat-based (possible GLUTEN) and sometimes made with milk (DAIRY); jallab/qamar al-din may be garnished with PINE NUTS/raisins; several are very high in sugar. Cultural caution only; safety from the item's data + the gate."
 inject_summary: "مشروبات الإفطار المنعشة: فيمتو التوت، السوبيا الكريمية، قمر الدين المشمشي، التمر هندي والجلاب — حلوة ومبرّدة."
 version: 1
