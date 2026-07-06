@@ -267,7 +267,7 @@ function Eighty6({
 // ---------------------------------------------------------------------------
 
 // Item 17 — kitchen-ticket print link. Opens the audited, money-STRIPPED ticket
-// route (/orders/[id]/ticket) in a new tab; that page owns the print (QZ silent or
+// route (/c/orders/[id]/ticket) in a new tab; that page owns the print (QZ silent or
 // the browser dialog) and stamps the ticket_printed audit. Rendered ONLY when the
 // tenant's kitchen_ticket flag is on — the route 404s otherwise, so we never link
 // into a dead page.
@@ -276,7 +276,7 @@ function TicketPrintLink({ id, enabled }: { id: string; enabled: boolean }) {
   if (!enabled) return null;
   return (
     <a
-      href={`/orders/${id}/ticket`}
+      href={`/c/orders/${id}/ticket`}
       target="_blank"
       rel="noopener noreferrer"
       title={t("shift.printTicket")}
