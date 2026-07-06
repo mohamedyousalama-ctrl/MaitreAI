@@ -496,7 +496,6 @@
         "جنبري"
       ],
       "فول سوداني": [
-        "فول سوداني",
         "فولسوداني",
         "سوداني"
       ]
@@ -505,8 +504,8 @@
       "env": "no human recordings available; STT fixtures were TTS-synthesized (OpenAI gpt-4o-mini-tts, voice 'sage') as a proxy, noise-mixed for noise-tagged items. PROXY — re-confirm on real Saudi recordings (WO-VOICE-1).",
       "date_scope": "WO-VOICE-0 keyed scoring run",
       "exact_term_recall": {
-        "whisper-1": 0.744,
-        "gpt-4o-transcribe": 0.692
+        "whisper-1": 0.692,
+        "gpt-4o-transcribe": 0.667
       },
       "finding": "Affix-normalized exact-term match FAILS the 1.00 safety bar on BOTH engines (~0.69–0.74; ~half the must-flag allergy notes lose >=1 safety term). Every miss was a phonetic-near garble: جلوتين→بلوتين, لبن→النبن, أتحسس→تحصّص, بيض→البيت/بيبك, مكسرات→المكسّرة, plus code-switch (I have allergy→meninphostoc). The two engines' miss sets differ.",
       "confidence_signal": "whisper avg_logprob→prob: captured items ranged from 0.63, MISSED-term confidences ranged UP TO 0.768 — i.e. misses were often MORE confident than captures. Confidence does not separate hits from misses; it is a weak secondary tripwire only. gpt-4o-transcribe returns no confidence (json-only).",
@@ -517,7 +516,8 @@
         "gpt-4o-transcribe": "10/18"
       },
       "noise_finding": "babble was tolerated (STT-14 2/2) but traffic_fast_speech, child_pitch, code-switch, and 'mild' each dropped a safety term. NOTE: noise is ADDITIVE Gaussian — a partial proxy; child_pitch/*_fast_speech are not truly simulated (flagged noise_proxy_only), so real degradation is likely WORSE.",
-      "method_note": "errored items count as MISSES not removed-from-denominator (fixed denominator=39 both engines); response_format branches per model (verbose_json whisper / json gpt-4o); affix + tashkeel + alef normalization before matching. See scripts/voice/score_bakeoff.py."
+      "method_note": "errored items count as MISSES not removed-from-denominator (fixed denominator=39 both engines); response_format branches per model (verbose_json whisper / json gpt-4o); affix + tashkeel + alef normalization before matching. See scripts/voice/score_bakeoff.py.",
+      "reproducibility": "NOISE_SEED=0 makes the additive-noise mix reproducible; residual variance is transient API errors (counted fail-closed as misses, so true STT recall is marginally higher)."
     },
     "SAFETY_STT_CONFIDENCE_FLOOR_note": "0.66 kept as the confidence TRIPWIRE (rule B-ii/D); it is NOT the primary safety net (see measuredRun.confidence_signal)."
   }

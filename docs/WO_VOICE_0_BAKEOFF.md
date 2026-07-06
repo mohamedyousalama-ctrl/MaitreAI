@@ -48,8 +48,11 @@ actually mixed**; errored items counted as misses over a fixed 39-term denominat
 
 | STT engine | safety-term recall | must-flag notes fully captured | confidence signal |
 | :--- | :--- | :--- | :--- |
-| `whisper-1` | **0.74** (29/39) | **9/18** | `avg_logprob` available |
-| `gpt-4o-transcribe` | **0.69** (27/39) | **10/18** | none (json-only) |
+| `whisper-1` | **≈0.69** (27/39) | **9/18** | `avg_logprob` available |
+| `gpt-4o-transcribe` | **≈0.67** (26/39) | **10/18** | none (json-only) |
+
+*(Seeded `NOISE_SEED=0` → the noise mix is reproducible; small residual variance is transient API errors,
+which count fail-closed as misses — so true STT recall is marginally higher. Proxy fixtures either way.)*
 
 **Both engines FAIL the 1.00 safety bar — badly: ~half the must-flag allergy notes lose ≥1 safety term**,
 and the miss sets differ. Every miss was a **phonetic-near garble**, not a total dropout:
@@ -73,7 +76,7 @@ no confidence at all.
 3. **Route any allergy-CONTEXT utterance** (حساسية / أتحسس / ما يصير آكل / تأذيني / "allergy") to the
    deterministic gate + a text-confirm, even when the specific allergen token is garbled.
 4. **`SAFETY_STT_CONFIDENCE_FLOOR = 0.66` is kept as a secondary TRIPWIRE**, not the primary net.
-5. **Vendor:** whisper-1 (0.74) edges gpt-4o-transcribe (0.69) on this proxy with differing miss sets, and
+5. **Vendor:** whisper-1 (≈0.69) edges gpt-4o-transcribe (≈0.67) on this proxy with differing miss sets, and
    crucially whisper-1 exposes `avg_logprob`/`no_speech_prob` for the tripwire while gpt-4o-transcribe returns
    no confidence — so **whisper-1 is the pragmatic default** for WO-VOICE-1; either way, lean on the net.
 
@@ -181,12 +184,15 @@ Voice's dangerous failure is **under-transcribing an allergy**. The rule (full s
 
 1. **Text path (unchanged gate):** the transcript feeds the existing deterministic allergen gate. A lexicon
    term in the transcript → normal safety-positive. Voice adds no new "safe" path.
-2. **Fail-closed net (new):** treat as a safety-positive (acknowledge + verify/escalate) if **either**
-   - a segment's confidence `< SAFETY_STT_CONFIDENCE_FLOOR (0.66)` **and** it is **phonetically near** a safety
-     lexicon term (Arabic-normalized Levenshtein ≤ 2 — normalize ق↔g, ظ↔ز↔ذ, ث/ص↔س, ة↔ه, ى↔ي, hamza↔ا, doubled
-     letters), **or**
-   - a low-confidence segment co-occurs with a confidently-heard **allergen noun** (an allergy statement may have
-     been garbled *around* the noun).
+2. **Fail-closed net (measured-corrected):** treat as a safety-positive (acknowledge + verify/escalate) if **any**
+   - a transcript token is **phonetically near** a safety lexicon term — Arabic-normalized **+ affix/definite-article
+     stripped**, Levenshtein ≤ 2 (normalize ق↔g, ظ↔ز↔ذ, ث/ص↔س, ة↔ه, ى↔ي, hamza↔ا, doubled letters) — applied
+     **UNCONDITIONALLY, not gated on `SAFETY_STT_CONFIDENCE_FLOOR`** (the measured run saw high-confidence garbles
+     like `جلوتين→بلوتين` at conf 0.71 and affix misses like `الفول السوداني`≠`فول سوداني`), **or**
+   - a low-confidence segment (`< SAFETY_STT_CONFIDENCE_FLOOR`, 0.66 — a secondary tripwire) co-occurs with a
+     confidently-heard **allergen noun** (an allergy statement may have been garbled *around* the noun), **or**
+   - an **allergy-context verb** (حساسية / أتحسس / ما يصير آكل / تأذيني / "allergy") is present even when the
+     specific allergen token is unrecognized → route to the gate + a text-confirm.
 3. **Whole-utterance uncertainty + food context** → ask the customer to re-send as text / confirm; **never
    fabricate an order or an "allergen-safe" claim from a low-confidence voice note** (extends the existing
    mock-STT honesty rule). Over-escalation is acceptable; under-escalation is not.

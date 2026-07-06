@@ -72,6 +72,7 @@ def tts(text, voice, path, model="gpt-4o-mini-tts", fmt="wav", instructions=None
 
 def add_noise(in_wav, out_wav, snr_db):
     import numpy as np
+    rng = np.random.default_rng(int(os.environ.get("NOISE_SEED", "0")))  # seeded → reproducible noise
     with wave.open(in_wav, "rb") as w:
         ch, sw, fr = w.getnchannels(), w.getsampwidth(), w.getframerate()
         frames = w.readframes(-1)  # read all available; do NOT trust nframes (streaming-wav placeholder)
@@ -81,7 +82,7 @@ def add_noise(in_wav, out_wav, snr_db):
     if x.size == 0:
         with open(out_wav, "wb") as f, open(in_wav, "rb") as g: f.write(g.read()); return
     sig_p = np.mean(x**2) + 1e-9
-    noise = np.random.normal(0, math.sqrt(sig_p / (10 ** (snr_db / 10.0))), x.shape)
+    noise = rng.normal(0, math.sqrt(sig_p / (10 ** (snr_db / 10.0))), x.shape)
     y = np.clip(x + noise, -32768, 32767).astype(np.int16)
     # Write with EXPLICIT params (writeframes recomputes nframes) — avoids the source header's
     # placeholder frame count overflowing the WAV 'L' field.
