@@ -26,7 +26,7 @@ import { useHasHydrated } from "@/lib/store";
 import { deriveConversationDisplay, type ConversationOwnershipState, type ConversationDisplayState } from "@/lib/console-v2/display-state";
 import type { DisplayState } from "@/lib/console-v2/display-state";
 import {
-  HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, HandledByChip, AuroraDrawer, Toasts, pushToast,
+  HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, HandledByChip, AuroraDrawer, MiniModal, Toasts, pushToast,
 } from "@/components/console-v2/kit";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi } from "@/components/kivo";
@@ -73,6 +73,7 @@ export default function ConversationsPage() {
   }, [conversations]);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+  const [modal, setModal] = useState<null | "assign" | "guest">(null);
 
   return (
     <>
@@ -141,11 +142,61 @@ export default function ConversationsPage() {
       />
 
       <AuroraDrawer open={!!selected} onClose={() => select("")} safety={!!selected && isHold(selected)}>
-        {selected && <ConversationDrawer key={selected.id} conv={selected} onClose={() => select("")} />}
+        {selected && <ConversationDrawer key={selected.id} conv={selected} onClose={() => select("")} onAssign={() => setModal("assign")} onGuest={() => setModal("guest")} />}
       </AuroraDrawer>
+
+      {/* ovAssign — assign-to-teammate. No backing route yet → SOON, never faked. */}
+      <MiniModal open={modal === "assign"} onClose={() => setModal(null)}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 16 }}>↪</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{t("conv.assignTitle")}</span>
+          <TruthChip state="soon" />
+          <button onClick={() => setModal(null)} style={drawerX}><X size={15} /></button>
+        </div>
+        <p style={{ fontSize: 10.5, color: "var(--faint)", margin: "0 0 12px", lineHeight: 1.6 }}>{t("conv.assignSub")}</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <TeammateRow initial="ب" name="بهاء" role={t("conv.assignRoles.manager")} />
+          <TeammateRow initial="أ" name="أحمد" role={t("conv.assignRoles.operator")} />
+        </div>
+      </MiniModal>
+
+      {/* ovGuest — guest-card-lite. Facts GATHERING until the full card is wired;
+          allergy hint is the verbatim operator-hint microcopy (never a guarantee). */}
+      <MiniModal open={modal === "guest"} onClose={() => setModal(null)}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <span style={{ ...avatar, width: 32, height: 32 }}>{selected ? <Bdi>{selected.customer.slice(0, 1)}</Bdi> : "👤"}</span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--txt)" }}>{selected ? <Bdi>{selected.customer}</Bdi> : ""}</div>
+            <div style={{ fontSize: 9, color: "var(--faint)" }}>{t("conv.guestLite")}</div>
+          </div>
+          <button onClick={() => setModal(null)} style={drawerX}><X size={15} /></button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", color: "var(--faint)", textTransform: "uppercase" }}>{t("conv.facts")}</span>
+          <TruthChip state="gather" />
+          <span style={{ fontSize: 10.5, color: "var(--faint)" }}>{t("conv.guestGathering")}</span>
+        </div>
+        {selected && isHold(selected) && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 9, background: "rgba(255,107,94,.08)", border: "1px solid rgba(255,107,94,.35)", borderRadius: 12, padding: "11px 13px" }}>
+            <Lock size={14} strokeWidth={2.4} color="#ffc9c9" style={{ flex: "none", marginTop: 1 }} />
+            <span style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.6 }}>{t("conv.allergyHint")}</span>
+          </div>
+        )}
+        <div style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 12, textAlign: "center" }}>{t("conv.guestFull")}</div>
+      </MiniModal>
 
       <Toasts />
     </>
+  );
+}
+
+function TeammateRow({ initial, name, role }: { initial: string; name: string; role: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "9px 12px" }}>
+      <span style={{ ...avatar, background: "linear-gradient(135deg,#8fd0ff,#6db8f7)", color: "#03203a" }}><Bdi>{initial}</Bdi></span>
+      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--txt)", flex: 1 }}><Bdi>{name}</Bdi></span>
+      <span style={{ fontSize: 9.5, color: "var(--faint)" }}>{role}</span>
+    </div>
   );
 }
 
@@ -193,7 +244,7 @@ function HallPill({ conv, onOpen }: { conv: Conversation; onOpen: () => void }) 
 // Conversation drawer — transcript (authorship-labeled) + composer (takeover-at-
 // SEND) + actions. Safety holds show the lock banner + verbatim allergy hint.
 // ---------------------------------------------------------------------------
-function ConversationDrawer({ conv, onClose }: { conv: Conversation; onClose: () => void }) {
+function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conversation; onClose: () => void; onAssign: () => void; onGuest: () => void }) {
   const t = useT();
   const takeover = useConversationStore((s) => s.takeoverToHuman);
   const addHuman = useConversationStore((s) => s.addHumanMessage);
@@ -251,17 +302,17 @@ function ConversationDrawer({ conv, onClose }: { conv: Conversation; onClose: ()
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: "1px solid var(--stroke)" }}>
         <span style={{ ...avatar, width: 34, height: 34, background: hold ? "linear-gradient(135deg,#ff8d7e,#f75b52)" : undefined, color: hold ? "#fff" : undefined }}>{hold ? <Lock size={14} /> : <Bdi>{conv.customer.slice(0, 1)}</Bdi>}</span>
-        <div style={{ minWidth: 0, flex: 1 }}>
+        <button onClick={onGuest} style={{ minWidth: 0, flex: 1, border: 0, background: "none", padding: 0, cursor: "pointer", textAlign: "start", fontFamily: "inherit" }}>
           <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--txt)" }}><Bdi>{conv.customer}</Bdi></div>
           <div style={{ marginTop: 3 }}><OwnChip display={display} /></div>
-        </div>
+        </button>
         <button onClick={onClose} style={drawerX}><X size={15} /></button>
       </div>
 
       {/* Actions */}
       {!closed && (
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", padding: "10px 0", borderBottom: "1px solid var(--stroke)" }}>
-          <span style={soonChip}><TruthChip state="soon" /> {t("conv.assign")}</span>
+          <button onClick={onAssign} style={soonChip}><TruthChip state="soon" /> {t("conv.assign")}</button>
           {humanOwned && <button onClick={() => returnToAi(conv.id)} disabled={busy} style={ghostBtn}><CornerUpLeft size={13} /> {t("conv.returnKarim")}</button>}
           {canClose && <button onClick={doClose} disabled={busy} style={ghostBtn}><CheckCircle2 size={13} /> {t("conv.close")}</button>}
         </div>
@@ -334,6 +385,6 @@ const avatar: React.CSSProperties = { width: 26, height: 26, borderRadius: 9, ba
 const unreadDot: React.CSSProperties = { minWidth: 18, height: 18, padding: "0 5px", borderRadius: 99, background: "var(--blue)", color: "#fff", fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" };
 const stageChip: React.CSSProperties = { fontSize: 9, fontWeight: 700, color: "var(--faint)", background: "var(--inset)", borderRadius: 6, padding: "3px 7px" };
 const drawerX: React.CSSProperties = { width: 30, height: 30, borderRadius: 10, background: "var(--inset)", border: "1px solid var(--stroke)", color: "var(--dim)", cursor: "pointer", display: "grid", placeItems: "center", flex: "none" };
-const soonChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "var(--dim)", background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 10, padding: "6px 11px" };
+const soonChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "var(--dim)", background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 10, padding: "6px 11px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)" };
 const ghostBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", borderRadius: 10, border: "1px solid var(--stroke)", background: "var(--inset)", color: "var(--dim)", fontFamily: "var(--kvx-font-ar)", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
 const sendBtn: React.CSSProperties = { height: 42, width: 46, borderRadius: 13, border: 0, background: "linear-gradient(135deg,#4b8bff,#2f6ce0)", color: "#fff", cursor: "pointer", display: "grid", placeItems: "center", flex: "none" };
