@@ -8,7 +8,7 @@
 // kit MiniModal + SectionHeader. All money comes straight off the order row.
 // ============================================================================
 
-import { Receipt } from "lucide-react";
+import { Receipt, MessageCircle } from "lucide-react";
 import { MiniModal, SectionHeader } from "@/components/console-v2/kit";
 import { StateChip } from "@/components/console-v2";
 import { deriveOrderDisplay, derivePosDisplay, derivePaymentDisplay } from "@/lib/console-v2/display-state";
@@ -27,7 +27,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-export function OrderDetailsModal({ order, onClose }: { order: LocalOrder | null; onClose: () => void }) {
+export function OrderDetailsModal({ order, onClose, onViewConversation }: { order: LocalOrder | null; onClose: () => void; onViewConversation?: () => void }) {
   const t = useT();
   if (!order) return null;
   const pos: PosStatus = order.posStatus ?? "not_entered";
@@ -91,6 +91,16 @@ export function OrderDetailsModal({ order, onClose }: { order: LocalOrder | null
         <Row label={t("shift.od.customer")}><Phone>{order.customerPhone}</Phone></Row>
         <Row label={t("shift.od.fulfillment")}>{order.fulfillmentType === "pickup" ? t("shift.od.pickup") : t("shift.od.deliveryType")}</Row>
         {order.deliveryAddress && <Row label={t("shift.od.address")}><Bdi>{order.deliveryAddress}</Bdi></Row>}
+
+        {/* Order → its WhatsApp thread (#ovWa). Only when a conversation is linked. */}
+        {order.conversationId && onViewConversation && (
+          <button
+            onClick={onViewConversation}
+            style={{ marginTop: 14, width: "100%", height: 40, borderRadius: 11, border: "1px solid rgba(75,139,255,.34)", background: "rgba(75,139,255,.12)", color: "#a9c6ff", fontFamily: "var(--kvx-font-ar)", fontSize: 12.5, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+          >
+            <MessageCircle size={15} /> {t("shift.wa.view")}
+          </button>
+        )}
       </div>
     </MiniModal>
   );
