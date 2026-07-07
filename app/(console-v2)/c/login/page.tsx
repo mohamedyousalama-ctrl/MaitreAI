@@ -103,12 +103,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--kv-bg-login)", padding: 24 }}>
-      <div className="kv-console" style={{ width: "100%", maxWidth: 420 }}>
-        <div style={{ background: "var(--kv-card)", borderRadius: "var(--kv-r-lg-xl)", boxShadow: "var(--kv-shadow-login)", padding: "34px 30px" }}>
+    <div className="kvx" style={pageStyle}>
+      <div style={{ width: "100%", maxWidth: 424, position: "relative" }}>
+        <div style={cardStyle}>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
-            <div style={{ width: 54, height: 54, borderRadius: 17, background: "var(--kv-grad-brand)", display: "grid", placeItems: "center", boxShadow: "0 14px 28px -14px rgba(10,138,95,.85)" }}>
-              <KivoMark size={30} tone="white" title="Kivo" />
+            <div style={{ width: 56, height: 56, borderRadius: 18, background: "radial-gradient(circle at 32% 28%,#3fd39b,#0E9F6E 62%,#0a6e4c)", display: "grid", placeItems: "center", boxShadow: "0 14px 30px -12px rgba(14,159,110,.75)" }}>
+              <KivoMark size={31} tone="white" title="Kivo" />
             </div>
           </div>
 
@@ -146,15 +146,15 @@ export default function LoginPage() {
           ) : (
             <>
               <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
-                <div style={{ width: 60, height: 60, borderRadius: 18, background: "var(--kv-primary-tint)", display: "grid", placeItems: "center" }}>
-                  <Mail size={28} strokeWidth={2.2} color="var(--kv-deep)" />
+                <div style={{ width: 60, height: 60, borderRadius: 18, background: "rgba(46,204,154,.14)", border: "1px solid rgba(46,204,154,.32)", display: "grid", placeItems: "center" }}>
+                  <Mail size={28} strokeWidth={2.2} color="var(--teal)" />
                 </div>
               </div>
               <Eyebrow>{t("auth.sent.eyebrow")}</Eyebrow>
               <Title>{t("auth.verify.title")}</Title>
               <Sub>
                 {t("auth.verify.sub")}{" "}
-                <Bdi><strong style={{ color: "var(--kv-text)" }}>{email}</strong></Bdi>
+                <Bdi><strong style={{ color: "var(--txt)" }}>{email}</strong></Bdi>
               </Sub>
               <p style={{ fontSize: 12, color: "var(--kv-faint)", textAlign: "center", marginTop: 6 }}>{t("auth.sent.expiry")}</p>
 
@@ -194,30 +194,56 @@ export default function LoginPage() {
   );
 }
 
+// Misty-slate aurora — the same page ground as the console shell (.kvx-page).
+const pageStyle: React.CSSProperties = {
+  minHeight: "100vh", display: "grid", placeItems: "center", padding: 24,
+  color: "var(--txt)", fontFamily: "var(--kvx-font-ar)",
+  background: "#3a4149",
+  backgroundImage:
+    "radial-gradient(1200px 800px at 75% 10%,rgba(120,140,165,.5),transparent 60%)," +
+    "radial-gradient(1000px 700px at 10% 90%,rgba(70,80,95,.55),transparent 55%)," +
+    "radial-gradient(700px 500px at 45% 45%,rgba(150,160,175,.22),transparent 60%)," +
+    "linear-gradient(160deg,#4a525d 0%,#2e343d 55%,#232830 100%)",
+};
+
+// Dark-glass card — the console device material, with a baked-in top brand glow so
+// it always sits behind the content (no absolute-sibling stacking surprises).
+const cardStyle: React.CSSProperties = {
+  position: "relative", overflow: "hidden", padding: "34px 30px", borderRadius: 24,
+  background:
+    "radial-gradient(460px 150px at 50% 0,rgba(46,204,154,.14),transparent 70%)," +
+    "rgba(18,22,30,.66)",
+  backdropFilter: "blur(34px) saturate(1.25)",
+  WebkitBackdropFilter: "blur(34px) saturate(1.25)",
+  border: "1px solid rgba(255,255,255,.14)",
+  boxShadow: "0 46px 130px rgba(15,20,30,.55),0 0 0 6px rgba(255,255,255,.05)",
+};
+
 const inputStyle: React.CSSProperties = {
   width: "100%",
   height: 46,
-  borderRadius: "var(--kv-r-md)",
-  border: "1.5px solid var(--kv-border)",
-  background: "var(--kv-card-soft)",
+  borderRadius: 12,
+  border: "1.5px solid var(--stroke)",
+  background: "var(--inset2)",
   padding: "0 14px",
   fontSize: 14,
-  fontFamily: "var(--kv-font)",
-  color: "var(--kv-text)",
+  fontFamily: "var(--kvx-font-ar)",
+  color: "var(--txt)",
   outline: "none",
 };
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <p style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".08em", color: "var(--kv-primary)", textAlign: "center", margin: 0 }}>{children}</p>;
+  return <p style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".08em", color: "var(--teal)", textAlign: "center", margin: 0 }}>{children}</p>;
 }
 function Title({ children }: { children: React.ReactNode }) {
-  return <h1 style={{ fontSize: 23, fontWeight: 800, color: "var(--kv-text)", textAlign: "center", margin: "6px 0 0" }}>{children}</h1>;
+  return <h1 style={{ fontSize: 23, fontWeight: 800, color: "var(--txt)", textAlign: "center", margin: "6px 0 0" }}>{children}</h1>;
 }
 function Sub({ children }: { children: React.ReactNode }) {
-  return <p style={{ fontSize: 13, color: "var(--kv-muted)", textAlign: "center", lineHeight: 1.7, margin: "8px 0 0" }}>{children}</p>;
+  return <p style={{ fontSize: 13, color: "var(--dim)", textAlign: "center", lineHeight: 1.7, margin: "8px 0 0" }}>{children}</p>;
 }
 function ErrorLine({ children }: { children: React.ReactNode }) {
-  return <p style={{ fontSize: 12.5, fontWeight: 700, color: "var(--kv-red)", margin: "8px 2px 0" }}>{children}</p>;
+  // Auth errors are operational, never a safety event → amber, never red.
+  return <p style={{ fontSize: 12.5, fontWeight: 700, color: "var(--amber)", margin: "8px 2px 0" }}>{children}</p>;
 }
 function PrimaryButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled: boolean }) {
   return (
@@ -225,10 +251,10 @@ function PrimaryButton({ children, onClick, disabled }: { children: React.ReactN
       onClick={onClick}
       disabled={disabled}
       style={{
-        width: "100%", height: 48, marginTop: 16, borderRadius: "var(--kv-r-md)", border: 0,
-        background: "var(--kv-grad-brand)", color: "#fff", fontFamily: "var(--kv-font)", fontSize: 14.5, fontWeight: 800,
+        width: "100%", height: 48, marginTop: 16, borderRadius: 12, border: 0,
+        background: "linear-gradient(135deg,#3fd39b,#0E9F6E)", color: "#062018", fontFamily: "var(--kvx-font-ar)", fontSize: 14.5, fontWeight: 800,
         display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 9,
-        cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1, boxShadow: "var(--kv-shadow-btn)",
+        cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1, boxShadow: "0 14px 30px -14px rgba(14,159,110,.8)",
       }}
     >
       {children}
@@ -236,6 +262,6 @@ function PrimaryButton({ children, onClick, disabled }: { children: React.ReactN
   );
 }
 const linkBtnStyle: React.CSSProperties = {
-  border: 0, background: "transparent", color: "var(--kv-primary)", fontFamily: "var(--kv-font)",
+  border: 0, background: "transparent", color: "var(--teal)", fontFamily: "var(--kvx-font-ar)",
   fontSize: 12.5, fontWeight: 800, cursor: "pointer", padding: 0,
 };
