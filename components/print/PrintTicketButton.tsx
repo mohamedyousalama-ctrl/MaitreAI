@@ -49,7 +49,7 @@ async function fetchTicketBase64(orderId: string, width: Width): Promise<string 
   }
 }
 
-export function PrintTicketButton({ orderId }: { orderId: string }) {
+export function PrintTicketButton({ orderId, dark = false }: { orderId: string; dark?: boolean }) {
   const [width, setWidth] = useState<Width>("80mm");
   const [busy, setBusy] = useState(false);
 
@@ -129,9 +129,11 @@ export function PrintTicketButton({ orderId }: { orderId: string }) {
       aria-pressed={width === w}
       style={{
         padding: "6px 14px", borderRadius: 8, border: "1.5px solid",
-        borderColor: width === w ? "#b5502e" : "#d8ccbf",
-        background: width === w ? "#b5502e" : "transparent",
-        color: width === w ? "#fff" : "#6a5c4e", fontWeight: 700, fontSize: 13, cursor: "pointer",
+        // console_v2 dark: teal-selected on glass; legacy: the warm terracotta.
+        borderColor: width === w ? (dark ? "#2ecc9a" : "#b5502e") : (dark ? "rgba(255,255,255,.16)" : "#d8ccbf"),
+        background: width === w ? (dark ? "#2ecc9a" : "#b5502e") : "transparent",
+        color: width === w ? (dark ? "#062018" : "#fff") : (dark ? "#9aa7b8" : "#6a5c4e"),
+        fontWeight: 700, fontSize: 13, cursor: "pointer",
       }}
     >
       {label}
@@ -140,11 +142,17 @@ export function PrintTicketButton({ orderId }: { orderId: string }) {
 
   // Truth chip — never claims "connected" until QZ actually reports active.
   const chip = () => {
-    const map: Record<QzStatus, { t: string; bg: string; fg: string }> = {
-      connected: { t: "الطابعة متصلة", bg: "#e7f4ea", fg: "#1f7a3d" },
-      disconnected: { t: "الاتصال غير مثبت", bg: "#fbf3e3", fg: "#8a6d1f" },
-      error: { t: "تعذّر الاتصال — سيُطبع عبر المتصفح", bg: "#fdecea", fg: "#a3352a" },
-    };
+    const map: Record<QzStatus, { t: string; bg: string; fg: string }> = dark
+      ? {
+          connected: { t: "الطابعة متصلة", bg: "rgba(46,204,154,.16)", fg: "#66e4b6" },
+          disconnected: { t: "الاتصال غير مثبت", bg: "rgba(232,180,90,.16)", fg: "#e8b45a" },
+          error: { t: "تعذّر الاتصال — سيُطبع عبر المتصفح", bg: "rgba(255,148,64,.16)", fg: "#ffb977" },
+        }
+      : {
+          connected: { t: "الطابعة متصلة", bg: "#e7f4ea", fg: "#1f7a3d" },
+          disconnected: { t: "الاتصال غير مثبت", bg: "#fbf3e3", fg: "#8a6d1f" },
+          error: { t: "تعذّر الاتصال — سيُطبع عبر المتصفح", bg: "#fdecea", fg: "#a3352a" },
+        };
     const c = map[qzConn];
     return (
       <button type="button" onClick={testConnection} title="اختبار اتصال QZ Tray"
@@ -156,7 +164,7 @@ export function PrintTicketButton({ orderId }: { orderId: string }) {
 
   return (
     <div className="kt-no-print" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 12.5, fontWeight: 700, color: "#9b8b7c" }}>عرض الورق:</span>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: dark ? "#9aa7b8" : "#9b8b7c" }}>عرض الورق:</span>
       {pill("58mm", "٥٨ مم")}
       {pill("80mm", "٨٠ مم")}
       {qzEnabled ? chip() : null}
@@ -166,7 +174,10 @@ export function PrintTicketButton({ orderId }: { orderId: string }) {
         disabled={busy}
         style={{
           display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 18px", borderRadius: 10,
-          border: "none", background: "#2a211b", color: "#fff", fontWeight: 800, fontSize: 14,
+          border: "none",
+          // console_v2 dark: the console green-gradient dark-ink CTA; legacy: warm ink.
+          background: dark ? "linear-gradient(135deg,#3fd39b,#0E9F6E)" : "#2a211b",
+          color: dark ? "#062018" : "#fff", fontWeight: 800, fontSize: 14,
           cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, marginInlineStart: "auto",
         }}
       >
