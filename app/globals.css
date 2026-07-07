@@ -201,6 +201,18 @@ body {
   .kv-pulse, .kv-urgent, .kv-skeleton { animation: none !important; }
 }
 
+/* WO-UI-FIX-4 — dark-console skeleton. The GLOBAL .kv-skeleton above stays
+   BYTE-IDENTICAL: Wesaya's LIGHT legacy console (.kv-console / app/(console)/*)
+   needs the near-white shimmer. Inside the .kvx dark scope ONLY, override the
+   gradient to a subtle slate shimmer so skeletons read as dark-glass GATHERING,
+   never glaring white blocks. Specificity (.kvx .kv-skeleton = 0,2,0) beats the
+   global (0,1,0); we override ONLY `background`, so `background-size` +
+   kv-shimmer are inherited, and the reduced-motion `animation: none !important`
+   above still disables the sweep. Still reads as gathering, never as data. */
+.kvx .kv-skeleton {
+  background: linear-gradient(90deg, rgba(148,163,184,.08) 25%, rgba(148,163,184,.16) 37%, rgba(148,163,184,.08) 63%);
+}
+
 /* console_v2 §5 MOTION GRAMMAR (Kivo_Color_System.md §5 — motion is a word).
    Layer-2 only. The ACT-NOW fast pulse (1.2s) is the ONLY fast motion and is
    reserved for awaiting-handoff-over-threshold + safety events — nothing else.
