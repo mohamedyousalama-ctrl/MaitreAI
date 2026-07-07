@@ -125,11 +125,19 @@ export async function handleMoyasarWebhook(
   let matchedBy = "";
   for (const a of attempts) {
     if (!a.val) continue;
-    const { data: row } = await admin
+    const { data: row, error: lookupErr } = await admin
       .from("payment_sessions")
       .select(SESSION_COLS)
       .eq(a.field, a.val)
       .maybeSingle();
+    // FAIL LOUD on a read error (mirrors the dedup read below): a transient read /
+    // RLS / missing-migration fault must NOT masquerade as unknown_session (200), or
+    // Moyasar stops retrying and a real payment is silently lost. 503 → it retries,
+    // the gap stays visible. Only a SUCCESSFUL empty read falls through to swallow.
+    if (lookupErr) {
+      console.error("[moyasar:webhook] session lookup failed — failing loud:", (lookupErr as { message?: string }).message);
+      return { httpStatus: 503, outcome: "retry_later" };
+    }
     if (row) { session = row as SessionRow; matchedBy = a.label; break; }
   }
   if (!session) {

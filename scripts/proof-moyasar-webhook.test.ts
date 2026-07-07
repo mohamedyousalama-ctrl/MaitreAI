@@ -284,6 +284,23 @@ async function run() {
     const r = await handleMoyasarWebhook(makeAdmin(store), paymentBody({ paymentId: "pay_nomatch", invoiceId: "inv_NOPE" }), {}, deps());
     check("payment_paid no matching link → 200 unknown_session (swallowed)", r.httpStatus === 200 && r.outcome === "unknown_session");
   }
+  // (h) session-lookup READ ERROR → fail loud 503 retry_later (CodeRabbit): a transient
+  //     read/RLS/migration fault must NOT masquerade as unknown_session (200), or Moyasar
+  //     stops retrying and a real payment is lost — mirrors the dedup read's fail-loud.
+  {
+    const store = seed();
+    const base = makeAdmin(store);
+    const erroringAdmin = {
+      from: (t: string) => {
+        const q = base.from(t) as Record<string, unknown>;
+        if (t === "payment_sessions") q.maybeSingle = async () => ({ data: null, error: { message: "transient read failure" } });
+        return q;
+      },
+    } as never;
+    const r = await handleMoyasarWebhook(erroringAdmin, paymentBody({ invoiceId: "inv_1" }), {}, deps());
+    check("session lookup error → 503 retry_later (fail loud, NOT unknown_session)", r.httpStatus === 503 && r.outcome === "retry_later");
+    check("session lookup error → order NOT stamped", store.orders[0].payment_status === "unpaid");
+  }
 
   // ---- tenant isolation: order stamp scoped to the session's own tenant ------
   {
