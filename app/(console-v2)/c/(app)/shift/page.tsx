@@ -28,7 +28,10 @@ import {
   derivePosDisplay,
   derivePaymentDisplay,
 } from "@/lib/console-v2/display-state";
-import { StateChip, TruthChip, ActNowDot } from "@/components/console-v2";
+import { StateChip, ActNowDot } from "@/components/console-v2";
+import { HeaderRow, PageGrid, StatTile, SectionHeader, MiniModal, AuroraDrawer, TruthChip } from "@/components/console-v2/kit";
+import { LiveMaps, type HeatPoint } from "@/components/console-v2/shift/LiveMaps";
+import { OrderDetailsModal } from "@/components/console-v2/shift/OrderDetailsModal";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi, Num } from "@/components/kivo";
 import type { LocalOrder, OrderStatusKey, PosStatus } from "@/lib/types";
@@ -58,6 +61,15 @@ export default function LiveShiftPage() {
   const setAssistant = useConsoleOps((s) => s.setAssistant);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseError, setPauseError] = useState(false);
+
+  // Order-details popup (#ovDetails) — the primary row interaction.
+  const [selected, setSelected] = useState<LocalOrder | null>(null);
+  // Pause/resume confirm overlay (#ovPause) — a kill switch confirms before acting.
+  const [pauseConfirm, setPauseConfirm] = useState(false);
+  // Drill/evidence drawer (#ovDrill/#ovEv/#ovLost) — the outcomes-blocked cluster.
+  // Rendered as the DESIGNED aurora drawer in its honest GATHERING state (never a
+  // flat placeholder); lights up when the outcomes ledger (WO-1) lands.
+  const [drillOpen, setDrillOpen] = useState(false);
 
   // Optimistic local layers (realtime reconciles in a configured tenant).
   const [stamped, setStamped] = useState<Set<string>>(new Set());
@@ -90,6 +102,16 @@ export default function LiveShiftPage() {
     // must NOT inflate the sole alarm (they still show in the active list, badged).
     () => orders.filter((o) => !o.isTest && POS_ELIGIBLE.includes(o.orderStatus) && posOf(o) === "not_entered" && !stamped.has(o.id)),
     [orders, stamped]
+  );
+
+  // Order-Heat points — real located-order coordinates (0043 orders.lat/lng),
+  // non-test, non-cancelled. Null coords (WhatsApp / typed-address orders) are
+  // dropped; when none are located the map renders its honest GATHERING state.
+  const heatPoints = useMemo<HeatPoint[]>(
+    () => orders
+      .filter((o) => !o.isTest && o.orderStatus !== "cancelled" && typeof o.lat === "number" && typeof o.lng === "number")
+      .map((o) => ({ lat: o.lat as number, lng: o.lng as number })),
+    [orders]
   );
 
   // Payment mix — PASSIVE, "today" only (the store loads full history), non-test,
@@ -126,31 +148,55 @@ export default function LiveShiftPage() {
     }
   }
 
+  const karimOn = opsLoaded && assistantOn;
+
   return (
-    <div style={{ maxWidth: 1040, margin: "0 auto" }}>
-      {/* Header: title + Karim pause + passive payment-mix chip */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-text)", margin: 0, flex: 1 }}>{t("shift.title")}</h1>
-        <PaymentMixChip codLabel={t("shift.cod")} paidLabel={t("shift.paidCount")} cod={mix.cod} paid={mix.paid} mixLabel={t("shift.paymentMix")} />
-        {isManager && (
-          <PauseControl
-            on={opsLoaded && assistantOn}
-            loading={!opsLoaded}
-            busy={pauseBusy}
-            onToggle={togglePause}
-            activeLabel={t("shift.karimActive")}
-            pausedLabel={t("shift.karimPaused")}
-            loadingLabel={t("shift.karimLoading")}
-            ariaLabel={t("shift.pause")}
-          />
-        )}
-      </div>
+    <>
+      <HeaderRow
+        title={t("shift.title")}
+        right={
+          <>
+            <PaymentMixChip codLabel={t("shift.cod")} paidLabel={t("shift.paidCount")} cod={mix.cod} paid={mix.paid} mixLabel={t("shift.paymentMix")} />
+            {isManager && (
+              <PauseControl
+                on={karimOn}
+                loading={!opsLoaded}
+                busy={pauseBusy}
+                onToggle={() => setPauseConfirm(true)}
+                activeLabel={t("shift.karimActive")}
+                pausedLabel={t("shift.karimPaused")}
+                loadingLabel={t("shift.karimLoading")}
+                ariaLabel={t("shift.pause")}
+              />
+            )}
+          </>
+        }
+      />
       {pauseError && (
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-red)", marginBottom: 14 }}>{t("shift.pauseError")}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--red)", marginBottom: 14 }}>{t("shift.pauseError")}</div>
       )}
 
+      <PageGrid
+        context={
+          <>
+            <SectionHeader tier="blue" icon={<Store size={15} />} title={t("shift.now")} />
+            <Drillable onOpen={() => setDrillOpen(true)}>
+              <StatTile tier="coral" label={t("shift.ctx.handoff")} countUp={awaitingHandoff.length} value={awaitingHandoff.length} fact={t("shift.ctx.handoffFact")} />
+            </Drillable>
+            <Drillable onOpen={() => setDrillOpen(true)}>
+              <StatTile tier="blue" label={t("shift.ctx.active")} countUp={active.length} value={active.length} fact={t("shift.ctx.activeFact")} />
+            </Drillable>
+            <Drillable onOpen={() => setDrillOpen(true)}>
+              <StatTile tier="gold" label={t("shift.ctx.paid")} countUp={mix.paid} value={mix.paid} fact={t("shift.ctx.paidFact")} />
+            </Drillable>
+            <StatTile tier="green" label={t("shift.ctx.karim")} value={karimOn ? t("shift.karimActive") : t("shift.karimPaused")} fact={karimOn ? t("shift.ctx.karimFact") : t("shift.ctx.karimPausedFact")} />
+            <div style={{ fontSize: 10.5, color: "var(--faint)", lineHeight: 1.7, padding: "4px 2px", borderTop: "1px dashed var(--stroke)", marginTop: 4 }}>{t("shift.doctrine")}</div>
+          </>
+        }
+        hero={
+          <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       {/* AWAITING HANDOFF — the only alarm (fast-pulse ACT-NOW dot). */}
-      <section style={{ marginBottom: 22 }}>
+      <section>
         <SectionHead icon={<Store size={16} />} title={t("shift.awaitingHandoff")} count={awaitingHandoff.length} />
         {awaitingHandoff.length === 0 ? (
           <EmptyLine>{t("shift.awaitingHandoffEmpty")}</EmptyLine>
@@ -159,7 +205,7 @@ export default function LiveShiftPage() {
             {awaitingHandoff.map((o) => (
               <div key={o.id} style={{ ...cardStyle, borderInlineStart: "3px solid #e8b45a" }}>
                 <ActNowDot kind="handoff" />
-                <OrderIdentity order={o} test={t("shift.test")} />
+                <OrderIdentity order={o} test={t("shift.test")} onClick={() => setSelected(o)} />
                 <div style={{ flex: 1 }} />
                 <TicketPrintLink id={o.id} enabled={kitchenTicket} />
                 <input
@@ -179,7 +225,7 @@ export default function LiveShiftPage() {
       </section>
 
       {/* Active orders board — every axis via displayState()/derive*(). */}
-      <section style={{ marginBottom: 22 }}>
+      <section>
         <SectionHead title={t("shift.orders")} count={active.length} />
         {!hydrated ? null : active.length === 0 ? (
           <EmptyLine>{t("shift.noOrders")}</EmptyLine>
@@ -187,7 +233,7 @@ export default function LiveShiftPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {active.map((o) => (
               <div key={o.id} style={cardStyle}>
-                <OrderIdentity order={o} test={t("shift.test")} />
+                <OrderIdentity order={o} test={t("shift.test")} onClick={() => setSelected(o)} />
                 <div style={{ flex: 1 }} />
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <StateChip display={deriveOrderDisplay(o.orderStatus)} />
@@ -205,12 +251,68 @@ export default function LiveShiftPage() {
 
       {/* 86 quick action — wired to the audited availability route. */}
       <Eighty6 menuItems={menuItems} setItemAvailability={setItemAvailability} />
+          </div>
+        }
+      />
 
-      {/* Hero + Loss/Ad-sources — GATHERING until 0043 coords + outcomes feed them. */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 14, marginTop: 22 }}>
-        <GatheringPanel title={t("shift.heat")} />
-        <GatheringPanel title={t("shift.lossAds")} />
+      {/* The maps grid (v35 flagship): Order Heat (LIVE from 0043 order coords when
+          located orders exist, else the designed GATHERING map-card) + Losing Orders
+          and Ad Sources as designed GATHERING map-cards until their engines feed them. */}
+      <div style={{ marginTop: 22 }}>
+        <LiveMaps heatPoints={heatPoints} ordersToday={active.length} />
       </div>
+
+      {/* Order details popup (#ovDetails) — opens on an order row. */}
+      <OrderDetailsModal order={selected} onClose={() => setSelected(null)} />
+
+      {/* Pause/resume confirm overlay (#ovPause) — the kill switch confirms first. */}
+      <MiniModal open={pauseConfirm} onClose={() => setPauseConfirm(false)}>
+        <div style={{ padding: "18px 20px" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--txt)", marginBottom: 6 }}>
+            {karimOn ? t("shift.pauseConfirm.title") : t("shift.resumeConfirm.title")}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.6, marginBottom: 16 }}>
+            {karimOn ? t("shift.pauseConfirm.body") : t("shift.resumeConfirm.body")}
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={() => setPauseConfirm(false)} style={{ height: 38, padding: "0 16px", borderRadius: 10, border: "1px solid var(--stroke2)", background: "rgba(255,255,255,.04)", color: "var(--txt)", fontFamily: "var(--kvx-font-ar)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+              {t("shift.cancel")}
+            </button>
+            <button
+              onClick={async () => { setPauseConfirm(false); await togglePause(); }}
+              disabled={pauseBusy}
+              /* pause is an operational kill-switch, NOT a safety event → amber, never red */
+              style={{ height: 38, padding: "0 18px", borderRadius: 10, border: 0, background: karimOn ? "var(--amber)" : "var(--teal)", color: "#062018", fontFamily: "var(--kvx-font-ar)", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}
+            >
+              {karimOn ? t("shift.pauseConfirm.go") : t("shift.resumeConfirm.go")}
+            </button>
+          </div>
+        </div>
+      </MiniModal>
+
+      {/* Drill / evidence drawer (#ovDrill/#ovEv/#ovLost) — the designed aurora drawer
+          in its honest GATHERING state (the outcomes ledger feeds it). */}
+      <AuroraDrawer open={drillOpen} onClose={() => setDrillOpen(false)}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 800, color: "var(--txt)", margin: 0, flex: 1 }}>{t("shift.drill.title")}</h3>
+            <button onClick={() => setDrillOpen(false)} style={{ border: 0, background: "transparent", color: "var(--faint)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{t("shift.od.close")}</button>
+          </div>
+          <div style={{ display: "grid", placeItems: "center", gap: 12, padding: "48px 12px", textAlign: "center" }}>
+            <TruthChip state="gather" />
+            <div style={{ fontSize: 12, color: "var(--dim)", lineHeight: 1.7, maxWidth: 300 }}>{t("shift.drill.gather")}</div>
+          </div>
+        </div>
+      </AuroraDrawer>
+    </>
+  );
+}
+
+/** Wraps a StatTile so clicking it opens the drill/evidence drawer. */
+function Drillable({ onOpen, children }: { onOpen: () => void; children: React.ReactNode }) {
+  return (
+    <div role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }} style={{ cursor: "pointer" }}>
+      {children}
     </div>
   );
 }
@@ -291,9 +393,9 @@ function TicketPrintLink({ id, enabled }: { id: string; enabled: boolean }) {
   );
 }
 
-function OrderIdentity({ order, test }: { order: LocalOrder; test: string }) {
+function OrderIdentity({ order, test, onClick }: { order: LocalOrder; test: string; onClick?: () => void }) {
   return (
-    <div style={{ minWidth: 0 }}>
+    <button type="button" onClick={onClick} style={{ minWidth: 0, border: 0, background: "transparent", padding: 0, cursor: onClick ? "pointer" : "default", textAlign: "start", fontFamily: "var(--kv-font)" }}>
       <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--kv-text)", display: "flex", alignItems: "center", gap: 7 }}>
         <span>#<Num>{order.orderNumber}</Num></span>
         <Bdi>{order.customerName}</Bdi>
@@ -301,7 +403,7 @@ function OrderIdentity({ order, test }: { order: LocalOrder; test: string }) {
           <span style={{ fontSize: 9.5, fontWeight: 800, color: "#7d4fd0", background: "rgba(168,120,240,.16)", borderRadius: 6, padding: "3px 7px" }}>{test}</span>
         )}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -359,19 +461,6 @@ function SectionHead({ icon, title, count }: { icon?: React.ReactNode; title: st
 
 function EmptyLine({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 13, color: "var(--kv-faint)", padding: "14px 4px" }}>{children}</div>;
-}
-
-function GatheringPanel({ title }: { title: string }) {
-  return (
-    <div style={{ border: "1.5px dashed rgba(100,116,139,.28)", borderRadius: "var(--kv-r-md-lg)", background: "var(--kv-card-soft)", padding: 18, minHeight: 120, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: "var(--kv-muted)" }}>{title}</span>
-        <TruthChip state="gathering" />
-      </div>
-      <div className="kv-skeleton" style={{ height: 12, borderRadius: 7, width: "70%" }} />
-      <div className="kv-skeleton" style={{ height: 12, borderRadius: 7, width: "45%" }} />
-    </div>
-  );
 }
 
 const cardStyle: React.CSSProperties = {

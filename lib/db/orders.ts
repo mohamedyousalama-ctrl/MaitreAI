@@ -54,6 +54,8 @@ interface OrderRowJoined extends Record<string, unknown> {
   payment_method: string | null;
   address: string | null;
   zone_id: string | null;
+  lat?: number | null;
+  lng?: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -77,6 +79,11 @@ function mapOrder(r: OrderRowJoined): LocalOrder {
     fulfillmentType: r.fulfillment as FulfillmentKey,
     deliveryAreaId: r.zone_id ?? undefined,
     deliveryAddress: r.address ?? undefined,
+    // DLV6b (0043) — real web-order coordinates for the Order-Heat map. loadOrders
+    // selects "*", so these are absent (→ null) on a DB without the columns / on
+    // WhatsApp + typed-address orders. Only a finite number → numeric.
+    lat: typeof r.lat === "number" ? r.lat : null,
+    lng: typeof r.lng === "number" ? r.lng : null,
     items: Array.isArray(r.items) ? r.items : [],
     subtotal: Number(r.subtotal),
     deliveryFee: Number(r.delivery_fee),
