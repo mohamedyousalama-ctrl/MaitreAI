@@ -27,7 +27,7 @@ import {
   MessageSquare, Flag, Building2, Clock3, Power, Rocket, Pencil,
   Check, AlertTriangle, Clock, Lock, Printer, CreditCard,
 } from "lucide-react";
-import { HeaderRow, TruthChip, type TruthState, type Tier } from "@/components/console-v2/kit";
+import { HeaderRow, PageGrid, MiniModal, TruthChip, type TruthState, type Tier } from "@/components/console-v2/kit";
 import { useConsoleOps } from "@/lib/console-ops-store";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi } from "@/components/kivo";
@@ -104,23 +104,32 @@ export default function SettingsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Canonical console_v2 grid: 84px rail (shell) | 348px context | 1fr hero.
+  // CONTEXT = who-you-are + the emergency control (the design's identity column).
+  // HERO = the operational truth surfaces (truth board, hours, payments, flags,
+  // printer) + the go-live gate. Content is UNCHANGED; only the layout moves from
+  // full-width to rail+context+hero.
+  const context = (
+    <>
+      <Identity identity={identity} onSaved={load} />
+      <Emergency />
+    </>
+  );
+  const hero = (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16, alignItems: "start" }}>
+      <div style={{ gridColumn: "1 / -1" }}><TruthBoard health={health} onReload={load} /></div>
+      <Hours hours={hours} />
+      <FeatureFlags flags={flags} onChanged={load} />
+      <PspCredentials pspFlagOn={flags?.flags?.psp_payments === true} />
+      <QzPrinter qzFlagOn={flags?.flags?.qz_print === true} />
+      <div style={{ gridColumn: "1 / -1" }}><GoLiveGate health={health} /></div>
+    </div>
+  );
+
   return (
     <>
-    <HeaderRow title={t("set.title")} jobLine={t("set.sub")} />
-    <div style={{ maxWidth: 1080, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18, paddingTop: 4 }}>
-      <TruthBoard health={health} onReload={load} />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18, alignItems: "start" }}>
-        <FeatureFlags flags={flags} onChanged={load} />
-        <Identity identity={identity} onSaved={load} />
-        <Hours hours={hours} />
-        <PspCredentials pspFlagOn={flags?.flags?.psp_payments === true} />
-        <QzPrinter qzFlagOn={flags?.flags?.qz_print === true} />
-        <Emergency />
-      </div>
-
-      <GoLiveGate health={health} />
-    </div>
+      <HeaderRow title={t("set.title")} jobLine={t("set.sub")} />
+      <PageGrid context={context} hero={hero} />
     </>
   );
 }
@@ -152,16 +161,17 @@ function TruthBoard({ health, onReload }: { health: HealthResp | null; onReload:
       </SectionHead>
 
       {probes.length === 0 ? (
-        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}>
-          <span style={{ fontSize: 12.5, color: "var(--kv-faint)" }}>{t("set.loadError")}</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, flexWrap: "wrap", padding: "8px 0" }}>
+          <span style={{ fontSize: 12.5, color: "var(--faint)" }}>{t("set.loadError")}</span>
+          <button onClick={() => void onReload()} style={retryBtn}>↻ {t("set.retry")}</button>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(232px,1fr))", gap: 6 }}>
           {probes.map((p) => (
             <div key={p.id} style={probeRow}>
               <ProbeGlyph status={p.status} />
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--kv-text)", flex: 1 }}>{t(PROBE_LABEL[p.id])}</span>
-              <span style={{ ...pill, ...PROBE_TONE[p.status], fontSize: 10 }}>{t(PROBE_STATUS_LABEL[p.status])}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--txt)", flex: 1 }}>{t(PROBE_LABEL[p.id])}</span>
+              <span style={{ ...pill, ...PROBE_TONE[p.status], fontSize: 9.5 }}>{t(PROBE_STATUS_LABEL[p.status])}</span>
             </div>
           ))}
         </div>
@@ -209,18 +219,20 @@ function RoundTrip({ onDone, disabled }: { onDone: () => Promise<void>; disabled
     }
   }
 
+  // Compact test-console module — a distinct bordered block so the test surface
+  // reads as intentional, not empty space.
   return (
-    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{ marginTop: 12, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "11px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <input
           value={to} onChange={(e) => setTo(e.target.value)} dir="ltr"
           placeholder={t("set.wa.roundtripTo")}
-          style={{ height: 34, width: 200, borderRadius: "var(--kv-r-md-sm)", border: "1.5px solid var(--kv-border)", background: "var(--kv-card-soft)", padding: "0 10px", fontSize: 12.5, fontFamily: "var(--kv-font)", color: "var(--kv-text)" }}
+          style={{ height: 34, flex: 1, minWidth: 150, borderRadius: 10, border: "1px solid var(--stroke2)", background: "var(--inset)", padding: "0 11px", fontSize: 12.5, fontFamily: "var(--kvx-font-ar)", color: "var(--txt)" }}
         />
         <button onClick={run} disabled={busy || disabled} style={{ ...primaryBtn, opacity: busy || disabled ? 0.5 : 1 }}>{t("set.wa.roundtrip")}</button>
       </div>
-      <span style={{ fontSize: 11.5, color: "var(--kv-faint)", lineHeight: 1.6 }}>{t("set.wa.roundtripSub")}</span>
-      {msg && <span style={{ fontSize: 12.5, fontWeight: 700, color: msg.tone === "ok" ? "var(--kv-deep)" : "var(--kv-amber)" }}>{t(msg.key)}</span>}
+      <span style={{ fontSize: 11, color: "var(--faint)", lineHeight: 1.55 }}>{t("set.wa.roundtripSub")}</span>
+      {msg && <span style={{ fontSize: 12, fontWeight: 700, color: msg.tone === "ok" ? "#8ce8cc" : "#ffcf8d" }}>{t(msg.key)}</span>}
     </div>
   );
 }
@@ -240,9 +252,10 @@ function FeatureFlags({ flags, onChanged }: { flags: FlagsResp | null; onChanged
     return (
       <section style={card}>
         <SectionHead icon={<Flag size={16} />} title={t("set.flags.title")} sub={t("set.flags.sub")} />
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <TruthChip state="gather" />
-          <span style={{ fontSize: 12.5, color: "var(--kv-faint)" }}>{t("set.loadError")}</span>
+          <span style={{ fontSize: 12.5, color: "var(--faint)" }}>{t("set.loadError")}</span>
+          <button onClick={() => void onChanged()} style={retryBtn}>↻ {t("set.retry")}</button>
         </div>
       </section>
     );
@@ -456,6 +469,7 @@ function Emergency() {
   const setAssistant = useConsoleOps((s) => s.setAssistant);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   async function toggle() {
     if (busy || !loaded) return;
@@ -464,20 +478,44 @@ function Emergency() {
     if (!res.ok) setErr(true);
     setBusy(false);
   }
+  // Pausing (stopping the agent) asks for confirmation first — prevents an
+  // accidental stop. Resuming is restorative and needs no gate.
+  function onButton() {
+    if (busy || !loaded) return;
+    if (assistantOn) setConfirmOpen(true);
+    else void toggle();
+  }
+  async function confirmStop() {
+    setConfirmOpen(false);
+    await toggle();
+  }
 
   return (
     <section style={{ ...card, background: "rgba(232,180,90,.06)", border: "1px solid rgba(232,180,90,.35)" }}>
       <SectionHead icon={<Power size={16} />} title={t("set.emergency.title")} sub={t("set.emergency.sub")} tone="#b9822a" />
-      <p style={{ fontSize: 12, color: "var(--kv-muted)", lineHeight: 1.7, margin: "0 0 12px" }}>{t("set.emergency.body")}</p>
+      <p style={{ fontSize: 12, color: "var(--dim)", lineHeight: 1.7, margin: "0 0 12px" }}>{t("set.emergency.body")}</p>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={toggle} disabled={busy || !loaded} style={{ ...amberBtn, opacity: busy || !loaded ? 0.5 : 1 }}>
+        <button onClick={onButton} disabled={busy || !loaded} style={{ ...amberBtn, opacity: busy || !loaded ? 0.5 : 1 }}>
           {assistantOn ? t("set.emergency.pause") : t("set.emergency.resume")}
         </button>
-        <span style={{ fontSize: 12, fontWeight: 800, color: assistantOn ? "var(--kv-muted)" : "#b9822a" }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: assistantOn ? "var(--dim)" : "#ffcf8d" }}>
           {!loaded ? "…" : assistantOn ? t("set.emergency.active") : t("set.emergency.paused")}
         </span>
       </div>
-      {err && <span style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-amber)", marginTop: 8, display: "block" }}>{t("set.emergency.error")}</span>}
+      {err && <span style={{ fontSize: 12, fontWeight: 700, color: "#ffcf8d", marginTop: 8, display: "block" }}>{t("set.emergency.error")}</span>}
+
+      {/* Confirm-stop modal — AMBER (operational), NOT red. Prevents accidental stops. */}
+      <MiniModal open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <span style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(232,180,90,.16)", color: "#ffcf8d", display: "grid", placeItems: "center", flex: "none" }}><Power size={16} /></span>
+          <h2 style={{ fontSize: 15, fontWeight: 800, color: "var(--txt)", margin: 0 }}>{t("set.emergency.confirmTitle")}</h2>
+        </div>
+        <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.7, margin: "0 0 16px" }}>{t("set.emergency.confirmBody")}</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => void confirmStop()} disabled={busy} style={{ ...amberBtn, flex: 1, opacity: busy ? 0.5 : 1 }}>{t("set.emergency.confirmYes")}</button>
+          <button onClick={() => setConfirmOpen(false)} disabled={busy} style={ghostBtn}>{t("set.emergency.confirmNo")}</button>
+        </div>
+      </MiniModal>
     </section>
   );
 }
@@ -489,32 +527,54 @@ function Emergency() {
 function GoLiveGate({ health }: { health: HealthResp | null }) {
   const t = useT();
   const rollup = health?.rollup ?? null;
+  // Only the WhatsApp check is wired to a real rollup; the rest are SOON.
+  const waTone: RowTone = rollup === "pass" ? "ready" : rollup === "fail" ? "action" : "pending";
 
   return (
     <section style={card}>
-      <SectionHead icon={<Rocket size={16} />} title={t("set.gate.title")} />
-      <p style={{ fontSize: 12.5, color: "var(--kv-muted)", lineHeight: 1.7, margin: "0 0 14px" }}>{t("set.gate.note")}</p>
+      <SectionHead icon={<Rocket size={16} />} title={t("set.gate.title")} tier="green" />
+      <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.7, margin: "0 0 14px" }}>{t("set.gate.note")}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <GateRow label={t("set.gate.wa")}>
+        <GateRow tone={waTone} label={t("set.gate.wa")} exp={t("set.gate.wa.exp")}>
           {rollup == null ? <TruthChip state="gather" />
             : rollup === "pass" ? <span style={{ ...pill, ...PROBE_TONE.pass }}><Check size={12} strokeWidth={3} /> {t("set.probe.pass")}</span>
             : rollup === "fail" ? <TruthChip state="degraded" />
             : <TruthChip state="gather" />}
         </GateRow>
-        {/* Not wired — rendered SOON, never a fabricated «passed / 47 items / 25 zones». */}
-        <GateRow label={t("set.gate.allergy")}><TruthChip state="soon" /></GateRow>
-        <GateRow label={t("set.gate.menu")}><TruthChip state="soon" /></GateRow>
-        <GateRow label={t("set.gate.zones")}><TruthChip state="soon" /></GateRow>
+        {/* Not wired — rendered SOON, never a fabricated «passed / 47 items / 25 zones».
+            The allergy row carries the SAFETY tone (it is a safety gate), but its
+            console surface is honestly SOON. */}
+        <GateRow tone="safety" label={t("set.gate.allergy")} exp={t("set.gate.allergy.exp")}><TruthChip state="soon" /></GateRow>
+        <GateRow tone="pending" label={t("set.gate.menu")} exp={t("set.gate.menu.exp")}><TruthChip state="soon" /></GateRow>
+        <GateRow tone="pending" label={t("set.gate.zones")} exp={t("set.gate.zones.exp")}><TruthChip state="soon" /></GateRow>
       </div>
-      <p style={{ fontSize: 11.5, color: "#b9822a", lineHeight: 1.7, margin: "14px 0 0", fontWeight: 700 }}>{t("set.gate.warn")}</p>
+      {/* The safety line — verbatim. Red is a SAFETY use here (the allergy gate). */}
+      <div style={{ display: "flex", gap: 9, alignItems: "flex-start", marginTop: 14, padding: "11px 13px", background: "rgba(255,107,94,.06)", border: "1px solid rgba(255,107,94,.28)", borderRadius: 12 }}>
+        <AlertTriangle size={15} style={{ color: "#ffb3a8", flex: "none", marginTop: 1 }} />
+        <p style={{ fontSize: 11.5, color: "#ffb3a8", lineHeight: 1.7, margin: 0, fontWeight: 700 }}>{t("set.gate.warn")}</p>
+      </div>
     </section>
   );
 }
 
-function GateRow({ label, children }: { label: string; children: React.ReactNode }) {
+type RowTone = "ready" | "action" | "pending" | "safety";
+// Status-color discipline: green=ready · amber=needs-action · slate=pending ·
+// red=safety-only (the allergy gate). Never a new palette.
+const ROW_TONE: Record<RowTone, { fg: string; bg: string; icon: React.ReactNode }> = {
+  ready: { fg: "#8ce8cc", bg: "rgba(46,204,154,.14)", icon: <Check size={13} strokeWidth={3} /> },
+  action: { fg: "#ffcf8d", bg: "rgba(232,180,90,.16)", icon: <AlertTriangle size={13} strokeWidth={2.5} /> },
+  pending: { fg: "var(--dim)", bg: "rgba(255,255,255,.06)", icon: <Clock size={13} strokeWidth={2.5} /> },
+  safety: { fg: "#ffb3a8", bg: "rgba(255,107,94,.12)", icon: <Lock size={12} strokeWidth={2.6} /> },
+};
+function GateRow({ tone, label, exp, children }: { tone: RowTone; label: string; exp: string; children: React.ReactNode }) {
+  const c = ROW_TONE[tone];
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--kv-card-soft)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md)", padding: "10px 13px" }}>
-      <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--kv-text)", flex: 1 }}>{label}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 11, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "10px 13px" }}>
+      <span style={{ width: 22, height: 22, borderRadius: 7, background: c.bg, color: c.fg, display: "grid", placeItems: "center", flex: "none" }}>{c.icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--txt)" }}>{label}</div>
+        <div style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 1, lineHeight: 1.5 }}>{exp}</div>
+      </div>
       {children}
     </div>
   );
@@ -816,6 +876,12 @@ const ghostBtn: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", borderRadius: 12,
   border: "1px solid var(--stroke2)", background: "rgba(255,255,255,.05)", color: "var(--dim)", fontFamily: "var(--kvx-font-ar)",
   fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+};
+// Retry CTA — makes an honest load-failed state actionable (re-runs the fetch).
+const retryBtn: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 5, height: 30, padding: "0 12px", borderRadius: 999,
+  border: "1px solid rgba(75,139,255,.4)", background: "rgba(75,139,255,.1)", color: "#a9d4ff", fontFamily: "var(--kvx-font-ar)",
+  fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
 };
 const input: React.CSSProperties = {
   height: 36, borderRadius: 12, border: "1px solid var(--stroke2)",

@@ -389,6 +389,15 @@ export const DICTIONARY = {
     "set.gate.menu": "المنيو منشور والأسعار متحقَّقة",
     "set.gate.zones": "المناطق والرسوم فعّالة",
     "set.gate.warn": "البوابة ترفض حتى ينجح اختبار الحساسية — بلا استثناء، ولا حتى للمؤسِّس.",
+    "set.retry": "إعادة المحاولة",
+    "set.gate.wa.exp": "ثماني حقائق مُثبَتة على حدة — لا يُسمّى متصلًا حتى تنجح كلها.",
+    "set.gate.allergy.exp": "يعمل على منيو هذا المطعم بالذات — قانون سلامة، لا استثناء.",
+    "set.gate.menu.exp": "الوكيل يقتبس فقط أصنافًا وأسعارًا منشورة.",
+    "set.gate.zones.exp": "رسوم التوصيل تُقتبَس حسب المنطقة، لا من نص العنوان.",
+    "set.emergency.confirmTitle": "تأكيد إيقاف الوكيل",
+    "set.emergency.confirmBody": "سيتوقف كريم عن الرد فورًا؛ يصل العملاء رسالة بديلة ويُنبَّه الفريق. قابل للتراجع بضغطة، ومُدقَّق باسمك.",
+    "set.emergency.confirmYes": "نعم، أوقِف الوكيل",
+    "set.emergency.confirmNo": "إلغاء",
     // Knowledge (item 9) — the Three-Tier Editing Law. INSTANT wired · GATED → signing
     // folder (SOON) · LOCKED view-only. All reads real; standing rules honest GATHERING.
     "kn.title": "المعرفة",
@@ -1265,6 +1274,15 @@ export const DICTIONARY = {
     "set.gate.menu": "Menu published & prices verified",
     "set.gate.zones": "Zones & fees active",
     "set.gate.warn": "The gate refuses until the allergy test passes — no exceptions, not even for the founder.",
+    "set.retry": "Retry",
+    "set.gate.wa.exp": "Eight truths proven separately — never called connected until all pass.",
+    "set.gate.allergy.exp": "Runs on this tenant’s exact menu — a safety law, no exception.",
+    "set.gate.menu.exp": "The agent quotes only published items and prices.",
+    "set.gate.zones.exp": "Delivery fees are quoted by zone, never parsed from an address.",
+    "set.emergency.confirmTitle": "Confirm agent stop",
+    "set.emergency.confirmBody": "Karim stops replying immediately; customers get the fallback message and the team is alerted. Reversible in one tap, and audited under your name.",
+    "set.emergency.confirmYes": "Yes, stop the agent",
+    "set.emergency.confirmNo": "Cancel",
     // Knowledge (item 9) — the Three-Tier Editing Law. INSTANT wired · GATED → signing
     // folder (SOON) · LOCKED view-only. All reads real; standing rules honest GATHERING.
     "kn.title": "Knowledge",
