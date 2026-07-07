@@ -1,32 +1,39 @@
 "use client";
 
 // ============================================================================
-// console_v2 item 12 — Insights. "The money story — never a fake metric." A strict
-// TRI-STATE page: LIVE (a real aggregate) · GATHERING (real metric, no basis yet) ·
-// SOON (engine unbuilt). Carved-in rules:
+// console_v2 item 12 — Insights (v35 dark-glass rebuild). "The money story —
+// never a fake metric." Presentation rebuilt onto the shared kit; the truth
+// logic is UNCHANGED from the shipped page — a strict tri-state surface:
+// LIVE (a real aggregate) · GATHERING (real metric, no basis yet) · SOON (engine
+// unbuilt). Carved-in rules, all preserved:
 //
-//  1) TREND deltas render ONLY with two comparable periods, ALWAYS with baseline text
-//     («vs last week» …). pctDelta() returns null when the prior window has no basis →
-//     no trend shown. A colored trend without a baseline is a defect — never emitted.
-//  2) COMMISSION HERO stays GATHERING: no aggregator-rate config exists anywhere, and
-//     a rate is never assumed. (When rates are entered it will carry «per the entered
-//     rates» — the label is reserved here.)
-//  3) EVERY LIVE number is a real order aggregate over DB_READY data. In DEMO/loading
-//     the store holds seed data → the LIVE cards render GATHERING, never seed-as-real
-//     (the L1 data-truth law). Zero orders in a real window is a TRUE zero (shown);
-//     unloaded data is GATHERING — different truths.
-//  4) DO-NEXT = SOON: the Brain proposes, it never acts; its proposals route to
-//     Approvals — nothing else. The decision layer isn't built → SOON.
-//  5) GATHERING is NEVER colored (existing law) — slate chip, skeleton, no number.
+//  1) TREND deltas render ONLY with two comparable periods, ALWAYS with baseline
+//     text. pctDelta() returns null with no prior basis → no trend shown. A
+//     colored trend without a baseline is a defect. Down-trend floors at coral,
+//     NEVER red (red = safety only).
+//  2) MARGIN HERO stays GATHERING: no aggregator-rate config exists, a rate is
+//     never assumed.
+//  3) EVERY LIVE number is a real order aggregate over DB_READY data. In DEMO/
+//     loading the store holds seed data → LIVE cards render GATHERING, never
+//     seed-as-real (the L1 data-truth law). A true zero is shown; unloaded is
+//     GATHERING — different truths.
+//  4) FUNNEL / KARIM performance need the outcomes table (flag-OFF) → rendered as
+//     the FULL designed component in its GATHERING state (shimmer chrome, honest
+//     copy), never a flat placeholder, never a fabricated rate.
+//  5) DO-NEXT = SOON: the Brain proposes, it never acts; the decision layer isn't
+//     built → SOON panel with honest copy.
+//  6) SCOPE: no "late deliveries" card (delivery is out of scope) — ops shows COD
+//     share + completion (real) + kitchen misses (GATHERING).
 //
 // Money aggregates come from the pure, unit-tested lib/insights/order-kpis. Order
-// sources come from the real GET /api/insights/order-sources. Everything outcomes-
-// derived (funnel, conversion, repeat) is GATHERING (outcomes table flag-OFF, 0 rows).
+// sources come from the real GET /api/insights/order-sources.
 // ============================================================================
 
 import { useEffect, useMemo, useState } from "react";
 import { Wallet, Bot, Cog, TrendingUp, Radio, GitBranch, Lightbulb } from "lucide-react";
-import { TruthChip } from "@/components/console-v2";
+import {
+  HeaderRow, SectionHeader, Panel, TruthChip, Toasts, pushToast, type Tier,
+} from "@/components/console-v2/kit";
 import { useOrderStore } from "@/lib/order-store";
 import { useRestaurantStore } from "@/lib/store";
 import { useConsoleDataStore } from "@/lib/console-data-state";
@@ -62,184 +69,257 @@ export default function InsightsPage() {
     return () => { alive = false; };
   }, []);
 
-  const money = (n: number) => <span><Num>{Math.round(n).toLocaleString("en-US")}</Num> <span style={{ fontSize: 11, color: "var(--kv-muted)" }}>{currency}</span></span>;
-  const pct = (n: number) => <span><Num>{Math.round(n * 100)}</Num><span style={{ fontSize: 12, color: "var(--kv-muted)" }}>%</span></span>;
-  // A LIVE card only when the data is real; otherwise honest GATHERING (rule 3).
-  const live = (valueNode: React.ReactNode, delta: number | null, accent: string) =>
-    isReal ? { kind: "live" as const, valueNode, delta, accent } : { kind: "gather" as const, msg: "ins.gather.outcomes" as DictKey };
+  const money = (n: number) => <span><Num>{Math.round(n).toLocaleString("en-US")}</Num> <span style={{ fontSize: 11, color: "var(--dim)" }}>{currency}</span></span>;
+  const pct = (n: number) => <span><Num>{Math.round(n * 100)}</Num><span style={{ fontSize: 12, color: "var(--dim)" }}>%</span></span>;
   const baseKey = RANGE_BASE[range];
+  // A LIVE card only when the data is real; otherwise honest GATHERING (rule 3).
+  const live = (valueNode: React.ReactNode, delta: number | null, tier: Tier): CardModel =>
+    isReal ? { kind: "live", valueNode, delta, tier } : { kind: "gather", msg: "ins.gather.outcomes" };
 
   return (
-    <div style={{ maxWidth: 1040, margin: "0 auto", display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Header + range */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-text)", margin: "0 0 6px" }}>{t("ins.title")}</h1>
-          <p style={{ fontSize: 13, color: "var(--kv-muted)", margin: 0, lineHeight: 1.7 }}>{t("ins.sub")} · <span style={{ fontSize: 11.5 }}>{t("ins.exclTest")}</span></p>
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {(["today", "week", "month"] as Range[]).map((r) => (
-            <button key={r} onClick={() => setRange(r)} aria-pressed={range === r}
-              style={{ height: 32, padding: "0 13px", borderRadius: "var(--kv-r-pill)", border: range === r ? 0 : "1px solid var(--kv-border)", background: range === r ? "var(--kv-grad-brand)" : "var(--kv-card)", color: range === r ? "#fff" : "var(--kv-muted)", fontFamily: "var(--kv-font)", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-              {t(`ins.range.${r}` as DictKey)}
+    <>
+      <HeaderRow
+        title={t("ins.title")}
+        jobLine={<>{t("ins.sub")} · {t("ins.exclTest")}</>}
+        right={
+          <>
+            <div style={{ display: "flex", gap: 3, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 11, padding: 3 }}>
+              {(["today", "week", "month"] as Range[]).map((r) => (
+                <button key={r} onClick={() => setRange(r)} aria-pressed={range === r}
+                  style={{ height: 28, padding: "0 12px", borderRadius: 8, border: 0, cursor: "pointer", fontFamily: "var(--kvx-font-ui)", fontSize: 11, fontWeight: 800,
+                    background: range === r ? "linear-gradient(135deg,#12b57e,#0E9F6E)" : "transparent",
+                    color: range === r ? "#fff" : "var(--dim)" }}>
+                  {t(`ins.range.${r}` as DictKey)}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => pushToast(t("ins.export"), "blue")}
+              style={{ height: 34, padding: "0 13px", borderRadius: 11, border: "1px solid var(--stroke2)", background: "rgba(255,255,255,.05)", color: "var(--dim)", fontFamily: "var(--kvx-font-ui)", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
+              {t("ins.export")}
             </button>
-          ))}
+          </>
+        }
+      />
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingBottom: 8 }}>
+        {/* ── THE MONEY STORY ─────────────────────────────────────────── */}
+        <SectionHeader tier="gold" icon={<Wallet size={15} />} title={t("ins.sec.money")} />
+        {/* Hero — commission/margin recovered: no rate config anywhere → GATHERING (rule 2). */}
+        <MarginHero title={t("ins.hero.title")} sub={t("ins.hero.sub")} msg={t("ins.hero.gathering")} chip={<TruthChip state="gather" />} />
+        <Grid>
+          <KpiCard title={t("ins.revenue")} model={live(money(ins.current.revenue), pctDelta(ins.current.revenue, ins.prior.revenue), "gold")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
+          <KpiCard title={t("ins.orders")} model={live(<Num>{ins.current.orders}</Num>, pctDelta(ins.current.orders, ins.prior.orders), "blue")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
+          <KpiCard title={t("ins.aov")} model={live(money(ins.current.aov), pctDelta(ins.current.aov, ins.prior.aov), "green")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
+        </Grid>
+
+        {/* ── THE FUNNEL — chat to order (needs outcomes → GATHERING shell) ─ */}
+        <SectionHeader tier="blue" icon={<GitBranch size={15} />} title={t("ins.sec.funnel")} right={<TruthChip state="gather" />} />
+        <FunnelShell
+          stages={[t("ins.funnel.convos"), t("ins.funnel.intent"), t("ins.funnel.quoted"), t("ins.funnel.ordered")]}
+          note={t("ins.funnel.gather")}
+        />
+
+        {/* ── KARIM'S PERFORMANCE (needs outcomes → GATHERING tiles) ────── */}
+        <SectionHeader tier="blue" icon={<Bot size={15} />} title={t("ins.sec.karim")} right={<TruthChip state="gather" />} />
+        <Grid n={4}>
+          <GatherTile title={t("ins.karim.handled")} />
+          <GatherTile title={t("ins.karim.escalated")} />
+          <GatherTile title={t("ins.karim.holds")} />
+          <GatherTile title={t("ins.karim.reply")} />
+        </Grid>
+        <Hint>{t("ins.karim.gather")}</Hint>
+
+        {/* ── OPERATIONS (COD + completion real; misses GATHERING) ──────── */}
+        <SectionHeader tier="green" icon={<Cog size={15} />} title={t("ins.sec.ops")} />
+        <Grid>
+          <KpiCard title={t("ins.cod")} model={live(pct(ins.current.codShare), null, "green")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
+          <KpiCard title={t("ins.completion")} model={live(pct(ins.current.completionRate), null, "green")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
+          <KpiCard title={t("ins.misses")} model={{ kind: "gather", msg: "ins.gather.timing" }} baseKey={baseKey} priorHasData={ins.prior.hasData} />
+        </Grid>
+
+        {/* ── GROWTH (top item real; repeat GATHERING; redeem SOON) ─────── */}
+        <SectionHeader tier="gold" icon={<TrendingUp size={15} />} title={t("ins.sec.growth")} />
+        <Grid>
+          {isReal && ins.current.topItem ? (
+            <div style={cardStyle}>
+              <CardHead title={t("ins.topItem")} tier="gold" right={<TruthChip state="live" />} />
+              <div style={{ fontSize: 17, fontWeight: 800, color: "var(--gold)", fontFamily: "var(--kvx-font-ar)" }}><Bdi>{ins.current.topItem.name}</Bdi></div>
+              <div style={{ fontSize: 11, color: "var(--dim)", marginTop: 4 }}>{money(ins.current.topItem.revenue)} · {t("ins.byRevenue")}</div>
+            </div>
+          ) : <KpiCard title={t("ins.topItem")} model={{ kind: "gather", msg: "ins.gather.outcomes" }} baseKey={baseKey} priorHasData={ins.prior.hasData} />}
+          <KpiCard title={t("ins.repeat")} model={{ kind: "gather", msg: "ins.gather.periods" }} baseKey={baseKey} priorHasData={ins.prior.hasData} />
+          <SoonCard title={t("ins.redeem")} msg={t("ins.soon.campaigns")} />
+        </Grid>
+
+        {/* ── ORDER SOURCES — real server aggregate ─────────────────────── */}
+        <SectionHeader tier="blue" icon={<Radio size={15} />} title={t("ins.sec.sources")} right={sources && sources.total > 0 ? <TruthChip state="live" /> : undefined} />
+        {sourcesErr || sources === null ? (
+          <GatherPanel msg={sourcesErr ? t("ins.loadError") : ""} />
+        ) : sources.total === 0 ? (
+          <Panel><div style={{ fontSize: 12.5, color: "var(--faint)" }}>{t("ins.sources.empty")}</div></Panel>
+        ) : (
+          <Panel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              <SourceBar label={t("ins.sources.whatsapp")} n={sources.whatsapp} total={sources.total} color="var(--g-green)" />
+              <SourceBar label={t("ins.sources.web")} n={sources.web} total={sources.total} color="var(--g-blue)" />
+              {sources.unknown > 0 && <SourceBar label={t("ins.sources.unknown")} n={sources.unknown} total={sources.total} color="rgba(255,255,255,.22)" />}
+            </div>
+          </Panel>
+        )}
+
+        {/* ── DO NEXT — Brain proposes, never acts → SOON ───────────────── */}
+        <SectionHeader tier="violet" icon={<Lightbulb size={15} />} title={t("ins.sec.donext")} right={<TruthChip state="soon" />} />
+        <div style={{ ...cardStyle, background: "linear-gradient(150deg,rgba(168,120,240,.12),transparent 60%),var(--inset)", border: "1px solid rgba(168,120,240,.3)" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--txt)", marginBottom: 6 }}>{t("ins.donext.title")}</div>
+          <div style={{ fontSize: 11.5, color: "var(--faint)", lineHeight: 1.65 }}>{t("ins.donext.soon")}</div>
         </div>
       </div>
-
-      {/* THE MONEY STORY */}
-      <SectionLabel icon={<Wallet size={14} />}>{t("ins.sec.money")}</SectionLabel>
-      {/* Hero — commission saved: no rate config anywhere → GATHERING (rule 2). */}
-      <GatheringCard title={t("ins.hero.title")} sub={t("ins.hero.sub")} msg={t("ins.hero.gathering")} big />
-      <Grid>
-        <Card title={t("ins.revenue")} card={live(money(ins.current.revenue), pctDelta(ins.current.revenue, ins.prior.revenue), "#c58b1f")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
-        <Card title={t("ins.orders")} card={live(<Num>{ins.current.orders}</Num>, pctDelta(ins.current.orders, ins.prior.orders), "#3f7fe0")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
-        <Card title={t("ins.aov")} card={live(money(ins.current.aov), pctDelta(ins.current.aov, ins.prior.aov), "#0A8A5F")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
-      </Grid>
-
-      {/* KARIM — needs the outcomes/intelligence layer (flag-OFF) → GATHERING. */}
-      <SectionLabel icon={<Bot size={14} />}>{t("ins.sec.karim")}</SectionLabel>
-      <GatheringCard title={t("ins.karim.title")} msg={t("ins.gather.outcomes")} />
-
-      {/* OPERATIONS */}
-      <SectionLabel icon={<Cog size={14} />}>{t("ins.sec.ops")}</SectionLabel>
-      <Grid>
-        <Card title={t("ins.cod")} card={live(pct(ins.current.codShare), null, "#6b7688")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
-        <Card title={t("ins.completion")} card={live(pct(ins.current.completionRate), null, "#0A8A5F")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
-        <GatheringCard title={t("ins.misses")} msg={t("ins.gather.timing")} />
-      </Grid>
-
-      {/* GROWTH */}
-      <SectionLabel icon={<TrendingUp size={14} />}>{t("ins.sec.growth")}</SectionLabel>
-      <Grid>
-        {isReal && ins.current.topItem ? (
-          <div style={cardStyle}>
-            <CardHead title={t("ins.topItem")} accent="#c58b1f" live={t("ins.live")} />
-            <div style={{ fontSize: 17, fontWeight: 800, color: "#c58b1f", fontFamily: "var(--kv-font)" }}><Bdi>{ins.current.topItem.name}</Bdi></div>
-            <div style={{ fontSize: 11, color: "var(--kv-muted)", marginTop: 4 }}>{money(ins.current.topItem.revenue)} · {t("ins.byRevenue")}</div>
-          </div>
-        ) : <GatheringCard title={t("ins.topItem")} msg={t("ins.gather.outcomes")} />}
-        <GatheringCard title={t("ins.repeat")} msg={t("ins.gather.periods")} />
-        <SoonCard title={t("ins.redeem")} msg={t("ins.soon.campaigns")} />
-      </Grid>
-
-      {/* ORDER SOURCES — real server aggregate. */}
-      <SectionLabel icon={<Radio size={14} />}>{t("ins.sec.sources")}</SectionLabel>
-      {sourcesErr || sources === null ? (
-        <GatheringCard title={t("ins.sec.sources")} msg={sourcesErr ? t("ins.loadError") : ""} />
-      ) : sources.total === 0 ? (
-        <div style={cardStyle}><div style={{ fontSize: 12.5, color: "var(--kv-faint)" }}>{t("ins.sources.empty")}</div></div>
-      ) : (
-        <div style={cardStyle}>
-          <CardHead title={t("ins.sec.sources")} accent="#3f7fe0" live={t("ins.live")} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-            <SourceBar label={t("ins.sources.whatsapp")} n={sources.whatsapp} total={sources.total} color="#0E9F6E" />
-            <SourceBar label={t("ins.sources.web")} n={sources.web} total={sources.total} color="#4b8bff" />
-            {sources.unknown > 0 && <SourceBar label={t("ins.sources.unknown")} n={sources.unknown} total={sources.total} color="#9aa7b8" />}
-          </div>
-        </div>
-      )}
-
-      {/* FUNNEL — needs outcomes for the middle stages → GATHERING. */}
-      <SectionLabel icon={<GitBranch size={14} />}>{t("ins.sec.funnel")}</SectionLabel>
-      <GatheringCard title={t("ins.sec.funnel")} msg={t("ins.gather.outcomes")} />
-
-      {/* DO NEXT — Brain proposes, never acts → SOON. */}
-      <SectionLabel icon={<Lightbulb size={14} />}>{t("ins.sec.donext")}</SectionLabel>
-      <SoonCard title={t("ins.donext.title")} msg={t("ins.donext.soon")} />
-    </div>
+      <Toasts />
+    </>
   );
 }
 
 // ---------------------------------------------------------------------------
 type CardModel =
-  | { kind: "live"; valueNode: React.ReactNode; delta: number | null; accent: string }
+  | { kind: "live"; valueNode: React.ReactNode; delta: number | null; tier: Tier }
   | { kind: "gather"; msg: DictKey };
 
-function Card({ title, card, baseKey, priorHasData }: { title: string; card: CardModel; baseKey: DictKey; priorHasData: boolean }) {
+const TIER_COLOR: Record<Tier, string> = {
+  gold: "var(--gold)", green: "#7ce8c0", blue: "#a9d4ff", coral: "var(--coral)", violet: "#d4bcff",
+};
+
+function KpiCard({ title, model, baseKey, priorHasData }: { title: string; model: CardModel; baseKey: DictKey; priorHasData: boolean }) {
   const t = useT();
-  if (card.kind === "gather") return <GatheringCard title={title} msg={t(card.msg)} />;
+  if (model.kind === "gather") {
+    return (
+      <div style={cardStyle}>
+        <CardHead title={title} right={<TruthChip state="gather" />} />
+        <div className="kv-skeleton" style={{ height: 20, borderRadius: 8, width: "45%", margin: "2px 0 8px" }} />
+        <div style={{ fontSize: 11, color: "var(--faint)", lineHeight: 1.6 }}>{t(model.msg)}</div>
+      </div>
+    );
+  }
   return (
     <div style={cardStyle}>
-      <CardHead title={title} accent={card.accent} live={t("ins.live")} />
-      <div style={{ fontSize: 22, fontWeight: 800, color: card.accent }}>{card.valueNode}</div>
-      {/* Rule 1: a trend is shown ONLY with two comparable periods (delta ≠ null AND a
-          real prior basis), ALWAYS with its baseline text. */}
-      {card.delta !== null && priorHasData ? <Trend delta={card.delta} baseline={t(baseKey)} /> : <div style={{ height: 16 }} />}
+      <CardHead title={title} tier={model.tier} right={<TruthChip state="live" />} />
+      <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-.02em", color: TIER_COLOR[model.tier], fontFamily: "var(--kvx-font-ui)" }}>{model.valueNode}</div>
+      {/* Rule 1: a trend shows ONLY with two comparable periods AND a real prior basis, ALWAYS with baseline text. */}
+      {model.delta !== null && priorHasData ? <Trend delta={model.delta} baseline={t(baseKey)} /> : <div style={{ height: 16 }} />}
     </div>
   );
 }
 
 function Trend({ delta, baseline }: { delta: number; baseline: string }) {
-  // Up = emerald, down = amber (never red — red is safety only), flat = slate.
-  const color = delta > 0 ? "#0A8A5F" : delta < 0 ? "#b9822a" : "#6b7688";
+  // Up = teal, down = coral (the trend FLOOR — never red, red is safety), flat = slate.
+  const color = delta > 0 ? "#8ce8cc" : delta < 0 ? "var(--coral)" : "var(--faint)";
   const arrow = delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
   return (
-    <div style={{ fontSize: 11, marginTop: 4 }}>
+    <div style={{ fontSize: 11, marginTop: 5 }}>
       <span style={{ color, fontWeight: 800 }}>{arrow} <Num>{Math.abs(delta)}</Num>%</span>
-      <span style={{ color: "var(--kv-faint)" }}> {baseline}</span>
+      <span style={{ color: "var(--faint)" }}> {baseline}</span>
     </div>
   );
 }
 
-function CardHead({ title, accent, live }: { title: string; accent: string; live: string }) {
+function CardHead({ title, tier, right }: { title: string; tier?: Tier; right?: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-      <span style={{ width: 8, height: 8, borderRadius: 3, background: accent }} />
-      <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--kv-muted)", flex: 1 }}>{title}</span>
-      <span style={{ fontSize: 9.5, fontWeight: 800, color: "#0A8A5F" }}>{live}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+      {tier && <span style={{ width: 8, height: 8, borderRadius: 3, background: TIER_COLOR[tier] }} />}
+      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--dim)", flex: 1, letterSpacing: ".02em" }}>{title}</span>
+      {right}
     </div>
   );
 }
 
-// GATHERING — never colored (rule 5): slate chip + skeleton + honest message, no number.
-function GatheringCard({ title, sub, msg, big }: { title: string; sub?: string; msg: string; big?: boolean }) {
+// Margin/commission hero — GATHERING, never colored as a verdict (rule 2/5).
+function MarginHero({ title, sub, msg, chip }: { title: string; sub: string; msg: string; chip: React.ReactNode }) {
   return (
-    <div style={{ ...cardStyle, ...(big ? { padding: "18px 20px" } : {}) }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--kv-muted)", flex: 1 }}>{title}{sub ? <span style={{ fontWeight: 600, color: "var(--kv-faint)" }}> · {sub}</span> : null}</span>
-        <TruthChip state="gathering" />
+    <div style={{ borderRadius: 20, padding: "18px 20px", position: "relative", overflow: "hidden",
+      background: "linear-gradient(150deg,rgba(255,212,126,.12),rgba(255,212,126,.02) 60%),var(--inset)", border: "1px solid rgba(255,212,126,.28)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ width: 40, height: 40, borderRadius: 12, background: "var(--g-gold)", display: "grid", placeItems: "center", color: "var(--ink)", fontSize: 19, flex: "none" }}>💰</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--txt)" }}>{title}</div>
+          <div style={{ fontSize: 9.5, color: "var(--faint)", marginTop: 2 }}>{sub}</div>
+        </div>
+        {chip}
       </div>
-      <div className="kv-skeleton" style={{ height: big ? 34 : 18, borderRadius: 8, width: "45%", marginBottom: 8 }} />
-      {msg && <div style={{ fontSize: 11.5, color: "var(--kv-faint)", lineHeight: 1.6 }}>{msg}</div>}
+      <div className="kv-skeleton" style={{ height: 34, width: "45%", borderRadius: 10, margin: "14px 0 8px" }} />
+      <div style={{ fontSize: 9.5, color: "var(--faint)", lineHeight: 1.6, maxWidth: 620 }}>{msg}</div>
     </div>
   );
 }
+
 function SoonCard({ title, msg }: { title: string; msg: string }) {
   return (
     <div style={{ ...cardStyle, borderStyle: "dashed" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--kv-muted)", flex: 1 }}>{title}</span>
-        <TruthChip state="soon" />
-      </div>
-      <div style={{ fontSize: 11.5, color: "var(--kv-faint)", lineHeight: 1.6 }}>{msg}</div>
+      <CardHead title={title} right={<TruthChip state="soon" />} />
+      <div style={{ fontSize: 11.5, color: "var(--faint)", lineHeight: 1.6 }}>{msg}</div>
     </div>
   );
 }
+
+// Data-blocked KPI as a GATHERING tile (full designed chrome, shimmer, no number).
+function GatherTile({ title }: { title: string }) {
+  return (
+    <div style={cardStyle}>
+      <CardHead title={title} right={<TruthChip state="gather" />} />
+      <div className="kv-skeleton" style={{ height: 22, width: "50%", borderRadius: 8, marginTop: 2 }} />
+    </div>
+  );
+}
+
+function GatherPanel({ msg }: { msg: string }) {
+  return (
+    <Panel>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <TruthChip state="gather" />
+        {msg && <span style={{ fontSize: 12, color: "var(--faint)" }}>{msg}</span>}
+      </div>
+    </Panel>
+  );
+}
+
+// The funnel — full designed chrome in GATHERING: 4 stage rows, shimmer tracks,
+// NO fabricated percentages (a rate without a real basis is a lie).
+function FunnelShell({ stages, note }: { stages: string[]; note: string }) {
+  return (
+    <Panel>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        {stages.map((s) => (
+          <div key={s} style={{ display: "flex", alignItems: "center", gap: 13 }}>
+            <span style={{ width: 120, flex: "none", fontSize: 11, fontWeight: 700, color: "var(--dim)" }}>{s}</span>
+            <span className="kv-skeleton" style={{ flex: 1, height: 28, borderRadius: 9 }} />
+            <span style={{ width: 30, flex: "none" }}><TruthChip state="gather" label="—" /></span>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--faint)", lineHeight: 1.6, marginTop: 11 }}>{note}</div>
+    </Panel>
+  );
+}
+
 function SourceBar({ label, n, total, color }: { label: string; n: number; total: number; color: string }) {
   const w = total > 0 ? Math.round((n / total) * 100) : 0;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--kv-muted)", width: 90 }}>{label}</span>
-      <div style={{ flex: 1, height: 10, borderRadius: 6, background: "var(--kv-card-soft)", overflow: "hidden" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--dim)", width: 90, flex: "none" }}>{label}</span>
+      <div style={{ flex: 1, height: 11, borderRadius: 6, background: "var(--inset2)", overflow: "hidden" }}>
         <div style={{ width: `${w}%`, height: "100%", background: color, borderRadius: 6 }} />
       </div>
-      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--kv-text)", width: 40, textAlign: "end" }}><Num>{n}</Num></span>
+      <span style={{ fontSize: 12, fontWeight: 900, color: "var(--txt)", width: 40, textAlign: "end", fontFamily: "var(--kvx-font-ui)" }}><Num>{n}</Num></span>
     </div>
   );
 }
-function SectionLabel({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0 0" }}>
-      <span style={{ color: "var(--kv-faint)", display: "inline-flex" }}>{icon}</span>
-      <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".08em", color: "var(--kv-faint)" }}>{children}</span>
-    </div>
-  );
+
+function Hint({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 10.5, color: "var(--faint)", lineHeight: 1.6, padding: "0 2px" }}>{children}</div>;
 }
-function Grid({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>{children}</div>;
+
+function Grid({ children, n = 3 }: { children: React.ReactNode; n?: number }) {
+  return <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(${n === 4 ? 170 : 210}px,1fr))`, gap: 12 }}>{children}</div>;
 }
+
 const cardStyle: React.CSSProperties = {
-  background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md-lg)",
-  boxShadow: "var(--kv-shadow-card)", padding: "14px 16px",
+  background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 16, padding: "14px 16px",
 };
