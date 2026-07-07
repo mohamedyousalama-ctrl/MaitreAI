@@ -30,6 +30,7 @@ import {
 } from "@/lib/console-v2/display-state";
 import { StateChip, ActNowDot } from "@/components/console-v2";
 import { LiveMaps, type HeatPoint } from "@/components/console-v2/shift/LiveMaps";
+import { OrderDetailsModal } from "@/components/console-v2/shift/OrderDetailsModal";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi, Num } from "@/components/kivo";
 import type { LocalOrder, OrderStatusKey, PosStatus } from "@/lib/types";
@@ -59,6 +60,9 @@ export default function LiveShiftPage() {
   const setAssistant = useConsoleOps((s) => s.setAssistant);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseError, setPauseError] = useState(false);
+
+  // Order-details popup (#ovDetails) — the primary row interaction.
+  const [selected, setSelected] = useState<LocalOrder | null>(null);
 
   // Optimistic local layers (realtime reconciles in a configured tenant).
   const [stamped, setStamped] = useState<Set<string>>(new Set());
@@ -170,7 +174,7 @@ export default function LiveShiftPage() {
             {awaitingHandoff.map((o) => (
               <div key={o.id} style={{ ...cardStyle, borderInlineStart: "3px solid #e8b45a" }}>
                 <ActNowDot kind="handoff" />
-                <OrderIdentity order={o} test={t("shift.test")} />
+                <OrderIdentity order={o} test={t("shift.test")} onClick={() => setSelected(o)} />
                 <div style={{ flex: 1 }} />
                 <TicketPrintLink id={o.id} enabled={kitchenTicket} />
                 <input
@@ -198,7 +202,7 @@ export default function LiveShiftPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {active.map((o) => (
               <div key={o.id} style={cardStyle}>
-                <OrderIdentity order={o} test={t("shift.test")} />
+                <OrderIdentity order={o} test={t("shift.test")} onClick={() => setSelected(o)} />
                 <div style={{ flex: 1 }} />
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <StateChip display={deriveOrderDisplay(o.orderStatus)} />
@@ -223,6 +227,9 @@ export default function LiveShiftPage() {
       <div style={{ marginTop: 22 }}>
         <LiveMaps heatPoints={heatPoints} ordersToday={active.length} />
       </div>
+
+      {/* Order details popup (#ovDetails) — opens on an order row. */}
+      <OrderDetailsModal order={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }
@@ -303,9 +310,9 @@ function TicketPrintLink({ id, enabled }: { id: string; enabled: boolean }) {
   );
 }
 
-function OrderIdentity({ order, test }: { order: LocalOrder; test: string }) {
+function OrderIdentity({ order, test, onClick }: { order: LocalOrder; test: string; onClick?: () => void }) {
   return (
-    <div style={{ minWidth: 0 }}>
+    <button type="button" onClick={onClick} style={{ minWidth: 0, border: 0, background: "transparent", padding: 0, cursor: onClick ? "pointer" : "default", textAlign: "start", fontFamily: "var(--kv-font)" }}>
       <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--kv-text)", display: "flex", alignItems: "center", gap: 7 }}>
         <span>#<Num>{order.orderNumber}</Num></span>
         <Bdi>{order.customerName}</Bdi>
@@ -313,7 +320,7 @@ function OrderIdentity({ order, test }: { order: LocalOrder; test: string }) {
           <span style={{ fontSize: 9.5, fontWeight: 800, color: "#7d4fd0", background: "rgba(168,120,240,.16)", borderRadius: 6, padding: "3px 7px" }}>{test}</span>
         )}
       </div>
-    </div>
+    </button>
   );
 }
 
