@@ -222,3 +222,179 @@ body {
 .kv-scroll::-webkit-scrollbar { width: 7px; height: 7px; }
 .kv-scroll::-webkit-scrollbar-thumb { background-color: rgba(14,159,110,.3); border-radius: 99px; }
 .kv-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ===================================================================== *
+ * CONSOLE_V2 — DARK MISTY-SLATE GLASS THEME (v35 handoff canon)          *
+ * Chromatic Truth System tokens. SCOPED to `.kvx` (the console_v2 shell  *
+ * root) so the OLD console (light `.kv-console`, Wesaya) is NEVER touched *
+ * by the cascade. Also remaps the legacy --kv-* tokens to dark WITHIN     *
+ * .kvx so any not-yet-rebuilt console_v2 page stays legible on dark.      *
+ * ===================================================================== */
+.kvx {
+  /* Layer-1 identity + neutrals (design canon) */
+  --bg:#141924; --panel:rgba(255,255,255,.065); --inset:rgba(255,255,255,.05); --inset2:rgba(10,14,20,.45);
+  --stroke:rgba(255,255,255,.12); --stroke2:rgba(255,255,255,.2);
+  --txt:#f2f5f9; --dim:#9aa7b8; --faint:#66748a;
+  --blue:#4b8bff; --blue2:#93d2ff; --teal:#2ecc9a; --violet:#a878f0; --gold:#ffd47e; --amber:#e8b45a;
+  --red:#ff6b5e;                 /* SAFETY ONLY — never decorative */
+  --coral:#ff9440;               /* trend floor — bad never escalates to red */
+  /* Vivid tier/verdict gradients (dark-ink text) */
+  --g-gold:linear-gradient(135deg,#ffe37a,#ffcf4d);
+  --g-green:linear-gradient(135deg,#66e4b6,#2ecc9a);
+  --g-blue:linear-gradient(135deg,#93d2ff,#5fb0f6);
+  --g-coral:linear-gradient(135deg,#ffb977,#ff9440);
+  --g-violet:linear-gradient(135deg,#c4b1ff,#a878f0);
+  --ink:#0b1a14; --ink-soft:rgba(11,26,20,.62); --ink-line:rgba(0,0,0,.14); --ink-chip:rgba(0,0,0,.12);
+  --kvx-font-ui:"Inter",var(--font-readex),system-ui,sans-serif;
+  --kvx-font-ar:var(--font-readex),var(--font-arabic),system-ui,sans-serif;
+
+  /* Legacy --kv-* remap (scoped) — keeps un-rebuilt console_v2 pages legible on dark */
+  --kv-card:rgba(255,255,255,.055); --kv-card-soft:rgba(10,14,20,.4);
+  --kv-text:#f2f5f9; --kv-muted:#9aa7b8; --kv-faint:#66748a;
+  --kv-border:rgba(255,255,255,.12); --kv-primary-tint:rgba(14,159,110,.16);
+  --kv-bg-console:transparent;
+}
+
+/* ---- Shell: misty-slate page + glass device ------------------------- */
+.kvx-page{ min-height:100vh; display:flex; align-items:safe center; justify-content:center; padding:22px;
+  color:var(--txt); font-family:var(--kvx-font-ar);
+  background:#3a4149;
+  background-image:
+    radial-gradient(1200px 800px at 75% 10%,rgba(120,140,165,.5),transparent 60%),
+    radial-gradient(1000px 700px at 10% 90%,rgba(70,80,95,.55),transparent 55%),
+    radial-gradient(700px 500px at 45% 45%,rgba(150,160,175,.22),transparent 60%),
+    linear-gradient(160deg,#4a525d 0%,#2e343d 55%,#232830 100%); }
+.kvx-device{ width:min(1520px,98vw); height:min(940px,95vh); border-radius:24px; position:relative;
+  background:rgba(18,22,30,.58); backdrop-filter:blur(34px) saturate(1.25);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 46px 130px rgba(15,20,30,.5),0 0 0 7px rgba(255,255,255,.055);
+  display:grid; grid-template-columns:84px 1fr; grid-template-rows:1fr; overflow:hidden; }
+.kvx-main{ grid-column:2; grid-row:1; min-height:0; overflow-y:auto; padding:0 22px 22px; position:relative; }
+.kvx-headrow{ position:sticky; top:0; z-index:6; display:flex; align-items:center; gap:12px; height:56px;
+  margin:0 -22px 16px; padding:0 22px; border-bottom:1px solid var(--stroke);
+  background:rgba(18,22,30,.72); backdrop-filter:blur(14px); }
+@media (max-width:900px){
+  .kvx-page{ padding:0; align-items:stretch; }
+  .kvx-device{ width:100vw; height:100vh; border-radius:0; box-shadow:none; grid-template-columns:64px 1fr; }
+}
+
+/* ---- 84px icon rail ------------------------------------------------- */
+.kvx-rail{ grid-column:1; grid-row:1/3; display:flex; flex-direction:column; align-items:center;
+  padding:12px 0 14px; background:var(--panel); border-inline-end:1px solid var(--stroke);
+  backdrop-filter:blur(22px); overflow-y:auto; }
+.kvx-brand{ width:42px; height:42px; border-radius:14px; margin:2px 0 14px; display:grid; place-items:center;
+  background:radial-gradient(circle at 32% 28%,#3fd39b,#0E9F6E 62%,#0a6e4c); box-shadow:0 6px 20px rgba(14,159,110,.5); cursor:pointer; }
+.kvx-rlbl{ font-size:7.5px; letter-spacing:.16em; color:var(--faint); margin:8px 0 4px; font-weight:800; font-family:var(--kvx-font-ui); }
+.kvx-rdiv{ width:36px; height:1px; background:var(--stroke); margin:8px 0; }
+.kvx-ric{ width:52px; min-height:46px; border-radius:14px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:3px; color:var(--dim); margin:3px 0; cursor:pointer; position:relative; transition:.18s; border:1px solid transparent; background:transparent; }
+.kvx-ric:hover{ background:rgba(255,255,255,.06); color:var(--txt); }
+.kvx-ric.on{ background:rgba(14,159,110,.16); border-color:rgba(14,159,110,.4); color:#5fe0b0; }
+.kvx-ric.on::before{ content:""; position:absolute; inset-inline-start:-1px; top:12px; bottom:12px; width:3px; border-radius:99px; background:var(--teal); }
+.kvx-ric .kvx-rt{ font-size:8px; font-weight:700; letter-spacing:.01em; }
+.kvx-ric.soon{ opacity:.5; cursor:default; }
+.kvx-ric .kvx-tip{ position:absolute; inset-inline-start:60px; top:50%; transform:translateY(-50%); white-space:nowrap;
+  background:#0b0e14; border:1px solid var(--stroke); color:var(--txt); font-size:11px; font-weight:700; padding:5px 10px;
+  border-radius:9px; opacity:0; pointer-events:none; transition:.14s; z-index:20; font-family:var(--kvx-font-ar); }
+.kvx-ric:hover .kvx-tip{ opacity:1; }
+
+/* ---- page grid (348px context col + 1fr hero) ---------------------- */
+.kvx-grid{ display:grid; grid-template-columns:348px 1fr; gap:18px; align-items:start; }
+.kvx-grid > .kvx-col{ display:flex; flex-direction:column; gap:14px; }
+@media (max-width:1100px){ .kvx-grid{ grid-template-columns:1fr; } }
+
+/* ---- glass panel + section-header anatomy -------------------------- */
+.kvx-panel{ background:var(--panel); border:1px solid var(--stroke); border-radius:18px; padding:16px; backdrop-filter:blur(12px); }
+.kvx-shead{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.kvx-sic{ width:30px; height:30px; border-radius:9px; flex:none; display:grid; place-items:center; color:var(--ink);
+  background:var(--g-blue); box-shadow:0 6px 16px rgba(0,0,0,.28); }
+.kvx-sh-tt{ min-width:0; flex:1; }
+.kvx-sh-tt b{ display:block; font-size:11.5px; font-weight:800; color:var(--txt); }
+.kvx-sh-tt span{ display:block; font-size:8px; letter-spacing:.06em; color:var(--faint); font-weight:700; text-transform:uppercase; margin-top:1px; font-family:var(--kvx-font-ui); }
+
+/* ---- truth-state chips (Layer 2 state) ----------------------------- */
+.kvx-ts{ display:inline-flex; align-items:center; gap:6px; font-size:9px; font-weight:800; border-radius:8px; padding:4px 9px;
+  letter-spacing:.04em; font-family:var(--kvx-font-ui); }
+.kvx-ts .kvx-dot{ width:5px; height:5px; border-radius:50%; }
+.kvx-ts.live{ color:#8ce8cc; background:rgba(46,204,154,.12); border:1px solid rgba(46,204,154,.4); }
+.kvx-ts.live .kvx-dot{ background:var(--teal); box-shadow:0 0 6px var(--teal); animation:kvxPulseDot 2s infinite; }
+.kvx-ts.pro{ color:#c4b1ff; background:rgba(168,120,240,.14); border:1px solid rgba(168,120,240,.4); }
+.kvx-ts.wo{ color:#ffcf8d; background:rgba(232,180,90,.12); border:1px solid rgba(232,180,90,.45); }
+.kvx-ts.soon{ color:var(--faint); background:rgba(255,255,255,.05); border:1px solid var(--stroke); }
+.kvx-ts.degraded{ color:#ffb3a8; background:rgba(255,107,94,.1); border:1px solid rgba(255,107,94,.4); } /* feed down — amber-red, still not a safety claim */
+/* GATHERING — shimmer slate, NEVER colored green/orange (a trend without data is a lie) */
+.kvx-ts.gather{ color:var(--dim); background:rgba(255,255,255,.05); border:1px solid var(--stroke); position:relative; overflow:hidden; }
+.kvx-ts.gather::after{ content:""; position:absolute; inset:0; transform:translateX(-120%);
+  background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.12) 50%,transparent 60%); animation:kvxShim 2.6s infinite; }
+
+/* ---- handled-by (attribution) chips -------------------------------- */
+.kvx-hby{ display:inline-flex; align-items:center; gap:5px; font-size:9.5px; font-weight:800; border-radius:7px; padding:3px 8px; }
+.kvx-hby.karim{ color:var(--blue2); background:rgba(75,139,255,.14); border:1px solid rgba(75,139,255,.36); }
+.kvx-hby.human{ color:#ffcf8d; background:rgba(232,180,90,.14); border:1px solid rgba(232,180,90,.4); }
+
+/* ---- vivid stat tile (left accent + fact line) --------------------- */
+.kvx-stile{ position:relative; border-radius:15px; padding:13px 14px 12px 16px; overflow:hidden; color:var(--ink);
+  box-shadow:0 12px 26px rgba(0,0,0,.28); }
+.kvx-stile::before{ content:""; position:absolute; inset-inline-start:0; top:0; bottom:0; width:5px; background:rgba(0,0,0,.22); }
+.kvx-stile.gold{ background:var(--g-gold); } .kvx-stile.green{ background:var(--g-green); }
+.kvx-stile.blue{ background:var(--g-blue); } .kvx-stile.coral{ background:var(--g-coral); } .kvx-stile.violet{ background:var(--g-violet); }
+.kvx-stile .kvx-slbl{ font-size:8.5px; font-weight:900; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-soft); font-family:var(--kvx-font-ui); }
+.kvx-stile .kvx-sn{ font-size:26px; font-weight:900; letter-spacing:-.02em; line-height:1.05; margin-top:3px; font-family:var(--kvx-font-ui); }
+.kvx-stile .kvx-sfact{ font-size:9.5px; font-weight:700; color:var(--ink-soft); margin-top:4px; border-top:1px solid var(--ink-line); padding-top:5px; }
+
+/* ---- SVG progress ring --------------------------------------------- */
+.kvx-ring{ transform:rotate(-90deg); } .kvx-ring circle{ fill:none; stroke-linecap:round; }
+.kvx-ring .kvx-track{ stroke:rgba(255,255,255,.12); } .kvx-ring .kvx-fg{ transition:stroke-dashoffset .9s cubic-bezier(.2,.9,.3,1); }
+
+/* ---- leaderboard row (gold #1 + crown) ----------------------------- */
+.kvx-lrow{ display:flex; align-items:center; gap:11px; padding:9px 11px; border-radius:12px; background:var(--inset); border:1px solid var(--stroke); }
+.kvx-lrow.first{ background:var(--g-gold); color:var(--ink); border-color:transparent; }
+.kvx-crown{ position:absolute; top:-9px; inset-inline-start:-4px; font-size:13px; animation:kvxBob 2.4s ease-in-out infinite; }
+.kvx-pav{ width:30px; height:30px; border-radius:50%; flex:none; position:relative; display:grid; place-items:center; font-weight:800; font-size:12px; }
+
+/* ---- spotlight card (shine sweep) ---------------------------------- */
+.kvx-spot{ position:relative; overflow:hidden; border-radius:16px; padding:15px; color:var(--ink); background:var(--g-coral); box-shadow:0 14px 30px rgba(0,0,0,.3); }
+.kvx-spot::after{ content:""; position:absolute; inset:0; transform:translateX(-130%);
+  background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.35) 50%,transparent 60%); animation:kvxShine 3.4s infinite; }
+
+/* ---- loyalty card anatomy ------------------------------------------ */
+.kvx-gc{ border-radius:17px; padding:15px; color:var(--ink); position:relative; overflow:hidden; box-shadow:0 14px 30px rgba(0,0,0,.3); }
+.kvx-gc.vip{ background:var(--g-gold); } .kvx-gc.reg{ background:var(--g-green); } .kvx-gc.new{ background:var(--g-blue); } .kvx-gc.risk{ background:var(--g-coral); }
+.kvx-gc .kvx-hair{ height:1px; background:var(--ink-line); margin:10px 0; }
+.kvx-gc .kvx-sp{ font-size:21px; font-weight:900; letter-spacing:-.02em; font-family:var(--kvx-font-ui); }
+.kvx-gc .kvx-sp small{ display:block; font-size:7.5px; letter-spacing:.1em; font-weight:800; color:var(--ink-soft); }
+.kvx-favchip{ display:inline-flex; align-items:center; gap:5px; font-size:9px; font-weight:800; background:var(--ink-chip); color:var(--ink); border-radius:7px; padding:3px 7px; }
+.kvx-warnDot{ position:absolute; top:12px; inset-inline-end:12px; width:9px; height:9px; border-radius:50%; background:var(--red); box-shadow:0 0 8px var(--red); animation:kvxPulseDot 1.6s infinite; }
+
+/* ---- aurora drawer + mini-modal + toasts --------------------------- */
+.kvx-scrim{ position:fixed; inset:0; background:rgba(6,7,10,.6); backdrop-filter:blur(3px); z-index:60; animation:kvxFade .24s ease; }
+.kvx-drawer{ position:fixed; inset-block:0; inset-inline-end:0; width:min(452px,94vw); z-index:61; display:flex; flex-direction:column;
+  background:rgba(20,24,32,.9); backdrop-filter:blur(40px) saturate(1.3); border-inline-start:1px solid var(--stroke2);
+  box-shadow:-40px 0 120px rgba(0,0,0,.5); overflow:hidden; animation:kvxSlideIn .3s cubic-bezier(.2,.9,.25,1); }
+.kvx-drawer .kvx-aurora{ position:absolute; inset:-40% -20% auto -20%; height:60%; pointer-events:none; opacity:.5;
+  background:conic-gradient(from 0deg,rgba(75,139,255,.4),rgba(168,120,240,.3),rgba(46,204,154,.35),rgba(75,139,255,.4)); filter:blur(60px); animation:kvxSpin 18s linear infinite; }
+.kvx-modal{ position:fixed; z-index:61; inset-block-start:9vh; inset-inline:0; margin-inline:auto; width:min(560px,94vw); max-height:82vh;
+  display:flex; flex-direction:column; overflow:hidden; background:rgba(22,23,30,.9); backdrop-filter:blur(40px);
+  border:1px solid var(--stroke2); border-radius:20px; box-shadow:0 40px 120px rgba(0,0,0,.6); animation:kvxRise .26s cubic-bezier(.2,.9,.25,1); }
+.kvx-toasts{ position:fixed; bottom:22px; inset-inline-start:50%; transform:translateX(-50%); z-index:80; display:flex; flex-direction:column; gap:8px; }
+.kvx-toast{ background:#141b25; border:1px solid rgba(14,159,110,.5); color:var(--txt); font-size:12px; border-radius:12px; padding:11px 18px; box-shadow:0 14px 40px rgba(0,0,0,.5); animation:kvxTup .3s; }
+
+/* ---- locked-gold switch -------------------------------------------- */
+.kvx-sw{ position:relative; width:38px; height:21px; border-radius:12px; background:rgba(255,255,255,.14); cursor:pointer; transition:.2s; flex:none; }
+.kvx-sw::after{ content:""; position:absolute; top:2.5px; inset-inline-start:3px; width:15px; height:15px; border-radius:50%; background:#8b97a8; transition:.2s; }
+.kvx-sw.on{ background:rgba(14,159,110,.5); } .kvx-sw.on::after{ inset-inline-start:20px; background:var(--teal); }
+.kvx-sw.locked{ background:rgba(255,212,126,.28); cursor:not-allowed; } .kvx-sw.locked::after{ inset-inline-start:20px; background:var(--gold); }
+
+/* ---- motion grammar ------------------------------------------------- */
+@keyframes kvxPulseDot{ 0%,100%{ transform:scale(1); opacity:1 } 50%{ transform:scale(1.5); opacity:.45 } }
+@keyframes kvxShim{ 60%,100%{ transform:translateX(120%) } }
+@keyframes kvxShine{ 55%,100%{ transform:translateX(130%) } }
+@keyframes kvxBob{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-3px) } }
+@keyframes kvxSpin{ to{ transform:rotate(360deg) } }
+@keyframes kvxFade{ from{ opacity:0 } } @keyframes kvxTup{ from{ transform:translateY(10px); opacity:0 } }
+@keyframes kvxSlideIn{ from{ transform:translateX(8%); opacity:0 } } @keyframes kvxRise{ from{ transform:translateY(-10px) scale(.985); opacity:0 } }
+@media (prefers-reduced-motion:reduce){
+  .kvx-ts.live .kvx-dot,.kvx-ts.gather::after,.kvx-spot::after,.kvx-crown,.kvx-drawer .kvx-aurora,.kvx-warnDot,
+  .kvx-scrim,.kvx-drawer,.kvx-modal,.kvx-toast{ animation:none !important; }
+  .kvx-ring .kvx-fg{ transition:none; }
+}
