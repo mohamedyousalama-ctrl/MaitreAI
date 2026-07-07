@@ -150,6 +150,8 @@ export const DICTIONARY = {
     "shift.resumeConfirm.body": "سيبدأ كريم بالرد على العملاء تلقائيًا.",
     "shift.resumeConfirm.go": "شغّل كريم",
     "shift.cancel": "إلغاء",
+    "shift.drill.title": "تفصيل الرقم",
+    "shift.drill.gather": "التفصيل والأدلة (سبب الفقد، مصدر الطلب، سلسلة الأحداث) يظهران هنا فور وصول جدول النتائج — لا نخمّن سببًا أبدًا.",
     // Conversations (item 6)
     "conv.title": "المحادثات",
     "conv.tabFloor": "الساحة",
@@ -868,6 +870,8 @@ export const DICTIONARY = {
     "shift.resumeConfirm.body": "Karim starts auto-answering customers again.",
     "shift.resumeConfirm.go": "Resume Karim",
     "shift.cancel": "Cancel",
+    "shift.drill.title": "Break down the number",
+    "shift.drill.gather": "The breakdown and evidence (loss reason, order source, event chain) appear here once the outcomes ledger lands — we never guess a cause.",
     "conv.title": "Conversations",
     "conv.tabFloor": "The Floor",
     "conv.tabClosed": "Closed",

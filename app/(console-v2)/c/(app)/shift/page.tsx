@@ -29,7 +29,7 @@ import {
   derivePaymentDisplay,
 } from "@/lib/console-v2/display-state";
 import { StateChip, ActNowDot } from "@/components/console-v2";
-import { HeaderRow, PageGrid, StatTile, SectionHeader, MiniModal } from "@/components/console-v2/kit";
+import { HeaderRow, PageGrid, StatTile, SectionHeader, MiniModal, AuroraDrawer, TruthChip } from "@/components/console-v2/kit";
 import { LiveMaps, type HeatPoint } from "@/components/console-v2/shift/LiveMaps";
 import { OrderDetailsModal } from "@/components/console-v2/shift/OrderDetailsModal";
 import { useT } from "@/lib/i18n/lang";
@@ -66,6 +66,10 @@ export default function LiveShiftPage() {
   const [selected, setSelected] = useState<LocalOrder | null>(null);
   // Pause/resume confirm overlay (#ovPause) — a kill switch confirms before acting.
   const [pauseConfirm, setPauseConfirm] = useState(false);
+  // Drill/evidence drawer (#ovDrill/#ovEv/#ovLost) — the outcomes-blocked cluster.
+  // Rendered as the DESIGNED aurora drawer in its honest GATHERING state (never a
+  // flat placeholder); lights up when the outcomes ledger (WO-1) lands.
+  const [drillOpen, setDrillOpen] = useState(false);
 
   // Optimistic local layers (realtime reconciles in a configured tenant).
   const [stamped, setStamped] = useState<Set<string>>(new Set());
@@ -176,9 +180,15 @@ export default function LiveShiftPage() {
         context={
           <>
             <SectionHeader tier="blue" icon={<Store size={15} />} title={t("shift.now")} />
-            <StatTile tier="coral" label={t("shift.ctx.handoff")} countUp={awaitingHandoff.length} value={awaitingHandoff.length} fact={t("shift.ctx.handoffFact")} />
-            <StatTile tier="blue" label={t("shift.ctx.active")} countUp={active.length} value={active.length} fact={t("shift.ctx.activeFact")} />
-            <StatTile tier="gold" label={t("shift.ctx.paid")} countUp={mix.paid} value={mix.paid} fact={t("shift.ctx.paidFact")} />
+            <Drillable onOpen={() => setDrillOpen(true)}>
+              <StatTile tier="coral" label={t("shift.ctx.handoff")} countUp={awaitingHandoff.length} value={awaitingHandoff.length} fact={t("shift.ctx.handoffFact")} />
+            </Drillable>
+            <Drillable onOpen={() => setDrillOpen(true)}>
+              <StatTile tier="blue" label={t("shift.ctx.active")} countUp={active.length} value={active.length} fact={t("shift.ctx.activeFact")} />
+            </Drillable>
+            <Drillable onOpen={() => setDrillOpen(true)}>
+              <StatTile tier="gold" label={t("shift.ctx.paid")} countUp={mix.paid} value={mix.paid} fact={t("shift.ctx.paidFact")} />
+            </Drillable>
             <StatTile tier="green" label={t("shift.ctx.karim")} value={karimOn ? t("shift.karimActive") : t("shift.karimPaused")} fact={karimOn ? t("shift.ctx.karimFact") : t("shift.ctx.karimPausedFact")} />
             <div style={{ fontSize: 10.5, color: "var(--faint)", lineHeight: 1.7, padding: "4px 2px", borderTop: "1px dashed var(--stroke)", marginTop: 4 }}>{t("shift.doctrine")}</div>
           </>
@@ -279,7 +289,31 @@ export default function LiveShiftPage() {
           </div>
         </div>
       </MiniModal>
+
+      {/* Drill / evidence drawer (#ovDrill/#ovEv/#ovLost) — the designed aurora drawer
+          in its honest GATHERING state (the outcomes ledger feeds it). */}
+      <AuroraDrawer open={drillOpen} onClose={() => setDrillOpen(false)}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 800, color: "var(--txt)", margin: 0, flex: 1 }}>{t("shift.drill.title")}</h3>
+            <button onClick={() => setDrillOpen(false)} style={{ border: 0, background: "transparent", color: "var(--faint)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{t("shift.od.close")}</button>
+          </div>
+          <div style={{ display: "grid", placeItems: "center", gap: 12, padding: "48px 12px", textAlign: "center" }}>
+            <TruthChip state="gather" />
+            <div style={{ fontSize: 12, color: "var(--dim)", lineHeight: 1.7, maxWidth: 300 }}>{t("shift.drill.gather")}</div>
+          </div>
+        </div>
+      </AuroraDrawer>
     </>
+  );
+}
+
+/** Wraps a StatTile so clicking it opens the drill/evidence drawer. */
+function Drillable({ onOpen, children }: { onOpen: () => void; children: React.ReactNode }) {
+  return (
+    <div role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }} style={{ cursor: "pointer" }}>
+      {children}
+    </div>
   );
 }
 
