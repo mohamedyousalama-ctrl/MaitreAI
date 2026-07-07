@@ -68,11 +68,13 @@ export function Panel({ children, style, className }: { children: ReactNode; sty
 // Vivid stat tile (left accent + count value + fact line). `value` is DISPLAYED,
 // never derived here — pass the engine-computed figure.
 // ---------------------------------------------------------------------------
-export function StatTile({ tier, label, value, fact, countUp }: {
+export function StatTile({ tier, label, value, fact, countUp, variant = "vivid" }: {
   tier: Tier; label: string; value: ReactNode; fact?: ReactNode; countUp?: number;
+  /** "vivid" = flooded gradient block (default). "accent" = dark surface + colored strip. */
+  variant?: "vivid" | "accent";
 }) {
   return (
-    <div className={`kvx-stile ${tier}`}>
+    <div className={`kvx-stile ${tier}${variant === "accent" ? " accent" : ""}`}>
       <div className="kvx-slbl">{label}</div>
       <div className="kvx-sn">{countUp != null ? <CountUp to={countUp} /> : value}</div>
       {fact && <div className="kvx-sfact">{fact}</div>}

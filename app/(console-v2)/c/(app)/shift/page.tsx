@@ -18,7 +18,7 @@
 // ============================================================================
 
 import { useEffect, useMemo, useState } from "react";
-import { UtensilsCrossed, Store, Printer } from "lucide-react";
+import { UtensilsCrossed, Store, Printer, Map as MapIcon } from "lucide-react";
 import { useOrderStore } from "@/lib/order-store";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
 import { useConsoleOps } from "@/lib/console-ops-store";
@@ -117,14 +117,13 @@ export default function LiveShiftPage() {
     [orders]
   );
 
-  // Payment mix — PASSIVE, "today" only (the store loads full history), non-test,
-  // excluding cancelled. Order truth (counts, not derived money).
+  // Paid-today — PASSIVE, "today" only (the store loads full history), non-test,
+  // excluding cancelled. Order truth (a count, never derived money).
   const mix = useMemo(() => {
     const startOfToday = new Date().setHours(0, 0, 0, 0);
     const real = orders.filter((o) => !o.isTest && o.orderStatus !== "cancelled" && o.createdAt >= startOfToday);
     const paid = real.filter((o) => o.paymentStatus === "paid").length;
-    const cod = real.filter((o) => o.paymentMethod === "cod").length;
-    return { paid, cod };
+    return { paid };
   }, [orders]);
 
   async function togglePause() {
@@ -153,13 +152,24 @@ export default function LiveShiftPage() {
 
   const karimOn = opsLoaded && assistantOn;
 
+  // The single most-urgent handoff (longest-waiting) — the ONE solid primary action
+  // in the alarm context; every other row action renders as a restrained ghost (FIX C).
+  const mostUrgentHandoffId = useMemo(
+    () => awaitingHandoff.reduce<LocalOrder | null>((a, b) => (a && a.createdAt <= b.createdAt ? a : b), null)?.id ?? null,
+    [awaitingHandoff]
+  );
+
   return (
     <>
       <HeaderRow
         title={t("shift.title")}
         right={
-          <>
-            <PaymentMixChip codLabel={t("shift.cod")} paidLabel={t("shift.paidCount")} cod={mix.cod} paid={mix.paid} mixLabel={t("shift.paymentMix")} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {/* Shift-health chips (FIX F): live · #awaiting-POS · #active · paid-today. */}
+            <HealthChip dot="var(--teal)" label={t("shift.live")} />
+            <HealthChip dot="var(--coral)" value={awaitingHandoff.length} label={t("shift.chip.waiting")} />
+            <HealthChip dot="var(--blue)" value={active.length} label={t("shift.chip.active")} />
+            <HealthChip dot="var(--gold)" value={mix.paid} label={t("shift.chip.paid")} title={t("shift.paymentMix")} />
             {isManager && (
               <PauseControl
                 on={karimOn}
@@ -172,7 +182,7 @@ export default function LiveShiftPage() {
                 ariaLabel={t("shift.pause")}
               />
             )}
-          </>
+          </div>
         }
       />
       {pauseError && (
@@ -184,15 +194,22 @@ export default function LiveShiftPage() {
           <>
             <SectionHeader tier="blue" icon={<Store size={15} />} title={t("shift.now")} />
             <Drillable onOpen={() => setDrillOpen(true)}>
-              <StatTile tier="coral" label={t("shift.ctx.handoff")} countUp={awaitingHandoff.length} value={awaitingHandoff.length} fact={t("shift.ctx.handoffFact")} />
+              <StatTile variant="accent" tier="coral" label={t("shift.ctx.handoff")} countUp={awaitingHandoff.length} value={awaitingHandoff.length} fact={t("shift.ctx.handoffFact")} />
             </Drillable>
             <Drillable onOpen={() => setDrillOpen(true)}>
-              <StatTile tier="blue" label={t("shift.ctx.active")} countUp={active.length} value={active.length} fact={t("shift.ctx.activeFact")} />
+              <StatTile variant="accent" tier="blue" label={t("shift.ctx.active")} countUp={active.length} value={active.length} fact={t("shift.ctx.activeFact")} />
             </Drillable>
             <Drillable onOpen={() => setDrillOpen(true)}>
-              <StatTile tier="gold" label={t("shift.ctx.paid")} countUp={mix.paid} value={mix.paid} fact={t("shift.ctx.paidFact")} />
+              <StatTile variant="accent" tier="gold" label={t("shift.ctx.paid")} countUp={mix.paid} value={mix.paid} fact={t("shift.ctx.paidFact")} />
             </Drillable>
-            <StatTile tier="green" label={t("shift.ctx.karim")} value={karimOn ? t("shift.karimActive") : t("shift.karimPaused")} fact={karimOn ? t("shift.ctx.karimFact") : t("shift.ctx.karimPausedFact")} />
+            {/* Karim status — paused is AMBER (operational caution), not green (success);
+                red stays reserved for safety. Paused surfaces a reason + a resume CTA. */}
+            <KarimCard on={karimOn} loading={!opsLoaded} isManager={isManager} onResume={() => setPauseConfirm(true)}
+              statusLabel={karimOn ? t("shift.karimActive") : t("shift.karimPaused")}
+              loadingLabel={t("shift.karimLoading")}
+              caption={t("shift.ctx.karim")}
+              reason={karimOn ? t("shift.ctx.karimFact") : t("shift.ctx.karimPausedFact")}
+              resumeLabel={t("shift.karimResume")} />
             <div style={{ fontSize: 10.5, color: "var(--faint)", lineHeight: 1.7, padding: "4px 2px", borderTop: "1px dashed var(--stroke)", marginTop: 4 }}>{t("shift.doctrine")}</div>
           </>
         }
@@ -218,7 +235,7 @@ export default function LiveShiftPage() {
                   dir="ltr"
                   style={posInputStyle}
                 />
-                <button onClick={() => stampPos(o)} disabled={posBusy.has(o.id)} style={primaryBtn}>
+                <button onClick={() => stampPos(o)} disabled={posBusy.has(o.id)} style={o.id === mostUrgentHandoffId ? primaryBtn : ghostBtn}>
                   {t("shift.stampPos")}
                 </button>
               </div>
@@ -254,16 +271,18 @@ export default function LiveShiftPage() {
 
       {/* 86 quick action — wired to the audited availability route. */}
       <Eighty6 menuItems={menuItems} setItemAvailability={setItemAvailability} />
+
+      {/* Maps grid (v35 flagship) — composed INSIDE the hero flow as mapsGrid 1.45fr 1fr
+          (Order Heat large + Losing Orders/Ad Sources stacked), NOT a full-width band
+          below the grid. Order Heat is LIVE from real 0043 coords; loss/ads render the
+          designed GATHERING map-cards until their engines feed them. */}
+      <section>
+        <SectionHead icon={<MapIcon size={16} />} title={t("shift.mapsSection")} />
+        <LiveMaps heatPoints={heatPoints} ordersToday={active.length} />
+      </section>
           </div>
         }
       />
-
-      {/* The maps grid (v35 flagship): Order Heat (LIVE from 0043 order coords when
-          located orders exist, else the designed GATHERING map-card) + Losing Orders
-          and Ad Sources as designed GATHERING map-cards until their engines feed them. */}
-      <div style={{ marginTop: 22 }}>
-        <LiveMaps heatPoints={heatPoints} ordersToday={active.length} />
-      </div>
 
       {/* Order details popup (#ovDetails) — opens on an order row. */}
       <OrderDetailsModal
@@ -367,8 +386,8 @@ function Eighty6({
         <button onClick={eightySix} disabled={!sel || busy} style={{ ...primaryBtn, opacity: !sel || busy ? 0.5 : 1 }}>
           {t("shift.86button")}
         </button>
-        {msg && <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--kv-deep)" }}>{msg}</span>}
-        {err && <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--kv-red)" }}>{t("shift.86error")}</span>}
+        {msg && <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--teal)" }}>{msg}</span>}
+        {err && <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--amber)" }}>{t("shift.86error")}</span>}
       </div>
     </section>
   );
@@ -394,8 +413,8 @@ function TicketPrintLink({ id, enabled }: { id: string; enabled: boolean }) {
       title={t("shift.printTicket")}
       style={{
         display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px",
-        borderRadius: 10, border: "1px solid var(--kv-border)", background: "var(--kv-card)",
-        color: "var(--kv-muted)", fontSize: 12, fontWeight: 700, textDecoration: "none", flex: "none",
+        borderRadius: 10, border: "1px solid var(--stroke)", background: "var(--inset2)",
+        color: "var(--dim)", fontSize: 12, fontWeight: 700, textDecoration: "none", flex: "none",
       }}
     >
       <Printer size={14} /> {t("shift.printTicket")}
@@ -405,12 +424,12 @@ function TicketPrintLink({ id, enabled }: { id: string; enabled: boolean }) {
 
 function OrderIdentity({ order, test, onClick }: { order: LocalOrder; test: string; onClick?: () => void }) {
   return (
-    <button type="button" onClick={onClick} style={{ minWidth: 0, border: 0, background: "transparent", padding: 0, cursor: onClick ? "pointer" : "default", textAlign: "start", fontFamily: "var(--kv-font)" }}>
-      <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--kv-text)", display: "flex", alignItems: "center", gap: 7 }}>
+    <button type="button" onClick={onClick} style={{ minWidth: 0, border: 0, background: "transparent", padding: 0, cursor: onClick ? "pointer" : "default", textAlign: "start", fontFamily: "var(--kvx-font-ar)" }}>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--txt)", display: "flex", alignItems: "center", gap: 7 }}>
         <span>#<Num>{order.orderNumber}</Num></span>
         <Bdi>{order.customerName}</Bdi>
         {order.isTest && (
-          <span style={{ fontSize: 9.5, fontWeight: 800, color: "#7d4fd0", background: "rgba(168,120,240,.16)", borderRadius: 6, padding: "3px 7px" }}>{test}</span>
+          <span style={{ fontSize: 9.5, fontWeight: 800, color: "#c4b1ff", background: "rgba(168,120,240,.16)", borderRadius: 6, padding: "3px 7px" }}>{test}</span>
         )}
       </div>
     </button>
@@ -420,18 +439,19 @@ function OrderIdentity({ order, test, onClick }: { order: LocalOrder; test: stri
 function Money({ total, currency }: { total: number; currency: string }) {
   // DISPLAY only — the amount comes straight from the order row, never recomputed.
   return (
-    <span style={{ fontSize: 13.5, fontWeight: 800, color: "var(--kv-text)", whiteSpace: "nowrap" }}>
-      <Num>{total.toLocaleString("en-US")}</Num> <span style={{ fontSize: 11, color: "var(--kv-muted)" }}>{currency}</span>
+    <span style={{ fontSize: 13.5, fontWeight: 800, color: "var(--txt)", whiteSpace: "nowrap", fontFamily: "var(--kvx-font-ui)" }}>
+      <Num>{total.toLocaleString("en-US")}</Num> <span style={{ fontSize: 11, color: "var(--dim)" }}>{currency}</span>
     </span>
   );
 }
 
-function PaymentMixChip({ cod, paid, codLabel, paidLabel, mixLabel }: { cod: number; paid: number; codLabel: string; paidLabel: string; mixLabel: string }) {
+// Header shift-health chip (FIX F): a compact dot + value + label pill.
+function HealthChip({ dot, value, label, title }: { dot: string; value?: React.ReactNode; label: string; title?: string }) {
   return (
-    <span title={mixLabel} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: "var(--kv-r-pill)", background: "var(--kv-card)", border: "1px solid var(--kv-border)", fontSize: 11.5, fontWeight: 700, color: "var(--kv-muted)" }}>
-      <span>{codLabel} <Num>{cod}</Num></span>
-      <span style={{ color: "var(--kv-faint)" }}>·</span>
-      <span>{paidLabel} <Num>{paid}</Num></span>
+    <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", borderRadius: 999, background: "var(--inset)", border: "1px solid var(--stroke)", fontSize: 11, fontWeight: 700, color: "var(--dim)", whiteSpace: "nowrap" }}>
+      <span aria-hidden style={{ width: 6, height: 6, borderRadius: "50%", background: dot, boxShadow: `0 0 6px ${dot}` }} />
+      {value != null && <b style={{ color: "var(--txt)", fontFamily: "var(--kvx-font-ui)", fontWeight: 800 }}>{value}</b>}
+      <span>{label}</span>
     </span>
   );
 }
@@ -440,18 +460,23 @@ function PauseControl({ on, loading, busy, onToggle, activeLabel, pausedLabel, l
   on: boolean; loading: boolean; busy: boolean; onToggle: () => void;
   activeLabel: string; pausedLabel: string; loadingLabel: string; ariaLabel: string;
 }) {
+  // Paused is NOT success → AMBER (operational caution), never green. Active = green.
+  // Red stays reserved for safety and never appears here.
+  const amber = "var(--amber)", teal = "var(--teal)";
+  const accent = loading ? "var(--faint)" : on ? teal : amber;
+  const tint = loading ? "rgba(154,167,184,.12)" : on ? "rgba(46,204,154,.12)" : "rgba(232,180,90,.14)";
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "6px 12px", borderRadius: "var(--kv-r-pill)", background: on ? "var(--kv-primary-tint)" : "rgba(154,167,184,.14)", border: "1px solid var(--kv-border)" }}>
-      <span className={on ? "kv-pulse" : undefined} aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", background: on ? "var(--kv-primary)" : "var(--kv-faint)" }} />
-      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--kv-text)" }}>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "5px 11px", borderRadius: 999, background: tint, border: `1px solid ${loading ? "var(--stroke)" : on ? "rgba(46,204,154,.34)" : "rgba(232,180,90,.4)"}` }}>
+      <span className={on ? "kv-pulse" : undefined} aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", background: accent, boxShadow: loading ? undefined : `0 0 6px ${accent}` }} />
+      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--txt)" }}>
         {loading ? loadingLabel : on ? activeLabel : pausedLabel}
       </span>
       <button
         type="button" role="switch" aria-checked={on} aria-label={ariaLabel}
         disabled={loading || busy} onClick={onToggle}
-        style={{ width: 38, height: 22, borderRadius: 99, border: 0, cursor: loading || busy ? "default" : "pointer", opacity: loading ? 0.5 : 1, padding: 0, position: "relative", background: on ? "var(--kv-primary)" : "#cdd9d2" }}
+        style={{ width: 38, height: 22, borderRadius: 99, border: 0, cursor: loading || busy ? "default" : "pointer", opacity: loading ? 0.5 : 1, padding: 0, position: "relative", background: loading ? "rgba(255,255,255,.14)" : on ? teal : amber }}
       >
-        <span style={{ position: "absolute", top: 3, insetInlineStart: on ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.25)", transition: "inset-inline-start .15s" }} />
+        <span style={{ position: "absolute", top: 3, insetInlineStart: on ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.35)", transition: "inset-inline-start .15s" }} />
       </button>
     </div>
   );
@@ -460,34 +485,65 @@ function PauseControl({ on, loading, busy, onToggle, activeLabel, pausedLabel, l
 function SectionHead({ icon, title, count }: { icon?: React.ReactNode; title: string; count?: number }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px" }}>
-      {icon && <span style={{ color: "var(--kv-muted)", display: "inline-flex" }}>{icon}</span>}
-      <h2 style={{ fontSize: 13, fontWeight: 800, color: "var(--kv-muted)", margin: 0 }}>{title}</h2>
+      {icon && <span style={{ color: "var(--dim)", display: "inline-flex" }}>{icon}</span>}
+      <h2 style={{ fontSize: 13, fontWeight: 800, color: "var(--dim)", margin: 0 }}>{title}</h2>
       {typeof count === "number" && (
-        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--kv-faint)" }}>(<Num>{count}</Num>)</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--faint)" }}>(<Num>{count}</Num>)</span>
       )}
     </div>
   );
 }
 
 function EmptyLine({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 13, color: "var(--kv-faint)", padding: "14px 4px" }}>{children}</div>;
+  return <div style={{ fontSize: 13, color: "var(--faint)", padding: "14px 4px" }}>{children}</div>;
+}
+
+// Karim status tile — accent card. Active = green (success); paused = AMBER
+// (operational caution, never red = safety), with the reason + a resume CTA. Until
+// the ops store confirms, it renders a NEUTRAL loading state — it never asserts
+// "paused" for a state it hasn't actually read.
+function KarimCard({ on, loading, isManager, onResume, statusLabel, loadingLabel, caption, reason, resumeLabel }: {
+  on: boolean; loading: boolean; isManager: boolean; onResume: () => void;
+  statusLabel: string; loadingLabel: string; caption: string; reason: string; resumeLabel: string;
+}) {
+  const color = loading ? "" : on ? "green" : "amber";
+  const txtColor = loading ? "var(--dim)" : on ? "var(--teal)" : "var(--amber)";
+  return (
+    <div className={`kvx-stile accent${color ? " " + color : ""}`}>
+      <div className="kvx-slbl">{caption}</div>
+      <div style={{ fontSize: 15, fontWeight: 900, color: txtColor, marginTop: 4, fontFamily: "var(--kvx-font-ar)" }}>{loading ? loadingLabel : statusLabel}</div>
+      {!loading && <div className="kvx-sfact">{reason}</div>}
+      {!loading && !on && isManager && (
+        <button onClick={onResume} style={{ marginTop: 10, height: 30, width: "100%", borderRadius: 9, border: 0, background: "var(--amber)", color: "#3a2600", fontFamily: "var(--kvx-font-ar)", fontSize: 11.5, fontWeight: 800, cursor: "pointer" }}>
+          {resumeLabel}
+        </button>
+      )}
+    </div>
+  );
 }
 
 const cardStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: 12,
-  background: "var(--kv-card)", border: "1px solid var(--kv-border)",
-  borderRadius: "var(--kv-r-md-lg)", padding: "12px 14px", boxShadow: "var(--kv-shadow-card)",
+  background: "var(--inset)", border: "1px solid var(--stroke)",
+  borderRadius: 14, padding: "11px 14px",
 };
+// One primary per context — solid green. Everything else uses ghostBtn.
 const primaryBtn: React.CSSProperties = {
-  height: 34, padding: "0 14px", borderRadius: "var(--kv-r-md-sm)", border: 0,
-  background: "var(--kv-grad-brand)", color: "#fff", fontFamily: "var(--kv-font)",
+  height: 34, padding: "0 15px", borderRadius: 10, border: 0,
+  background: "linear-gradient(135deg,#3fd39b,#0E9F6E)", color: "#062018", fontFamily: "var(--kvx-font-ar)",
+  fontSize: 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
+};
+// Secondary/outlined — the restrained default for non-primary row actions.
+const ghostBtn: React.CSSProperties = {
+  height: 34, padding: "0 15px", borderRadius: 10, border: "1px solid rgba(46,204,154,.42)",
+  background: "rgba(46,204,154,.08)", color: "#7fe6c0", fontFamily: "var(--kvx-font-ar)",
   fontSize: 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
 };
 const posInputStyle: React.CSSProperties = {
-  height: 34, width: 160, borderRadius: "var(--kv-r-md-sm)", border: "1.5px solid var(--kv-border)",
-  background: "var(--kv-card-soft)", padding: "0 10px", fontSize: 12.5, fontFamily: "var(--kv-font)", color: "var(--kv-text)",
+  height: 34, width: 148, borderRadius: 10, border: "1px solid var(--stroke)",
+  background: "var(--inset2)", padding: "0 10px", fontSize: 12.5, fontFamily: "var(--kvx-font-ui)", color: "var(--txt)", outline: "none",
 };
 const selectStyle: React.CSSProperties = {
-  height: 36, minWidth: 220, borderRadius: "var(--kv-r-md-sm)", border: "1.5px solid var(--kv-border)",
-  background: "var(--kv-card-soft)", padding: "0 10px", fontSize: 13, fontFamily: "var(--kv-font)", color: "var(--kv-text)",
+  height: 36, minWidth: 220, borderRadius: 10, border: "1px solid var(--stroke)",
+  background: "var(--inset2)", padding: "0 10px", fontSize: 13, fontFamily: "var(--kvx-font-ar)", color: "var(--txt)", outline: "none",
 };

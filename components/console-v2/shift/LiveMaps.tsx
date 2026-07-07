@@ -72,13 +72,15 @@ function MapCard({
   live?: React.ReactNode; points?: HeatPoint[] | null; gathering?: boolean;
   gatheringNote?: string; legend?: { color: string; label: string }[];
 }) {
+  const t = useT();
   const ref = useLeaflet(gathering ? [] : (points ?? []));
   const accent = tier === "gold" ? "#e8b45a" : tier === "coral" ? "#ff6b5e" : "#a878f0";
   return (
     <div className={`kvx-panel${variant === "heat" ? " kvx-mapHero" : ""}`} style={{ position: "relative", padding: 0, overflow: "hidden", minHeight: variant === "heat" ? 300 : 190 }}>
-      <div ref={ref} style={{ position: "absolute", inset: 0, borderRadius: 18, filter: gathering ? "grayscale(.7) brightness(.7)" : undefined }} aria-hidden />
-      {/* vignette for legibility of the overlaid chrome */}
-      <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(120% 90% at 50% 0%,transparent 40%,rgba(10,13,20,.72) 100%)", borderRadius: 18 }} />
+      <div ref={ref} style={{ position: "absolute", inset: 0, borderRadius: 18, filter: gathering ? "brightness(.66) saturate(.35)" : undefined }} aria-hidden />
+      {/* vignette for legibility of the overlaid chrome (deeper on GATHERING so the
+          honest module reads as intentional, not a broken grey wash) */}
+      <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: gathering ? "radial-gradient(130% 100% at 50% 45%,rgba(10,13,20,.55) 30%,rgba(10,13,20,.82) 100%)" : "radial-gradient(120% 90% at 50% 0%,transparent 40%,rgba(10,13,20,.72) 100%)", borderRadius: 18 }} />
       <div style={{ position: "relative", padding: 14, display: "flex", flexDirection: "column", height: "100%", pointerEvents: "none" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: 3, background: accent, boxShadow: `0 0 8px ${accent}`, flex: "none" }} />
@@ -86,9 +88,14 @@ function MapCard({
           {stat && <span style={{ marginInlineStart: "auto", fontSize: 11, fontWeight: 700, color: "var(--dim)" }}>{stat}</span>}
         </div>
         {gathering ? (
-          <div style={{ margin: "auto", textAlign: "center", pointerEvents: "auto" }}>
-            <TruthChip state="gather" />
-            {gatheringNote && <div style={{ fontSize: 11, color: "var(--dim)", marginTop: 8, maxWidth: 220, lineHeight: 1.6 }}>{gatheringNote}</div>}
+          <div style={{ margin: "auto" }}>
+            {/* GATHERING is our honesty law — never faked. Presented as an intentional,
+                premium module: a small glass card with the chip + قيد التجميع + honest eta. */}
+            <div className="kvx-mapGather" style={{ background: "rgba(12,16,24,.62)", border: "1px solid var(--stroke)", borderRadius: 14, padding: "13px 16px", backdropFilter: "blur(6px)" }}>
+              <TruthChip state="gather" />
+              <div className="kvx-mgH">{t("shift.map.gatherH")}</div>
+              {gatheringNote && <div className="kvx-mgEta">{gatheringNote}</div>}
+            </div>
           </div>
         ) : <div style={{ flex: 1 }} />}
         {legend && (
@@ -118,7 +125,7 @@ export function LiveMaps({ heatPoints, ordersToday, hottestZone }: {
   const t = useT();
   const located = heatPoints?.length ?? 0;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gridTemplateRows: "auto auto", gap: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1.45fr 1fr", gridTemplateRows: "auto auto", gap: 14 }}>
       <div style={{ gridRow: "1 / 3" }}>
         <MapCard
           variant="heat" tier="gold" title={t("shift.map.heat")}
