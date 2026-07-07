@@ -46,7 +46,7 @@ function fmt(dt?: string | number | null): string {
 
 const SOURCE_AR: Record<string, string> = { whatsapp: "واتساب", web: "الموقع" };
 
-export async function KitchenTicketView({ id }: { id: string }) {
+export async function KitchenTicketView({ id, dark = false }: { id: string; dark?: boolean }) {
   const tenant = await getServerTenant();
   if (!tenant) notFound();
 
@@ -83,13 +83,35 @@ export async function KitchenTicketView({ id }: { id: string }) {
       style={{
         minHeight: "100vh",
         overflowY: "auto",
-        background: "#efe9e2",
+        // Legacy route keeps the warm cream ground; the console_v2 route opts into
+        // the dark misty-slate ground (same as the shell) so the white paper reads
+        // as an intentional print PREVIEW, never a broken theme. The paper ticket
+        // itself is untouched either way — a kitchen ticket prints black-on-white.
+        ...(dark
+          ? {
+              color: "#f2f5f9",
+              fontFamily: "var(--font-readex), system-ui, sans-serif",
+              background: "#3a4149",
+              backgroundImage:
+                "radial-gradient(1200px 800px at 75% 10%,rgba(120,140,165,.5),transparent 60%)," +
+                "radial-gradient(1000px 700px at 10% 90%,rgba(70,80,95,.55),transparent 55%)," +
+                "linear-gradient(160deg,#4a525d 0%,#2e343d 55%,#232830 100%)",
+            }
+          : { background: "#efe9e2" }),
         padding: 24,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
       }}
     >
+      {/* console_v2 dark chrome only: a caption that frames the white paper as a
+          print preview. Hidden in print (.kt-no-print). Legacy renders nothing. */}
+      {dark ? (
+        <div className="kt-no-print" style={{ width: "var(--kt-width, 80mm)", maxWidth: "100%", marginBottom: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#f2f5f9" }}>تذكرة المطبخ</div>
+          <div style={{ fontSize: 11, color: "#9aa7b8", marginTop: 3, lineHeight: 1.6 }}>معاينة — تُطبع بالأبيض والأسود على رول حراري ٥٨ / ٨٠ مم</div>
+        </div>
+      ) : null}
       {/* Print isolation + paper sizing. #kitchen-ticket is the ONLY visible node
           in print; the console shell + control bar are hidden. The printed width
           is governed by the element's own width (--kt-width, border-box) — NOT by
@@ -111,7 +133,7 @@ export async function KitchenTicketView({ id }: { id: string }) {
       `}</style>
 
       <div style={{ width: "var(--kt-width, 80mm)", maxWidth: "100%" }} className="kt-no-print">
-        <PrintTicketButton orderId={id} />
+        <PrintTicketButton orderId={id} dark={dark} />
       </div>
 
       <div

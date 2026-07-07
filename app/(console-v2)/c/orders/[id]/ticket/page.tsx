@@ -14,5 +14,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function ConsoleV2KitchenTicketPage({ params }: { params: { id: string } }) {
-  return <KitchenTicketView id={params.id} />;
+  // console_v2 renders the shared ticket on the dark misty-slate chrome (the white
+  // paper is unchanged — a kitchen ticket prints black-on-white). `dark` is opt-in;
+  // the legacy route passes no prop and keeps its warm cream ground untouched.
+  return <KitchenTicketView id={params.id} dark />;
 }
