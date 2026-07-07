@@ -29,6 +29,7 @@ import {
   derivePaymentDisplay,
 } from "@/lib/console-v2/display-state";
 import { StateChip, ActNowDot } from "@/components/console-v2";
+import { HeaderRow, PageGrid, StatTile, SectionHeader, MiniModal } from "@/components/console-v2/kit";
 import { LiveMaps, type HeatPoint } from "@/components/console-v2/shift/LiveMaps";
 import { OrderDetailsModal } from "@/components/console-v2/shift/OrderDetailsModal";
 import { useT } from "@/lib/i18n/lang";
@@ -63,6 +64,8 @@ export default function LiveShiftPage() {
 
   // Order-details popup (#ovDetails) — the primary row interaction.
   const [selected, setSelected] = useState<LocalOrder | null>(null);
+  // Pause/resume confirm overlay (#ovPause) — a kill switch confirms before acting.
+  const [pauseConfirm, setPauseConfirm] = useState(false);
 
   // Optimistic local layers (realtime reconciles in a configured tenant).
   const [stamped, setStamped] = useState<Set<string>>(new Set());
@@ -141,31 +144,49 @@ export default function LiveShiftPage() {
     }
   }
 
+  const karimOn = opsLoaded && assistantOn;
+
   return (
-    <div style={{ maxWidth: 1040, margin: "0 auto" }}>
-      {/* Header: title + Karim pause + passive payment-mix chip */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 22 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-text)", margin: 0, flex: 1 }}>{t("shift.title")}</h1>
-        <PaymentMixChip codLabel={t("shift.cod")} paidLabel={t("shift.paidCount")} cod={mix.cod} paid={mix.paid} mixLabel={t("shift.paymentMix")} />
-        {isManager && (
-          <PauseControl
-            on={opsLoaded && assistantOn}
-            loading={!opsLoaded}
-            busy={pauseBusy}
-            onToggle={togglePause}
-            activeLabel={t("shift.karimActive")}
-            pausedLabel={t("shift.karimPaused")}
-            loadingLabel={t("shift.karimLoading")}
-            ariaLabel={t("shift.pause")}
-          />
-        )}
-      </div>
+    <>
+      <HeaderRow
+        title={t("shift.title")}
+        right={
+          <>
+            <PaymentMixChip codLabel={t("shift.cod")} paidLabel={t("shift.paidCount")} cod={mix.cod} paid={mix.paid} mixLabel={t("shift.paymentMix")} />
+            {isManager && (
+              <PauseControl
+                on={karimOn}
+                loading={!opsLoaded}
+                busy={pauseBusy}
+                onToggle={() => setPauseConfirm(true)}
+                activeLabel={t("shift.karimActive")}
+                pausedLabel={t("shift.karimPaused")}
+                loadingLabel={t("shift.karimLoading")}
+                ariaLabel={t("shift.pause")}
+              />
+            )}
+          </>
+        }
+      />
       {pauseError && (
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-red)", marginBottom: 14 }}>{t("shift.pauseError")}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--red)", marginBottom: 14 }}>{t("shift.pauseError")}</div>
       )}
 
+      <PageGrid
+        context={
+          <>
+            <SectionHeader tier="blue" icon={<Store size={15} />} title={t("shift.now")} />
+            <StatTile tier="coral" label={t("shift.ctx.handoff")} countUp={awaitingHandoff.length} value={awaitingHandoff.length} fact={t("shift.ctx.handoffFact")} />
+            <StatTile tier="blue" label={t("shift.ctx.active")} countUp={active.length} value={active.length} fact={t("shift.ctx.activeFact")} />
+            <StatTile tier="gold" label={t("shift.ctx.paid")} countUp={mix.paid} value={mix.paid} fact={t("shift.ctx.paidFact")} />
+            <StatTile tier="green" label={t("shift.ctx.karim")} value={karimOn ? t("shift.karimActive") : t("shift.karimPaused")} fact={karimOn ? t("shift.ctx.karimFact") : t("shift.ctx.karimPausedFact")} />
+            <div style={{ fontSize: 10.5, color: "var(--faint)", lineHeight: 1.7, padding: "4px 2px", borderTop: "1px dashed var(--stroke)", marginTop: 4 }}>{t("shift.doctrine")}</div>
+          </>
+        }
+        hero={
+          <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       {/* AWAITING HANDOFF — the only alarm (fast-pulse ACT-NOW dot). */}
-      <section style={{ marginBottom: 22 }}>
+      <section>
         <SectionHead icon={<Store size={16} />} title={t("shift.awaitingHandoff")} count={awaitingHandoff.length} />
         {awaitingHandoff.length === 0 ? (
           <EmptyLine>{t("shift.awaitingHandoffEmpty")}</EmptyLine>
@@ -194,7 +215,7 @@ export default function LiveShiftPage() {
       </section>
 
       {/* Active orders board — every axis via displayState()/derive*(). */}
-      <section style={{ marginBottom: 22 }}>
+      <section>
         <SectionHead title={t("shift.orders")} count={active.length} />
         {!hydrated ? null : active.length === 0 ? (
           <EmptyLine>{t("shift.noOrders")}</EmptyLine>
@@ -220,6 +241,9 @@ export default function LiveShiftPage() {
 
       {/* 86 quick action — wired to the audited availability route. */}
       <Eighty6 menuItems={menuItems} setItemAvailability={setItemAvailability} />
+          </div>
+        }
+      />
 
       {/* The maps grid (v35 flagship): Order Heat (LIVE from 0043 order coords when
           located orders exist, else the designed GATHERING map-card) + Losing Orders
@@ -230,7 +254,32 @@ export default function LiveShiftPage() {
 
       {/* Order details popup (#ovDetails) — opens on an order row. */}
       <OrderDetailsModal order={selected} onClose={() => setSelected(null)} />
-    </div>
+
+      {/* Pause/resume confirm overlay (#ovPause) — the kill switch confirms first. */}
+      <MiniModal open={pauseConfirm} onClose={() => setPauseConfirm(false)}>
+        <div style={{ padding: "18px 20px" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--txt)", marginBottom: 6 }}>
+            {karimOn ? t("shift.pauseConfirm.title") : t("shift.resumeConfirm.title")}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.6, marginBottom: 16 }}>
+            {karimOn ? t("shift.pauseConfirm.body") : t("shift.resumeConfirm.body")}
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={() => setPauseConfirm(false)} style={{ height: 38, padding: "0 16px", borderRadius: 10, border: "1px solid var(--stroke2)", background: "rgba(255,255,255,.04)", color: "var(--txt)", fontFamily: "var(--kvx-font-ar)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+              {t("shift.cancel")}
+            </button>
+            <button
+              onClick={async () => { setPauseConfirm(false); await togglePause(); }}
+              disabled={pauseBusy}
+              /* pause is an operational kill-switch, NOT a safety event → amber, never red */
+              style={{ height: 38, padding: "0 18px", borderRadius: 10, border: 0, background: karimOn ? "var(--amber)" : "var(--teal)", color: "#062018", fontFamily: "var(--kvx-font-ar)", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}
+            >
+              {karimOn ? t("shift.pauseConfirm.go") : t("shift.resumeConfirm.go")}
+            </button>
+          </div>
+        </div>
+      </MiniModal>
+    </>
   );
 }
 
