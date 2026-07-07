@@ -27,7 +27,7 @@ import {
   MessageSquare, Flag, Building2, Clock3, Power, Rocket, Pencil,
   Check, AlertTriangle, Clock, Lock, Printer, CreditCard,
 } from "lucide-react";
-import { TruthChip, type TruthState } from "@/components/console-v2";
+import { HeaderRow, TruthChip, type TruthState, type Tier } from "@/components/console-v2/kit";
 import { useConsoleOps } from "@/lib/console-ops-store";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi } from "@/components/kivo";
@@ -37,10 +37,12 @@ import { parsePrinterConfig, PRINT_WIDTHS, type PrinterConfig, type PrintWidth }
 import { connectQz, listQzPrinters, type QzStatus } from "@/lib/print/qz-client";
 
 // Canon §2 hexes — proven=emerald, failing=amber (alarm, NOT red), unobserved=slate.
+// Dark-legible probe tones — proven=emerald, failing=amber (alarm, NOT red),
+// unobserved=slate. fg brightened for the dark glass surface.
 const PROBE_TONE: Record<ProbeStatus, { fg: string; bg: string }> = {
-  pass: { fg: "#0A8A5F", bg: "rgba(14,159,110,.13)" },
-  fail: { fg: "#b9822a", bg: "rgba(232,180,90,.18)" },
-  unknown: { fg: "#5b6b7a", bg: "rgba(154,167,184,.16)" },
+  pass: { fg: "#8ce8cc", bg: "rgba(46,204,154,.12)" },
+  fail: { fg: "#ffcf8d", bg: "rgba(232,180,90,.16)" },
+  unknown: { fg: "var(--dim)", bg: "rgba(255,255,255,.05)" },
 };
 const PROBE_LABEL: Record<WhatsAppProbeId, DictKey> = {
   access_token: "set.wa.access_token",
@@ -103,12 +105,9 @@ export default function SettingsPage() {
   useEffect(() => { void load(); }, [load]);
 
   return (
-    <div style={{ maxWidth: 1080, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 }}>
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-text)", margin: "0 0 6px" }}>{t("set.title")}</h1>
-        <p style={{ fontSize: 13, color: "var(--kv-muted)", margin: 0, lineHeight: 1.7 }}>{t("set.sub")}</p>
-      </div>
-
+    <>
+    <HeaderRow title={t("set.title")} jobLine={t("set.sub")} />
+    <div style={{ maxWidth: 1080, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18, paddingTop: 4 }}>
       <TruthBoard health={health} onReload={load} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18, alignItems: "start" }}>
@@ -122,6 +121,7 @@ export default function SettingsPage() {
 
       <GoLiveGate health={health} />
     </div>
+    </>
   );
 }
 
@@ -139,11 +139,11 @@ function TruthBoard({ health, onReload }: { health: HealthResp | null; onReload:
       <SectionHead icon={<MessageSquare size={16} />} title={t("set.wa.title")} sub={t("set.wa.sub")}>
         {/* Headline rollup — never a green while a red exists (rollUpProbes law). */}
         {probes.length === 0 ? (
-          <TruthChip state="gathering" />
+          <TruthChip state="gather" />
         ) : rollup === "fail" ? (
           <TruthChip state="degraded" />
         ) : rollup === "unknown" ? (
-          <TruthChip state="gathering" />
+          <TruthChip state="gather" />
         ) : (
           <span style={{ ...pill, ...PROBE_TONE.pass }}>
             <Check size={12} strokeWidth={3} /> {proven}/{probes.length} {t("set.probe.pass")}
@@ -241,7 +241,7 @@ function FeatureFlags({ flags, onChanged }: { flags: FlagsResp | null; onChanged
       <section style={card}>
         <SectionHead icon={<Flag size={16} />} title={t("set.flags.title")} sub={t("set.flags.sub")} />
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <TruthChip state="gathering" />
+          <TruthChip state="gather" />
           <span style={{ fontSize: 12.5, color: "var(--kv-faint)" }}>{t("set.loadError")}</span>
         </div>
       </section>
@@ -317,9 +317,9 @@ function FlagToggle({ flag, on, onChanged }: { flag: string; on: boolean; onChan
       </div>
       <button
         type="button" role="switch" aria-checked={on} aria-label={flag} disabled={busy} onClick={flip}
-        style={{ width: 38, height: 22, borderRadius: 99, border: 0, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1, padding: 0, position: "relative", background: on ? "var(--kv-primary)" : "#cdd9d2", flex: "0 0 auto" }}
+        style={{ width: 38, height: 22, borderRadius: 99, border: 0, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1, padding: 0, position: "relative", background: on ? "rgba(14,159,110,.5)" : "rgba(255,255,255,.14)", flex: "0 0 auto" }}
       >
-        <span style={{ position: "absolute", top: 3, insetInlineStart: on ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.25)", transition: "inset-inline-start .15s" }} />
+        <span style={{ position: "absolute", top: 3, insetInlineStart: on ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: on ? "var(--teal)" : "#8b97a8", boxShadow: "0 1px 3px rgba(0,0,0,.25)", transition: "inset-inline-start .15s" }} />
       </button>
     </div>
   );
@@ -421,7 +421,7 @@ function Hours({ hours }: { hours: HoursResp | null }) {
       <SectionHead icon={<Clock3 size={16} />} title={t("set.hours.title")} sub={t("set.hours.sub")} />
       {days.length === 0 ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
-          <TruthChip state="gathering" />
+          <TruthChip state="gather" />
           <span style={{ fontSize: 12.5, color: "var(--kv-faint)" }}>{t("set.hours.none")}</span>
         </div>
       ) : (
@@ -496,10 +496,10 @@ function GoLiveGate({ health }: { health: HealthResp | null }) {
       <p style={{ fontSize: 12.5, color: "var(--kv-muted)", lineHeight: 1.7, margin: "0 0 14px" }}>{t("set.gate.note")}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <GateRow label={t("set.gate.wa")}>
-          {rollup == null ? <TruthChip state="gathering" />
+          {rollup == null ? <TruthChip state="gather" />
             : rollup === "pass" ? <span style={{ ...pill, ...PROBE_TONE.pass }}><Check size={12} strokeWidth={3} /> {t("set.probe.pass")}</span>
             : rollup === "fail" ? <TruthChip state="degraded" />
-            : <TruthChip state="gathering" />}
+            : <TruthChip state="gather" />}
         </GateRow>
         {/* Not wired — rendered SOON, never a fabricated «passed / 47 items / 25 zones». */}
         <GateRow label={t("set.gate.allergy")}><TruthChip state="soon" /></GateRow>
@@ -530,7 +530,7 @@ function GateRow({ label, children }: { label: string; children: React.ReactNode
 // (amber alarm, never red — red is safety only). Browser print is always the
 // fallback, so a not-proven connection is never an error state on its own.
 // ---------------------------------------------------------------------------
-const QZ_CONN_STATE: Record<QzStatus, TruthState> = { connected: "live", disconnected: "gathering", error: "degraded" };
+const QZ_CONN_STATE: Record<QzStatus, TruthState> = { connected: "live", disconnected: "gather", error: "degraded" };
 const QZ_CONN_LABEL: Record<QzStatus, DictKey> = {
   connected: "set.printer.conn.connected",
   disconnected: "set.printer.conn.notproven",
@@ -727,7 +727,7 @@ function PspCredentials({ pspFlagOn }: { pspFlagOn: boolean }) {
   return (
     <section style={card}>
       <SectionHead icon={<CreditCard size={16} />} title={t("set.psp.title")} sub={t("set.psp.sub")}>
-        {enabled ? <TruthChip state={configured ? "live" : "gathering"} label={t(configured ? "set.psp.configured" : "set.psp.notconfigured")} /> : null}
+        {enabled ? <TruthChip state={configured ? "live" : "gather"} label={t(configured ? "set.psp.configured" : "set.psp.notconfigured")} /> : null}
       </SectionHead>
       {!enabled ? (
         <p style={{ fontSize: 12.5, color: loadFailed ? "var(--kv-amber)" : "var(--kv-faint)" }}>
@@ -754,13 +754,20 @@ function PspCredentials({ pspFlagOn }: { pspFlagOn: boolean }) {
   );
 }
 
-function SectionHead({ icon, title, sub, tone, children }: { icon: React.ReactNode; title: string; sub?: string; tone?: string; children?: React.ReactNode }) {
+// Section-header anatomy matching the kit: 30px gradient icon-badge (dark ink) +
+// title + sub + optional right-aligned content. `tone` (amber, Emergency) picks
+// the coral badge; otherwise the badge is the neutral glass gradient.
+const SEC_GRAD: Record<Tier, string> = {
+  gold: "var(--g-gold)", green: "var(--g-green)", blue: "var(--g-blue)", coral: "var(--g-coral)", violet: "var(--g-violet)",
+};
+function SectionHead({ icon, title, sub, tone, tier = "blue", children }: { icon: React.ReactNode; title: string; sub?: string; tone?: string; tier?: Tier; children?: React.ReactNode }) {
+  const grad = tone ? SEC_GRAD.coral : SEC_GRAD[tier];
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
-      <span style={{ color: tone ?? "var(--kv-muted)", display: "inline-flex", marginTop: 1 }}>{icon}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+      <span style={{ width: 30, height: 30, borderRadius: 9, background: grad, color: "var(--ink)", display: "grid", placeItems: "center", flex: "none" }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 800, color: "var(--kv-text)", margin: 0 }}>{title}</h2>
-        {sub && <p style={{ fontSize: 11.5, color: "var(--kv-faint)", margin: "3px 0 0", lineHeight: 1.6 }}>{sub}</p>}
+        <h2 style={{ fontSize: 13, fontWeight: 800, color: "var(--txt)", margin: 0 }}>{title}</h2>
+        {sub && <p style={{ fontSize: 10, color: "var(--faint)", margin: "2px 0 0", lineHeight: 1.5, textTransform: "uppercase", letterSpacing: ".05em" }}>{sub}</p>}
       </div>
       {children && <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 8 }}>{children}</div>}
     </div>
@@ -777,40 +784,40 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const card: React.CSSProperties = {
-  background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-lg)",
-  boxShadow: "var(--kv-shadow-card)", padding: "18px 20px",
+  background: "var(--panel)", border: "1px solid var(--stroke)", borderRadius: 18,
+  backdropFilter: "blur(12px)", padding: "18px 20px",
 };
 const pill: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: "var(--kv-r-pill)",
-  fontFamily: "var(--kv-font)", fontSize: 11, fontWeight: 800, lineHeight: 1, whiteSpace: "nowrap",
+  display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 99,
+  fontFamily: "var(--kvx-font-ui)", fontSize: 11, fontWeight: 800, lineHeight: 1, whiteSpace: "nowrap",
 };
 const probeRow: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 10, background: "var(--kv-card-soft)",
-  border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md)", padding: "9px 12px",
+  display: "flex", alignItems: "center", gap: 10, background: "var(--inset2)",
+  border: "1px solid var(--stroke)", borderRadius: 12, padding: "9px 12px",
 };
 const flagRow: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 10, background: "var(--kv-card-soft)",
-  border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md)", padding: "9px 12px",
+  display: "flex", alignItems: "center", gap: 10, background: "var(--inset2)",
+  border: "1px solid var(--stroke)", borderRadius: 12, padding: "9px 12px",
 };
 const subHead: React.CSSProperties = {
-  fontSize: 10, fontWeight: 900, letterSpacing: ".08em", color: "var(--kv-faint)", margin: "4px 0 8px",
+  fontSize: 10, fontWeight: 900, letterSpacing: ".08em", color: "var(--faint)", margin: "4px 0 8px",
 };
 const primaryBtn: React.CSSProperties = {
-  height: 34, padding: "0 14px", borderRadius: "var(--kv-r-md-sm)", border: 0,
-  background: "var(--kv-grad-brand)", color: "#fff", fontFamily: "var(--kv-font)",
+  height: 34, padding: "0 14px", borderRadius: 12, border: 0,
+  background: "linear-gradient(135deg,#12b57e,#0E9F6E)", color: "#fff", fontFamily: "var(--kvx-font-ar)",
   fontSize: 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
 };
 const amberBtn: React.CSSProperties = {
-  height: 36, padding: "0 16px", borderRadius: "var(--kv-r-md-sm)", border: "1px solid rgba(232,180,90,.5)",
-  background: "rgba(232,180,90,.14)", color: "#b9822a", fontFamily: "var(--kv-font)",
+  height: 36, padding: "0 16px", borderRadius: 12, border: "1px solid rgba(232,180,90,.5)",
+  background: "rgba(232,180,90,.14)", color: "#ffcf8d", fontFamily: "var(--kvx-font-ar)",
   fontSize: 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
 };
 const ghostBtn: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", borderRadius: "var(--kv-r-md-sm)",
-  border: "1px solid var(--kv-border)", background: "var(--kv-card)", color: "var(--kv-muted)", fontFamily: "var(--kv-font)",
+  display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", borderRadius: 12,
+  border: "1px solid var(--stroke2)", background: "rgba(255,255,255,.05)", color: "var(--dim)", fontFamily: "var(--kvx-font-ar)",
   fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
 };
 const input: React.CSSProperties = {
-  height: 36, borderRadius: "var(--kv-r-md-sm)", border: "1.5px solid var(--kv-border)",
-  background: "var(--kv-card-soft)", padding: "0 11px", fontSize: 13, fontFamily: "var(--kv-font)", color: "var(--kv-text)",
+  height: 36, borderRadius: 12, border: "1px solid var(--stroke2)",
+  background: "var(--inset2)", padding: "0 11px", fontSize: 13, fontFamily: "var(--kvx-font-ar)", color: "var(--txt)",
 };

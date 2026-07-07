@@ -1,31 +1,40 @@
 "use client";
 
 // ============================================================================
-// console_v2 item 11 — Customers (CRM). "The regulars wall — every direct guest,
-// remembered honestly." The last of the seven pages.
+// console_v2 item 11 — Customers / the Regulars Wall (v35 dark-glass rebuild).
+// "Every direct guest, remembered honestly." Presentation rebuilt onto the shared
+// kit (PageGrid, SectionHeader, StatTile, LeaderRow, Spotlight, LoyaltyCard,
+// AuroraDrawer); all data + truth logic UNCHANGED from the shipped page.
 //
 // THE MEMORY LAW: facts (حقائق) come only from real orders; Karim's readings
 // (استنتاج) are always labeled and never mixed with facts.
 //
-//  • REAL — facts strip, segment counts, top-by-spend, slipping-away all come from
-//    GET /api/customers/aggregates, which derives from the customers table's own
-//    maintained counters via the pure computeCustomerAggregates (the single source of
-//    truth — this page NEVER re-derives). Segments follow the ratified formula
-//    (new ≤1 · returning 2–4 · loyal ≥5); at-risk = ordered ≥1 but silent 30+ days.
-//    When the tenant is unconfigured / has no customers, every surface renders honest
-//    GATHERING — never a fabricated guest or number.
-//  • SOON — customer_memory inference (استنتاج labels) is flag-gated (customer_memory)
-//    and 0 rows until Pro is explicitly on → the memory card is SOON, never faked. The
-//    win-back / merge / opt-out write actions (Growth/Decision-Layer + consent
-//    machinery) have no backend yet → SOON.
+//  • REAL — facts strip, segment counts, top-by-spend leaderboard, slipping-away
+//    spotlight, and the loyalty-card wall's SPEND + ORDER COUNT all derive from
+//    GET /api/customers/aggregates (the single source of truth — never re-derived
+//    here). A card's TIER is derived from real order count (loyal ≥5 → VIP ·
+//    returning 2–4 → repeat · new ≤1) or risk (in the at-risk set) — derived,
+//    never invented (the same ratified segment formula). Money is displayed,
+//    never computed in the UI.
+//  • DATA-BLOCKED (rendered as the FULL designed component in GATHERING/SOON, never
+//    a flat box, never a fabricated number):
+//      - loyalty RING (tier-progress %) · per-guest VISITS · USUAL item — no data
+//        source yet → ring omitted + honest wall note.
+//      - Karim MEMORY (استنتاج) — flag-gated customer_memory, 0 rows → GATHERING.
+//      - dossier TIMELINE — no per-guest order-history read route → GATHERING.
+//      - win-back / merge / opt-out / chat / reorder ACTIONS — no backend → SOON.
 //
-// Colour: identity hues per segment; NO red (at-risk is amber, not red — red = safety
-// only). XSS: dictionary text nodes + <Bdi>/<Num> only.
+// Colour: identity hues per segment (gold VIP / green repeat / blue new / coral
+// at-risk); NO red (at-risk is coral, not red — red = safety only). XSS:
+// dictionary text nodes + <Bdi>/<Num> only.
 // ============================================================================
 
-import { useEffect, useState } from "react";
-import { Star, Repeat, Sparkles, Clock3, Trophy, Brain, Users } from "lucide-react";
-import { TruthChip } from "@/components/console-v2";
+import { useEffect, useMemo, useState } from "react";
+import { Star, Trophy, Clock3, Brain, Users, Search } from "lucide-react";
+import {
+  HeaderRow, PageGrid, SectionHeader, StatTile, LeaderRow, Spotlight, LoyaltyCard,
+  TruthChip, AuroraDrawer, type Tier,
+} from "@/components/console-v2/kit";
 import { useRestaurantStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi, Num } from "@/components/kivo";
@@ -35,11 +44,17 @@ interface TopRow { id: string; name: string | null; phone: string | null; ltv: n
 interface RiskRow { id: string; name: string | null; phone: string | null; last_seen_at: string | null; days_since: number }
 interface Aggregates { facts: Facts; segments: { new: number; returning: number; loyal: number }; topBySpend: TopRow[]; atRisk: RiskRow[] }
 
+type Seg = "all" | "vip" | "reg" | "new" | "risk";
+type CardTier = "vip" | "reg" | "new" | "risk";
+
 export default function CustomersPage() {
   const t = useT();
   const currency = useRestaurantStore((s) => s.profile.currency);
   const [data, setData] = useState<Aggregates | null>(null);
   const [error, setError] = useState(false);
+  const [seg, setSeg] = useState<Seg>("all");
+  const [q, setQ] = useState("");
+  const [dossier, setDossier] = useState<WallGuest | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -50,167 +65,242 @@ export default function CustomersPage() {
     return () => { alive = false; };
   }, []);
 
-  const money = (n: number) => <span><Num>{Math.round(n).toLocaleString("en-US")}</Num> <span style={{ fontSize: 11, color: "var(--kv-muted)" }}>{currency}</span></span>;
+  const money = (n: number) => <span><Num>{Math.round(n).toLocaleString("en-US")}</Num> <span style={{ fontSize: 11, color: "var(--dim)" }}>{currency}</span></span>;
   const repeatCount = data ? data.segments.returning + data.segments.loyal : 0;
 
-  return (
-    <div style={{ maxWidth: 1040, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-text)", margin: "0 0 6px" }}>{t("cu.title")}</h1>
-          <p style={{ fontSize: 13, color: "var(--kv-muted)", margin: 0, lineHeight: 1.7 }}>{t("cu.sub")}</p>
+  // Wall guests = the real top-by-spend guests (they carry ltv + order count).
+  // Tier derived from real order count; at-risk flag if the guest is in the
+  // at-risk set. NEVER fabricate a guest or a spend figure.
+  const guests: WallGuest[] = useMemo(() => {
+    if (!data) return [];
+    const riskIds = new Set(data.atRisk.map((r) => r.id));
+    return data.topBySpend.map((c) => {
+      const atRisk = riskIds.has(c.id);
+      const tier: CardTier = atRisk ? "risk" : c.orders_count >= 5 ? "vip" : c.orders_count >= 2 ? "reg" : "new";
+      return { id: c.id, name: c.name, phone: c.phone, ltv: c.ltv, orders: c.orders_count, tier, atRisk };
+    });
+  }, [data]);
+
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return guests.filter((g) => (seg === "all" || g.tier === seg) && (!needle || (g.name ?? "").toLowerCase().includes(needle) || (g.phone ?? "").includes(needle)));
+  }, [guests, seg, q]);
+
+  const TIER_LABEL: Record<CardTier, string> = { vip: t("cu.tier.vip"), reg: t("cu.tier.reg"), new: t("cu.tier.new"), risk: t("cu.tier.risk") };
+  const SEG_TABS: { key: Seg; label: string }[] = [
+    { key: "all", label: t("cu.seg.all") }, { key: "vip", label: t("cu.tier.vip") },
+    { key: "reg", label: t("cu.tier.reg") }, { key: "new", label: t("cu.tier.new") }, { key: "risk", label: t("cu.tier.risk") },
+  ];
+
+  const context = (
+    <>
+      {/* Guest book — derived segment tiles (never invented). */}
+      <SectionHeader tier="blue" icon={<Users size={15} />} title={t("cu.derived")} sub={t("cu.sub")}
+        right={data ? <TruthChip state="live" /> : undefined} />
+      {data && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <StatTile tier="gold" label={t("cu.seg.vip")} value="" countUp={data.segments.loyal} fact={t("cu.seg.vipHint")} />
+          <StatTile tier="green" label={t("cu.seg.repeat")} value="" countUp={data.segments.returning} fact={t("cu.seg.repeatHint")} />
+          <StatTile tier="blue" label={t("cu.seg.new")} value="" countUp={data.segments.new} fact={t("cu.seg.newHint")} />
+          <StatTile tier="coral" label={t("cu.seg.risk")} value="" countUp={data.atRisk.length} fact={t("cu.seg.riskHint")} />
         </div>
-        {data && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11.5, fontWeight: 700, color: "var(--kv-muted)", background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-pill)", padding: "6px 12px", whiteSpace: "nowrap" }}>
-            <Users size={13} /> <Num>{data.facts.totalCustomers}</Num> {t("cu.guests")} · ↺ <Num>{repeatCount}</Num> {t("cu.repeat")}
-          </span>
-        )}
+      )}
+
+      {/* Top regulars — real spend, crown leaderboard. */}
+      <SectionHeader tier="gold" icon={<Trophy size={15} />} title={t("cu.top.title")} sub={t("cu.top.sub")} />
+      {data && data.topBySpend.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {data.topBySpend.slice(0, 5).map((c, i) => (
+            <LeaderRow key={c.id} rank={i + 1} avatar={<Bdi>{(c.name || "؟").slice(0, 1)}</Bdi>}
+              name={<Bdi>{c.name || "—"}</Bdi>} meta={<><Num>{c.orders_count}</Num> {t("cu.top.orders")}</>}
+              value={money(c.ltv)} />
+          ))}
+        </div>
+      ) : <EmptyLine>{t("cu.top.empty")}</EmptyLine>}
+
+      {/* Slipping away — at-risk spotlight (real days silent). Win-back = SOON. */}
+      {data && data.atRisk.length > 0 && (
+        <Spotlight>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 8 }}>
+            <Clock3 size={16} style={{ color: "var(--ink)" }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: "var(--ink)" }}>{t("cu.slip.title")}</div>
+              <div style={{ fontSize: 9, color: "var(--ink-soft)" }}>{t("cu.slip.sub")}</div>
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 900, color: "var(--ink)", background: "rgba(0,0,0,.16)", borderRadius: 8, padding: "3px 9px" }}>
+              <Num>{data.atRisk.length}</Num> {t("cu.guests")}
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {data.atRisk.slice(0, 5).map((c) => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10.5, fontWeight: 700, color: "var(--ink)" }}>
+                <Bdi>{c.name || "—"}</Bdi>
+                <span style={{ marginInlineStart: "auto", fontWeight: 900 }}><Num>{c.days_since}</Num> {t("cu.slip.days")}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+            <TruthChip state="soon" />
+            <span style={{ fontSize: 9.5, fontWeight: 800, color: "var(--ink-soft)" }}>{t("cu.slip.winback")}</span>
+          </div>
+        </Spotlight>
+      )}
+
+      {/* Memory law — copy, not data. */}
+      <div style={{ border: "1px dashed var(--stroke2)", borderRadius: 14, background: "var(--inset)", padding: "11px 13px", fontSize: 10.5, color: "var(--dim)", lineHeight: 1.75 }}>
+        💡 {t("cu.law")}
+      </div>
+    </>
+  );
+
+  const hero = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+      {/* Wall bar — section header + segment tabs + search. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <SectionHeader tier="gold" icon={<Star size={15} />} title={t("cu.wall.title")} sub={t("cu.wall.sub")} />
+        </div>
+        <div style={{ display: "flex", background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 12, padding: 3, gap: 2 }}>
+          {SEG_TABS.map((s) => (
+            <button key={s.key} onClick={() => setSeg(s.key)} aria-pressed={seg === s.key}
+              style={{ fontSize: 10.5, fontWeight: 800, color: seg === s.key ? "var(--ink)" : "var(--dim)", background: seg === s.key ? "var(--g-blue)" : "transparent", border: 0, borderRadius: 9, padding: "6px 11px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)" }}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "8px 12px", width: 200 }}>
+          <Search size={13} style={{ color: "var(--faint)", flex: "none" }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("cu.search")} dir="auto"
+            style={{ flex: 1, minWidth: 0, background: "none", border: 0, outline: "none", color: "var(--txt)", fontSize: 11, fontFamily: "var(--kvx-font-ar)" }} />
+        </label>
       </div>
 
       {error ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><TruthChip state="gathering" /><span style={{ fontSize: 12.5, color: "var(--kv-faint)" }}>{t("cu.loadError")}</span></div>
-      ) : data === null ? null : (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><TruthChip state="degraded" /><span style={{ fontSize: 12.5, color: "var(--faint)" }}>{t("cu.loadError")}</span></div>
+      ) : data === null ? (
+        <div style={{ fontSize: 12.5, color: "var(--faint)" }}><TruthChip state="gather" /></div>
+      ) : shown.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: "var(--faint)", padding: "20px 2px" }}>{t("cu.wall.empty")}</div>
+      ) : (
         <>
-          {/* Facts strip — pure arithmetic from real orders. */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
-            <Fact label={t("cu.guests")} value={<Num>{data.facts.totalCustomers}</Num>} />
-            <Fact label={t("cu.facts.orders")} value={<Num>{data.facts.totalOrders}</Num>} />
-            <Fact label={t("cu.facts.revenue")} value={money(data.facts.totalRevenue)} />
-            <Fact label={t("cu.facts.avgOrder")} value={money(data.facts.avgOrderValue)} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 12 }}>
+            {shown.map((g) => (
+              <button key={g.id} type="button" onClick={() => setDossier(g)} style={{ border: 0, padding: 0, background: "none", cursor: "pointer", textAlign: "start" }}>
+                <LoyaltyCard
+                  tier={g.tier}
+                  avatar={<Bdi>{(g.name || "؟").slice(0, 1)}</Bdi>}
+                  name={<Bdi>{g.name || "—"}</Bdi>}
+                  phone={g.phone ? <span dir="ltr">{g.phone}</span> : undefined}
+                  tierLabel={TIER_LABEL[g.tier]}
+                  orders={<Num>{g.orders}</Num>}
+                  visits="—"
+                  spend={money(g.ltv)}
+                  spendLabel={t("cu.top.lifetime")}
+                  atRisk={g.atRisk}
+                />
+              </button>
+            ))}
           </div>
-
-          {/* Segment tiles — derived, never invented. VIP=loyal, REPEAT=returning, NEW=new, RISK=at-risk. */}
-          <section style={card}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-              <span style={{ fontSize: 14, fontWeight: 800, color: "var(--kv-text)", flex: 1 }}>{t("cu.derived")}</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, fontWeight: 800, color: "#0A8A5F", background: "rgba(14,159,110,.12)", borderRadius: "var(--kv-r-pill)", padding: "4px 10px" }}>✓ {t("cu.derived")}</span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12 }}>
-              <SegTile icon={<Star size={15} />} accent="#c58b1f" label={t("cu.seg.vip")} hint={t("cu.seg.vipHint")} n={data.segments.loyal} />
-              <SegTile icon={<Repeat size={15} />} accent="#3f7fe0" label={t("cu.seg.repeat")} hint={t("cu.seg.repeatHint")} n={data.segments.returning} />
-              <SegTile icon={<Sparkles size={15} />} accent="#0E9F6E" label={t("cu.seg.new")} hint={t("cu.seg.newHint")} n={data.segments.new} />
-              <SegTile icon={<Clock3 size={15} />} accent="#b9822a" label={t("cu.seg.risk")} hint={t("cu.seg.riskHint")} n={data.atRisk.length} />
-            </div>
-          </section>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 16, alignItems: "start" }}>
-            {/* Top regulars — by real spend. */}
-            <section style={card}>
-              <Head icon={<Trophy size={16} />} accent="#c58b1f" title={t("cu.top.title")} sub={t("cu.top.sub")} />
-              {data.topBySpend.length === 0 ? <EmptyLine>{t("cu.top.empty")}</EmptyLine> : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                  {data.topBySpend.map((c, i) => (
-                    <div key={c.id} style={rowStyle}>
-                      <span style={{ width: 22, fontSize: 12, fontWeight: 800, color: "var(--kv-faint)", textAlign: "center" }}><Num>{i + 1}</Num></span>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--kv-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Bdi>{c.name || "—"}</Bdi></div>
-                        <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--kv-faint)", marginTop: 2 }}><Num>{c.orders_count}</Num> {t("cu.top.orders")}</div>
-                      </div>
-                      <span style={{ textAlign: "end" }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--kv-text)" }}>{money(c.ltv)}</div>
-                        <div style={{ fontSize: 9, fontWeight: 800, color: "var(--kv-faint)" }}>{t("cu.top.lifetime")}</div>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {/* Slipping away — at-risk (real days silent). Win-back = SOON. */}
-            <section style={card}>
-              <Head icon={<Clock3 size={16} />} accent="#b9822a" title={t("cu.slip.title")} sub={t("cu.slip.sub")} />
-              {data.atRisk.length === 0 ? <EmptyLine>{t("cu.slip.empty")}</EmptyLine> : (
-                <>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                    {data.atRisk.slice(0, 8).map((c) => (
-                      <div key={c.id} style={rowStyle}>
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--kv-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Bdi>{c.name || "—"}</Bdi></div>
-                        </div>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: "#b9822a", whiteSpace: "nowrap" }}><Num>{c.days_since}</Num> {t("cu.slip.days")}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-                    <TruthChip state="soon" />
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--kv-faint)" }}>{t("cu.slip.winback")}</span>
-                  </div>
-                </>
-              )}
-            </section>
+          {/* Scope honesty — the wall is the top-by-spend slice, not the full
+              roster (aggregates topN=10); search + tabs scope to it. */}
+          <div style={{ fontSize: 10.5, color: "var(--faint)", lineHeight: 1.6, padding: "0 2px" }}>{t("cu.wall.scope")}</div>
+          {/* Data-blocked ring/visits/usual — honest wall note (hard-rule #1). */}
+          <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 10.5, color: "var(--faint)", lineHeight: 1.6 }}>
+            <TruthChip state="gather" /> {t("cu.wall.ringGather")}
           </div>
-
-          {/* Karim's memory — inference. Flag-gated customer_memory, 0 rows → SOON. */}
-          <section style={card}>
-            <Head icon={<Brain size={16} />} accent="#a878f0" title={t("cu.mem.title")} sub={t("cu.mem.sub")} />
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <TruthChip state="soon" />
-              <span style={{ fontSize: 12.5, color: "var(--kv-faint)", lineHeight: 1.6 }}>{t("cu.mem.soon")}</span>
-            </div>
-          </section>
         </>
       )}
+    </div>
+  );
 
-      {/* The memory law — copy, not data. */}
-      <div style={{ border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md-lg)", background: "var(--kv-card-soft)", padding: "12px 16px", fontSize: 12.5, color: "var(--kv-muted)", lineHeight: 1.85 }}>
-        💡 {t("cu.law")}
+  return (
+    <>
+      <HeaderRow
+        title={t("cu.title")}
+        jobLine={t("cu.sub")}
+        right={data ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 700, color: "var(--dim)", background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 99, padding: "5px 11px", whiteSpace: "nowrap" }}>
+            <Users size={12} /> <Num>{data.facts.totalCustomers}</Num> {t("cu.guests")} · ↺ <Num>{repeatCount}</Num> {t("cu.repeat")}
+          </span>
+        ) : undefined}
+      />
+      <PageGrid context={context} hero={hero} />
+
+      {/* Dossier drawer — real facts + GATHERING memory/timeline + SOON actions. */}
+      <AuroraDrawer open={dossier !== null} onClose={() => setDossier(null)}>
+        {dossier && <Dossier g={dossier} money={money} tierLabel={TIER_LABEL[dossier.tier]} onClose={() => setDossier(null)} />}
+      </AuroraDrawer>
+    </>
+  );
+}
+
+interface WallGuest { id: string; name: string | null; phone: string | null; ltv: number; orders: number; tier: CardTier; atRisk: boolean }
+
+function Dossier({ g, money, tierLabel, onClose }: { g: WallGuest; money: (n: number) => React.ReactNode; tierLabel: string; onClose: () => void }) {
+  const t = useT();
+  const TIER_GRAD: Record<CardTier, string> = { vip: "var(--g-gold)", reg: "var(--g-green)", new: "var(--g-blue)", risk: "var(--g-coral)" };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Header — tier-filled, dark ink. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, background: TIER_GRAD[g.tier], color: "var(--ink)", borderRadius: 16, padding: "14px 16px" }}>
+        <span style={{ width: 46, height: 46, borderRadius: "50%", background: "rgba(0,0,0,.16)", display: "grid", placeItems: "center", fontWeight: 900, fontSize: 18, color: "var(--ink)", flex: "none" }}><Bdi>{(g.name || "؟").slice(0, 1)}</Bdi></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, fontFamily: "var(--kvx-font-ar)" }}><Bdi>{g.name || "—"}</Bdi></div>
+          {g.phone && <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ink-soft)" }} dir="ltr">{g.phone}</div>}
+        </div>
+        <span style={{ fontSize: 9, fontWeight: 900, background: "var(--ink-chip)", borderRadius: 8, padding: "3px 9px" }}>{tierLabel}</span>
+        <button onClick={onClose} aria-label={t("cu.dossier.close")} style={{ width: 30, height: 30, borderRadius: 10, border: 0, background: "rgba(0,0,0,.16)", color: "var(--ink)", cursor: "pointer", flex: "none" }}>✕</button>
       </div>
-      {/* Customer write actions — no backend yet → honest SOON. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+
+      {/* Real facts. */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <Fact label={t("cu.dossier.facts")} value={money(g.ltv)} tier="gold" />
+        <Fact label={t("cu.top.orders")} value={<Num>{g.orders}</Num>} tier="blue" />
+      </div>
+
+      {/* Karim memory — GATHERING (flag-gated). */}
+      <div style={{ background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 14, padding: "12px 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <Brain size={15} style={{ color: "#c4b1ff" }} />
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{t("cu.mem.title")}</span>
+          <TruthChip state="gather" />
+        </div>
+        <div style={{ fontSize: 11, color: "var(--faint)", lineHeight: 1.6 }}>{t("cu.dossier.memGather")}</div>
+      </div>
+
+      {/* Timeline — GATHERING (no per-guest read route). */}
+      <div style={{ background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 14, padding: "12px 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{t("cu.top.title")}</span>
+          <TruthChip state="gather" />
+        </div>
+        <div style={{ fontSize: 11, color: "var(--faint)", lineHeight: 1.6 }}>{t("cu.dossier.timelineGather")}</div>
+      </div>
+
+      {/* Actions — SOON (no backend). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
         <TruthChip state="soon" />
-        <span style={{ fontSize: 11.5, color: "var(--kv-faint)" }}>{t("cu.actionsSoon")}</span>
+        <span style={{ fontSize: 11, color: "var(--faint)", lineHeight: 1.6 }}>{t("cu.dossier.actionsSoon")}</span>
       </div>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-function Fact({ label, value }: { label: string; value: React.ReactNode }) {
+function Fact({ label, value, tier }: { label: string; value: React.ReactNode; tier: Tier }) {
+  const grad: Record<Tier, string> = { gold: "var(--g-gold)", green: "var(--g-green)", blue: "var(--g-blue)", coral: "var(--g-coral)", violet: "var(--g-violet)" };
   return (
-    <div style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md-lg)", padding: "12px 14px" }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: "var(--kv-text)" }}>{value}</div>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--kv-muted)", marginTop: 2 }}>{label}</div>
+    <div style={{ background: grad[tier], color: "var(--ink)", borderRadius: 13, padding: "11px 13px" }}>
+      <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "var(--kvx-font-ui)" }}>{value}</div>
+      <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".05em", color: "var(--ink-soft)", textTransform: "uppercase", marginTop: 2 }}>{label}</div>
     </div>
   );
 }
-function SegTile({ icon, accent, label, hint, n }: { icon: React.ReactNode; accent: string; label: string; hint: string; n: number }) {
-  return (
-    <div style={{ background: "var(--kv-card-soft)", border: "1px solid var(--kv-border)", borderTop: `3px solid ${accent}`, borderRadius: "var(--kv-r-md-lg)", padding: "12px 14px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
-        <span style={{ color: accent, display: "inline-flex" }}>{icon}</span>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--kv-text)" }}>{label}</span>
-      </div>
-      <div style={{ fontSize: 24, fontWeight: 800, color: accent }}><Num>{n}</Num></div>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--kv-faint)", marginTop: 2 }}>{hint}</div>
-    </div>
-  );
-}
-function Head({ icon, accent, title, sub }: { icon: React.ReactNode; accent: string; title: string; sub: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
-      <span style={{ color: accent, display: "inline-flex", marginTop: 1 }}>{icon}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 800, color: "var(--kv-text)", margin: 0 }}>{title}</h2>
-        <p style={{ fontSize: 11.5, color: "var(--kv-faint)", margin: "3px 0 0", lineHeight: 1.6 }}>{sub}</p>
-      </div>
-    </div>
-  );
-}
+
 function EmptyLine({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 2px" }}>
-      <TruthChip state="gathering" />
-      <span style={{ fontSize: 12.5, color: "var(--kv-faint)", lineHeight: 1.6 }}>{children}</span>
+      <TruthChip state="gather" />
+      <span style={{ fontSize: 12, color: "var(--faint)", lineHeight: 1.6 }}>{children}</span>
     </div>
   );
 }
-
-const card: React.CSSProperties = {
-  background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-lg)",
-  boxShadow: "var(--kv-shadow-card)", padding: "16px 20px",
-};
-const rowStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 12, background: "var(--kv-card-soft)",
-  border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md)", padding: "10px 13px",
-};
