@@ -1,42 +1,46 @@
 "use client";
 
 // ============================================================================
-// console_v2 item 9 — Knowledge. "What Karim knows — and is allowed to say."
-// Four rooms, governed by the THREE-TIER EDITING LAW:
+// console_v2 item 9 — Knowledge (v35 dark-glass rebuild). "What Karim knows —
+// and is allowed to say." Composed entirely from @/components/console-v2/kit;
+// the design's four "rooms" render as glass Panels with tier-accented section
+// headers (Chromatic Truth: the tier lives in the header badge + summary tiles,
+// never a fabricated trend color). Every functional wire from the shipped page
+// survives the reskin — the rebuild is VISUAL:
 //
-//  • INSTANT — writes immediately via an audited route. The 86/availability toggle
-//    (POST /api/menu/availability, logged) and tonight-notes (POST
-//    /api/settings/tonight-notes, manager-only, auto-expire at close). Wired real.
-//  • GATED — a price/description/zone edit is a PROPOSAL for the signing folder,
-//    NEVER a direct write ("a wrong price in Karim's mouth is a live incident"). As of
-//    item 10 the signing folder EXISTS: propose files a knowledge_change_request
-//    (POST /api/knowledge/change-requests) that a manager approves + applies in
-//    Approvals — nothing writes a truth table from here. (Policy/tone/standing edits
-//    have no field-level apply path yet → still rendered SOON, honestly.)
-//  • LOCKED — the safety (allergen) vocabulary renders view-only with NO edit path at
-//    all: the console is simply not a surface that can change what the deterministic
-//    gate reads. request-change + the 211-case test log have no backend → SOON.
+//  • INSTANT — the 86/availability toggle (POST /api/menu/availability, logged)
+//    and tonight-notes (POST /api/settings/tonight-notes, manager-only, auto-
+//    expire at close) write immediately via audited routes. Real.
+//  • GATED  — a price/description/zone edit is a PROPOSAL: propose files a
+//    knowledge_change_request (POST /api/knowledge/change-requests) that a
+//    manager approves + applies in Approvals. Nothing writes a truth table here.
+//    (Policy tone/dialect + the rich item-editor sections — photo, modifier
+//    groups, pairings, performance — have no backend yet → rendered SOON.)
+//  • LOCKED — the safety (allergen) vocabulary renders view-only with NO edit
+//    path: red is used ONLY here (safety is the one sanctioned red). request-
+//    change + the 211-case test log have no backend → SOON.
 //
-// Every read is real. Standing rules are flag-gated OFF for most tenants → honest
-// GATHERING. RED is used ONLY on the Safety room. XSS: text nodes + <Bdi>/<Num> only.
+// Standing rules are flag-gated OFF for most tenants → honest GATHERING. Hours
+// GATHERING until loaded. XSS: dictionary text nodes + <Bdi>/<Num> only.
 // ============================================================================
 
-import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Truck, Moon, ShieldAlert, Lock, Search, Pencil, Clock } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BookOpen, Truck, Moon, ShieldAlert, Lock, Search, Pencil, Clock, X } from "lucide-react";
 import { useRestaurantStore, useHasHydrated } from "@/lib/store";
-import { TruthChip } from "@/components/console-v2";
+import {
+  HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, LockedSwitch,
+  AuroraDrawer, MiniModal, Toasts, pushToast, type Tier,
+} from "@/components/console-v2/kit";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi, Num } from "@/components/kivo";
 import type { DictKey } from "@/lib/i18n/dictionary";
 import type { MenuItem, DeliveryArea } from "@/lib/types";
 import { ALLERGENS, mapAllergenValue, canonicalToArLabel } from "@/lib/ai/allergen-vocab";
 
-const ACCENT = { menu: "#c58b1f", zones: "#3f7fe0", staff: "#6b7688", safety: "#ff6b5e" } as const;
-
 interface TonightNote { id: string; body: string; expires_at: string }
 interface StandingRow { id: string; version: number; body: string; active: boolean; approved_by: string | null; retired_at: string | null }
 
-// A GATED edit that files a real change-request to the signing folder (item 10).
+// A GATED edit that files a real change-request to the signing folder.
 type EditKind = "number" | "text";
 interface EditField { field: string; labelKey: DictKey; kind: EditKind; current: number | string }
 interface EditTarget { targetType: "menu_item" | "delivery_zone"; targetId: string; targetLabel: string; currency: string; fields: EditField[] }
@@ -50,6 +54,7 @@ function allergenLabel(raw: string): string {
   return (key && canonicalToArLabel(key)) || raw;
 }
 
+// ---------------------------------------------------------------------------
 export default function KnowledgePage() {
   const t = useT();
   const hydrated = useHasHydrated();
@@ -60,52 +65,136 @@ export default function KnowledgePage() {
   const [hours, setHours] = useState<Record<string, { open?: string; close?: string; closed?: boolean }> | null>(null);
   const [standing, setStanding] = useState<StandingRow[] | null>(null);
   const [edit, setEdit] = useState<EditTarget | null>(null);
+  const [modal, setModal] = useState<null | "changelog" | "testlog" | "vocab" | "zones" | "policy">(null);
+
+  const roomRefs = {
+    menu: useRef<HTMLDivElement>(null),
+    zones: useRef<HTMLDivElement>(null),
+    staff: useRef<HTMLDivElement>(null),
+    safety: useRef<HTMLDivElement>(null),
+  };
+  const scrollTo = (k: keyof typeof roomRefs) => roomRefs[k].current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   useEffect(() => {
     void getJson<{ hours?: Record<string, { open?: string; close?: string; closed?: boolean }> }>("/api/settings/hours").then((d) => setHours(d?.hours ?? {}));
     void getJson<{ instructions?: StandingRow[] }>("/api/settings/standing-instructions").then((d) => setStanding(d?.instructions ?? []));
   }, []);
 
+  const offTonight = menuItems.filter((m) => !m.available).length;
+
   return (
-    <div style={{ maxWidth: 1080, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--kv-text)", margin: "0 0 6px" }}>{t("kn.title")}</h1>
-          <p style={{ fontSize: 13, color: "var(--kv-muted)", margin: 0, lineHeight: 1.7 }}>{t("kn.sub")}</p>
+    <>
+      <HeaderRow
+        title={t("kn.title")}
+        jobLine={t("kn.sub")}
+        right={
+          <button onClick={() => setModal("changelog")} title={t("kn.changelog.title")} style={freshPill}>
+            <span style={{ color: "var(--dim)" }}>{t("kn.fresh.priced")} <Num>{menuItems.length}</Num>/<Num>{menuItems.length}</Num></span>
+            <span style={{ color: "#5fe0b0", fontWeight: 800 }}>· {t("kn.gateLocked")}</span>
+          </button>
+        }
+      />
+
+      <PageGrid
+        context={
+          <>
+            {/* LEFT — "The brain": four summary tiles + editing-law doctrine. */}
+            <Panel>
+              <SectionHeader icon={<BookOpen size={15} />} tier="gold" title={t("kn.brain")} sub={t("kn.editing.law")} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+                <button onClick={() => scrollTo("menu")} style={tileBtn}>
+                  <StatTile tier="gold" label={`📖 ${t("kn.menu.lbl")}`} value={<span><Num>{menuItems.length}</Num> <small style={{ fontSize: 11, fontWeight: 800 }}>{t("kn.items")}</small></span>} fact={t("kn.menu.r3")} />
+                </button>
+                <button onClick={() => scrollTo("zones")} style={tileBtn}>
+                  <StatTile tier="blue" label={`🛵 ${t("kn.zones.lbl")}`} value={<span><Num>{zones.length}</Num> <small style={{ fontSize: 11, fontWeight: 800 }}>{t("kn.zonesUnit")}</small></span>} fact={t("kn.zones.r3")} />
+                </button>
+                <button onClick={() => scrollTo("staff")} style={tileBtn}>
+                  <StatTile tier="coral" label={`🌙 ${t("kn.staff.lbl")}`} value={<TruthChip state="gather" />} fact={t("kn.staff.r3")} />
+                </button>
+                {/* Safety summary — the ONE sanctioned red surface (red = safety only). */}
+                <button onClick={() => scrollTo("safety")} style={{ ...tileBtn }}>
+                  <div style={safetyTile}>
+                    <div style={{ fontSize: 8.5, fontWeight: 900, letterSpacing: ".09em", textTransform: "uppercase", color: "rgba(255,255,255,.85)" }}>🛡️ {t("kn.safe.lbl")}</div>
+                    <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.05, marginTop: 3, color: "#fff", fontFamily: "var(--kvx-font-ui)" }}><Num>{ALLERGENS.length}</Num> <small style={{ fontSize: 11 }}>{t("kn.safe.locked")}</small></div>
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(255,255,255,.85)", marginTop: 4, borderTop: "1px solid rgba(255,255,255,.22)", paddingTop: 5 }}>{t("kn.safe.r3")}</div>
+                  </div>
+                </button>
+              </div>
+              <p style={doctrine}>{t("kn.law")}</p>
+            </Panel>
+          </>
+        }
+        hero={
+          <Panel style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <SectionHeader
+              icon={<BookOpen size={15} />}
+              tier="gold"
+              title={t("kn.library")}
+              sub={t("kn.librarySub")}
+              right={<MenuSearchLink />}
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div ref={roomRefs.menu}><MenuRoom items={menuItems} hydrated={hydrated} currency={currency} offTonight={offTonight} onEdit={setEdit} /></div>
+              <div ref={roomRefs.zones}><DeliveryRoom zones={zones} hydrated={hydrated} currency={currency} hours={hours} onEdit={setEdit} onAllZones={() => setModal("zones")} onPolicy={() => setModal("policy")} /></div>
+              <div ref={roomRefs.staff}><StaffRoom standing={standing} /></div>
+              <div ref={roomRefs.safety}><SafetyRoom onTestLog={() => setModal("testlog")} onRequest={() => setModal("vocab")} /></div>
+            </div>
+          </Panel>
+        }
+      />
+
+      {edit && <ItemEditorDrawer target={edit} onClose={() => setEdit(null)} />}
+
+      {/* Changelog — GATHERING (version-history engine not shipped). */}
+      <MiniModal open={modal === "changelog"} onClose={() => setModal(null)}>
+        <ModalHead icon="🧾" title={t("kn.changelog.title")} onClose={() => setModal(null)} />
+        <GatheringBody body={t("kn.changelog.gathering")} />
+      </MiniModal>
+      {/* Test log — SOON (211-case harness has no console surface). */}
+      <MiniModal open={modal === "testlog"} onClose={() => setModal(null)}>
+        <ModalHead icon="📋" title={t("kn.safe.testLog")} onClose={() => setModal(null)} />
+        <SoonBody body={t("kn.safe.locknote")} />
+      </MiniModal>
+      {/* Vocabulary change request — SOON (safety edits are a production event, no console path). */}
+      <MiniModal open={modal === "vocab"} onClose={() => setModal(null)}>
+        <ModalHead icon="🔒" title={t("kn.safe.requestChange")} onClose={() => setModal(null)} />
+        <SoonBody body={t("kn.safe.locknote")} />
+      </MiniModal>
+      {/* All zones — REAL (deliveryAreas store). */}
+      <MiniModal open={modal === "zones"} onClose={() => setModal(null)}>
+        <ModalHead icon="📍" title={t("kn.zones.title")} onClose={() => setModal(null)} />
+        <div style={{ padding: "4px 2px", display: "flex", flexDirection: "column", gap: 7 }}>
+          {zones.map((z) => (
+            <div key={z.id} style={zoneRow}>
+              <span style={{ fontFamily: "var(--kvx-font-ar)", fontWeight: 700, color: "var(--txt)" }}><Bdi>{z.name}</Bdi></span>
+              <span style={{ marginInlineStart: "auto", fontWeight: 800, color: "var(--gold)" }}><Num>{z.deliveryFee.toLocaleString("en-US")}</Num> {currency}</span>
+              {!z.active && <span style={{ fontSize: 10, color: "var(--faint)" }}>({t("kn.pol.closed")})</span>}
+            </div>
+          ))}
         </div>
-        {hydrated && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11.5, fontWeight: 700, color: "var(--kv-muted)", background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-pill)", padding: "6px 12px", whiteSpace: "nowrap" }}>
-            <Num>{menuItems.length}</Num> {t("kn.items")} · <Num>{zones.length}</Num> {t("kn.zonesUnit")} · <span style={{ color: "#0A8A5F" }}>{t("kn.gateLocked")}</span>
-          </span>
-        )}
-      </div>
+      </MiniModal>
+      {/* Policy (tone / dialect / modes / payment) — tone & dialect have no field-apply path → SOON. */}
+      <MiniModal open={modal === "policy"} onClose={() => setModal(null)}>
+        <ModalHead icon="🗣️" title={t("kn.pol.title")} onClose={() => setModal(null)} />
+        <div style={{ padding: "4px 2px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <PolicyRow label={t("kn.pol.pay")} state="live" />
+          <PolicyRow label={t("kn.pol.modes")} state="live" />
+          <PolicyRow label={`${t("kn.pol.tone")} · ${t("kn.pol.dialect")}`} state="soon" />
+        </div>
+      </MiniModal>
 
-      <div style={{ border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md-lg)", background: "var(--kv-card-soft)", padding: "12px 16px", fontSize: 12.5, color: "var(--kv-muted)", lineHeight: 1.8 }}>
-        {t("kn.law")}
-      </div>
-
-      <MenuRoom items={menuItems} hydrated={hydrated} currency={currency} onEdit={setEdit} />
-      <DeliveryRoom zones={zones} hydrated={hydrated} currency={currency} hours={hours} onEdit={setEdit} />
-      <StaffRoom standing={standing} />
-      <SafetyRoom />
-
-      {edit && <ProposeModal target={edit} onClose={() => setEdit(null)} />}
-    </div>
+      <Toasts />
+    </>
   );
 }
 
 // ---------------------------------------------------------------------------
-function Room({ icon, accent, title, sub, right, children }: { icon: React.ReactNode; accent: string; title: string; sub: string; right?: React.ReactNode; children: React.ReactNode }) {
+// A room = a glass Panel-inside-Panel: tier section header + body.
+// ---------------------------------------------------------------------------
+function Room({ icon, tier, title, sub, right, children }: { icon: React.ReactNode; tier: Tier; title: string; sub: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderTop: `3px solid ${accent}`, borderRadius: "var(--kv-r-lg)", boxShadow: "var(--kv-shadow-card)", padding: "16px 20px" }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
-        <span style={{ color: accent, display: "inline-flex", marginTop: 1 }}>{icon}</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 800, color: "var(--kv-text)", margin: 0 }}>{title}</h2>
-          <p style={{ fontSize: 11.5, color: "var(--kv-faint)", margin: "3px 0 0", lineHeight: 1.6 }}>{sub}</p>
-        </div>
-        {right && <div style={{ flex: "0 0 auto" }}>{right}</div>}
-      </div>
+    <section style={roomBox}>
+      <SectionHeader icon={icon} tier={tier} title={title} sub={sub} right={right} />
       {children}
     </section>
   );
@@ -114,13 +203,12 @@ function Room({ icon, accent, title, sub, right, children }: { icon: React.React
 // ---------------------------------------------------------------------------
 // Menu Truth — INSTANT 86 toggle (real) + GATED propose (files a change-request).
 // ---------------------------------------------------------------------------
-function MenuRoom({ items, hydrated, currency, onEdit }: { items: MenuItem[]; hydrated: boolean; currency: string; onEdit: (t: EditTarget) => void }) {
+function MenuRoom({ items, hydrated, currency, offTonight, onEdit }: { items: MenuItem[]; hydrated: boolean; currency: string; offTonight: number; onEdit: (t: EditTarget) => void }) {
   const t = useT();
   const setItemAvailability = useRestaurantStore((s) => s.setItemAvailability);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
   const [busy, setBusy] = useState<Set<string>>(new Set());
-  const [err, setErr] = useState<string | null>(null);
 
   const cats = useMemo(() => {
     const seen: string[] = [];
@@ -134,53 +222,57 @@ function MenuRoom({ items, hydrated, currency, onEdit }: { items: MenuItem[]; hy
 
   async function flip(m: MenuItem) {
     if (busy.has(m.id)) return;
-    setBusy((s) => new Set(s).add(m.id)); setErr(null);
+    setBusy((s) => new Set(s).add(m.id));
     const ok = await setItemAvailability(m.id, !m.available);
-    if (!ok) setErr(t("kn.menu.86error"));
+    pushToast(ok ? t(m.available ? "kn.menu.86done.off" : "kn.menu.86done.on") : t("kn.menu.86error"), ok ? "ok" : "amber");
     setBusy((s) => { const n = new Set(s); n.delete(m.id); return n; });
   }
 
+  const editTargetFor = (m: MenuItem): EditTarget => ({
+    targetType: "menu_item", targetId: m.id, targetLabel: m.name, currency, fields: [
+      { field: "price", labelKey: "kn.edit.newPrice", kind: "number", current: m.price },
+      { field: "description", labelKey: "kn.edit.newDesc", kind: "text", current: m.description ?? "" },
+    ],
+  });
+
   return (
-    <Room icon={<BookOpen size={17} />} accent={ACCENT.menu} title={t("kn.menu.title")} sub={t("kn.menu.sub")}
-      right={
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "var(--kv-card-soft)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md-sm)", padding: "6px 10px", width: 190, maxWidth: "40vw" }}>
-          <Search size={13} color="var(--kv-faint)" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("kn.menu.search")} style={{ border: 0, background: "transparent", outline: "none", color: "var(--kv-text)", fontFamily: "var(--kv-font)", fontSize: 12, width: "100%" }} />
-        </span>
-      }
+    <Room icon={<BookOpen size={15} />} tier="gold" title={t("kn.menu.title")} sub={t("kn.menu.roomJob")}
+      right={<span style={{ fontSize: 10, fontWeight: 800, color: "var(--dim)" }}><Num>{items.length}</Num> {t("kn.items")}{offTonight > 0 && <> · <Num>{offTonight}</Num> {t("kn.menu.off")}</>}</span>}
     >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+        <span style={searchBox}>
+          <Search size={13} color="var(--faint)" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("kn.menu.search")} style={searchInput} />
+        </span>
+      </div>
       {cats.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
           <CatChip active={cat === "all"} onClick={() => setCat("all")}>{t("kn.menu.all")}</CatChip>
           {cats.map((c) => <CatChip key={c} active={cat === c} onClick={() => setCat(c)}><Bdi>{c}</Bdi></CatChip>)}
         </div>
       )}
-      {err && <div style={{ fontSize: 12, fontWeight: 700, color: "var(--kv-amber)", marginBottom: 10 }}>{err}</div>}
 
       {!hydrated ? null : shown.length === 0 ? (
         <EmptyLine>{t("kn.menu.empty")}</EmptyLine>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           {shown.map((m) => (
-            <div key={m.id} style={rowStyle}>
+            <div key={m.id} style={itemRow} onClick={() => onEdit(editTargetFor(m))} role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter") onEdit(editTargetFor(m)); }}>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--kv-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Bdi>{m.name}</Bdi></div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "var(--txt)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Bdi>{m.name}</Bdi></div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
                   {m.allergens?.slice(0, 4).map((a) => (
-                    <span key={a} style={{ fontSize: 9.5, fontWeight: 800, color: "#c0392b", background: "rgba(255,107,94,.12)", borderRadius: 6, padding: "2px 7px" }}>⚠ {allergenLabel(a)}</span>
+                    <span key={a} style={allergenChip}>⚠ {allergenLabel(a)}</span>
                   ))}
-                  {!m.available && <span style={{ fontSize: 10, fontWeight: 800, color: "#b9822a" }}>{t("kn.menu.off")}</span>}
+                  {!m.available && <span style={{ fontSize: 10, fontWeight: 800, color: "var(--coral)" }}>{t("kn.menu.off")}</span>}
                 </div>
               </div>
-              <span style={{ fontSize: 14, fontWeight: 800, color: "var(--kv-text)", whiteSpace: "nowrap" }}><Num>{m.price.toLocaleString("en-US")}</Num> <span style={{ fontSize: 11, color: "var(--kv-muted)" }}>{currency}</span></span>
-              <button type="button" role="switch" aria-checked={m.available} aria-label={t("kn.menu.toggleAria")} disabled={busy.has(m.id)} onClick={() => flip(m)} title={t("kn.instant")}
-                style={{ width: 38, height: 22, borderRadius: 99, border: 0, cursor: busy.has(m.id) ? "default" : "pointer", opacity: busy.has(m.id) ? 0.5 : 1, padding: 0, position: "relative", background: m.available ? "var(--kv-primary)" : "#cdd9d2", flex: "0 0 auto" }}>
-                <span style={{ position: "absolute", top: 3, insetInlineStart: m.available ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.25)", transition: "inset-inline-start .15s" }} />
-              </button>
-              <button onClick={() => onEdit({ targetType: "menu_item", targetId: m.id, targetLabel: m.name, currency, fields: [
-                { field: "price", labelKey: "kn.edit.newPrice", kind: "number", current: m.price },
-                { field: "description", labelKey: "kn.edit.newDesc", kind: "text", current: m.description ?? "" },
-              ] })} style={ghostBtn}><Pencil size={12} /> {t("kn.menu.propose")}</button>
+              <span style={{ fontSize: 14, fontWeight: 800, color: "var(--gold)", whiteSpace: "nowrap" }}><Num>{m.price.toLocaleString("en-US")}</Num> <span style={{ fontSize: 11, color: "var(--dim)" }}>{currency}</span></span>
+              <span onClick={(e) => e.stopPropagation()} title={t("kn.instant")} style={{ display: "inline-flex" }}>
+                <LockedSwitch on={m.available} onToggle={() => flip(m)} />
+              </span>
+              <button onClick={(e) => { e.stopPropagation(); onEdit(editTargetFor(m)); }} style={ghostBtn}><Pencil size={12} /> {t("kn.menu.propose")}</button>
             </div>
           ))}
         </div>
@@ -196,50 +288,41 @@ const DAY_LABEL: Record<string, DictKey> = {
   wednesday: "set.day.wednesday", thursday: "set.day.thursday", friday: "set.day.friday", saturday: "set.day.saturday",
 };
 
-function DeliveryRoom({ zones, hydrated, currency, hours, onEdit }: { zones: DeliveryArea[]; hydrated: boolean; currency: string; hours: Record<string, { open?: string; close?: string; closed?: boolean }> | null; onEdit: (t: EditTarget) => void }) {
+function DeliveryRoom({ zones, hydrated, currency, hours, onEdit, onAllZones, onPolicy }: { zones: DeliveryArea[]; hydrated: boolean; currency: string; hours: Record<string, { open?: string; close?: string; closed?: boolean }> | null; onEdit: (t: EditTarget) => void; onAllZones: () => void; onPolicy: () => void }) {
   const t = useT();
   const days = hours ? DAY_ORDER.filter((d) => hours[d]) : [];
+  const feeEdit = (z: DeliveryArea): EditTarget => ({ targetType: "delivery_zone", targetId: z.id, targetLabel: z.name, currency, fields: [{ field: "deliveryFee", labelKey: "kn.edit.newFee", kind: "number", current: z.deliveryFee }] });
 
   return (
-    <Room icon={<Truck size={17} />} accent={ACCENT.zones} title={t("kn.zones.title")} sub={t("kn.zones.sub")}>
+    <Room icon={<Truck size={15} />} tier="blue" title={t("kn.zones.title")} sub={t("kn.zones.roomJob")}
+      right={<span style={{ fontSize: 10, fontWeight: 800, color: "var(--dim)" }}><Num>{zones.length}</Num> {t("kn.zonesUnit")}</span>}
+    >
       {!hydrated ? null : zones.length === 0 ? (
         <EmptyLine>{t("kn.zones.empty")}</EmptyLine>
       ) : (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {zones.map((z) => (
-            <button key={z.id} onClick={() => onEdit({ targetType: "delivery_zone", targetId: z.id, targetLabel: z.name, currency, fields: [
-              { field: "deliveryFee", labelKey: "kn.edit.newFee", kind: "number", current: z.deliveryFee },
-            ] })} title={t("kn.gatedSoon")}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "var(--kv-card-soft)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md)", padding: "8px 12px", cursor: "pointer", fontFamily: "var(--kv-font)" }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--kv-text)" }}><Bdi>{z.name}</Bdi></span>
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: "#0A8A5F" }}><Num>{z.deliveryFee.toLocaleString("en-US")}</Num> {currency}</span>
-              {!z.active && <span style={{ fontSize: 10, fontWeight: 800, color: "var(--kv-faint)" }}>({t("kn.pol.closed")})</span>}
+          {zones.slice(0, 5).map((z) => (
+            <button key={z.id} onClick={() => onEdit(feeEdit(z))} title={t("kn.gatedSoon")} style={zoneChip}>
+              <span style={{ fontFamily: "var(--kvx-font-ar)", fontWeight: 700, color: "var(--txt)" }}><Bdi>{z.name}</Bdi></span>
+              <span style={{ fontWeight: 800, color: "var(--gold)" }}><Num>{z.deliveryFee.toLocaleString("en-US")}</Num> {currency}</span>
             </button>
           ))}
+          {zones.length > 5 && <button onClick={onAllZones} style={{ ...zoneChip, color: "var(--blue2)" }}>📍 {t("kn.zones.all")}</button>}
         </div>
       )}
 
-      <div style={{ marginTop: 16, borderTop: "1px solid var(--kv-border)", paddingTop: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--kv-muted)" }}>{t("kn.pol.title")}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <Clock size={14} color="var(--kv-muted)" />
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--kv-text)", flex: 1 }}>{t("kn.pol.hours")}</span>
-          {hours === null ? <TruthChip state="gathering" /> : days.length === 0 ? <span style={{ fontSize: 12, color: "var(--kv-faint)" }}>{t("kn.pol.unset")}</span> : (
-            <span style={{ fontSize: 12, color: "var(--kv-muted)", display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }} dir="ltr">
-              {days.map((d) => {
-                const h = hours[d];
-                return <span key={d}>{t(DAY_LABEL[d])} {h.closed || !h.open || !h.close ? t("kn.pol.closed") : `${h.open}–${h.close}`}</span>;
-              })}
+      <div style={{ marginTop: 14, borderTop: "1px solid var(--stroke)", paddingTop: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={policyPill}>
+          <Clock size={12} />
+          {hours === null ? <TruthChip state="gather" /> : days.length === 0 ? <span style={{ color: "var(--faint)" }}>{t("kn.pol.unset")}</span> : (
+            <span dir="ltr" style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+              {days.slice(0, 2).map((d) => { const h = hours[d]; return <span key={d}>{t(DAY_LABEL[d])} {h.closed || !h.open || !h.close ? t("kn.pol.closed") : `${h.open}–${h.close}`}</span>; })}
             </span>
           )}
-        </div>
-        {/* Tone/dialect have no field-level apply path yet → honest SOON. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--kv-muted)", flex: 1 }}>{t("kn.pol.tone")} · {t("kn.pol.dialect")}</span>
-          <TruthChip state="soon" />
-        </div>
+        </span>
+        <button style={policyPill} onClick={onPolicy}>💵 {t("kn.pol.pay")}</button>
+        <button style={policyPill} onClick={onPolicy}>🛍️ {t("kn.pol.modes")}</button>
+        <button style={policyPill} onClick={onPolicy}>🗣️ {t("kn.pol.tone")} <TruthChip state="soon" /></button>
       </div>
     </Room>
   );
@@ -251,7 +334,6 @@ function StaffRoom({ standing }: { standing: StandingRow[] | null }) {
   const [notes, setNotes] = useState<TonightNote[] | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   const active = (standing ?? []).filter((r) => r.active && r.approved_by && !r.retired_at);
 
@@ -264,37 +346,35 @@ function StaffRoom({ standing }: { standing: StandingRow[] | null }) {
   async function addNote() {
     const body = draft.trim();
     if (!body || busy) return;
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       const r = await fetch("/api/settings/tonight-notes", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ body }) });
-      if (r.ok) { setDraft(""); setMsg({ text: t("kn.staff.tonightSaved"), ok: true }); await loadNotes(); }
-      else setMsg({ text: t("kn.staff.tonightError"), ok: false });
-    } catch { setMsg({ text: t("kn.staff.tonightError"), ok: false }); }
+      if (r.ok) { setDraft(""); pushToast(t("kn.staff.tonightSaved"), "ok"); await loadNotes(); }
+      else pushToast(t("kn.staff.tonightError"), "amber");
+    } catch { pushToast(t("kn.staff.tonightError"), "amber"); }
     finally { setBusy(false); }
   }
 
   return (
-    <Room icon={<Moon size={17} />} accent={ACCENT.staff} title={t("kn.staff.title")} sub={t("kn.staff.sub")}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 18 }}>
-        {/* STANDING — real read; edits have no field-level apply path yet → SOON. */}
+    <Room icon={<Moon size={15} />} tier="coral" title={t("kn.staff.title")} sub={t("kn.staff.roomJob")}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16 }}>
+        {/* STANDING — real read; field-level edit has no apply path yet → SOON. */}
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, color: "var(--kv-muted)", flex: 1 }}>📌 {t("kn.staff.standing")}</span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: "var(--dim)", flex: 1 }}>📌 {t("kn.staff.standingHead")}</span>
             <TruthChip state="soon" />
           </div>
-          {standing === null ? <TruthChip state="gathering" /> : active.length === 0 ? (
+          {standing === null ? <TruthChip state="gather" /> : active.length === 0 ? (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <TruthChip state="gathering" />
-              <span style={{ fontSize: 12, color: "var(--kv-faint)", lineHeight: 1.6 }}>{t("kn.staff.standingGathering")}</span>
+              <TruthChip state="gather" />
+              <span style={{ fontSize: 11.5, color: "var(--faint)", lineHeight: 1.6 }}>{t("kn.staff.standingGathering")}</span>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               {active.map((r) => (
-                <div key={r.id} style={{ ...rowStyle, alignItems: "flex-start" }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--kv-text)", lineHeight: 1.6 }}><Bdi>{r.body}</Bdi></div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--kv-faint)", marginTop: 3 }}>{t("kn.staff.version")} <Num>{r.version}</Num></div>
-                  </div>
+                <div key={r.id} style={{ ...noteBox }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--txt)", lineHeight: 1.6, fontFamily: "var(--kvx-font-ar)" }}><Bdi>{r.body}</Bdi></div>
+                  <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--faint)", marginTop: 4 }}>{t("kn.staff.version")} <Num>{r.version}</Num> · {t("kn.staff.ownerOk")}</div>
                 </div>
               ))}
             </div>
@@ -304,24 +384,22 @@ function StaffRoom({ standing }: { standing: StandingRow[] | null }) {
         {/* TONIGHT — INSTANT (real, manager-only, auto-expire) */}
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, color: "var(--kv-muted)", flex: 1 }}>🌙 {t("kn.staff.tonight")}</span>
-            <span style={{ fontSize: 9.5, fontWeight: 800, color: "#0A8A5F" }}>{t("kn.instant")}</span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: "var(--dim)", flex: 1 }}>🌙 {t("kn.staff.tonightHead")}</span>
+            <TruthChip state="live" label={t("kn.instant")} />
           </div>
-          <p style={{ fontSize: 10.5, color: "var(--kv-faint)", margin: "0 0 10px", lineHeight: 1.6 }}>{t("kn.staff.tonightSub")}</p>
+          <p style={{ fontSize: 10, color: "var(--faint)", margin: "0 0 10px", lineHeight: 1.6 }}>{t("kn.staff.tonightSub")}</p>
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addNote(); } }} placeholder={t("kn.staff.tonightAdd")} dir="rtl"
-              style={{ flex: 1, height: 36, borderRadius: "var(--kv-r-md-sm)", border: "1.5px solid var(--kv-border)", background: "var(--kv-card-soft)", padding: "0 11px", fontSize: 12.5, fontFamily: "var(--kv-font)", color: "var(--kv-text)" }} />
+            <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addNote(); } }} placeholder={t("kn.staff.tonightAdd")} dir="rtl" style={noteInput} />
             <button onClick={addNote} disabled={busy || !draft.trim()} style={{ ...primaryBtn, opacity: busy || !draft.trim() ? 0.5 : 1 }}>{t("kn.staff.tonightBtn")}</button>
           </div>
-          {msg && <div style={{ fontSize: 11.5, fontWeight: 700, color: msg.ok ? "var(--kv-deep)" : "var(--kv-amber)", marginBottom: 8 }}>{msg.text}</div>}
           {notes === null ? null : notes.length === 0 ? (
             <EmptyLine>{t("kn.staff.tonightEmpty")}</EmptyLine>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               {notes.map((n) => (
-                <div key={n.id} style={{ ...rowStyle, background: "rgba(232,180,90,.08)", borderColor: "rgba(232,180,90,.3)" }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--kv-text)", flex: 1, lineHeight: 1.6 }}><Bdi>{n.body}</Bdi></span>
-                  <span style={{ fontSize: 10, color: "var(--kv-faint)", whiteSpace: "nowrap" }}>{t("kn.staff.expires")} <Bdi>{new Date(n.expires_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</Bdi></span>
+                <div key={n.id} style={{ ...noteBox, background: "rgba(232,180,90,.08)", borderColor: "rgba(232,180,90,.3)" }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--txt)", lineHeight: 1.6, fontFamily: "var(--kvx-font-ar)" }}><Bdi>{n.body}</Bdi></span>
+                  <div style={{ fontSize: 9.5, color: "var(--faint)", marginTop: 4 }}>{t("kn.staff.expires")} <Bdi>{new Date(n.expires_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</Bdi></div>
                 </div>
               ))}
             </div>
@@ -333,49 +411,50 @@ function StaffRoom({ standing }: { standing: StandingRow[] | null }) {
 }
 
 // ---------------------------------------------------------------------------
-function SafetyRoom() {
+// Safety — the ONE red room. View-only vocabulary; no edit path exists here.
+// ---------------------------------------------------------------------------
+function SafetyRoom({ onTestLog, onRequest }: { onTestLog: () => void; onRequest: () => void }) {
   const t = useT();
   return (
-    <Room icon={<ShieldAlert size={17} />} accent={ACCENT.safety} title={t("kn.safe.title")} sub={t("kn.safe.sub")}
-      right={<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: "#c0392b", background: "rgba(255,107,94,.12)", borderRadius: "var(--kv-r-pill)", padding: "4px 10px" }}><Lock size={12} /> {t("kn.safe.title")}</span>}
-    >
+    <section style={{ ...roomBox, border: "1px solid rgba(255,107,94,.4)", background: "rgba(255,107,94,.05)" }}>
+      <SectionHeader icon={<ShieldAlert size={15} />} tier="coral" title={t("kn.safe.title")} sub={t("kn.safe.roomJob")}
+        right={<span style={safetyLockChip}><Lock size={12} /> {t("kn.safe.locked")}</span>} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {ALLERGENS.map((a) => (
-          <span key={a.key} style={{ fontSize: 12, fontWeight: 800, color: "#c0392b", background: "rgba(255,107,94,.10)", border: "1px solid rgba(255,107,94,.28)", borderRadius: "var(--kv-r-md-sm)", padding: "7px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span key={a.key} style={vocabChip}>
             <Lock size={11} strokeWidth={2.6} /> <Bdi>{a.arLabel}</Bdi>
           </span>
         ))}
       </div>
-      <p style={{ fontSize: 12, color: "var(--kv-muted)", lineHeight: 1.85, margin: "14px 0 0" }}>{t("kn.safe.locknote")}</p>
+      <p style={{ fontSize: 11.5, color: "var(--dim)", lineHeight: 1.85, margin: "14px 0 0" }}>{t("kn.safe.locknote")}</p>
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-        <span style={soonStatic}><TruthChip state="soon" /> {t("kn.safe.requestChange")}</span>
-        <span style={soonStatic}><TruthChip state="soon" /> {t("kn.safe.testLog")}</span>
+        <button onClick={onTestLog} style={soonStatic}><TruthChip state="soon" /> {t("kn.safe.testLog")}</button>
+        <button onClick={onRequest} style={soonStatic}><TruthChip state="soon" /> {t("kn.safe.requestChange")}</button>
       </div>
-    </Room>
+    </section>
   );
 }
 
 // ---------------------------------------------------------------------------
-// GATED — the propose modal. Edits are REAL: on "Propose" each changed field files a
-// knowledge_change_request to the signing folder (Approvals). Nothing writes a truth
-// table here — the banner says exactly that.
+// GATED — the item editor drawer. Price + description are REAL (file a
+// knowledge_change_request → Approvals). The market-standard sections the design
+// shows (photo, modifier groups, pairings, performance, WA preview) have no
+// backend → rendered SOON, full chrome, never faked.
 // ---------------------------------------------------------------------------
-function ProposeModal({ target, onClose }: { target: EditTarget; onClose: () => void }) {
+function ItemEditorDrawer({ target, onClose }: { target: EditTarget; onClose: () => void }) {
   const t = useT();
   const [vals, setVals] = useState<Record<string, string>>(() => Object.fromEntries(target.fields.map((f) => [f.field, String(f.current)])));
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   async function propose() {
     if (busy) return;
-    setBusy(true); setMsg(null);
-    // File one change-request per CHANGED field.
+    setBusy(true);
     const changed = target.fields.filter((f) => {
       const raw = vals[f.field] ?? "";
       if (f.kind === "number") return Number(raw) !== Number(f.current);
       return raw !== String(f.current);
     });
-    if (changed.length === 0) { setMsg({ text: t("kn.edit.noChange"), ok: false }); setBusy(false); return; }
+    if (changed.length === 0) { pushToast(t("kn.edit.noChange"), "amber"); setBusy(false); return; }
     try {
       for (const f of changed) {
         const newValue = f.kind === "number" ? Number(vals[f.field]) : vals[f.field];
@@ -383,70 +462,139 @@ function ProposeModal({ target, onClose }: { target: EditTarget; onClose: () => 
           method: "POST", credentials: "include", headers: { "content-type": "application/json" },
           body: JSON.stringify({ targetType: target.targetType, targetId: target.targetId, targetLabel: target.targetLabel, field: f.field, oldValue: f.current, newValue }),
         });
-        if (!r.ok) { setMsg({ text: t("kn.edit.proposeError"), ok: false }); setBusy(false); return; }
+        if (!r.ok) { pushToast(t("kn.edit.proposeError"), "amber"); setBusy(false); return; }
       }
-      setMsg({ text: t("kn.edit.proposed"), ok: true });
-      setTimeout(onClose, 900);
-    } catch { setMsg({ text: t("kn.edit.proposeError"), ok: false }); }
-    finally { setBusy(false); }
+      pushToast(t("kn.edit.proposed"), "ok");
+      setTimeout(onClose, 700);
+    } catch { pushToast(t("kn.edit.proposeError"), "amber"); setBusy(false); }
   }
 
+  const isMenu = target.targetType === "menu_item";
+
   return (
-    <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.55)", display: "grid", placeItems: "center", zIndex: 90, padding: 20 }}>
-      <div style={{ width: "min(460px,94vw)", background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-lg)", boxShadow: "0 30px 90px rgba(0,0,0,.4)", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: "1px solid var(--kv-border)" }}>
-          <Pencil size={15} color="var(--kv-muted)" />
-          <span style={{ fontSize: 14, fontWeight: 800, color: "var(--kv-text)", flex: 1 }}>{t("kn.edit.title")} · <Bdi>{target.targetLabel}</Bdi></span>
-          <button onClick={onClose} aria-label={t("kn.close")} style={{ ...ghostBtn, width: 30, padding: 0, justifyContent: "center" }}>✕</button>
+    <AuroraDrawer open onClose={onClose}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)" }}><Pencil size={14} style={{ verticalAlign: "-2px" }} /> {t("kn.edit.title")} · <Bdi>{target.targetLabel}</Bdi></div>
+          <div style={{ fontSize: 9, color: "var(--faint)", marginTop: 3 }}>{t("kn.edit.roomJob")}</div>
         </div>
-        <div style={{ padding: "16px 18px" }}>
-          {target.fields.map((f) => (
-            <label key={f.field} style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
-              <span style={{ fontSize: 11, fontWeight: 800, color: "var(--kv-muted)" }}>{t(f.labelKey)}{f.kind === "number" && target.currency ? ` (${target.currency})` : ""}</span>
-              <input value={vals[f.field] ?? ""} onChange={(e) => setVals((v) => ({ ...v, [f.field]: e.target.value }))}
-                inputMode={f.kind === "number" ? "decimal" : undefined} dir={f.kind === "number" ? "ltr" : "rtl"}
-                style={{ height: 38, borderRadius: "var(--kv-r-md-sm)", border: "1.5px solid var(--kv-border)", background: "var(--kv-card-soft)", padding: "0 11px", fontSize: 13, fontFamily: "var(--kv-font)", color: "var(--kv-text)" }} />
-            </label>
-          ))}
-          <div style={{ marginTop: 4, display: "flex", alignItems: "flex-start", gap: 10, background: "rgba(232,180,90,.10)", border: "1px solid rgba(232,180,90,.35)", borderRadius: "var(--kv-r-md)", padding: "12px 14px" }}>
-            <span style={{ fontSize: 12, color: "var(--kv-muted)", lineHeight: 1.7 }}>{t("kn.edit.soonBanner")}</span>
-          </div>
-          {msg && <div style={{ fontSize: 12, fontWeight: 700, color: msg.ok ? "var(--kv-deep)" : "var(--kv-amber)", marginTop: 10 }}>{msg.text}</div>}
-          <button onClick={propose} disabled={busy} style={{ ...primaryBtn, width: "100%", marginTop: 12, height: 40, opacity: busy ? 0.6 : 1 }}>
-            {t("kn.edit.proposeDisabled")} · <span style={{ fontWeight: 700 }}>{t("kn.gatedSoon")}</span>
-          </button>
-        </div>
+        <button onClick={onClose} aria-label={t("kn.close")} style={drawerX}><X size={15} /></button>
       </div>
-    </div>
+
+      {/* REAL editable fields — file a change-request. */}
+      {target.fields.map((f) => (
+        <label key={f.field} style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 12 }}>
+          <span style={fieldLabel}>{t(f.labelKey)}{f.kind === "number" && target.currency ? ` (${target.currency})` : ""}</span>
+          <input value={vals[f.field] ?? ""} onChange={(e) => setVals((v) => ({ ...v, [f.field]: e.target.value }))}
+            inputMode={f.kind === "number" ? "decimal" : undefined} dir={f.kind === "number" ? "ltr" : "rtl"} style={fieldInput} />
+        </label>
+      ))}
+
+      {/* SOON sections — full designed chrome, no backend yet. */}
+      {isMenu && (
+        <>
+          <SoonSection label={t("kn.edit.photo")} />
+          <SoonSection label={t("kn.edit.modifiers")} />
+          <SoonSection label={t("kn.edit.pairing")} />
+          <SoonSection label={t("kn.edit.perf")} />
+        </>
+      )}
+
+      <div style={{ marginTop: 14, display: "flex", alignItems: "flex-start", gap: 10, background: "rgba(232,180,90,.10)", border: "1px solid rgba(232,180,90,.35)", borderRadius: 12, padding: "12px 14px" }}>
+        <span style={{ fontSize: 11.5, color: "var(--dim)", lineHeight: 1.7 }}>{t("kn.edit.soonBanner")}</span>
+      </div>
+      <button onClick={propose} disabled={busy} style={{ ...primaryBtn, width: "100%", marginTop: 12, height: 40, opacity: busy ? 0.6 : 1 }}>
+        {t("kn.edit.proposeDisabled")} → {t("nav.approvals")}
+      </button>
+    </AuroraDrawer>
   );
 }
 
 // ---------------------------------------------------------------------------
+// Small shared pieces
+// ---------------------------------------------------------------------------
+function MenuSearchLink() {
+  return <TruthChip state="live" />;
+}
+function ModalHead({ icon, title, onClose }: { icon: string; title: string; onClose: () => void }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+      <span style={{ fontSize: 17 }}>{icon}</span>
+      <span style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{title}</span>
+      <button onClick={onClose} style={drawerX}><X size={15} /></button>
+    </div>
+  );
+}
+function GatheringBody({ body }: { body: string }) {
+  const t = useT();
+  return (
+    <div style={{ textAlign: "center", padding: "18px 8px" }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><TruthChip state="gather" /></div>
+      <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.8, maxWidth: 420, margin: "0 auto" }}>{body}</p>
+      <p style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 10 }}>{t("kn.soon.hint")}</p>
+    </div>
+  );
+}
+function SoonBody({ body }: { body: string }) {
+  const t = useT();
+  return (
+    <div style={{ padding: "6px 4px" }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><TruthChip state="soon" /></div>
+      <p style={{ fontSize: 11.5, color: "var(--dim)", lineHeight: 1.85 }}>{body}</p>
+      <p style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 10, textAlign: "center" }}>{t("kn.soon.hint")}</p>
+    </div>
+  );
+}
+function SoonSection({ label }: { label: string }) {
+  return (
+    <div style={{ marginTop: 12, border: "1px dashed var(--stroke2)", borderRadius: 12, padding: "12px 13px", display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--dim)", flex: 1 }}>{label}</span>
+      <TruthChip state="soon" />
+    </div>
+  );
+}
+function PolicyRow({ label, state }: { label: string; state: "live" | "soon" }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "10px 13px" }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--txt)", flex: 1 }}>{label}</span>
+      <TruthChip state={state} />
+    </div>
+  );
+}
 function CatChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} aria-pressed={active} style={{ height: 30, padding: "0 12px", borderRadius: "var(--kv-r-pill)", border: active ? 0 : "1px solid var(--kv-border)", background: active ? "var(--kv-grad-brand)" : "var(--kv-card)", color: active ? "#fff" : "var(--kv-muted)", fontFamily: "var(--kv-font)", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-      {children}
-    </button>
+    <button onClick={onClick} aria-pressed={active} style={{
+      height: 30, padding: "0 12px", borderRadius: 99, cursor: "pointer", fontFamily: "var(--kvx-font-ar)", fontSize: 11.5, fontWeight: 800,
+      border: active ? 0 : "1px solid var(--stroke)", background: active ? "var(--g-gold)" : "transparent", color: active ? "var(--ink)" : "var(--dim)",
+    }}>{children}</button>
   );
 }
 function EmptyLine({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 12.5, color: "var(--kv-faint)", padding: "12px 4px", lineHeight: 1.6 }}>{children}</div>;
+  return <div style={{ fontSize: 12, color: "var(--faint)", padding: "12px 4px", lineHeight: 1.6 }}>{children}</div>;
 }
 
-const rowStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 12, background: "var(--kv-card-soft)",
-  border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md)", padding: "10px 13px",
-};
-const ghostBtn: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 6, height: 30, padding: "0 11px", borderRadius: "var(--kv-r-md-sm)",
-  border: "1px solid var(--kv-border)", background: "var(--kv-card)", color: "var(--kv-muted)", fontFamily: "var(--kv-font)",
-  fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flex: "0 0 auto",
-};
-const primaryBtn: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, height: 36, padding: "0 14px", borderRadius: "var(--kv-r-md-sm)", border: 0,
-  background: "var(--kv-grad-brand)", color: "#fff", fontFamily: "var(--kv-font)", fontSize: 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
-};
-const soonStatic: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: "var(--kv-faint)",
-  background: "var(--kv-card-soft)", border: "1px solid var(--kv-border)", borderRadius: "var(--kv-r-md-sm)", padding: "7px 12px",
-};
+// ---------------------------------------------------------------------------
+// Inline styles (all tokens from the .kvx scope).
+// ---------------------------------------------------------------------------
+const freshPill: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, fontWeight: 700, background: "var(--panel)", border: "1px solid var(--stroke)", borderRadius: 99, padding: "6px 12px", cursor: "pointer", fontFamily: "var(--kvx-font-ui)" };
+const tileBtn: React.CSSProperties = { border: 0, background: "none", padding: 0, cursor: "pointer", textAlign: "start", width: "100%", fontFamily: "inherit" };
+const safetyTile: React.CSSProperties = { position: "relative", borderRadius: 15, padding: "13px 14px 12px 16px", overflow: "hidden", background: "linear-gradient(135deg,#ff8d7e,#f75b52)", boxShadow: "0 10px 26px rgba(0,0,0,.28)" };
+const doctrine: React.CSSProperties = { marginTop: 12, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 14, padding: "11px 13px", fontSize: 11, color: "var(--dim)", lineHeight: 1.7 };
+const roomBox: React.CSSProperties = { background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 18, padding: "15px 16px" };
+const searchBox: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "8px 12px", width: 220, maxWidth: "50vw" };
+const searchInput: React.CSSProperties = { border: 0, background: "transparent", outline: "none", color: "var(--txt)", fontFamily: "var(--kvx-font-ar)", fontSize: 12, width: "100%" };
+const itemRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 11, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 13, padding: "10px 13px", cursor: "pointer" };
+const allergenChip: React.CSSProperties = { fontSize: 9.5, fontWeight: 800, color: "#ffb3a8", background: "rgba(255,107,94,.12)", border: "1px solid rgba(255,107,94,.3)", borderRadius: 6, padding: "2px 7px" };
+const zoneChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 8, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "8px 12px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)", fontSize: 11.5 };
+const policyPill: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 11, padding: "7px 12px", cursor: "pointer", fontSize: 11.5, fontWeight: 700, color: "var(--txt)", fontFamily: "var(--kvx-font-ar)" };
+const noteBox: React.CSSProperties = { background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "10px 13px" };
+const noteInput: React.CSSProperties = { flex: 1, height: 36, borderRadius: 11, border: "1px solid var(--stroke)", background: "var(--inset2)", padding: "0 11px", fontSize: 12, fontFamily: "var(--kvx-font-ar)", color: "var(--txt)", outline: "none" };
+const vocabChip: React.CSSProperties = { fontSize: 12, fontWeight: 800, color: "#ffc9c9", background: "rgba(255,107,94,.10)", border: "1px solid rgba(255,107,94,.32)", borderRadius: 10, padding: "7px 12px", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--kvx-font-ar)" };
+const safetyLockChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: "#ffc9c9", background: "rgba(255,107,94,.14)", border: "1px solid rgba(255,107,94,.4)", borderRadius: 99, padding: "4px 10px" };
+const soonStatic: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 11.5, fontWeight: 700, color: "var(--dim)", background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 11, padding: "7px 12px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)" };
+const zoneRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 10, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 11, padding: "9px 12px", fontSize: 11.5 };
+const drawerX: React.CSSProperties = { width: 30, height: 30, borderRadius: 10, background: "var(--inset)", border: "1px solid var(--stroke)", color: "var(--dim)", cursor: "pointer", display: "grid", placeItems: "center", flex: "none" };
+const fieldLabel: React.CSSProperties = { fontSize: 8.5, fontWeight: 800, letterSpacing: ".08em", color: "var(--faint)", textTransform: "uppercase" };
+const fieldInput: React.CSSProperties = { height: 38, borderRadius: 11, border: "1px solid var(--stroke)", background: "var(--inset2)", padding: "0 12px", fontSize: 12.5, fontFamily: "var(--kvx-font-ar)", color: "var(--txt)", outline: "none" };
+const ghostBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 30, padding: "0 11px", borderRadius: 10, border: "1px solid var(--stroke)", background: "var(--inset)", color: "var(--dim)", fontFamily: "var(--kvx-font-ar)", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flex: "none" };
+const primaryBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, height: 36, padding: "0 14px", borderRadius: 11, border: 0, background: "var(--g-green)", color: "var(--ink)", fontFamily: "var(--kvx-font-ui)", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" };
