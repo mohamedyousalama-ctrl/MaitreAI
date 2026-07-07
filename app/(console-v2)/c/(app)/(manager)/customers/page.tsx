@@ -95,6 +95,10 @@ export default function CustomersPage() {
   // Per-widget truth chip — each context card tells its OWN truth (never collapse
   // into one page-level chip). data → LIVE · load failed → DEGRADED · loading → GATHERING.
   const widgetChip = data ? <TruthChip state="live" /> : error ? <TruthChip state="degraded" /> : <TruthChip state="gather" />;
+  // Top-regulars tells its OWN truth too — LIVE only with rows, else DEGRADED
+  // (load failed) / GATHERING (loading). Never a gather chip on a load error.
+  const topReady = !!data && data.topBySpend.length > 0;
+  const topChip = topReady ? <TruthChip state="live" /> : error ? <TruthChip state="degraded" /> : <TruthChip state="gather" />;
 
   const context = (
     <>
@@ -119,8 +123,7 @@ export default function CustomersPage() {
 
       {/* Top regulars — real spend, crown leaderboard. A proper card. */}
       <div style={ctxCard}>
-        <SectionHeader tier="gold" icon={<Trophy size={15} />} title={t("cu.top.title")} sub={t("cu.top.sub")}
-          right={data && data.topBySpend.length > 0 ? <TruthChip state="live" /> : undefined} />
+        <SectionHeader tier="gold" icon={<Trophy size={15} />} title={t("cu.top.title")} sub={t("cu.top.sub")} right={topChip} />
         {data && data.topBySpend.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {data.topBySpend.slice(0, 5).map((c, i) => (
@@ -129,7 +132,11 @@ export default function CustomersPage() {
                 value={money(c.ltv)} />
             ))}
           </div>
-        ) : <EmptyLine>{error ? t("cu.loadError") : t("cu.top.empty")}</EmptyLine>}
+        ) : error ? (
+          // Load failed → honest note (NOT EmptyLine's gather chip — the header
+          // already carries the DEGRADED chip).
+          <div style={ctxNote}>{t("cu.loadError")}</div>
+        ) : <EmptyLine>{t("cu.top.empty")}</EmptyLine>}
       </div>
 
       {/* Slipping away — at-risk spotlight (real days silent). Win-back = SOON. */}
