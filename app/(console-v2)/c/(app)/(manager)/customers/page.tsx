@@ -30,7 +30,7 @@
 // ============================================================================
 
 import { useEffect, useMemo, useState } from "react";
-import { Star, Trophy, Clock3, Brain, Users, Search } from "lucide-react";
+import { Star, Trophy, Clock3, Brain, Users, Search, AlertTriangle } from "lucide-react";
 import {
   HeaderRow, PageGrid, SectionHeader, StatTile, LeaderRow, Spotlight, LoyaltyCard,
   TruthChip, AuroraDrawer, type Tier,
@@ -92,31 +92,52 @@ export default function CustomersPage() {
     { key: "reg", label: t("cu.tier.reg") }, { key: "new", label: t("cu.tier.new") }, { key: "risk", label: t("cu.tier.risk") },
   ];
 
+  // Per-widget truth chip — each context card tells its OWN truth (never collapse
+  // into one page-level chip). data → LIVE · load failed → DEGRADED · loading → GATHERING.
+  const widgetChip = data ? <TruthChip state="live" /> : error ? <TruthChip state="degraded" /> : <TruthChip state="gather" />;
+  // Top-regulars tells its OWN truth too — LIVE only with rows, else DEGRADED
+  // (load failed) / GATHERING (loading). Never a gather chip on a load error.
+  const topReady = !!data && data.topBySpend.length > 0;
+  const topChip = topReady ? <TruthChip state="live" /> : error ? <TruthChip state="degraded" /> : <TruthChip state="gather" />;
+
   const context = (
     <>
-      {/* Guest book — derived segment tiles (never invented). */}
-      <SectionHeader tier="blue" icon={<Users size={15} />} title={t("cu.derived")} sub={t("cu.sub")}
-        right={data ? <TruthChip state="live" /> : undefined} />
-      {data && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <StatTile tier="gold" label={t("cu.seg.vip")} value="" countUp={data.segments.loyal} fact={t("cu.seg.vipHint")} />
-          <StatTile tier="green" label={t("cu.seg.repeat")} value="" countUp={data.segments.returning} fact={t("cu.seg.repeatHint")} />
-          <StatTile tier="blue" label={t("cu.seg.new")} value="" countUp={data.segments.new} fact={t("cu.seg.newHint")} />
-          <StatTile tier="coral" label={t("cu.seg.risk")} value="" countUp={data.atRisk.length} fact={t("cu.seg.riskHint")} />
-        </div>
-      )}
+      {/* Guest book — derived segment tiles (never invented). A proper card. */}
+      <div style={ctxCard}>
+        <SectionHeader tier="blue" icon={<Users size={15} />} title={t("cu.derived")} sub={t("cu.sub")} right={widgetChip} />
+        {data ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <StatTile tier="gold" label={t("cu.seg.vip")} value="" countUp={data.segments.loyal} fact={t("cu.seg.vipHint")} />
+            <StatTile tier="green" label={t("cu.seg.repeat")} value="" countUp={data.segments.returning} fact={t("cu.seg.repeatHint")} />
+            <StatTile tier="blue" label={t("cu.seg.new")} value="" countUp={data.segments.new} fact={t("cu.seg.newHint")} />
+            <StatTile tier="coral" label={t("cu.seg.risk")} value="" countUp={data.atRisk.length} fact={t("cu.seg.riskHint")} />
+          </div>
+        ) : error ? (
+          <div style={ctxNote}>{t("cu.loadError")}</div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {[0, 1, 2, 3].map((i) => <div key={i} className="kv-skeleton" style={{ height: 62, borderRadius: 14 }} />)}
+          </div>
+        )}
+      </div>
 
-      {/* Top regulars — real spend, crown leaderboard. */}
-      <SectionHeader tier="gold" icon={<Trophy size={15} />} title={t("cu.top.title")} sub={t("cu.top.sub")} />
-      {data && data.topBySpend.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-          {data.topBySpend.slice(0, 5).map((c, i) => (
-            <LeaderRow key={c.id} rank={i + 1} avatar={<Bdi>{(c.name || "؟").slice(0, 1)}</Bdi>}
-              name={<Bdi>{c.name || "—"}</Bdi>} meta={<><Num>{c.orders_count}</Num> {t("cu.top.orders")}</>}
-              value={money(c.ltv)} />
-          ))}
-        </div>
-      ) : <EmptyLine>{t("cu.top.empty")}</EmptyLine>}
+      {/* Top regulars — real spend, crown leaderboard. A proper card. */}
+      <div style={ctxCard}>
+        <SectionHeader tier="gold" icon={<Trophy size={15} />} title={t("cu.top.title")} sub={t("cu.top.sub")} right={topChip} />
+        {data && data.topBySpend.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {data.topBySpend.slice(0, 5).map((c, i) => (
+              <LeaderRow key={c.id} rank={i + 1} avatar={<Bdi>{(c.name || "؟").slice(0, 1)}</Bdi>}
+                name={<Bdi>{c.name || "—"}</Bdi>} meta={<><Num>{c.orders_count}</Num> {t("cu.top.orders")}</>}
+                value={money(c.ltv)} />
+            ))}
+          </div>
+        ) : error ? (
+          // Load failed → honest note (NOT EmptyLine's gather chip — the header
+          // already carries the DEGRADED chip).
+          <div style={ctxNote}>{t("cu.loadError")}</div>
+        ) : <EmptyLine>{t("cu.top.empty")}</EmptyLine>}
+      </div>
 
       {/* Slipping away — at-risk spotlight (real days silent). Win-back = SOON. */}
       {data && data.atRisk.length > 0 && (
@@ -155,32 +176,43 @@ export default function CustomersPage() {
 
   const hero = (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
-      {/* Wall bar — section header + segment tabs + search. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 160 }}>
-          <SectionHeader tier="gold" icon={<Star size={15} />} title={t("cu.wall.title")} sub={t("cu.wall.sub")} />
-        </div>
-        <div style={{ display: "flex", background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 12, padding: 3, gap: 2 }}>
+      {/* Wall header */}
+      <SectionHeader tier="gold" icon={<Star size={15} />} title={t("cu.wall.title")} sub={t("cu.wall.sub")}
+        right={data && shown.length > 0 ? <TruthChip state="live" /> : undefined} />
+
+      {/* Toolbar — filter pills + search in one RTL-aligned bar under the header. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "var(--panel)", border: "1px solid var(--stroke)", borderRadius: 14, padding: 8, backdropFilter: "blur(12px)" }}>
+        <div style={{ display: "flex", background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 999, padding: 3, gap: 2, flexWrap: "wrap" }}>
           {SEG_TABS.map((s) => (
             <button key={s.key} onClick={() => setSeg(s.key)} aria-pressed={seg === s.key}
-              style={{ fontSize: 10.5, fontWeight: 800, color: seg === s.key ? "var(--ink)" : "var(--dim)", background: seg === s.key ? "var(--g-blue)" : "transparent", border: 0, borderRadius: 9, padding: "6px 11px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)" }}>
+              style={{ fontSize: 10.5, fontWeight: 800, color: seg === s.key ? "var(--ink)" : "var(--dim)", background: seg === s.key ? "var(--g-blue)" : "transparent", border: 0, borderRadius: 999, padding: "6px 13px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)" }}>
               {s.label}
             </button>
           ))}
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "8px 12px", width: 200 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 999, padding: "8px 13px", flex: 1, minWidth: 160, marginInlineStart: "auto" }}>
           <Search size={13} style={{ color: "var(--faint)", flex: "none" }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("cu.search")} dir="auto"
-            style={{ flex: 1, minWidth: 0, background: "none", border: 0, outline: "none", color: "var(--txt)", fontSize: 11, fontFamily: "var(--kvx-font-ar)" }} />
+            style={{ flex: 1, minWidth: 0, background: "none", border: 0, outline: "none", color: "var(--txt)", fontSize: 11.5, fontFamily: "var(--kvx-font-ar)" }} />
         </label>
       </div>
 
       {error ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><TruthChip state="degraded" /><span style={{ fontSize: 12.5, color: "var(--faint)" }}>{t("cu.loadError")}</span></div>
+        // DEGRADED — honest load-failure signal, NOT softened. Premium, intentional.
+        <HeroState tone="degraded" chip={<TruthChip state="degraded" />} icon={<AlertTriangle size={26} strokeWidth={2.2} />}
+          title={t("cu.loadError")} body={t("cu.wall.degradedBody")} />
       ) : data === null ? (
-        <div style={{ fontSize: 12.5, color: "var(--faint)" }}><TruthChip state="gather" /></div>
+        // Loading — skeleton loyalty-card grid (no fabricated data).
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 12 }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="kv-skeleton" style={{ height: 150, borderRadius: 17 }} />)}
+        </div>
+      ) : guests.length === 0 ? (
+        // Genuinely no confirmed customers — premium HONEST empty-state (no fake guests).
+        <HeroState chip={<TruthChip state="gather" />} icon={<Users size={26} strokeWidth={2.2} />}
+          title={t("cu.wall.emptyTitle")} body={t("cu.wall.emptyBody")} />
       ) : shown.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: "var(--faint)", padding: "20px 2px" }}>{t("cu.wall.empty")}</div>
+        // Real customers exist, but the filter/search matched none.
+        <HeroState icon={<Search size={24} strokeWidth={2.2} />} title={t("cu.wall.noMatch")} />
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 12 }}>
@@ -304,3 +336,31 @@ function EmptyLine({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+// Premium, intentional hero state — fills the wall area for empty / no-match /
+// DEGRADED (load-failure). Honest: it never fabricates a customer; the DEGRADED
+// variant keeps the DEGRADED chip + message (not softened away).
+function HeroState({ icon, title, body, chip, tone }: { icon: React.ReactNode; title: string; body?: string; chip?: React.ReactNode; tone?: "degraded" }) {
+  const degraded = tone === "degraded";
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center",
+      gap: 12, minHeight: 360, padding: "44px 24px", borderRadius: 20,
+      background: degraded ? "rgba(255,107,94,.05)" : "var(--inset)",
+      border: degraded ? "1px solid rgba(255,107,94,.28)" : "1px dashed var(--stroke2)",
+    }}>
+      <span style={{ width: 56, height: 56, borderRadius: 16, display: "grid", placeItems: "center", flex: "none",
+        background: degraded ? "rgba(255,107,94,.12)" : "var(--inset2)", color: degraded ? "#ffb3a8" : "var(--faint)" }}>{icon}</span>
+      {chip}
+      <div style={{ fontSize: 15, fontWeight: 800, color: "var(--txt)" }}>{title}</div>
+      {body && <div style={{ fontSize: 12, color: "var(--faint)", lineHeight: 1.75, maxWidth: 440 }}>{body}</div>}
+    </div>
+  );
+}
+
+const ctxCard: React.CSSProperties = {
+  background: "var(--panel)", border: "1px solid var(--stroke)", borderRadius: 18, padding: 15, backdropFilter: "blur(12px)",
+};
+const ctxNote: React.CSSProperties = {
+  fontSize: 11.5, color: "var(--faint)", lineHeight: 1.6, padding: "2px 2px",
+};
