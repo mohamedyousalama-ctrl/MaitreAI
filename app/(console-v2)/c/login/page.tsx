@@ -12,7 +12,7 @@
 // authed gate → workspace picker → role-aware landing. No password, ever.
 // ============================================================================
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -23,7 +23,14 @@ import { Bdi } from "@/components/kivo";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type Step = "request" | "sent";
+// Only a same-origin relative path is honored as a post-login destination (a
+// crafted ?next=//evil.com must never become an open redirect). Mirrors the guard
+// in the sign-out route.
+function safeNext(raw: string | null): string | null {
+  return raw && raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\") ? raw : null;
+}
+
+type Step = "request" | "verify";
 
 export default function LoginPage() {
   const t = useT();
@@ -33,11 +40,26 @@ export default function LoginPage() {
 
   const [step, setStep] = useState<Step>("request");
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Deep-link return target (P3): a user bounced from /c/settings lands back there,
+  // not just /c. Read client-side (no Suspense needed for useSearchParams).
+  const [next, setNext] = useState("/c");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const n = safeNext(params.get("next"));
+    if (n && n.startsWith("/c")) setNext(n);
+    // The auth callback bounces a failed /c exchange here with ?error=auth (P3).
+    if (params.get("error") === "auth") setError(t("auth.err.generic"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const redirectTo =
-    typeof window !== "undefined" ? `${window.location.origin}/auth/callback?next=/c` : undefined;
+    typeof window !== "undefined"
+      ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
+      : undefined;
 
   function mapError(message: string): string {
     const m = (message || "").toLowerCase();
@@ -45,24 +67,42 @@ export default function LoginPage() {
     return t("auth.err.generic");
   }
 
-  async function sendLink() {
+  async function sendCode() {
     const value = email.trim();
     if (!EMAIL_RE.test(value)) return setError(t("auth.err.email"));
     if (!supabase) {
       // Demo/unconfigured: no real auth backend — jump straight to the gate so the
       // flow is explorable locally (the authed layout is permissive in demo mode).
-      return router.push("/c");
+      return router.push(next);
     }
     setLoading(true);
     setError(null);
+    // The project's email template delivers a 6-digit OTP code. We ALSO pass
+    // emailRedirectTo so a clicked magic link (if the template includes one) still
+    // lands on /auth/callback?next=<next> — but the primary path is code entry below.
     const { error } = await supabase.auth.signInWithOtp({ email: value, options: { emailRedirectTo: redirectTo } });
     setLoading(false);
     if (error) return setError(mapError(error.message));
-    setStep("sent");
+    setCode("");
+    setStep("verify");
+  }
+
+  async function verifyCode() {
+    const value = email.trim();
+    if (!code.trim()) return setError(t("auth.err.code"));
+    if (!supabase) return router.push(next);
+    setLoading(true);
+    setError(null);
+    const { error } = await supabase.auth.verifyOtp({ email: value, token: code.trim(), type: "email" });
+    setLoading(false);
+    if (error) return setError(t("auth.err.code"));
+    // Session cookie is set; land on the resolved destination (deep-link or /c).
+    router.push(next);
+    router.refresh();
   }
 
   async function googleSso() {
-    if (!supabase) return router.push("/c");
+    if (!supabase) return router.push(next);
     setError(null);
     const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
     if (error) setError(mapError(error.message));
@@ -93,12 +133,12 @@ export default function LoginPage() {
                 dir="ltr"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendLink()}
+                onKeyDown={(e) => e.key === "Enter" && sendCode()}
                 placeholder="you@example.com"
                 style={inputStyle}
               />
               {error && <ErrorLine>{error}</ErrorLine>}
-              <PrimaryButton onClick={sendLink} disabled={loading}>
+              <PrimaryButton onClick={sendCode} disabled={loading}>
                 <Mail size={17} strokeWidth={2.3} />
                 {t("auth.send")}
                 <ArrowRight size={16} strokeWidth={2.6} style={{ transform: "scaleX(var(--kv-dir-x,1))" }} />
@@ -120,24 +160,38 @@ export default function LoginPage() {
                 </div>
               </div>
               <Eyebrow>{t("auth.sent.eyebrow")}</Eyebrow>
-              <Title>{t("auth.sent.title")}</Title>
+              <Title>{t("auth.verify.title")}</Title>
               <Sub>
-                {t("auth.sent.sub")}{" "}
+                {t("auth.verify.sub")}{" "}
                 <Bdi><strong style={{ color: "var(--kv-text)" }}>{email}</strong></Bdi>
               </Sub>
               <p style={{ fontSize: 12, color: "var(--kv-faint)", textAlign: "center", marginTop: 6 }}>{t("auth.sent.expiry")}</p>
 
-              <PrimaryButton onClick={() => router.push("/c")} disabled={false}>
-                {t("auth.sent.opened")}
+              <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--kv-faint)", margin: "18px 0 7px" }}>
+                {t("auth.verify.label")}
+              </label>
+              <input
+                dir="ltr"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && verifyCode()}
+                placeholder={t("auth.verify.placeholder")}
+                style={{ ...inputStyle, fontSize: 18, fontWeight: 800, letterSpacing: "0.4em", textAlign: "center" }}
+              />
+              {error && <ErrorLine>{error}</ErrorLine>}
+              <PrimaryButton onClick={verifyCode} disabled={loading}>
+                {t("auth.verify.confirm")}
                 <ArrowRight size={16} strokeWidth={2.6} />
               </PrimaryButton>
 
               <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 14, fontSize: 12.5, color: "var(--kv-muted)" }}>
                 <span>{t("auth.sent.noLink")}</span>
-                <button onClick={sendLink} style={linkBtnStyle}>{t("auth.sent.resend")}</button>
+                <button onClick={sendCode} style={linkBtnStyle}>{t("auth.sent.resend")}</button>
               </div>
               <div style={{ textAlign: "center", marginTop: 8 }}>
-                <button onClick={() => { setStep("request"); setError(null); }} style={{ ...linkBtnStyle, color: "var(--kv-faint)" }}>
+                <button onClick={() => { setStep("request"); setCode(""); setError(null); }} style={{ ...linkBtnStyle, color: "var(--kv-faint)" }}>
                   {t("auth.sent.diffAccount")}
                 </button>
               </div>
