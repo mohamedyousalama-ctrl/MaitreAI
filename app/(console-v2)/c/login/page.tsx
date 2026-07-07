@@ -2,14 +2,15 @@
 
 // ============================================================================
 // console_v2 item 4 — Login (pages/11-login-auth.html). Two states on one route:
-//   SIGN IN          → enter email, "Send sign-in link" (Supabase magic link)
-//   CHECK YOUR EMAIL → link sent; resend / use a different account / I opened it
+//   REQUEST → enter email, "Send sign-in code" (Supabase signInWithOtp)
+//   VERIFY  → enter the 6-digit code from the email → verifyOtp → land on `next`
 //
-// Mechanic note (faithful-but-honest, mirroring the old LoginForm): the design
-// says "phone or email", but the repo only has email magic-link auth — a phone
-// field would be a false affordance, so this is EMAIL only. The magic link
-// redirects through the existing /auth/callback with ?next=/c, which then hits the
-// authed gate → workspace picker → role-aware landing. No password, ever.
+// Mechanic note (faithful-but-honest, mirroring the old LoginForm): the repo's auth
+// is EMAIL ONE-TIME CODE (signInWithOtp → verifyOtp) — the email delivers a 6-digit
+// code, so the UI is code entry, not a magic-link dead-end. No password field (the
+// repo has none — it would be a false affordance) and NO Google SSO button (that
+// provider is cancelled — a dead OAuth button is worse UX than none). `next` (a safe
+// same-origin path) threads the deep-link target through to the post-verify redirect.
 // ============================================================================
 
 import { useEffect, useState } from "react";
@@ -101,13 +102,6 @@ export default function LoginPage() {
     router.refresh();
   }
 
-  async function googleSso() {
-    if (!supabase) return router.push(next);
-    setError(null);
-    const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
-    if (error) setError(mapError(error.message));
-  }
-
   return (
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--kv-bg-login)", padding: 24 }}>
       <div className="kv-console" style={{ width: "100%", maxWidth: 420 }}>
@@ -143,9 +137,6 @@ export default function LoginPage() {
                 {t("auth.send")}
                 <ArrowRight size={16} strokeWidth={2.6} style={{ transform: "scaleX(var(--kv-dir-x,1))" }} />
               </PrimaryButton>
-
-              <Divider />
-              <GhostButton onClick={googleSso} disabled={loading}>{t("auth.sso.google")}</GhostButton>
               {!configured && (
                 <p style={{ fontSize: 11, color: "var(--kv-faint)", textAlign: "center", marginTop: 12 }}>
                   demo mode — no auth backend configured
@@ -228,9 +219,6 @@ function Sub({ children }: { children: React.ReactNode }) {
 function ErrorLine({ children }: { children: React.ReactNode }) {
   return <p style={{ fontSize: 12.5, fontWeight: 700, color: "var(--kv-red)", margin: "8px 2px 0" }}>{children}</p>;
 }
-function Divider() {
-  return <div style={{ height: 1, background: "var(--kv-border)", margin: "18px 0" }} />;
-}
 function PrimaryButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled: boolean }) {
   return (
     <button
@@ -241,21 +229,6 @@ function PrimaryButton({ children, onClick, disabled }: { children: React.ReactN
         background: "var(--kv-grad-brand)", color: "#fff", fontFamily: "var(--kv-font)", fontSize: 14.5, fontWeight: 800,
         display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 9,
         cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1, boxShadow: "var(--kv-shadow-btn)",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-function GhostButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        width: "100%", height: 46, borderRadius: "var(--kv-r-md)", border: "1.5px solid var(--kv-border)",
-        background: "var(--kv-card)", color: "var(--kv-text)", fontFamily: "var(--kv-font)", fontSize: 14, fontWeight: 700,
-        cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1,
       }}
     >
       {children}
