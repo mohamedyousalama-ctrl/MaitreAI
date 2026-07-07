@@ -97,24 +97,49 @@ export async function handleMoyasarWebhook(
   }
   const data = (payload.data ?? {}) as Record<string, unknown>;
   const providerRef = typeof data.id === "string" ? data.id : "";
-  if (!providerRef) return { httpStatus: 400, outcome: "no_provider_ref" };
+  // WO-PSP-WEBHOOK-EVENTS — Moyasar's dashboard offers ONLY payment-level events
+  // (payment_paid/_failed/_expired…), no invoice_paid, so on a payment event `data.id`
+  // is the PAYMENT id — NOT our invoice provider_ref. Resolve the session across the
+  // three DOCUMENTED links, in order (all are Moyasar-contract fields or our own stamp):
+  //   (a) data.id          → invoice id (an invoice_* event, where supported) = provider_ref
+  //   (b) data.invoice_id  → the payment object's parent invoice id = provider_ref
+  //   (c) data.metadata.sessionId → the id we stamp at createPayment (belt-and-suspenders)
+  const invoiceId = typeof data.invoice_id === "string" ? data.invoice_id : "";
+  const meta = (data.metadata ?? {}) as Record<string, unknown>;
+  const metaSessionId = typeof meta.sessionId === "string" ? meta.sessionId : "";
+  if (!providerRef && !invoiceId && !metaSessionId) return { httpStatus: 400, outcome: "no_provider_ref" };
 
-  // 2. Resolve the session BY provider_ref (the only pre-verify read — it decides
-  //    whose secret to verify against). HARDENING (guardian ruling 1): select ONLY
-  //    the columns needed for verification/routing (id, restaurant_id, order_id,
-  //    amount, currency, psp_currency, status) — all verification data, NEVER PII
-  //    (customer phone / order_number). Those are loaded ONLY AFTER the signature
-  //    passes, on the paid notify path. Unknown session → swallow 200 (never leak).
-  const { data: sessionRaw } = await admin
-    .from("payment_sessions")
-    .select("id, restaurant_id, order_id, amount, currency, psp_currency, status, expires_at")
-    .eq("provider_ref", providerRef)
-    .maybeSingle();
-  const session = sessionRaw as SessionRow | null;
+  // 2. Resolve the session (the only pre-verify read — it decides whose secret to
+  //    verify against). HARDENING (guardian ruling 1): select ONLY the columns needed
+  //    for verification/routing (id, restaurant_id, order_id, amount, currency,
+  //    psp_currency, status) — all verification data, NEVER PII (customer phone /
+  //    order_number). Those are loaded ONLY AFTER the signature passes, on the paid
+  //    notify path. Unknown session → swallow 200 (never leak).
+  const SESSION_COLS = "id, restaurant_id, order_id, amount, currency, psp_currency, status, expires_at";
+  const attempts: Array<{ label: string; field: "provider_ref" | "id"; val: string }> = [
+    { label: "data.id", field: "provider_ref", val: providerRef },
+    { label: "data.invoice_id", field: "provider_ref", val: invoiceId },
+    { label: "metadata.sessionId", field: "id", val: metaSessionId },
+  ];
+  let session: SessionRow | null = null;
+  let matchedBy = "";
+  for (const a of attempts) {
+    if (!a.val) continue;
+    const { data: row } = await admin
+      .from("payment_sessions")
+      .select(SESSION_COLS)
+      .eq(a.field, a.val)
+      .maybeSingle();
+    if (row) { session = row as SessionRow; matchedBy = a.label; break; }
+  }
   if (!session) {
-    console.log(`[moyasar:webhook] unknown session for provider_ref ${maskRef(providerRef)} — swallowed`);
+    console.log(`[moyasar:webhook] unknown session (id=${maskRef(providerRef)} inv=${maskRef(invoiceId)} meta=${metaSessionId ? "y" : "n"}) — swallowed`);
     return { httpStatus: 200, outcome: "unknown_session" };
   }
+  // Confirm-log (masked, no payload dump — respects the no-body-logging rule): which
+  // DOCUMENTED link routed this event to the session. This is the real-event
+  // confirmation the diagnostic precondition wanted, captured on the settling delivery.
+  console.log(`[moyasar:webhook] session ${maskRef(session.id)} matched by ${matchedBy}`);
   const restaurantId = session.restaurant_id;
 
   // 3. Load THIS tenant's webhook secret + flags (service-role read).
