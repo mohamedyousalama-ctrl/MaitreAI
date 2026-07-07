@@ -28,7 +28,8 @@ import {
   derivePosDisplay,
   derivePaymentDisplay,
 } from "@/lib/console-v2/display-state";
-import { StateChip, TruthChip, ActNowDot } from "@/components/console-v2";
+import { StateChip, ActNowDot } from "@/components/console-v2";
+import { LiveMaps, type HeatPoint } from "@/components/console-v2/shift/LiveMaps";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi, Num } from "@/components/kivo";
 import type { LocalOrder, OrderStatusKey, PosStatus } from "@/lib/types";
@@ -90,6 +91,16 @@ export default function LiveShiftPage() {
     // must NOT inflate the sole alarm (they still show in the active list, badged).
     () => orders.filter((o) => !o.isTest && POS_ELIGIBLE.includes(o.orderStatus) && posOf(o) === "not_entered" && !stamped.has(o.id)),
     [orders, stamped]
+  );
+
+  // Order-Heat points — real located-order coordinates (0043 orders.lat/lng),
+  // non-test, non-cancelled. Null coords (WhatsApp / typed-address orders) are
+  // dropped; when none are located the map renders its honest GATHERING state.
+  const heatPoints = useMemo<HeatPoint[]>(
+    () => orders
+      .filter((o) => !o.isTest && o.orderStatus !== "cancelled" && typeof o.lat === "number" && typeof o.lng === "number")
+      .map((o) => ({ lat: o.lat as number, lng: o.lng as number })),
+    [orders]
   );
 
   // Payment mix — PASSIVE, "today" only (the store loads full history), non-test,
@@ -206,10 +217,11 @@ export default function LiveShiftPage() {
       {/* 86 quick action — wired to the audited availability route. */}
       <Eighty6 menuItems={menuItems} setItemAvailability={setItemAvailability} />
 
-      {/* Hero + Loss/Ad-sources — GATHERING until 0043 coords + outcomes feed them. */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 14, marginTop: 22 }}>
-        <GatheringPanel title={t("shift.heat")} />
-        <GatheringPanel title={t("shift.lossAds")} />
+      {/* The maps grid (v35 flagship): Order Heat (LIVE from 0043 order coords when
+          located orders exist, else the designed GATHERING map-card) + Losing Orders
+          and Ad Sources as designed GATHERING map-cards until their engines feed them. */}
+      <div style={{ marginTop: 22 }}>
+        <LiveMaps heatPoints={heatPoints} ordersToday={active.length} />
       </div>
     </div>
   );
@@ -359,19 +371,6 @@ function SectionHead({ icon, title, count }: { icon?: React.ReactNode; title: st
 
 function EmptyLine({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 13, color: "var(--kv-faint)", padding: "14px 4px" }}>{children}</div>;
-}
-
-function GatheringPanel({ title }: { title: string }) {
-  return (
-    <div style={{ border: "1.5px dashed rgba(100,116,139,.28)", borderRadius: "var(--kv-r-md-lg)", background: "var(--kv-card-soft)", padding: 18, minHeight: 120, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: "var(--kv-muted)" }}>{title}</span>
-        <TruthChip state="gathering" />
-      </div>
-      <div className="kv-skeleton" style={{ height: 12, borderRadius: 7, width: "70%" }} />
-      <div className="kv-skeleton" style={{ height: 12, borderRadius: 7, width: "45%" }} />
-    </div>
-  );
 }
 
 const cardStyle: React.CSSProperties = {

@@ -91,6 +91,11 @@ export interface LocalOrder {
   fulfillmentType: FulfillmentKey;
   deliveryAreaId?: string;
   deliveryAddress?: string;
+  /** DLV6b (0043) — real web-order coordinates picked at checkout. Null for
+   *  WhatsApp / typed-address orders. Drives the Live Shift Order-Heat map; the
+   *  map renders GATHERING until located orders exist on the stream. */
+  lat?: number | null;
+  lng?: number | null;
   items: LocalOrderItem[];
   subtotal: number;
   deliveryFee: number;
