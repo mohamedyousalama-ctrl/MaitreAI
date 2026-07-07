@@ -22,9 +22,9 @@
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, XCircle, Send, Sparkles, ShieldCheck, Rocket, Trophy, X } from "lucide-react";
+import { CheckCircle2, XCircle, Send, Sparkles, ShieldCheck, Rocket, Trophy, X, Settings, SlidersHorizontal, Coins } from "lucide-react";
 import {
-  HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, AuroraDrawer, Toasts, pushToast,
+  HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, AuroraDrawer, MiniModal, Toasts, pushToast,
 } from "@/components/console-v2/kit";
 import { useRestaurantStore } from "@/lib/store";
 import { useT } from "@/lib/i18n/lang";
@@ -64,6 +64,7 @@ export default function ApprovalsPage() {
   const [error, setError] = useState(false);
   const [mod, setMod] = useState("all");
   const [evidence, setEvidence] = useState<ChangeRequest | null>(null);
+  const [modal, setModal] = useState<null | "kill" | "mc" | "rules" | "cost">(null);
 
   const load = useCallback(async () => {
     try {
@@ -101,7 +102,7 @@ export default function ApprovalsPage() {
                 <button key={m.key} onClick={() => setMod(m.key)} style={mod === m.key ? pillOn : pillOff}>{t(m.labelKey)}</button>
               ))}
             </div>
-            <span style={killChip} title={t("ap.autorun")}><ShieldCheck size={12} /> {t("ap.autorun")}</span>
+            <button onClick={() => setModal("kill")} style={{ ...killChip, cursor: "pointer" }} title={t("ap.kill.title")}><ShieldCheck size={12} /> {t("ap.autorun")}</button>
           </>
         }
       />
@@ -129,10 +130,18 @@ export default function ApprovalsPage() {
               <div style={{ marginTop: 10, fontSize: 10.5, color: "var(--faint)", lineHeight: 1.6 }}>{t("ap.streakSoon")}</div>
             </Panel>
 
-            {/* Decision Layer — module proposers with no backend → honest SOON. */}
+            {/* Decision Layer — module proposers with no backend → honest SOON.
+                The config surfaces (ovMC/ovRules/ovCost) render their designed
+                modal chrome in SOON, opened from these controls. */}
             <Panel>
               <SectionHeader icon={<Sparkles size={15} />} tier="violet" title={t("ap.decisionLayer")} sub={t("ap.menuLaneNote")} right={<TruthChip state="soon" />} />
-              <div style={{ fontSize: 11.5, color: "var(--dim)", lineHeight: 1.7 }}>{t("ap.decisionSoon")}</div>
+              <div style={{ fontSize: 11.5, color: "var(--dim)", lineHeight: 1.7, marginBottom: 10 }}>{t("ap.decisionSoon")}</div>
+              <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".1em", color: "var(--faint)", textTransform: "uppercase", marginBottom: 7 }}>{t("ap.decisionCtrls")}</div>
+              <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                <button onClick={() => setModal("mc")} style={ctrlBtn}><Settings size={12} /> {t("ap.configure")}</button>
+                <button onClick={() => setModal("rules")} style={ctrlBtn}><SlidersHorizontal size={12} /> {t("ap.rulesBtn")}</button>
+                <button onClick={() => setModal("cost")} style={ctrlBtn}><Coins size={12} /> {t("ap.costPolicy")}</button>
+              </div>
             </Panel>
           </>
         }
@@ -179,6 +188,24 @@ export default function ApprovalsPage() {
       <AuroraDrawer open={!!evidence} onClose={() => setEvidence(null)}>
         {evidence && <EvidenceBody req={evidence} currency={currency} onClose={() => setEvidence(null)} />}
       </AuroraDrawer>
+
+      {/* ovKill — global kill switch (owner-only). Auto-run is already OFF (law);
+          the global Karim kill wires with the execution engine → SOON. */}
+      <SoonModal open={modal === "kill"} onClose={() => setModal(null)} icon={<ShieldCheck size={16} />} title={t("ap.kill.title")} body={t("ap.kill.body")} />
+      {/* ovMC — module configuration → SOON. */}
+      <SoonModal open={modal === "mc"} onClose={() => setModal(null)} icon={<Settings size={16} />} title={t("ap.mc.title")} body={t("ap.mc.body")} />
+      {/* ovRules — module rules editor → SOON. */}
+      <SoonModal open={modal === "rules"} onClose={() => setModal(null)} icon={<SlidersHorizontal size={16} />} title={t("ap.rules.title")} body={t("ap.rules.body")} />
+      {/* ovCost — cost-input policy for budgeted proposals → SOON. */}
+      <MiniModal open={modal === "cost"} onClose={() => setModal(null)}>
+        <ModalHead icon={<Coins size={16} />} title={t("ap.cost.title")} state="soon" onClose={() => setModal(null)} />
+        <p style={{ fontSize: 12, color: "var(--dim)", lineHeight: 1.85 }}>{t("ap.cost.body")}</p>
+        <label style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 12, opacity: 0.6 }}>
+          <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".08em", color: "var(--faint)", textTransform: "uppercase" }}>{t("ap.cost.input")} ({currency})</span>
+          <input disabled inputMode="decimal" placeholder="—" style={{ height: 38, borderRadius: 11, border: "1px solid var(--stroke)", background: "var(--inset2)", padding: "0 12px", fontSize: 13, color: "var(--txt)", outline: "none" }} />
+        </label>
+        <p style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 12, textAlign: "center" }}>{t("ap.soonHint")}</p>
+      </MiniModal>
 
       <Toasts />
     </>
@@ -258,19 +285,25 @@ function RequestCard({ req, currency, onChanged, onEvidence }: { req: ChangeRequ
       {req.status === "rejected" && req.reason && <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 8 }}><Bdi>{req.reason}</Bdi></div>}
 
       {/* Actions */}
-      {req.status === "proposed" && !rejecting && (
+      {req.status === "proposed" && (
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button onClick={() => act("approve")} disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.5 : 1 }}><CheckCircle2 size={14} /> {t("ap.approve")}</button>
           <button onClick={() => setRejecting(true)} disabled={busy} style={ghostBtn}><XCircle size={14} /> {t("ap.reject")}</button>
         </div>
       )}
-      {req.status === "proposed" && rejecting && (
-        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("ap.rejectReason")} dir="rtl" style={reasonInput} />
-          <button onClick={() => act("reject")} disabled={busy} style={{ ...ghostBtn, color: "#ffb3a8" }}>{t("ap.confirmReject")}</button>
+      {/* ovVeto — reject-with-reason modal (real). */}
+      <MiniModal open={rejecting} onClose={() => { setRejecting(false); setReason(""); }}>
+        <ModalHead icon={<XCircle size={16} />} title={t("ap.veto.title")} onClose={() => { setRejecting(false); setReason(""); }} />
+        <div style={{ ...diffBox, marginBottom: 12 }}>
+          {req.target_label && <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--txt)" }}><Bdi>{req.target_label}</Bdi></span>}
+          <span style={{ fontSize: 11, color: "var(--faint)" }}>· {fieldLabel}</span>
+        </div>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("ap.rejectReason")} dir="rtl" style={{ ...reasonInput, width: "100%", marginBottom: 12 }} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => act("reject")} disabled={busy} style={{ ...primaryBtn, background: "var(--inset)", color: "#ffb3a8", border: "1px solid rgba(255,107,94,.4)", opacity: busy ? 0.5 : 1 }}>{t("ap.confirmReject")}</button>
           <button onClick={() => { setRejecting(false); setReason(""); }} disabled={busy} style={ghostBtn}>{t("ap.cancel")}</button>
         </div>
-      )}
+      </MiniModal>
       {req.status === "approved" && (
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button onClick={() => act("apply")} disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.5 : 1 }}><Send size={14} /> {busy ? t("ap.busy") : t("ap.apply")}</button>
@@ -341,7 +374,30 @@ function fmt(iso: string): string {
 }
 
 // ---------------------------------------------------------------------------
+function ModalHead({ icon, title, state, onClose }: { icon: React.ReactNode; title: string; state?: "soon"; onClose: () => void }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+      <span style={{ color: "var(--dim)", display: "inline-flex" }}>{icon}</span>
+      <span style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{title}</span>
+      {state === "soon" && <TruthChip state="soon" />}
+      <button onClick={onClose} style={drawerX}><X size={15} /></button>
+    </div>
+  );
+}
+function SoonModal({ open, onClose, icon, title, body }: { open: boolean; onClose: () => void; icon: React.ReactNode; title: string; body: string }) {
+  const t = useT();
+  return (
+    <MiniModal open={open} onClose={onClose}>
+      <ModalHead icon={icon} title={title} state="soon" onClose={onClose} />
+      <p style={{ fontSize: 12, color: "var(--dim)", lineHeight: 1.85 }}>{body}</p>
+      <p style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 12, textAlign: "center" }}>{t("ap.soonHint")}</p>
+    </MiniModal>
+  );
+}
+
+// ---------------------------------------------------------------------------
 const pillGroup: React.CSSProperties = { display: "flex", gap: 4, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: 3 };
+const ctrlBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 30, padding: "0 11px", borderRadius: 10, border: "1px solid var(--stroke)", background: "var(--inset)", color: "var(--dim)", fontFamily: "var(--kvx-font-ar)", fontSize: 11, fontWeight: 700, cursor: "pointer" };
 const pillOn: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, color: "var(--ink)", background: "var(--g-blue)", border: 0, borderRadius: 9, padding: "6px 11px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)" };
 const pillOff: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, color: "var(--dim)", background: "transparent", border: 0, borderRadius: 9, padding: "6px 11px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)" };
 const killChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10.5, fontWeight: 800, color: "#5fe0b0", background: "rgba(46,204,154,.1)", border: "1px solid rgba(46,204,154,.4)", borderRadius: 99, padding: "5px 11px", fontFamily: "var(--kvx-font-ar)" };

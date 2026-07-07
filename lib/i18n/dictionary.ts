@@ -433,6 +433,21 @@ export const DICTIONARY = {
     "ap.soonHint": "يضيء عند تفعيل محرّكه",
     "ap.streakSoon": "عدّاد القرارات يضيء مع أول قرار مُقاس",
     "ap.menuLaneNote": "لَين المنيو وحده مُوصَّل الآن — بقية الوحدات تقترح عند شحن محرّكاتها.",
+    // Approvals popups (ovVeto real; ovKill/ovMC/ovRules/ovCost decision-layer SOON).
+    "ap.veto.title": "رفض المقترح",
+    "ap.kill.title": "مفتاح الإيقاف العام",
+    "ap.kill.body": "التشغيل التلقائي موقوف دائمًا — لا شيء يُطبَّق دون توقيعك. مفتاح إيقاف كريم العام للمالك سيُوصَّل مع محرّك التشغيل.",
+    "ap.mc.title": "إعداد الوحدة",
+    "ap.mc.body": "حدود ومعايير كل وحدة قرار تظهر هنا عند شحن محرّكها.",
+    "ap.rules.title": "قواعد الوحدة",
+    "ap.rules.body": "قواعد ما تقترحه الوحدة (ومتى) تُدار هنا عند تفعيل الوحدة.",
+    "ap.cost.title": "سياسة التكلفة",
+    "ap.cost.body": "المقترحات ذات التكلفة تطلب تقديرًا قبل الموافقة — عند تفعيل الوحدات ذات الميزانية.",
+    "ap.cost.input": "التكلفة التقديرية",
+    "ap.configure": "إعداد",
+    "ap.rulesBtn": "القواعد",
+    "ap.costPolicy": "سياسة التكلفة",
+    "ap.decisionCtrls": "ضوابط طبقة القرار",
     // Customers (item 11) — the CRM wall. Facts/segments/top/at-risk from the real
     // aggregates endpoint; customer_memory inference + write actions stay SOON.
     "cu.title": "العملاء",
@@ -1120,6 +1135,21 @@ export const DICTIONARY = {
     "ap.soonHint": "lights up when its engine ships",
     "ap.streakSoon": "the decision streak lights up with the first measured decision",
     "ap.menuLaneNote": "only the Menu lane is wired today — the other modules propose here when their engines ship.",
+    // Approvals popups (ovVeto real; ovKill/ovMC/ovRules/ovCost decision-layer SOON).
+    "ap.veto.title": "Reject this proposal",
+    "ap.kill.title": "Global kill switch",
+    "ap.kill.body": "Auto-run is always OFF — nothing applies without your signature. The owner-only global Karim kill switch wires up with the execution engine.",
+    "ap.mc.title": "Module configuration",
+    "ap.mc.body": "Each decision module’s limits and thresholds appear here when its engine ships.",
+    "ap.rules.title": "Module rules",
+    "ap.rules.body": "The rules for what a module proposes (and when) are managed here once the module is live.",
+    "ap.cost.title": "Cost policy",
+    "ap.cost.body": "Proposals with a cost ask for an estimate before approval — when budgeted modules go live.",
+    "ap.cost.input": "Estimated cost",
+    "ap.configure": "Configure",
+    "ap.rulesBtn": "Rules",
+    "ap.costPolicy": "Cost policy",
+    "ap.decisionCtrls": "Decision-layer controls",
     // Customers (item 11) — the CRM wall. Facts/segments/top/at-risk from the real
     // aggregates endpoint; customer_memory inference + write actions stay SOON.
     "cu.title": "Customers",
