@@ -169,13 +169,17 @@ function InviteModal({ onClose, onDone }: { onClose: () => void; onDone: () => P
     if (busy) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setErr(t("tm.inv.badEmail")); return; }
     setBusy(true); setErr(null);
+    let ok = false;
     try {
       const r = await fetch("/api/team/invite", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email.trim(), role }) });
       if (r.status === 409) { setErr(t("tm.inv.dup")); return; }
       if (!r.ok) { setErr(t("tm.inv.error")); return; }
-      await onDone(); pushToast(t("tm.inv.send"), "ok"); onClose();
+      ok = true;
     } catch { setErr(t("tm.inv.error")); }
     finally { setBusy(false); }
+    // Post-success UI is OUTSIDE the write's try/catch — a failed roster refetch
+    // must never re-map a succeeded invite to an error the user would retry.
+    if (ok) { pushToast(t("tm.inv.send"), "ok"); onClose(); void onDone(); }
   }
 
   return (
@@ -207,13 +211,16 @@ function RoleModal({ member, onClose, onDone }: { member: TeamMember; onClose: (
   async function save() {
     if (busy) return;
     setBusy(true); setErr(null);
+    let ok = false;
     try {
       const r = await fetch(`/api/members/${member.id}`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ role: target }) });
       if (r.status === 409) { setErr(t("tm.rl.lastManager")); return; }
       if (!r.ok) { setErr(t("tm.rl.error")); return; }
-      await onDone(); pushToast(t("tm.rl.save"), "ok"); onClose();
+      ok = true;
     } catch { setErr(t("tm.rl.error")); }
     finally { setBusy(false); }
+    // Post-success UI outside the write's try/catch (see InviteModal.send).
+    if (ok) { pushToast(t("tm.rl.save"), "ok"); onClose(); void onDone(); }
   }
 
   return (

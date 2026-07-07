@@ -176,7 +176,7 @@ export default function CustomersPage() {
       </div>
 
       {error ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><TruthChip state="gather" /><span style={{ fontSize: 12.5, color: "var(--faint)" }}>{t("cu.loadError")}</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><TruthChip state="degraded" /><span style={{ fontSize: 12.5, color: "var(--faint)" }}>{t("cu.loadError")}</span></div>
       ) : data === null ? (
         <div style={{ fontSize: 12.5, color: "var(--faint)" }}><TruthChip state="gather" /></div>
       ) : shown.length === 0 ? (

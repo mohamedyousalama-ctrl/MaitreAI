@@ -151,6 +151,13 @@ export default function InsightsPage() {
               <div style={{ fontSize: 17, fontWeight: 800, color: "var(--gold)", fontFamily: "var(--kvx-font-ar)" }}><Bdi>{ins.current.topItem.name}</Bdi></div>
               <div style={{ fontSize: 11, color: "var(--dim)", marginTop: 4 }}>{money(ins.current.topItem.revenue)} · {t("ins.byRevenue")}</div>
             </div>
+          ) : isReal ? (
+            // Real window with no top item = a TRUE zero (shown LIVE), NOT
+            // unloaded GATHERING — different truths (rule 3).
+            <div style={cardStyle}>
+              <CardHead title={t("ins.topItem")} right={<TruthChip state="live" />} />
+              <div style={{ fontSize: 11.5, color: "var(--faint)", lineHeight: 1.6, marginTop: 2 }}>{t("ins.topItem.empty")}</div>
+            </div>
           ) : <KpiCard title={t("ins.topItem")} model={{ kind: "gather", msg: "ins.gather.outcomes" }} baseKey={baseKey} priorHasData={ins.prior.hasData} />}
           <KpiCard title={t("ins.repeat")} model={{ kind: "gather", msg: "ins.gather.periods" }} baseKey={baseKey} priorHasData={ins.prior.hasData} />
           <SoonCard title={t("ins.redeem")} msg={t("ins.soon.campaigns")} />

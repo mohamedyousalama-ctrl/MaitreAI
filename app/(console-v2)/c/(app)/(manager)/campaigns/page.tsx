@@ -105,7 +105,7 @@ export default function CampaignsPage() {
         </div>
 
         {/* CAPACITY STRIP — capacity + quality real; market rules fixed reference. */}
-        <SectionHeader tier="blue" icon={<BarChart3 size={15} />} title={t("cmp.cap.title")} right={capReady ? <TruthChip state="live" /> : <TruthChip state="gather" />} />
+        <SectionHeader tier="blue" icon={<BarChart3 size={15} />} title={t("cmp.cap.title")} right={capLoading ? undefined : <TruthChip state={capReady ? "live" : "gather"} />} />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
           <StripCard tier="blue" icon={<BarChart3 size={14} />} title={t("cmp.cap.capTitle")} sub={t("cmp.cap.capSub")}>
             {capLoading ? <Loading /> : !capReady || !cap ? (
@@ -138,7 +138,7 @@ export default function CampaignsPage() {
         </div>
 
         {/* TEMPLATE REGISTRY — REAL (0068) with category-truth chips. */}
-        <SectionHeader tier="violet" icon={<Megaphone size={15} />} title={t("cmp.reg.title")} sub={t("cmp.reg.sub")} right={templates && templates.length > 0 ? <TruthChip state="live" /> : <TruthChip state="gather" />} />
+        <SectionHeader tier="violet" icon={<Megaphone size={15} />} title={t("cmp.reg.title")} sub={t("cmp.reg.sub")} right={regLoading ? undefined : <TruthChip state={templates && templates.length > 0 ? "live" : "gather"} />} />
         <Panel>
           {regLoading ? (
             <Loading label={t("cmp.reg.loading")} />
