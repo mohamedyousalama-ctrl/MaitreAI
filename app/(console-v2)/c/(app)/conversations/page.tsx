@@ -195,7 +195,7 @@ export default function ConversationsPage() {
 // REAL order data only; payment tone via the law engine (failed=amber, not red);
 // no safety/allergen detail ever reaches this chip.
 const PAYMENT_KEYS = new Set(["unpaid", "payment_link_sent", "paid", "failed", "refunded"]);
-function OrderContextChip({ order, currency }: { order: { id: string; total: number; paymentStatus: string }; currency: string }) {
+function OrderContextChip({ order, currency }: { order: { ref: string; total: number; paymentStatus: string }; currency: string }) {
   const t = useT();
   // Defensive: only route KNOWN payment keys through the law engine (its switch
   // ends in assertNever). An unexpected value → omit the payment sub-chip rather
@@ -207,7 +207,7 @@ function OrderContextChip({ order, currency }: { order: { id: string; total: num
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--stroke)" }}>
       <Receipt size={13} color="var(--dim)" style={{ flex: "none" }} />
-      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--txt)" }}>#<Num>{order.id}</Num></span>
+      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--txt)" }}>#<Num>{order.ref}</Num></span>
       <span style={{ fontSize: 11, fontWeight: 800, color: "var(--gold)" }}><Num>{order.total.toLocaleString("en-US")}</Num> <span style={{ fontSize: 9.5, color: "var(--dim)" }}>{currency}</span></span>
       {pay && payTone && <span style={{ marginInlineStart: "auto", fontSize: 9.5, fontWeight: 800, color: payTone.fg, background: payTone.bg, border: `1px solid ${payTone.bd}`, borderRadius: 99, padding: "3px 9px" }}>{t(pay.labelKey)}</span>}
     </div>
@@ -288,7 +288,9 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
   // routes through derivePaymentDisplay so `failed` is amber, never red. This
   // chip carries ONLY order#/total/payment — no safety/allergen path touches it.
   const currency = useRestaurantStore((s) => s.profile.currency);
-  const order = useOrderStore((s) => (conv.linkedOrderId ? s.orders.find((o) => o.id === conv.linkedOrderId) : undefined));
+  // Match on the order's id OR its human orderNumber — linkedOrderId may carry
+  // either depending on how the link was written; both are real identifiers.
+  const order = useOrderStore((s) => (conv.linkedOrderId ? s.orders.find((o) => o.id === conv.linkedOrderId || o.orderNumber === conv.linkedOrderId) : undefined));
 
   const own = ownOf(conv);
   const hold = isHold(conv);
@@ -342,7 +344,7 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
       </div>
 
       {/* Order-context chip — real linked order only; honest-empty otherwise. */}
-      {order && <OrderContextChip order={order} currency={currency} />}
+      {order && <OrderContextChip order={{ ref: order.orderNumber, total: order.total, paymentStatus: order.paymentStatus }} currency={currency} />}
 
       {/* Actions */}
       {!closed && (
