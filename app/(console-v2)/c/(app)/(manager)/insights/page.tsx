@@ -32,7 +32,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Wallet, Bot, Cog, TrendingUp, Radio, GitBranch, Lightbulb } from "lucide-react";
 import {
-  HeaderRow, SectionHeader, Panel, TruthChip, Toasts, pushToast, type Tier,
+  HeaderRow, SectionHeader, Panel, TruthChip, type Tier,
 } from "@/components/console-v2/kit";
 import { useOrderStore } from "@/lib/order-store";
 import { useRestaurantStore } from "@/lib/store";
@@ -93,10 +93,15 @@ export default function InsightsPage() {
                 </button>
               ))}
             </div>
-            <button onClick={() => pushToast(t("ins.export"), "blue")}
-              style={{ height: 34, padding: "0 13px", borderRadius: 11, border: "1px solid var(--stroke2)", background: "rgba(255,255,255,.05)", color: "var(--dim)", fontFamily: "var(--kvx-font-ui)", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
-              {t("ins.export")}
-            </button>
+            {/* Export is not wired yet → disabled + SOON, never a no-op that
+                claims to have exported (honest-states law). */}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <button disabled aria-disabled title={t("ins.export.soon")}
+                style={{ height: 34, padding: "0 13px", borderRadius: 11, border: "1px solid var(--stroke)", background: "rgba(255,255,255,.03)", color: "var(--faint)", fontFamily: "var(--kvx-font-ui)", fontSize: 11, fontWeight: 800, cursor: "not-allowed" }}>
+                {t("ins.export")}
+              </button>
+              <TruthChip state="soon" />
+            </span>
           </>
         }
       />
@@ -174,7 +179,6 @@ export default function InsightsPage() {
           <div style={{ fontSize: 11.5, color: "var(--faint)", lineHeight: 1.65 }}>{t("ins.donext.soon")}</div>
         </div>
       </div>
-      <Toasts />
     </>
   );
 }

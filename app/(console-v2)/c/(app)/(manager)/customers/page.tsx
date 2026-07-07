@@ -201,6 +201,9 @@ export default function CustomersPage() {
               </button>
             ))}
           </div>
+          {/* Scope honesty — the wall is the top-by-spend slice, not the full
+              roster (aggregates topN=10); search + tabs scope to it. */}
+          <div style={{ fontSize: 10.5, color: "var(--faint)", lineHeight: 1.6, padding: "0 2px" }}>{t("cu.wall.scope")}</div>
           {/* Data-blocked ring/visits/usual — honest wall note (hard-rule #1). */}
           <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 10.5, color: "var(--faint)", lineHeight: 1.6 }}>
             <TruthChip state="gather" /> {t("cu.wall.ringGather")}
