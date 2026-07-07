@@ -305,6 +305,16 @@ jobs:
       - name: Photo-thread sequencing unit tests
         run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-photo-thread.test.ts
 
+      # ── Blocking gate 18: WO-MANAGER-RECOGNITION staff-roster sync ────────
+      # A manager added in Settings/Team (with a WhatsApp number, flag ON) is
+      # auto-recognized on the staff command channel. Asserts the roster-sync helpers
+      # + that the ADD is flag-gated + manager-only, AND the HARD LINE holds: a roster
+      # number is parsed ONLY for commands and a non-command NEVER reaches the Brain
+      # (webhook skips staff from the persist loop; command-channel default = bounded
+      # reply, no runCustomerTurn). The --import loader stubs server-only + @/ aliases.
+      - name: Manager-recognition roster-sync unit tests
+        run: node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-manager-recognition.test.ts
+
       # ── Informational: DB-backed proof scripts (no creds → exit 0/skip) ──
       # These self-exit with 0 when no Supabase creds are present. They are
       # included here so that IF a CI Supabase secret is ever wired up, they

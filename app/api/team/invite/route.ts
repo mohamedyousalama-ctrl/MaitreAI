@@ -14,6 +14,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { recordAuditEvent } from "@/lib/db/audit";
+import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
+import { syncManagerToRoster } from "@/lib/staff/roster-sync";
 
 export const runtime = "nodejs";
 
@@ -48,6 +50,10 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const email = String(body.email ?? "").trim().toLowerCase();
   const role = String(body.role ?? "");
+  // WO-MANAGER-RECOGNITION — optional WhatsApp number for a manager, so they're
+  // auto-recognized on the staff command channel (flag-gated below). Absent → the
+  // invite behaves exactly as before.
+  const phone = String(body.phone ?? "").trim();
   if (!EMAIL_RE.test(email)) return NextResponse.json({ error: "bad_email" }, { status: 400 });
   if (!ROLES.has(role)) return NextResponse.json({ error: "bad_role" }, { status: 400 });
 
@@ -80,9 +86,11 @@ export async function POST(req: Request) {
 
   // 3. Insert the membership — restaurant_id from the SESSION (never the client),
   //    role whitelisted above.
-  const { error } = await admin
+  const { data: newMember, error } = await admin
     .from("members")
-    .insert({ restaurant_id: tenant.restaurantId, user_id: userId, role });
+    .insert({ restaurant_id: tenant.restaurantId, user_id: userId, role })
+    .select("id")
+    .single();
   if (error) {
     // Unique-violation race → already a member.
     if ((error as { code?: string }).code === "23505") {
@@ -98,5 +106,30 @@ export async function POST(req: Request) {
     metadata: { invited_user_id: userId, role },
   });
 
-  return NextResponse.json({ ok: true, status: "invited", email, role });
+  // WO-MANAGER-RECOGNITION (note 45) — a MANAGER added WITH a WhatsApp number is
+  // auto-recognized on the staff command channel: their number is upserted into the
+  // staff_numbers roster so الحالة / وقف / 86 work from their phone. Flag-gated
+  // (manager_command_recognition, default OFF). The command grammar + the HARD LINE
+  // (a roster number is parsed ONLY for commands; a non-command gets a bounded reply
+  // and NEVER reaches runCustomerTurn) already live in the webhook + command-channel.
+  let staffRecognized = false;
+  if (role === "manager" && phone && newMember?.id) {
+    const { data: rRow } = await admin
+      .from("restaurants")
+      .select("feature_flags, country")
+      .eq("id", tenant.restaurantId)
+      .single();
+    const flags = (rRow?.feature_flags ?? null) as Record<string, unknown> | null;
+    if (isFeatureExplicitlyEnabled("manager_command_recognition", flags)) {
+      const sync = await syncManagerToRoster(admin, {
+        restaurantId: tenant.restaurantId,
+        memberId: newMember.id as string,
+        phone,
+        country: (rRow?.country as string | null) ?? null,
+      });
+      staffRecognized = sync.ok;
+    }
+  }
+
+  return NextResponse.json({ ok: true, status: "invited", email, role, staffRecognized });
 }
