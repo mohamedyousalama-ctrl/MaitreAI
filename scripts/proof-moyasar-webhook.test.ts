@@ -71,6 +71,18 @@ function body(o: { eventId?: string; providerRef?: string; amount?: number; curr
     data: { id: o.providerRef ?? "inv_1", amount: o.amount ?? 5000, currency: o.currency ?? "SAR", status: o.status ?? "paid" },
   });
 }
+// WO-PSP-WEBHOOK-EVENTS — a PAYMENT-level event (Moyasar offers only these): data.id is
+// the PAYMENT id (NOT our invoice provider_ref); the link back is data.invoice_id (the
+// parent invoice = provider_ref) and/or data.metadata.sessionId (our createPayment stamp).
+function paymentBody(o: { eventId?: string; paymentId?: string; invoiceId?: string; metaSessionId?: string; amount?: number; currency?: string; status?: string } = {}) {
+  const data: Record<string, unknown> = {
+    id: o.paymentId ?? "pay_abc", // PAYMENT id — deliberately NOT provider_ref
+    amount: o.amount ?? 5000, currency: o.currency ?? "SAR", status: o.status ?? "paid",
+  };
+  if (o.invoiceId !== undefined) data.invoice_id = o.invoiceId;
+  if (o.metaSessionId !== undefined) data.metadata = { sessionId: o.metaSessionId };
+  return JSON.stringify({ id: o.eventId ?? "pevt_1", type: "payment_" + (o.status ?? "paid"), secret_token: "SECRET", data });
+}
 // Injected verify: valid unless secret is wrong; status from the body.
 function deps(over: Partial<MoyasarWebhookDeps> & { valid?: boolean; notifies?: string[]; alerts?: string[] } = {}): MoyasarWebhookDeps {
   return {
@@ -218,6 +230,76 @@ async function run() {
     const r = await handleMoyasarWebhook(makeAdmin(store), body({ currency: "" }), {}, deps({ alerts }));
     check("missing currency → held + alert (fail closed)",
       r.outcome === "amount_mismatch_held" && alerts[0] === "payment_amount_mismatch" && store.orders[0].payment_status === "unpaid");
+  }
+
+  // ==========================================================================
+  // WO-PSP-WEBHOOK-EVENTS — payment-level events settle (Moyasar has no invoice_paid)
+  // ==========================================================================
+  // (a) payment_paid resolved via data.invoice_id (= parent invoice = provider_ref)
+  {
+    const store = seed(); const notifies: string[] = [];
+    const r = await handleMoyasarWebhook(makeAdmin(store), paymentBody({ paymentId: "pay_zzz", invoiceId: "inv_1" }), {}, deps({ notifies }));
+    check("payment_paid via data.invoice_id → 200 paid", r.httpStatus === 200 && r.outcome === "paid");
+    check("payment_paid via invoice_id → session + order paid", store.payment_sessions[0].status === "paid" && store.orders[0].payment_status === "paid");
+    check("payment_paid via invoice_id → notify once + event recorded", notifies.length === 1 && store.processed_payment_events.length === 1);
+  }
+  // (b) payment_paid resolved via data.metadata.sessionId (our stamp) when invoice_id absent
+  {
+    const store = seed();
+    const r = await handleMoyasarWebhook(makeAdmin(store), paymentBody({ paymentId: "pay_www", metaSessionId: "sess-1" }), {}, deps());
+    check("payment_paid via metadata.sessionId → 200 paid", r.httpStatus === 200 && r.outcome === "paid" && store.orders[0].payment_status === "paid");
+  }
+  // (c) payment_paid with WRONG signature → 401 (SAME fail-closed gate, order untouched)
+  {
+    const store = seed();
+    const r = await handleMoyasarWebhook(makeAdmin(store), paymentBody({ invoiceId: "inv_1" }), {}, deps({ valid: false }));
+    check("payment_paid wrong signature → 401 invalid_signature", r.httpStatus === 401 && r.outcome === "invalid_signature");
+    check("payment_paid wrong signature → order NOT stamped", store.orders[0].payment_status === "unpaid" && store.processed_payment_events.length === 0);
+  }
+  // (d) payment_paid dedup → single settlement (SAME dedup guard)
+  {
+    const store = seed(); const admin = makeAdmin(store); const notifies: string[] = [];
+    await handleMoyasarWebhook(admin, paymentBody({ eventId: "pevt_dup", invoiceId: "inv_1" }), {}, deps({ notifies }));
+    const r2 = await handleMoyasarWebhook(admin, paymentBody({ eventId: "pevt_dup", invoiceId: "inv_1" }), {}, deps({ notifies }));
+    check("payment_paid dedup → duplicate_event no-op", r2.outcome === "duplicate_event");
+    check("payment_paid dedup → notify once, one processed row", notifies.length === 1 && store.processed_payment_events.length === 1);
+  }
+  // (e) payment_paid amount mismatch → held + alert, never paid (SAME amount guard)
+  {
+    const store = seed(); const alerts: string[] = [];
+    const r = await handleMoyasarWebhook(makeAdmin(store), paymentBody({ invoiceId: "inv_1", amount: 4000 }), {}, deps({ alerts }));
+    check("payment_paid amount mismatch → held, order NOT paid",
+      r.outcome === "amount_mismatch_held" && store.orders[0].payment_status === "unpaid" && alerts[0] === "payment_amount_mismatch");
+  }
+  // (f) payment_failed (payment-level name) → session failed, order untouched
+  {
+    const store = seed();
+    const r = await handleMoyasarWebhook(makeAdmin(store), paymentBody({ eventId: "pevt_f", invoiceId: "inv_1", status: "failed" }), {}, deps());
+    check("payment_failed via invoice_id → session=failed, order untouched",
+      r.outcome === "failed" && store.payment_sessions[0].status === "failed" && store.orders[0].payment_status === "unpaid");
+  }
+  // (g) payment event with NO matching invoice_id/metadata → still swallowed 200 (fail-closed, no leak)
+  {
+    const store = seed();
+    const r = await handleMoyasarWebhook(makeAdmin(store), paymentBody({ paymentId: "pay_nomatch", invoiceId: "inv_NOPE" }), {}, deps());
+    check("payment_paid no matching link → 200 unknown_session (swallowed)", r.httpStatus === 200 && r.outcome === "unknown_session");
+  }
+  // (h) session-lookup READ ERROR → fail loud 503 retry_later (CodeRabbit): a transient
+  //     read/RLS/migration fault must NOT masquerade as unknown_session (200), or Moyasar
+  //     stops retrying and a real payment is lost — mirrors the dedup read's fail-loud.
+  {
+    const store = seed();
+    const base = makeAdmin(store);
+    const erroringAdmin = {
+      from: (t: string) => {
+        const q = base.from(t) as Record<string, unknown>;
+        if (t === "payment_sessions") q.maybeSingle = async () => ({ data: null, error: { message: "transient read failure" } });
+        return q;
+      },
+    } as never;
+    const r = await handleMoyasarWebhook(erroringAdmin, paymentBody({ invoiceId: "inv_1" }), {}, deps());
+    check("session lookup error → 503 retry_later (fail loud, NOT unknown_session)", r.httpStatus === 503 && r.outcome === "retry_later");
+    check("session lookup error → order NOT stamped", store.orders[0].payment_status === "unpaid");
   }
 
   // ---- tenant isolation: order stamp scoped to the session's own tenant ------
