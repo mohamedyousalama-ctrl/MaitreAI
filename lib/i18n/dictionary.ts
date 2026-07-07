@@ -810,6 +810,8 @@ export const DICTIONARY = {
     // Onboarding / go-live cockpit (item 15) — the wizard that mirrors the real gate.
     "ob.title": "الإقلاع",
     "ob.subtitle": "لا شيء يعمل حتى تُثبَت كل حقيقة.",
+    "ob.setup": "الإقلاع",
+    "ob.railFoot": "لا شيء يعمل حتى تنجح البوابة — اختبار تنبيه الحساسية على منيوك بالذات. لا اختبار، لا تشغيل.",
     "ob.step.whatsapp": "واتساب",
     "ob.step.whatsapp.sub": "لوحة الحقيقة — ٨ فحوص",
     "ob.step.testdrive": "التجربة",
@@ -1700,6 +1702,8 @@ export const DICTIONARY = {
     // Onboarding / go-live cockpit (item 15)
     "ob.title": "Go live",
     "ob.subtitle": "Nothing goes live until every truth is proven.",
+    "ob.setup": "GO-LIVE",
+    "ob.railFoot": "Nothing goes live until the gate passes — the allergy-hint test on your exact menu. No test, no live.",
     "ob.step.whatsapp": "WhatsApp",
     "ob.step.whatsapp.sub": "truth board — 8 probes",
     "ob.step.testdrive": "Test drive",

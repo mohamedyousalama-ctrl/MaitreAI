@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { HeaderRow, TruthChip, type TruthState } from "@/components/console-v2/kit";
+import { KivoMark } from "@/components/brand/KivoLogo";
 import { useConsoleDataStore } from "@/lib/console-data-state";
 import { useT } from "@/lib/i18n/lang";
 import type { DictKey } from "@/lib/i18n/dictionary";
@@ -66,68 +67,76 @@ export default function OnboardingPage() {
     <>
       <HeaderRow title={t("ob.title")} jobLine={t("ob.subtitle")} />
 
-      <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16, paddingTop: 4 }}>
-        {/* Stepper — dark-glass dots + connectors */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {STEPS.map((s, i) => {
-            const Icon = s.icon;
-            const state: "done" | "on" | "todo" = i < step ? "done" : i === step ? "on" : "todo";
-            return (
-              <button
-                key={s.key}
-                type="button"
-                onClick={() => setStep(i)}
-                style={{
-                  flex: "1 1 220px", display: "flex", alignItems: "center", gap: 11, padding: "12px 14px",
-                  borderRadius: 14, cursor: "pointer", textAlign: "start", fontFamily: "var(--kvx-font-ar)",
-                  border: `1px solid ${state === "on" ? "rgba(14,159,110,.4)" : "var(--stroke)"}`,
-                  background: state === "on" ? "rgba(14,159,110,.12)" : "var(--inset)",
-                }}
-              >
-                <span style={{
-                  width: 28, height: 28, borderRadius: "50%", flex: "none", display: "grid", placeItems: "center",
-                  fontSize: 12, fontWeight: 800, fontFamily: "var(--kvx-font-ui)",
-                  background: state === "todo" ? "rgba(255,255,255,.07)" : "var(--g-green)",
-                  color: state === "todo" ? "var(--faint)" : "var(--ink)",
-                }}>
-                  {state === "done" ? <Check size={15} strokeWidth={3} /> : i + 1}
-                </span>
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--txt)" }}>
-                    <Icon size={14} strokeWidth={2.2} />{t(s.labelKey)}
+      {/* Design layout: 290px vertical stepper RAIL + 1fr STAGE (content unchanged). */}
+      <div style={{ display: "grid", gridTemplateColumns: "290px minmax(0,1fr)", gap: 16, alignItems: "start", paddingTop: 4 }}>
+        {/* LEFT — the 290px stepper rail (brand + vertical steps + doctrine footer). */}
+        <aside style={railPanel}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+            <span style={{ width: 38, height: 38, borderRadius: 11, background: "radial-gradient(circle at 32% 28%,#3fd39b,#0E9F6E 62%,#0a6e4c)", display: "grid", placeItems: "center", flex: "none", boxShadow: "0 6px 20px rgba(14,159,110,.5)" }}>
+              <KivoMark size={22} tone="white" title="Kivo" />
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "var(--txt)" }}>Kivo</div>
+              <div style={{ fontSize: 9, color: "var(--faint)", fontWeight: 600, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("ob.subtitle")}</div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 9, letterSpacing: ".14em", fontWeight: 800, color: "var(--faint)", textTransform: "uppercase", margin: "22px 0 12px" }}>{t("ob.setup")}</div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+            {STEPS.map((s, i) => {
+              const Icon = s.icon;
+              const state: "done" | "on" | "todo" = i < step ? "done" : i === step ? "on" : "todo";
+              return (
+                <button key={s.key} type="button" onClick={() => setStep(i)} style={stepRow(state)}>
+                  {/* connector to the previous dot — emerald once the step above is reached */}
+                  {i > 0 && <span aria-hidden style={{ position: "absolute", top: -6, insetInlineStart: 24, width: 2, height: 12, borderRadius: 2, background: i <= step ? "var(--teal)" : "var(--stroke)" }} />}
+                  <span style={stepDot(state)}>{state === "done" ? <Check size={14} strokeWidth={3} /> : i + 1}</span>
+                  <span style={{ minWidth: 0, textAlign: "start" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: state === "todo" ? "var(--dim)" : "var(--txt)" }}>
+                      <Icon size={13} strokeWidth={2.2} />{t(s.labelKey)}
+                    </span>
+                    <span style={{ display: "block", fontSize: 9, color: "var(--faint)", marginTop: 2 }}>{t(s.subKey)}</span>
                   </span>
-                  <span style={{ display: "block", fontSize: 10.5, color: "var(--faint)", marginTop: 2 }}>{t(s.subKey)}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                </button>
+              );
+            })}
+          </div>
 
-        {/* Step body */}
-        <div style={{ background: "var(--panel)", border: "1px solid var(--stroke)", borderRadius: 18, padding: "22px 24px", backdropFilter: "blur(12px)" }}>
-          {cur === "whatsapp" && <WhatsAppStep />}
-          {cur === "testdrive" && <TestDriveStep />}
-          {cur === "golive" && <GoLiveStep />}
-        </div>
+          {/* Doctrine footer — the safety line (no test, no live). */}
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--stroke)", fontSize: 9.5, color: "var(--faint)", lineHeight: 1.7 }}>{t("ob.railFoot")}</div>
+        </aside>
 
-        {/* Footer nav */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button
-            type="button"
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
-            disabled={step === 0}
-            style={{ ...navBtn, visibility: step === 0 ? "hidden" : "visible" }}
-          >
-            {t("ob.back")}
-          </button>
-          <span style={{ marginInline: "auto", fontSize: 11, color: "var(--faint)", fontWeight: 700 }}>
-            {t("ob.stepOf")} {step + 1} {t("ob.of")} {STEPS.length}
-          </span>
-          {step < STEPS.length - 1 && (
-            <button type="button" onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))} style={{ ...navBtn, ...navPrimary }}>
-              {t("ob.next")}
+        {/* RIGHT — the 1fr stage (progress bar + active step content + footer nav). */}
+        <div style={stagePanel}>
+          <div style={{ height: 3, background: "rgba(255,255,255,.07)" }}>
+            <div style={{ height: "100%", width: `${((step + 1) / STEPS.length) * 100}%`, background: "linear-gradient(90deg,#12b57e,#3fd39b)", transition: "width .4s cubic-bezier(.2,.9,.3,1)" }} />
+          </div>
+
+          <div style={{ padding: "24px 26px 6px" }}>
+            {cur === "whatsapp" && <WhatsAppStep />}
+            {cur === "testdrive" && <TestDriveStep />}
+            {cur === "golive" && <GoLiveStep />}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 26px", borderTop: "1px solid var(--stroke)", marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={() => setStep((s) => Math.max(0, s - 1))}
+              disabled={step === 0}
+              style={{ ...navBtn, visibility: step === 0 ? "hidden" : "visible" }}
+            >
+              {t("ob.back")}
             </button>
-          )}
+            <span style={{ marginInline: "auto", fontSize: 11, color: "var(--faint)", fontWeight: 700 }}>
+              {t("ob.stepOf")} {step + 1} {t("ob.of")} {STEPS.length}
+            </span>
+            {step < STEPS.length - 1 && (
+              <button type="button" onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))} style={{ ...navBtn, ...navPrimary }}>
+                {t("ob.next")}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </>
@@ -139,6 +148,34 @@ const navBtn: React.CSSProperties = {
   fontFamily: "var(--kvx-font-ar)", border: "1px solid var(--stroke2)", background: "rgba(255,255,255,.05)", color: "var(--dim)",
 };
 const navPrimary: React.CSSProperties = { border: 0, background: "linear-gradient(135deg,#12b57e,#0E9F6E)", color: "#fff" };
+
+// 290px stepper rail + 1fr stage — the design's onboarding anatomy (12-onboarding.html).
+const railPanel: React.CSSProperties = {
+  display: "flex", flexDirection: "column", minHeight: 380,
+  background: "rgba(10,14,20,.4)", border: "1px solid var(--stroke)", borderRadius: 18, padding: "20px 18px", backdropFilter: "blur(12px)",
+};
+const stagePanel: React.CSSProperties = {
+  display: "flex", flexDirection: "column", overflow: "hidden",
+  background: "var(--panel)", border: "1px solid var(--stroke)", borderRadius: 18, backdropFilter: "blur(12px)",
+};
+function stepRow(state: "done" | "on" | "todo"): React.CSSProperties {
+  return {
+    position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 13,
+    cursor: "pointer", textAlign: "start", fontFamily: "var(--kvx-font-ar)",
+    border: state === "on" ? "1px solid rgba(14,159,110,.34)" : "1px solid transparent",
+    background: state === "on" ? "rgba(14,159,110,.12)" : "transparent",
+  };
+}
+function stepDot(state: "done" | "on" | "todo"): React.CSSProperties {
+  return {
+    width: 26, height: 26, borderRadius: "50%", flex: "none", display: "grid", placeItems: "center",
+    fontSize: 11.5, fontWeight: 800, fontFamily: "var(--kvx-font-ui)",
+    background: state === "todo" ? "rgba(255,255,255,.07)" : "linear-gradient(135deg,#3fd39b,#0E9F6E)",
+    border: state === "todo" ? "1px solid var(--stroke)" : "1px solid transparent",
+    color: state === "todo" ? "var(--dim)" : "#fff",
+    boxShadow: state === "on" ? "0 4px 12px rgba(14,159,110,.5)" : "none",
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Step 1 — WhatsApp truth board
