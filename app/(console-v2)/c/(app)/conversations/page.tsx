@@ -20,16 +20,17 @@
 // ============================================================================
 
 import { useMemo, useState } from "react";
-import { Send, Lock, CornerUpLeft, CheckCircle2, Radio, Users, ShieldAlert, CheckCheck, X } from "lucide-react";
+import { Send, Lock, CornerUpLeft, CheckCircle2, Radio, Users, ShieldAlert, CheckCheck, X, Receipt } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
-import { useHasHydrated } from "@/lib/store";
-import { deriveConversationDisplay, type ConversationOwnershipState, type ConversationDisplayState } from "@/lib/console-v2/display-state";
+import { useHasHydrated, useRestaurantStore } from "@/lib/store";
+import { useOrderStore } from "@/lib/order-store";
+import { deriveConversationDisplay, derivePaymentDisplay, type ConversationOwnershipState, type ConversationDisplayState } from "@/lib/console-v2/display-state";
 import type { DisplayState } from "@/lib/console-v2/display-state";
 import {
   HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, HandledByChip, AuroraDrawer, MiniModal, Toasts, pushToast,
 } from "@/components/console-v2/kit";
 import { useT } from "@/lib/i18n/lang";
-import { Bdi } from "@/components/kivo";
+import { Bdi, Num } from "@/components/kivo";
 import { CONVERSATION_STAGE_LABELS, type Conversation } from "@/lib/types";
 
 const ownOf = (c: Conversation): ConversationOwnershipState => c.ownershipState ?? "AI_ACTIVE";
@@ -190,6 +191,29 @@ export default function ConversationsPage() {
   );
 }
 
+// Order-context chip (drawer header) — order# · engine total · payment-state.
+// REAL order data only; payment tone via the law engine (failed=amber, not red);
+// no safety/allergen detail ever reaches this chip.
+const PAYMENT_KEYS = new Set(["unpaid", "payment_link_sent", "paid", "failed", "refunded"]);
+function OrderContextChip({ order, currency }: { order: { id: string; total: number; paymentStatus: string }; currency: string }) {
+  const t = useT();
+  // Defensive: only route KNOWN payment keys through the law engine (its switch
+  // ends in assertNever). An unexpected value → omit the payment sub-chip rather
+  // than crash the drawer. Order#/total (engine money) still show honestly.
+  const pay = PAYMENT_KEYS.has(order.paymentStatus)
+    ? derivePaymentDisplay(order.paymentStatus as Parameters<typeof derivePaymentDisplay>[0])
+    : null;
+  const payTone = pay ? (TONE_DARK[pay.tone] ?? TONE_DARK.slate) : null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--stroke)" }}>
+      <Receipt size={13} color="var(--dim)" style={{ flex: "none" }} />
+      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--txt)" }}>#<Num>{order.id}</Num></span>
+      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--gold)" }}><Num>{order.total.toLocaleString("en-US")}</Num> <span style={{ fontSize: 9.5, color: "var(--dim)" }}>{currency}</span></span>
+      {pay && payTone && <span style={{ marginInlineStart: "auto", fontSize: 9.5, fontWeight: 800, color: payTone.fg, background: payTone.bg, border: `1px solid ${payTone.bd}`, borderRadius: 99, padding: "3px 9px" }}>{t(pay.labelKey)}</span>}
+    </div>
+  );
+}
+
 function TeammateRow({ initial, name, role }: { initial: string; name: string; role: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "9px 12px" }}>
@@ -258,6 +282,14 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
   // send always claims (the atomic server proof); once won, later sends skip it.
   const [claimed, setClaimed] = useState<Set<string>>(new Set());
 
+  // Order-context — REAL order only (resolved from the order store by the
+  // conversation's linkedOrderId). Honest-empty when there's no linked order.
+  // `total` is engine-computed money (displayed, never derived); payment tone
+  // routes through derivePaymentDisplay so `failed` is amber, never red. This
+  // chip carries ONLY order#/total/payment — no safety/allergen path touches it.
+  const currency = useRestaurantStore((s) => s.profile.currency);
+  const order = useOrderStore((s) => (conv.linkedOrderId ? s.orders.find((o) => o.id === conv.linkedOrderId) : undefined));
+
   const own = ownOf(conv);
   const hold = isHold(conv);
   const closed = own === "CLOSED";
@@ -308,6 +340,9 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
         </button>
         <button onClick={onClose} style={drawerX}><X size={15} /></button>
       </div>
+
+      {/* Order-context chip — real linked order only; honest-empty otherwise. */}
+      {order && <OrderContextChip order={order} currency={currency} />}
 
       {/* Actions */}
       {!closed && (
