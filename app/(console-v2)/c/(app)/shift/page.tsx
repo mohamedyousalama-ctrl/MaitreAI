@@ -32,6 +32,7 @@ import { StateChip, ActNowDot } from "@/components/console-v2";
 import { HeaderRow, PageGrid, StatTile, SectionHeader, MiniModal, AuroraDrawer, TruthChip } from "@/components/console-v2/kit";
 import { LiveMaps, type HeatPoint } from "@/components/console-v2/shift/LiveMaps";
 import { OrderDetailsModal } from "@/components/console-v2/shift/OrderDetailsModal";
+import { WaThreadDrawer } from "@/components/console-v2/shift/WaThreadDrawer";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi, Num } from "@/components/kivo";
 import type { LocalOrder, OrderStatusKey, PosStatus } from "@/lib/types";
@@ -64,6 +65,8 @@ export default function LiveShiftPage() {
 
   // Order-details popup (#ovDetails) — the primary row interaction.
   const [selected, setSelected] = useState<LocalOrder | null>(null);
+  // Order → WhatsApp thread drawer (#ovWa) — the order's conversation, opened from details.
+  const [waOrder, setWaOrder] = useState<LocalOrder | null>(null);
   // Pause/resume confirm overlay (#ovPause) — a kill switch confirms before acting.
   const [pauseConfirm, setPauseConfirm] = useState(false);
   // Drill/evidence drawer (#ovDrill/#ovEv/#ovLost) — the outcomes-blocked cluster.
@@ -263,7 +266,14 @@ export default function LiveShiftPage() {
       </div>
 
       {/* Order details popup (#ovDetails) — opens on an order row. */}
-      <OrderDetailsModal order={selected} onClose={() => setSelected(null)} />
+      <OrderDetailsModal
+        order={selected}
+        onClose={() => setSelected(null)}
+        onViewConversation={() => { const o = selected; setSelected(null); setWaOrder(o); }}
+      />
+
+      {/* Order → WhatsApp thread drawer (#ovWa) — the order's conversation thread. */}
+      <WaThreadDrawer order={waOrder} onClose={() => setWaOrder(null)} />
 
       {/* Pause/resume confirm overlay (#ovPause) — the kill switch confirms first. */}
       <MiniModal open={pauseConfirm} onClose={() => setPauseConfirm(false)}>
