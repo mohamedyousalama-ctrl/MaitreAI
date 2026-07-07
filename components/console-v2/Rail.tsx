@@ -10,7 +10,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, ChevronsUpDown } from "lucide-react";
 import { KivoMark } from "@/components/brand/KivoLogo";
 import { useT } from "@/lib/i18n/lang";
 import { RAIL_SECTIONS, railItemsFor, type RailItem, type ConsoleRole } from "@/lib/console-v2/nav";
@@ -98,12 +98,11 @@ export function Rail({ tenantName, role = "manager" }: { tenantName?: string; ro
 
   return (
     <aside
-      className="kv-scroll"
       style={{
         width: 234,
         flex: "none",
         height: "100%",
-        overflowY: "auto",
+        overflow: "hidden",
         background: "linear-gradient(180deg,#ffffff,#f6faf8)",
         borderInlineStart: "1px solid var(--kv-border)",
         padding: "20px 16px",
@@ -111,8 +110,9 @@ export function Rail({ tenantName, role = "manager" }: { tenantName?: string; ro
         flexDirection: "column",
       }}
     >
-      {/* Brand + real tenant */}
-      <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "0 4px" }}>
+      {/* Brand + real tenant. The tenant row is a "switch workspace" control → /c/select
+          so a manager on multiple restaurants is never stranded on one. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "0 4px", flex: "none" }}>
         <div
           style={{
             width: 42,
@@ -130,45 +130,62 @@ export function Rail({ tenantName, role = "manager" }: { tenantName?: string; ro
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 19, fontWeight: 800, color: "var(--kv-text)", lineHeight: 1.1 }}>Kivo</div>
           {tenantName && (
-            <div
+            <Link
+              href="/c/select"
+              title={t("nav.switchWorkspace")}
+              aria-label={t("nav.switchWorkspace")}
               style={{
-                fontSize: 11,
-                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                marginTop: 3,
+                maxWidth: 150,
+                padding: "2px 7px",
+                marginInlineStart: -7,
+                borderRadius: 8,
+                textDecoration: "none",
                 color: "var(--kv-faint)",
-                marginTop: 2,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
+                background: "transparent",
               }}
             >
-              {tenantName}
-            </div>
+              <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {tenantName}
+              </span>
+              <ChevronsUpDown size={12} strokeWidth={2.2} style={{ flex: "none" }} />
+            </Link>
           )}
         </div>
       </div>
 
-      {RAIL_SECTIONS.map(({ section, labelKey }) => {
-        const items = railItemsFor(section, role);
-        if (items.length === 0) return null;
-        return (
-          <div key={section}>
-            <div
-              style={{ fontSize: 11, fontWeight: 800, color: "var(--kv-faint)", padding: "0 12px", margin: "16px 0 7px", letterSpacing: ".02em" }}
-            >
-              {t(labelKey)}
+      {/* Scrollable nav — the ONLY scrolling region, so sign-out below stays pinned. */}
+      <div className="kv-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", marginInline: -4, paddingInline: 4 }}>
+        {RAIL_SECTIONS.map(({ section, labelKey }) => {
+          const items = railItemsFor(section, role);
+          if (items.length === 0) return null;
+          return (
+            <div key={section}>
+              <div
+                style={{ fontSize: 11, fontWeight: 800, color: "var(--kv-faint)", padding: "0 12px", margin: "16px 0 7px", letterSpacing: ".02em" }}
+              >
+                {t(labelKey)}
+              </div>
+              <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                {items.map((item) => (
+                  <RailRow key={item.key} item={item} active={isActive(item)} />
+                ))}
+              </nav>
             </div>
-            <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              {items.map((item) => (
-                <RailRow key={item.key} item={item} active={isActive(item)} />
-              ))}
-            </nav>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
 
-      {/* Sign out — a real form POST to the server route (clears auth cookies),
-          then a hard nav to /c/login. Sits at the rail foot. */}
-      <form action="/auth/signout?next=/c/login" method="post" style={{ marginTop: "auto", paddingTop: 16 }}>
+      {/* Sign out — pinned, ALWAYS visible (never scrolls out of reach). A real form
+          POST to the server route (clears auth cookies), then a hard nav to /c/login. */}
+      <form
+        action="/auth/signout?next=/c/login"
+        method="post"
+        style={{ flex: "none", paddingTop: 12, marginTop: 4, borderTop: "1px solid var(--kv-border)" }}
+      >
         <button
           type="submit"
           style={{

@@ -11,7 +11,15 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
+  // Only a same-origin relative path is honored (a crafted ?next=//evil.com must
+  // never become an open redirect). Default to the old console home.
+  const rawNext = searchParams.get("next");
+  const next =
+    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.startsWith("/\\")
+      ? rawNext
+      : "/dashboard";
+  // A console_v2 (/c) sign-in must fail back to /c/login, never the old /login.
+  const loginOnFail = next.startsWith("/c") ? "/c/login" : "/login";
 
   if (code) {
     const supabase = createClient();
@@ -20,5 +28,5 @@ export async function GET(request: Request) {
       if (!error) return NextResponse.redirect(`${origin}${next}`);
     }
   }
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  return NextResponse.redirect(`${origin}${loginOnFail}?error=auth`);
 }
