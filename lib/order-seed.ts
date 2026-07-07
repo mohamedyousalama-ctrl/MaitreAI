@@ -52,6 +52,18 @@ const CONVERSATION_LINKS: Record<string, string> = {
   "1041": "conv3",
 };
 
+// Demo Order-Heat coordinates — a deterministic scatter of DELIVERY orders around
+// Riyadh so the demo Live Shift heat map shows real pins (DEMO only; a real tenant's
+// coordinates come from the 0043 web-picker columns, never from this seed).
+const HEAT_CENTER: [number, number] = [24.7136, 46.6753];
+function seedCoord(id: string): { lat: number; lng: number } {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffff;
+  const dLat = ((h % 100) / 100 - 0.5) * 0.12;
+  const dLng = (((h >> 5) % 100) / 100 - 0.5) * 0.14;
+  return { lat: HEAT_CENTER[0] + dLat, lng: HEAT_CENTER[1] + dLng };
+}
+
 export function buildSeedOrders(): LocalOrder[] {
   const now = Date.now();
   return legacyOrders.map((o) => {
@@ -59,6 +71,7 @@ export function buildSeedOrders(): LocalOrder[] {
     const paymentStatus = PAYMENT_MAP[o.paymentStatus] ?? "unpaid";
     const fulfillmentType: FulfillmentKey = o.fulfillment === "استلام" ? "pickup" : "delivery";
     const createdAt = now - o.createdAtMinutesAgo * 60_000;
+    const coord = fulfillmentType === "delivery" ? seedCoord(o.id) : null;
 
     const items = o.items.map((it, idx) => {
       const menu = seedMenuItems.find((m) => m.name === it.name);
@@ -83,6 +96,8 @@ export function buildSeedOrders(): LocalOrder[] {
       source: "whatsapp",
       branchName: o.branch,
       fulfillmentType,
+      lat: coord?.lat ?? null,
+      lng: coord?.lng ?? null,
       items,
       subtotal,
       deliveryFee: o.total - subtotal > 0 ? o.total - subtotal : 0,
