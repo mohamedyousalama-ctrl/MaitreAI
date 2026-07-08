@@ -186,9 +186,9 @@ export function AskKivoPalette() {
 
         {/* tier rail — the three honest tiers, always visible */}
         <div className="askTrail">
-          <span className="askPill live"><span className="askDot live" />{t("ask.tier.commands")}<span className="askSt">LIVE</span></span>
-          <span className="askPill"><span className="askDot gather" />{t("ask.tier.questions")}<span className="askSt">GATHERING</span></span>
-          <span className="askPill"><span className="askDot soon" />{t("ask.tier.proposals")}<span className="askSt">SOON</span></span>
+          <span className="askPill live"><span className="askDot live" />{t("ask.tier.commands")}<span className="askSt">{t("truth.live")}</span></span>
+          <span className="askPill"><span className="askDot gather" />{t("ask.tier.questions")}<span className="askSt">{t("truth.gathering")}</span></span>
+          <span className="askPill"><span className="askDot soon" />{t("ask.tier.proposals")}<span className="askSt">{t("truth.soon")}</span></span>
         </div>
 
         <div className="askDiv" />
