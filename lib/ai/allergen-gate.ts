@@ -41,7 +41,6 @@ const ALLERGEN_TERMS = [
   "طحينه",  // tahini — sesame (normalizeAr maps ة→ه, so «طحينة»→«طحينه»)
 ];
 const ALLERGEN_TERMS_NORM = ALLERGEN_TERMS.map((t) => normalizeAr(t));
-const ALLERGEN_RE = new RegExp(`(?:${ALLERGEN_TERMS_NORM.join("|")})`);
 
 /** Escape a normalized term for use inside a RegExp. */
 function escapeReg(s: string): string {
@@ -66,6 +65,17 @@ function pickAllergenTerm(n: string): string | null {
   if (!matched.length) return null;
   matched.sort((a, b) => b.length - a.length);
   return matched[0];
+}
+
+/** Boundary-aware "is a real allergen term actually named here?" — uses the SAME
+ *  boundary-aware matcher as pickAllergenTerm (tolerating the «ال» article), so the
+ *  FIRING/guard decision can never disagree with the NAMING. There is deliberately
+ *  NO bare-alternation fast path: a bare substring scan mid-word (e.g. «لوز» inside
+ *  «اللوزتين» tonsils, «بيض» inside «ابيض» white) over-triggers the gate on innocent
+ *  Arabic text — \b is meaningless for Arabic in JS regex — so all detection paths
+ *  go through this boundary-aware check. True iff a clean boundary match exists. */
+function hasAllergenTerm(n: string): boolean {
+  return pickAllergenTerm(n) !== null;
 }
 
 /** Explicit allergy word — fires on its own (escalate to identify the allergen).
@@ -137,13 +147,18 @@ export function detectAllergenAvoidance(text: string): AllergenAvoidanceHit {
   const n = normalizeAr(text);
   if (!n) return { fired: false, term: null };
   const explicit = EXPLICIT_ALLERGY_RE.test(n);
-  const hasAllergen = ALLERGEN_RE.test(n); // FIRING recall (broad) — unchanged
+  // FIRING + NAMING share ONE boundary-aware pass (was a bare-substring RE for
+  // firing, boundary-aware only for naming — the two could disagree, so «التهاب في
+  // اللوزتين» fired with term=null). Now `picked` is the single source of truth:
+  // hasAllergen ⇔ a real term is named. Boundary-aware = precision without losing a
+  // true positive (every clean «بندق/البندق/اللبن/…» still matches, tolerating «ال»).
+  const picked = pickAllergenTerm(n);
+  const hasAllergen = picked !== null;
   const intent = AVOIDANCE_INTENT_RE.test(n);
   const fired = explicit || (intent && hasAllergen);
   if (!fired) return { fired: false, term: null };
-  // NAMING (boundary-aware, most-specific): never name a wrong allergen. If no
-  // clean term is found, fall back to generic «الحساسية» (still escalates).
-  const picked = pickAllergenTerm(n);
+  // Fall back to generic «الحساسية» ONLY on an explicit-allergy hit with no clean
+  // term (still escalates); never name a wrong allergen.
   return { fired: true, term: picked ?? (explicit ? "الحساسية" : null) };
 }
 
@@ -154,7 +169,7 @@ export function assertsAllergenSafety(reply: string): boolean {
   const n = normalizeAr(reply);
   if (!n) return false;
   if (SAFETY_ASSERT_STANDALONE_RE.test(n)) return true;
-  return SAFETY_ASSERT_RE.test(n) && (ALLERGEN_RE.test(n) || /حساسي|allerg/.test(n));
+  return SAFETY_ASSERT_RE.test(n) && (hasAllergenTerm(n) || /حساسي|allerg/.test(n));
 }
 
 /** Decide whether an allergen-safety claim caught by the OUTPUT guard should also
