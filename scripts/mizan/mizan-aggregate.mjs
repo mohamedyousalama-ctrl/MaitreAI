@@ -21,6 +21,17 @@ const here = dirname(fileURLToPath(import.meta.url));
 const MANIFEST = JSON.parse(await readFile(join(here, "mizan-suites.json"), "utf8"));
 const stamp = () => new Date().toISOString().slice(0, 10);
 
+// Scenarios whose CURRENT captured reply reflects a KNOWN, out-of-scope defect (the
+// allergen safety-gate over-trigger — tracked under its own fix WO), NOT a genuine
+// dialect/persona failure. Per PM: ship + score the replies AS-IS (never alter them),
+// but MARK these items and add a per-suite caveat in the report so a low score is read
+// with that context — not mistaken for a true persona failure. Delete an entry once
+// the fix lands and the item is re-captured with a genuine reply.
+const BUG_AFFECTED_SCENARIOS = {
+  "S1-03": "allergen over-trigger (fix WO pending)",
+  "S10-02": "allergen over-trigger (fix WO pending)",
+};
+
 function arg(name, dflt) {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : dflt;
@@ -207,9 +218,16 @@ async function main() {
     const agg = aggBySuite[s.id];
     L.push(`### Suite ${s.id} — ${s.name}  ·  status: **${agg.status}**${agg.highVariance ? " ⚠️ HIGH-VARIANCE" : ""}`);
     L.push(`Rubric: ${s.rubric.dimensions.join(" · ")} (1–${s.rubric.scale}, pass ≥ ${s.rubric.threshold}) · min reviewers seen: ${agg.minReviewers}`);
+    // Known-bug caveat: if any of this suite's scenarios carry an out-of-scope defect,
+    // flag it on the suite's gate line so a low value is read with that context.
+    const bugItems = agg.items.filter((it) => BUG_AFFECTED_SCENARIOS[it.scenarioId]);
+    if (bugItems.length) {
+      L.push(`> ⚠️ **CAVEAT — read this suite's gate with context:** ${bugItems.length} of ${agg.items.length} scenario(s) (${bugItems.map((it) => it.scenarioId).join(", ")}) are KNOWN-BUG-AFFECTED — the reply reflects an out-of-scope allergen over-trigger (separate fix WO pending), not a genuine ${s.name} failure. A low score here is partly that bug, NOT pure persona failure; re-capture after the fix lands to resolve cleanly.`);
+    }
     for (const it of agg.items) {
       const rep = replies[it.scenarioId];
-      L.push(`- \`${it.scenarioId}\` — reviewers: ${it.reviewerCount} · status: ${it.status}${it.highVariance ? " ⚠️" : ""}`);
+      const bug = BUG_AFFECTED_SCENARIOS[it.scenarioId];
+      L.push(`- \`${it.scenarioId}\` — reviewers: ${it.reviewerCount} · status: ${it.status}${it.highVariance ? " ⚠️" : ""}${bug ? ` · ⚠️ known-bug-affected: ${bug}` : ""}`);
       if (rep) { for (const r of (rep.replies || []).filter(Boolean)) L.push(`  - Khalid: ${r}`); }
       for (const d of s.rubric.dimensions) {
         const dd = it.dims[d];
