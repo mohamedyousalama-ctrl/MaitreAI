@@ -22,6 +22,14 @@
 //
 // Standing rules are flag-gated OFF for most tenants → honest GATHERING. Hours
 // GATHERING until loaded. XSS: dictionary text nodes + <Bdi>/<Num> only.
+//
+// WO-KNOWLEDGE-DENSITY (verify pass) — confirmed, no visual/functional change
+// needed: summary tiles are kit StatTiles (tier accent, not fabricated data);
+// menu-row propose = ghost button, always-visible (touch-safe + design canon);
+// menu rows comfortably spaced (not cramped); allergen safety is the ONE
+// sanctioned red surface — Safety room LOCKED view-only, no edit path added;
+// GATED propose (change-request) intact; honest SOON on the unbuilt editors
+// (photo/modifiers/pairings/performance) + test-log + vocab-change.
 // ============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
