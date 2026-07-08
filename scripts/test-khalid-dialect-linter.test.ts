@@ -43,6 +43,9 @@ const NATIVE_SAUDI = [
   "أبشر", "الحين", "وش", "هلا", "هلا والله", "الله يعطيك العافية", "تسلم",
   "على راسي", "شلونك", "هلا وغلا", "حياك الله", "أبشر بأمرك", "ما قصرت",
   "الله يعافيك", "على خشمي", "وش تحب", "تفضل بطلبك",
+  // «خالص» = done/finished/settled in native Saudi/Gulf — removed from EGYPTIAN
+  // (homograph false-ban, same reason as شلونك). Locked clean here.
+  "خالص", "طلبك خالص", "الحساب خالص",
 ];
 for (const w of NATIVE_SAUDI) {
   ok(`(fp) native Saudi «${w}» is clean`, findLeakage(w).ok);
@@ -60,6 +63,7 @@ for (const w of NATIVE_SAUDI) {
 }
 // شلونك specifically (native Eastern-Saudi) was removed from the reference Levantine list.
 ok("(sanity) «شلونك» removed from LEVANTINE (native Eastern-Saudi)", !LEVANTINE.includes("شلونك"));
+ok("(sanity) «خالص» removed from EGYPTIAN (native done/finished/paid homograph)", !EGYPTIAN.includes("خالص"));
 ok("(sanity) «الله يعطيك العافية» never a banned needle", !banned.has("الله يعطيك العافية"));
 
 // --- TRUE-POSITIVE: ≥1 real marker per category trips, correct tag -----------
@@ -69,6 +73,16 @@ function firstHitCategory(text: string): string | null {
 }
 ok("(tp) egyptian «دلوقتي» trips as egyptian", firstHitCategory("دلوقتي نجهزه") === "egyptian");
 ok("(tp) egyptian «معلش» trips as egyptian", firstHitCategory("معلش تأخرنا") === "egyptian");
+// Codex P2: canonical «عايز» now caught, and explicit hamza spelling variants of «ازيك».
+ok("(tp) egyptian «عايز» trips as egyptian", firstHitCategory("عايز اطلب") === "egyptian");
+ok("(tp) egyptian «عايزة» trips as egyptian", firstHitCategory("انا عايزة برجر") === "egyptian");
+ok("(tp) hamza variant «إزيك» trips (explicit)", firstHitCategory("إزيك") === "egyptian");
+ok("(tp) hamza variant «أزيك» trips (explicit)", !findLeakage("أزيك").ok);
+ok("(tp) «ازيك» (plain alef) still trips", firstHitCategory("ازيك") === "egyptian");
+// ★ The هلأ/هلا distinction (why we do NOT alef-normalize): Levantine «هلأ» trips,
+// native Saudi «هلا» does NOT — no normalization collapses them together.
+ok("(tp) levantine «هلأ» trips as levantine", firstHitCategory("هلأ نجهز") === "levantine");
+ok("(fp) native «هلا» stays clean (not collapsed onto هلأ)", findLeakage("هلا").ok);
 ok("(tp) levantine «كيفك» trips as levantine", firstHitCategory("كيفك اليوم") === "levantine");
 ok("(tp) levantine «بدي» (standalone) trips as levantine", firstHitCategory("بدي اطلب") === "levantine");
 ok("(tp) other «شنو» trips as other", firstHitCategory("شنو تحب") === "other");
@@ -92,8 +106,9 @@ ok("(wb) space boundary: «يا كيفك» trips", isWordHit("يا كيفك", "�
 
 // --- DETERMINISM ------------------------------------------------------------
 const t = "كيفك، بدي بديل بدون مكسرات دلوقتي";
-ok("(det) same text → identical result",
-  JSON.stringify(findLeakage(t)) === JSON.stringify(findLeakage(t)));
+const det1 = findLeakage(t);
+const det2 = findLeakage(t);
+ok("(det) same text → identical result", JSON.stringify(det1) === JSON.stringify(det2));
 
 // --- soft advisory helpers (never a block) ----------------------------------
 ok("emojiCount counts emoji", emojiCount("أهلاً 🌟🔥") === 2);
