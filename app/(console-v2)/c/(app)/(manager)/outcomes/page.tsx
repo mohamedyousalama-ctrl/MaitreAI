@@ -60,9 +60,9 @@ export default function OutcomesPage() {
             <Panel>
               <SectionHeader icon={<Target size={15} />} tier="gold" title={t("out.today")} sub={t("out.summaryGathering")} right={<TruthChip state="gather" />} />
               <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-                <GatherTile icon={<CheckCircle2 size={15} />} label={t("out.ordered")} />
-                <GatherTile icon={<TrendingDown size={15} />} label={t("out.lost")} />
-                <GatherTile icon={<Percent size={15} />} label={t("out.conversion")} />
+                <GatherTile tier="gold" icon={<CheckCircle2 size={15} />} label={t("out.ordered")} />
+                <GatherTile tier="coral" icon={<TrendingDown size={15} />} label={t("out.lost")} />
+                <GatherTile tier="blue" icon={<Percent size={15} />} label={t("out.conversion")} />
               </div>
               {/* Send report — no report job wired for console_v2 yet → SOON. */}
               <button onClick={() => pushToast(t("out.soonHint"), "blue")} style={reportBtn}>
@@ -89,36 +89,36 @@ export default function OutcomesPage() {
               ))}
             </div>
 
-            {/* The Ledger — GATHERING shell (no rows fabricated). */}
+            {/* The Ledger — GATHERING shell, premium pending (no fabricated rows). */}
             <div style={ledgerGather}>
-              <div style={{ display: "inline-flex", marginBottom: 12, width: 46, height: 46, borderRadius: 14, background: "var(--inset)", alignItems: "center", justifyContent: "center", color: "var(--dim)" }}>
+              <div style={{ display: "inline-flex", marginBottom: 14, width: 48, height: 48, borderRadius: 15, background: "rgba(255,212,126,.12)", border: "1px solid rgba(255,212,126,.28)", alignItems: "center", justifyContent: "center", color: "var(--gold)" }}>
                 <Target size={22} />
               </div>
-              <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}><TruthChip state="gather" /></div>
-              <h2 style={{ fontSize: 15, fontWeight: 800, color: "var(--txt)", margin: "0 0 8px" }}>{t("out.gatheringTitle")}</h2>
-              <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.8, maxWidth: 520, margin: "0 auto" }}>{t("out.gatheringBody")}</p>
-              <p style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 10 }}>{t("out.replaySoon")}</p>
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 11 }}><TruthChip state="gather" /></div>
+              <h2 style={{ fontSize: 15.5, fontWeight: 800, color: "var(--txt)", margin: "0 0 8px" }}>{t("out.gatheringTitle")}</h2>
+              <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.85, maxWidth: 520, margin: "0 auto" }}>{t("out.gatheringBody")}</p>
+              <p style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 12 }}>{t("out.replaySoon")}</p>
             </div>
 
-            {/* The coverage DOCTRINE — real copy, not data. */}
+            {/* The coverage DOCTRINE — real copy, not data: formula + bullets. */}
             <div style={doctrineCard}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--dim)", marginBottom: 8 }}>{t("out.covDoctrineTitle")}</div>
-              <p style={{ fontSize: 11.5, color: "var(--dim)", lineHeight: 1.9, margin: 0 }}>{t("out.covDoctrine")}</p>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--dim)", marginBottom: 10 }}>{t("out.covDoctrineTitle")}</div>
+              <CoverageDoctrine />
             </div>
           </Panel>
         }
       />
 
-      {/* Coverage modal — the written-once law (copy, renders now). */}
+      {/* Coverage-law popover — formula + clean bullets (copy, renders now). */}
       <MiniModal open={coverageOpen} onClose={() => setCoverageOpen(false)}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
           <span style={{ fontSize: 17 }}>🧾</span>
           <span style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{t("out.covDoctrineTitle")}</span>
           <TruthChip state="gather" />
           <button onClick={() => setCoverageOpen(false)} style={modalX}><X size={15} /></button>
         </div>
-        <p style={{ fontSize: 12, color: "var(--dim)", lineHeight: 1.9 }}>{t("out.covDoctrine")}</p>
-        <p style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 12, textAlign: "center" }}>{t("out.soonHint")}</p>
+        <CoverageDoctrine />
+        <p style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 14, textAlign: "center" }}>{t("out.soonHint")}</p>
       </MiniModal>
 
       <Toasts />
@@ -127,30 +127,65 @@ export default function OutcomesPage() {
 }
 
 // ---------------------------------------------------------------------------
-// A summary tile in its GATHERING state — the tile footprint (icon + metric
-// label) with a shimmer where the number will be. Never a colored/fake figure.
+// A summary tile in its GATHERING state — premium-but-honest. The tile carries
+// its Layer-1 IDENTITY (a soft tier-tinted icon badge: ordered=gold, lost=coral,
+// conversion=blue) so it reads as a designed, intentional pending card — but the
+// Layer-2 VALUE stays a faint uncolored "—" (never a fabricated / colored number)
+// under a GATHERING chip. Identity ≠ populated: no number is invented.
 // ---------------------------------------------------------------------------
-function GatherTile({ icon, label }: { icon: React.ReactNode; label: string }) {
+type TileTier = "gold" | "coral" | "blue";
+const TILE_TINT: Record<TileTier, { fg: string; bg: string; bd: string }> = {
+  gold: { fg: "#ffd47e", bg: "rgba(255,212,126,.14)", bd: "rgba(255,212,126,.3)" },
+  coral: { fg: "#ff9440", bg: "rgba(255,148,64,.14)", bd: "rgba(255,148,64,.3)" },
+  blue: { fg: "#93d2ff", bg: "rgba(75,139,255,.14)", bd: "rgba(75,139,255,.3)" },
+};
+function GatherTile({ tier, icon, label }: { tier: TileTier; icon: React.ReactNode; label: string }) {
+  const t = useT();
+  const c = TILE_TINT[tier];
   return (
     <div style={gatherTileBox}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <span style={{ color: "var(--dim)", display: "inline-flex" }}>{icon}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span style={{ width: 28, height: 28, borderRadius: 9, background: c.bg, border: `1px solid ${c.bd}`, color: c.fg, display: "grid", placeItems: "center", flex: "none" }}>{icon}</span>
         <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{label}</span>
         <TruthChip state="gather" />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ background: "rgba(255,255,255,.06)", height: 22, borderRadius: 7, width: "55%" }} />
-        <div style={{ background: "rgba(255,255,255,.06)", height: 11, borderRadius: 7, width: "80%" }} />
+      {/* Value slot — faint, uncolored, honest: no number until the engine ships. */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginTop: 13 }}>
+        <span style={{ fontSize: 26, fontWeight: 900, color: "var(--faint)", lineHeight: 1, fontFamily: "var(--kvx-font-ui)" }}>—</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--faint)" }}>{t("out.pending")}</span>
       </div>
     </div>
   );
 }
+// A Karim-noticed insight in its pending state — a clean designed row (violet
+// identity dot + honest microcopy), not a grey skeleton bar. No fabricated insight.
 function GatherLine() {
+  const t = useT();
   return (
-    <div style={{ background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "11px 13px", display: "flex", flexDirection: "column", gap: 7 }}>
-      <div style={{ background: "rgba(255,255,255,.06)", height: 12, borderRadius: 6, width: "70%" }} />
-      <div style={{ background: "rgba(255,255,255,.06)", height: 10, borderRadius: 6, width: "45%" }} />
+    <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "11px 13px" }}>
+      <span style={{ width: 24, height: 24, borderRadius: 8, background: "rgba(168,120,240,.14)", border: "1px solid rgba(168,120,240,.3)", display: "grid", placeItems: "center", flex: "none" }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#c4b1ff" }} />
+      </span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--faint)", flex: 1 }}>{t("out.pending")}</span>
+      <span style={{ fontSize: 16, fontWeight: 900, color: "var(--faint)", lineHeight: 1 }}>—</span>
     </div>
+  );
+}
+// Coverage law as a formula + clean bullets (shared by the hero card + popover).
+function CoverageDoctrine() {
+  const t = useT();
+  return (
+    <>
+      <div style={formulaBox}>{t("out.cov.formula")}</div>
+      <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 9 }}>
+        {(["out.cov.b1", "out.cov.b2", "out.cov.b3"] as const).map((k) => (
+          <li key={k} style={{ display: "flex", gap: 9, fontSize: 11.5, color: "var(--dim)", lineHeight: 1.65 }}>
+            <span style={{ color: "#ffcf8d", fontWeight: 900, flex: "none" }}>•</span>
+            <span>{t(k)}</span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -163,6 +198,7 @@ const gatherTileBox: React.CSSProperties = { background: "var(--inset)", border:
 const reportBtn: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", marginTop: 12, height: 38, borderRadius: 12, border: "1px solid var(--stroke)", background: "var(--inset)", color: "var(--dim)", fontFamily: "var(--kvx-font-ar)", fontSize: 12, fontWeight: 800, cursor: "pointer" };
 const tabOn: React.CSSProperties = { height: 32, padding: "0 13px", borderRadius: 99, border: 0, background: "var(--g-blue)", color: "var(--ink)", fontFamily: "var(--kvx-font-ar)", fontSize: 12, fontWeight: 800, cursor: "pointer" };
 const tabOff: React.CSSProperties = { height: 32, padding: "0 13px", borderRadius: 99, border: "1px solid var(--stroke)", background: "transparent", color: "var(--dim)", fontFamily: "var(--kvx-font-ar)", fontSize: 12, fontWeight: 800, cursor: "pointer" };
-const ledgerGather: React.CSSProperties = { border: "1.5px dashed var(--stroke2)", borderRadius: 16, background: "var(--inset2)", padding: 28, textAlign: "center" };
+const ledgerGather: React.CSSProperties = { border: "1px solid var(--stroke)", borderRadius: 16, background: "linear-gradient(180deg,rgba(255,212,126,.05),var(--inset2))", padding: "34px 28px", textAlign: "center" };
 const doctrineCard: React.CSSProperties = { marginTop: 16, border: "1px solid var(--stroke)", borderRadius: 14, background: "var(--inset)", padding: "16px 18px" };
+const formulaBox: React.CSSProperties = { fontSize: 12, fontWeight: 800, color: "var(--txt)", background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 10, padding: "9px 13px", fontFamily: "var(--kvx-font-ui)", letterSpacing: ".01em" };
 const modalX: React.CSSProperties = { width: 30, height: 30, borderRadius: 10, background: "var(--inset)", border: "1px solid var(--stroke)", color: "var(--dim)", cursor: "pointer", display: "grid", placeItems: "center", flex: "none" };
