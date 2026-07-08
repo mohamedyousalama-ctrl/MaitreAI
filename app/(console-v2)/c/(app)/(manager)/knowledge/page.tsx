@@ -525,11 +525,12 @@ function MenuSearchLink() {
   return <TruthChip state="live" />;
 }
 function ModalHead({ icon, title, onClose }: { icon: string; title: string; onClose: () => void }) {
+  const t = useT();
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
       <span style={{ fontSize: 17 }}>{icon}</span>
       <span style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{title}</span>
-      <button onClick={onClose} style={drawerX}><X size={15} /></button>
+      <button onClick={onClose} aria-label={t("a11y.close")} style={drawerX}><X size={15} /></button>
     </div>
   );
 }

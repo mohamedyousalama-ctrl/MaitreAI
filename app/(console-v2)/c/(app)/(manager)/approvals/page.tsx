@@ -366,7 +366,7 @@ function EvidenceBody({ req, currency, onClose }: { req: ChangeRequest; currency
           <div style={{ fontSize: 9.5, color: "var(--faint)", marginTop: 3 }}>{t(TYPE_LABEL[req.target_type])} · {fieldLabel}</div>
         </div>
         <span style={{ fontSize: 10, fontWeight: 800, color: accent, background: `${accent}22`, borderRadius: 99, padding: "4px 10px" }}>{t(STATUS_LABEL[req.status])}</span>
-        <button onClick={onClose} style={drawerX}><X size={15} /></button>
+        <button onClick={onClose} aria-label={t("a11y.close")} style={drawerX}><X size={15} /></button>
       </div>
       <div style={{ ...diffBox, marginBottom: 14 }}>
         <ValueBlock label={t("ap.from")} value={req.old_value} field={req.field} currency={currency} muted />
@@ -399,12 +399,13 @@ function fmt(iso: string): string {
 
 // ---------------------------------------------------------------------------
 function ModalHead({ icon, title, state, onClose }: { icon: React.ReactNode; title: string; state?: "soon"; onClose: () => void }) {
+  const t = useT();
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
       <span style={{ color: "var(--dim)", display: "inline-flex" }}>{icon}</span>
       <span style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{title}</span>
       {state === "soon" && <TruthChip state="soon" />}
-      <button onClick={onClose} style={drawerX}><X size={15} /></button>
+      <button onClick={onClose} aria-label={t("a11y.close")} style={drawerX}><X size={15} /></button>
     </div>
   );
 }

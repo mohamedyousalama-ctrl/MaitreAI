@@ -152,7 +152,7 @@ export default function ConversationsPage() {
           <span style={{ fontSize: 16 }}>↪</span>
           <span style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{t("conv.assignTitle")}</span>
           <TruthChip state="soon" />
-          <button onClick={() => setModal(null)} style={drawerX}><X size={15} /></button>
+          <button onClick={() => setModal(null)} aria-label={t("a11y.close")} style={drawerX}><X size={15} /></button>
         </div>
         <p style={{ fontSize: 10.5, color: "var(--faint)", margin: "0 0 12px", lineHeight: 1.6 }}>{t("conv.assignSub")}</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -170,7 +170,7 @@ export default function ConversationsPage() {
             <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--txt)" }}>{selected ? <Bdi>{selected.customer}</Bdi> : ""}</div>
             <div style={{ fontSize: 9, color: "var(--faint)" }}>{t("conv.guestLite")}</div>
           </div>
-          <button onClick={() => setModal(null)} style={drawerX}><X size={15} /></button>
+          <button onClick={() => setModal(null)} aria-label={t("a11y.close")} style={drawerX}><X size={15} /></button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
           <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", color: "var(--faint)", textTransform: "uppercase" }}>{t("conv.facts")}</span>
@@ -340,7 +340,7 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
           <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--txt)" }}><Bdi>{conv.customer}</Bdi></div>
           <div style={{ marginTop: 3 }}><OwnChip display={display} /></div>
         </button>
-        <button onClick={onClose} style={drawerX}><X size={15} /></button>
+        <button onClick={onClose} aria-label={t("a11y.close")} style={drawerX}><X size={15} /></button>
       </div>
 
       {/* Order-context chip — real linked order only; honest-empty otherwise. */}
