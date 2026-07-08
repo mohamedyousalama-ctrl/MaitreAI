@@ -20,6 +20,7 @@ import {
   HIJAZI_EXEMPLARS,
 } from "../lib/ai/personas/khalid.ts";
 import type { KsaRegion } from "../lib/ai/personas/khalid.ts";
+import { findLeakage } from "../lib/ai/personas/khalid-dialect-linter.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.log("  ❌", n); } };
@@ -157,6 +158,59 @@ for (const b of PHRASE_BUCKETS) {
   for (const p of NAJDI_EXEMPLARS[b]) ok(`(f) Najdi anchor in bank: «${p}»`, najdiBank.has(p));
   for (const p of HIJAZI_EXEMPLARS[b]) ok(`(f) Hijazi anchor in bank: «${p}»`, hijaziBank.has(p));
 }
+
+// ============================================================================
+// WO-KHALID-STEP3 — sharpened dialect/style prompt RULES (overlay text only).
+// (flag-OFF byte-identical is proven by the wiring golden — the overlay only renders
+//  when khalid_persona is ON; here we prove the rules are present, terminal-safe, and
+//  the rule text itself is leakage-clean and agrees with the Step-2 linter.)
+// ============================================================================
+function styleSection(o: string): string {
+  const s = o.indexOf("STYLE RULES");
+  const e = o.indexOf("- SAFETY IS SACRED");
+  return s >= 0 && e > s ? o.slice(s, e) : "";
+}
+for (const l of [najdX, hijazX, asirX, easternX]) {
+  // (b) the sharpened rule sections are all present.
+  ok("(step3) STYLE RULES section present", l.includes("STYLE RULES"));
+  ok("(step3) LENGTH rule present", l.includes("LENGTH:") && l.includes("1–3 short sentences"));
+  ok("(step3) LIGHT-MIRROR rule present + precise", l.includes("LIGHT-MIRROR") && l.includes("ONE or TWO cues per reply at MOST"));
+  ok("(step3) LIGHT-MIRROR forbids full-switch/MSA/Egyptian/Levantine",
+    l.includes("NEVER fully switch your home register") && l.includes("NEVER go MSA") && l.includes("Egyptian, Levantine, or Iraqi"));
+  // (Codex P2) LIGHT-MIRROR is RELATIVE to the configured region, not a hardcoded Najdi default.
+  ok("(step3) LIGHT-MIRROR is region-aware (home register = configured region)",
+    l.includes("home register = your configured"));
+  ok("(step3) REGISTER BANS present (no فندم/حضرتك/سيادتكم)",
+    l.includes("REGISTER BANS") && l.includes("فندم") && l.includes("حضرتك") && l.includes("سيادتكم"));
+  ok("(step3) RELIGIOUS-PHRASE BUDGET present (~1/turn, no chains)",
+    l.includes("RELIGIOUS-PHRASE BUDGET") && l.includes("ONE per turn") && l.includes("caricature"));
+  ok("(step3) EMOJI restraint present", l.includes("EMOJI:") && l.includes("NONE on a serious apology"));
+  ok("(step3) TONE modulation present (happy/delay/complaint/VIP)",
+    l.includes("TONE:") && l.includes("happy path") && l.includes("Mild delay") && l.includes("Real complaint") && l.includes("VIP"));
+  // (constraint) escalation still DEFERS to the engine — never self-authorized.
+  ok("(step3) complaint→escalate defers to engine (no self-authorize)",
+    l.includes("escalate ONLY when the ENGINE's criteria are met") && l.includes("NEVER self-authorize a handoff"));
+  // (constraint) STYLE precedes the TERMINAL safety line.
+  ok("(step3) STYLE rules precede the terminal SAFETY line",
+    l.indexOf("STYLE RULES") < l.indexOf("SAFETY IS SACRED"));
+  // (alignment) the rules point at the SAME target as the Step-2 linter.
+  ok("(step3) rules reference the Step-2 leakage-linter (same target)", l.includes("Step-2 leakage-linter"));
+  // (alignment) the rule text does NOT ban a word the linter treats as NATIVE (خالص/شلونك).
+  ok("(step3) rule text does not ban the linter-native «خالص»", !styleSection(l).includes("خالص"));
+  ok("(step3) rule text does not ban the linter-native «شلونك»", !styleSection(l).includes("شلونك"));
+  // (purity) run the Step-2 linter over the NEW rule text — must be leakage-clean.
+  ok("(step3) STYLE rule text is leakage-clean (Step-2 linter)", findLeakage(styleSection(l)).ok);
+}
+// (Codex P2) region-relative home register: a hijaz tenant's home is Hijazi, not Najdi.
+ok("(step3) najd home register renders Najdi label", styleSection(najdX).includes("نجدي"));
+ok("(step3) hijaz home register renders Hijazi label (respects the region setting)",
+  styleSection(hijazX).includes("حجازي"));
+
+// determinism already covered above; re-confirm the STYLE section is stable (two-const,
+// lint-safe — not a literal self-compare).
+const styleA = styleSection(buildKhalidPersonaLayer({ region: "najd", restaurantName: "X" }));
+const styleB = styleSection(buildKhalidPersonaLayer({ region: "najd", restaurantName: "X" }));
+ok("(step3) determinism: STYLE section identical across two builds", styleA === styleB && styleA.length > 0);
 
 console.log(`\nKHALID-PERSONA UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
