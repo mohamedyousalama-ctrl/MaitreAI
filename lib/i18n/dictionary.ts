@@ -593,6 +593,13 @@ export const DICTIONARY = {
     "ap.rulesBtn": "القواعد",
     "ap.costPolicy": "سياسة التكلفة",
     "ap.decisionCtrls": "ضوابط طبقة القرار",
+    // Approvals empty-state teaching anatomy (label-only, no fabricated approval).
+    "ap.anat.title": "أجزاء الموافقة",
+    "ap.anat.sub": "هكذا تبدو الموافقة — قبل وصول أول واحدة",
+    "ap.anat.proposed": "المقترح",
+    "ap.anat.evidence": "الدليل",
+    "ap.anat.impact": "التأثير",
+    "ap.anat.decision": "القرار",
     // Customers (item 11) — the CRM wall. Facts/segments/top/at-risk from the real
     // aggregates endpoint; customer_memory inference + write actions stay SOON.
     "cu.title": "العملاء",
@@ -1490,6 +1497,13 @@ export const DICTIONARY = {
     "ap.rulesBtn": "Rules",
     "ap.costPolicy": "Cost policy",
     "ap.decisionCtrls": "Decision-layer controls",
+    // Approvals empty-state teaching anatomy (label-only, no fabricated approval).
+    "ap.anat.title": "The parts of an approval",
+    "ap.anat.sub": "what an approval looks like — before the first one arrives",
+    "ap.anat.proposed": "Proposed",
+    "ap.anat.evidence": "Evidence",
+    "ap.anat.impact": "Impact",
+    "ap.anat.decision": "Decision",
     // Customers (item 11) — the CRM wall. Facts/segments/top/at-risk from the real
     // aggregates endpoint; customer_memory inference + write actions stay SOON.
     "cu.title": "Customers",

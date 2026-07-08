@@ -155,7 +155,7 @@ export default function ApprovalsPage() {
               <div style={boardGrid}>
                 {/* Column 1 — WAITING FOR YOU (proposed, real). */}
                 <PipeCol icon={<ShieldCheck size={14} />} title={t("ap.col.waiting")} accent="#4b8bff" n={waiting.length}>
-                  {reqs === null ? null : waiting.length === 0 ? <ColEmpty>{t("ap.emptyPending")}</ColEmpty> : waiting.map((r) => (
+                  {reqs === null ? null : waiting.length === 0 ? <ApprovalAnatomy /> : waiting.map((r) => (
                     <RequestCard key={r.id} req={r} currency={currency} onChanged={load} onEvidence={() => setEvidence(r)} />
                   ))}
                 </PipeCol>
@@ -225,8 +225,32 @@ function PipeCol({ icon, title, accent, n, children }: { icon: React.ReactNode; 
     </div>
   );
 }
-function ColEmpty({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 11.5, color: "var(--faint)", padding: "14px 4px", lineHeight: 1.6 }}>{children}</div>;
+// Empty WAITING column — TEACH THE WORKFLOW. A label-only blueprint of what an
+// approval is (proposed → evidence → impact → decision), so the operator learns
+// the shape before the first request arrives. Strictly the four labeled slots +
+// an empty "—" marker — NO fabricated example (no fake item / price / requester).
+// Blue template accent = the proposed lane's §6 identity; nothing red.
+const ANATOMY: readonly DictKey[] = ["ap.anat.proposed", "ap.anat.evidence", "ap.anat.impact", "ap.anat.decision"];
+function ApprovalAnatomy() {
+  const t = useT();
+  return (
+    <div style={anatCard}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 11 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--txt)" }}>{t("ap.anat.title")}</span>
+        <span style={{ fontSize: 9.5, color: "var(--faint)", lineHeight: 1.5 }}>{t("ap.anat.sub")}</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {ANATOMY.map((k, i) => (
+          <div key={k} style={anatSlot}>
+            <span style={anatStep}><Num>{i + 1}</Num></span>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: "var(--dim)", flex: 1 }}>{t(k)}</span>
+            <span aria-hidden style={{ fontSize: 13, fontWeight: 900, color: "var(--faint)", lineHeight: 1 }}>—</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 11, textAlign: "center" }}>{t("ap.emptyPending")}</div>
+    </div>
+  );
 }
 function ColSoon({ body }: { body: string }) {
   return (
@@ -406,6 +430,9 @@ const doctrineCard: React.CSSProperties = { marginTop: 12, background: "var(--in
 const boardGrid: React.CSSProperties = { flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, minHeight: 0 };
 const colBox: React.CSSProperties = { display: "flex", flexDirection: "column", minHeight: 0, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 16, padding: 12 };
 const cardBox: React.CSSProperties = { border: "1px solid var(--stroke)", borderRadius: 13, background: "var(--panel)", padding: "13px 14px" };
+const anatCard: React.CSSProperties = { border: "1px dashed rgba(75,139,255,.35)", borderInlineStart: "3px solid rgba(75,139,255,.5)", borderRadius: 13, background: "rgba(75,139,255,.04)", padding: "13px 14px" };
+const anatSlot: React.CSSProperties = { display: "flex", alignItems: "center", gap: 10, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 10, padding: "9px 12px" };
+const anatStep: React.CSSProperties = { width: 18, height: 18, borderRadius: 6, background: "rgba(75,139,255,.14)", border: "1px solid rgba(75,139,255,.3)", color: "#93d2ff", fontSize: 9.5, fontWeight: 900, display: "grid", placeItems: "center", flex: "none", fontFamily: "var(--kvx-font-ui)" };
 const typeChip: React.CSSProperties = { fontSize: 9.5, fontWeight: 800, color: "var(--dim)", background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 6, padding: "3px 8px" };
 const diffBox: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "10px 13px" };
 const primaryBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 11, border: 0, background: "var(--g-green)", color: "var(--ink)", fontFamily: "var(--kvx-font-ar)", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" };
