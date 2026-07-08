@@ -1,0 +1,299 @@
+<!doctype html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>تقييم لهجة «خالد»</title>
+<!--
+  MIZAN native-review UI (WO-KHALID-STEP5). Arabic-first, RTL, mobile-friendly.
+  A reviewer opens this ONE file, taps a score 1–10 per dimension for each of Khalid's
+  replies, optionally adds a note, and exports their results as JSON (+ CSV) to send back.
+  Pause/resume is automatic (localStorage). NOTHING here scores automatically — it only
+  collects what the human taps. The packet is injected in place of __MIZAN_PACKET__ by
+  mizan-packet.mjs; if left un-injected, a file picker loads a packet JSON instead.
+-->
+<style>
+  :root { --bg:#0f1419; --card:#1a2029; --card2:#232b36; --fg:#f2f5f8; --muted:#9fb0c0;
+          --accent:#2ea36b; --accent2:#3ad07f; --line:#2b3543; --warn:#e2b23a; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f3f5f7; --card:#ffffff; --card2:#eef2f6; --fg:#16202b; --muted:#5a6b7b;
+            --accent:#1e8a56; --accent2:#12703f; --line:#dbe3ea; --warn:#a9791a; }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--fg);
+    font-family:"Segoe UI","Noto Sans Arabic",Tahoma,"Geeza Pro",system-ui,sans-serif;
+    font-size:17px; line-height:1.7; }
+  .wrap { max-width:620px; margin:0 auto; padding:16px 16px 96px; }
+  h1 { font-size:1.5rem; margin:.2em 0 .1em; }
+  h2 { font-size:1.15rem; margin:1.2em 0 .3em; }
+  p { margin:.5em 0; }
+  .muted { color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin:14px 0; }
+  .chip { display:inline-block; background:var(--card2); color:var(--muted); border-radius:999px;
+    padding:3px 12px; font-size:.85rem; margin-inline-start:6px; }
+  .guest { background:var(--card2); border-radius:14px 14px 14px 4px; padding:12px 14px; margin:8px 0; }
+  .khalid { background:linear-gradient(180deg,rgba(46,163,107,.14),rgba(46,163,107,.06));
+    border:1px solid rgba(46,163,107,.35); border-radius:14px 14px 4px 14px; padding:12px 14px; margin:8px 0; font-size:1.05rem; }
+  .lbl { font-size:.8rem; color:var(--muted); margin-bottom:2px; }
+  .dim { margin:18px 0; }
+  .dim .name { font-weight:600; margin-bottom:8px; }
+  .scale { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+  @media (min-width:440px){ .scale { grid-template-columns:repeat(10,1fr); } }
+  .scale button { min-height:48px; border:1px solid var(--line); background:var(--card2);
+    color:var(--fg); border-radius:12px; font-size:1.15rem; font-weight:600; cursor:pointer; transition:.12s; }
+  .scale button:active { transform:scale(.94); }
+  .scale button[aria-pressed="true"] { background:var(--accent); border-color:var(--accent2); color:#fff; }
+  textarea { width:100%; min-height:64px; background:var(--card2); color:var(--fg);
+    border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; resize:vertical; }
+  input[type=text] { width:100%; background:var(--card2); color:var(--fg); border:1px solid var(--line);
+    border-radius:12px; padding:12px 14px; font:inherit; }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:52px;
+    padding:0 22px; border:none; border-radius:14px; background:var(--accent); color:#fff;
+    font-size:1.05rem; font-weight:600; cursor:pointer; }
+  .btn.secondary { background:var(--card2); color:var(--fg); border:1px solid var(--line); }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .navbar { position:fixed; inset-inline:0; bottom:0; background:var(--card); border-top:1px solid var(--line);
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom)); display:flex; gap:10px; justify-content:space-between;
+    max-width:620px; margin:0 auto; inset-inline:0; }
+  .navbar .btn { flex:1; }
+  .progress { text-align:center; color:var(--muted); font-size:.9rem; margin:4px 0 0; }
+  .bar { height:6px; background:var(--card2); border-radius:999px; overflow:hidden; margin:8px 0 2px; }
+  .bar > i { display:block; height:100%; background:var(--accent); width:0; transition:.2s; }
+  .warnbox { background:rgba(226,178,58,.12); border:1px solid var(--warn); border-radius:12px; padding:10px 14px; color:var(--fg); }
+  .hide { display:none !important; }
+  .center { text-align:center; }
+  a { color:var(--accent2); }
+  .rubric li { margin:.3em 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ░░ screen: load (only if packet not embedded) ░░ -->
+  <section id="scr-load" class="hide">
+    <h1>تقييم لهجة «خالد» 🌟</h1>
+    <p class="muted">حمّل ملف المراجعة (packet) اللي وصلك.</p>
+    <div class="card">
+      <input type="file" id="file" accept="application/json,.json" />
+      <p class="muted" style="font-size:.85rem">الملف يكون باسم مثل <code>mizan-packet-YYYY-MM-DD.json</code>.</p>
+    </div>
+  </section>
+
+  <!-- ░░ screen: welcome + name ░░ -->
+  <section id="scr-welcome" class="hide">
+    <h1>تقييم لهجة «خالد» 🌟</h1>
+    <p>مرحباً، وشكراً لمساعدتك. مهمتك تقرأ ردود «خالد» (وكيل مطعم يرد على العملاء)، وتقيّم كل رد: هل يتكلم مثل شخص سعودي حقيقي؟</p>
+    <div class="card">
+      <div class="lbl">اسمك (عشان نميّز تقييمك)</div>
+      <input type="text" id="reviewer-name" placeholder="اكتب اسمك هنا" autocomplete="name" />
+      <p class="muted" style="font-size:.9rem;margin-top:10px">تقدر توقف وترجع في أي وقت — تقييمك محفوظ تلقائياً على جهازك.</p>
+    </div>
+    <div class="card rubric">
+      <h2 style="margin-top:0">كيف تعطي الدرجة (من ١ إلى ١٠)</h2>
+      <ul>
+        <li><b>١–٣ ضعيف:</b> يحس إنه أجنبي أو مصري أو لهجة ثانية، أو رسمي وجامد بزيادة.</li>
+        <li><b>٤–٦ مقبول:</b> سعودي، لكن فيه شي يوقّف أو ما يحس طبيعي تماماً.</li>
+        <li><b>٧–٨ جيد:</b> يتكلم سعودي طبيعي، مثل موظف مطعم حقيقي.</li>
+        <li><b>٩–١٠ ممتاز:</b> سعودي أصيل، دافئ، ما تشك فيه أبداً.</li>
+      </ul>
+      <p class="muted">قيّم اللهجة والأسلوب فقط — ما تقيّم صحة الأسعار أو المنيو، هذا شي ثاني.</p>
+    </div>
+  </section>
+
+  <!-- ░░ screen: item ░░ -->
+  <section id="scr-item" class="hide">
+    <div class="bar"><i id="barfill"></i></div>
+    <div class="progress" id="progress"></div>
+    <div class="card">
+      <div id="ctx"></div>
+      <div class="lbl">رسالة العميل</div>
+      <div id="guest"></div>
+      <div class="lbl" style="margin-top:12px">رد «خالد»</div>
+      <div id="khalid"></div>
+    </div>
+    <div class="card" id="dims"></div>
+    <div class="card">
+      <div class="lbl">ملاحظة (اختياري)</div>
+      <textarea id="notes" placeholder="لو عندك ملاحظة عن اللهجة أو الأسلوب، اكتبها هنا"></textarea>
+    </div>
+  </section>
+
+  <!-- ░░ screen: finish ░░ -->
+  <section id="scr-finish" class="hide">
+    <h1 class="center">تم! 🌟</h1>
+    <p class="center">شكراً لك. صدّر نتائجك وأرسل الملف لمن طلب منك التقييم.</p>
+    <div id="finish-warn"></div>
+    <div class="card center">
+      <button class="btn" id="export-json">📄 صدّر النتائج (JSON)</button>
+      <div style="height:10px"></div>
+      <button class="btn secondary" id="export-csv">📊 صدّر (CSV)</button>
+      <div style="height:14px"></div>
+      <button class="btn secondary" id="back-review">↩︎ رجوع للمراجعة</button>
+    </div>
+  </section>
+
+</div>
+
+<!-- ░░ bottom nav (item screen only) ░░ -->
+<div class="navbar hide" id="navbar">
+  <button class="btn secondary" id="prev">السابق</button>
+  <button class="btn" id="next">التالي</button>
+</div>
+
+<script id="mizan-packet" type="application/json">{"_SAMPLE":"SAMPLE — not real reviewer data. Illustrative replies to demonstrate the review flow only.","packetId":"mizan-panel-SAMPLE","benchmark":"MIZAN v0.1-phase1","regions":["najd","hijaz"],"minReviewers":3,"guide":"docs/KHALID_NATIVE_REVIEW_GUIDE_AR.md","note":"لكل رد: قيّم من ١ إلى ١٠ على كل بُعد، وأضف ملاحظة إن رغبت. قيّم اللهجة والأسلوب فقط.","suites":[{"id":1,"name":"Dialect authenticity","dimensions":["authenticity","warmth_karam","register_fit"],"scale":10,"threshold":7.5},{"id":9,"name":"Tone modulation","dimensions":["tone_fit","warmth","brevity"],"scale":10,"threshold":7.5}],"items":[{"scenarioId":"S1-01","suiteId":1,"suiteName":"Dialect authenticity","region":"najd","frame":null,"turns":["السلام عليكم، عندكم كبسة؟"],"replies":["وعليكم السلام، هلا وغلا 🌟 إي والله عندنا كبسة دجاج وكبسة لحم، وش تحب أجهّز لك؟"],"dimensions":["authenticity","warmth_karam","register_fit"],"scale":10},{"scenarioId":"S1-02","suiteId":1,"suiteName":"Dialect authenticity","region":"najd","frame":null,"turns":["وش تنصحني اطلب اليوم؟"],"replies":["أنصحك بالكبسة، إنها من أكثر الأطباق التي يقع عليها الطلب لدى ضيوفنا الكرام."],"dimensions":["authenticity","warmth_karam","register_fit"],"scale":10},{"scenarioId":"S1-03","suiteId":1,"suiteName":"Dialect authenticity","region":"hijaz","frame":null,"turns":["هلا، إيش عندكم أطباق اليوم؟"],"replies":["هلا فيك 🌟 اليوم عندنا مندي لحم طري وسمك مشوي طازة، تحب أوصف لك أي واحد؟"],"dimensions":["authenticity","warmth_karam","register_fit"],"scale":10},{"scenarioId":"S1-04","suiteId":1,"suiteName":"Dialect authenticity","region":"najd","frame":null,"turns":["أبغى شي دسم ومشبع"],"replies":["أبشر، عليك بالمندي اللحم — دسم ويشبع، ومعاه رز على أصوله. أجهّزه لك؟"],"dimensions":["authenticity","warmth_karam","register_fit"],"scale":10},{"scenarioId":"S9-01","suiteId":9,"suiteName":"Tone modulation","region":null,"frame":"happy","turns":["حبيت الأكل مرة، شكراً"],"replies":["يسعدنا هذا والله 🌟 تسلم وتستاهل كل خير، ننتظرك دايم."],"dimensions":["tone_fit","warmth","brevity"],"scale":10},{"scenarioId":"S9-02","suiteId":9,"suiteName":"Tone modulation","region":null,"frame":"mild-delay","turns":["الطلب متأخر شوي؟"],"replies":["عذراً على التأخير، طلبك بالطريق ويوصلك قريب إن شاء الله. أشكر صبرك."],"dimensions":["tone_fit","warmth","brevity"],"scale":10}]}</script>
+<script>
+(function () {
+  "use strict";
+  var AR = ["٠","١","٢","٣","٤","٥","٦","٧","٨","٩"];
+  function toAr(n){ return String(n).replace(/[0-9]/g, function(d){ return AR[+d]; }); }
+
+  // Arabic labels for rubric dimensions — reviewers must never see English/jargon keys.
+  var DIM_AR = {
+    authenticity:"الأصالة (سعودي حقيقي؟)", warmth_karam:"الدفء والكرم", register_fit:"مناسبة اللهجة للمنطقة والموقف",
+    tone_fit:"مناسبة النبرة للموقف", warmth:"الدفء", brevity:"الاختصار (بدون إطالة)",
+    natural_offer:"العرض الطبيعي (اقتراح لطيف)", not_pushy:"بدون إلحاح", menu_truth:"صادق مع المنيو",
+    ownership:"يتحمّل المسؤولية", no_defensiveness:"بدون تبرير دفاعي", face_saving:"يحفظ ماء الوجه",
+    karam_warmth:"الكرم والدفء", not_theatrical:"بدون مبالغة", one_person:"يخاطب شخص واحد"
+  };
+  var SUITE_AR = { 1:"التعريف والترحيب", 9:"نبرة الرد حسب الموقف", 10:"اقتراح إضافي", 11:"التعامل مع شكوى", 12:"الكرم والضيافة" };
+  var FRAME_AR = { happy:"العميل مبسوط", "mild-delay":"تأخّر بسيط", complaint:"شكوى" };
+
+  var $ = function(id){ return document.getElementById(id); };
+  function show(id){ ["scr-load","scr-welcome","scr-item","scr-finish"].forEach(function(s){ $(s).classList.add("hide"); });
+    $(id).classList.remove("hide"); $("navbar").classList.toggle("hide", id !== "scr-item"); window.scrollTo(0,0); }
+
+  var packet = null, idx = 0, state = { scores:{}, notes:{} }, reviewerName = "";
+
+  function slug(s){ return String(s||"").trim().replace(/\s+/g,"-").replace(/[^\w؀-ۿ-]/g,"").slice(0,40) || "reviewer"; }
+  // A persisted per-browser random id so two reviewers who type the SAME display name still get
+  // distinct reviewerIds — otherwise the aggregate would dedupe them by reviewerId+scenario and
+  // drop one person's scores / leave the panel under-reviewed (Codex P2). Combined with the name
+  // slug so a human reading the file still sees who it was.
+  function browserUid(){
+    var k = "mizan_reviewer_uid";
+    var v = null; try { v = localStorage.getItem(k); } catch(e){}
+    if(!v){ v = "u" + Math.random().toString(36).slice(2,9) + Math.random().toString(36).slice(2,5); try { localStorage.setItem(k, v); } catch(e){} }
+    return v;
+  }
+  function reviewerIdFor(name){ return slug(name) + "-" + browserUid(); }
+  function storeKey(){ return "mizan_" + (packet && packet.packetId) + "_" + slug(reviewerName); }
+  function save(){ try { localStorage.setItem(storeKey(), JSON.stringify({ idx: idx, state: state, reviewerName: reviewerName })); } catch(e){} }
+  function load(){ try { var raw = localStorage.getItem(storeKey()); if(raw){ var o = JSON.parse(raw); state = o.state || state; idx = o.idx || 0; } } catch(e){} }
+
+  function tryEmbedded(){
+    var el = $("mizan-packet"); if(!el) return null;
+    var txt = (el.textContent || "").trim();
+    if(!txt || txt.indexOf("__MIZAN_PACKET__") !== -1) return null;
+    try { var p = JSON.parse(txt); return (p && p.items) ? p : null; } catch(e){ return null; }
+  }
+
+  function startWith(p){
+    packet = p;
+    if(!packet.items || !packet.items.length){ $("scr-welcome").insertAdjacentHTML("afterbegin",
+      '<div class="card warnbox">ما فيه ردود في هذا الملف بعد (لم يُشغّل على مطعم حقيقي). تقدر تستعرض الشكل فقط.</div>'); }
+    show("scr-welcome");
+  }
+
+  function renderItem(){
+    var it = packet.items[idx];
+    $("progress").textContent = "الرد " + toAr(idx+1) + " من " + toAr(packet.items.length);
+    $("barfill").style.width = ((idx+1)/packet.items.length*100) + "%";
+    var ctx = SUITE_AR[it.suiteId] || "";
+    var chips = ctx ? '<span class="chip">'+ctx+'</span>' : "";
+    if(it.frame && FRAME_AR[it.frame]) chips += '<span class="chip">'+FRAME_AR[it.frame]+'</span>';
+    if(it.region) chips += '<span class="chip">'+(it.region==="hijaz"?"حجازي":it.region==="najd"?"نجدي":it.region)+'</span>';
+    $("ctx").innerHTML = chips;
+    $("guest").innerHTML = (it.turns||[]).map(function(t){ return '<div class="guest">'+escapeHtml(t)+'</div>'; }).join("");
+    var reps = (it.replies||[]).filter(function(r){ return r && r.trim(); });
+    $("khalid").innerHTML = reps.length ? reps.map(function(r){ return '<div class="khalid">'+escapeHtml(r)+'</div>'; }).join("")
+      : '<div class="khalid muted">(لا يوجد رد — لم يُشغّل بعد)</div>';
+
+    var sc = state.scores[it.scenarioId] || {};
+    $("dims").innerHTML = (it.dimensions||[]).map(function(d){
+      var label = DIM_AR[d] || d;
+      var btns = "";
+      for(var n=1;n<=(it.scale||10);n++){ btns += '<button data-dim="'+d+'" data-val="'+n+'" aria-pressed="'+(sc[d]===n)+'">'+toAr(n)+'</button>'; }
+      return '<div class="dim"><div class="name">'+label+'</div><div class="scale">'+btns+'</div></div>';
+    }).join("");
+    $("notes").value = state.notes[it.scenarioId] || "";
+    $("prev").disabled = idx === 0;
+    $("next").textContent = (idx === packet.items.length-1) ? "إنهاء ✓" : "التالي";
+  }
+
+  function escapeHtml(s){ return String(s).replace(/[&<>"]/g, function(c){ return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]; }); }
+
+  // event delegation for score buttons
+  $("dims").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-dim]"); if(!b) return;
+    var it = packet.items[idx], dim = b.getAttribute("data-dim"), val = +b.getAttribute("data-val");
+    state.scores[it.scenarioId] = state.scores[it.scenarioId] || {};
+    state.scores[it.scenarioId][dim] = val;
+    Array.prototype.forEach.call(b.parentNode.querySelectorAll("button"), function(x){
+      x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+    save();
+  });
+  $("notes").addEventListener("input", function(){ var it = packet.items[idx]; state.notes[it.scenarioId] = $("notes").value; save(); });
+  $("prev").addEventListener("click", function(){ if(idx>0){ idx--; save(); renderItem(); } });
+  $("next").addEventListener("click", function(){ if(idx < packet.items.length-1){ idx++; save(); renderItem(); } else { finish(); } });
+
+  function completeness(){
+    var missing = 0;
+    packet.items.forEach(function(it){ var sc = state.scores[it.scenarioId] || {};
+      (it.dimensions||[]).forEach(function(d){ if(typeof sc[d] !== "number") missing++; }); });
+    return missing;
+  }
+
+  function finish(){
+    var miss = completeness();
+    $("finish-warn").innerHTML = miss ? '<div class="card warnbox">تنبيه: فيه '+toAr(miss)+' درجة ما اخترتها بعد. تقدر ترجع وتكملها، أو تصدّر كذا (اللي ما تعطيه درجة يُترك فاضي).</div>' : "";
+    show("scr-finish");
+  }
+
+  function buildResult(){
+    var scores = packet.items.map(function(it){
+      return { scenarioId: it.scenarioId, suiteId: it.suiteId, dims: state.scores[it.scenarioId] || {}, notes: state.notes[it.scenarioId] || "" };
+    });
+    return { packetId: packet.packetId, reviewerId: reviewerIdFor(reviewerName), reviewerName: reviewerName,
+      submittedAt: new Date().toISOString(), scores: scores };
+  }
+  function download(name, text, type){
+    var blob = new Blob([text], { type: type || "application/json" }); var url = URL.createObjectURL(blob);
+    var a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+  }
+  $("export-json").addEventListener("click", function(){ var r = buildResult();
+    download("mizan-scores-" + r.reviewerId + ".json", JSON.stringify(r, null, 2), "application/json"); });
+  $("export-csv").addEventListener("click", function(){
+    var rows = [["reviewerId","reviewerName","scenarioId","suiteId","dimension","score","notes"]];
+    var r = buildResult();
+    r.scores.forEach(function(s){ var dims = Object.keys(s.dims);
+      if(!dims.length) rows.push([r.reviewerId, r.reviewerName, s.scenarioId, s.suiteId, "", "", s.notes]);
+      dims.forEach(function(d){ rows.push([r.reviewerId, r.reviewerName, s.scenarioId, s.suiteId, d, s.dims[d], s.notes]); }); });
+    var csv = rows.map(function(row){ return row.map(function(c){ return '"'+String(c==null?"":c).replace(/"/g,'""')+'"'; }).join(","); }).join("\n");
+    download("mizan-scores-" + r.reviewerId + ".csv", "﻿" + csv, "text/csv"); });
+  $("back-review").addEventListener("click", function(){ show("scr-item"); renderItem(); });
+
+  // welcome → start
+  document.addEventListener("DOMContentLoaded", function(){
+    var embedded = tryEmbedded();
+    if(embedded){ startWith(embedded); }
+    else {
+      show("scr-load");
+      $("file").addEventListener("change", function(e){ var f = e.target.files && e.target.files[0]; if(!f) return;
+        var fr = new FileReader(); fr.onload = function(){ try { var p = JSON.parse(fr.result); if(p && p.items){ startWith(p); return; } } catch(err){}
+          alert("الملف غير صالح. تأكد إنه ملف mizan-packet-*.json."); }; fr.readAsText(f); });
+    }
+    // welcome start button (added dynamically to keep markup clean)
+    var startBtn = document.createElement("button"); startBtn.className = "btn"; startBtn.textContent = "ابدأ التقييم ←";
+    startBtn.style.width = "100%"; startBtn.style.marginTop = "8px";
+    $("scr-welcome").appendChild(startBtn);
+    startBtn.addEventListener("click", function(){
+      reviewerName = ($("reviewer-name").value || "").trim();
+      if(!reviewerName){ $("reviewer-name").focus(); $("reviewer-name").style.borderColor = "var(--warn)"; return; }
+      load(); show("scr-item"); renderItem();
+    });
+  });
+})();
+</script>
+</body>
+</html>
