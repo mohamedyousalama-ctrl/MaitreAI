@@ -176,7 +176,10 @@ for (const l of [najdX, hijazX, asirX, easternX]) {
   ok("(step3) LENGTH rule present", l.includes("LENGTH:") && l.includes("1–3 short sentences"));
   ok("(step3) LIGHT-MIRROR rule present + precise", l.includes("LIGHT-MIRROR") && l.includes("ONE or TWO cues per reply at MOST"));
   ok("(step3) LIGHT-MIRROR forbids full-switch/MSA/Egyptian/Levantine",
-    l.includes("NEVER switch fully to Hijazi") && l.includes("NEVER to MSA") && l.includes("Egyptian, Levantine, or Iraqi"));
+    l.includes("NEVER fully switch your home register") && l.includes("NEVER go MSA") && l.includes("Egyptian, Levantine, or Iraqi"));
+  // (Codex P2) LIGHT-MIRROR is RELATIVE to the configured region, not a hardcoded Najdi default.
+  ok("(step3) LIGHT-MIRROR is region-aware (home register = configured region)",
+    l.includes("home register = your configured"));
   ok("(step3) REGISTER BANS present (no فندم/حضرتك/سيادتكم)",
     l.includes("REGISTER BANS") && l.includes("فندم") && l.includes("حضرتك") && l.includes("سيادتكم"));
   ok("(step3) RELIGIOUS-PHRASE BUDGET present (~1/turn, no chains)",
@@ -198,6 +201,11 @@ for (const l of [najdX, hijazX, asirX, easternX]) {
   // (purity) run the Step-2 linter over the NEW rule text — must be leakage-clean.
   ok("(step3) STYLE rule text is leakage-clean (Step-2 linter)", findLeakage(styleSection(l)).ok);
 }
+// (Codex P2) region-relative home register: a hijaz tenant's home is Hijazi, not Najdi.
+ok("(step3) najd home register renders Najdi label", styleSection(najdX).includes("نجدي"));
+ok("(step3) hijaz home register renders Hijazi label (respects the region setting)",
+  styleSection(hijazX).includes("حجازي"));
+
 // determinism already covered above; re-confirm the STYLE section is stable (two-const,
 // lint-safe — not a literal self-compare).
 const styleA = styleSection(buildKhalidPersonaLayer({ region: "najd", restaurantName: "X" }));
