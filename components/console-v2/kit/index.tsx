@@ -12,19 +12,29 @@
 // ============================================================================
 
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from "react";
+import { useT } from "@/lib/i18n/lang";
+import type { DictKey } from "@/lib/i18n/dictionary";
 
 // ---------------------------------------------------------------------------
 // Truth-state chip (Layer-2). GATHERING/SOON are never colored as a verdict.
+// The Arabic-first console renders the label through the dictionary (ratified
+// once here → every page's chips are Arabic at once). EXPLICIT, exhaustive
+// state→key map: note kit state "gather" resolves to key "truth.gathering"
+// (the names deliberately don't match 1:1 — `t("truth."+state)` would be wrong).
+// A caller-supplied `label` still wins (used for probe/verify names).
+// Colours/dots/classes are unchanged — only the text label is translated.
 // ---------------------------------------------------------------------------
 export type TruthState = "live" | "gather" | "soon" | "pro" | "wo" | "degraded";
-const TRUTH_LABEL: Record<TruthState, string> = {
-  live: "LIVE", gather: "GATHERING", soon: "SOON", pro: "PRO", wo: "WO", degraded: "DEGRADED",
+const TRUTH_KEY: Record<TruthState, DictKey> = {
+  live: "truth.live", gather: "truth.gathering", soon: "truth.soon",
+  pro: "truth.pro", wo: "truth.wo", degraded: "truth.degraded",
 };
 export function TruthChip({ state, label }: { state: TruthState; label?: string }) {
+  const t = useT();
   return (
     <span className={`kvx-ts ${state}`}>
       {state === "live" && <span className="kvx-dot" />}
-      {label ?? TRUTH_LABEL[state]}
+      {label ?? t(TRUTH_KEY[state])}
     </span>
   );
 }
