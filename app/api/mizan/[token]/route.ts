@@ -32,8 +32,11 @@ export async function POST(req: Request, { params }: { params: { token: string }
   if (!ENABLE_MIZAN_PANEL) return notFound();
   // Unknown token → 404 (never reveal whether the surface exists to a bad token).
   if (!validateReviewerToken(params.token)) return notFound();
+  // Key both the throttle and DB scoping by the token HASH, never the raw token
+  // credential (which stays only in the URL). One hash, two uses.
+  const tokenHash = hashToken(params.token);
 
-  const rl = rateLimit(`mizan:${params.token}`, RATE_LIMIT, RATE_WINDOW_MS);
+  const rl = rateLimit(`mizan:${tokenHash}`, RATE_LIMIT, RATE_WINDOW_MS);
   if (!rl.ok) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429, headers: { "retry-after": String(rl.retryAfterSec) } });
   }
@@ -47,7 +50,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
 
   const r = await upsertReview(admin, {
     packetId: activePacketId(),
-    tokenHash: hashToken(params.token),
+    tokenHash,
     sub: check.value,
   });
   if (!r.ok) return NextResponse.json({ error: "save_failed" }, { status: 500 });
@@ -57,8 +60,9 @@ export async function POST(req: Request, { params }: { params: { token: string }
 export async function GET(req: Request, { params }: { params: { token: string } }) {
   if (!ENABLE_MIZAN_PANEL) return notFound();
   if (!validateReviewerToken(params.token)) return notFound();
+  const tokenHash = hashToken(params.token);
 
-  const rl = rateLimit(`mizan:${params.token}`, RATE_LIMIT, RATE_WINDOW_MS);
+  const rl = rateLimit(`mizan:${tokenHash}`, RATE_LIMIT, RATE_WINDOW_MS);
   if (!rl.ok) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429, headers: { "retry-after": String(rl.retryAfterSec) } });
   }
@@ -69,9 +73,10 @@ export async function GET(req: Request, { params }: { params: { token: string } 
   try {
     const rows = await getReviewsForReviewer(admin, {
       packetId: activePacketId(),
-      tokenHash: hashToken(params.token),
+      tokenHash,
     });
-    return NextResponse.json({ ok: true, rows });
+    // Token-scoped reviewer data: never let a browser/proxy retain it.
+    return NextResponse.json({ ok: true, rows }, { headers: { "Cache-Control": "no-store, private" } });
   } catch {
     return NextResponse.json({ error: "read_failed" }, { status: 500 });
   }

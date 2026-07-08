@@ -140,5 +140,23 @@ function makeFakeAdmin(seed: { rows?: Record<string, unknown>[]; upsertError?: s
   ok("db read: query error throws", threw === true);
 }
 
+// ★ Fix D — mizan-aggregate --db must FAIL CLOSED on an operational error (missing
+// env / --packetId / query failure), never write an honest-looking zero-reviewer
+// report. Exercised via a subprocess with no Supabase env → expect exit 2.
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+{
+  const here = dirname(fileURLToPath(import.meta.url));
+  const script = join(here, "mizan", "mizan-aggregate.mjs");
+  const env = { ...process.env };
+  delete env.NEXT_PUBLIC_SUPABASE_URL;
+  delete env.SUPABASE_SERVICE_ROLE_KEY;
+  const noEnv = spawnSync(process.execPath, [script, "--db", "--packetId=nope"], { env, encoding: "utf8" });
+  ok("aggregate --db: missing env → exit 2 (fail closed)", noEnv.status === 2);
+  const noPacket = spawnSync(process.execPath, [script, "--db"], { env, encoding: "utf8" });
+  ok("aggregate --db: missing --packetId → exit 2 (fail closed)", noPacket.status === 2);
+}
+
 console.log(`\nMIZAN HOSTED UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

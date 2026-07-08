@@ -55,7 +55,9 @@ export function MizanReviewClient({ token, packet }: { token: string; packet: Pa
   const [notes, setNotes] = useState<Notes>({});
   const [loaded, setLoaded] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One debounce timer PER scenario — a shared timer would let a note typed on a new
+  // item cancel the previous item's still-pending save (silent loss of that note).
+  const noteTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // --- resume: pull this reviewer's saved cells on mount ----------------------
   useEffect(() => {
@@ -107,15 +109,23 @@ export function MizanReviewClient({ token, packet }: { token: string; packet: Pa
   const onNote = useCallback((val: string) => {
     if (!it) return;
     setNotes((prev) => ({ ...prev, [it.scenarioId]: val }));
-    // Persist the note onto every already-scored cell for this item (debounced).
-    if (noteTimer.current) clearTimeout(noteTimer.current);
-    noteTimer.current = setTimeout(() => {
-      const sc = scores[it.scenarioId] || {};
+    // Persist the note onto every already-scored cell for this item (debounced,
+    // keyed per scenario so switching items never cancels another item's save).
+    const sid = it.scenarioId;
+    if (noteTimers.current[sid]) clearTimeout(noteTimers.current[sid]);
+    noteTimers.current[sid] = setTimeout(() => {
+      const sc = scores[sid] || {};
       const dims = Object.keys(sc);
       if (!dims.length) return; // no row yet — the note saves with the first score
-      for (const d of dims) void saveCell(it.scenarioId, it.suiteId, d, sc[d], val);
+      for (const d of dims) void saveCell(sid, it.suiteId, d, sc[d], val);
     }, 700);
   }, [it, scores, saveCell]);
+
+  // Flush-cancel any pending note timers on unmount (avoid setState-after-unmount).
+  useEffect(() => {
+    const timers = noteTimers.current;
+    return () => { for (const t of Object.values(timers)) clearTimeout(t); };
+  }, []);
 
   const missingCount = useCallback(() => {
     let m = 0;

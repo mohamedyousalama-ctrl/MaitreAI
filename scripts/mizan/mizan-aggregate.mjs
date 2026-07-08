@@ -124,6 +124,18 @@ async function main() {
     ? await loadReviewerFilesFromDb(EXPECTED_PACKET_ID || (packet && packet.packetId) || "")
     : await loadReviewerFiles(REVIEWS_DIR);
 
+  // ★ --db must FAIL CLOSED. In DB mode `missing` means an OPERATIONAL failure —
+  // missing env, missing --packetId, or a query error (see loadReviewerFilesFromDb).
+  // Continuing would write a normal zero-reviewer report with exit 0, which reads as
+  // "no reviews yet → PENDING-HUMAN" and could hide a broken DB read behind an honest-
+  // looking gate. Refuse loudly (exit 2) instead. (File mode treats a missing dir as
+  // "no reviewer files yet" — a legitimate empty state — so this guard is DB-only.)
+  if (DB_MODE && missing) {
+    console.error("MIZAN aggregate --db failed: could not read reviewer scores (missing env / --packetId / query error). Not writing a report.");
+    process.exitCode = 2;
+    return;
+  }
+
   // Enforce packetId BEFORE aggregating — never blend ratings from different packet runs.
   const expected = resolveExpectedPacketId(allFiles, EXPECTED_PACKET_ID, packet);
   if (expected.mixed) {
