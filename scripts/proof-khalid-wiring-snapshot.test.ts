@@ -57,12 +57,20 @@ const onPrompt = buildCustomerAgentSystemPrompt(baseCtx({ khalidPersona: true, k
 // THE gate: flag-OFF is byte-identical to the pre-wiring baseline.
 ok("flag-OFF prompt is BYTE-IDENTICAL to the pre-change golden", offPrompt === golden);
 ok("flag-OFF contains NO Khalid persona-layer marker", !offPrompt.includes("طبقة الشخصية"));
+// WO-KHALID-STEP1 (proof a, semantic): the curated voice anchors NEVER reach the
+// flag-OFF (Wesaya) path — neither the sub-section marker nor a sample curated phrase.
+ok("STEP1: flag-OFF has NO voice-anchors sub-section", !offPrompt.includes("voice anchors by register"));
+ok("STEP1: flag-OFF has NO curated anchor phrase", !offPrompt.includes("هلا والله، منور."));
 
 // Flag-ON behaves: additive-only (appended at the very end), overlay present.
 ok("flag-ON differs from flag-OFF", onPrompt !== offPrompt);
 ok("flag-ON is ADDITIVE — starts with the EXACT flag-OFF prompt (nothing above changed)", onPrompt.startsWith(offPrompt));
 ok("flag-ON is strictly longer (content appended)", onPrompt.length > offPrompt.length);
 ok("flag-ON contains the Khalid persona-layer marker", onPrompt.includes("طبقة الشخصية"));
+// WO-KHALID-STEP1: flag-ON DOES carry the curated voice anchors (najd shown here;
+// the region-aware hijaz check is below, after onHijazi is built).
+ok("STEP1: flag-ON carries the voice-anchors sub-section", onPrompt.includes("voice anchors by register"));
+ok("STEP1: flag-ON najd carries a Najdi curated anchor", onPrompt.includes("هلا والله، منور."));
 // ORDER (Khalid-window verified, pinned permanently): the persona layer is injected
 // BEFORE the playbooks — persona@ < playbooks@ in the rendered prompt.
 const personaIdx = onPrompt.indexOf("طبقة الشخصية");
@@ -75,6 +83,9 @@ ok("flag-ON ORDER: persona layer precedes playbooks (persona@ < playbooks@)",
 const onHijazi = buildCustomerAgentSystemPrompt(baseCtx({ khalidPersona: true, ksaRegion: "hijaz" }) as any);
 ok("flag-ON region is honored (najd vs hijaz overlays differ)", onHijazi !== onPrompt);
 ok("flag-ON hijaz still additive over OFF", onHijazi.startsWith(offPrompt));
+// WO-KHALID-STEP1: region-aware curation — hijaz carries the Hijazi anchor, not the Najdi one.
+ok("STEP1: flag-ON hijaz carries a Hijazi curated anchor", onHijazi.includes("إيش نقدّم لك اليوم؟"));
+ok("STEP1: flag-ON hijaz does NOT carry the Najdi-distinct anchor", !onHijazi.includes("هلا والله، منور."));
 
 // ── WO-ENCYCLOPEDIA (spec §5/§6 properties 8, 9, 10) ──
 const SENTINEL = "the eval suite asserts against your outputs.";
