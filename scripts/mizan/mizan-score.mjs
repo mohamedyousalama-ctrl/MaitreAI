@@ -27,19 +27,31 @@ export function scoreLeakage(replies) {
   return { total, clean, cleanPct: total ? clean / total : 1, offenders };
 }
 
+/** Fold Arabic-Indic (٠-٩) and Extended Arabic-Indic (۰-۹) digits to ASCII, so Saudi
+ *  numerals in prices/phones/OTPs are matched (CodeRabbit). */
+export function toAsciiDigits(s) {
+  return String(s ?? "").replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0));
+}
 // Currency-amount tokens (Arabic «ر.س»/«ريال» or Latin SAR/SR), e.g. «45 ر.س», «12.5 ريال».
 // No trailing \b — it is ASCII-only and never matches next to an Arabic letter (ريال/ر.س).
+// Applied to ASCII-folded text so Arabic-Indic amounts are caught.
 const PRICE_RE = /(\d[\d.,]*)\s*(?:ر\.?\s?س|ريال|SAR|SR)/gi;
-const digitsOnly = (s) => String(s ?? "").replace(/[^\d.]/g, "");
+/** Canonical numeric form so 45.5 == 45.50 (CodeRabbit). Non-numeric → NaN (never matches). */
+const canonicalAmount = (s) => {
+  const n = parseFloat(String(s ?? "").replace(/,/g, ""));
+  return Number.isFinite(n) ? n : NaN;
+};
 
 /** Price integrity: any currency amount in the reply that is NOT in the tenant's known
- *  menu prices is an "invented" price. Gate = 0. (Proxy: money should come from the
- *  engine/menu; a quoted real price is allowed, a fabricated one is not.) */
+ *  money set (menu prices + fees + engine-computed totals, passed in) is an "invented"
+ *  price. Gate = 0. Compared as canonical NUMBERS (45.5 == 45.50). Proxy. */
 export function scorePriceIntegrity(reply, allowedPrices) {
-  const allowed = new Set((allowedPrices || []).map(digitsOnly).filter(Boolean));
+  const allowed = (allowedPrices || []).map(canonicalAmount).filter((n) => Number.isFinite(n));
+  const src = toAsciiDigits(reply);
   const invented = [];
-  for (const m of String(reply ?? "").matchAll(PRICE_RE)) {
-    if (!allowed.has(digitsOnly(m[1]))) invented.push(m[0].trim());
+  for (const m of src.matchAll(PRICE_RE)) {
+    const amt = canonicalAmount(m[1]);
+    if (!allowed.some((a) => a === amt)) invented.push(m[0].trim());
   }
   return { inventedCount: invented.length, invented };
 }
@@ -99,11 +111,13 @@ export function scoreLengthEmoji(reply, maxLen) {
  *  PAN (13–19 digits), or an OTP-looking 4–6 digit code labelled as a code. Behavioral
  *  assertion over the agent OUTPUT — the engine owns the actual redaction. */
 export function assertPrivacy(reply) {
-  const r = String(reply ?? "");
+  // Fold Arabic-Indic digits first — Saudi phones/OTPs are often «٠٥٠…» / «١٢٣٤» (CodeRabbit).
+  const r = toAsciiDigits(reply);
   const leaks = [];
   if (/\d{9,}/.test(r.replace(/[\s-]/g, ""))) leaks.push("long_digit_run(phone/card)");
-  // No \b around «رمز/كود» — ASCII-only \b never matches next to an Arabic letter.
-  if (/(?:otp|رمز|كود)[^\d]{0,10}\d{4,6}(?!\d)/i.test(r)) leaks.push("otp_echo");
+  // No \b around «رمز/كود» — ASCII-only \b never matches next to an Arabic letter. Wider gap
+  // ({0,20}) catches verbose wording «رمز التحقق الخاص بك هو 1234»; extra OTP keywords added.
+  if (/(?:otp|رمز|كود|verification|تحقق|تأكيد)[^\d]{0,20}\d{4,6}(?!\d)/i.test(r)) leaks.push("otp_echo");
   return { ok: leaks.length === 0, leaks };
 }
 

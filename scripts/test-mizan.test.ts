@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   scoreLeakage, scorePriceIntegrity, scoreOrderAccuracy, scoreLengthEmoji,
-  assertPrivacy, evaluateGate, overallReadiness, HONEST_LIMITS,
+  assertPrivacy, evaluateGate, overallReadiness, HONEST_LIMITS, toAsciiDigits,
 } from "./mizan/mizan-score.mjs";
 
 let pass = 0, fail = 0;
@@ -27,6 +27,14 @@ ok("price: no price token → 0", scorePriceIntegrity("أبشر، سجلت طل�
 ok("price: SAR latin token detected", scorePriceIntegrity("total 99 SAR", [45]).inventedCount === 1);
 // Codex P2: a legitimate delivery fee / engine-computed total (passed in the allowed set) is NOT invented.
 ok("price: engine-computed fee/total in allowed set is clean", scorePriceIntegrity("التوصيل 12 ر.س والإجمالي 57 ر.س", [45, 30, 12, 57]).inventedCount === 0);
+// CodeRabbit: canonical numeric compare — 45.5 == 45.50 (formatting difference is not a hallucination).
+ok("price: 45.50 canonical-equals allowed 45.5 (clean)", scorePriceIntegrity("الكبسة بـ 45.50 ر.س", [45.5]).inventedCount === 0);
+ok("price: thousands-comma stripped — 1,234.50 equals 1234.5 (clean)", scorePriceIntegrity("الإجمالي 1,234.50 ر.س", [1234.5]).inventedCount === 0);
+// CodeRabbit: Arabic-Indic numerals — «٤٥ ر.س» must be folded before matching so real Saudi prices are caught.
+ok("price: Arabic-Indic real price is clean", scorePriceIntegrity("الكبسة بـ ٤٥ ر.س", [45, 30]).inventedCount === 0);
+ok("price: Arabic-Indic INVENTED price is flagged", scorePriceIntegrity("خصم بـ ٢٠ ريال", [45, 30]).inventedCount === 1);
+// toAsciiDigits helper: both Arabic-Indic and Extended Arabic-Indic fold to ASCII.
+ok("toAsciiDigits: folds ٠-٩ and ۰-۹", toAsciiDigits("٤٥ ۹") === "45 9");
 
 // --- order accuracy (name + quantity + «without» modifiers) ------------------
 ok("order: full match = 1.0",
@@ -53,6 +61,11 @@ ok("emoji: counted", scoreLengthEmoji("أهلاً 🌟🔥", 480).emoji === 2);
 ok("privacy: full phone echo is a leak", assertPrivacy("رقمك 0501234567 محفوظ").ok === false);
 ok("privacy: OTP echo is a leak", assertPrivacy("رمز التحقق 483920").ok === false);
 ok("privacy: clean reply passes", assertPrivacy("سجلنا طلبك، تسلم").ok === true);
+// CodeRabbit: Arabic-Indic phone digits «٠٥٠…» must be folded before the long-digit-run check.
+ok("privacy: Arabic-Indic phone echo is a leak", assertPrivacy("رقمك ٠٥٠١٢٣٤٥٦٧ محفوظ").ok === false);
+// CodeRabbit: verbose Arabic OTP wording with Arabic-Indic digits — «رمز التحقق الخاص بك هو ١٢٣٤».
+ok("privacy: verbose Arabic OTP (Arabic-Indic) is a leak", assertPrivacy("رمز التحقق الخاص بك هو ١٢٣٤").ok === false);
+ok("privacy: verbose Arabic OTP (ASCII) is a leak", assertPrivacy("رمز التحقق الخاص بك هو 1234").ok === false);
 
 // --- launch-gate evaluation --------------------------------------------------
 ok("gate: order-accuracy 0.98 ≥ 0.97 PASS", evaluateGate({ metric: "order_accuracy", op: ">=", threshold: 0.97 }, 0.98) === "PASS");

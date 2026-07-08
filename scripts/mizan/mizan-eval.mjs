@@ -45,20 +45,35 @@ const REP = { ...H, Prefer: "return=representation" };
 const j = (r) => r.json();
 const stamp = () => new Date().toISOString().slice(0, 10);
 
+/** fetch with an AbortController timeout so an unresponsive agent/Supabase can't hang the
+ *  harness forever (CodeRabbit). Aborted requests surface a clear timeout error. */
+async function tfetch(url, opts = {}, ms = 10000) {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } catch (e) {
+    if (e && e.name === "AbortError") throw new Error(`timeout after ${ms}ms: ${url}`);
+    throw e;
+  } finally {
+    clearTimeout(to);
+  }
+}
+
 // --- minimal seeded-tenant plumbing (mirrors eval-scenarios.mjs) -------------
 async function resolveRestaurantId() {
   if (EVAL_RESTAURANT_ID) return EVAL_RESTAURANT_ID;
   if (!OWNER_UID) throw new Error("no EVAL_RESTAURANT_ID and no EVAL_OWNER_UID");
-  const rows = await fetch(`${SB}/rest/v1/members?user_id=eq.${OWNER_UID}&select=restaurant_id`, { headers: H }).then(j);
+  const rows = await tfetch(`${SB}/rest/v1/members?user_id=eq.${OWNER_UID}&select=restaurant_id`, { headers: H }).then(j);
   const id = rows?.[0]?.restaurant_id;
   if (!id) throw new Error("no seeded restaurant for owner " + OWNER_UID);
   return id;
 }
 async function menuPrices(restaurantId) {
-  const items = await fetch(`${SB}/rest/v1/menu_items?restaurant_id=eq.${restaurantId}&select=name,price`, { headers: H }).then(j).catch(() => []);
+  const items = await tfetch(`${SB}/rest/v1/menu_items?restaurant_id=eq.${restaurantId}&select=name,price`, { headers: H }).then(j).catch(() => []);
   // Legitimate money also comes from engine-computed fees (delivery zones) + order totals —
   // include them so a truthful fee/total isn't scored as an invented price (Codex P2).
-  const zones = await fetch(`${SB}/rest/v1/delivery_zones?restaurant_id=eq.${restaurantId}&select=fee`, { headers: H }).then(j).catch(() => []);
+  const zones = await tfetch(`${SB}/rest/v1/delivery_zones?restaurant_id=eq.${restaurantId}&select=fee`, { headers: H }).then(j).catch(() => []);
   return {
     names: (items || []).map((x) => x.name).filter(Boolean),
     prices: (items || []).map((x) => x.price).filter((p) => p != null),
@@ -72,18 +87,18 @@ function draftAmounts(draft) {
   return [d.total, d.subtotal, d.grandTotal, d.grand_total, d.amount, d.deliveryFee, d.delivery_fee, d.fee, d.tax, d.vat].filter((v) => v != null);
 }
 async function makeConversation(restaurantId, phone) {
-  const cust = await fetch(`${SB}/rest/v1/customers`, { method: "POST", headers: REP, body: JSON.stringify({ restaurant_id: restaurantId, phone, name: "تقييم ميزان" }) }).then(j);
+  const cust = await tfetch(`${SB}/rest/v1/customers`, { method: "POST", headers: REP, body: JSON.stringify({ restaurant_id: restaurantId, phone, name: "تقييم ميزان" }) }).then(j);
   const customerId = cust?.[0]?.id;
-  const conv = await fetch(`${SB}/rest/v1/conversations`, { method: "POST", headers: REP, body: JSON.stringify({ restaurant_id: restaurantId, customer_id: customerId, channel: "whatsapp" }) }).then(j);
+  const conv = await tfetch(`${SB}/rest/v1/conversations`, { method: "POST", headers: REP, body: JSON.stringify({ restaurant_id: restaurantId, customer_id: customerId, channel: "whatsapp" }) }).then(j);
   return { customerId, conversationId: conv?.[0]?.id };
 }
 async function cleanup(restaurantId, conversationId, customerId) {
-  for (const t of ["agent_runs", "conversation_signals", "messages"]) await fetch(`${SB}/rest/v1/${t}?conversation_id=eq.${conversationId}`, { method: "DELETE", headers: H }).catch(() => {});
-  await fetch(`${SB}/rest/v1/conversations?id=eq.${conversationId}`, { method: "DELETE", headers: H }).catch(() => {});
-  await fetch(`${SB}/rest/v1/customers?id=eq.${customerId}`, { method: "DELETE", headers: H }).catch(() => {});
+  for (const t of ["agent_runs", "conversation_signals", "messages"]) await tfetch(`${SB}/rest/v1/${t}?conversation_id=eq.${conversationId}`, { method: "DELETE", headers: H }).catch(() => {});
+  await tfetch(`${SB}/rest/v1/conversations?id=eq.${conversationId}`, { method: "DELETE", headers: H }).catch(() => {});
+  await tfetch(`${SB}/rest/v1/customers?id=eq.${customerId}`, { method: "DELETE", headers: H }).catch(() => {});
 }
 async function callAgent(restaurantId, conversationId, text) {
-  const res = await fetch(`${BASE}/api/agent/respond`, { method: "POST", headers: { "Content-Type": "application/json", "x-agent-secret": SECRET }, body: JSON.stringify({ restaurantId, conversationId, text }) });
+  const res = await tfetch(`${BASE}/api/agent/respond`, { method: "POST", headers: { "Content-Type": "application/json", "x-agent-secret": SECRET }, body: JSON.stringify({ restaurantId, conversationId, text }) }, 30000);
   const out = await res.json().catch(() => ({ error: "non_json_response" }));
   out.__http = res.status;
   return out;
@@ -135,7 +150,8 @@ function scoreSuite(suite, runs, menu) {
       return { escalation: per, escalationRate: rate };
     }
     if (suite.metric === "privacy_pass_rate" || suite.assert === "no_pii_echo") {
-      const per = runs.map((r) => ({ id: r.id, ...assertPrivacy(r.replies.at(-1) || "") }));
+      // Check EVERY reply in the scenario — PII echoed in an earlier turn must fail too (CodeRabbit).
+      const per = runs.map((r) => ({ id: r.id, ...assertPrivacy(r.replies.join(" ")) }));
       const rate = per.length ? per.filter((p) => p.ok).length / per.length : null;
       return { privacy: per, privacyPassRate: rate };
     }
@@ -247,48 +263,63 @@ async function main() {
     console.log(`MIZAN blocked (preflight): missing ${missing.join(", ")}`);
     process.exit(2);
   }
-  const restaurantId = await resolveRestaurantId();
-  // MIZAN grades KHALID — the persona must be ON or we'd score the base Saudi prompt (Codex P2).
-  // Read the tenant's feature_flags; ensure khalid_persona is ON for the run; restore after.
-  const frows = await fetch(`${SB}/rest/v1/restaurants?id=eq.${restaurantId}&select=feature_flags`, { headers: H }).then(j).catch(() => []);
-  const originalFlags = frows?.[0]?.feature_flags ?? {};
-  const personaWasOn = originalFlags.khalid_persona === true;
-  if (!personaWasOn) {
-    await fetch(`${SB}/rest/v1/restaurants?id=eq.${restaurantId}`, { method: "PATCH", headers: H, body: JSON.stringify({ feature_flags: { ...originalFlags, khalid_persona: true } }) });
-    console.log("MIZAN: khalid_persona was OFF — enabled for this run (will restore).");
-  }
-  const menu = await menuPrices(restaurantId);
-  const scores = {}; const gateValues = {};
-  let anyFail = false;
+  let restaurantId = null;
+  let originalFlags = {};
+  let personaTouched = false;
   try {
+    restaurantId = await resolveRestaurantId();
+    // MIZAN grades KHALID — the persona must be ON or we'd score the base Saudi prompt (Codex P2).
+    // Read the tenant's feature_flags; ensure khalid_persona is ON for the run; restore in finally.
+    const frows = await tfetch(`${SB}/rest/v1/restaurants?id=eq.${restaurantId}&select=feature_flags`, { headers: H }).then(j).catch(() => []);
+    originalFlags = frows?.[0]?.feature_flags ?? {};
+    if (originalFlags.khalid_persona !== true) {
+      await tfetch(`${SB}/rest/v1/restaurants?id=eq.${restaurantId}`, { method: "PATCH", headers: H, body: JSON.stringify({ feature_flags: { ...originalFlags, khalid_persona: true } }) });
+      personaTouched = true;
+      console.log("MIZAN: khalid_persona was OFF — enabled for this run (will restore).");
+    }
+    const menu = await menuPrices(restaurantId);
+    const scores = {}; const gateValues = {};
+    let anyFail = false;
     for (const suite of MANIFEST.suites) {
       const runs = [];
       for (let i = 0; i < suite.scenarios.length; i++) {
-        runs.push(await runScenario(restaurantId, suite.scenarios[i], `+9665${String(Date.now()).slice(-8)}${i}`));
+        const sc = suite.scenarios[i];
+        try {
+          runs.push(await runScenario(restaurantId, sc, `+9665${String(Date.now()).slice(-8)}${i}`));
+        } catch (e) {
+          // One scenario failing (network blip, agent error) must not abort the whole run (CodeRabbit).
+          runs.push({ id: sc.id, region: sc.region, frame: sc.frame, turns: sc.turns, replies: [], last: { error: e?.message || String(e) }, error: true });
+          console.error(`MIZAN scenario ${sc.id} failed:`, e?.message || e);
+        }
       }
       scores[suite.id] = scoreSuite(suite, runs, menu);
     }
+    // map suite scores → gate values
+    for (const g of MANIFEST.launchGates) {
+      const s = scores[g.suite];
+      if (g.id === "order_accuracy") gateValues[g.id] = s?.avgAccuracy ?? null;
+      else if (g.id === "price_hallucination") gateValues[g.id] = s?.inventedPrices ?? null;
+      else if (g.id === "escalation") gateValues[g.id] = s?.escalationRate ?? null;
+      else if (g.id === "pdpl_privacy") gateValues[g.id] = s?.privacyPassRate ?? null;
+      else if (g.id === "allergy_safety") gateValues[g.id] = s?.safetyPassRate ?? null;
+      else gateValues[g.id] = null; // human → PENDING
+      if (g.metric !== "human") {
+        const st = evaluateGate(g, gateValues[g.id]);
+        if (st === "FAIL") anyFail = true;
+      }
+    }
+    await writeReport({ date, scores, gateValues });
+    process.exitCode = anyFail ? 1 : 0;
+  } catch (e) {
+    // The report is ALWAYS written — a runtime error after preflight still produces a blocked report.
+    await writeReport({ date, blocked: true, blockReason: `Runtime error: ${e?.message || e}` });
+    console.error("MIZAN error:", e?.message || e);
+    process.exitCode = 2;
   } finally {
-    if (!personaWasOn) {
-      await fetch(`${SB}/rest/v1/restaurants?id=eq.${restaurantId}`, { method: "PATCH", headers: H, body: JSON.stringify({ feature_flags: originalFlags }) }).catch(() => {});
+    if (personaTouched && restaurantId) {
+      await tfetch(`${SB}/rest/v1/restaurants?id=eq.${restaurantId}`, { method: "PATCH", headers: H, body: JSON.stringify({ feature_flags: originalFlags }) }).catch(() => {});
     }
   }
-  // map suite scores → gate values
-  for (const g of MANIFEST.launchGates) {
-    const s = scores[g.suite];
-    if (g.id === "order_accuracy") gateValues[g.id] = s?.avgAccuracy ?? null;
-    else if (g.id === "price_hallucination") gateValues[g.id] = s?.inventedPrices ?? null;
-    else if (g.id === "escalation") gateValues[g.id] = s?.escalationRate ?? null;
-    else if (g.id === "pdpl_privacy") gateValues[g.id] = s?.privacyPassRate ?? null;
-    else if (g.id === "allergy_safety") gateValues[g.id] = s?.safetyPassRate ?? null;
-    else gateValues[g.id] = null; // human → PENDING
-    if (g.metric !== "human") {
-      const st = evaluateGate(g, gateValues[g.id]);
-      if (st === "FAIL") anyFail = true;
-    }
-  }
-  await writeReport({ date, scores, gateValues });
-  process.exit(anyFail ? 1 : 0);
 }
 
-main().catch((e) => { console.error("MIZAN error:", e?.message || e); process.exit(2); });
+main().catch((e) => { console.error("MIZAN fatal:", e?.message || e); process.exit(2); });
