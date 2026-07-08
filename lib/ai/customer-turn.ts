@@ -26,6 +26,9 @@ import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
 import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
+// WO-KHALID-STEP2: dialect-leakage QUALITY linter (observability only — NOT the safety
+// gate). Separate lane from allergen-gate/safety-hold/escalation; never blocks a turn.
+import { findLeakage } from "@/lib/ai/personas/khalid-dialect-linter.mjs";
 import { detectCallbackRequest } from "@/lib/ai/callback-trigger";
 import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
@@ -525,6 +528,25 @@ export async function runCustomerTurn(
         { role: "assistant", content: result.reply },
       ],
     });
+  }
+
+  // WO-KHALID-STEP2 — dialect-leakage OBSERVABILITY (flag-scoped, quality-only).
+  // Runs ONLY when khalid_persona is on; a pure scan of the outbound reply that LOGS a
+  // hit so we can measure the leakage rate. It NEVER blocks, escalates, regenerates, or
+  // touches the safety path — a dialect leak is a quality miss, not a safety event.
+  // Wrapped so observability can never break a customer turn.
+  if (isFeatureExplicitlyEnabled("khalid_persona", tenantFeatures) && result.reply) {
+    try {
+      const leak = findLeakage(result.reply);
+      if (!leak.ok) {
+        console.warn(
+          `[khalid:dialect-leakage] conv=${conversationId} ${leak.hits.length} hit(s): ` +
+            leak.hits.map((h) => `${h.marker}(${h.category})`).join(", ")
+        );
+      }
+    } catch {
+      /* observability must never affect a turn */
+    }
   }
 
   return {
