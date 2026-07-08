@@ -9,7 +9,7 @@
 // The reviewer never sees ids/internals, and never sees another reviewer's scores.
 // ============================================================================
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface PacketItem {
   scenarioId: string;
@@ -48,7 +48,7 @@ type Scores = Record<string, Record<string, number>>;
 type Notes = Record<string, string>;
 
 export function MizanReviewClient({ token, packet }: { token: string; packet: Packet }) {
-  const items = packet.items || [];
+  const items = useMemo(() => packet.items || [], [packet.items]);
   const [screen, setScreen] = useState<"welcome" | "item" | "finish">("welcome");
   const [idx, setIdx] = useState(0);
   const [scores, setScores] = useState<Scores>({});

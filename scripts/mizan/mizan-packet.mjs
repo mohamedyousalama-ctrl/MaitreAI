@@ -128,6 +128,48 @@ async function writePacket(packet, date) {
   console.log(`MIZAN packet → reports/mizan-packet-${date}.json (${packet.items.length} items, ${packet.suites.length} human suites)`);
 }
 
+// --emit-active rewrites JUST lib/mizan/active-packet-data.ts (the TS literal the
+// HOSTED /mizan/<token> surface serves) with this run's live packetId + replies, so
+// the deployed reviewer flow scores Khalid's REAL captured replies. No scores here —
+// only prompts/replies a human reads. Scores are saved to Supabase by the API route.
+const EMIT_ACTIVE = process.argv.includes("--emit-active");
+async function writeActivePacketData(packet) {
+  const reviewerView = {
+    packetId: packet.packetId,
+    benchmark: packet.benchmark,
+    unseeded: !!packet.blocked || packet.items.every((it) => !(it.replies || []).some((r) => r && r.trim())),
+    minReviewers: packet.minReviewers,
+    note: packet.note || "لكل رد: قيّم من ١ إلى ١٠ على كل بُعد، وأضف ملاحظة إن رغبت. قيّم اللهجة والأسلوب فقط.",
+    suites: packet.suites,
+    items: packet.items.map((it) => ({
+      scenarioId: it.scenarioId, suiteId: it.suiteId, suiteName: it.suiteName,
+      region: it.region ?? null, frame: it.frame ?? null,
+      turns: it.turns, replies: it.replies || [],
+      dimensions: it.dimensions, scale: it.scale,
+    })),
+  };
+  const header = `// ============================================================================
+// MaitreAI — MIZAN ACTIVE PACKET DATA (WO-KHALID-STEP5B) — GENERATED, do not hand-edit.
+//
+// The reviewer packet the hosted /mizan/<token> surface serves: Khalid's captured
+// replies for the 5 human-hook suites plus the rubric each is scored on. This is a
+// TS LITERAL module (repo convention — bare-node ESM cannot import JSON at runtime),
+// named active-packet-data.ts (NOT *.data.ts — the ts-ext resolver treats a ".data"
+// suffix as a file extension and fails to resolve it).
+//
+// Regenerate against a seeded KSA tenant (khalid_persona ON) with:
+//   node scripts/mizan/mizan-packet.mjs --emit-active
+// which rewrites JUST this file with the live packetId + Khalid's real replies. No
+// scores live here — only the prompts/replies a human reads. Scores go to Supabase.
+// ============================================================================
+
+export const ACTIVE_PACKET_DATA = ${JSON.stringify(reviewerView, null, 2)} as const;
+`;
+  const out = join(here, "..", "..", "lib", "mizan", "active-packet-data.ts");
+  await writeFile(out, header, "utf8");
+  console.log(`MIZAN active packet → lib/mizan/active-packet-data.ts (${reviewerView.items.length} items, packetId ${reviewerView.packetId}${reviewerView.unseeded ? ", UNSEEDED" : ""})`);
+}
+
 function preflight() {
   const missing = [];
   if (!SB) missing.push("NEXT_PUBLIC_SUPABASE_URL");
@@ -159,6 +201,7 @@ async function main() {
     const packet = { ...basePacket, blocked: true, blockReason: `Missing env: ${missing.join(", ")}. Point at a seeded KSA tenant (khalid_persona ON) to capture live replies.`, items };
     await writePacket(packet, date);
     await writeReviewHtml(packet, date, true);
+    if (EMIT_ACTIVE) await writeActivePacketData(packet); // regenerates the UNSEEDED committed default
     console.log(`MIZAN packet blocked (preflight): missing ${missing.join(", ")} — wrote STRUCTURE + UI template.`);
     process.exit(2);
   }
@@ -192,6 +235,7 @@ async function main() {
     const packet = { ...basePacket, items };
     await writePacket(packet, date);
     await writeReviewHtml(packet, date, false);
+    if (EMIT_ACTIVE) await writeActivePacketData(packet); // bake live replies into the hosted surface
     process.exitCode = 0;
   } catch (e) {
     const items = humanSuites.flatMap((s) => buildItems(s, {}));

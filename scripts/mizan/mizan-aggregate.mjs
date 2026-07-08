@@ -30,6 +30,44 @@ const LABEL = arg("label", process.env.MIZAN_PANEL_LABEL || "");
 const PACKET_PATH = arg("packet", "");
 const EXPECTED_PACKET_ID = arg("packetId", "");
 const isSample = /sample/i.test(LABEL);
+// --db reads the HOSTED reviewer scores straight from Supabase (mizan_reviews) for
+// one packet_id, instead of reviewer JSON files. Same downstream: the DB rows are
+// reshaped into the exact reviewer-file shape and fed through the UNCHANGED honesty
+// core. Env: NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY. Requires --packetId.
+const DB_MODE = process.argv.includes("--db");
+
+/** Read all mizan_reviews rows for a packet and reshape them into reviewer files:
+ *  one file per reviewer_token_hash, scores grouped by scenario with dims{dim:score}.
+ *  reviewerId is a short, non-reversible label derived from the hash (rev-<first8>) —
+ *  the raw token never existed here. Returns the same shape as loadReviewerFiles. */
+async function loadReviewerFilesFromDb(packetId) {
+  const SB = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SR = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SB || !SR) { console.error("MIZAN --db: missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY"); return { files: [], dir: "supabase:mizan_reviews", missing: true }; }
+  if (!packetId) { console.error("MIZAN --db: --packetId=<id> is required (which packet's scores to read)"); return { files: [], dir: "supabase:mizan_reviews", missing: true }; }
+  const H = { apikey: SR, Authorization: `Bearer ${SR}` };
+  const url = `${SB}/rest/v1/mizan_reviews?packet_id=eq.${encodeURIComponent(packetId)}&select=reviewer_token_hash,scenario_id,suite_id,dimension,score,notes`;
+  let rows = [];
+  try {
+    const res = await fetch(url, { headers: H });
+    if (!res.ok) { console.error(`MIZAN --db: query failed (${res.status})`); return { files: [], dir: "supabase:mizan_reviews", missing: true }; }
+    rows = await res.json();
+  } catch (e) { console.error("MIZAN --db: query error", e?.message || e); return { files: [], dir: "supabase:mizan_reviews", missing: true }; }
+
+  const byReviewer = new Map(); // hash → { reviewerId, packetId, byScenario: Map }
+  for (const r of rows || []) {
+    const hash = String(r.reviewer_token_hash || "");
+    if (!hash) continue;
+    if (!byReviewer.has(hash)) byReviewer.set(hash, { reviewerId: `rev-${hash.slice(0, 8)}`, packetId, byScenario: new Map() });
+    const rev = byReviewer.get(hash);
+    if (!rev.byScenario.has(r.scenario_id)) rev.byScenario.set(r.scenario_id, { scenarioId: r.scenario_id, suiteId: Number(r.suite_id), dims: {}, notes: "" });
+    const sc = rev.byScenario.get(r.scenario_id);
+    if (Number.isFinite(Number(r.score))) sc.dims[r.dimension] = Number(r.score);
+    if (r.notes && !sc.notes) sc.notes = String(r.notes);
+  }
+  const files = [...byReviewer.values()].map((rev) => ({ reviewerId: rev.reviewerId, packetId: rev.packetId, scores: [...rev.byScenario.values()] }));
+  return { files, dir: `supabase:mizan_reviews (packet ${packetId})`, missing: false };
+}
 
 /** Reject reviewer files exported against a DIFFERENT packet run. Scenario IDs (S1-01…) are
  *  stable across runs, so stale ratings for old replies/persona could otherwise be counted toward
@@ -81,8 +119,10 @@ function fmt(n, d = 2) { return typeof n === "number" ? n.toFixed(d) : "—"; }
 async function main() {
   const date = stamp();
   const humanSuites = MANIFEST.suites.filter((s) => s.category === "human" && HUMAN_SUITE_IDS.includes(s.id));
-  const { files: allFiles, dir, missing } = await loadReviewerFiles(REVIEWS_DIR);
   const { byId: replies, packet } = await loadPacket();
+  const { files: allFiles, dir, missing } = DB_MODE
+    ? await loadReviewerFilesFromDb(EXPECTED_PACKET_ID || (packet && packet.packetId) || "")
+    : await loadReviewerFiles(REVIEWS_DIR);
 
   // Enforce packetId BEFORE aggregating — never blend ratings from different packet runs.
   const expected = resolveExpectedPacketId(allFiles, EXPECTED_PACKET_ID, packet);
