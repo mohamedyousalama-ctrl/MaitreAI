@@ -11,6 +11,8 @@ import {
   KHALID_DEFAULT_NAME,
   KHALID_PERSONA_ID,
   DEFAULT_KSA_REGION,
+  CURATED_EXEMPLARS,
+  PHRASE_BUCKETS,
 } from "../lib/ai/personas/khalid.ts";
 import type { KsaRegion } from "../lib/ai/personas/khalid.ts";
 
@@ -49,6 +51,69 @@ for (const l of layers) {
   ok("money still = order tools", l.includes("money still comes ONLY from the order tools"));
   ok("safety is sacred / defers to gate", l.includes("SAFETY IS SACRED") && l.includes("deterministic gate"));
   ok("karam never overrides safety", l.includes("karam NEVER softens") || l.includes("Hospitality yields to safety"));
+}
+
+// ============================================================================
+// WO-KHALID-STEP1 — curated phrase-bank exemplars (5 required proofs a–e).
+// (a) flag-OFF byte-identical is proven by the wiring golden
+//     (scripts/proof-khalid-wiring-snapshot.test.ts) — the overlay below is only
+//     appended when khalid_persona is ON, so the Wesaya flag-OFF path is untouched.
+//     Here we prove the overlay-level guarantees b–e.
+// ============================================================================
+const najdX = buildKhalidPersonaLayer({ region: "najd", restaurantName: "X" });
+const hijazX = buildKhalidPersonaLayer({ region: "hijaz", restaurantName: "X" });
+const asirX = buildKhalidPersonaLayer({ region: "asir", restaurantName: "X" });
+const easternX = buildKhalidPersonaLayer({ region: "eastern", restaurantName: "X" });
+
+// --- (b) flag-ON overlay includes the curated buckets, region-aware ---------
+ok("(b) overlay renders the voice-anchors sub-section", najdX.includes("voice anchors by register"));
+ok("(b) all 12 buckets grouped in the anchors section",
+  (najdX.match(/\n {2}• /g) || []).length >= PHRASE_BUCKETS.length);
+// Najdi core phrases present for najd; a Najdi-distinct greeting is there…
+ok("(b) najd overlay carries a Najdi anchor", najdX.includes("هلا والله، منور."));
+// …and the Hijazi-distinct greeting is NOT in the najd overlay.
+ok("(b) najd overlay does NOT carry a Hijazi-distinct anchor", !najdX.includes("إيش نقدّم لك اليوم؟"));
+// hijaz draws the Hijazi set.
+ok("(b) hijaz overlay carries a Hijazi anchor", hijazX.includes("إيش نقدّم لك اليوم؟"));
+ok("(b) hijaz overlay does NOT carry a Najdi-distinct anchor", !hijazX.includes("هلا والله، منور."));
+// najd/asir/eastern all draw the Najdi core.
+ok("(b) asir draws the Najdi core", asirX.includes("هلا والله، منور."));
+ok("(b) eastern draws the Najdi core", easternX.includes("هلا والله، منور."));
+
+// --- (c) PURITY: no Egyptian/Levantine marker + no placeholder in the anchors
+// Scoped to the CURATED anchors (the pre-existing region "note" intentionally
+// references «كيفك» as a register Khalid UNDERSTANDS — that is not a curated anchor).
+// Word-boundary aware (Arabic): «بدي» must not match بديل/أبدي/نبي, etc.
+const AR = "\\u0600-\\u06FF";
+const BANNED = ["عايز", "دلوقتي", "يا فندم", "كيفك", "بدي", "هلق", "معلش", "ازيك", "إزيك"];
+const joined = CURATED_EXEMPLARS.join("\n");
+for (const w of BANNED) {
+  const re = new RegExp(`(?<![${AR}])${w}(?![${AR}])`, "u");
+  ok(`(c) purity: no Levantine/Egyptian marker «${w}» in curated anchors`, !re.test(joined));
+}
+ok("(c) no {brand}/{ticket_id} placeholder leaks into the curated anchors",
+  !CURATED_EXEMPLARS.some((p) => p.includes("{brand}") || p.includes("{ticket_id}") || p.includes("{")));
+ok("(c) no raw brace placeholder in the rendered overlay (najd)", !/\{brand\}|\{ticket_id\}/.test(najdX));
+ok("(c) no raw brace placeholder in the rendered overlay (hijaz)", !/\{brand\}|\{ticket_id\}/.test(hijazX));
+// VOICE-only discipline: no curated anchor carries a currency/price token.
+ok("(c) no currency/price token in any curated anchor",
+  !CURATED_EXEMPLARS.some((p) => /ر\.\s?س|ريال|SAR|SR\b|\$|٪|%/.test(p)));
+
+// --- (d) DETERMINISM: same ctx → same string (pure function) -----------------
+ok("(d) determinism: identical ctx → byte-identical overlay",
+  buildKhalidPersonaLayer({ region: "najd", restaurantName: "مطعم الديرة" }) ===
+  buildKhalidPersonaLayer({ region: "najd", restaurantName: "مطعم الديرة" }));
+ok("(d) determinism holds for hijaz too",
+  buildKhalidPersonaLayer({ region: "hijaz", restaurantName: "X" }) === hijazX);
+
+// --- (e) safety/deferral lines still present, and SAFETY stays TERMINAL ------
+for (const l of [najdX, hijazX, asirX, easternX]) {
+  ok("(e) SAFETY IS SACRED still present", l.includes("SAFETY IS SACRED") && l.includes("deterministic gate"));
+  ok("(e) defers to engine still present", l.includes("never the facts"));
+  ok("(e) anchors caption reasserts voice-not-facts", l.includes("comes ONLY from the engine + tools, NEVER from these lines"));
+  // SAFETY IS SACRED remains AFTER the exemplars (safety is the terminal word).
+  ok("(e) exemplars precede the SAFETY line (safety stays terminal)",
+    l.indexOf("voice anchors by register") < l.indexOf("SAFETY IS SACRED"));
 }
 
 console.log(`\nKHALID-PERSONA UNIT: ${pass} passed, ${fail} failed`);
