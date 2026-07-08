@@ -46,19 +46,45 @@ export function scorePriceIntegrity(reply, allowedPrices) {
 
 const norm = (s) => String(s ?? "").replace(/[ً-ْ]/g, "").replace(/[أإآ]/g, "ا").trim().toLowerCase();
 
-/** Order accuracy: fraction of the customer's expected items that appear in the captured
- *  draft (structured check over draft.items / draft.lines). */
-export function scoreOrderAccuracy(draft, expectItems) {
-  const exp = (expectItems || []).map(norm).filter(Boolean);
-  if (!exp.length) return { matched: 0, expected: 0, accuracy: 1, missing: [] };
-  const gotNames = ((draft && (draft.items || draft.lines)) || []).map((x) => norm(x && (x.name ?? x.title) ? (x.name ?? x.title) : x));
-  const missing = [];
+/** Normalize an expected item: accepts a bare name string OR {name, qty, without:[...]}. */
+function normExpected(e) {
+  if (typeof e === "string") return { name: norm(e), qty: null, without: [] };
+  return { name: norm(e && e.name), qty: e && e.qty != null ? Number(e.qty) : null, without: (e && e.without ? e.without : []).map(norm) };
+}
+/** Normalize a captured draft line into {name, qty, modText} — modText is the line's whole
+ *  modifier/note surface flattened to one normalized string, so a captured removal
+ *  («بدون بصل», removed:["بصل"], notes:"…") is detectable regardless of the exact field. */
+function normLine(x) {
+  if (x == null) return { name: "", qty: null, modText: "" };
+  if (typeof x === "string") return { name: norm(x), qty: null, modText: "" };
+  const name = norm(x.name ?? x.title ?? "");
+  const qtyRaw = x.qty ?? x.quantity ?? x.count ?? null;
+  const modBits = [].concat(x.modifiers ?? [], x.mods ?? [], x.removed ?? [], x.without ?? [], x.extras ?? [], x.notes ? [x.notes] : []);
+  const modText = norm(modBits.map((m) => (m && m.name ? m.name : m)).join(" "));
+  return { name, qty: qtyRaw != null ? Number(qtyRaw) : null, modText };
+}
+
+/** Order accuracy: fraction of the customer's expected items captured CORRECTLY — matching
+ *  name AND (when specified) quantity AND «without» removals. A draft with one mandi instead
+ *  of two, or a burger whose onion-removal was dropped, is NOT counted correct.
+ *  NOTE (proxy): the «without» check requires the removed item to be REFERENCED in the line's
+ *  modifier/note fields (removal captured). Exact add-vs-remove semantics depend on the draft
+ *  schema and can be tightened once confirmed on the seeded tenant. */
+export function scoreOrderAccuracy(draft, expected) {
+  const exp = (expected || []).map(normExpected).filter((e) => e.name);
+  if (!exp.length) return { matched: 0, expected: 0, accuracy: 1, issues: [] };
+  const lines = ((draft && (draft.items || draft.lines)) || []).map(normLine);
+  const issues = [];
   let matched = 0;
   for (const e of exp) {
-    if (gotNames.some((g) => g && (g.includes(e) || e.includes(g)))) matched++;
-    else missing.push(e);
+    const line = lines.find((l) => l.name && (l.name.includes(e.name) || e.name.includes(l.name)));
+    if (!line) { issues.push(`missing:${e.name}`); continue; }
+    if (e.qty != null && line.qty != null && line.qty !== e.qty) { issues.push(`qty:${e.name} want ${e.qty} got ${line.qty}`); continue; }
+    const droppedRemoval = e.without.filter((w) => !line.modText.includes(w));
+    if (droppedRemoval.length) { issues.push(`modifier:${e.name} removal not captured (${droppedRemoval.join(",")})`); continue; }
+    matched++;
   }
-  return { matched, expected: exp.length, accuracy: matched / exp.length, missing };
+  return { matched, expected: exp.length, accuracy: matched / exp.length, issues };
 }
 
 /** Length & emoji discipline (reuses the Step-2 advisory helpers). */

@@ -25,13 +25,24 @@ ok("price: quoting a REAL menu price is clean", scorePriceIntegrity("الكبس�
 ok("price: an INVENTED price is flagged", scorePriceIntegrity("خصم خاص لك بـ 20 ريال", [45, 30]).inventedCount === 1);
 ok("price: no price token → 0", scorePriceIntegrity("أبشر، سجلت طلبك", [45]).inventedCount === 0);
 ok("price: SAR latin token detected", scorePriceIntegrity("total 99 SAR", [45]).inventedCount === 1);
+// Codex P2: a legitimate delivery fee / engine-computed total (passed in the allowed set) is NOT invented.
+ok("price: engine-computed fee/total in allowed set is clean", scorePriceIntegrity("التوصيل 12 ر.س والإجمالي 57 ر.س", [45, 30, 12, 57]).inventedCount === 0);
 
-// --- order accuracy ----------------------------------------------------------
+// --- order accuracy (name + quantity + «without» modifiers) ------------------
 ok("order: full match = 1.0",
   scoreOrderAccuracy({ items: [{ name: "كبسة دجاج" }, { name: "بيبسي" }] }, ["كبسة", "بيبسي"]).accuracy === 1);
 const oa = scoreOrderAccuracy({ items: [{ name: "كبسة" }] }, ["كبسة", "بيبسي"]);
-ok("order: partial match = 0.5 + missing recorded", oa.accuracy === 0.5 && oa.missing.length === 1);
+ok("order: partial match = 0.5 + issue recorded", oa.accuracy === 0.5 && oa.issues.length === 1);
 ok("order: empty expected → 1.0 (nothing to capture)", scoreOrderAccuracy({ items: [] }, []).accuracy === 1);
+// Codex P2: quantity is scored — one mandi when two were asked is NOT 100%.
+ok("order: qty match passes", scoreOrderAccuracy({ items: [{ name: "مندي", qty: 2 }] }, [{ name: "مندي", qty: 2 }]).accuracy === 1);
+ok("order: qty mismatch fails (1 vs 2)",
+  scoreOrderAccuracy({ items: [{ name: "مندي", qty: 1 }] }, [{ name: "مندي", qty: 2 }]).accuracy === 0);
+// Codex P2: «without» is scored — a dropped onion-removal is NOT 100%.
+ok("order: «without» removal captured passes",
+  scoreOrderAccuracy({ items: [{ name: "برجر", removed: ["بصل"] }] }, [{ name: "برجر", without: ["بصل"] }]).accuracy === 1);
+ok("order: «without» removal dropped fails",
+  scoreOrderAccuracy({ items: [{ name: "برجر" }] }, [{ name: "برجر", without: ["بصل"] }]).accuracy === 0);
 
 // --- length & emoji ----------------------------------------------------------
 ok("length: over the limit flagged", scoreLengthEmoji("x".repeat(500), 480).over === true);

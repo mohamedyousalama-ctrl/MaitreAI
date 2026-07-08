@@ -26,9 +26,9 @@
     {
       "id": 2, "name": "Order accuracy", "category": "machine", "metric": "order_accuracy", "gate": "order_accuracy",
       "scenarios": [
-        { "id": "S2-01", "turns": ["أبغى كبسة دجاج وبيبسي"], "expectItems": ["كبسة", "بيبسي"] },
-        { "id": "S2-02", "turns": ["ثنتين مندي لحم وعصير برتقال"], "expectItems": ["مندي", "عصير"] },
-        { "id": "S2-03", "turns": ["أبي برجر بدون بصل وبطاطس"], "expectItems": ["برجر", "بطاطس"] }
+        { "id": "S2-01", "turns": ["أبغى كبسة دجاج وبيبسي"], "expectOrder": [{ "name": "كبسة" }, { "name": "بيبسي" }] },
+        { "id": "S2-02", "turns": ["ثنتين مندي لحم وعصير برتقال"], "expectOrder": [{ "name": "مندي", "qty": 2 }, { "name": "عصير" }] },
+        { "id": "S2-03", "turns": ["أبي برجر بدون بصل وبطاطس"], "expectOrder": [{ "name": "برجر", "without": ["بصل"] }, { "name": "بطاطس" }] }
       ]
     },
     {

@@ -56,10 +56,20 @@ async function resolveRestaurantId() {
 }
 async function menuPrices(restaurantId) {
   const items = await fetch(`${SB}/rest/v1/menu_items?restaurant_id=eq.${restaurantId}&select=name,price`, { headers: H }).then(j).catch(() => []);
+  // Legitimate money also comes from engine-computed fees (delivery zones) + order totals —
+  // include them so a truthful fee/total isn't scored as an invented price (Codex P2).
+  const zones = await fetch(`${SB}/rest/v1/delivery_zones?restaurant_id=eq.${restaurantId}&select=fee`, { headers: H }).then(j).catch(() => []);
   return {
     names: (items || []).map((x) => x.name).filter(Boolean),
     prices: (items || []).map((x) => x.price).filter((p) => p != null),
+    fees: (zones || []).map((x) => x.fee).filter((f) => f != null),
   };
+}
+/** Numeric money amounts the ENGINE computed for a draft (total/subtotal/fee/tax) — these
+ *  are legitimate and must be allowed by the price-integrity scorer. */
+function draftAmounts(draft) {
+  const d = draft || {};
+  return [d.total, d.subtotal, d.grandTotal, d.grand_total, d.amount, d.deliveryFee, d.delivery_fee, d.fee, d.tax, d.vat].filter((v) => v != null);
 }
 async function makeConversation(restaurantId, phone) {
   const cust = await fetch(`${SB}/rest/v1/customers`, { method: "POST", headers: REP, body: JSON.stringify({ restaurant_id: restaurantId, phone, name: "تقييم ميزان" }) }).then(j);
@@ -103,11 +113,12 @@ function scoreSuite(suite, runs, menu) {
     if (suite.metric === "leakage_rate") return { leakage: scoreLeakage(allReplies) };
     if (suite.metric === "length_emoji") return { lengthEmoji: runs.map((r) => ({ id: r.id, ...scoreLengthEmoji(r.replies.at(-1) || "", suite.maxLen || 480) })) };
     if (suite.metric === "price_hallucination") {
-      const per = runs.map((r) => ({ id: r.id, ...scorePriceIntegrity(r.replies.at(-1) || "", menu.prices) }));
+      // Allowed money per reply = menu prices + delivery fees + the engine-computed draft totals.
+      const per = runs.map((r) => ({ id: r.id, ...scorePriceIntegrity(r.replies.at(-1) || "", [...menu.prices, ...menu.fees, ...draftAmounts(r.last?.draft)]) }));
       return { priceIntegrity: per, inventedPrices: per.reduce((a, b) => a + b.inventedCount, 0) };
     }
     if (suite.metric === "order_accuracy") {
-      const per = runs.map((r) => ({ id: r.id, ...scoreOrderAccuracy(r.last?.draft, (suite.scenarios.find((s) => s.id === r.id) || {}).expectItems) }));
+      const per = runs.map((r) => ({ id: r.id, ...scoreOrderAccuracy(r.last?.draft, (suite.scenarios.find((s) => s.id === r.id) || {}).expectOrder) }));
       const acc = per.length ? per.reduce((a, b) => a + b.accuracy, 0) / per.length : null;
       return { orderAccuracy: per, avgAccuracy: acc };
     }
@@ -237,15 +248,30 @@ async function main() {
     process.exit(2);
   }
   const restaurantId = await resolveRestaurantId();
+  // MIZAN grades KHALID — the persona must be ON or we'd score the base Saudi prompt (Codex P2).
+  // Read the tenant's feature_flags; ensure khalid_persona is ON for the run; restore after.
+  const frows = await fetch(`${SB}/rest/v1/restaurants?id=eq.${restaurantId}&select=feature_flags`, { headers: H }).then(j).catch(() => []);
+  const originalFlags = frows?.[0]?.feature_flags ?? {};
+  const personaWasOn = originalFlags.khalid_persona === true;
+  if (!personaWasOn) {
+    await fetch(`${SB}/rest/v1/restaurants?id=eq.${restaurantId}`, { method: "PATCH", headers: H, body: JSON.stringify({ feature_flags: { ...originalFlags, khalid_persona: true } }) });
+    console.log("MIZAN: khalid_persona was OFF — enabled for this run (will restore).");
+  }
   const menu = await menuPrices(restaurantId);
   const scores = {}; const gateValues = {};
   let anyFail = false;
-  for (const suite of MANIFEST.suites) {
-    const runs = [];
-    for (let i = 0; i < suite.scenarios.length; i++) {
-      runs.push(await runScenario(restaurantId, suite.scenarios[i], `+9665${String(Date.now()).slice(-8)}${i}`));
+  try {
+    for (const suite of MANIFEST.suites) {
+      const runs = [];
+      for (let i = 0; i < suite.scenarios.length; i++) {
+        runs.push(await runScenario(restaurantId, suite.scenarios[i], `+9665${String(Date.now()).slice(-8)}${i}`));
+      }
+      scores[suite.id] = scoreSuite(suite, runs, menu);
     }
-    scores[suite.id] = scoreSuite(suite, runs, menu);
+  } finally {
+    if (!personaWasOn) {
+      await fetch(`${SB}/rest/v1/restaurants?id=eq.${restaurantId}`, { method: "PATCH", headers: H, body: JSON.stringify({ feature_flags: originalFlags }) }).catch(() => {});
+    }
   }
   // map suite scores → gate values
   for (const g of MANIFEST.launchGates) {
