@@ -24,17 +24,41 @@
 // ============================================================================
 
 import { useState } from "react";
-import { Crown, HardHat, MessageSquare, Truck, Activity, UserPlus } from "lucide-react";
+import { Crown, HardHat, MessageSquare, Truck, Activity, UserPlus, ShieldCheck, Check, Minus } from "lucide-react";
 import { HeaderRow, SectionHeader, TruthChip, MiniModal, Toasts, pushToast } from "@/components/console-v2/kit";
 import { useMembersStore, type TeamMember } from "@/lib/members-store";
 import { useT } from "@/lib/i18n/lang";
 import type { DictKey } from "@/lib/i18n/dictionary";
 import { Bdi } from "@/components/kivo";
 
-const CMD_KEYS: DictKey[] = ["tm.cmd.status", "tm.cmd.pause", "tm.cmd.resume", "tm.cmd.86", "tm.cmd.restore"];
+// Command vocabulary — the REAL deterministic handler that runs on the staff-WhatsApp
+// webhook. Grouped by category (status / shift / item) for scannability; the vocab is a
+// static reference, the authorized-numbers list + command LOG stay GATHERING (no read route).
 const CMD_TRIGGER: Record<string, string> = {
   "tm.cmd.status": "الحالة", "tm.cmd.pause": "وقف كريم", "tm.cmd.resume": "شغّل كريم", "tm.cmd.86": "86 [صنف]", "tm.cmd.restore": "رجّع [صنف]",
 };
+const CMD_GROUPS: { catKey: DictKey; keys: DictKey[] }[] = [
+  { catKey: "tm.cmd.cat.status", keys: ["tm.cmd.status"] },
+  { catKey: "tm.cmd.cat.shift", keys: ["tm.cmd.pause", "tm.cmd.resume"] },
+  { catKey: "tm.cmd.cat.item", keys: ["tm.cmd.86", "tm.cmd.restore"] },
+];
+
+// Permission matrix — REAL, code-enforced role rules (NOT invented). Manager-diverged
+// capabilities gate on tenant.role !== "manager" at the API layer + the (manager) route
+// redirect; the two SHARED floor actions gate on membership only (requireTenant), with the
+// route handlers explicitly allowing both roles. Enforced at:
+//   settings   → app/api/settings/*  (POST) + (manager)/layout.tsx  → manager-only
+//   approvals  → app/api/knowledge/change-requests/[id]  (decision) → manager-only
+//   pos        → app/api/orders/[id]/pos  ("any operator … manager or operation") → shared
+//   item (86)  → app/api/menu/availability  ("any tenant member … can 86") → shared
+//   invite     → app/api/team/invite + app/api/members/[id]  → manager-only
+const MATRIX: { labelKey: DictKey; mgr: boolean; op: boolean }[] = [
+  { labelKey: "tm.matrix.settings", mgr: true, op: false },
+  { labelKey: "tm.matrix.approvals", mgr: true, op: false },
+  { labelKey: "tm.matrix.pos", mgr: true, op: true },
+  { labelKey: "tm.matrix.item", mgr: true, op: true },
+  { labelKey: "tm.matrix.invite", mgr: true, op: false },
+];
 
 export default function TeamPage() {
   const t = useT();
@@ -62,6 +86,9 @@ export default function TeamPage() {
           <RoleCard tier="blue" icon={<HardHat size={16} />} title={t("tm.role.op")} sub={t("tm.role.op.sub")} perms={t("tm.role.op.perms")} count={members.filter((m) => m.role === "operation").length} />
         </div>
 
+        {/* PERMISSION MATRIX — scannable who-can-do-what, mirroring the REAL role rules. */}
+        <PermMatrix />
+
         {/* MEMBERS — real roster; per-member stats GATHERING. */}
         <SectionHeader tier="blue" icon={<UserPlus size={15} />} title={t("tm.sec.members")} right={members.length > 0 ? <TruthChip state="gather" label={t("tm.stat.actions")} /> : undefined} />
         {members.length === 0 ? (
@@ -83,12 +110,17 @@ export default function TeamPage() {
         <section style={card}>
           <p style={{ fontSize: 12, color: "var(--dim)", lineHeight: 1.7, margin: "0 0 12px" }}>{t("tm.cmd.note")}</p>
           <div style={subLabel}>{t("tm.cmd.vocab")}</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-            {CMD_KEYS.map((k) => (
-              <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 11, padding: "7px 11px" }}>
-                <span dir="rtl" style={{ fontSize: 11.5, fontWeight: 800, color: "#a9d4ff" }}>{CMD_TRIGGER[k]}</span>
-                <span style={{ fontSize: 10.5, color: "var(--faint)" }}>{t(k)}</span>
-              </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+            {CMD_GROUPS.map((g) => (
+              <div key={g.catKey} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "var(--faint)", minWidth: 52 }}>{t(g.catKey)}</span>
+                {g.keys.map((k) => (
+                  <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 11, padding: "7px 11px" }}>
+                    <span dir="rtl" style={{ fontSize: 11.5, fontWeight: 800, color: "#a9d4ff" }}>{CMD_TRIGGER[k]}</span>
+                    <span style={{ fontSize: 10.5, color: "var(--faint)" }}>{t(k)}</span>
+                  </span>
+                ))}
+              </div>
             ))}
           </div>
           <div style={{ ...subLabel, display: "flex", alignItems: "center", gap: 8 }}>{t("tm.cmd.authed")} <TruthChip state="gather" /></div>
@@ -262,6 +294,53 @@ function RoleCard({ tier, icon, title, sub, perms, count }: { tier: "gold" | "bl
     </div>
   );
 }
+
+// Permission matrix — complements the role cards' prose with a scannable grid. Cells are
+// a teal check (allowed) or a faint dash (not allowed) — NEVER red; "not allowed" is a
+// neutral capability boundary, not a safety alarm. Rows reflect real code-enforced rules.
+function PermMatrix() {
+  const t = useT();
+  return (
+    <section style={card}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <ShieldCheck size={14} style={{ color: "var(--faint)" }} />
+        <span style={subLabel}>{t("tm.matrix.cap")}</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 92px 92px", rowGap: 2 }}>
+        {/* header */}
+        <span style={mtxHeadCell} />
+        <span style={{ ...mtxHeadCell, textAlign: "center", color: "var(--gold)" }}>{t("tm.role.mgr")}</span>
+        <span style={{ ...mtxHeadCell, textAlign: "center", color: "#a9d4ff" }}>{t("tm.role.op")}</span>
+        {MATRIX.map((r, i) => (
+          <MatrixRow key={r.labelKey} label={t(r.labelKey)} mgr={r.mgr} op={r.op} first={i === 0} />
+        ))}
+      </div>
+      <p style={{ fontSize: 10.5, color: "var(--faint)", lineHeight: 1.7, margin: "12px 0 0" }}>{t("tm.matrix.note")}</p>
+    </section>
+  );
+}
+function MatrixRow({ label, mgr, op, first }: { label: string; mgr: boolean; op: boolean; first: boolean }) {
+  const t = useT();
+  const border = first ? {} : { borderTop: "1px solid var(--stroke)" };
+  return (
+    <>
+      <span style={{ ...mtxCell, ...border, justifyContent: "flex-start", fontWeight: 700, color: "var(--dim)" }}>{label}</span>
+      <span style={{ ...mtxCell, ...border }}><Cell allow={mgr} yes={t("tm.matrix.allowed")} no={t("tm.matrix.denied")} /></span>
+      <span style={{ ...mtxCell, ...border }}><Cell allow={op} yes={t("tm.matrix.allowed")} no={t("tm.matrix.denied")} /></span>
+    </>
+  );
+}
+function Cell({ allow, yes, no }: { allow: boolean; yes: string; no: string }) {
+  return allow ? (
+    <span role="img" aria-label={yes} style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(14,159,110,.16)", border: "1px solid rgba(14,159,110,.34)", display: "grid", placeItems: "center", color: "#5fe0b0" }}>
+      <Check size={13} strokeWidth={3} />
+    </span>
+  ) : (
+    <span role="img" aria-label={no} style={{ color: "var(--faint)", display: "grid", placeItems: "center" }}>
+      <Minus size={14} strokeWidth={2.5} />
+    </span>
+  );
+}
 function ModalHead({ title, sub, onClose }: { title: string; sub: string; onClose: () => void }) {
   const t = useT();
   return (
@@ -293,6 +372,12 @@ const rowStyle: React.CSSProperties = {
 };
 const subLabel: React.CSSProperties = {
   fontSize: 10.5, fontWeight: 900, letterSpacing: ".06em", color: "var(--faint)", marginBottom: 8,
+};
+const mtxHeadCell: React.CSSProperties = {
+  fontSize: 10, fontWeight: 900, letterSpacing: ".05em", color: "var(--faint)", paddingBottom: 8,
+};
+const mtxCell: React.CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "center", minHeight: 40, fontSize: 12,
 };
 const primaryBtn: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 6, height: 36, padding: "0 14px", borderRadius: 12, border: 0,
