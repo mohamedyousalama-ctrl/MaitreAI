@@ -36,3 +36,14 @@ export const CONSOLE_V2 =
 // "false" (and redeploy) to make the whole module inert again. Client + server.
 export const ENABLE_DELIVERY_TRACKING =
   process.env.NEXT_PUBLIC_ENABLE_DELIVERY_TRACKING !== "false";
+
+// ENABLE_MIZAN_PANEL — the hosted MIZAN reviewer surface: /mizan/<token> where a
+// real Saudi reviewer scores Khalid's replies (the 5 human-hook suites) on their
+// phone, per-token auth (no login), scores saved server-side to Supabase via the
+// token-scoped API route. DEFAULT OFF — the whole surface (page + /api/mizan/*)
+// 404s until this is flipped on and redeployed. Standalone review surface: it does
+// NOT touch the allergen gate, persona, engine, or any customer-facing turn. Read
+// on both server and client so the route can notFound() itself when off. Code-only
+// flag; set NEXT_PUBLIC_ENABLE_MIZAN_PANEL="true" (and redeploy) to reveal it.
+export const ENABLE_MIZAN_PANEL =
+  process.env.NEXT_PUBLIC_ENABLE_MIZAN_PANEL === "true";
