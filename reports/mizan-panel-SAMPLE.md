@@ -4,7 +4,8 @@
 > These scores are DUMMY inputs to demonstrate the aggregate→gate flow. They do **not** resolve the real launch gate. The dialect gate stays PENDING-HUMAN until ≥3 real Saudi reviewers score the live packet.
 
 - **Benchmark:** MIZAN v0.1-phase1 · human-hook suites: 1, 9, 10, 11, 12
-- **Reviewers found:** 3 (SAMPLE-reviewer-1, SAMPLE-reviewer-2, SAMPLE-reviewer-3) · min per item required: 3
+- **Reviewers found:** 3 (SAMPLE-reviewer-1, SAMPLE-reviewer-2, SAMPLE-reviewer-3) · min per item required: 3 (and every rubric dimension needs ≥3 scores)
+- **Packet:** `mizan-panel-SAMPLE` (reviewer files for other packets are rejected)
 - **Reviews dir:** `scripts/mizan/sample/reviewers`
 - **Variance flag:** an item whose reviewers span ≥ 4 points on a dimension is flagged HIGH-VARIANCE (adjudicate, don't average).
 

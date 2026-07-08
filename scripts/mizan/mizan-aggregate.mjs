@@ -28,7 +28,30 @@ function arg(name, dflt) {
 const REVIEWS_DIR = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : (process.env.MIZAN_REVIEWS_DIR || join(here, "..", "..", "reports", "reviews"));
 const LABEL = arg("label", process.env.MIZAN_PANEL_LABEL || "");
 const PACKET_PATH = arg("packet", "");
+const EXPECTED_PACKET_ID = arg("packetId", "");
 const isSample = /sample/i.test(LABEL);
+
+/** Reject reviewer files exported against a DIFFERENT packet run. Scenario IDs (S1-01…) are
+ *  stable across runs, so stale ratings for old replies/persona could otherwise be counted toward
+ *  the live gate and wrongly resolve the dialect slot (Codex P1). Expected packetId = --packetId,
+ *  else the packet file's id (--packet), else the single distinct id among the files. If the files
+ *  carry MORE than one packetId and none was named, we refuse to blend them. */
+function partitionByPacket(files, expected) {
+  const kept = [], packetSkips = [];
+  for (const f of files) {
+    const pid = f && f.packetId ? String(f.packetId) : "";
+    if (expected && pid !== expected) { packetSkips.push({ reason: pid ? `packetId mismatch (${pid} ≠ ${expected})` : `missing packetId (expected ${expected})`, file: f.reviewerName || f.reviewerId }); continue; }
+    kept.push(f);
+  }
+  return { kept, packetSkips };
+}
+function resolveExpectedPacketId(files, explicit, packet) {
+  if (explicit) return { id: explicit, mixed: false };
+  if (packet && packet.packetId) return { id: String(packet.packetId), mixed: false };
+  const ids = [...new Set(files.map((f) => f && f.packetId).filter(Boolean))];
+  if (ids.length <= 1) return { id: ids[0] || "", mixed: false };
+  return { id: "", mixed: true, ids };
+}
 
 async function loadReviewerFiles(dir) {
   let names = [];
@@ -43,14 +66,14 @@ async function loadReviewerFiles(dir) {
   return { files, dir, missing: false };
 }
 
-async function loadPacketReplies() {
-  if (!PACKET_PATH) return {};
+async function loadPacket() {
+  if (!PACKET_PATH) return { byId: {}, packet: null };
   try {
     const p = JSON.parse(await readFile(PACKET_PATH, "utf8"));
     const byId = {};
     for (const it of (p.items || [])) byId[it.scenarioId] = { turns: it.turns, replies: it.replies };
-    return byId;
-  } catch { return {}; }
+    return { byId, packet: p };
+  } catch { return { byId: {}, packet: null }; }
 }
 
 function fmt(n, d = 2) { return typeof n === "number" ? n.toFixed(d) : "—"; }
@@ -58,9 +81,24 @@ function fmt(n, d = 2) { return typeof n === "number" ? n.toFixed(d) : "—"; }
 async function main() {
   const date = stamp();
   const humanSuites = MANIFEST.suites.filter((s) => s.category === "human" && HUMAN_SUITE_IDS.includes(s.id));
-  const { files, dir, missing } = await loadReviewerFiles(REVIEWS_DIR);
-  const { byScenario, skipped } = collectByScenario(files);
-  const replies = await loadPacketReplies();
+  const { files: allFiles, dir, missing } = await loadReviewerFiles(REVIEWS_DIR);
+  const { byId: replies, packet } = await loadPacket();
+
+  // Enforce packetId BEFORE aggregating — never blend ratings from different packet runs.
+  const expected = resolveExpectedPacketId(allFiles, EXPECTED_PACKET_ID, packet);
+  if (expected.mixed) {
+    const outDir = join(here, "..", "..", "reports");
+    await mkdir(outDir, { recursive: true });
+    const msg = `Reviewer files carry MULTIPLE packetIds (${expected.ids.join(", ")}) and none was named. Refusing to blend runs — pass --packetId=<id> (or --packet=<path>) to pick the target packet.`;
+    await writeFile(join(outDir, `mizan-panel-${date}.md`), `# MIZAN — native-panel results — BLOCKED — ${date}\n\n> ⚠️ ${msg}\n`, "utf8");
+    console.error("MIZAN aggregate blocked:", msg);
+    process.exitCode = 2;
+    return;
+  }
+  const { kept: files, packetSkips } = partitionByPacket(allFiles, expected.id);
+  const { byScenario, skipped: idSkips } = collectByScenario(files);
+  const skipped = [...idSkips, ...packetSkips];
+  const expectedPacketId = expected.id;
 
   // Aggregate every human suite.
   const aggBySuite = {};
@@ -93,7 +131,8 @@ async function main() {
     L.push(`> These scores are DUMMY inputs to demonstrate the aggregate→gate flow. They do **not** resolve the real launch gate. The dialect gate stays PENDING-HUMAN until ≥${MIN_REVIEWERS} real Saudi reviewers score the live packet.`, "");
   }
   L.push(`- **Benchmark:** ${MANIFEST.name} v${MANIFEST.version} · human-hook suites: ${HUMAN_SUITE_IDS.join(", ")}`);
-  L.push(`- **Reviewers found:** ${reviewerIds.length}${reviewerIds.length ? ` (${reviewerIds.join(", ")})` : ""} · min per item required: ${MIN_REVIEWERS}`);
+  L.push(`- **Reviewers found:** ${reviewerIds.length}${reviewerIds.length ? ` (${reviewerIds.join(", ")})` : ""} · min per item required: ${MIN_REVIEWERS} (and every rubric dimension needs ≥${MIN_REVIEWERS} scores)`);
+  L.push(`- **Packet:** ${expectedPacketId ? `\`${expectedPacketId}\` (reviewer files for other packets are rejected)` : "not specified — no packetId cross-check"}`);
   L.push(`- **Reviews dir:** \`${dir.replace(join(here, "..", ".."), ".")}\`${missing ? " (not found — no reviewer files yet)" : ""}`);
   L.push(`- **Variance flag:** an item whose reviewers span ≥ ${VARIANCE_RANGE_FLAG} points on a dimension is flagged HIGH-VARIANCE (adjudicate, don't average).`, "");
 

@@ -165,6 +165,17 @@
   var packet = null, idx = 0, state = { scores:{}, notes:{} }, reviewerName = "";
 
   function slug(s){ return String(s||"").trim().replace(/\s+/g,"-").replace(/[^\w؀-ۿ-]/g,"").slice(0,40) || "reviewer"; }
+  // A persisted per-browser random id so two reviewers who type the SAME display name still get
+  // distinct reviewerIds — otherwise the aggregate would dedupe them by reviewerId+scenario and
+  // drop one person's scores / leave the panel under-reviewed (Codex P2). Combined with the name
+  // slug so a human reading the file still sees who it was.
+  function browserUid(){
+    var k = "mizan_reviewer_uid";
+    var v = null; try { v = localStorage.getItem(k); } catch(e){}
+    if(!v){ v = "u" + Math.random().toString(36).slice(2,9) + Math.random().toString(36).slice(2,5); try { localStorage.setItem(k, v); } catch(e){} }
+    return v;
+  }
+  function reviewerIdFor(name){ return slug(name) + "-" + browserUid(); }
   function storeKey(){ return "mizan_" + (packet && packet.packetId) + "_" + slug(reviewerName); }
   function save(){ try { localStorage.setItem(storeKey(), JSON.stringify({ idx: idx, state: state, reviewerName: reviewerName })); } catch(e){} }
   function load(){ try { var raw = localStorage.getItem(storeKey()); if(raw){ var o = JSON.parse(raw); state = o.state || state; idx = o.idx || 0; } } catch(e){} }
@@ -242,7 +253,7 @@
     var scores = packet.items.map(function(it){
       return { scenarioId: it.scenarioId, suiteId: it.suiteId, dims: state.scores[it.scenarioId] || {}, notes: state.notes[it.scenarioId] || "" };
     });
-    return { packetId: packet.packetId, reviewerId: slug(reviewerName), reviewerName: reviewerName,
+    return { packetId: packet.packetId, reviewerId: reviewerIdFor(reviewerName), reviewerName: reviewerName,
       submittedAt: new Date().toISOString(), scores: scores };
   }
   function download(name, text, type){
@@ -251,7 +262,7 @@
     setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
   }
   $("export-json").addEventListener("click", function(){ var r = buildResult();
-    download("mizan-scores-" + slug(reviewerName) + ".json", JSON.stringify(r, null, 2), "application/json"); });
+    download("mizan-scores-" + r.reviewerId + ".json", JSON.stringify(r, null, 2), "application/json"); });
   $("export-csv").addEventListener("click", function(){
     var rows = [["reviewerId","reviewerName","scenarioId","suiteId","dimension","score","notes"]];
     var r = buildResult();
@@ -259,7 +270,7 @@
       if(!dims.length) rows.push([r.reviewerId, r.reviewerName, s.scenarioId, s.suiteId, "", "", s.notes]);
       dims.forEach(function(d){ rows.push([r.reviewerId, r.reviewerName, s.scenarioId, s.suiteId, d, s.dims[d], s.notes]); }); });
     var csv = rows.map(function(row){ return row.map(function(c){ return '"'+String(c==null?"":c).replace(/"/g,'""')+'"'; }).join(","); }).join("\n");
-    download("mizan-scores-" + slug(reviewerName) + ".csv", "﻿" + csv, "text/csv"); });
+    download("mizan-scores-" + r.reviewerId + ".csv", "﻿" + csv, "text/csv"); });
   $("back-review").addEventListener("click", function(){ show("scr-item"); renderItem(); });
 
   // welcome → start

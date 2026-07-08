@@ -70,11 +70,16 @@ export function aggregateItem(scenarioId, reviewerScores, dimensions) {
     if (m != null) dimMeans.push(m);
   }
   const itemMean = mean(dimMeans);
-  const scored = reviewerCount >= MIN_REVIEWERS;
+  // An item is SCORED only when EVERY rubric dimension has ≥ MIN_REVIEWERS finite human scores —
+  // not merely when ≥3 reviewer rows exist. The UI lets a reviewer export with dimensions left
+  // blank; without this, three mostly-empty submissions (or one filled dimension) would resolve
+  // to SCORED/PASS off a mean of only the present dimensions. Any under-scored dimension keeps the
+  // whole item PENDING-HUMAN (Codex P1). PENDING-HUMAN always wins — never a partial pass/fail.
+  const everyDimComplete = dimensions.length > 0 && dimensions.every((d) => dims[d].count >= MIN_REVIEWERS);
+  const scored = reviewerCount >= MIN_REVIEWERS && everyDimComplete;
   const notes = list.map((r) => ({ reviewerId: r.reviewerId, note: r.notes || "" })).filter((n) => n.note);
   return {
-    scenarioId, reviewerCount, dims, itemMean, highVariance: anyHighVariance, notes,
-    // PENDING-HUMAN wins over everything: an under-reviewed item is NEVER given a pass/fail.
+    scenarioId, reviewerCount, dims, itemMean, highVariance: anyHighVariance, notes, everyDimComplete,
     status: !scored ? "PENDING-HUMAN" : anyHighVariance ? "HIGH-VARIANCE" : "SCORED",
   };
 }

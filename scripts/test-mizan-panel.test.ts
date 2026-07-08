@@ -66,6 +66,20 @@ ok("item: 2 reviewers (< 3) → PENDING-HUMAN", item2.status === "PENDING-HUMAN"
 const item0 = aggregateItem("S1-04", [], DIMS);
 ok("item: 0 reviewers → PENDING-HUMAN, itemMean null (never guessed)", item0.status === "PENDING-HUMAN" && item0.itemMean === null);
 
+// ★ Codex P1: 3 reviewers but a dimension left blank by one → NOT fully scored → PENDING-HUMAN.
+const itemPartialDim = aggregateItem("S1-05", [
+  { reviewerId: "r1", dims: { authenticity: 8, warmth_karam: 8, register_fit: 8 }, notes: "" },
+  { reviewerId: "r2", dims: { authenticity: 8, warmth_karam: 8, register_fit: 8 }, notes: "" },
+  { reviewerId: "r3", dims: { authenticity: 8, warmth_karam: 8 /* register_fit omitted */ }, notes: "" },
+], DIMS);
+ok("item: 3 reviewers but a blank dimension → PENDING-HUMAN (not a partial pass)", itemPartialDim.status === "PENDING-HUMAN" && itemPartialDim.everyDimComplete === false);
+const itemAllDims = aggregateItem("S1-06", [
+  { reviewerId: "r1", dims: { authenticity: 8, warmth_karam: 8, register_fit: 8 }, notes: "" },
+  { reviewerId: "r2", dims: { authenticity: 8, warmth_karam: 8, register_fit: 8 }, notes: "" },
+  { reviewerId: "r3", dims: { authenticity: 8, warmth_karam: 8, register_fit: 8 }, notes: "" },
+], DIMS);
+ok("item: 3 reviewers all dimensions complete → SCORED", itemAllDims.status === "SCORED" && itemAllDims.everyDimComplete === true);
+
 // --- aggregateSuite ----------------------------------------------------------
 const here = dirname(fileURLToPath(import.meta.url));
 const M = JSON.parse(readFileSync(join(here, "mizan", "mizan-suites.json"), "utf8"));
