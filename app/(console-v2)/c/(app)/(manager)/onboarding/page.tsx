@@ -31,10 +31,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Radio, FlaskConical, Rocket, Check, ArrowRight, Send, Loader2,
-  ExternalLink, ShieldCheck, ShieldAlert, type LucideIcon,
+  ExternalLink, ShieldCheck, ShieldAlert, MessageCircle, RotateCw,
+  AlertTriangle, type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { HeaderRow, TruthChip, type TruthState } from "@/components/console-v2/kit";
+import { FbSdkLoader } from "@/components/console-v2/FbSdkLoader";
 import { KivoMark } from "@/components/brand/KivoLogo";
 import { useConsoleDataStore } from "@/lib/console-data-state";
 import { useT } from "@/lib/i18n/lang";
@@ -57,6 +59,13 @@ const PROBE_LABEL: Record<string, DictKey> = {
 };
 // pass → live (emerald) · fail → degraded (amber, NOT red) · unknown → gather
 const PROBE_TRUTH: Record<ProbeStatus, TruthState> = { pass: "live", fail: "degraded", unknown: "gather" };
+
+// Public Meta credentials for Embedded Signup — present ONLY once Mohamed has set
+// up the Meta app deployment-side. App ID is public-ish; the App SECRET stays
+// server-side (WHATSAPP_APP_SECRET) and is never read here. Either blank ⇒ the
+// connect card degrades honestly to a SOON "not configured yet" state.
+const META_APP_ID = process.env.NEXT_PUBLIC_WHATSAPP_APP_ID || "";
+const META_CONFIG_ID = process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID || "";
 
 export default function OnboardingPage() {
   const t = useT();
@@ -186,24 +195,28 @@ function WhatsAppStep() {
   const [rollup, setRollup] = useState<ProbeStatus | null>(null);
   const [err, setErr] = useState(false);
 
-  useEffect(() => {
-    let dead = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/settings/whatsapp-health");
-        const j = await res.json();
-        if (dead) return;
-        if (!res.ok || !Array.isArray(j.probes)) { setErr(true); return; }
-        setProbes(j.probes as Probe[]);
-        setRollup((j.rollup as ProbeStatus) ?? null);
-      } catch { if (!dead) setErr(true); }
-    })();
-    return () => { dead = true; };
+  // Extracted so the Embedded Signup card can re-pull the truth board after a
+  // successful connect — the board (not the client) remains the source of truth.
+  const loadHealth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings/whatsapp-health");
+      const j = await res.json();
+      if (!res.ok || !Array.isArray(j.probes)) { setErr(true); return; }
+      setErr(false);
+      setProbes(j.probes as Probe[]);
+      setRollup((j.rollup as ProbeStatus) ?? null);
+    } catch { setErr(true); }
   }, []);
+
+  useEffect(() => { void loadHealth(); }, [loadHealth]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <StepHead kicker="ob.wa.kicker" h="ob.wa.h" sub="ob.wa.sub" />
+
+      {/* Embedded Signup — the client-side connect action (Meta popup → backend). */}
+      <EmbeddedSignupCard onConnected={loadHealth} />
+
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)" }}>{t("ob.wa.board")}</div>
         <div style={{ fontSize: 11, color: "var(--faint)" }}>{t("ob.wa.boardSub")}</div>
@@ -243,6 +256,186 @@ function WhatsAppStep() {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Embedded Signup card — the CLIENT-side piece. Loads Meta's SDK on this step
+// only, runs FB.login() with the Embedded Signup config_id, captures the auth
+// code + phone/waba ids, and POSTs them to the EXISTING backend route
+// (/api/onboarding/embedded-signup). Honest per-widget truth:
+//   connected → LIVE · failure/cancel → DEGRADED (amber, NOT red) + retry ·
+//   unconfigured (env missing) → SOON "not configured yet" (never a broken popup).
+// SDK-flow logic ported from feat/embedded-signup-frontend; the backend is the
+// contract — body { restaurantId, code, phoneNumberId, wabaId }.
+// ---------------------------------------------------------------------------
+type SdkState = "loading" | "ready" | "error";
+type ConnectUi = "idle" | "connecting" | "connected" | "error";
+
+function EmbeddedSignupCard({ onConnected }: { onConnected?: () => void }) {
+  const t = useT();
+  const rid = useConsoleDataStore((s) => s.tenantId);
+  const configured = !!(META_APP_ID && META_CONFIG_ID);
+
+  const [sdkState, setSdkState] = useState<SdkState>(configured ? "loading" : "error");
+  const [ui, setUi] = useState<ConnectUi>("idle");
+  const [errKey, setErrKey] = useState<DictKey | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const handleSdkReady = useCallback(() => setSdkState("ready"), []);
+  const handleSdkError = useCallback(() => setSdkState("error"), []);
+
+  // Real Embedded Signup launch. The auth code comes from FB.login()'s
+  // authResponse; the phone/waba ids arrive via Meta's postMessage BEFORE the
+  // login callback resolves — so we register the message listener first.
+  const connect = useCallback(async () => {
+    if (!configured) return;
+    if (!rid) { setUi("error"); setErrKey("ob.wa.es.noTenant"); return; }
+    if (sdkState !== "ready" || !window.FB) { setUi("error"); setErrKey("ob.wa.es.sdkError"); return; }
+
+    setUi("connecting");
+    setErrKey(null);
+
+    let phoneNumberId: string | null = null;
+    let wabaId: string | null = null;
+
+    // ⚠️  Meta sends WA_EMBEDDED_SIGNUP with { data: { phone_number_id, waba_id } }
+    //     on FINISH. Verify this shape on first live test — Meta changes it silently.
+    const messageHandler = (event: MessageEvent) => {
+      if (event.origin !== "https://www.facebook.com") return;
+      try {
+        const payload = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (payload?.type !== "WA_EMBEDDED_SIGNUP") return;
+        if (payload.event === "FINISH") {
+          phoneNumberId = payload.data?.phone_number_id ?? null;
+          wabaId = payload.data?.waba_id ?? null;
+        }
+      } catch { /* non-JSON / unrelated message — ignore */ }
+    };
+    window.addEventListener("message", messageHandler);
+
+    try {
+      const auth = await new Promise<{ authResponse?: { code?: string } | null }>((resolve) =>
+        window.FB!.login(resolve, {
+          config_id: META_CONFIG_ID,
+          response_type: "code",
+          override_default_response_type: true,
+          scope: "whatsapp_business_management,whatsapp_business_messaging",
+          extras: {
+            feature: "whatsapp_embedded_signup",
+            sessionInfoVersion: "3", // ⚠️  verify this value is current against Meta docs
+          },
+        }),
+      );
+      window.removeEventListener("message", messageHandler);
+
+      const code = auth?.authResponse?.code;
+      if (!code) { setUi("error"); setErrKey("ob.wa.es.cancelled"); return; }
+      if (!phoneNumberId || !wabaId) { setUi("error"); setErrKey("ob.wa.es.noPhone"); return; }
+
+      const res = await fetch("/api/onboarding/embedded-signup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ restaurantId: rid, code, phoneNumberId, wabaId }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.configured) { setUi("error"); setErrKey("ob.wa.es.failed"); return; }
+
+      setUi("connected");
+      onConnected?.();
+    } catch {
+      window.removeEventListener("message", messageHandler);
+      setUi("error");
+      setErrKey("ob.wa.es.failed");
+    }
+  }, [configured, rid, sdkState, onConnected]);
+
+  const retry = useCallback(() => {
+    setErrKey(null);
+    setUi("idle");
+    if (sdkState === "error") { setSdkState("loading"); setReloadNonce((n) => n + 1); }
+  }, [sdkState]);
+
+  // ── Unconfigured: honest SOON degrade — no broken popup. ──
+  if (!configured) {
+    return (
+      <div style={esCard}>
+        <div style={esIconWrap}><MessageCircle size={20} style={{ color: "#8ce8cc" }} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={esRow}>
+            <span style={esTitle}>{t("ob.wa.es.soonH")}</span>
+            <TruthChip state="soon" />
+          </div>
+          <div style={esSub}>{t("ob.wa.es.soonB")}</div>
+        </div>
+      </div>
+    );
+  }
+
+  const sdkLoading = sdkState === "loading";
+  const connecting = ui === "connecting";
+  const busy = connecting || sdkLoading;
+
+  return (
+    <div style={esCard}>
+      {/* Load Meta's SDK on THIS step only (never global). Keyed so retry remounts. */}
+      <FbSdkLoader key={reloadNonce} appId={META_APP_ID} onReady={handleSdkReady} onError={handleSdkError} />
+
+      <div style={esIconWrap}>
+        {ui === "connected"
+          ? <Check size={20} strokeWidth={3} style={{ color: "#8ce8cc" }} />
+          : <MessageCircle size={20} style={{ color: "#8ce8cc" }} />}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={esRow}>
+          <span style={esTitle}>{ui === "connected" ? t("ob.wa.es.connectedH") : t("ob.wa.es.title")}</span>
+          {ui === "connected" && <TruthChip state="live" />}
+          {ui === "error" && <TruthChip state="degraded" />}
+        </div>
+        <div style={esSub}>{ui === "connected" ? t("ob.wa.es.connectedB") : t("ob.wa.es.sub")}</div>
+
+        {/* Honest amber error line (never red) + retry. */}
+        {ui === "error" && errKey && (
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 10, fontSize: 11.5, fontWeight: 700, color: "#e8b45a" }}>
+            <AlertTriangle size={14} /> {t(errKey)}
+          </div>
+        )}
+
+        {ui !== "connected" && (
+          <button
+            type="button"
+            onClick={() => (ui === "error" ? retry() : void connect())}
+            disabled={busy}
+            style={{
+              ...navBtn, ...navPrimary, marginTop: 12, opacity: busy ? 0.6 : 1,
+              cursor: busy ? "not-allowed" : "pointer",
+              display: "inline-flex", alignItems: "center", gap: 8,
+            }}
+          >
+            {busy && <Loader2 size={14} className="kv-spin" />}
+            {ui === "error"
+              ? (<><RotateCw size={14} /> {t("ob.wa.es.retry")}</>)
+              : connecting ? t("ob.wa.es.connecting")
+              : sdkLoading ? t("ob.wa.es.loadingSdk")
+              : t("ob.wa.es.connect")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const esCard: React.CSSProperties = {
+  display: "flex", gap: 13, padding: "16px 18px", borderRadius: 15,
+  background: "rgba(14,159,110,.08)", border: "1px solid rgba(14,159,110,.3)",
+};
+const esIconWrap: React.CSSProperties = {
+  width: 42, height: 42, borderRadius: 12, flex: "none", display: "grid", placeItems: "center",
+  background: "rgba(14,159,110,.15)", border: "1px solid rgba(14,159,110,.3)",
+};
+const esRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" };
+const esTitle: React.CSSProperties = { fontSize: 13.5, fontWeight: 800, color: "var(--txt)" };
+const esSub: React.CSSProperties = { fontSize: 11.5, color: "var(--dim)", lineHeight: 1.6, marginTop: 4 };
 
 // ---------------------------------------------------------------------------
 // Step 2 — Test drive (the real agent, sandboxed) — phone-frame anatomy
