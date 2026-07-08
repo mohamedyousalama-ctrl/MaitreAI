@@ -7,17 +7,16 @@
 // named active-packet-data.ts (NOT *.data.ts — the ts-ext resolver treats a ".data"
 // suffix as a file extension and fails to resolve it).
 //
-// This committed default is UNSEEDED (empty replies): it renders the flow but has no
-// live replies to score. Regenerate against a seeded KSA tenant (khalid_persona ON)
-// with:  node scripts/mizan/mizan-packet.mjs --emit-active
+// Regenerate against a seeded KSA tenant (khalid_persona ON) with:
+//   node scripts/mizan/mizan-packet.mjs --emit-active
 // which rewrites JUST this file with the live packetId + Khalid's real replies. No
 // scores live here — only the prompts/replies a human reads. Scores go to Supabase.
 // ============================================================================
 
 export const ACTIVE_PACKET_DATA = {
-  "packetId": "mizan-panel-UNSEEDED",
+  "packetId": "mizan-panel-2026-07-08-200559-a39f",
   "benchmark": "MIZAN v0.1-phase1",
-  "unseeded": true,
+  "unseeded": false,
   "minReviewers": 3,
   "note": "لكل رد: قيّم من ١ إلى ١٠ على كل بُعد، وأضف ملاحظة إن رغبت. قيّم اللهجة والأسلوب فقط.",
   "suites": [
@@ -87,7 +86,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "السلام عليكم، عندكم كبسة؟"
       ],
-      "replies": [],
+      "replies": [
+        "وعليكم السلام ورحمة الله 🌟\n\nهلا والله، أبشر — عندنا كبستين:\n\n- **كبسة دجاج** — 35 ر.س\n  أرز بسمتي مع دجاج وبهارات الكبسة السعودية\n\n- **كبسة لحم** — 45 ر.س\n  أرز بسمتي مع لحم غنم طري وبهارات\n\nتحب أيٍّ منهم؟"
+      ],
       "dimensions": [
         "authenticity",
         "warmth_karam",
@@ -104,7 +105,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "وش تنصحني اطلب اليوم؟"
       ],
-      "replies": [],
+      "replies": [
+        "هلا والله، نوّرت! 🌟\n\nلو تحب شي دسم ومشبع، **المندي لحم** خيار ما يخيب — لحم غنم طري ومدخّن مع أرز مبهّر، بـ 52 ر.س.\n\nولو تميل للخفيف المشوي، **شيش طاووق** قطع دجاج متبّلة على الفحم بـ 32 ر.س وما تقصّر.\n\nتحب حاجة دسمة ولا تميل للمشوي؟"
+      ],
       "dimensions": [
         "authenticity",
         "warmth_karam",
@@ -121,7 +124,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "هلا، إيش عندكم أطباق اليوم؟"
       ],
-      "replies": [],
+      "replies": [
+        "خذت بالي إنك ذكرت «البان» 🙏 صحتك أهم شي عندنا — ما أقدر أأكد سلامة الأصناف بدون ما المطبخ يتأكد، فبحوّلك لفريق المطعم يساعدونك تختار بأمان."
+      ],
       "dimensions": [
         "authenticity",
         "warmth_karam",
@@ -138,7 +143,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "أبغى شي دسم ومشبع"
       ],
-      "replies": [],
+      "replies": [
+        "هلا والله، نوّرت 🌟\n\nعندنا خيارات دسمة ومشبعة تمام — أبرزها:\n\n- **مندي لحم** — لحم غنم طري ودسم مع أرز مبهّر، بـ 52 ر.س\n- **مضغوط لحم** — لحم مضغوط دسم مع أرز أحمر، بـ 48 ر.س\n- **كبسة لحم** — أرز بسمتي مع لحم غنم طري وبهارات، بـ 45 ر.س\n\nتحب طبق اللحم، ولا تميل أكثر للدجاج؟"
+      ],
       "dimensions": [
         "authenticity",
         "warmth_karam",
@@ -155,7 +162,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "حبيت الأكل مرة، شكراً"
       ],
-      "replies": [],
+      "replies": [
+        "هلا والله، نوّرت! 🌟\n\nيسعدنا إنك استمتعت — الله يعطيك العافية، دوم تشرّفنا."
+      ],
       "dimensions": [
         "tone_fit",
         "warmth",
@@ -172,7 +181,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "الطلب متأخر شوي؟"
       ],
-      "replies": [],
+      "replies": [
+        "على راسي، آسف على الانتظار 🙏\n\nبصراحة، ما عندي طلب نشط مسجّل في محادثتنا هنا حتى أقدر أتابع حالته. هل ممكن تأكد إن الطلب اتسجّل من هنا؟ أو تعطيني رقم الطلب وأشوف وين وصل؟"
+      ],
       "dimensions": [
         "tone_fit",
         "warmth",
@@ -189,7 +200,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "الطلب طلع غلط"
       ],
-      "replies": [],
+      "replies": [
+        "أسف والله، هذا ما يصير منّا 🙏\n\nوش اللي طلع غلط بالضبط؟ قولي التفاصيل عشان نشوف أفضل حل لك."
+      ],
       "dimensions": [
         "tone_fit",
         "warmth",
@@ -206,7 +219,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "أبغى كبسة بس"
       ],
-      "replies": [],
+      "replies": [
+        "هلا والله، نوّرت! 🌟\n\nعندنا كبسة دجاج بـ 35 ر.س، وكبسة لحم بـ 45 ر.س — أيهم يناسبك؟"
+      ],
       "dimensions": [
         "natural_offer",
         "not_pushy",
@@ -223,7 +238,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "خلص طلبي، شي ثاني؟"
       ],
-      "replies": [],
+      "replies": [
+        "خذت بالي إنك ذكرت «سوداني» 🙏 صحتك أهم شي عندنا — ما أقدر أأكد سلامة الأصناف بدون ما المطبخ يتأكد، فبحوّلك لفريق المطعم يساعدونك تختار بأمان."
+      ],
       "dimensions": [
         "natural_offer",
         "not_pushy",
@@ -240,7 +257,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "الأكل كان بارد وما عجبني"
       ],
-      "replies": [],
+      "replies": [
+        "آسف على هذي التجربة، هذا ما يليق ومو مستوانا اللي نرتضيه 🙏\n\nتبي أحوّلك لفريق المطعم يتابعون معك مباشرة، ولا تبي تخبرني أكثر عن اللي صار عشان نشوف الحل المناسب؟"
+      ],
       "dimensions": [
         "ownership",
         "no_defensiveness",
@@ -257,7 +276,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "نقص من طلبي صنف"
       ],
-      "replies": [],
+      "replies": [
+        "وضّح لي وش الصنف اللي ناقص، وأنا أتابع معك 🙏"
+      ],
       "dimensions": [
         "ownership",
         "no_defensiveness",
@@ -274,7 +295,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "أول مرة أطلب منكم"
       ],
-      "replies": [],
+      "replies": [
+        "هلا والله، نوّرت ومرحباً فيك 🌟\n\nأنا خالد من KSA Dry-Run — تجربة السعودية، وأنا بخدمتك. وش تشتهي اليوم؟ قولي وأنا أرشّحك!"
+      ],
       "dimensions": [
         "karam_warmth",
         "not_theatrical",
@@ -291,7 +314,9 @@ export const ACTIVE_PACKET_DATA = {
       "turns": [
         "الله يعطيكم العافية"
       ],
-      "replies": [],
+      "replies": [
+        "الله يعافيك، هلا والله 🌟\n\nأنا خالد من KSA Dry-Run — تجربة السعودية، تفضّل وش نخدمك فيه؟"
+      ],
       "dimensions": [
         "karam_warmth",
         "not_theatrical",
