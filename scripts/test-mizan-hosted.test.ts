@@ -11,6 +11,7 @@
 import { hashToken, parseTokenHashes, isValidReviewerToken } from "../lib/mizan/token.ts";
 import { reviewerPacket, validateSubmission } from "../lib/mizan/active-packet.ts";
 import { upsertReview, getReviewsForReviewer } from "../lib/db/mizan-reviews.ts";
+import { uniqueHostedPacketId } from "./mizan/mizan-packet-id.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.log("  ❌", n); } };
@@ -33,26 +34,49 @@ ok("auth: empty allowlist → false (fail-closed)", isValidReviewerToken(T, new 
 ok("auth: empty token → false", isValidReviewerToken("", set) === false);
 
 // --- packet submission validation -------------------------------------------
-const packet = reviewerPacket();
-const scenario = packet.items[0].scenarioId;                // e.g. S1-01
-const dim = packet.items[0].dimensions[0];                  // e.g. authenticity
-const suiteId = packet.items[0].suiteId;
+// A SEEDED fixture (unseeded:false, items carry real replies) for the happy path.
+const dims = ["authenticity", "warmth_karam", "register_fit"];
+const seeded: any = {
+  packetId: "pkt-seeded", benchmark: "MIZAN vX", unseeded: false, minReviewers: 3, note: "", suites: [],
+  items: [{ scenarioId: "S1-01", suiteId: 1, suiteName: "Dialect", region: "najd", frame: null, turns: ["مرحبا"], replies: ["هلا والله، حيّاك"], dimensions: dims, scale: 10 }],
+};
+const scenario = "S1-01";
+const dim = "authenticity";
+const suiteId = 1;
 
-const good = validateSubmission(packet, { scenarioId: scenario, dimension: dim, score: 8, notes: "طبيعي" });
+const good = validateSubmission(seeded, { scenarioId: scenario, dimension: dim, score: 8, notes: "طبيعي" });
 ok("validate: valid cell accepted", good.ok === true);
 ok("validate: suiteId taken from packet (not client)", good.ok && good.value.suiteId === suiteId);
 ok("validate: notes carried through", good.ok && good.value.notes === "طبيعي");
 // suiteId sent by the client is ignored — packet wins
-const spoof = validateSubmission(packet, { scenarioId: scenario, dimension: dim, score: 5, suiteId: 999 });
+const spoof = validateSubmission(seeded, { scenarioId: scenario, dimension: dim, score: 5, suiteId: 999 });
 ok("validate: client-sent suiteId is overridden by the packet", spoof.ok && spoof.value.suiteId === suiteId);
 
-ok("validate: unknown scenario rejected", validateSubmission(packet, { scenarioId: "S9-99", dimension: dim, score: 8 }).ok === false);
-ok("validate: off-rubric dimension rejected", validateSubmission(packet, { scenarioId: scenario, dimension: "made_up", score: 8 }).ok === false);
-ok("validate: score 0 rejected (below range)", validateSubmission(packet, { scenarioId: scenario, dimension: dim, score: 0 }).ok === false);
-ok("validate: score 11 rejected (above scale)", validateSubmission(packet, { scenarioId: scenario, dimension: dim, score: 11 }).ok === false);
-ok("validate: non-integer score rejected", validateSubmission(packet, { scenarioId: scenario, dimension: dim, score: 7.5 }).ok === false);
-ok("validate: missing score rejected", validateSubmission(packet, { scenarioId: scenario, dimension: dim }).ok === false);
-ok("validate: empty notes → null", (() => { const r = validateSubmission(packet, { scenarioId: scenario, dimension: dim, score: 6 }); return r.ok && r.value.notes === null; })());
+ok("validate: unknown scenario rejected", validateSubmission(seeded, { scenarioId: "S9-99", dimension: dim, score: 8 }).ok === false);
+ok("validate: off-rubric dimension rejected", validateSubmission(seeded, { scenarioId: scenario, dimension: "made_up", score: 8 }).ok === false);
+ok("validate: score 0 rejected (below range)", validateSubmission(seeded, { scenarioId: scenario, dimension: dim, score: 0 }).ok === false);
+ok("validate: score 11 rejected (above scale)", validateSubmission(seeded, { scenarioId: scenario, dimension: dim, score: 11 }).ok === false);
+ok("validate: non-integer score rejected", validateSubmission(seeded, { scenarioId: scenario, dimension: dim, score: 7.5 }).ok === false);
+ok("validate: missing score rejected", validateSubmission(seeded, { scenarioId: scenario, dimension: dim }).ok === false);
+ok("validate: empty notes → null", (() => { const r = validateSubmission(seeded, { scenarioId: scenario, dimension: dim, score: 6 }); return r.ok && r.value.notes === null; })());
+
+// ★ Fix 1 — gate-integrity guards: never score a reply that isn't there.
+// (a) an UNSEEDED packet rejects EVERY submission (the committed default is unseeded).
+const unseeded = reviewerPacket();
+ok("validate: committed default packet IS unseeded (safety default)", unseeded.unseeded === true);
+ok("validate: unseeded packet rejects all submissions", validateSubmission(unseeded, { scenarioId: unseeded.items[0].scenarioId, dimension: unseeded.items[0].dimensions[0], score: 8 }).ok === false);
+ok("validate: unseeded rejection carries the reason", (() => { const r = validateSubmission(unseeded, { scenarioId: unseeded.items[0].scenarioId, dimension: unseeded.items[0].dimensions[0], score: 8 }); return !r.ok && r.error === "unseeded_packet"; })());
+// (b) a seeded packet still rejects an item whose capture produced no reply.
+const noReply: any = { ...seeded, items: [{ ...seeded.items[0], replies: [] }] };
+ok("validate: seeded packet, item with empty replies → rejected", (() => { const r = validateSubmission(noReply, { scenarioId: scenario, dimension: dim, score: 8 }); return !r.ok && r.error === "no_reply"; })());
+const blankReply: any = { ...seeded, items: [{ ...seeded.items[0], replies: ["", "   "] }] };
+ok("validate: whitespace-only replies count as no reply → rejected", validateSubmission(blankReply, { scenarioId: scenario, dimension: dim, score: 8 }).ok === false);
+
+// ★ Fix 2 — hosted packet id is run-unique so a same-day re-capture can't collide.
+const idA = uniqueHostedPacketId("mizan-panel-2026-07-08");
+const idB = uniqueHostedPacketId("mizan-panel-2026-07-08");
+ok("packetId: two emits from the same base differ", idA !== idB);
+ok("packetId: keeps the base id as a prefix (traceable)", idA.startsWith("mizan-panel-2026-07-08-") && idB.startsWith("mizan-panel-2026-07-08-"));
 
 // --- DB layer (stub admin) ---------------------------------------------------
 function makeFakeAdmin(seed: { rows?: Record<string, unknown>[]; upsertError?: string; selectError?: string } = {}) {

@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { HUMAN_SUITE_IDS } from "./mizan-panel-score.mjs";
+import { uniqueHostedPacketId } from "./mizan-packet-id.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MANIFEST = JSON.parse(readFileSync(join(here, "mizan-suites.json"), "utf8"));
@@ -135,7 +136,9 @@ async function writePacket(packet, date) {
 const EMIT_ACTIVE = process.argv.includes("--emit-active");
 async function writeActivePacketData(packet) {
   const reviewerView = {
-    packetId: packet.packetId,
+    // Run-unique id so a same-day re-capture never reuses/overwrites earlier reviewer
+    // rows (the API + aggregation scope solely by packet_id).
+    packetId: uniqueHostedPacketId(packet.packetId),
     benchmark: packet.benchmark,
     unseeded: !!packet.blocked || packet.items.every((it) => !(it.replies || []).some((r) => r && r.trim())),
     minReviewers: packet.minReviewers,

@@ -82,9 +82,22 @@ export function validateSubmission(
   packet: ActivePacket,
   sub: ReviewSubmission,
 ): { ok: true; value: ValidatedSubmission } | { ok: false; error: string } {
+  // Gate-integrity guard: never persist a score against a reply that doesn't exist.
+  // An UNSEEDED packet (the committed default, or one whose capture never ran) has no
+  // real replies to review, so ALL submissions are rejected — otherwise taps on the
+  // "(no reply yet)" placeholder would flow into the DB and feed the launch gate as if
+  // a human had reviewed an actual reply. Authenticity is human-scored on real replies
+  // only; a blank reply is never scorable.
+  if (packet.unseeded) return { ok: false, error: "unseeded_packet" };
+
   const scenarioId = typeof sub.scenarioId === "string" ? sub.scenarioId : "";
   const item = packet.items.find((it) => it.scenarioId === scenarioId);
   if (!item) return { ok: false, error: "unknown_scenario" };
+
+  // Per-item guard: even in a seeded packet, an individual scenario whose capture failed
+  // ships with no non-empty reply. Reject scores for it (no real reply was reviewed).
+  const hasReply = (item.replies || []).some((r) => typeof r === "string" && r.trim().length > 0);
+  if (!hasReply) return { ok: false, error: "no_reply" };
 
   const dimension = typeof sub.dimension === "string" ? sub.dimension : "";
   if (!item.dimensions.includes(dimension)) return { ok: false, error: "unknown_dimension" };
