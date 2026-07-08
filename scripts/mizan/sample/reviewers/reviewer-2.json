@@ -1,0 +1,14 @@
+{
+  "_SAMPLE": "SAMPLE — not real reviewer data (demonstration only). Does NOT resolve the real gate.",
+  "packetId": "mizan-panel-SAMPLE",
+  "reviewerId": "SAMPLE-reviewer-2",
+  "reviewerName": "مراجع تجريبي ٢",
+  "submittedAt": "2026-07-08T12:05:00Z",
+  "scores": [
+    { "scenarioId": "S1-01", "suiteId": 1, "dims": { "authenticity": 8, "warmth_karam": 7, "register_fit": 8 }, "notes": "" },
+    { "scenarioId": "S1-02", "suiteId": 1, "dims": { "authenticity": 6, "warmth_karam": 7, "register_fit": 7 }, "notes": "عادي، مو سيّئ بس مو أصيل تماماً" },
+    { "scenarioId": "S1-03", "suiteId": 1, "dims": { "authenticity": 9, "warmth_karam": 8, "register_fit": 8 }, "notes": "" },
+    { "scenarioId": "S1-04", "suiteId": 1, "dims": { "authenticity": 8, "warmth_karam": 7, "register_fit": 7 }, "notes": "" },
+    { "scenarioId": "S9-01", "suiteId": 9, "dims": { "tone_fit": 7, "warmth": 8, "brevity": 8 }, "notes": "" }
+  ]
+}

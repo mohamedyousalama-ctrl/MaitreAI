@@ -1,0 +1,21 @@
+{
+  "_SAMPLE": "SAMPLE — not real reviewer data. Illustrative replies to demonstrate the review flow only.",
+  "packetId": "mizan-panel-SAMPLE",
+  "benchmark": "MIZAN v0.1-phase1",
+  "regions": ["najd", "hijaz"],
+  "minReviewers": 3,
+  "guide": "docs/KHALID_NATIVE_REVIEW_GUIDE_AR.md",
+  "note": "لكل رد: قيّم من ١ إلى ١٠ على كل بُعد، وأضف ملاحظة إن رغبت. قيّم اللهجة والأسلوب فقط.",
+  "suites": [
+    { "id": 1, "name": "Dialect authenticity", "dimensions": ["authenticity", "warmth_karam", "register_fit"], "scale": 10, "threshold": 7.5 },
+    { "id": 9, "name": "Tone modulation", "dimensions": ["tone_fit", "warmth", "brevity"], "scale": 10, "threshold": 7.5 }
+  ],
+  "items": [
+    { "scenarioId": "S1-01", "suiteId": 1, "suiteName": "Dialect authenticity", "region": "najd", "frame": null, "turns": ["السلام عليكم، عندكم كبسة؟"], "replies": ["وعليكم السلام، هلا وغلا 🌟 إي والله عندنا كبسة دجاج وكبسة لحم، وش تحب أجهّز لك؟"], "dimensions": ["authenticity", "warmth_karam", "register_fit"], "scale": 10 },
+    { "scenarioId": "S1-02", "suiteId": 1, "suiteName": "Dialect authenticity", "region": "najd", "frame": null, "turns": ["وش تنصحني اطلب اليوم؟"], "replies": ["أنصحك بالكبسة، إنها من أكثر الأطباق التي يقع عليها الطلب لدى ضيوفنا الكرام."], "dimensions": ["authenticity", "warmth_karam", "register_fit"], "scale": 10 },
+    { "scenarioId": "S1-03", "suiteId": 1, "suiteName": "Dialect authenticity", "region": "hijaz", "frame": null, "turns": ["هلا، إيش عندكم أطباق اليوم؟"], "replies": ["هلا فيك 🌟 اليوم عندنا مندي لحم طري وسمك مشوي طازة، تحب أوصف لك أي واحد؟"], "dimensions": ["authenticity", "warmth_karam", "register_fit"], "scale": 10 },
+    { "scenarioId": "S1-04", "suiteId": 1, "suiteName": "Dialect authenticity", "region": "najd", "frame": null, "turns": ["أبغى شي دسم ومشبع"], "replies": ["أبشر، عليك بالمندي اللحم — دسم ويشبع، ومعاه رز على أصوله. أجهّزه لك؟"], "dimensions": ["authenticity", "warmth_karam", "register_fit"], "scale": 10 },
+    { "scenarioId": "S9-01", "suiteId": 9, "suiteName": "Tone modulation", "region": null, "frame": "happy", "turns": ["حبيت الأكل مرة، شكراً"], "replies": ["يسعدنا هذا والله 🌟 تسلم وتستاهل كل خير، ننتظرك دايم."], "dimensions": ["tone_fit", "warmth", "brevity"], "scale": 10 },
+    { "scenarioId": "S9-02", "suiteId": 9, "suiteName": "Tone modulation", "region": null, "frame": "mild-delay", "turns": ["الطلب متأخر شوي؟"], "replies": ["عذراً على التأخير، طلبك بالطريق ويوصلك قريب إن شاء الله. أشكر صبرك."], "dimensions": ["tone_fit", "warmth", "brevity"], "scale": 10 }
+  ]
+}
