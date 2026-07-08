@@ -115,7 +115,7 @@ export default function OutcomesPage() {
           <span style={{ fontSize: 17 }}>🧾</span>
           <span style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{t("out.covDoctrineTitle")}</span>
           <TruthChip state="gather" />
-          <button onClick={() => setCoverageOpen(false)} style={modalX}><X size={15} /></button>
+          <button onClick={() => setCoverageOpen(false)} aria-label={t("a11y.close")} style={modalX}><X size={15} /></button>
         </div>
         <CoverageDoctrine />
         <p style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 14, textAlign: "center" }}>{t("out.soonHint")}</p>

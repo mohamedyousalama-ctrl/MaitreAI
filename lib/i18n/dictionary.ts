@@ -34,6 +34,8 @@ export const DICTIONARY = {
     "nav.onboarding": "الإعداد",
     "nav.campaigns": "الحملات",
     "nav.switchWorkspace": "تبديل المطعم",
+    // a11y — shared accessibility labels for icon-only controls
+    "a11y.close": "إغلاق",
     // nav — one-rail section headers (MAIN / MODULES / CRM / ADMIN)
     "nav.section.main": "الرئيسي",
     "nav.section.modules": "الوحدات",
@@ -962,6 +964,7 @@ export const DICTIONARY = {
     "nav.onboarding": "Onboarding",
     "nav.campaigns": "Campaigns",
     "nav.switchWorkspace": "Switch workspace",
+    "a11y.close": "Close",
     "nav.section.main": "Main",
     "nav.section.modules": "Modules",
     "nav.section.crm": "CRM",
