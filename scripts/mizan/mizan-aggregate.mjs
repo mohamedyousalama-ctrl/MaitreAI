@@ -15,7 +15,7 @@ import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { evaluateGate, overallReadiness, HONEST_LIMITS } from "./mizan-score.mjs";
-import { HUMAN_SUITE_IDS, MIN_REVIEWERS, VARIANCE_RANGE_FLAG, collectByScenario, aggregateSuite, panelGateStatus } from "./mizan-panel-score.mjs";
+import { HUMAN_SUITE_IDS, MIN_REVIEWERS, VARIANCE_RANGE_FLAG, collectByScenario, aggregateItem, aggregateSuite, panelGateStatus } from "./mizan-panel-score.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MANIFEST = JSON.parse(await readFile(join(here, "mizan-suites.json"), "utf8"));
@@ -127,6 +127,29 @@ async function loadPacket() {
 
 function fmt(n, d = 2) { return typeof n === "number" ? n.toFixed(d) : "—"; }
 
+/** List reviewer recordings in the private mizan-recordings bucket for a packet:
+ *  objects live at {packetId}/{reviewer_hash}/{scenarioId}. Two-level list (folders →
+ *  files). Best-effort — returns [] on any error/missing env. Reference-only (not scored). */
+async function listRecordings(packetId) {
+  const SB = process.env.NEXT_PUBLIC_SUPABASE_URL, SR = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SB || !SR) return [];
+  const H = { apikey: SR, Authorization: `Bearer ${SR}`, "Content-Type": "application/json" };
+  const list = async (prefix) => {
+    try {
+      const res = await fetch(`${SB}/storage/v1/object/list/mizan-recordings`, { method: "POST", headers: H, body: JSON.stringify({ prefix, limit: 1000 }) });
+      return res.ok ? await res.json() : [];
+    } catch { return []; }
+  };
+  const out = [];
+  for (const folder of await list(`${packetId}/`)) {
+    if (!folder || !folder.name) continue;
+    for (const file of await list(`${packetId}/${folder.name}/`)) {
+      if (file && file.name) out.push({ hash: folder.name, scenarioId: file.name });
+    }
+  }
+  return out;
+}
+
 async function main() {
   const date = stamp();
   const humanSuites = MANIFEST.suites.filter((s) => s.category === "human" && HUMAN_SUITE_IDS.includes(s.id));
@@ -237,6 +260,56 @@ async function main() {
       if (it.notes.length) for (const n of it.notes) L.push(`  - note (${n.reviewerId}): ${n.note}`);
     }
     L.push("");
+  }
+
+  // ── VOICE (WO-MIZAN-VOICE) — INFORMATIONAL, never a gate input ───────────────
+  // The ratified launch gate stays the TEXT dialect score (suite 1 ≥ 7.5). The voice
+  // scores below are reported for information only — no threshold yet (PM + Mohamed set
+  // one after round-1 data). Same honesty rules reused (aggregateItem): ≥ MIN_REVIEWERS
+  // per scenario or PENDING; variance ≥ VARIANCE_RANGE_FLAG flagged.
+  L.push(`## 🔊 Voice — spoken_dialect (INFORMATIONAL — NOT a launch gate)`, "");
+  L.push(`> Reported for information only; the ratified gate remains the TEXT dialect score. No voice threshold yet — PM + Mohamed set one after round-1. Rules identical: ≥${MIN_REVIEWERS} reviewers/scenario or PENDING; variance ≥${VARIANCE_RANGE_FLAG} flagged.`, "");
+  const voiceMeans = [];
+  for (const s of humanSuites) {
+    for (const sc of s.scenarios) {
+      const vi = aggregateItem(sc.id, byScenario.get(sc.id) || [], ["spoken_dialect"]);
+      const dd = vi.dims.spoken_dialect;
+      L.push(`- \`${sc.id}\` — reviewers: ${vi.reviewerCount} · status: ${vi.status}${dd.highVariance ? " ⚠️ high-variance" : ""} · mean ${fmt(dd.mean)} · votes [${dd.values.join(", ")}]`);
+      if (vi.status === "SCORED" && dd.mean != null) voiceMeans.push(dd.mean);
+    }
+  }
+  L.push(`- **overall spoken_dialect mean (scored scenarios only): ${voiceMeans.length ? fmt(voiceMeans.reduce((a, b) => a + b, 0) / voiceMeans.length) : "—"}** · _informational, no threshold_`, "");
+
+  // Voice comparison pick — canonical 1=A / 2=B / 3=C (A = code's declared prod voice).
+  const cmp = byScenario.get("VOICE-COMPARE") || [];
+  const tally = { 1: 0, 2: 0, 3: 0 };
+  for (const r of cmp) { const v = Number(r.dims?.voice_pick); if (v >= 1 && v <= 3) tally[v]++; }
+  const totalPicks = tally[1] + tally[2] + tally[3];
+  L.push(`## 🗳️ Voice comparison — «أي صوت يحس سعودي أكثر؟» (INFORMATIONAL — launch-decision input)`, "");
+  L.push(`> Canonical: 1 = Voice A (code's declared production voice), 2 = Voice B, 3 = Voice C. Reviewers saw a per-reviewer shuffle labeled صوت ١/٢/٣; the stored value is the canonical voice. The winner becomes ELEVENLABS_VOICE_ID at launch — a one-env-flip decision by PM + Mohamed, NOT auto-applied.`, "");
+  L.push(`- votes — Voice A: ${tally[1]} · Voice B: ${tally[2]} · Voice C: ${tally[3]} (of ${totalPicks} reviewer${totalPicks === 1 ? "" : "s"})`);
+  if (totalPicks < MIN_REVIEWERS) {
+    L.push(`- status: PENDING (need ≥${MIN_REVIEWERS} picks before the comparison is read)`);
+  } else {
+    const max = Math.max(tally[1], tally[2], tally[3]);
+    const leaders = [1, 2, 3].filter((v) => tally[v] === max).map((v) => ({ 1: "A", 2: "B", 3: "C" })[v]);
+    L.push(`- leading: ${leaders.length > 1 ? `TIE (${leaders.join(", ")}) — adjudicate` : `Voice ${leaders[0]}`}`);
+  }
+  L.push("");
+
+  // Reviewer recordings (DB mode) — reference material for Step 6 / voice tuning, NOT scored.
+  if (DB_MODE && expectedPacketId) {
+    const recs = await listRecordings(expectedPacketId);
+    L.push(`## 🎙️ Reviewer recordings (reference for Step-6 / voice tuning — NOT scored, NOT a gate input)`, "");
+    if (!recs.length) { L.push(`- none submitted.`, ""); }
+    else {
+      const byRev = {};
+      for (const r of recs) (byRev[r.hash] ||= []).push(r.scenarioId);
+      for (const [hash, sids] of Object.entries(byRev)) {
+        L.push(`- reviewer \`rev-${hash.slice(0, 8)}\`: ${sids.length} recording(s) — ${sids.join(", ")} · private bucket \`mizan-recordings/${expectedPacketId}/${hash}/\``);
+      }
+      L.push("");
+    }
   }
 
   if (skipped.length) { L.push(`## ⚠️ Skipped submissions (${skipped.length})`, ""); for (const sk of skipped) L.push(`- ${sk.reason}${sk.file ? ` — ${sk.file}` : ""}`); L.push(""); }

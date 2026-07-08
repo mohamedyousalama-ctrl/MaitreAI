@@ -1,20 +1,16 @@
 // ============================================================================
-// MaitreAI — MIZAN ACTIVE PACKET DATA (WO-KHALID-STEP5B) — GENERATED, do not hand-edit.
+// MaitreAI — MIZAN ACTIVE PACKET DATA (WO-MIZAN-VOICE) — GENERATED, do not hand-edit.
 //
-// The reviewer packet the hosted /mizan/<token> surface serves: Khalid's captured
-// replies for the 5 human-hook suites plus the rubric each is scored on. This is a
-// TS LITERAL module (repo convention — bare-node ESM cannot import JSON at runtime),
-// named active-packet-data.ts (NOT *.data.ts — the ts-ext resolver treats a ".data"
-// suffix as a file extension and fails to resolve it).
-//
-// Regenerate against a seeded KSA tenant (khalid_persona ON) with:
-//   node scripts/mizan/mizan-packet.mjs --emit-active
-// which rewrites JUST this file with the live packetId + Khalid's real replies. No
-// scores live here — only the prompts/replies a human reads. Scores go to Supabase.
+// Khalid's captured replies (text) PLUS a production-voice (ElevenLabs EL-custom-A,
+// model eleven_flash_v2_5) mp3 rendering of each — audioUrl per item, hosted in the public
+// mizan-khalid-audio bucket under unguessable names. Reviewers score text AND voice
+// (the added spoken_dialect dimension). A final voice_compare item renders one greeting
+// in 3 candidate voices for the "which sounds most Saudi?" pick. Regenerate with:
+//   node scripts/mizan/mizan-voice.mjs   (see the header there).
 // ============================================================================
 
 export const ACTIVE_PACKET_DATA = {
-  "packetId": "mizan-panel-2026-07-08-200559-a39f",
+  "packetId": "mizan-panel-2026-07-08-210945-b5db",
   "benchmark": "MIZAN v0.1-phase1",
   "unseeded": false,
   "minReviewers": 3,
@@ -76,6 +72,7 @@ export const ACTIVE_PACKET_DATA = {
       "threshold": 7.5
     }
   ],
+  "voiceModel": "eleven_flash_v2_5",
   "items": [
     {
       "scenarioId": "S1-01",
@@ -92,9 +89,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "authenticity",
         "warmth_karam",
-        "register_fit"
+        "register_fit",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/e416e7d9b0057364d7b45c124453af43.mp3"
     },
     {
       "scenarioId": "S1-02",
@@ -111,9 +110,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "authenticity",
         "warmth_karam",
-        "register_fit"
+        "register_fit",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/03308987f80b527d65780857af102b55.mp3"
     },
     {
       "scenarioId": "S1-03",
@@ -130,9 +131,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "authenticity",
         "warmth_karam",
-        "register_fit"
+        "register_fit",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/4f0b6f1c540db32c95b852fb6c6bfb2b.mp3"
     },
     {
       "scenarioId": "S1-04",
@@ -149,9 +152,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "authenticity",
         "warmth_karam",
-        "register_fit"
+        "register_fit",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/ed6abd1648bc36b191576e0ca12ee81e.mp3"
     },
     {
       "scenarioId": "S9-01",
@@ -168,9 +173,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "tone_fit",
         "warmth",
-        "brevity"
+        "brevity",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/c56a94b17340ebcc8e556c76cad9651a.mp3"
     },
     {
       "scenarioId": "S9-02",
@@ -187,9 +194,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "tone_fit",
         "warmth",
-        "brevity"
+        "brevity",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/e9698b44f060f052e2ef4937184408e5.mp3"
     },
     {
       "scenarioId": "S9-03",
@@ -206,9 +215,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "tone_fit",
         "warmth",
-        "brevity"
+        "brevity",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/35ae97cf05e5ef5bfd561ab356f70615.mp3"
     },
     {
       "scenarioId": "S10-01",
@@ -225,9 +236,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "natural_offer",
         "not_pushy",
-        "menu_truth"
+        "menu_truth",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/034940c3c60f8dcd2cc177f2cc7b63e8.mp3"
     },
     {
       "scenarioId": "S10-02",
@@ -244,9 +257,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "natural_offer",
         "not_pushy",
-        "menu_truth"
+        "menu_truth",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/3318ebd377758c95964edf7072eb2014.mp3"
     },
     {
       "scenarioId": "S11-01",
@@ -263,9 +278,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "ownership",
         "no_defensiveness",
-        "face_saving"
+        "face_saving",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/4f7f2abe63e77145b74145a0af7b32a9.mp3"
     },
     {
       "scenarioId": "S11-02",
@@ -282,9 +299,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "ownership",
         "no_defensiveness",
-        "face_saving"
+        "face_saving",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/a7fb2682b7f40577548caaa823c8a39f.mp3"
     },
     {
       "scenarioId": "S12-01",
@@ -301,9 +320,11 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "karam_warmth",
         "not_theatrical",
-        "one_person"
+        "one_person",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/221ff807f946615f45d846adba4ec61d.mp3"
     },
     {
       "scenarioId": "S12-02",
@@ -320,9 +341,32 @@ export const ACTIVE_PACKET_DATA = {
       "dimensions": [
         "karam_warmth",
         "not_theatrical",
-        "one_person"
+        "one_person",
+        "spoken_dialect"
       ],
-      "scale": 10
+      "scale": 10,
+      "audioUrl": "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/k/7fb3d70d9729309aed252bac3acec3f3.mp3"
+    },
+    {
+      "scenarioId": "VOICE-COMPARE",
+      "suiteId": 0,
+      "suiteName": "اختيار الصوت الأنسب",
+      "kind": "voice_compare",
+      "region": null,
+      "frame": null,
+      "turns": [],
+      "replies": [],
+      "prompt": "أي صوت يحس سعودي أكثر؟",
+      "compareText": "هلا والله، نوّرت! 🌟\n\nيسعدنا إنك استمتعت — الله يعطيك العافية، دوم تشرّفنا.",
+      "voiceClips": [
+        "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/c/900ab9fa109a30fa6d8bbd211e30e383.mp3",
+        "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/c/ed5ac16769913b9f78614e89f9ded950.mp3",
+        "https://zlighrbsjexrozrmuwpw.supabase.co/storage/v1/object/public/mizan-khalid-audio/c/65a5e2e13e4537644f9d321258b54686.mp3"
+      ],
+      "dimensions": [
+        "voice_pick"
+      ],
+      "scale": 3
     }
   ]
 } as const;

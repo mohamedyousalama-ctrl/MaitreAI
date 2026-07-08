@@ -61,11 +61,13 @@ ok("validate: missing score rejected", validateSubmission(seeded, { scenarioId: 
 ok("validate: empty notes → null", (() => { const r = validateSubmission(seeded, { scenarioId: scenario, dimension: dim, score: 6 }); return r.ok && r.value.notes === null; })());
 
 // ★ Fix 1 — gate-integrity guards: never score a reply that isn't there.
-// (a) an UNSEEDED packet rejects EVERY submission (the committed default is unseeded).
-const unseeded = reviewerPacket();
-ok("validate: committed default packet IS unseeded (safety default)", unseeded.unseeded === true);
+// (a) an UNSEEDED packet rejects EVERY submission. (The live committed packet is now a
+// real seeded capture, so we assert the guard against a constructed unseeded fixture.)
+const unseeded: any = { ...seeded, unseeded: true };
 ok("validate: unseeded packet rejects all submissions", validateSubmission(unseeded, { scenarioId: unseeded.items[0].scenarioId, dimension: unseeded.items[0].dimensions[0], score: 8 }).ok === false);
 ok("validate: unseeded rejection carries the reason", (() => { const r = validateSubmission(unseeded, { scenarioId: unseeded.items[0].scenarioId, dimension: unseeded.items[0].dimensions[0], score: 8 }); return !r.ok && r.error === "unseeded_packet"; })());
+// The live packet ships SEEDED (real replies + audio) — the activation's purpose.
+ok("validate: live committed packet is seeded (not the unseeded placeholder)", reviewerPacket().unseeded !== true);
 // (b) a seeded packet still rejects an item whose capture produced no reply.
 const noReply: any = { ...seeded, items: [{ ...seeded.items[0], replies: [] }] };
 ok("validate: seeded packet, item with empty replies → rejected", (() => { const r = validateSubmission(noReply, { scenarioId: scenario, dimension: dim, score: 8 }); return !r.ok && r.error === "no_reply"; })());
@@ -77,6 +79,28 @@ const idA = uniqueHostedPacketId("mizan-panel-2026-07-08");
 const idB = uniqueHostedPacketId("mizan-panel-2026-07-08");
 ok("packetId: two emits from the same base differ", idA !== idB);
 ok("packetId: keeps the base id as a prefix (traceable)", idA.startsWith("mizan-panel-2026-07-08-") && idB.startsWith("mizan-panel-2026-07-08-"));
+
+// ★ WO-MIZAN-VOICE — spoken_dialect (voice) dimension + voice_compare pick validation.
+const voiceSeeded: any = {
+  packetId: "pkt-voice", benchmark: "MIZAN vX", unseeded: false, minReviewers: 3, note: "", suites: [],
+  items: [
+    { scenarioId: "S1-01", suiteId: 1, suiteName: "Dialect", region: "najd", frame: null, turns: ["مرحبا"], replies: ["هلا والله"], dimensions: [...dims, "spoken_dialect"], scale: 10, audioUrl: "https://x/a.mp3" },
+    { scenarioId: "S1-mute", suiteId: 1, suiteName: "Dialect", region: null, frame: null, turns: ["مرحبا"], replies: ["هلا"], dimensions: [...dims, "spoken_dialect"], scale: 10, audioUrl: null },
+    { scenarioId: "VOICE-COMPARE", suiteId: 0, kind: "voice_compare", suiteName: "cmp", region: null, frame: null, turns: [], replies: [], dimensions: ["voice_pick"], scale: 3, voiceClips: ["a", "b", "c"] },
+  ],
+};
+ok("voice: spoken_dialect accepted when the item has audio", validateSubmission(voiceSeeded, { scenarioId: "S1-01", dimension: "spoken_dialect", score: 7 }).ok === true);
+ok("voice: spoken_dialect rejected when the item has NO audio (no_audio)", (() => { const r = validateSubmission(voiceSeeded, { scenarioId: "S1-mute", dimension: "spoken_dialect", score: 7 }); return !r.ok && r.error === "no_audio"; })());
+ok("voice: text dimension still fine on a muted item (only voice needs audio)", validateSubmission(voiceSeeded, { scenarioId: "S1-mute", dimension: "authenticity", score: 7 }).ok === true);
+ok("voice_compare: voice_pick 2 accepted (audio-only item, no reply needed)", (() => { const r = validateSubmission(voiceSeeded, { scenarioId: "VOICE-COMPARE", dimension: "voice_pick", score: 2 }); return r.ok && r.value.score === 2 && r.value.suiteId === 0; })());
+ok("voice_compare: voice_pick 4 rejected (scale 3)", validateSubmission(voiceSeeded, { scenarioId: "VOICE-COMPARE", dimension: "voice_pick", score: 4 }).ok === false);
+ok("voice_compare: voice_pick 0 rejected", validateSubmission(voiceSeeded, { scenarioId: "VOICE-COMPARE", dimension: "voice_pick", score: 0 }).ok === false);
+ok("voice_compare: non-voice_pick dimension rejected", validateSubmission(voiceSeeded, { scenarioId: "VOICE-COMPARE", dimension: "authenticity", score: 2 }).ok === false);
+ok("voice_compare: rejected when clips missing (no_audio)", (() => {
+  const noClips = { ...voiceSeeded, items: [{ ...voiceSeeded.items[2], voiceClips: [] }] };
+  const r = validateSubmission(noClips, { scenarioId: "VOICE-COMPARE", dimension: "voice_pick", score: 1 });
+  return !r.ok && r.error === "no_audio";
+})());
 
 // --- DB layer (stub admin) ---------------------------------------------------
 function makeFakeAdmin(seed: { rows?: Record<string, unknown>[]; upsertError?: string; selectError?: string } = {}) {

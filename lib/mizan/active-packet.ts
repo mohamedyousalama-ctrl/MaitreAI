@@ -23,6 +23,17 @@ export interface PacketItem {
   replies: string[];
   dimensions: string[];
   scale: number;
+  /** Public URL of the production-voice mp3 of this reply (WO-MIZAN-VOICE). */
+  audioUrl?: string | null;
+  /** Special item kind. "voice_compare" = the 3-voice "which sounds most Saudi?" pick. */
+  kind?: string;
+  /** voice_compare: the question shown to the reviewer. */
+  prompt?: string;
+  /** voice_compare: the text being spoken in all three clips (for reference). */
+  compareText?: string;
+  /** voice_compare: the 3 candidate clips in CANONICAL order [A, B, C]. The client
+   *  shuffles DISPLAY per reviewer and stores the canonical index (1=A/2=B/3=C). */
+  voiceClips?: string[];
 }
 export interface ActivePacket {
   packetId: string;
@@ -32,6 +43,8 @@ export interface ActivePacket {
   note: string;
   suites: { id: number; name: string; dimensions: string[]; scale: number; threshold: number }[];
   items: PacketItem[];
+  /** ElevenLabs model used to render the voice clips (informational). */
+  voiceModel?: string;
 }
 
 const PACKET = ACTIVE_PACKET_DATA as unknown as ActivePacket;
@@ -94,17 +107,29 @@ export function validateSubmission(
   const item = packet.items.find((it) => it.scenarioId === scenarioId);
   if (!item) return { ok: false, error: "unknown_scenario" };
 
-  // Per-item guard: even in a seeded packet, an individual scenario whose capture failed
-  // ships with no non-empty reply. Reject scores for it (no real reply was reviewed).
-  const hasReply = (item.replies || []).some((r) => typeof r === "string" && r.trim().length > 0);
-  if (!hasReply) return { ok: false, error: "no_reply" };
-
   const dimension = typeof sub.dimension === "string" ? sub.dimension : "";
   if (!item.dimensions.includes(dimension)) return { ok: false, error: "unknown_dimension" };
 
   const score = Number(sub.score);
   if (!Number.isInteger(score) || score < 1 || score > (item.scale || 10)) {
     return { ok: false, error: "score_out_of_range" };
+  }
+
+  if (item.kind === "voice_compare") {
+    // Audio-only pick (no text reply by design). Require the 3 clips actually exist,
+    // and only the voice_pick dimension (1..3, enforced by scale above) is accepted.
+    if (dimension !== "voice_pick") return { ok: false, error: "unknown_dimension" };
+    if (!(Array.isArray(item.voiceClips) && item.voiceClips.length === 3)) return { ok: false, error: "no_audio" };
+  } else {
+    // Normal item: must have a real captured reply (text) to score — an under-captured
+    // scenario ships with no non-empty reply and is never scorable.
+    const hasReply = (item.replies || []).some((r) => typeof r === "string" && r.trim().length > 0);
+    if (!hasReply) return { ok: false, error: "no_reply" };
+    // The spoken_dialect (voice) dimension needs a real audio rendering to judge — the
+    // voice analogue of the no-reply guard. No audioUrl → not voice-scorable.
+    if (dimension === "spoken_dialect" && !(typeof item.audioUrl === "string" && item.audioUrl.length > 0)) {
+      return { ok: false, error: "no_audio" };
+    }
   }
 
   const notes = typeof sub.notes === "string" ? sub.notes.slice(0, 2000) : null;
