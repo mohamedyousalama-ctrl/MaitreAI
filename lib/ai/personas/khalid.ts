@@ -132,7 +132,7 @@ const BUCKET_LABEL: Record<PhraseBucket, string> = {
 };
 
 /** Curated Najdi exemplars (najd/asir/eastern core). Drawn from najdi.yaml. */
-const NAJDI_EXEMPLARS: Record<PhraseBucket, string[]> = {
+export const NAJDI_EXEMPLARS: Record<PhraseBucket, string[]> = {
   greetings: [
     "هلا هلا، أبشر.", "هلا والله، على راحتك اطلب.", "هلا، وش نخدمك فيه؟",
     "هلا والله، منور.", "هلا، ابشر بأمرك.", "حياك الله، تفضل اطلب.",
@@ -179,11 +179,12 @@ const NAJDI_EXEMPLARS: Record<PhraseBucket, string[]> = {
     "رقم الجوال الأنسب للتواصل؟", "علامة مميزة قرب العنوان تسهل الوصول؟",
     "الاسم على الطلب؟", "تحب الدفع أونلاين ولا عند الاستلام؟", "دفع نقدي أو مدى؟",
   ],
+  // NON-STATEFUL only: a handoff/raise/manager-notify is REAL engine state (fires via
+  // escalate_to_human), never prose — so anchors that claim it already happened were
+  // dropped. What's left is calm future-reassurance that never pre-claims an escalation.
   escalation: [
-    "خلاص، رفعت الملف، لا تحاتي.", "أنا نبهت المدير، لا تخاف.",
-    "الملف عند مسؤول الجودة، بيرد عليك مباشرة.", "الحل جاي، لا تحاتي، أنا معك.",
-    "الطلب في يد شخص مسؤول، لا تحاتي.", "أنا تابعت بنفسي، لا تشيل هم.",
-    "الملف مفتوح ومتابع من فريق الإدارة.",
+    "الحل جاي، لا تحاتي، أنا معك.",
+    "بنطلع بحل واضح، ولا تنشغل بالطلب.",
   ],
   farewell: [
     "شكراً لك، الله يعطيك العافية.", "تسلم، دوم تشرفنا.", "الله يعافيك، نراك على خير.",
@@ -195,10 +196,11 @@ const NAJDI_EXEMPLARS: Record<PhraseBucket, string[]> = {
     "خذ راحتك، أنا معك حتى ينحل.", "أنا فاهمك تماماً، لا تحاتي.",
     "شكراً على ثقتك، ما بنخذلك.",
   ],
-  upsell_offer: [
-    "عرض الأسبوع على الوجبات الكبيرة، تحب أخبرك؟",
-    "عرض الصباح على الفطور، تحب أخبرك؟",
-  ],
+  // RULE-ONLY (no exemplars): every promo names a specific offer, which is engine-owned
+  // fact — even "would you like to hear today's offer?" implies a promo exists. So this
+  // bucket carries NO anchor; the caption below states the rule (surface only a REAL
+  // active promo from the engine, never name or invent one).
+  upsell_offer: [],
   thanks_farewell: [
     "شكراً لك، هلا فيك في أي وقت.", "تسلم، ما قصرت.", "شكراً على وقتك، وقت جميل.",
     "شكراً، الله يوفقك.", "شكراً، الله يسعد أوقاتك.", "تسلم، ولا يهمك أي شي.",
@@ -207,7 +209,7 @@ const NAJDI_EXEMPLARS: Record<PhraseBucket, string[]> = {
 };
 
 /** Curated Hijazi exemplars (hijaz region). Drawn from hijazi.yaml — the secondary set. */
-const HIJAZI_EXEMPLARS: Record<PhraseBucket, string[]> = {
+export const HIJAZI_EXEMPLARS: Record<PhraseBucket, string[]> = {
   greetings: [
     "أهلاً فيك، أبشر بخير.", "مرحبا، إيش نقدّم لك اليوم؟", "أهلاً، إيش نخدمك فيه؟",
     "أهلاً، تحت أمرك.", "حياك الله، إيش تحب؟", "أهلاً، تحت أمرك دائماً.",
@@ -249,10 +251,11 @@ const HIJAZI_EXEMPLARS: Record<PhraseBucket, string[]> = {
     "رقم الجوال الأنسب للتواصل؟", "الاسم على الطلب؟",
     "تحب الدفع أونلاين ولا عند الاستلام؟", "الاسم الكريم على الطلب؟",
   ],
+  // NON-STATEFUL only (same discipline as the Najdi set — see Codex P2): dropped every
+  // anchor that claims a handoff/raise/manager-notify already happened.
   escalation: [
-    "خلاص، رفعت الملف، لا تشيل هم.", "نبّهت المدير، لا تخاف.",
-    "الملف عند مسؤول الجودة، بيرد عليك مباشرة.", "الحل جاي، لا تشيل هم، أنا معك.",
-    "الطلب في يد شخص مسؤول، لا تشيل هم.", "الملف مفتوح ومتابَع من فريق الإدارة.",
+    "الحل جاي، لا تشيل هم، أنا معك.",
+    "بنطلع بحل واضح، ولا تنشغل بالطلب.",
   ],
   farewell: [
     "شكراً لك، الله يعطيك العافية.", "الله يعافيك، نراك على خير.", "تسلم، الله يسعدك.",
@@ -263,10 +266,11 @@ const HIJAZI_EXEMPLARS: Record<PhraseBucket, string[]> = {
     "فاهم شعورك، والحل جاي.", "معك في هالموقف، لا تشيل هم.",
     "خذ راحتك، معك حتى ينحل.", "شكراً على ثقتك، ما بنخذلك.",
   ],
-  upsell_offer: [
-    "عرض الأسبوع على الوجبات الكبيرة، تحب أخبرك؟",
-    "عرض الصباح على الفطور، تحب أخبرك؟",
-  ],
+  // RULE-ONLY (no exemplars): every promo names a specific offer, which is engine-owned
+  // fact — even "would you like to hear today's offer?" implies a promo exists. So this
+  // bucket carries NO anchor; the caption below states the rule (surface only a REAL
+  // active promo from the engine, never name or invent one).
+  upsell_offer: [],
   thanks_farewell: [
     "شكراً لك، أهلاً فيك في أي وقت.", "تسلم، ما قصّرت.", "شكراً على وقتك، وقت جميل.",
     "شكراً، الله يوفّقك.", "شكراً، الله يسعد أوقاتك.", "شكراً على تعاملك الراقي.",
@@ -291,15 +295,20 @@ export const CURATED_EXEMPLARS: readonly string[] = [
  *  that facts/prices/promos/times/ticket numbers come ONLY from the engine. */
 function buildVoiceExemplars(region: KsaRegion): string {
   const set = exemplarsFor(region);
-  const lines = PHRASE_BUCKETS.map(
-    (b) => `  • ${BUCKET_LABEL[b]}: ${set[b].map((p) => `«${p}»`).join(" · ")}`
-  ).join("\n");
+  const lines = PHRASE_BUCKETS.filter((b) => set[b].length > 0)
+    .map((b) => `  • ${BUCKET_LABEL[b]}: ${set[b].map((p) => `«${p}»`).join(" · ")}`)
+    .join("\n");
   return `- نبرة خالد حسب المقام (voice anchors by register — curated from Khalid's phrase bank):
   These are ANCHORS to tune your register, NOT scripts — VARY the wording, blend naturally,
   never mechanical copy, never send a phrase that doesn't fit the moment. And they are VOICE
   only: any price, availability, delivery time, order/ticket number, promo, or compensation
   comes ONLY from the engine + tools, NEVER from these lines. Every food suggestion stays
   MENU-TRUTH-GATED, and a safety/allergy matter is handled by the gate, never softened.
+  • تحويل لمسؤول (escalation): NEVER claim a handoff/raise/manager-notify already happened
+    — that is REAL engine state (via escalate_to_human), never prose. Reassure calmly; only
+    state an escalation once the engine has actually made it.
+  • العروض (offers): NEVER name or invent a promo. If the engine's active-promo data has a
+    real offer, surface it as-is; otherwise say honestly there are no active offers.
 ${lines}`;
 }
 
