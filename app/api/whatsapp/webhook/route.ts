@@ -19,6 +19,7 @@ import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMessage } from "@/lib/db/messages";
 import { resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/restaurants";
+import { decideWebhookRouting } from "@/lib/messaging/webhook-routing";
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
 import { withConversationLock } from "@/lib/db/conversation-lock";
 import { loadStaffNumbers, handleStaffCommand } from "@/lib/staff/command-channel";
@@ -160,18 +161,22 @@ export async function POST(req: NextRequest) {
   let statusUpdated = 0;
   let resolvedBy: "phone_number_id" | "env_fallback" = "env_fallback";
   if (admin && messages.length > 0) {
-    // Strict per-tenant routing. Three cases:
+    // Strict per-tenant routing (decideWebhookRouting — pure, unit-tested):
     // 1. tenant resolved by phone_number_id → use its creds (multi-tenant path)
-    // 2. phone_number_id present but NO tenant matched → drop cleanly (200, no
-    //    persist, no reply). Never fall back to a different restaurant's creds.
-    // 3. NO phone_number_id at all → env fallback (legacy single-tenant path)
+    // 2. phone_number_id === the configured GLOBAL WHATSAPP_PHONE_NUMBER_ID, or NO
+    //    phone_number_id at all → env fallback (legacy single-tenant path, e.g. Wesaya).
+    //    The globally-configured number is a valid target, NOT a drop.
+    // 3. any OTHER unmapped phone_number_id → drop cleanly (200, no persist, no reply).
+    //    Never serve an unknown number from another tenant's / the global creds.
+    const globalPnid = readWhatsAppEnv().phoneNumberId;
+    const routing = decideWebhookRouting(!!tenant, phoneNumberId, globalPnid);
     let restaurantId: string | null;
     let perTenantEnv: WhatsAppEnv | null;
-    if (tenant) {
+    if (routing === "per_tenant" && tenant) {
       restaurantId = tenant.restaurantId;
       perTenantEnv = tenant.env;
       resolvedBy = "phone_number_id";
-    } else if (phoneNumberId) {
+    } else if (routing === "drop") {
       console.warn("[whatsapp:webhook] unresolved_phone_number_id", {
         phoneNumberId,
         messageCount: messages.length,
@@ -356,10 +361,12 @@ export async function POST(req: NextRequest) {
     try {
       const statuses = normalizeWhatsAppStatuses(payload);
       if (statuses.length > 0) {
-        // Tenant scope mirrors inbound: prefer the phone_number_id tenant; an
-        // unresolved phone_number_id is skipped (can't scope safely); no
-        // phone_number_id → env fallback (legacy single-tenant path).
-        const statusRid = tenant?.restaurantId ?? (phoneNumberId ? null : await resolveWebhookRestaurantId(admin));
+        // Tenant scope mirrors inbound (same decideWebhookRouting rule): the
+        // phone_number_id tenant, else env fallback when there's no PNID OR it's the
+        // configured global number; any other unmapped PNID is skipped (can't scope safely).
+        const statusRid = tenant?.restaurantId
+          ?? (decideWebhookRouting(false, phoneNumberId, readWhatsAppEnv().phoneNumberId) === "env_fallback"
+            ? await resolveWebhookRestaurantId(admin) : null);
         if (statusRid) {
           for (const s of statuses) {
             try {
