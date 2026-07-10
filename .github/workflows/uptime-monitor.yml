@@ -1,0 +1,109 @@
+# ============================================================================
+# MaitreAI — WO-MONITORING-ALERTING: external uptime + monitor-sweep trigger.
+#
+# WHY EXTERNAL: Vercel Hobby cron is capped at once/DAY — far too coarse to catch
+# a Wesaya-class outage. And a monitor that lives INSIDE the app can't alert when
+# the app itself is down. This scheduled Action runs OUTSIDE Vercel every ~5 min:
+#
+#   1. Trigger the in-app monitor sweep (delivery silence, webhook spikes, agent
+#      error rate, daily spend). The app self-fires those alerts.
+#   2. Deep health-check the app. On N CONSECUTIVE failures, send Mohamed a
+#      WhatsApp alert DIRECTLY via the Meta Graph API — so a fully-down deploy
+#      still reaches him. (A red workflow run also notifies repo admins by email.)
+#
+# NO SECRETS IN GIT. All values come from GitHub Actions secrets, configured once
+# in repo Settings → Secrets and variables → Actions:
+#   MONITOR_BASE_URL              e.g. https://app.example.com  (no trailing slash)
+#   CRON_SECRET                   same value as the Vercel env CRON_SECRET
+#   ALERT_WHATSAPP_TOKEN          Meta Graph API token for the alert SENDER number
+#   ALERT_WHATSAPP_PHONE_NUMBER_ID  the sender's phone_number_id
+#   ALERT_WHATSAPP_TO             Mohamed's number in E.164 without '+' (e.g. 9665...)
+#
+# Any step whose secrets are unset is skipped cleanly, so this file is safe to
+# merge BEFORE the secrets exist. NOTE (Meta 24h window): a free-form alert text
+# requires an open session — Mohamed keeps the thread warm by messaging the alert
+# number. Swap in an approved template later if needed.
+#
+# Scheduled workflows only run on the DEFAULT branch, so this activates on merge.
+# ============================================================================
+name: uptime-monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *" # every 5 minutes (GitHub best-effort; may lag under load)
+  workflow_dispatch: {}   # allow a manual run from the Actions tab
+
+# Never let two ticks overlap.
+concurrency:
+  group: uptime-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # -- 1. Trigger the in-app DB monitor sweep --------------------------------
+      - name: Trigger monitor sweep
+        env:
+          BASE_URL: ${{ secrets.MONITOR_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "MONITOR_BASE_URL / CRON_SECRET not set — skipping sweep."
+            exit 0
+          fi
+          code=$(curl -s -o /tmp/sweep.json -w "%{http_code}" -X POST \
+            -H "x-cron-secret: $CRON_SECRET" \
+            "$BASE_URL/api/monitor/sweep" || echo "000")
+          echo "sweep HTTP $code"; cat /tmp/sweep.json 2>/dev/null || true
+          # A non-200 sweep is logged but does NOT fail the run — the uptime check
+          # below is the authoritative up/down signal.
+
+      # -- 2. Deep health check with N-consecutive-failure gate -----------------
+      - name: Deep health check + alert on outage
+        env:
+          BASE_URL: ${{ secrets.MONITOR_BASE_URL }}
+          WA_TOKEN: ${{ secrets.ALERT_WHATSAPP_TOKEN }}
+          WA_PHONE_ID: ${{ secrets.ALERT_WHATSAPP_PHONE_NUMBER_ID }}
+          WA_TO: ${{ secrets.ALERT_WHATSAPP_TO }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "MONITOR_BASE_URL not set — skipping health check."
+            exit 0
+          fi
+          # Require 3 CONSECUTIVE failures (~40s of real outage) before alerting, so
+          # a single blip or a cold start never pages Mohamed.
+          attempts=3
+          ok=0
+          for i in $(seq 1 $attempts); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+              "$BASE_URL/api/health?deep=1" || echo "000")
+            echo "health attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            sleep 20
+          done
+
+          if [ "$ok" = "1" ]; then
+            echo "healthy."
+            exit 0
+          fi
+
+          echo "::error::Kivo health check failed $attempts consecutive times."
+          if [ -n "$WA_TOKEN" ] && [ -n "$WA_PHONE_ID" ] && [ -n "$WA_TO" ]; then
+            BODY='🚨 Kivo — تنبيه حرج
+⚠️ النظام ما يستجيب لفحص الصحة (يمكن قاعدة البيانات أو الموقع متوقف).
+✅ المطلوب: بلّغ فارس فوراً. لو الموقع كامل ما يفتح، اتصل به مباشرة.
+النوع: uptime_down'
+            curl -s -X POST \
+              "https://graph.facebook.com/v20.0/${WA_PHONE_ID}/messages" \
+              -H "Authorization: Bearer ${WA_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n --arg to "$WA_TO" --arg body "$BODY" \
+                '{messaging_product:"whatsapp", to:$to, type:"text", text:{body:$body}}')" \
+              && echo "alert sent." || echo "alert send failed."
+          else
+            echo "ALERT_WHATSAPP_* secrets not set — cannot send WhatsApp alert."
+          fi
+          # Fail the run so GitHub also notifies repo admins by email (backup channel).
+          exit 1

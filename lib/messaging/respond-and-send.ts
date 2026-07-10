@@ -134,6 +134,45 @@ async function sendMenuLinkFallback(
   });
 }
 
+/** WO-MONITORING-ALERTING (Part 2) — polite Arabic fallback sent to the CUSTOMER
+ *  when the Brain turn fails (API error/timeout). Before this, the thread was
+ *  flagged for staff + alerted, but the customer got SILENCE. Now they get a short
+ *  honest wait message; the thread is still handed to a human and the failure still
+ *  counts toward the Part-1c error-rate alert. NEVER a raw error to the customer.
+ *  Best-effort: any failure here is swallowed so it can't mask the original error. */
+function agentErrorFallbackText(dialect: string | null | undefined): string {
+  return dialect === "egyptian"
+    ? "لحظة من فضلك 🙏 حيتواصل معاك أحد الموظفين حالاً."
+    : "لحظة من فضلك 🙏 يتواصل معك أحد الموظفين حالاً.";
+}
+
+async function sendAgentErrorFallbackToCustomer(
+  admin: SupabaseClient,
+  restaurantId: string,
+  conversationId: string,
+  phone: string,
+  lastInboundAtMs: number
+): Promise<void> {
+  try {
+    if (!phone) return;
+    const { data: r } = await admin.from("restaurants").select("dialect").eq("id", restaurantId).maybeSingle();
+    const text = agentErrorFallbackText((r as { dialect?: string | null } | null)?.dialect);
+    const send = await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
+    await admin.from("messages").insert({
+      restaurant_id: restaurantId,
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender: "ai",
+      text,
+      status: send.status === "failed" ? "failed" : "sent",
+      channel_message_id: send.externalMessageId ?? null,
+      meta: { kind: "agent_error_fallback" },
+    });
+  } catch (e) {
+    console.error("[respond-and-send] agent-error fallback send failed (swallowed)", e);
+  }
+}
+
 /**
  * WO-VOICE-2 — send an ADDITIVE voice note alongside the (already-sent) text reply.
  * Deterministic gate: trigger (customer used voice / asked) → hard-zero suppression
@@ -663,6 +702,12 @@ export async function respondAndSendWhatsApp(
   } catch (e) {
     // Fix B: surface the REAL message (was discarding it → «agent_error: agent_error»).
     const detail = e instanceof CustomerTurnError ? (e.message || e.code) : e instanceof Error ? e.message : String(e);
+    // WO-MONITORING-ALERTING (Part 2) — GRACEFUL DEGRADATION: the customer must
+    // NEVER hear silence (or a raw error) when the Brain fails. Send a polite Arabic
+    // "a staff member will reach you" line FIRST, then flag the thread for a human
+    // and alert. This runs ONLY in the error path — the happy path never enters
+    // this catch, so a successful turn is byte-identical.
+    await sendAgentErrorFallbackToCustomer(admin, restaurantId, conversationId, phone, lastInboundAtMs);
     // Ownership axis (spine Step 1): an agent error hands the thread to a human.
     await setOwnershipState(admin, conversationId, "HUMAN_ACTIVE", {
       extra: { owner: "human", status: "يحتاج تدخل موظف", escalation_reason: `agent_error: ${detail}` },
