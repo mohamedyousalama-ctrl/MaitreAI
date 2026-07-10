@@ -1,4 +1,7 @@
 # ALLERGY-COMPANION MODE — SPEC v2 (post external review; for Mohamed's final approval)
+
+> **Owner:** PM + Engineering · **Status:** Active · **Last reviewed:** 2026-07-10
+
 v1 approved-in-concept by Mohamed; two independent external LLM reviews converged on two decisive additions (prep/cross-contact layer, confirmation checkpoint) — both integrated. Applies to ALL personas (base engine).
 
 > **Status:** single source of truth for WO-COMPANION (W1→W2→W3). Where WO text and this spec conflict, **the spec wins**. Flag `allergy_companion_mode`, DEFAULT OFF; flag-off behavior byte-identical (except the §1e recovery carve-out, argued per-PR). Wesaya flip is Mohamed's explicit decision later, NOT part of these WOs. Dual sign-off (PM + Mohamed) at every merge.

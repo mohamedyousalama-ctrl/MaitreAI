@@ -11,11 +11,7 @@ Add a spec here as `MODULE_NAME_SPEC.md`, with the standard header
 
 ## In this folder
 
-- `DELIVERY_MODULE_SPEC.md` — the V1 delivery module build spec (moved in from `docs/`,
-  history preserved).
+- `ALLERGY_COMPANION_SPEC.md` — Allergy-Companion Mode spec (base-engine allergy safety).
+- `DELIVERY_MODULE_SPEC.md` — the V1 delivery module build spec.
 
-## Pending import (canon currently outside git)
-
-- `ALLERGY_COMPANION_SPEC.md` — arrives with PR #403 (branch `claude/wo-companion-w1`,
-  still unmerged). Move it into `docs/specs/` with the standard header in a follow-up
-  after that PR merges. Do not copy or recreate it here in the meantime.
+Both were moved in from `docs/` with history preserved; every approved spec now lives here.
