@@ -9,16 +9,13 @@ cross-cutting decisions a spec inherits.
 Add a spec here as `MODULE_NAME_SPEC.md`, with the standard header
 (`Owner` / `Status` / `Last reviewed`) at the top.
 
+## In this folder
+
+- `DELIVERY_MODULE_SPEC.md` — the V1 delivery module build spec (moved in from `docs/`,
+  history preserved).
+
 ## Pending import (canon currently outside git)
 
-The repo-canon WO (T3) called for moving two existing specs into this folder:
-
-- `ALLERGY_COMPANION_SPEC.md`
-- `DELIVERY_MODULE_SPEC.md`
-
-**Neither is committed to this repository** (no `*SPEC*.md` exists in git today), so they
-could not be `git mv`d — moving preserves history only for files already tracked, and
-fabricating their contents would invent canon rather than relocate it. They remain part
-of the "canon that lives outside git" this WO exists to fix. **Action for the owner:**
-add each file's real content here (with the standard header) so it becomes tracked
-canon; this README is the placeholder until then.
+- `ALLERGY_COMPANION_SPEC.md` — arrives with PR #403 (branch `claude/wo-companion-w1`,
+  still unmerged). Move it into `docs/specs/` with the standard header in a follow-up
+  after that PR merges. Do not copy or recreate it here in the meantime.

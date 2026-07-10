@@ -1,4 +1,7 @@
 # KIVO DELIVERY MODULE — BUILD SPEC v1 (C1; approved by Mohamed)
+
+> **Owner:** PM + Engineering · **Status:** Active · **Last reviewed:** 2026-07-10
+
 The last big V1 build. Converged design (3 brainstorms + audit) + Mohamed's notes 1/3/9 (branch routing).
 Principle: Kivo runs the restaurant's OWN delivery — never marketplace machinery.
 
