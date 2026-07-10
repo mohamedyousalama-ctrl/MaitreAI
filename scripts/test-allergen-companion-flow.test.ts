@@ -19,6 +19,9 @@ import {
   isExplicitContinueChoice,
   isExplicitRealertChoice,
   companionBannedRewriteReply,
+  decideRecoveryAction,
+  RECOVERY_CHOICE_CONTINUE,
+  RECOVERY_CHOICE_REALERT,
   EMERGENCY_HOLD_MARKER,
 } from "../lib/ai/allergen-companion-flow.ts";
 import { scanBannedAllergyPhrases } from "../lib/ai/allergen-companion.ts";
@@ -106,6 +109,24 @@ ok("realert: 'أبي أكلم موظف' → true", isExplicitRealertChoice("أب
   ok("checkpoint: offers the human on uncertainty", /موظف/.test(recap));
 }
 ok("truthState clear_verified is a DATA statement, not a guarantee", /ما يظهر فيها/.test(truthStatePhrase("clear_verified", "saudi")));
+
+// ── §1e RECOVERY decision ────────────────────────────────────────────────────
+const baseRec = { ownershipState: "HUMAN_ACTIVE", escalationReason: "سلامة الحساسية", isIdle: false, recoveryPending: false, messageText: "", interactiveId: null };
+// Purgatory: idle pending-human + new message → NEVER silence, ask the question.
+ok("recovery: idle stall → send_question (never silence)", decideRecoveryAction({ ...baseRec, isIdle: true, messageText: "في حد؟" }) === "send_question");
+// Fresh, actively-handled human thread → leave alone (no interruption).
+ok("recovery: fresh human thread → none (no interruption)", decideRecoveryAction({ ...baseRec, isIdle: false, messageText: "شكراً" }) === "none");
+// Explicit affirmative to a pending question (non-emergency) → resume.
+ok("recovery: explicit continue on non-emergency → resume_continue", decideRecoveryAction({ ...baseRec, recoveryPending: true, messageText: "أكمل مع كيفو" }) === "resume_continue");
+ok("recovery: continue button → resume_continue", decideRecoveryAction({ ...baseRec, recoveryPending: true, interactiveId: RECOVERY_CHOICE_CONTINUE, messageText: "" }) === "resume_continue");
+// Explicit re-alert → realert, stay held.
+ok("recovery: explicit re-alert → realert", decideRecoveryAction({ ...baseRec, recoveryPending: true, messageText: "نبّه الفريق مرة ثانية" }) === "realert");
+ok("recovery: re-alert button → realert", decideRecoveryAction({ ...baseRec, recoveryPending: true, interactiveId: RECOVERY_CHOICE_REALERT, messageText: "" }) === "realert");
+// §1e·d — EMERGENCY-class hold is NEVER customer-resumable, even on explicit continue.
+ok("recovery: continue on EMERGENCY hold → emergency_held (never resumes)",
+  decideRecoveryAction({ ...baseRec, escalationReason: emergencyEscalationReason("انسداد الحلق"), recoveryPending: true, interactiveId: RECOVERY_CHOICE_CONTINUE, messageText: "أكمل مع كيفو" }) === "emergency_held");
+// §1e·a — an ambiguous answer NEVER infers a resume; re-ask.
+ok("recovery: ambiguous answer → send_question (never inferred resume)", decideRecoveryAction({ ...baseRec, recoveryPending: true, messageText: "تمام" }) === "send_question");
 
 // ── §0 RED LINE — NO authored companion text contains a banned safety phrase ──
 {

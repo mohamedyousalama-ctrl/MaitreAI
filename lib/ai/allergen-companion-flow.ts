@@ -247,3 +247,59 @@ export function isExplicitRealertChoice(message: string): boolean {
     /re-?alert|call\s*the\s*team|notify\s*the\s*team/iu.test(s)
   );
 }
+
+// ---------------------------------------------------------------------------
+// §1e — the RECOVERY decision (pure). No purgatory, ever: a pending-human thread
+// that stalls (idle) or an explicit answer to the recovery question drives the ONE
+// next action. Emergency-class holds are NEVER customer-resumable (§1e·d) — a
+// hard branch that can only re-alert, never resume.
+// ---------------------------------------------------------------------------
+export type RecoveryAction =
+  | "none"            // fresh, actively-handled human thread → leave alone (no change)
+  | "send_question"   // stalled / ambiguous answer → ask «وصلك أحد من الفريق؟» (+ choices)
+  | "resume_continue" // explicit affirmative on a NON-emergency hold → resume with Kivo
+  | "realert"         // explicit "re-alert the team" → re-fire staff alert, stay held
+  | "emergency_held"; // explicit affirmative on an EMERGENCY hold → NEVER resume, re-alert
+
+export interface RecoveryInput {
+  /** conversations.ownership_state (SYSTEM_HOLD / HUMAN_ACTIVE / …). */
+  ownershipState: string | null;
+  /** conversations.escalation_reason (carries the emergency marker when emergency-class). */
+  escalationReason: string | null;
+  /** Thread has genuinely stalled — the customer is waiting with no human tending. An
+   *  actively-chatting human keeps updated_at fresh, so this is false for live handling. */
+  isIdle: boolean;
+  /** The last OUTBOUND turn was the recovery question (so this inbound is its answer). */
+  recoveryPending: boolean;
+  /** The customer's message text this turn. */
+  messageText: string;
+  /** A tap on a recovery choice button, resolved by the interactive router. */
+  interactiveId?: string | null;
+}
+
+/**
+ * Decide the §1e recovery action for a pending-human thread. Pure + deterministic.
+ * §1e·a: a resume happens ONLY on an EXPLICIT affirmative, never inferred. §1e·d:
+ * an emergency-class hold is a HARD non-resumable branch.
+ */
+export function decideRecoveryAction(inp: RecoveryInput): RecoveryAction {
+  const emergency = isEmergencyClassHold(inp.escalationReason);
+  const continueChoice =
+    inp.interactiveId === RECOVERY_CHOICE_CONTINUE || isExplicitContinueChoice(inp.messageText);
+  const realertChoice =
+    inp.interactiveId === RECOVERY_CHOICE_REALERT || isExplicitRealertChoice(inp.messageText);
+
+  // Answering a PENDING recovery question — honored even inside the idle window (we
+  // just bumped updated_at by asking), so a fast answer is never missed.
+  if (inp.recoveryPending) {
+    if (continueChoice) return emergency ? "emergency_held" : "resume_continue";
+    if (realertChoice) return "realert";
+    // Ambiguous answer → re-ask. NEVER infer a resume (§1e·a).
+    return "send_question";
+  }
+
+  // Not answered yet: intervene ONLY on genuine purgatory (idle). A fresh, actively-
+  // handled human thread is left alone → "none" (existing behavior, no interruption).
+  if (inp.isIdle) return "send_question";
+  return "none";
+}
