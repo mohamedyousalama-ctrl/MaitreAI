@@ -84,6 +84,7 @@ export async function loadReceiptData(client: SupabaseClient, orderId: string): 
     paymentMethod: row.payment_method ? String(row.payment_method) : undefined,
     source: row.source ? String(row.source) : undefined,
     safetyHold,
+    allergyNote: allergyNote || undefined,
     customerName: cust.name ?? undefined,
     customerPhone: cust.phone ?? undefined,
     address: row.address ? String(row.address) : undefined,

@@ -87,6 +87,17 @@ export async function applyCompanionSideEffects(
     postCommitQueryFailed = true;
   }
 
+  // 2b. Kitchen-ticket invariant (§1a.2): on a POST-COMMIT mention the order already
+  //     exists, so order-create never got the note — stamp it directly onto the order
+  //     row now so its ticket carries the allergens. Best-effort / deploy-safe.
+  if (postCommit && orderId && decision.note) {
+    try {
+      await admin.from("orders").update({ allergy_note: decision.note }).eq("id", orderId);
+    } catch {
+      /* column absent → inert */
+    }
+  }
+
   // 3. Staff alert. A POST-COMMIT mention fires the manager ping (§1a.3); the
   //    failed-query case fires it too (fail-toward-more). Emergency alerting is
   //    handled by the escalation/SYSTEM_HOLD path in customer-turn; here we only
