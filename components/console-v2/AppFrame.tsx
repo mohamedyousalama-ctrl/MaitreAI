@@ -36,10 +36,14 @@ function GatedMain({ children }: { children: ReactNode }) {
 export function AppFrame({
   tenantName,
   role,
+  deliveryModuleOn = false,
   children,
 }: {
   tenantName?: string;
   role: ConsoleRole;
+  /** WO-DELIVERY-D3: reveal the التوصيل rail item (delivery_runs OR delivery_geo_routing).
+   *  Default false → the rail is byte-identical for a tenant without the delivery module. */
+  deliveryModuleOn?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -47,7 +51,7 @@ export function AppFrame({
       {/* Hydrate the per-tenant DB stores + realtime for every authed page. */}
       <DataBootstrap />
       <Device>
-        <IconRail tenantName={tenantName} role={role} />
+        <IconRail tenantName={tenantName} role={role} deliveryModuleOn={deliveryModuleOn} />
         <main className="kvx-main kv-scroll">
           <GatedMain>{children}</GatedMain>
         </main>

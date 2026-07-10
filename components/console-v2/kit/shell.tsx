@@ -47,7 +47,7 @@ function RailIcon({ item, active, onAsk }: { item: RailItem; active: boolean; on
   return <Link href={item.href} className={`kvx-ric${active ? " on" : ""}`} aria-label={label}>{inner}</Link>;
 }
 
-export function IconRail({ role = "manager" }: { tenantName?: string; role?: ConsoleRole }) {
+export function IconRail({ role = "manager", deliveryModuleOn = false }: { tenantName?: string; role?: ConsoleRole; deliveryModuleOn?: boolean }) {
   const t = useT();
   const pathname = usePathname() ?? "";
   const openAsk = useAskKivoStore((s) => s.setOpen);
@@ -57,7 +57,7 @@ export function IconRail({ role = "manager" }: { tenantName?: string; role?: Con
     <aside className="kvx-rail kv-scroll">
       <Link href="/c" className="kvx-brand" aria-label="Kivo"><KivoMark size={24} tone="white" title="Kivo" /></Link>
       {RAIL_SECTIONS.map(({ section }, i) => {
-        const items = railItemsFor(section, role);
+        const items = railItemsFor(section, role, deliveryModuleOn);
         if (items.length === 0) return null;
         return (
           <div key={section} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
