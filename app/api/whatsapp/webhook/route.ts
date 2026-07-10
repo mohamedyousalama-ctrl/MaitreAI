@@ -27,6 +27,7 @@ import { normalizePhone } from "@/lib/messaging/phone";
 import { transcribeWhatsAppVoice } from "@/lib/messaging/voice";
 import { getSttAdapter, mockSttAllowed } from "@/lib/ai/stt";
 import { recordCriticalAlert } from "@/lib/alerts/record";
+import { recordWebhookAnomaly } from "@/lib/monitoring/webhook-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -136,6 +137,9 @@ export async function POST(req: NextRequest) {
           return sig.length === comp.length && timingSafeEqual(Buffer.from(sig), Buffer.from(comp));
         });
       if (!okSig) {
+        // WO-MONITORING-ALERTING (1b) — ledger the 401 so the sweep can detect a
+        // signature-break SPIKE (the exact incident). Fire-and-forget, never blocks.
+        void recordWebhookAnomaly(admin, "invalid_signature", { phoneNumberId, restaurantId: tenant?.restaurantId ?? null });
         return NextResponse.json({ ok: false, message: "invalid signature" }, { status: 401 });
       }
     } else if (process.env.NODE_ENV === "production") {
@@ -182,6 +186,9 @@ export async function POST(req: NextRequest) {
         messageCount: messages.length,
         action: "dropped",
       });
+      // WO-MONITORING-ALERTING (1b) — ledger the drop so the sweep can detect a
+      // spike of inbound going to an unrouted number. Fire-and-forget, never blocks.
+      void recordWebhookAnomaly(admin, "unresolved_phone_number_id", { phoneNumberId });
       return NextResponse.json({
         ok: true,
         received: messages.length,

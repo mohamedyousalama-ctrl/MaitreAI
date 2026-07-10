@@ -26,10 +26,10 @@
 // mirroring the M2.8 session-gating discipline.
 // ============================================================================
 
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getServerTenant } from "@/lib/db/tenant-server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { isAdminConfigured } from "@/lib/supabase/admin";
+import { isAdminConfigured, createAdminClient } from "@/lib/supabase/admin";
 import { isClaudeConfigured } from "@/lib/ai/llm";
 import { isWhatsAppConfigured, whatsAppEnvStatus, whatsAppMode } from "@/lib/messaging/config";
 
@@ -43,13 +43,35 @@ function isEncryptionKeyConfigured(): boolean {
   return /^[0-9a-fA-F]{64}$/.test(process.env.CREDENTIALS_ENCRYPTION_KEY ?? "");
 }
 
-export async function GET() {
+/** WO-MONITORING-ALERTING — trivial DB reachability probe: a single tiny read that
+ *  proves Supabase is actually answering (not just "env present"). Never throws;
+ *  returns false on any error. Only run in DEEP mode (see below) so the default
+ *  probe stays a pure env check that's safe to be hammered every few seconds. */
+async function isDbReachable(): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    if (!admin) return false;
+    const { error } = await admin.from("restaurants").select("id", { head: true, count: "exact" }).limit(1);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function GET(req: NextRequest) {
+  // DEEP mode (?deep=1): the external uptime pinger asks for a real DB round-trip so
+  // "ready" reflects reachability, not just config. Default (no deep) is unchanged:
+  // pure env inspection, byte-identical for load-balancer / Wesaya probes.
+  const deep = req.nextUrl.searchParams.get("deep") === "1";
+  const dbReachable = deep ? await isDbReachable() : null;
+
   // Required-to-function services — these gate readiness.
   const required = {
     supabase: isSupabaseConfigured(),
     supabaseAdmin: isAdminConfigured(),
     anthropic: isClaudeConfigured(),
     encryptionKey: isEncryptionKeyConfigured(),
+    ...(deep ? { dbReachable: dbReachable === true } : {}),
   };
   const ready = Object.values(required).every(Boolean);
   const httpStatus = ready ? 200 : 503;

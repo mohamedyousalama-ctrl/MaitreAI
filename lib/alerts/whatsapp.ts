@@ -21,6 +21,7 @@
 import "server-only";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
 import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
+import { alertGuidance } from "./guidance";
 
 export interface AlertWhatsAppPayload {
   type: string;
@@ -51,12 +52,19 @@ export async function sendAlertWhatsApp(p: AlertWhatsAppPayload): Promise<AlertW
 
   const place = p.restaurantName || p.restaurantId;
   const base = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/+$/, "");
+  // Plain-Arabic what/action so a non-technical reader can act (WO-MONITORING-
+  // ALERTING). Falls back to the bare detail for any type without guidance.
+  const g = alertGuidance(p.type);
   const lines = [
     "🚨 Kivo — تنبيه حرج",
-    `النوع: ${p.type}`,
     `المطعم: ${place}`,
-    `التفاصيل: ${p.detail}`,
   ];
+  if (g) {
+    lines.push(`⚠️ ${g.what}`);
+    lines.push(`✅ المطلوب: ${g.action}`);
+  }
+  lines.push(`النوع: ${p.type}`);
+  lines.push(`التفاصيل: ${p.detail}`);
   if (p.conversationId) lines.push(`محادثة: ${p.conversationId}`);
   if (base) lines.push(`🔗 ${base}/conversations`);
   lines.push(p.at);

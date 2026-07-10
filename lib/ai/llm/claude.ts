@@ -38,9 +38,18 @@ export const claudeAdapter: LlmAdapter = {
       if (cfg.effort) params.output_config = { effort: cfg.effort };
     }
 
-    const res = (await getClient().messages.create(
-      params as unknown as Anthropic.MessageCreateParamsNonStreaming
-    )) as Anthropic.Message;
+    // WO-MONITORING-ALERTING (Part 2) — optional per-request timeout so a hung
+    // Claude call fails FAST into the customer-facing fallback (respond-and-send)
+    // instead of stalling the turn. Env-gated: when AGENT_TIMEOUT_MS is unset the
+    // else branch is the VERBATIM original call (no second arg) — byte-identical on
+    // the happy path. When set, the SDK aborts after the timeout and throws; a
+    // successful response within the window is unchanged (the timeout only bounds
+    // the wait, not the result).
+    const client = getClient();
+    const timeoutMs = Number(process.env.AGENT_TIMEOUT_MS);
+    const res = (await (Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? client.messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming, { timeout: timeoutMs })
+      : client.messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming))) as Anthropic.Message;
 
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")

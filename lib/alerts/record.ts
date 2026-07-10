@@ -51,7 +51,27 @@ export type CriticalAlertType =
   // WO-VOICE-2 — the primary TTS (ElevenLabs) failed and the outbound voice note fell
   // back to OpenAI onyx. The customer still got the text + a voice note (never a silent
   // drop); the alert surfaces the EL outage/quota so it can be checked.
-  | "voice_tts_fallback";
+  | "voice_tts_fallback"
+  // WO-MONITORING-ALERTING — synthetic alerts raised by the monitor sweep
+  // (lib/monitoring/sweep.ts), NOT by an inline request failure. Each is cooldown-
+  // gated in monitor_alert_state so it fires once loudly, not in a storm.
+  // ── delivery_silence: zero inbound webhooks for a tenant that is OPEN + live for
+  //    X minutes — the exact signature of the Meta-side Wesaya outage. The #1 alert.
+  | "delivery_silence"
+  // ── webhook_signature_spike: a burst of 401 invalid-signature rejects (a broken
+  //    app secret / signature, like the incident) within the window.
+  | "webhook_signature_spike"
+  // ── webhook_unresolved_spike: a burst of inbound dropped as unresolved_phone_
+  //    number_id (a tenant's number fell out of routing) within the window.
+  | "webhook_unresolved_spike"
+  // ── agent_error_rate: Claude/agent error ratio over threshold across recent turns
+  //    (API errors/timeouts above threshold — Mohamed's scale concern #6).
+  | "agent_error_rate"
+  // ── daily_spend: today's Anthropic spend crossed the configured budget.
+  | "daily_spend"
+  // ── uptime_down: the app failed its own deep health check (DB unreachable / env
+  //    unsane). NOTE the external pinger detects a fully-down deploy independently.
+  | "uptime_down";
 
 export interface CriticalAlertInput {
   restaurantId: string;
