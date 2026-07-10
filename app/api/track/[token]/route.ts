@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getDeliveryByCustomerToken } from "@/lib/db/delivery";
+import { isActiveLeg } from "@/lib/delivery/runs";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -46,6 +47,12 @@ export async function GET(_req: Request, { params }: { params: { token: string }
   const fresh = loc && Date.now() - new Date(loc.recorded_at).getTime() < LOCATION_FRESH_MS;
   const o = (data.order ?? {}) as Record<string, unknown>;
 
+  // WO-DELIVERY-D2 — ACTIVE-LEG gate. A single delivery (run_id NULL) behaves
+  // exactly as before → byte-identical. A run stop (run_id SET) shows the driver's
+  // location ONLY while THIS leg is current (status === on_the_way), so a customer
+  // never sees the driver's dot while the driver is on another customer's leg.
+  const activeLeg = isActiveLeg(d.run_id != null, String(d.status ?? ""));
+
   return NextResponse.json({
     status: d.status,
     timeline: {
@@ -54,7 +61,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
       delivered_at: d.delivered_at ?? null,
     },
     driverName: (d.drivers as { name?: string } | null)?.name ?? null,
-    location: fresh && loc ? { lat: loc.lat, lng: loc.lng, recorded_at: loc.recorded_at } : null,
+    location: fresh && loc && activeLeg ? { lat: loc.lat, lng: loc.lng, recorded_at: loc.recorded_at } : null,
     order: {
       order_number: o.order_number ?? null,
       total: o.total ?? null,
