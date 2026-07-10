@@ -31,6 +31,16 @@ import { sendReceiptToCustomer } from "./send-receipt";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { checkAndNotifyStuck } from "@/lib/intelligence/stuck-detection";
 import { recordCriticalAlert } from "@/lib/alerts/record";
+// WO-COMPANION-W1-CORE §1e — the no-purgatory recovery. Pure decision + authored texts.
+import {
+  decideRecoveryAction,
+  recoveryReply,
+  recoveryChoiceTitles,
+  RECOVERY_CHOICE_REALERT,
+  RECOVERY_CHOICE_CONTINUE,
+  isEmergencyClassHold,
+} from "@/lib/ai/allergen-companion-flow";
+import { recordAllergyEvent } from "@/lib/db/allergy-audit";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export type RespondAndSendStatus =
@@ -42,7 +52,13 @@ export type RespondAndSendStatus =
   | "skipped_not_found"
   | "send_failed"
   | "agent_error"
-  | "deduped";
+  | "deduped"
+  // WO-COMPANION-W1-CORE §1e — the recovery reply was sent (never silence). The
+  // customer was asked «وصلك أحد من الفريق؟» / re-alerted / told an emergency hold
+  // needs a human. Distinct from skipped_takeover so purgatory is observably fixed.
+  | "recovery_prompt"
+  | "recovery_realert"
+  | "recovery_emergency_held";
 
 export interface RespondAndSendResult {
   status: RespondAndSendStatus;
@@ -105,6 +121,154 @@ async function realertOperator(
     ? "⏰🔒 العميل لسه مستني — دي محادثة سلامة/حساسية محوّلة لموظف ومحتاجة متابعة بشرية. (لا تُعاد للمساعد تلقائياً.)"
     : "⏰ العميل لسه مستني ردك — برجاء المتابعة.";
   await noteToTimeline(admin, restaurantId, conversationId, text, { kind: "handoff_idle_alert", safety });
+}
+
+// WO-COMPANION-W1-CORE §1e — the idle window (minutes) that marks a pending-human
+// thread as PURGATORY (customer waiting, no human tending). An actively-chatting human
+// keeps updated_at fresh, so the recovery never interrupts live handling.
+const RECOVERY_IDLE_MINUTES = 15;
+
+type RecoveryOutcome =
+  | { kind: "reply"; result: RespondAndSendResult } // recovery handled the turn (sent a message)
+  | { kind: "resume" }                              // §1e·b resume → caller continues to the Brain
+  | { kind: "none" };                               // not purgatory → caller runs existing logic
+
+/**
+ * §1e HANDOFF-RECOVERY — no purgatory, ever. For a pending-human thread receiving a
+ * customer message, decide and execute the ONE recovery action: ask «وصلك أحد من
+ * الفريق؟» (+ both choices), re-alert the team, resume with Kivo (§1e·b, non-emergency
+ * only), or explain an emergency hold needs a human (§1e·d, never resumable). A resume
+ * PRESERVES the allergy context (§1e·c: escalation_reason/allergy_note carry forward)
+ * and RE-FIRES the staff alert + audits the customer's verbatim choice (§1e·b). Best-
+ * effort; a failure returns {none} so the legacy path still runs.
+ */
+async function handleAllergyRecovery(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string;
+    conversationId: string;
+    ownershipState: string | null;
+    escalationReason: string | null;
+    updatedAt: string | null;
+    phone: string;
+    dialect: string;
+  }
+): Promise<RecoveryOutcome> {
+  const { restaurantId, conversationId, ownershipState, escalationReason, updatedAt, phone, dialect } = args;
+  try {
+    // Read the latest inbound (the message to act on) + the preceding outbound so we
+    // know whether the LAST thing Kivo said was the recovery question (→ this is its
+    // answer). One small read.
+    const { data: recentMsgs } = await admin
+      .from("messages")
+      .select("sender, text, meta, created_at")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(8);
+    const rows = (recentMsgs ?? []) as { sender: string; text: string | null; meta: Record<string, unknown> | null; created_at: string }[];
+    const inbound = rows.find((m) => m.sender === "customer");
+    if (!inbound) return { kind: "none" };
+    const lastInboundAtMs = new Date(inbound.created_at).getTime();
+    const interactiveId = (inbound.meta as { interactiveId?: string } | null)?.interactiveId ?? null;
+    const messageText = (inbound.text ?? "").trim();
+    // recoveryPending: the newest OUTBOUND (ai/system) message is the recovery question.
+    const lastOutbound = rows.find((m) => m.sender === "ai" || m.sender === "human" || m.sender === "system");
+    const recoveryPending = (lastOutbound?.meta as { kind?: string } | null)?.kind === "allergy_recovery_question";
+
+    const isIdle = isIdleBeyond(updatedAt, RECOVERY_IDLE_MINUTES);
+    const action = decideRecoveryAction({ ownershipState, escalationReason, isIdle, recoveryPending, messageText, interactiveId });
+    if (action === "none") return { kind: "none" };
+
+    const emergency = isEmergencyClassHold(escalationReason);
+
+    // ── RESUME (§1e·b, non-emergency only): customer explicitly chose to continue ──
+    if (action === "resume_continue") {
+      // §1e·c: PRESERVE the allergy context — do NOT clear escalation_reason/allergy_note.
+      // Customer-initiated SYSTEM_HOLD→AI_ACTIVE is a legal, deliberate resume (the map
+      // permits it); the enforced transition is satisfied.
+      await setOwnershipState(admin, conversationId, "AI_ACTIVE", {
+        extra: { owner: "ai", status: "AI نشط", updated_at: new Date().toISOString() },
+      });
+      // §1e·b: RE-FIRE the staff alert on resume (staff stay in the loop) + audit the
+      // customer's verbatim choice.
+      await realertOperator(admin, restaurantId, conversationId, RECOVERY_IDLE_MINUTES, true).catch(() => {});
+      await recordAllergyEvent(admin, {
+        restaurantId, conversationId, allergens: [], customerMessage: messageText,
+        eventKind: "recovery", humanAccepted: false, staffNotified: true,
+        netReason: "recovery_resume_continue",
+      }).catch(() => {});
+      await noteToTimeline(admin, restaurantId, conversationId,
+        "العميل اختار يكمل مع المساعد بعد انتظار الفريق — رجعت المحادثة للمساعد مع تنبيه الفريق مرة ثانية.",
+        { kind: "allergy_recovery_resume" });
+      return { kind: "resume" };
+    }
+
+    // ── The remaining actions all SEND a reply and stay held (never resume). ──
+    let text: string;
+    let statusKind: RespondAndSendStatus;
+    let auditReason: string;
+    let buttons: { id: string; title: string }[] = [];
+    const titles = recoveryChoiceTitles(dialect);
+    if (action === "realert") {
+      await realertOperator(admin, restaurantId, conversationId, RECOVERY_IDLE_MINUTES, true).catch(() => {});
+      text = dialect === "egyptian"
+        ? "نبّهت الفريق تاني 🙏 هيتواصلوا معاك في أقرب وقت. وأنا هنا لو حبيت أكمّل معاك."
+        : "نبّهت الفريق مرة ثانية 🙏 بيتواصلون معك قريب. وأنا هنا لو حبيت أكمّل معك.";
+      statusKind = "recovery_realert";
+      auditReason = "recovery_realert";
+    } else if (action === "emergency_held") {
+      // §1e·d — emergency-class hold is NEVER customer-resumable. Re-alert; explain a
+      // team member must assist. Never certifies safety, never reassures.
+      await realertOperator(admin, restaurantId, conversationId, RECOVERY_IDLE_MINUTES, true).catch(() => {});
+      text = dialect === "egyptian"
+        ? "دي حالة لازم حد من الفريق يتابعها معاك بنفسه 🙏 نبّهتهم تاني. لو فيه أي عرض قوي دلوقتي، اتصل بالطوارئ فوراً."
+        : "هذي حالة لازم أحد من الفريق يتابعها معك بنفسه 🙏 نبّهتهم مرة ثانية. إذا فيه أي عرض قوي الحين، تواصل مع الطوارئ فوراً.";
+      statusKind = "recovery_emergency_held";
+      auditReason = "recovery_emergency_held";
+    } else {
+      // send_question — ask «وصلك أحد من الفريق؟». Offer BOTH choices, EXCEPT an
+      // emergency hold offers ONLY re-alert (never a continue-with-Kivo path).
+      text = recoveryReply(dialect);
+      buttons = emergency
+        ? [{ id: RECOVERY_CHOICE_REALERT, title: titles.realert }]
+        : [{ id: RECOVERY_CHOICE_REALERT, title: titles.realert }, { id: RECOVERY_CHOICE_CONTINUE, title: titles.continue }];
+      statusKind = "recovery_prompt";
+      auditReason = emergency ? "recovery_question_emergency" : "recovery_question";
+    }
+
+    // Persist + send the reply (marked so the next turn recognizes the pending question).
+    const metaKind = action === "send_question" ? "allergy_recovery_question" : "allergy_recovery_ack";
+    const { data: rmsg } = await admin
+      .from("messages")
+      .insert({
+        restaurant_id: restaurantId, conversation_id: conversationId,
+        direction: "outbound", sender: "ai", text, status: "sent",
+        meta: { kind: metaKind },
+      })
+      .select("id")
+      .single();
+    let sendStatus = "sent";
+    const send = buttons.length
+      ? await sendWhatsAppInteractive({ to: phone, body: text, presentation: { kind: "buttons", buttons }, lastInboundAtMs })
+      : await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
+    sendStatus = send.status;
+    if (rmsg?.id) {
+      await admin.from("messages")
+        .update(send.status === "sent" ? { status: "sent", channel_message_id: send.externalMessageId ?? null } : { status: "failed" })
+        .eq("id", rmsg.id);
+    }
+    await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+    await recordAllergyEvent(admin, {
+      restaurantId, conversationId, allergens: [], customerMessage: messageText,
+      eventKind: "recovery", agentReply: text, humanOffered: action === "send_question",
+      staffNotified: action !== "send_question", netReason: auditReason,
+    }).catch(() => {});
+
+    return { kind: "reply", result: { status: statusKind, reply: text, sendStatus } };
+  } catch (e) {
+    console.error("[companion:recovery] error (falling through to legacy)", e);
+    return { kind: "none" };
+  }
 }
 
 /** Send the full web-menu link once — the budget-exhaustion fallback (browse the
@@ -459,6 +623,7 @@ export async function respondAndSendWhatsApp(
   // reason) NEVER auto-return — re-alert the team and stay silent. Flag-gated
   // (handoff_timeout); default off → the existing skipped_takeover behavior.
   let resumedAfterTimeout = false;
+  let resumedByRecovery = false; // §1e·b — the customer chose to continue with Kivo
   if ((conv.owner as string) === "human") {
     // Spine Step 3 (Part A — stuck detection live): a human-owned thread is exactly the
     // "customer waiting on a person" posture where stuck-ness matters. Detect + alert
@@ -470,11 +635,43 @@ export async function respondAndSendWhatsApp(
       console.error("[respond-and-send] stuck check error", e)
     );
 
-    const { data: rFlags } = await admin.from("restaurants").select("feature_flags").eq("id", restaurantId).single();
+    const { data: rFlags } = await admin.from("restaurants").select("feature_flags, dialect").eq("id", restaurantId).single();
     const features = (rFlags?.feature_flags as Record<string, unknown> | null) ?? null;
+
+    // WO-COMPANION-W1-CORE §1e — RECOVERY (no purgatory, ever). A pending-human thread
+    // that stalls must NEVER meet the customer with silence: ask «وصلك أحد من الفريق؟»
+    // (+ re-alert / continue), re-alert on request, resume with Kivo on an EXPLICIT
+    // affirmative (non-emergency), or explain an emergency hold needs a human (§1e·d).
+    //
+    // ⚠️ FLAG-SCOPING (carve-out — BOTH SIGN-OFFS): the recovery is GATED on
+    // allergy_companion_mode in W1, so flag-OFF stays BYTE-IDENTICAL (the law). The spec
+    // §1e scope-note argues this purgatory bug-fix SHOULD apply even flag-OFF; that
+    // unflagged carve-out is DEFERRED to the dual sign-off (shipping an unflagged reply/
+    // timing change on the Wesaya-live path is exactly what the highest-caution law
+    // forbids without an explicit ruling). To promote it, drop the `companionOn &&`.
+    const companionOn = isFeatureExplicitlyEnabled("allergy_companion_mode", features);
+    if (companionOn) {
+      const rec = await handleAllergyRecovery(admin, {
+        restaurantId,
+        conversationId,
+        ownershipState,
+        escalationReason: conv.escalation_reason as string | null,
+        updatedAt: conv.updated_at as string | null,
+        phone: (conv.customers as { phone?: string } | null)?.phone ?? "",
+        dialect: String((rFlags as { dialect?: string } | null)?.dialect ?? "egyptian"),
+      });
+      if (rec.kind === "reply") return rec.result;
+      // rec.kind === "resume": ownership is now AI_ACTIVE, staff re-alerted, context
+      // preserved — SKIP the legacy idle logic and fall through to the Brain turn.
+      if (rec.kind === "resume") {
+        resumedByRecovery = true;
+      }
+    }
+
     const cfg = readHandoffConfig(features);
-    const idle = cfg.enabled && isIdleBeyond(conv.updated_at as string | null, cfg.idleMinutes);
-    if (!idle) return { status: "skipped_takeover" };
+    const idle = !resumedByRecovery && cfg.enabled && isIdleBeyond(conv.updated_at as string | null, cfg.idleMinutes);
+    if (!resumedByRecovery && !idle) return { status: "skipped_takeover" };
+    if (!resumedByRecovery) {
 
     // Safety carve-out source of truth: the STRUCTURED is_safety_hold flag (Fix 2),
     // read only when the allergen-safety feature is on — so Wesaya (flag off) never
@@ -522,6 +719,7 @@ export async function respondAndSendWhatsApp(
       { kind: "handoff_auto_return", idleMinutes: cfg.idleMinutes }
     );
     resumedAfterTimeout = true;
+    } // end !resumedByRecovery (legacy idle policy)
   }
 
   // Mode gate (incident control, §F): only auto-reply in modes that allow it.

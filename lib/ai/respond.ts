@@ -16,6 +16,10 @@ import { modeAllowsOrders } from "./modes";
 import { dialectProfile } from "./dialect";
 import { fabricatesMoney, knownMenuPrices, offersNonMenuProduct } from "./money-guard";
 import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-gate";
+// WO-COMPANION-W1-CORE (§0/§6): companion banned-phrase guard + confirmation
+// checkpoint. Consulted ONLY when brain.allergyCompanion is on (flag OFF → inert).
+import { scanBannedAllergyPhrases, parseAllergyNote, computeDishTruthState, type DishTruthState } from "./allergen-companion";
+import { buildCheckpointRecap, companionBannedRewriteReply, type CheckpointDish } from "./allergen-companion-flow";
 import {
   emptyDraft,
   executeTool,
@@ -95,7 +99,7 @@ function claimsOrderConfirmed(text: string): boolean {
   return /(تم\s+(?:تأكيد|تسجيل|استلام)\s+الطلب|طلبك\s+(?:اتأكد|تأكد|تسجل|تم)|order\s+(?:confirmed|placed))/iu.test(text);
 }
 
-function isExplicitOrderConfirmation(text: string): boolean {
+export function isExplicitOrderConfirmation(text: string): boolean {
   if (/(?:لا|لأ|مش|ما)\s*(?:تأكد|تاكد|تأكيد|تاكيد|تكمل|تبعت|ترسل)|(?:الغ|إلغاء|cancel)/iu.test(text)) return false;
   return /(?:أكد|اكد|تأكيد|تاكيد|ابعته|ابعت|ارسله|رسل|كمّل|كمل|تمام|أيوه|ايوه|yes|confirm|send it)/iu.test(text);
 }
@@ -161,6 +165,62 @@ function safeAllergenNoEscalateReply(dialect: string): string {
     : "ما أقدر أأكد إن أي صنف خالٍ تماماً من مسببات الحساسية 🙏 بس أقدر أرشّح لك حسب المكوّنات المذكورة، وأتأكد لك من المطبخ لو تحب.";
 }
 
+// WO-COMPANION-W1-CORE §6 — the confirmation checkpoint. Whenever companion mode is
+// on AND an allergy exists in the session AND the customer has NOT yet explicitly
+// acknowledged, a finalize is INTERCEPTED: instead of committing the order, Kivo
+// recaps the allergens + the honest per-dish two-axis truth-state and requires an
+// explicit acknowledgement. The next explicit confirmation clears it (customer-turn
+// logs the ack → allergyAcknowledged, §6.5).
+function needsAllergyCheckpoint(brain: BrainContext): boolean {
+  return (
+    brain.allergyCompanion === true &&
+    typeof brain.sessionAllergyNote === "string" &&
+    brain.sessionAllergyNote.trim().length > 0 &&
+    brain.allergyAcknowledged !== true
+  );
+}
+
+/** Build the §6 recap for the current draft. Every dish resolves honestly to its
+ *  two-axis truth-state (W1: "unknown"/"contains" only — no prep data yet). */
+function buildDraftCheckpointRecap(brain: BrainContext, draft: OrderDraft): string {
+  const allergens = parseAllergyNote(brain.sessionAllergyNote);
+  const byId = new Map(brain.menuItems.map((m) => [m.id, m]));
+  const dishes: CheckpointDish[] = draft.lines.map((line) => {
+    const item = byId.get(line.itemId);
+    const data = { allergens: item?.allergens ?? null };
+    // Worst (most protective) state across all session allergens for this dish.
+    let worst: DishTruthState = "unknown";
+    for (const a of allergens) {
+      const st = computeDishTruthState(data, a);
+      if (st === "contains") { worst = "contains"; break; }
+    }
+    return { name: line.name, state: worst };
+  });
+  return buildCheckpointRecap(allergens, dishes, brain.dialect);
+}
+
+/** The RespondResult for an intercepted §6 checkpoint — the recap reply, the draft
+ *  NOT finalized, no escalation (Kivo keeps talking; the customer acknowledges next). */
+function checkpointResult(brain: BrainContext, ctx: ToolContext): RespondResult {
+  const recap = buildDraftCheckpointRecap(brain, ctx.draft);
+  ctx.signals.push({ type: "missing_data", detail: { reason: "allergy_checkpoint", recap } });
+  return {
+    reply: recap,
+    draft: ctx.draft,
+    escalate: false,
+    escalationReason: null,
+    signals: ctx.signals,
+    presentation: null,
+    photoRequests: ctx.photoRequests,
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
+    toolNames: [],
+    stopReason: "allergy_checkpoint",
+    model: "deterministic_allergen_companion",
+    adapter: "mock",
+    resendReceipt: false,
+  };
+}
+
 export async function respond(input: RespondInput): Promise<RespondResult> {
   const adapter = await getAdapter();
   const system =
@@ -216,6 +276,9 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     isExplicitOrderConfirmation(input.userMessage) &&
     atConfirmationPoint(input.history)
   ) {
+    // §6 checkpoint — intercept the fast-path finalize when an unacknowledged allergy
+    // is in the session. Recap + require ack instead of committing the order.
+    if (needsAllergyCheckpoint(input.brain)) return checkpointResult(input.brain, ctx);
     toolNames.push("finalize_draft");
     const out = executeTool("finalize_draft", {}, ctx);
     if (!out.isError) {
@@ -307,6 +370,11 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     messages.push({ role: "assistant", content: res.rawContent });
     const results: LlmContentBlock[] = [];
     for (const call of res.toolCalls) {
+      // §6 checkpoint — the model tried to finalize with an unacknowledged allergy in
+      // the session. Intercept: recap + require ack instead of committing the order.
+      if (call.name === "finalize_draft" && needsAllergyCheckpoint(input.brain)) {
+        return checkpointResult(input.brain, ctx);
+      }
       toolNames.push(call.name);
       const out = executeTool(call.name, call.input, ctx);
       results.push({
@@ -362,6 +430,19 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       text = safeAllergenReply(input.brain.dialect);
     } else {
       text = safeAllergenNoEscalateReply(input.brain.dialect);
+    }
+  }
+  // WO-COMPANION-W1-CORE §0 — companion banned-phrase guard. In companion mode Kivo
+  // must NEVER assert food safety: scan the FULL §0 vocabulary («آمن»/«مضمون»/«عادي»/
+  // «ما عليك»/«ما يضرك»/«خالي تماماً»/«بدون أي تلامس»/«يناسب الحساسية»/"safe") over the
+  // outbound text (including any legacy rewrite above, which uses «آمن» negated), and
+  // REPLACE it with a banned-phrase-clean reply that hands to the kitchen. Off → inert.
+  if (input.brain.allergyCompanion === true && text.trim()) {
+    const banned = scanBannedAllergyPhrases(text);
+    if (banned.length) {
+      ctx.signals.push({ type: "escalation", detail: { reason: "companion_banned_phrase", phrases: banned, reply: text } });
+      ctx.escalation = ctx.escalation ?? { reason: "سلامة الحساسية (رفيق): عبارة ممنوعة تؤكّد السلامة — يحتاج تأكيد المطبخ" };
+      text = companionBannedRewriteReply(input.brain.dialect);
     }
   }
 

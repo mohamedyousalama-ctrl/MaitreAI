@@ -190,6 +190,25 @@ export async function persistOrderFromDraft(
 
   const orderNumber = await nextOrderNumber(admin, restaurantId);
 
+  // WO-COMPANION-W1-CORE (§1a.2, kitchen-ticket INVARIANT): copy the FULL session
+  // allergy-note union onto the order AT create so the kitchen ticket carries every
+  // allergen mentioned this conversation, independent of is_safety_hold. Deploy-safe:
+  // the column is added by 0080; a missing column → the select errors → empty note →
+  // we DON'T add the field to the insert, so a pre-0080/flag-off tenant is byte-
+  // identical. A non-empty note only exists when the companion flow wrote it (⇒ 0080
+  // applied ⇒ the orders column exists), so the insert never errors on the column.
+  let allergyNote = "";
+  try {
+    const { data: convNote } = await admin
+      .from("conversations")
+      .select("allergy_note")
+      .eq("id", conversationId)
+      .maybeSingle();
+    allergyNote = ((convNote as { allergy_note?: string | null } | null)?.allergy_note ?? "").trim();
+  } catch {
+    /* column absent (0080 not applied) → inert */
+  }
+
   const { data, error } = await admin
     .from("orders")
     .upsert(
@@ -199,6 +218,7 @@ export async function persistOrderFromDraft(
         order_number: orderNumber,
         conversation_id: conversationId,
         customer_id: customerId,
+        ...(allergyNote ? { allergy_note: allergyNote } : {}),
         fulfillment: verifiedDraft.fulfillment ?? "pickup",
         branch_id: branchId,
         zone_id: zoneId,
