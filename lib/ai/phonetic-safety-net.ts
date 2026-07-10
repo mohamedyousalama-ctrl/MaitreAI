@@ -25,7 +25,7 @@
 // set's, so the two never silently drift.
 // ============================================================================
 
-import { normalizeAr } from "./allergen-gate";
+import { normalizeAr, hasAllergyIntent } from "./allergen-gate";
 
 /** Below the ratified STT confidence floor, a segment is "low confidence" — a
  *  SECONDARY tripwire only (measured garbles were often MORE confident than
@@ -158,6 +158,15 @@ export interface PhoneticNetOptions {
   /** STT confidence for a transcribed turn (undefined for typed text → the
    *  secondary confidence tripwire is inert). */
   sttConfidence?: number | null;
+  /** WO-PHONETIC-NET-TYPED-SCOPE: this turn is a transcribed VOICE note (its text
+   *  may be an STT garble). When true, the Levenshtein NEAR path uses the full
+   *  length-keyed budget — its designed STT-recovery purpose. When false/absent
+   *  (TYPED text — not a garble), NEAR is tightened (see detectPhoneticSafetyNet):
+   *  long terms (≥5) still near-match at dist 1; short terms only when the turn also
+   *  carries an allergy intent, so «عايز الحساب»/«موز» stay clean while a typo'd
+   *  disclosure «بتعبني البيظ» still fires. A present sttConfidence also implies a
+   *  transcript (belt-and-suspenders for callers that only set confidence). */
+  isVoiceTranscript?: boolean;
 }
 
 /** Edit distance of a token to a term, trying BOTH the raw normalized token and its
@@ -201,6 +210,25 @@ export function detectPhoneticSafetyNet(text: string, opts: PhoneticNetOptions =
   if (!raw.trim()) return NO_HIT;
   const n = normalizeAr(raw);
 
+  // WO-PHONETIC-NET-TYPED-SCOPE: is this turn a transcribed voice note (may be an STT
+  // garble → full near budget), or typed text (not a garble → tightened near)? A present
+  // sttConfidence also implies a transcript (some transcripts carry no confidence, so the
+  // explicit flag is the primary signal — see the eval-harness note in the WO).
+  const transcribed = opts.isVoiceTranscript === true || typeof opts.sttConfidence === "number";
+  // Allergy-intent (base gate's own predicate, shared). Only consulted for the TYPED
+  // short-term near exception below; computed once. Skipped work when transcribed.
+  const intent = transcribed ? false : hasAllergyIntent(n);
+  /** Should a NEAR (garbled) single-term hit at edit distance `d` (≥1) trip on THIS turn?
+   *  - transcribed: full length-keyed budget (the `d ≤ budgetFor(term)` outer guard) — STT
+   *    recovery, unchanged (dist 2 on a long term still fires, e.g. a real garble).
+   *  - typed: capped at dist ≤ 1 (a typed word is not a garble — 2 edits is a different word,
+   *    which is exactly how «أطباق»→البان / «الحساب»→حساسه / «البيت»→البان over-fired at d2),
+   *    AND long term (≥5) OR allergy-intent present. So «سودني»→سوداني(d1,long) and the
+   *    typo'd disclosure «بتعبني البيظ»(d1,short+intent) fire, while «عايز الحساب»/«موز»
+   *    (short, no intent) and every d2 look-alike stay clean. */
+  const nearTrips = (term: string, d: number): boolean =>
+    transcribed || (d <= 1 && (term.length >= 5 || intent));
+
   // 1) English / Franco allergy context (raw text, case-insensitive).
   if (ENGLISH_ALLERGY_RE.test(raw)) {
     return { fired: true, term: "allergy", reason: "allergy_context" };
@@ -222,12 +250,17 @@ export function detectPhoneticSafetyNet(text: string, opts: PhoneticNetOptions =
     for (const { term, cls } of SINGLE_TERMS) {
       const d = bestDist(tok, term);
       if (d > budgetFor(term)) continue;
-      sawAnyAllergyToken = true;
-      if (cls === "marker") return { fired: true, term, reason: d === 0 ? "allergy_marker" : "phonetic_near" };
-      if (cls === "symptom") return { fired: true, term, reason: d === 0 ? "symptom" : "phonetic_near" };
-      // allergen noun
-      if (d === 0) { sawExactAllergen = true; continue; } // ordinary food — needs context/garble
-      return { fired: true, term, reason: "phonetic_near" }; // garbled allergen → rule B-i
+      sawAnyAllergyToken = true; // counts toward 3b/tripwire even if the near is not a trip on typed text
+      // EXACT (d===0) is unchanged: markers/symptoms fire; a bare allergen noun needs context.
+      if (d === 0) {
+        if (cls === "marker") return { fired: true, term, reason: "allergy_marker" };
+        if (cls === "symptom") return { fired: true, term, reason: "symptom" };
+        sawExactAllergen = true; // ordinary food — needs context/garble
+        continue;
+      }
+      // NEAR (d≥1, garble): gate by transcribed / dist / length / intent (typed-scope rule).
+      if (!nearTrips(term, d)) continue; // typed: d2 look-alike, or short-term near w/o intent → not a trip
+      return { fired: true, term, reason: "phonetic_near" };
     }
   }
 

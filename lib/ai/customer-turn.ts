@@ -59,6 +59,10 @@ export interface CustomerTurnInput {
    *  (undefined for typed text). Feeds ONLY the fail-closed net's secondary
    *  confidence tripwire; the pipeline is otherwise unchanged. */
   sttConfidence?: number | null;
+  /** WO-PHONETIC-NET-TYPED-SCOPE: true when this turn is a transcribed voice note
+   *  (meta.voice). Lets the phonetic net apply its full STT-recovery near budget to
+   *  voice while typed text gets the tightened near path. Undefined ⇒ typed. */
+  isVoiceTranscript?: boolean;
 }
 
 export interface CustomerTurnOutcome {
@@ -361,7 +365,7 @@ export async function runCustomerTurn(
   // Evaluated last (only when the exact gates did not already fire) so a hold decision
   // is reached before perception/LLM.
   const phoneticHit = (!allergenHit.fired && !symptomHit.fired)
-    ? detectPhoneticSafetyNet(input.userMessage, { sttConfidence: input.sttConfidence })
+    ? detectPhoneticSafetyNet(input.userMessage, { sttConfidence: input.sttConfidence, isVoiceTranscript: input.isVoiceTranscript })
     : { fired: false, term: null, reason: null as string | null };
   const combinedAllergenHit = allergenHit.fired ? allergenHit : (symptomHit.fired ? symptomHit : phoneticHit);
   // Distinct source for observability (net-trip vs vocabulary-hit) — carried into the

@@ -25,6 +25,12 @@ import {
 } from "../lib/ai/phonetic-safety-net.ts";
 import { normalizeAr } from "../lib/ai/allergen-gate.ts";
 
+// WO-PHONETIC-NET-TYPED-SCOPE: every utterance in this suite is a transcribed VOICE
+// note (khalid-voice-eval-set.json = STT items / garbled transcripts), so the net is
+// exercised with isVoiceTranscript:true — its full STT-recovery near budget, unchanged.
+// (Typed text now gets a tightened near path; that is covered by proof-phonetic-typed-scope.)
+const VOICE = { isVoiceTranscript: true } as const;
+
 const here = dirname(fileURLToPath(import.meta.url));
 const evalSet = JSON.parse(
   readFileSync(join(here, "voice", "khalid-voice-eval-set.json"), "utf8")
@@ -44,7 +50,7 @@ const ok = (msg: string) => { passed++; if (process.env.VERBOSE) console.log("  
 // --- 1. RECALL: every mustFlag item fires -----------------------------------
 for (const it of evalSet.stt.items) {
   if (!it.mustFlag) continue;
-  const hit = detectPhoneticSafetyNet(it.spoken);
+  const hit = detectPhoneticSafetyNet(it.spoken, VOICE);
   if (hit.fired) ok(`${it.id} fires (reason=${hit.reason}, term=${hit.term})`);
   else fail(`${it.id} MUST flag but net did not fire — "${it.spoken}" [terms: ${it.safetyTerms.join(", ")}]`);
 }
@@ -52,7 +58,7 @@ for (const it of evalSet.stt.items) {
 // --- 2. CONTROL: clean order must NOT fire; STT-19 over-flag tolerated -------
 for (const it of evalSet.stt.items) {
   if (it.mustFlag) continue;
-  const hit = detectPhoneticSafetyNet(it.spoken);
+  const hit = detectPhoneticSafetyNet(it.spoken, VOICE);
   if (it.acceptableFlag) {
     ok(`${it.id} over-flag tolerated (fired=${hit.fired})`);
   } else if (!hit.fired) {
@@ -79,7 +85,7 @@ const GARBLED_TRANSCRIPTS = [
   "معادر اكل جمبري تكفى",          // elided avoidance معادر→مو قادر (phrase)
 ];
 for (const t of GARBLED_TRANSCRIPTS) {
-  const hit = detectPhoneticSafetyNet(t);
+  const hit = detectPhoneticSafetyNet(t, VOICE);
   if (hit.fired) ok(`garble fires: "${t}" (reason=${hit.reason})`);
   else fail(`GARBLE MISS — fail-closed net did not fire on "${t}"`);
 }
@@ -99,7 +105,7 @@ for (const [base, garbles] of Object.entries(evalSet.failClosedThreshold.phoneti
     // a garble "covers" if it either equals the base (post-normalize) or near-matches
     // some safety term, or fires inside a neutral food carrier.
     const near = nearestSafetyTerm(g);
-    const inCarrier = detectPhoneticSafetyNet(`ابي اكل ${g} بس`);
+    const inCarrier = detectPhoneticSafetyNet(`ابي اكل ${g} بس`, VOICE);
     if (near || inCarrier.fired || gn === normalizeAr(base)) covHit++;
     else covMisses.push(`${g}→${base}`);
   }
@@ -118,7 +124,7 @@ for (const [group, terms] of Object.entries(evalSet.stt.safetyLexicon)) {
     const tn = normalizeAr(term);
     // a lexicon term is "covered" if it (or a normalized form) is in the module set,
     // or the net fires on it directly (phrases / near forms).
-    if (lex.has(tn) || detectPhoneticSafetyNet(term).fired || [...lex].some((l) => tn.includes(l) || l.includes(tn))) continue;
+    if (lex.has(tn) || detectPhoneticSafetyNet(term, VOICE).fired || [...lex].some((l) => tn.includes(l) || l.includes(tn))) continue;
     missingFromModule.push(`${group}:${term}`);
   }
 }

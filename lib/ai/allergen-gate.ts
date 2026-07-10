@@ -119,6 +119,15 @@ const AVOIDANCE_INTENT_RE = new RegExp(
   ].join("|")
 );
 
+/** True iff the (ALREADY normalized via normalizeAr) text carries an allergy INTENT
+ *  signal — an explicit allergy word OR any avoidance/medical marker. This is the
+ *  base gate's own intent predicate, EXPORTED so other safety layers (e.g. the
+ *  phonetic net's typed short-term near-match exception) share ONE definition of
+ *  "allergy intent" instead of re-authoring it. Pass a normalizeAr'd string. */
+export function hasAllergyIntent(normalized: string): boolean {
+  return EXPLICIT_ALLERGY_RE.test(normalized) || AVOIDANCE_INTENT_RE.test(normalized);
+}
+
 /** Allergen-safety ASSERTION verbs/claims (for the output guard). */
 const SAFETY_ASSERT_RE = new RegExp(
   [
