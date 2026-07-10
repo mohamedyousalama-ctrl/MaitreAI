@@ -1,0 +1,71 @@
+# Feature Flag Registry
+
+> **Owner:** Engineering · **Status:** Active · **Last reviewed:** 2026-07-10
+
+The single index of every feature flag in the codebase. Generated from and verified
+against `lib/feature-flags.ts` (deploy/env flags) and `lib/tenant/tier.ts` (per-tenant
+`feature_flags`). When you add, rename, remove, or change the default of a flag, update
+this file in the same PR (see the PR checklist).
+
+Two kinds of flag exist:
+
+- **Deploy flags** live in `lib/feature-flags.ts`, read a `NEXT_PUBLIC_*` env var, and
+  gate a surface for the WHOLE deployment. Flipping one is an **Engineering** action:
+  set the env var in Vercel and redeploy. No secrets live here.
+- **Per-tenant flags** live in `restaurants.feature_flags` (JSONB) and are checked
+  through `lib/tenant/tier.ts`. They gate a capability for ONE restaurant. Flipping one
+  is a **Kivo Ops** action (settings write on that tenant). Default OFF unless noted.
+
+---
+
+## Deploy flags (`lib/feature-flags.ts`)
+
+| Flag (constant) | Env var | Default | Purpose | Who may flip |
+|---|---|---|---|---|
+| `ENABLE_ADMIN_CHAT_CONSOLE` | `NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE` | **off** | Reveals the operator «الرئيسية» Maître admin-chat console (`/api/agent/admin`) + the in-chat promotion builder. Hidden during the order-engine upgrade. | Engineering (env + redeploy) |
+| `CONSOLE_V2` | `NEXT_PUBLIC_CONSOLE_V2` | **off** | Deploy-level kill-switch for the entire new operator console (`app/(console-v2)`, the `/c` route group). Must be on for the per-tenant `console_v2` flag to route anyone into the new UI. | Engineering (env + redeploy) |
+| `ENABLE_DELIVERY_TRACKING` | `NEXT_PUBLIC_ENABLE_DELIVERY_TRACKING` | **on** | The delivery dispatch + driver flow + customer tracking module (drivers, deliveries, `/d/<token>`, `/t/<token>`, operator deliveries view). Set the env var to `"false"` to make the whole module inert. | Engineering (env + redeploy) |
+| `ENABLE_MIZAN_PANEL` | `NEXT_PUBLIC_ENABLE_MIZAN_PANEL` | **off** | The hosted MIZAN reviewer surface (`/mizan/<token>` + `/api/mizan/*`) where a Saudi reviewer scores Khalid's replies. 404s until on. Does not touch any customer-facing turn. | Engineering (env + redeploy) |
+
+> `HOME_HREF` in the same file is a **derived constant**, not a flag: it resolves the
+> post-login landing route from `ENABLE_ADMIN_CHAT_CONSOLE` (`/dashboard` when on, else
+> `/conversations`). Listed here so it isn't mistaken for an independent switch.
+
+---
+
+## Per-tenant flags (`lib/tenant/tier.ts` → `restaurants.feature_flags`)
+
+**Tier:** a tenant is `standard` (default) or `pro` (`isProTenant`). `isFeatureEnabled`
+treats `tier='pro'` as implying every capability below; `isFeatureExplicitlyEnabled`
+requires the flag to be set on the tenant **even for a Pro tenant** (a deliberate,
+separately-verified switch — e.g. `customer_memory`). All default **off** for a standard
+tenant. Who may flip: **Kivo Ops** (per-tenant `feature_flags` write).
+
+| Flag | Purpose |
+|---|---|
+| `conversation_intelligence` | Emit terminal conversation reports (Karim Pro P1). |
+| `customer_memory` | Build per-customer memory + the operator card from those reports (P2). Strict opt-in — NOT implied by `tier='pro'`. |
+| `conversation_outcomes` | Classify and persist a terminal outcome row per conversation. |
+| `perception` | Per-turn perception read (risk/intent) that feeds a directive into the agent. |
+| `cadence` | Honest read-receipt + typing indicator fired on each inbound. |
+| `stateful_orders` | Persistent multi-turn order draft/basket state across messages. |
+| `deterministic_allergen_safety` | The deterministic allergen safety gate + the structured `is_safety_hold` flag. |
+| `allergen_symptom_detection` | Symptom-based allergen escalation (companion to the gate). |
+| `psp_payments` | PSP (Moyasar) online payment links. |
+| `staff_command_channel` | The staff WhatsApp command lane — registered staff numbers routed to deterministic commands, never the customer lane. |
+| `standing_instructions` | Per-tenant standing instructions injected into the brain prompt. |
+| `kitchen_ticket` | The money-stripped kitchen print view (`/(console)/orders/[id]/ticket`); route 404s / audit 410s unless on. |
+| `console_v2` | Routes THIS restaurant into the new console_v2 UI (requires the `CONSOLE_V2` deploy flag on too). |
+| `media_guard` | Per-conversation image/media send budget + guard. |
+| `khalid_persona` | The Khalid (KSA) persona for the customer agent. |
+| `ksa_encyclopedia` | KSA dish/ingredient encyclopedia knowledge available to the agent. |
+| `callback_requests` | Customer callback-request capture flow. |
+| `qz_print` | QZ Tray local-printer integration. |
+| `voice_notes` | Additive outbound voice-note replies alongside text (WO-VOICE-2). |
+| `photo_thread` | Grouped photo-thread captions for menu/item images. |
+| `manager_command_recognition` | Recognize a manager messaging the business number and treat them accordingly. |
+
+---
+
+_To regenerate: read the `ProFeature` union and the exported constants in the two source
+files above and reconcile every entry here against them._
