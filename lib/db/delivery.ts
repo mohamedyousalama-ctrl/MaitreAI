@@ -690,3 +690,151 @@ export async function setCodCollectedByToken(
   await admin.from("delivery_events").insert({ delivery_id: d.id, type: `cod_collected:${!!collected}`, payload: {} });
   return { ok: true };
 }
+
+// ============================================================================
+// WO-DELIVERY-D3 — operator RUNS BOARD reads (spec §4). Pure read assembly over the
+// D2 model — NO business logic here beyond projecting rows. Sections are computed
+// INDEPENDENTLY per flag by the caller: active runs + unassigned queue → delivery_runs;
+// zone misses → delivery_geo_routing. Each read is wrapped so an unapplied 0081/0082
+// (the prepare-only window) yields an EMPTY section instead of a 500 (deploy-safety).
+// ============================================================================
+
+export interface BoardRunStop {
+  status: string;
+  stopOrder: number | null;
+  area: string | null;
+  codAmount: number;
+  codCollected: boolean;
+}
+export interface BoardRun {
+  runId: string;
+  driverName: string | null;
+  status: string;
+  createdAt: string;
+  stopCount: number;
+  stops: BoardRunStop[];
+}
+export interface BoardUnassigned {
+  deliveryId: string;
+  orderNumber: string | null;
+  area: string | null;
+  total: number | null;
+  currency: string | null;
+  createdAt: string;
+}
+export interface BoardMisses {
+  total: number;
+  byArea: { area: string; count: number }[];
+}
+
+// Batch zone-name lookup for a set of zone ids (empty-safe).
+async function zoneNames(admin: SupabaseClient, ids: (string | null | undefined)[]): Promise<Map<string, string>> {
+  const uniq = [...new Set(ids.filter((x): x is string => !!x))];
+  const out = new Map<string, string>();
+  if (!uniq.length) return out;
+  const { data } = await admin.from("delivery_zones").select("id,name").in("id", uniq);
+  for (const z of (data ?? []) as { id: string; name: string }[]) out.set(z.id, z.name);
+  return out;
+}
+
+/** Active runs for the operator board: driver + stop count + per-stop status/COD/area.
+ *  NO item details (not needed on the board). Empty on any read error (prepare-only). */
+export async function listActiveRunsForOperator(admin: SupabaseClient, restaurantId: string): Promise<BoardRun[]> {
+  try {
+    const { data: runs, error } = await admin
+      .from("delivery_runs")
+      .select("id,status,created_at,drivers(name)")
+      .eq("restaurant_id", restaurantId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error || !runs?.length) return [];
+    const runIds = runs.map((r) => r.id as string);
+    const { data: dels } = await admin
+      .from("deliveries")
+      .select("id,run_id,status,stop_order,cod_collected,orders(zone_id,total,payment_status)")
+      .in("run_id", runIds)
+      .order("stop_order", { ascending: true });
+    const rows = (dels ?? []) as { run_id: string; status: string; stop_order: number | null; cod_collected: boolean; orders: { zone_id?: string | null; total?: number | null; payment_status?: string | null } | null }[];
+    const zNames = await zoneNames(admin, rows.map((r) => r.orders?.zone_id));
+    const byRun = new Map<string, BoardRunStop[]>();
+    for (const r of rows) {
+      const paid = r.orders?.payment_status === "paid";
+      const stop: BoardRunStop = {
+        status: r.status,
+        stopOrder: r.stop_order,
+        area: r.orders?.zone_id ? zNames.get(r.orders.zone_id) ?? null : null,
+        codAmount: paid ? 0 : Number(r.orders?.total) || 0,
+        codCollected: !!r.cod_collected,
+      };
+      if (!byRun.has(r.run_id)) byRun.set(r.run_id, []);
+      byRun.get(r.run_id)!.push(stop);
+    }
+    return runs.map((r) => {
+      const stops = byRun.get(r.id as string) ?? [];
+      return {
+        runId: r.id as string,
+        driverName: (r as { drivers?: { name?: string } | null }).drivers?.name ?? null,
+        status: String(r.status),
+        createdAt: String(r.created_at),
+        stopCount: stops.length,
+        stops,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Unassigned (pending, not in a run) deliveries — the operator's dispatch queue,
+ *  oldest first (the UI flags the oldest amber). Empty on any read error. */
+export async function listUnassignedQueue(admin: SupabaseClient, restaurantId: string): Promise<BoardUnassigned[]> {
+  try {
+    const { data, error } = await admin
+      .from("deliveries")
+      .select("id,created_at,orders(order_number,address,zone_id,total,currency)")
+      .eq("restaurant_id", restaurantId)
+      .eq("status", "pending")
+      .is("run_id", null)
+      .order("created_at", { ascending: true })
+      .limit(50);
+    if (error || !data?.length) return [];
+    const rows = data as { id: string; created_at: string; orders: { order_number?: string | null; address?: string | null; zone_id?: string | null; total?: number | null; currency?: string | null } | null }[];
+    const zNames = await zoneNames(admin, rows.map((r) => r.orders?.zone_id));
+    return rows.map((r) => ({
+      deliveryId: r.id,
+      orderNumber: r.orders?.order_number ?? null,
+      area: (r.orders?.zone_id ? zNames.get(r.orders.zone_id) : null) ?? r.orders?.address ?? null,
+      total: r.orders?.total ?? null,
+      currency: r.orders?.currency ?? null,
+      createdAt: r.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Zone-miss insight summary (D1's zone_misses): plain count + per-area counts.
+ *  Feeds zone-expansion decisions. Empty on any read error (prepare-only 0081). */
+export async function zoneMissesSummary(admin: SupabaseClient, restaurantId: string): Promise<BoardMisses> {
+  try {
+    const { data, error } = await admin
+      .from("zone_misses")
+      .select("nearest_zone_id,area_text")
+      .eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error || !data?.length) return { total: 0, byArea: [] };
+    const rows = data as { nearest_zone_id?: string | null; area_text?: string | null }[];
+    const zNames = await zoneNames(admin, rows.map((r) => r.nearest_zone_id));
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const area = (r.nearest_zone_id ? zNames.get(r.nearest_zone_id) : null) ?? r.area_text ?? "غير محدد";
+      counts.set(area, (counts.get(area) ?? 0) + 1);
+    }
+    const byArea = [...counts.entries()].map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count);
+    return { total: rows.length, byArea };
+  } catch {
+    return { total: 0, byArea: [] };
+  }
+}

@@ -33,6 +33,7 @@ import {
   Settings,
   UserCog,
   Rocket,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 import type { DictKey } from "@/lib/i18n/dictionary";
@@ -53,6 +54,10 @@ export interface RailItem {
    *  surfaces (Live Shift + Conversations, per OPERATION_HREFS); every other rail
    *  item is manager-only and hidden from an operator's rail (item 4). */
   managerOnly: boolean;
+  /** WO-DELIVERY-D3: this item appears ONLY when the tenant has the delivery module
+   *  on (delivery_runs OR delivery_geo_routing). Absent on every existing item, so the
+   *  rail is byte-identical for a tenant without those flags. */
+  requiresDeliveryModule?: boolean;
 }
 
 /** Section header dictionary keys, in render order (MAIN → MODULES → CRM → ADMIN). */
@@ -80,6 +85,10 @@ export const RAIL_ITEMS: RailItem[] = [
   // Ask Kivo is a GLOBAL overlay within the /c group (one command brain, two doors —
   // item 14), not a page route, so it carries no href; the rail entry opens the overlay.
   { key: "ask-kivo", labelKey: "nav.askKivo", icon: Sparkles, section: "modules", ready: true, managerOnly: true },
+  // WO-DELIVERY-D3 — the التوصيل runs board. Flag-gated (requiresDeliveryModule): shown
+  // ONLY when the tenant has delivery_runs or delivery_geo_routing on; otherwise absent
+  // → the rail is byte-identical to today for every other tenant.
+  { key: "deliveries", labelKey: "nav.deliveries", icon: Truck, section: "modules", href: "/c/deliveries", ready: true, managerOnly: true, requiresDeliveryModule: true },
   // CRM — customer relationships (manager-only)
   { key: "customers", labelKey: "nav.customers", icon: Users, section: "crm", href: "/c/customers", ready: true, managerOnly: true },
   // ADMIN — configuration + people (manager-only)
@@ -91,9 +100,16 @@ export const RAIL_ITEMS: RailItem[] = [
 export type ConsoleRole = "manager" | "operation";
 
 /** Items for a section a given role may see, in declaration order. Operators get
- *  only the operation surfaces (managerOnly:false); managers get everything. */
-export function railItemsFor(section: RailSection, role: ConsoleRole): RailItem[] {
-  return RAIL_ITEMS.filter((i) => i.section === section && (role === "manager" || !i.managerOnly));
+ *  only the operation surfaces (managerOnly:false); managers get everything.
+ *  `deliveryModuleOn` (default false) gates the delivery-module item ONLY — every
+ *  existing item is untouched, so an unchanged caller yields the byte-identical rail. */
+export function railItemsFor(section: RailSection, role: ConsoleRole, deliveryModuleOn = false): RailItem[] {
+  return RAIL_ITEMS.filter(
+    (i) =>
+      i.section === section &&
+      (role === "manager" || !i.managerOnly) &&
+      (!i.requiresDeliveryModule || deliveryModuleOn)
+  );
 }
 
 /** The role-aware landing target after login + workspace pick. Both roles land on
