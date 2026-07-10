@@ -84,6 +84,14 @@ export interface MenuItemRow {
   // WB-ALLERGEN-2/3 — allergen review state (nullable; loaded via select("*")).
   allergens_reviewed_at?: string | null;
   allergens_reviewed_by?: string | null;
+  // WO-COMPANION W2 — axis-2 (prep/cross-contact) columns (migration 0083, nullable;
+  // absent until applied → optional here so select("*") mapping is deploy-safe).
+  cross_contact_risks?: string[] | null;
+  prep_status?: string | null;
+  prep_verified_at?: string | null;
+  prep_verified_by?: string | null;
+  kitchen_can_isolate?: string | null;
+  preparation_notes?: string | null;
   image_kind: "real" | "illustrative" | "card";
   image_status: "approved" | "pending" | "rejected";
 }
