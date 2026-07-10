@@ -59,8 +59,13 @@ export async function loadReceiptData(client: SupabaseClient, orderId: string): 
   const conv = (row.conversations as { is_safety_hold?: boolean; ownership_state?: string } | null) ?? {};
   const zone = (row.delivery_zones as { name?: string } | null) ?? {};
   const orderNumber = String(row.order_number ?? "");
-  // Allergy/safety hold = the linked conversation is currently held for review.
-  const safetyHold = conv.is_safety_hold === true || conv.ownership_state === "SYSTEM_HOLD";
+  // Allergy/safety banner (INVARIANT §1a.2, WO-COMPANION): show the kitchen banner when
+  // the conversation is safety-held (legacy lock) OR an allergy note rides on the order
+  // (companion flow — the flag is operator-flippable, so W1 alone must feed the ticket).
+  // One banner, extended predicate — never a second banner. `allergy_note` is a
+  // deploy-safe optional column (absent until 0080 is applied → falsy → legacy behavior).
+  const allergyNote = typeof row.allergy_note === "string" ? row.allergy_note.trim() : "";
+  const safetyHold = conv.is_safety_hold === true || conv.ownership_state === "SYSTEM_HOLD" || allergyNote.length > 0;
 
   return {
     restaurantName: rest.name ?? "",
