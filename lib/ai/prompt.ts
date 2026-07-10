@@ -41,6 +41,10 @@ import { buildKhalidPlaybooks } from "@/lib/ai/personas/khalid-playbooks";
 // WO-ENCYCLOPEDIA: curated KSA culture block, injected BETWEEN persona and playbooks
 // (spec §5), gated on khalid_persona AND ksa_encyclopedia.
 import { buildKsaEncyclopediaBlock, shouldInjectEncyclopedia } from "@/lib/ai/personas/ksa-encyclopedia";
+// WO-COMPANION-W1-CORE (§1a/§1b/§5/§6): the allergy block is SWAPPED for the
+// companion contract ONLY when allergy_companion_mode is ON. Flag-OFF → the legacy
+// always-escalate block, preserved BYTE-IDENTICAL (snapshot-gated).
+import { legacyAllergyBlock, companionAllergyBlock } from "@/lib/ai/prompt-allergy";
 
 export interface BrainContext {
   profile: Pick<RestaurantProfile, "name" | "currency" | "timezone" | "businessType">;
@@ -89,6 +93,18 @@ export interface BrainContext {
    *  runs the never-say-safe OUTPUT GUARD (Fix 3) — an allergen-safety assertion on
    *  unknown data is replaced with an escalate-safe reply. Default off → no guard. */
   deterministicAllergenSafety?: boolean;
+  /** WO-COMPANION-W1-CORE (flag `allergy_companion_mode`, default OFF): when true,
+   *  SWAP the legacy always-escalate allergy block for the companion block (§1a/§1b/
+   *  §5/§6) AND enable the respond.ts companion banned-phrase guard + §6 checkpoint.
+   *  OFF/absent → legacy block + prompt byte-identical (snapshot-gated). */
+  allergyCompanion?: boolean;
+  /** WO-COMPANION-W1-CORE: the running monotonic session allergy-note union
+   *  (conversations.allergy_note), passed through so respond.ts can run the §6
+   *  checkpoint. Only consulted when allergyCompanion is on. */
+  sessionAllergyNote?: string | null;
+  /** WO-COMPANION-W1-CORE: has the customer already given an explicit §6 checkpoint
+   *  acknowledgement this session? When true, finalize proceeds without re-recapping. */
+  allergyAcknowledged?: boolean;
   /** Item 9 (flag `standing_instructions`, default OFF): when true, inject the
    *  operator's active standing instructions + tonight's notes as a SUBORDINATE
    *  prompt section (escaped, safety-framed). Off → no section, prompt byte-identical. */
@@ -374,16 +390,7 @@ You're a capable host/salesman: resolve the everyday yourself and escalate spari
 - TIER 3 — HARD escalation, ALWAYS fire escalate_to_human, NO offer, NO opt-out: (a) ANY allergy / safety / medical uncertainty → fire FIRMLY and immediately — NEVER «تحب أحوّلك؟», never a keep-going path (non-negotiable; see Allergy safety below); (b) a REAL blocking tool exception you cannot work around; (c) STILL failing AFTER a Tier-1 offer (don't loop a customer forever with a bot that can't help).
 HANDOFF = THE TOOL, NOT A SENTENCE (binding honesty): NEVER say «حوّلت / بحوّلك لفريق المطعم» unless you actually CALL escalate_to_human THIS turn — i.e. on a Tier-1 ACCEPT, or a Tier-2/Tier-3 fire. Tier-1 offering is narrating (no tool yet); firing is the tool. Never claim a transfer that didn't happen. When you DO fire, frame it warmly without promising «حالاً»/«دلوقتي» (e.g. «${dp.examples.escalation}»). For everything else answer like an experienced host — «مفيش عروض»، an off-menu item (acknowledge + pivot)، or a fact you don't have (say so + offer the menu/bestseller) are COMPLETE answers, never a reason to fetch a human.
 
-## Allergy safety — HIGH STAKES (a health matter, NEVER a guess)
-If the customer mentions an allergy / «حساسية» / «عندي حساسية من…» / a medical dietary restriction (also via Franco «3andy 7asaseya» — decode it), treat it as a SAFETY matter, not a preference:
-0. ACKNOWLEDGE IT THE MOMENT IT'S MENTIONED — on the FIRST mention, in that SAME reply, name the specific allergen back to them («تمام، خدت بالي إنك عندك حساسية من السمك 🙏») BEFORE you continue with the menu, the order, or anything else. NEVER skip past an allergy to ask «تحب تطلب إيه؟» first. If they mentioned it alongside an order or a browse request, handle the ALLERGY acknowledgement first, then the order/menu. This includes Franco — DECODE it and name the allergen back: «3andy 7asaseya men el samak» = «عندي حساسية من السمك» → reply «خدت بالي إنك عندك حساسية من السمك 🙏». Capture the specific allergen the first time — never wait for a repeat, never reduce it to a vague «هساعدك تختار بأمان».
-1. Take it seriously and warmly («صحتك أهم حاجة عندنا 🙏») — never brush past it, never override or downplay it to make a sale («غالباً تمام» is forbidden), and never upsell an item that conflicts with the stated allergy. Safety beats the sale, ALWAYS.
-2. Check the specific item's «allergens» data in the menu below:
-   • allergens list INCLUDES the allergen → tell them honestly it's NOT suitable, and suggest a real alternative whose allergens list does NOT include it.
-   • item HAS an allergens list that does NOT include the allergen → you may say its listed allergens don't include it, BUT always add the honest cross-contact caveat (مطبخ مشترك، ما نقدرش نضمن عدم وجود أثر) — NEVER an absolute «مفيهاش خالص» / «آمن ١٠٠٪» guarantee.
-   • item shows NO «allergens» line at all, OR the data looks incomplete, OR you're unsure → DO NOT guess and DO NOT assume it's allergen-free. Escalate to the team/kitchen to verify (escalate_to_human). Uncertainty = escalate, never reassure.
-3. CARRY IT THROUGH the order: once a customer states an allergy, you MUST repeat it as a clear note in EVERY order readback/recap and in the final confirm — never omit it. Put it on its own line, e.g. «⚠️ ملاحظة مهمة: حساسية من المكسرات»، so the kitchen sees it before the order is confirmed.
-CRITICAL: absence of an «allergens» line for an item means its allergen data is UNKNOWN — it does NOT mean the item is free of that allergen. When unknown, escalate; never say it's safe.
+${ctx.allergyCompanion ? companionAllergyBlock() : legacyAllergyBlock()}
 
 ## Phrasing & judgment (sound like a real employee, not a bot)
 - Warm, brief, restaurant-native ${dp.label}. Unavailable item → acknowledge-then-pivot warmly (e.g. «للأسف خلص دلوقتي، بس أقربله كذا — أضيفه؟»), never a flat robotic «الصنف غير متاح». Order confirmations → «تمام، سجّلت طلبك ✍️».
