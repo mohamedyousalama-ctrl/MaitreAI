@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { updateDeliveryAreaDb, deleteDeliveryAreaDb } from "@/lib/db/brain";
+import { readZoneGeometry } from "@/lib/delivery/zone-geometry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +53,11 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: "bad_request", detail: errors.join("; ") }, { status: 400 });
   }
 
+  const geo = readZoneGeometry(body, errors);
+  if (errors.length) {
+    return NextResponse.json({ error: "bad_request", detail: errors.join("; ") }, { status: 400 });
+  }
+
   const patch: Parameters<typeof updateDeliveryAreaDb>[2] = {};
   if (typeof body.name === "string") patch.name = body.name.trim();
   if (typeof body.deliveryFee === "number") patch.deliveryFee = body.deliveryFee;
@@ -59,6 +65,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   if (typeof body.estimatedTime === "string") patch.estimatedTime = body.estimatedTime;
   if ("branchId" in body) patch.branchId = typeof body.branchId === "string" ? body.branchId : undefined;
   if (typeof body.active === "boolean") patch.active = body.active;
+  if (geo.centerLat !== undefined) patch.centerLat = geo.centerLat;
+  if (geo.centerLng !== undefined) patch.centerLng = geo.centerLng;
+  if (geo.radiusKm !== undefined) patch.radiusKm = geo.radiusKm;
 
   if (!Object.keys(patch).length) {
     return NextResponse.json({ error: "bad_request", detail: "no recognised fields to update" }, { status: 400 });

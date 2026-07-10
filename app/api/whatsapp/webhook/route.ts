@@ -12,7 +12,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
-import { extractInboundPhoneNumberId, markWhatsAppRead, normalizeWhatsAppInbound, normalizeWhatsAppStatuses, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
+import { extractInboundPhoneNumberId, markWhatsAppRead, normalizeWhatsAppInbound, normalizeWhatsAppLocations, normalizeWhatsAppStatuses, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { isWhatsAppConfigured, readWhatsAppEnv, type WhatsAppEnv } from "@/lib/messaging/config";
 import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
@@ -318,6 +318,50 @@ export async function POST(req: NextRequest) {
             detail: e instanceof Error ? e.message : String(e),
             context: { from: m.from },
           });
+        }
+      }
+
+      // WO-DELIVERY-D1 — INBOUND LOCATION PINS (delivery_geo_routing). FIRST statement
+      // is the flag gate: OFF → this whole branch is skipped, no location is parsed or
+      // persisted, so a location message is dropped exactly as it is today (the main
+      // normalizer already discards it) → the webhook is byte-equivalent to before.
+      // ON → each pin is persisted as a customer message carrying meta.location, so the
+      // Brain turn (respond-and-send → runCustomerTurn) routes it to a zone + branch.
+      if (isFeatureExplicitlyEnabled("delivery_geo_routing", flags)) {
+        try {
+          const locations = normalizeWhatsAppLocations(payload);
+          for (const loc of locations) {
+            // A staff-number pin never enters the customer lane (mirrors the message loop).
+            if (isStaffMsg({ from: loc.from })) continue;
+            try {
+              const r = await persistInboundMessage(admin, restaurantId, {
+                channel: "whatsapp",
+                externalMessageId: loc.externalMessageId,
+                from: loc.from,
+                customerName: loc.customerName,
+                text: "📍",
+                location: { lat: loc.lat, lng: loc.lng, name: loc.name, address: loc.address },
+                timestamp: loc.timestamp,
+              });
+              if (r.inserted) {
+                persisted++;
+                if (r.conversationId) toAnswer.add(r.conversationId);
+              } else {
+                deduped++;
+              }
+            } catch (e) {
+              console.error("[whatsapp:webhook] location persist error", e);
+              persistFailed++;
+              await recordCriticalAlert(admin, {
+                restaurantId,
+                type: "inbound_persist_failed",
+                detail: e instanceof Error ? e.message : String(e),
+                context: { from: loc.from, kind: "location" },
+              });
+            }
+          }
+        } catch (e) {
+          console.error("[whatsapp:webhook] location ingest error (non-blocking)", e);
         }
       }
 

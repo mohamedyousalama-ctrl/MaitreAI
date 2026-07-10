@@ -75,6 +75,8 @@ function toBranch(r: BranchRow): Branch {
     notes: r.notes ?? "",
     whatsappConnected: !!r.phone,
     phone: r.phone ?? "",
+    lat: r.lat == null ? undefined : Number(r.lat),
+    lng: r.lng == null ? undefined : Number(r.lng),
   };
 }
 
@@ -91,6 +93,11 @@ function toDeliveryArea(r: DeliveryZoneRow): DeliveryArea {
     deliveryFee: Number(r.fee),
     estimatedTime: r.eta_minutes ? `${r.eta_minutes} دقيقة` : "",
     active: r.active,
+    // Geometry is present only after migration 0081 is applied AND an operator has
+    // drawn the zone; guard both so legacy name-only zones map cleanly.
+    centerLat: r.center_lat == null ? undefined : Number(r.center_lat),
+    centerLng: r.center_lng == null ? undefined : Number(r.center_lng),
+    radiusKm: r.radius_km == null ? undefined : Number(r.radius_km),
   };
 }
 
@@ -527,10 +534,16 @@ function etaToMinutes(t?: string): number | null {
   return Math.max(...nums.map(Number));
 }
 export async function addDeliveryAreaDb(s: SupabaseClient, restaurantId: string, d: Omit<DeliveryArea, "id">) {
-  await s.from("delivery_zones").insert({
+  const row: Record<string, unknown> = {
     restaurant_id: restaurantId, branch_id: d.branchId || null, name: d.name, fee: d.deliveryFee, min_order: d.minOrder,
     eta_minutes: etaToMinutes(d.estimatedTime), active: d.active ?? true,
-  });
+  };
+  // Only include geometry when the caller supplied it, so a legacy name-only save
+  // never references the 0081 columns before that prepare-only migration is applied.
+  if (d.centerLat !== undefined) row.center_lat = d.centerLat;
+  if (d.centerLng !== undefined) row.center_lng = d.centerLng;
+  if (d.radiusKm !== undefined) row.radius_km = d.radiusKm;
+  await s.from("delivery_zones").insert(row);
 }
 export async function updateDeliveryAreaDb(s: SupabaseClient, id: string, patch: Partial<DeliveryArea>) {
   const map: Record<string, unknown> = {};
@@ -540,6 +553,9 @@ export async function updateDeliveryAreaDb(s: SupabaseClient, id: string, patch:
   if (patch.minOrder !== undefined) map.min_order = patch.minOrder;
   if (patch.estimatedTime !== undefined) map.eta_minutes = etaToMinutes(patch.estimatedTime);
   if (patch.active !== undefined) map.active = patch.active;
+  if (patch.centerLat !== undefined) map.center_lat = patch.centerLat;
+  if (patch.centerLng !== undefined) map.center_lng = patch.centerLng;
+  if (patch.radiusKm !== undefined) map.radius_km = patch.radiusKm;
   if (Object.keys(map).length) await s.from("delivery_zones").update(map).eq("id", id);
 }
 export async function deleteDeliveryAreaDb(s: SupabaseClient, id: string) {

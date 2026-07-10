@@ -49,6 +49,9 @@ interface WaMessage {
   };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
   voice?: { id?: string; mime_type?: string };
+  // WO-DELIVERY-D1 — a WhatsApp location pin. Meta sends lat/lng as decimal
+  // degrees; name/address are optional labels the sender's app may attach.
+  location?: { latitude?: number; longitude?: number; name?: string; address?: string };
   // WB3 — Meta click-to-message ad referral: present on the FIRST inbound message
   // after a customer taps a click-to-WhatsApp ad. Absent for organic messages.
   referral?: {
@@ -213,6 +216,64 @@ export function normalizeWhatsAppInbound(payload: unknown): InboundMessage[] {
     }
   }
 
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// WO-DELIVERY-D1 — inbound LOCATION PINS (delivery_geo_routing).
+//
+// SEPARATE from normalizeWhatsAppInbound ON PURPOSE: a location message carries no
+// text/audio, so the main normalizer's drop rule (line ~198) discards it exactly as
+// it does today — meaning the customer/text/voice pipeline is BYTE-IDENTICAL whether
+// or not this feature exists. Pins are handled only when the webhook, AFTER resolving
+// the tenant + the delivery_geo_routing flag, chooses to call THIS extractor. Flag
+// OFF → this is never called → the pin is dropped, same as today.
+// ---------------------------------------------------------------------------
+export interface InboundLocation {
+  from: string;
+  externalMessageId?: string;
+  customerName?: string;
+  lat: number;
+  lng: number;
+  /** Optional labels the pin carried (a named place / reverse-geocoded address). */
+  name?: string;
+  address?: string;
+  timestamp: number;
+}
+
+/** Extract every valid WhatsApp location pin from the payload. Pure parse: a pin
+ *  with a missing/out-of-range lat or lng is skipped (never a fake 0,0). */
+export function normalizeWhatsAppLocations(payload: unknown): InboundLocation[] {
+  const data = (payload ?? {}) as WaWebhookPayload;
+  const out: InboundLocation[] = [];
+  for (const entry of data.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const value = change.value;
+      if (!value?.messages?.length) continue;
+      const nameByWaId = new Map<string, string>();
+      for (const c of value.contacts ?? []) {
+        if (c.wa_id && c.profile?.name) nameByWaId.set(c.wa_id, c.profile.name);
+      }
+      for (const m of value.messages) {
+        const loc = m.location;
+        if (!m.from || !loc) continue;
+        const lat = Number(loc.latitude);
+        const lng = Number(loc.longitude);
+        // Range guard: outside real degrees (or NaN) → not a usable pin.
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+        out.push({
+          from: m.from,
+          externalMessageId: m.id,
+          customerName: nameByWaId.get(m.from),
+          lat,
+          lng,
+          name: typeof loc.name === "string" && loc.name.trim() ? loc.name.trim() : undefined,
+          address: typeof loc.address === "string" && loc.address.trim() ? loc.address.trim() : undefined,
+          timestamp: m.timestamp ? Number(m.timestamp) * 1000 : Date.now(),
+        });
+      }
+    }
+  }
   return out;
 }
 

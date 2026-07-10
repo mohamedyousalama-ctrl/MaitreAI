@@ -474,6 +474,11 @@ export interface Branch {
   // derived/legacy: whether a whatsapp number is configured
   whatsappConnected: boolean;
   phone: string;
+  // Physical location (WO-DELIVERY-D1) — used for the nearest-branch tie-break when
+  // a delivery pin falls inside overlapping zones. Undefined when the branch has no
+  // coordinates set yet (falls back to the zone-center distance).
+  lat?: number;
+  lng?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -502,6 +507,12 @@ export interface DeliveryArea {
   deliveryFee: number;
   estimatedTime: string; // e.g. "30-45 دقيقة"
   active: boolean;
+  // Zone geometry (WO-DELIVERY-D1). A zone with a center + radius is a real circle
+  // on the map used for pin→zone point-in-radius matching. Undefined until an
+  // operator draws the zone in the map editor (legacy name-only zones stay valid).
+  centerLat?: number;
+  centerLng?: number;
+  radiusKm?: number;
 }
 
 // ---------------------------------------------------------------------------
