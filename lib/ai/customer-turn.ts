@@ -12,7 +12,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadBrain } from "@/lib/db/brain";
 import { isPromoActiveNow } from "@/lib/promo";
-import { respond, type RespondResult } from "@/lib/ai/respond";
+import { respond, isExplicitOrderConfirmation, type RespondResult } from "@/lib/ai/respond";
 import { deriveSystemMode } from "@/lib/ai/modes";
 import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
@@ -24,6 +24,17 @@ import { isSafetyHold } from "@/lib/tenant/handoff";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
+// WO-COMPANION-W1-CORE (§1a/§5): the deterministic companion FLOW spine + authored
+// texts + the write-side effects. Consulted ONLY when allergy_companion_mode is ON.
+import {
+  decideCompanionAction,
+  emergencyReply,
+  emergencyEscalationReason,
+  type CompanionDecision,
+} from "@/lib/ai/allergen-companion-flow";
+import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
+import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
+import { recordAllergyEvent } from "@/lib/db/allergy-audit";
 import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
 // WO-KHALID-STEP2: dialect-leakage QUALITY linter (observability only — NOT the safety
@@ -134,6 +145,38 @@ function forcedAllergenSafetyResult(
   };
 }
 
+/** Companion-mode EMERGENCY outcome (§5) — deterministic, no LLM. An ACTIVE
+ *  reaction ALWAYS escalates to a SYSTEM_HOLD marked emergency-class (NEVER
+ *  customer-resumable, §1e·d); the reply is the fixed §5 line (staff alerted, never
+ *  reassurance). Mirrors a RespondResult so the downstream persist/escalation path
+ *  is unchanged; the escalation reason carries the marker so is_safety_hold →
+ *  SYSTEM_HOLD and the recovery path recognizes it. */
+function companionEmergencyResult(
+  decision: CompanionDecision,
+  dialect: string,
+  initialDraft: OrderDraft | null,
+  currency: string
+): RespondResult {
+  const reason = emergencyEscalationReason(decision.emergencyLabel);
+  return {
+    reply: emergencyReply(dialect),
+    draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
+    escalate: true,
+    escalationReason: reason,
+    signals: [
+      { type: "escalation", detail: { reason, source: "allergen_companion_emergency", label: decision.emergencyLabel, emergencyClass: true } },
+    ],
+    presentation: null,
+    photoRequests: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
+    toolNames: ["escalate_to_human"],
+    stopReason: "allergen_companion_emergency",
+    model: "deterministic_allergen_companion",
+    adapter: "mock",
+    resendReceipt: false,
+  };
+}
+
 /**
  * Run one Brain turn and persist its outcome using the admin (service-role)
  * client. Throws CustomerTurnError("restaurant_not_found") / ("agent_error").
@@ -162,6 +205,9 @@ export async function runCustomerTurn(
   // about its agent behavior changes.
   const tenantTier = (row.tier as Tier | null) ?? "standard";
   const tenantFeatures = (row.feature_flags as Record<string, unknown> | null) ?? null;
+  // WO-COMPANION-W1-CORE: the master switch. Default OFF → every companion read/
+  // branch below is skipped and the legacy allergen path is byte-identical.
+  const companionOn = isFeatureExplicitlyEnabled("allergy_companion_mode", tenantFeatures);
 
   const brain = await loadBrain(admin, restaurantId);
 
@@ -237,6 +283,42 @@ export async function runCustomerTurn(
 
   const dialect = String(row.dialect ?? "egyptian");
 
+  // WO-COMPANION-W1-CORE (§1a.2/§6): read the session's monotonic allergy-note union
+  // and whether a §6 checkpoint is pending/acknowledged. Best-effort + deploy-safe —
+  // a missing 0080 column/table → inert (companion mode ON implies 0080 is applied).
+  // Flag OFF → we never query; nothing changes.
+  let sessionAllergyNote: string | null = null;
+  let checkpointPending = false; // a checkpoint recap was shown but not yet acknowledged
+  let allergyAcknowledged = false;
+  if (companionOn && conversationId) {
+    try {
+      const { data: an } = await admin
+        .from("conversations")
+        .select("allergy_note")
+        .eq("id", conversationId)
+        .maybeSingle();
+      sessionAllergyNote = ((an as { allergy_note?: string | null } | null)?.allergy_note as string | null) ?? null;
+    } catch {
+      /* column absent → inert */
+    }
+    try {
+      const { data: ck } = await admin
+        .from("conversation_allergy_events")
+        .select("checkpoint_ack_at")
+        .eq("conversation_id", conversationId)
+        .eq("event_kind", "checkpoint")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const last = (ck as { checkpoint_ack_at?: string | null }[] | null)?.[0];
+      if (last) {
+        if (last.checkpoint_ack_at) allergyAcknowledged = true;
+        else checkpointPending = true;
+      }
+    } catch {
+      /* table absent → no checkpoint state */
+    }
+  }
+
   // Item 9 (flag `standing_instructions`, default OFF): fetch the operator's ACTIVE
   // standing instructions + non-expired tonight's notes to inject as a subordinate,
   // escaped prompt section. Fail-open: any read error → no section (never breaks a
@@ -311,6 +393,12 @@ export async function runCustomerTurn(
     currentDraft: initialDraft,
     // Allergen-safety (flag-gated): enables the never-say-safe OUTPUT GUARD in respond.ts.
     deterministicAllergenSafety: isFeatureExplicitlyEnabled("deterministic_allergen_safety", tenantFeatures),
+    // WO-COMPANION-W1-CORE (flag `allergy_companion_mode`, default OFF): swaps the
+    // prompt allergy block for the companion contract AND enables respond.ts's
+    // companion banned-phrase guard + §6 checkpoint. Off → legacy path, byte-identical.
+    allergyCompanion: companionOn,
+    sessionAllergyNote,
+    allergyAcknowledged,
     // WO-KHALID-WIRING (§3): additive persona reads, mirroring the flag flow above.
     // Default OFF for every tenant (khalid_persona is explicit-only); ON only for
     // مطعم الديرة today. The overlay is appended at the END of the prompt in prompt.ts.
@@ -386,15 +474,23 @@ export async function runCustomerTurn(
 
   const t0 = Date.now();
   let result: RespondResult;
-  if (combinedAllergenHit.fired) {
-    // Deterministic safety escalation — no LLM call, draft preserved.
-    result = forcedAllergenSafetyResult(
-      combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency,
-      holdSource, holdSource === "phonetic_safety_net" ? phoneticHit.reason : null
-    );
-  } else {
+  // WO-COMPANION-W1-CORE — the ONE companion branch point. Off → today's forced
+  // allergen escalation, byte-identical. On → the companion path (emergency-first §5,
+  // else §1a mention → keep talking). A companion turn's write-side effects (note +
+  // audit + post-commit alert) are applied AFTER the reply is computed (below).
+  let companionDecision: CompanionDecision | null = null;
+  // §6 checkpoint: when the customer explicitly acknowledges a PENDING checkpoint,
+  // log the ack (verbatim + timestamp) so respond() lets the finalize through NOW.
+  let checkpointJustAcknowledged = false;
+  // In companion mode an ACTIVE emergency (§5) must escalate even when the plain
+  // avoidance gate did NOT fire (an emergency phrase like «حلقي يتورم» names no
+  // allergen) — so evaluate it independently and let it enter the companion path.
+  const companionEmergency = companionOn ? detectAllergenEmergency(input.userMessage) : { fired: false, label: null };
+  const enterCompanion = companionOn && (combinedAllergenHit.fired || companionEmergency.fired);
+
+  const runRespond = async (): Promise<RespondResult> => {
     try {
-      result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive });
+      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await admin.from("agent_runs").insert({
@@ -407,6 +503,47 @@ export async function runCustomerTurn(
       });
       throw new CustomerTurnError("agent_error", message);
     }
+  };
+
+  if (combinedAllergenHit.fired && !companionOn) {
+    // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
+    result = forcedAllergenSafetyResult(
+      combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency,
+      holdSource, holdSource === "phonetic_safety_net" ? phoneticHit.reason : null
+    );
+  } else if (enterCompanion) {
+    // FLAG ON — companion path. decideCompanionAction checks the emergency detector
+    // FIRST (wins), else it's a §1a mention. The gate's term (if any) is passed as the
+    // note hint so a symptom/phonetic hit still captures a named allergen.
+    companionDecision = decideCompanionAction(input.userMessage, sessionAllergyNote, { term: combinedAllergenHit.term });
+    if (companionDecision.path === "emergency") {
+      // ACTIVE emergency → deterministic escalate, SYSTEM_HOLD, emergency-class.
+      result = companionEmergencyResult(companionDecision, dialect, initialDraft, ctx.profile.currency);
+    } else {
+      // §1a mention → keep talking. Carry the freshly-merged union note into the
+      // prompt so the model's recap/checkpoint read the FULL session union.
+      ctx.sessionAllergyNote = companionDecision.note;
+      result = await runRespond();
+    }
+  } else {
+    // Normal turn. In companion mode this MAY be a §6 checkpoint ACKNOWLEDGEMENT: a
+    // pending checkpoint + an explicit confirmation → log the verbatim ack now so
+    // respond() permits the finalize this turn (§6.5).
+    if (companionOn && checkpointPending && sessionAllergyNote && isExplicitOrderConfirmation(input.userMessage)) {
+      checkpointJustAcknowledged = true;
+      ctx.allergyAcknowledged = true;
+      await recordAllergyEvent(admin, {
+        restaurantId,
+        conversationId: conversationId ?? "",
+        allergens: [],
+        customerMessage: input.userMessage,
+        eventKind: "checkpoint",
+        checkpointAckText: input.userMessage,
+        checkpointAckAt: new Date().toISOString(),
+        netReason: "checkpoint_ack",
+      });
+    }
+    result = await runRespond();
   }
   const latencyMs = Date.now() - t0;
 
@@ -438,6 +575,36 @@ export async function runCustomerTurn(
       .single();
     replyMessageId = (msg?.id as string) ?? null;
     await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+  }
+
+  // WO-COMPANION-W1-CORE — write-side effects of a companion turn (§1a.2/§1a.3/§4):
+  // stamp the monotonic union note, run the post-commit status query + staff alert,
+  // and emit the §4 audit row. Best-effort / never throws. Emergency's SYSTEM_HOLD +
+  // staff surface is handled by the escalation flip below; here the emergency path
+  // only records the note + audit (post-commit alert is guarded off for emergency).
+  if (companionDecision && conversationId) {
+    await applyCompanionSideEffects(admin, {
+      restaurantId,
+      conversationId,
+      decision: companionDecision,
+      customerMessage: input.userMessage,
+      agentReply: result.reply,
+    }).catch((e) => console.error("[companion] side-effects error", e));
+  }
+  // §6 CHECKPOINT recap emitted this turn (respond.ts intercepted a finalize): record
+  // the checkpoint audit row (ack null) so the NEXT explicit confirmation is treated
+  // as the acknowledgement. Suppressed on the ack turn itself (already logged above).
+  if (companionOn && conversationId && result.stopReason === "allergy_checkpoint" && !checkpointJustAcknowledged) {
+    await recordAllergyEvent(admin, {
+      restaurantId,
+      conversationId,
+      allergens: [],
+      customerMessage: input.userMessage,
+      eventKind: "checkpoint",
+      agentReply: result.reply,
+      humanOffered: true,
+      netReason: "checkpoint_recap",
+    }).catch(() => {});
   }
 
   const { data: run } = await admin

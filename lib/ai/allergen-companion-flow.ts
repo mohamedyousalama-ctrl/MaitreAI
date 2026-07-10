@@ -61,21 +61,25 @@ export interface CompanionDecision {
  */
 export function decideCompanionAction(
   userMessage: string,
-  existingNote: string | null | undefined
+  existingNote: string | null | undefined,
+  opts: { term?: string | null } = {}
 ): CompanionDecision {
   const emergency = detectAllergenEmergency(userMessage);
   const avoidance = detectAllergenAvoidance(userMessage);
-  // Merge only a genuinely NAMED allergen into the union — never inject the generic
-  // «حساسية» label when the message named nothing (e.g. an emergency phrase like
-  // «حلقي يتورم»), so an existing specific note («⚠️ حساسية: مكسرات») is preserved
-  // verbatim rather than diluted with a generic label.
-  const newTerms = avoidance.term ? [avoidance.term] : [];
-  const note = mergeAllergyNote(existingNote, newTerms);
+  // The allergen label for this turn: a caller-supplied hint (the gate that fired —
+  // symptom/phonetic may name a term avoidance doesn't) wins, else the avoidance term.
+  const term = opts.term ?? avoidance.term;
+  // Merge the NAMED allergen into the monotonic union. If nothing was named AND the
+  // session note is still empty, add the generic «حساسية» label so the kitchen always
+  // gets a note. But an emergency phrase that names nothing NEVER dilutes an existing
+  // specific note («⚠️ حساسية: مكسرات» stays as-is).
+  let note = mergeAllergyNote(existingNote, term ? [term] : []);
+  if (!note) note = mergeAllergyNote(existingNote, [null]);
 
   if (emergency.fired) {
     return {
       path: "emergency",
-      term: avoidance.term,
+      term,
       note,
       escalate: true,
       systemHold: true,
@@ -88,7 +92,7 @@ export function decideCompanionAction(
 
   return {
     path: "mention",
-    term: avoidance.term,
+    term,
     note,
     escalate: false,
     systemHold: false,
@@ -107,6 +111,17 @@ export function emergencyReply(dialect: string): string {
   return dialect === "egyptian"
     ? "بلّغت الفريق فوراً 🚨 لو فيه صعوبة في التنفس أو تورم أو أعراض قوية، اتصل بالإسعاف/الطوارئ دلوقتي. أنا معاك."
     : "بلّغت الفريق فوراً 🚨 إذا فيه صعوبة في التنفس أو تورم أو أعراض قوية، تواصل مع الإسعاف/الطوارئ الآن. أنا معك.";
+}
+
+// §0 rewrite — the safe reply that REPLACES any companion output caught asserting
+// food safety (a banned §0 phrase). Itself banned-phrase-clean; never certifies,
+// hands to the kitchen/team. (The legacy respond.ts safeAllergenReply uses «آمن»
+// negated, which the companion scanner would itself flag — so companion mode needs
+// this clean variant.)
+export function companionBannedRewriteReply(dialect: string): string {
+  return dialect === "egyptian"
+    ? "صحتك تهمّنا 🙏 ما أقدرش أجزم عن سلامة الأصناف من غير ما المطبخ يتأكد — أوصلك بفريق المطعم يساعدوك تختاروا براحة."
+    : "صحتك تهمّنا 🙏 ما أقدر أجزم عن سلامة الأصناف بدون ما المطبخ يتأكد — أوصلك بفريق المطعم يساعدونك تختارون براحة.";
 }
 
 // ---------------------------------------------------------------------------

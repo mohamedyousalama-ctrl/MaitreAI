@@ -18,6 +18,7 @@ import {
   emergencyEscalationReason,
   isExplicitContinueChoice,
   isExplicitRealertChoice,
+  companionBannedRewriteReply,
   EMERGENCY_HOLD_MARKER,
 } from "../lib/ai/allergen-companion-flow.ts";
 import { scanBannedAllergyPhrases } from "../lib/ai/allergen-companion.ts";
@@ -35,6 +36,17 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.er
   ok("mention: offers human once", d.offerHuman === true);
   ok("mention: captures the named allergen in the note", d.note.includes("مكسرات"));
   ok("mention: audit kind = mention", d.auditKind === "mention");
+}
+
+// Caller-supplied term hint (symptom/phonetic gate named a term avoidance didn't).
+{
+  const d = decideCompanionAction("بتعبني لو أكلت", null, { term: "لبن" });
+  ok("mention: caller term hint captured in the note", d.note.includes("لبن"));
+}
+// No named term + empty session → generic «حساسية» note so the kitchen always sees one.
+{
+  const d = decideCompanionAction("عندي حساسية", null);
+  ok("mention: generic fallback note when nothing named", d.note.includes("حساسية"));
 }
 
 // Monotonic union across a session — a second allergen ADDS, never drops the first.
@@ -100,6 +112,7 @@ ok("truthState clear_verified is a DATA statement, not a guarantee", /ما يظ�
   const authored: string[] = [
     emergencyReply("saudi"), emergencyReply("egyptian"),
     recoveryReply("saudi"), recoveryReply("egyptian"),
+    companionBannedRewriteReply("saudi"), companionBannedRewriteReply("egyptian"),
     recoveryChoiceTitles("saudi").realert, recoveryChoiceTitles("saudi").continue,
     recoveryChoiceTitles("egyptian").realert, recoveryChoiceTitles("egyptian").continue,
     buildCheckpointRecap(["مكسرات"], [{ name: "بروست", state: "unknown" }], "saudi"),
