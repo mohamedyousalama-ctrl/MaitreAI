@@ -698,7 +698,7 @@ export async function respondAndSendWhatsApp(
   //    human on escalation. Any failure hands the thread to a human + notes it.
   let outcome;
   try {
-    outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage, sttConfidence });
+    outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage, sttConfidence, isVoiceTranscript: inboundWasVoice });
   } catch (e) {
     // Fix B: surface the REAL message (was discarding it → «agent_error: agent_error»).
     const detail = e instanceof CustomerTurnError ? (e.message || e.code) : e instanceof Error ? e.message : String(e);
