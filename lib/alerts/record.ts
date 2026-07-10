@@ -71,7 +71,12 @@ export type CriticalAlertType =
   | "daily_spend"
   // ── uptime_down: the app failed its own deep health check (DB unreachable / env
   //    unsane). NOTE the external pinger detects a fully-down deploy independently.
-  | "uptime_down";
+  | "uptime_down"
+  // WO-COMPANION-W1-CORE (§1a.3) — an allergy note was added AFTER the order was
+  // committed (confirmed/paid). The order is NEVER auto-cancelled; the kitchen/
+  // delivery must review before prep/handoff. Fires even when the post-commit
+  // status query fails (fail toward MORE alerting).
+  | "allergy_added_post_commit";
 
 export interface CriticalAlertInput {
   restaurantId: string;

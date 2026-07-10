@@ -62,6 +62,10 @@ export interface ReceiptData {
   source?: string;
   /** TRUE when the linked conversation is on an allergy/safety hold (don't prepare). */
   safetyHold?: boolean;
+  /** WO-COMPANION-W1-CORE (§1a.2): the kitchen-readable allergy note copied onto the
+   *  order (e.g. «⚠️ حساسية: بيض، مكسرات»). Rendered under the safety banner so the
+   *  kitchen sees the specific allergens, not just a flag. */
+  allergyNote?: string;
   customerName?: string;
   customerPhone?: string;
   address?: string;
@@ -250,11 +254,15 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
   y += s(26);
   if (d.source) { parts.push(tRight(y, `المصدر: ${SOURCE_AR[d.source] ?? d.source}`, 16, "#666")); y += s(18); }
 
-  // 2b. Allergy/safety hold — ⚠️ at TOP when flagged (red/boxed).
+  // 2b. Allergy/safety hold — ⚠️ at TOP when flagged (red/boxed). WO-COMPANION-W1-CORE:
+  // when a kitchen-readable allergy note rides on the order, render the SPECIFIC
+  // allergens on a second line so the kitchen sees WHICH allergens, not just a flag.
   if (d.safetyHold) {
-    const h = s(42);
+    const note = (d.allergyNote ?? "").trim();
+    const h = note ? s(70) : s(42);
     parts.push(boxRect(y, h, "#fdecec", "#c0392b"));
     parts.push(tMid(y + s(27), "⚠️ حساسية — لا يتم التحضير قبل مراجعة المطعم", 19, "#a01b0b", 800));
+    if (note) parts.push(tMid(y + s(54), note, 21, "#a01b0b", 800));
     y += h + s(12);
   }
   y += s(8);
