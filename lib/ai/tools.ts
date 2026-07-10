@@ -7,7 +7,7 @@
 // persistence.
 // ============================================================================
 
-import type { DeliveryArea, MenuItem, Modifier } from "../types";
+import type { Branch, DeliveryArea, MenuItem, Modifier } from "../types";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
 import type { PaymentConfig } from "@/lib/payments/config";
 import type { LlmToolDef } from "./llm/types";
@@ -42,6 +42,12 @@ export interface OrderDraft {
   /** Customer's written street address for delivery (null for pickup or not yet provided). */
   address: string | null;
   deliveryFee: number;
+  // WO-DELIVERY-D1 (delivery_geo_routing) — additive, optional, and only ever set
+  // when the flag is ON. Absent on every legacy draft → flag-off serialization is
+  // unchanged. branchId: the branch this order routes to (from the pin-matched zone,
+  // or the customer's chosen pickup branch). deliveryPin: the raw location pin.
+  branchId?: string | null;
+  deliveryPin?: { lat: number; lng: number } | null;
   subtotal: number;
   tax: number; // VAT amount (0 when tax-inclusive)
   taxRate: number; // applied rate (0 when inclusive)
@@ -90,6 +96,11 @@ export interface ToolContext {
   menuItems: MenuItem[];
   modifiers: Modifier[];
   deliveryAreas: DeliveryArea[];
+  /** Tenant branches — used for the geo-routing pickup-branch selection. */
+  branches: Branch[];
+  /** WO-DELIVERY-D1: when true, set_fulfillment accepts a pickup branch_name and
+   *  routes the order to it. Default false → set_fulfillment behaves exactly as before. */
+  geoRouting: boolean;
   draft: OrderDraft;
   signals: ToolSignal[];
   escalation: { reason: string } | null;
@@ -342,6 +353,35 @@ export const ORDER_TOOLS: LlmToolDef[] = [
 export const NON_ORDER_TOOLS: LlmToolDef[] = ORDER_TOOLS.filter(
   (t) => t.name === "escalate_to_human" || t.name === "send_item_photos" || t.name === "resend_receipt"
 );
+
+/** WO-DELIVERY-D1: the order tools with set_fulfillment augmented to accept a pickup
+ *  `branch_name` when delivery_geo_routing is ON. Flag OFF → returns ORDER_TOOLS by
+ *  reference (identical object), so the tool definitions the model sees are
+ *  byte-identical to before (snapshot-safe). */
+export function orderToolsWithGeo(geoRouting: boolean): LlmToolDef[] {
+  if (!geoRouting) return ORDER_TOOLS;
+  return ORDER_TOOLS.map((t) =>
+    t.name === "set_fulfillment"
+      ? {
+          ...t,
+          description:
+            "Set pickup or delivery. For delivery, pass the delivery zone name from the zones list so the fee is applied " +
+            "(the customer's location pin is matched to a zone by the system automatically). " +
+            "For pickup, pass branch_name = the branch the customer chose, so the order routes to that branch.",
+          input_schema: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["pickup", "delivery"] },
+              zone_name: { type: "string", description: "For delivery: the delivery zone name" },
+              branch_name: { type: "string", description: "For pickup: the branch the customer chose" },
+            },
+            required: ["type"],
+            additionalProperties: false,
+          },
+        }
+      : t
+  );
+}
 
 // --- helpers ----------------------------------------------------------------
 function norm(s: string): string {
@@ -670,8 +710,32 @@ export function executeTool(
       d.fulfillment = type;
       d.deliveryZone = null;
       d.deliveryFee = 0;
-      if (type === "pickup") d.address = null;
+      if (type === "pickup") {
+        d.address = null;
+        // WO-DELIVERY-D1 (geo routing ON): the customer picks a pickup branch and the
+        // order routes to it. Off → branch_name ignored, behavior identical to before.
+        if (ctx.geoRouting) {
+          const branchName = String(input.branch_name ?? "").trim();
+          if (branchName) {
+            const b =
+              ctx.branches.find((x) => norm(x.name) === norm(branchName)) ||
+              ctx.branches.find((x) => norm(x.name).includes(norm(branchName)) || norm(branchName).includes(norm(x.name)));
+            if (!b) {
+              ctx.signals.push({ type: "missing_data", detail: { branch: branchName } });
+              return {
+                content: `الفرع «${branchName}» غير معروف. اعرض على العميل الفروع المتاحة: ${ctx.branches.map((x) => x.name).join("، ") || "لا توجد فروع"}.`,
+                isError: true,
+              };
+            }
+            d.branchId = b.id;
+          }
+        }
+      }
       if (type === "delivery") {
+        // Switching to delivery clears any prior pickup branch — the delivery branch
+        // is derived from the matched zone at order creation. Gated so a flag-off
+        // draft never gains a branchId key (serialization stays byte-identical).
+        if (ctx.geoRouting) d.branchId = null;
         const zoneName = String(input.zone_name ?? "");
         const zone = ctx.deliveryAreas.find((z) => z.active && norm(z.name) === norm(zoneName)) ||
           ctx.deliveryAreas.find((z) => z.active && (norm(z.name).includes(norm(zoneName)) || norm(zoneName).includes(norm(z.name))));

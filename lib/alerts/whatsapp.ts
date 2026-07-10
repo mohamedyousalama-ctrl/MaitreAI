@@ -66,7 +66,10 @@ export async function sendAlertWhatsApp(p: AlertWhatsAppPayload): Promise<AlertW
   lines.push(`النوع: ${p.type}`);
   lines.push(`التفاصيل: ${p.detail}`);
   if (p.conversationId) lines.push(`محادثة: ${p.conversationId}`);
-  if (base) lines.push(`🔗 ${base}/conversations`);
+  // Deep-link to the live console-v2 conversations route (/c/conversations). The
+  // domain comes from NEXT_PUBLIC_APP_URL — keep that env pointed at the current
+  // domain (e.g. https://www.getkivo.io), not the stale one.
+  if (base) lines.push(`🔗 ${base}/c/conversations`);
   lines.push(p.at);
   const text = lines.join("\n");
 

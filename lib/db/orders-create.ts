@@ -106,7 +106,10 @@ async function recomputeDraftFromDb(
       finalized: args.draft.finalized,
     },
     zoneId: priced.deliveryZone?.id ?? null,
-    branchId: priced.deliveryZone?.branchId ?? null,
+    // Delivery: the matched zone's branch is authoritative. Pickup (no zone): the
+    // customer's chosen pickup branch rides via the draft (WO-DELIVERY-D1). Money is
+    // unaffected — branch_id is routing metadata, not a price input.
+    branchId: priced.deliveryZone?.branchId ?? args.draft.branchId ?? null,
   };
 }
 

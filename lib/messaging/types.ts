@@ -53,6 +53,10 @@ export interface InboundMessage {
   /** WB3 — Meta click-to-message ad referral, when this inbound arrived via a
    *  click-to-WhatsApp ad. Undefined for organic messages. Captured as data only. */
   referral?: AdReferral;
+  /** WO-DELIVERY-D1 — a WhatsApp location pin (delivery_geo_routing). Set only when
+   *  the webhook, after resolving the flag, chose to ingest the pin. Persisted into
+   *  messages.meta.location so the Brain turn can route it to a zone + branch. */
+  location?: { lat: number; lng: number; name?: string; address?: string };
   /** Original raw payload fragment, kept for debugging only. */
   raw?: unknown;
 }

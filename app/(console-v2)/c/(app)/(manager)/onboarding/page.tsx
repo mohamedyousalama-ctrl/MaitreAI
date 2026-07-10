@@ -32,10 +32,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Radio, FlaskConical, Rocket, Check, ArrowRight, Send, Loader2,
   ExternalLink, ShieldCheck, ShieldAlert, MessageCircle, RotateCw,
-  AlertTriangle, type LucideIcon,
+  AlertTriangle, MapPin, type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { HeaderRow, TruthChip, type TruthState } from "@/components/console-v2/kit";
+import ZoneMapEditor from "@/components/console-v2/delivery/ZoneMapEditor";
 import { FbSdkLoader } from "@/components/console-v2/FbSdkLoader";
 import { KivoMark } from "@/components/brand/KivoLogo";
 import { useConsoleDataStore } from "@/lib/console-data-state";
@@ -568,6 +569,8 @@ function GoLiveStep() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(false);
+  // WO-DELIVERY-D1 — the delivery-zone map editor, mounted in the التشغيل step.
+  const [zoneOpen, setZoneOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!rid) { setLoading(false); return; }
@@ -602,6 +605,20 @@ function GoLiveStep() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <StepHead kicker="ob.gl.kicker" h="ob.gl.h" sub="ob.gl.sub" />
+
+      {/* WO-DELIVERY-D1 — draw delivery zones on the map (same reusable editor as
+          Settings→التوصيل). Optional here; routing behind delivery_geo_routing. */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 14px", borderRadius: 12, background: "var(--inset2)", border: "1px solid var(--stroke)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <span style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(224,181,58,.16)", color: "var(--gold, #e0b53a)", display: "grid", placeItems: "center", flex: "none" }}><MapPin size={16} /></span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--txt)" }}>مناطق التوصيل على الخريطة</div>
+            <div style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 1 }}>ارسم كل منطقة (مركز + نصف قطر) وحدد رسومها ومدتها وفرعها.</div>
+          </div>
+        </div>
+        <button onClick={() => setZoneOpen(true)} style={{ height: 34, padding: "0 14px", borderRadius: 10, border: "none", background: "var(--gold, #e0b53a)", color: "#0b0f16", fontSize: 12, fontWeight: 900, fontFamily: "inherit", cursor: "pointer", flex: "none" }}>افتح المحرر</button>
+      </div>
+      <ZoneMapEditor open={zoneOpen} onClose={() => setZoneOpen(false)} />
 
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--dim)", padding: "12px 0" }}>

@@ -23,6 +23,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { addDeliveryAreaDb } from "@/lib/db/brain";
+import { readZoneGeometry } from "@/lib/delivery/zone-geometry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,9 +35,12 @@ export async function GET() {
   if (!gate.ok) return gate.response;
   const tenant = gate.tenant;
 
+  // select("*") stays resilient whether or not migration 0081 (zone geometry) has
+  // been applied — missing columns are simply absent, so this GET is byte-identical
+  // pre-migration and gains center/radius once the columns exist.
   const { data, error } = await supabase
     .from("delivery_zones")
-    .select("id, name, fee, min_order, eta_minutes, branch_id, active")
+    .select("*")
     .eq("restaurant_id", tenant.restaurantId)
     .order("created_at");
 
@@ -50,6 +54,9 @@ export async function GET() {
     estimatedTime: r.eta_minutes != null ? `${r.eta_minutes} دقيقة` : "",
     branchId: (r.branch_id as string | null) ?? undefined,
     active: r.active as boolean,
+    centerLat: r.center_lat == null ? undefined : Number(r.center_lat),
+    centerLng: r.center_lng == null ? undefined : Number(r.center_lng),
+    radiusKm: r.radius_km == null ? undefined : Number(r.radius_km),
   }));
 
   return NextResponse.json({ zones });
@@ -70,6 +77,10 @@ export async function POST(req: Request) {
   if (typeof body.deliveryFee !== "number" || body.deliveryFee < 0) errors.push("deliveryFee must be a non-negative number");
   if (typeof body.minOrder !== "number" || body.minOrder < 0) errors.push("minOrder must be a non-negative number");
 
+  // Geometry (WO-DELIVERY-D1) is optional but all-or-nothing: a zone is either
+  // name-only (legacy) or a full circle (center + radius). A partial circle is a bug.
+  const geo = readZoneGeometry(body, errors);
+
   if (errors.length) {
     return NextResponse.json({ error: "bad_request", detail: errors.join("; ") }, { status: 400 });
   }
@@ -81,6 +92,7 @@ export async function POST(req: Request) {
     estimatedTime: typeof body.estimatedTime === "string" ? body.estimatedTime : "",
     branchId: typeof body.branchId === "string" ? body.branchId : undefined,
     active: body.active !== false,
+    ...geo,
   });
 
   return NextResponse.json({ ok: true }, { status: 201 });

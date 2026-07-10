@@ -24,7 +24,7 @@ import {
   emptyDraft,
   executeTool,
   NON_ORDER_TOOLS,
-  ORDER_TOOLS,
+  orderToolsWithGeo,
   type OrderDraft,
   type Presentation,
   type PhotoRequest,
@@ -50,6 +50,10 @@ export interface RespondInput {
    *  output guard to decide whether a blocked allergen-safety claim also escalates
    *  to a human (only on a genuine avoidance signal — never on a benign filter). */
   safetyHoldActive?: boolean;
+  /** WO-DELIVERY-D1: a per-turn directive appended to the system prompt when an
+   *  inbound location pin was routed (confirm zone+branch) or fell outside all zones
+   *  (relay the soft message). Absent on non-pin turns → identical behavior. */
+  geoDirective?: string | null;
 }
 
 export interface RespondResult {
@@ -222,14 +226,18 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const system =
     buildCustomerAgentSystemPrompt(input.brain) +
     (input.perceptionDirective ? `\n\n${input.perceptionDirective}` : "") +
-    (input.cadenceDirective ? `\n\n${input.cadenceDirective}` : "");
+    (input.cadenceDirective ? `\n\n${input.cadenceDirective}` : "") +
+    (input.geoDirective ? `\n\n${input.geoDirective}` : "");
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
   const knownPrices = knownMenuPrices(input.brain);
 
+  const geoRouting = !!input.brain.geoRouting;
   const ctx: ToolContext = {
     menuItems: input.brain.menuItems,
     modifiers: input.brain.modifiers,
     deliveryAreas: input.brain.deliveryAreas,
+    branches: input.brain.branches,
+    geoRouting,
     draft: input.initialDraft ? structuredClone(input.initialDraft) : emptyDraft(currency),
     signals: [],
     escalation: null,
@@ -242,7 +250,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   };
 
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
-  const tools = canOrder ? ORDER_TOOLS : NON_ORDER_TOOLS;
+  const tools = canOrder ? orderToolsWithGeo(geoRouting) : NON_ORDER_TOOLS;
 
   // Real-time 86ing: if a saved-cart item went out-of-stock since it was added,
   // append a per-turn availability alert to the (uncached) user message so «كريم»

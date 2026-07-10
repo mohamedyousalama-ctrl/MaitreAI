@@ -838,6 +838,10 @@ export async function respondAndSendWhatsApp(
   const sttConfidence = (rows[lastCustomerIdx].meta as { stt_confidence?: number } | null)?.stt_confidence;
   // WO-VOICE-2: did the customer open the voice door this turn (sent a voice note)?
   const inboundWasVoice = (rows[lastCustomerIdx].meta as { voice?: boolean } | null)?.voice === true;
+  // WO-DELIVERY-D1: a location pin the customer sent this turn (persisted in meta by
+  // the webhook, ONLY when delivery_geo_routing is on). Undefined for every other
+  // turn/tenant → runCustomerTurn ignores it → pipeline byte-identical when off.
+  const pinLocation = (rows[lastCustomerIdx].meta as { location?: { lat: number; lng: number; name?: string; address?: string } } | null)?.location;
   const lastInboundAtMs = new Date(rows[lastCustomerIdx].created_at).getTime();
 
   // HX1 — label human-authored turns so Karim distinguishes its own words from the
@@ -896,7 +900,7 @@ export async function respondAndSendWhatsApp(
   //    human on escalation. Any failure hands the thread to a human + notes it.
   let outcome;
   try {
-    outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage, sttConfidence, isVoiceTranscript: inboundWasVoice });
+    outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage, sttConfidence, isVoiceTranscript: inboundWasVoice, pinLocation });
   } catch (e) {
     // Fix B: surface the REAL message (was discarding it → «agent_error: agent_error»).
     const detail = e instanceof CustomerTurnError ? (e.message || e.code) : e instanceof Error ? e.message : String(e);
