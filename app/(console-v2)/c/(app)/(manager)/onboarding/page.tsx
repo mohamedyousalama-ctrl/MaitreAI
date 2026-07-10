@@ -43,6 +43,7 @@ import { useConsoleDataStore } from "@/lib/console-data-state";
 import { useT } from "@/lib/i18n/lang";
 import type { DictKey } from "@/lib/i18n/dictionary";
 import type { Probe, ProbeStatus } from "@/lib/messaging/whatsapp-health";
+import AllergyCoverageMeter from "@/components/console-v2/AllergyCoverageMeter";
 
 // ---- step model ------------------------------------------------------------
 type StepKey = "whatsapp" | "testdrive" | "golive";
@@ -125,7 +126,7 @@ export default function OnboardingPage() {
 
           <div style={{ padding: "24px 26px 6px" }}>
             {cur === "whatsapp" && <WhatsAppStep />}
-            {cur === "testdrive" && <TestDriveStep />}
+            {cur === "testdrive" && <><TestDriveStep /><AllergyCoverageMeter /></>}
             {cur === "golive" && <GoLiveStep />}
           </div>
 
