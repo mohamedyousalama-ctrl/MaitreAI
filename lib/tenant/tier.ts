@@ -35,7 +35,12 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
 // ordering conversation byte-identical to today (Wesaya untouched until Mohamed
 // flips it). Gates ONLY the agent-conversation changes; zone geometry data + the
 // console zone editor are visible regardless.
-export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing";
+// delivery_runs (WO-DELIVERY-D2): multi-order delivery runs — a driver carries up
+// to 3 deliveries as one run (grouping over existing rows), the /d run stop-list,
+// KIVO grouping suggestions, and /t active-leg gating. STRICT per-tenant switch,
+// DEFAULT OFF, never implied by tier='pro'. Flag-off keeps every single-delivery
+// flow (assign, /d/<token>, /t/<token>, COD) byte-identical.
+export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "delivery_runs";
 
 /** A feature is ON when the tenant explicitly enabled THAT feature (narrow,
  *  default-off opt-in) OR the tenant is full 'pro' (gets everything). Keeping a

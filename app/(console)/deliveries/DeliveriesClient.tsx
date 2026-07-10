@@ -8,11 +8,11 @@
 // map. Styling uses Kivo tokens (var(--kv-*)); assign/CRUD logic is unchanged.
 // ============================================================================
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRole } from "@/lib/use-role";
 import { useDispatchStore } from "@/lib/dispatch-store";
 import { runActionOutcome } from "@/lib/console-toast";
-import { Truck, Plus, Loader2, Link2, Check } from "lucide-react";
+import { Truck, Plus, Loader2, Link2, Check, Layers, Sparkles } from "lucide-react";
 
 interface Driver { id: string; name: string; phone: string; vehicle: string | null; active: boolean }
 interface Delivery {
@@ -71,6 +71,58 @@ export function DeliveriesClient() {
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", phone: "", vehicle: "" });
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // WO-DELIVERY-D2 — run assembly (flag-gated on delivery_runs). OFF → the whole
+  // panel is hidden and this surface is byte-identical to today's single assign.
+  const [runsEnabled, setRunsEnabled] = useState(false);
+  const [runSel, setRunSel] = useState<string[]>([]);
+  const [runDriver, setRunDriver] = useState("");
+  const [runBusy, setRunBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<{ zoneKey: string | null; deliveryIds: string[] }[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/settings/flags")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive && j) setRunsEnabled((j.flags as Record<string, unknown> | null)?.delivery_runs === true); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const toggleRunPick = (id: string) =>
+    setRunSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length >= 3 ? prev : [...prev, id]));
+
+  async function loadSuggestions() {
+    setRunBusy(true);
+    try {
+      const r = await fetch("/api/deliveries/suggest-runs", { cache: "no-store" });
+      const j = (await r.json().catch(() => ({}))) as { groups?: { zoneKey: string | null; deliveryIds: string[] }[] };
+      setSuggestions(r.ok ? j.groups ?? [] : []);
+    } finally {
+      setRunBusy(false);
+    }
+  }
+
+  async function createRun() {
+    if (!runDriver || runSel.length < 2) return;
+    setRunBusy(true);
+    await runActionOutcome("جارٍ إنشاء الرحلة…", async () => {
+      const r = await fetch("/api/deliveries/assign-run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driverId: runDriver, deliveryIds: runSel }),
+      });
+      const j = (await r.json().catch(() => ({}))) as { error?: string; whatsapp?: string };
+      if (!r.ok) {
+        const msg = j.error === "run_cap_exceeded" ? "الحد الأقصى ٣ طلبات في الرحلة." : `تعذّر إنشاء الرحلة: ${j.error ?? `HTTP ${r.status}`}`;
+        return { state: "failed" as const, message: msg, retry: true };
+      }
+      setRunSel([]); setRunDriver(""); setSuggestions(null);
+      await loadDeliveries();
+      return { state: "success" as const, message: j.whatsapp === "sent" ? "تم إنشاء الرحلة وإرسال اللينك للسائق" : "تم إنشاء الرحلة — شارك اللينك مع السائق يدويًا." };
+    });
+    setRunBusy(false);
+  }
 
   // R8 — surface the COMPOSITE assignment result: assigned vs failed, and (if
   // assigned) the WhatsApp dispatch sub-status. A failed assign never shows as
@@ -172,6 +224,82 @@ export function DeliveriesClient() {
           <p style={{ fontSize: 12.5, fontWeight: 600, color: "var(--kv-muted)", marginTop: 4 }}>إدارة المندوبين وتعيين الطلبات</p>
         </div>
       </div>
+
+      {runsEnabled && (() => {
+        const pending = deliveries.filter((d) => d.status === "pending");
+        return (
+          <div className="mb-5 p-4" style={{ ...cardStyle }}>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <span className="flex items-center gap-1.5 text-sm font-bold" style={{ color: "var(--kv-text)" }}>
+                <Layers size={15} style={{ color: "var(--kv-primary)" }} /> رحلة متعددة الطلبات (حتى ٣)
+              </span>
+              <button
+                onClick={loadSuggestions}
+                disabled={runBusy}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                style={{ ...fieldStyle }}
+              >
+                {runBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" style={{ color: "var(--kv-primary)" }} />} اقترح تجميع
+              </button>
+            </div>
+
+            {suggestions && (
+              <div className="mt-3 space-y-2">
+                {suggestions.length === 0 ? (
+                  <p className="text-xs" style={{ color: "var(--kv-muted)" }}>لا توجد اقتراحات تجميع الآن.</p>
+                ) : (
+                  suggestions.map((g, n) => (
+                    <div key={n} className="flex items-center justify-between rounded-lg px-3 py-2 text-xs" style={{ background: "var(--kv-card-soft)", color: "var(--kv-muted)" }}>
+                      <span>مجموعة من {g.deliveryIds.length} طلبات{g.zoneKey ? " — نفس المنطقة" : ""}</span>
+                      <button onClick={() => setRunSel(g.deliveryIds.slice(0, 3))} className="rounded-md px-2 py-1 font-semibold" style={{ ...fieldStyle, color: "var(--kv-deep)" }}>
+                        استخدم هذا الاقتراح
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {pending.length === 0 ? (
+              <p className="mt-3 text-xs" style={{ color: "var(--kv-muted)" }}>لا توجد طلبات بانتظار التعيين للتجميع.</p>
+            ) : (
+              <div className="mt-3 grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))" }}>
+                {pending.map((d) => {
+                  const on = runSel.includes(d.id);
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => toggleRunPick(d.id)}
+                      className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-start"
+                      style={{ ...fieldStyle, borderColor: on ? "var(--kv-primary)" : "var(--kv-border)", background: on ? "var(--kv-primary-tint)" : "var(--kv-card)" }}
+                    >
+                      {on ? <Check className="h-3.5 w-3.5" style={{ color: "var(--kv-primary)" }} /> : <span className="inline-block h-3.5 w-3.5 rounded border" style={{ borderColor: "var(--kv-border)" }} />}
+                      <span className="truncate">طلب {d.orders?.order_number ?? "—"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="mt-3 flex items-center gap-2">
+              <select value={runDriver} onChange={(e) => setRunDriver(e.target.value)} className="flex-1 px-2 py-1.5 text-sm" style={fieldStyle}>
+                <option value="">اختر مندوباً للرحلة…</option>
+                {activeDrivers.map((dr) => (
+                  <option key={dr.id} value={dr.id}>{dr.name} — {dr.phone}</option>
+                ))}
+              </select>
+              <button
+                disabled={runBusy || !runDriver || runSel.length < 2}
+                onClick={createRun}
+                className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
+                style={{ background: "var(--kv-grad-brand)" }}
+              >
+                {runBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" />} أنشئ الرحلة ({runSel.length})
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* Deliveries list */}

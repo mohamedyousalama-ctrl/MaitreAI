@@ -14,6 +14,7 @@ import { sendWhatsAppText } from "@/lib/messaging/outbound";
 import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
 import { captureCodOnDelivered } from "@/lib/db/cod";
 import { recordCriticalAlert } from "@/lib/alerts/record";
+import { withinRunCap } from "@/lib/delivery/runs";
 
 export const DELIVERY_STATUSES = [
   "pending",
@@ -314,7 +315,9 @@ export async function getDeliveryByDriverToken(admin: SupabaseClient, tok: strin
 export async function getDeliveryByCustomerToken(admin: SupabaseClient, tok: string) {
   const { data: d } = await admin
     .from("deliveries")
-    .select("id,order_id,restaurant_id,status,assigned_at,picked_up_at,delivered_at,expires_at,drivers(name)")
+    // run_id (WO-DELIVERY-D2): drives the /t active-leg gate. Null on every
+    // single-delivery row → the track route stays byte-identical when off.
+    .select("id,order_id,restaurant_id,status,run_id,assigned_at,picked_up_at,delivered_at,expires_at,drivers(name)")
     .eq("customer_token", tok)
     .maybeSingle();
   if (!d) return null;
@@ -442,5 +445,208 @@ export async function pushLocationByToken(
   if (!d) return { ok: false, error: "not_found" };
   if (isExpired(d as { expires_at?: string | null; status?: string })) return { ok: false, error: "completed" };
   await admin.from("delivery_locations").insert({ delivery_id: d.id, lat, lng });
+  return { ok: true };
+}
+
+// ============================================================================
+// WO-DELIVERY-D2 — multi-order RUNS (grouping over existing delivery rows).
+// A run is created ONLY on the flag-gated run-assign path; single-delivery assign
+// (assignDriver) is untouched. Each delivery keeps its own tokens/status/COD row —
+// a run just adds run_id + stop_order + a run_token that authenticates the /d run
+// page; per-stop ACTIONS still use each delivery's own driver_token.
+// ============================================================================
+
+export interface RunStop {
+  deliveryId: string;
+  /** Per-stop action auth: the driver owns the whole run, so each stop's own
+   *  driver_token is exposed to the run page for status/location/COD calls. */
+  driverToken: string | null;
+  stopOrder: number | null;
+  status: string;
+  customerName: string | null;
+  customerPhone: string | null;
+  /** Area label — the zone name (never the item list). */
+  area: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  /** DISTINCT ORDER LINES only — never item names/notes/modifiers (safety law). */
+  itemsCount: number;
+  codAmount: number;
+  currency: string;
+  codCollected: boolean;
+}
+
+export interface RunAssignResult {
+  runId: string;
+  runLink: string;
+  stops: { deliveryId: string; driverLink: string; customerLink: string }[];
+  whatsapp: string;
+}
+
+/**
+ * Assign several deliveries to ONE driver as a run (spec §3). Enforces the cap in
+ * the ENGINE (not the UI): more than RUN_CAP deliveries → throws run_cap_exceeded.
+ * Mints a run_token for the page + (re)mints each delivery's tokens, sets run_id +
+ * stop_order (input order), flips each to `assigned`, and sends the driver ONE run
+ * dispatch. Preserves each delivery's existing token/status/COD machinery.
+ */
+export async function assignDeliveriesToRun(
+  admin: SupabaseClient,
+  args: { restaurantId: string; driverId: string; deliveryIds: string[] }
+): Promise<RunAssignResult> {
+  const { restaurantId, driverId } = args;
+  const ids = [...new Set(args.deliveryIds)].filter(Boolean);
+  if (!withinRunCap(ids.length)) throw new Error("run_cap_exceeded");
+
+  const { data: driver } = await admin.from("drivers").select("id,name,phone,active").eq("id", driverId).eq("restaurant_id", restaurantId).maybeSingle();
+  if (!driver) throw new Error("driver_not_found");
+
+  const { data: dels } = await admin
+    .from("deliveries")
+    .select("id,order_id,driver_token,customer_token,status")
+    .in("id", ids)
+    .eq("restaurant_id", restaurantId);
+  if (!dels || dels.length !== ids.length) throw new Error("delivery_not_found");
+
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  const runTok = token();
+  const { data: run, error: runErr } = await admin
+    .from("delivery_runs")
+    .insert({ restaurant_id: restaurantId, driver_id: driverId, status: "active", run_token: runTok, expires_at: expiresAt })
+    .select("id")
+    .single();
+  if (runErr || !run) throw new Error("run_create_failed");
+  const runId = run.id as string;
+
+  const base = appBaseUrl();
+  const byId = new Map(dels.map((d) => [d.id as string, d]));
+  const stops: { deliveryId: string; driverLink: string; customerLink: string }[] = [];
+  let stopOrder = 1;
+  for (const id of ids) {
+    const del = byId.get(id)!;
+    const driverTok = (del.driver_token as string) || token();
+    const customerTok = (del.customer_token as string) || token();
+    await admin
+      .from("deliveries")
+      .update({ driver_id: driverId, run_id: runId, stop_order: stopOrder, status: "assigned", driver_token: driverTok, customer_token: customerTok, token_used: false, assigned_at: now, expires_at: expiresAt, updated_at: now })
+      .eq("id", id);
+    await admin.from("delivery_events").insert({ delivery_id: id, type: "assigned", payload: { driverId, driverName: driver.name, runId, stopOrder } });
+    stops.push({ deliveryId: id, driverLink: `${base}/d/${driverTok}`, customerLink: `${base}/t/${customerTok}` });
+    stopOrder++;
+  }
+
+  const runLink = `${base}/d/r/${runTok}`;
+  // One run dispatch — count + total COD only (never item details).
+  let whatsapp = "skipped";
+  try {
+    let codTotal = 0;
+    let currency = "";
+    for (const id of ids) {
+      const s = await loadOrderSummary(admin, byId.get(id)!.order_id as string);
+      if (s) { codTotal += Number(s.total) || 0; currency = String(s.currency || currency); }
+    }
+    const body =
+      `🛵 رحلة توصيل جديدة\n` +
+      `${ids.length} طلبات في رحلة واحدة\n` +
+      (codTotal ? `إجمالي التحصيل: ${codTotal} ${currency}\n` : "") +
+      `\nافتح قائمة التوصيل وحدّث حالة كل طلب وشارك موقعك:\n${runLink}`;
+    const res = await runWithTenantWhatsAppCreds(admin, restaurantId, () =>
+      sendWhatsAppText({ to: String(driver.phone), text: body })
+    );
+    whatsapp = res.status;
+  } catch (e) {
+    console.error("[delivery] run dispatch send error", e);
+    whatsapp = "failed";
+  }
+
+  return { runId, runLink, stops, whatsapp };
+}
+
+/**
+ * Load a run + its ordered stops by run_token (the /d run page auth). The stop
+ * projection is deliberately NARROW — customer name/area/count/COD/coords ONLY.
+ * It NEVER carries item names, notes, modifiers, or any allergen/health data
+ * (safety law — allergen data lives in menu_items/customer_memory, neither touched).
+ */
+export async function getRunByToken(admin: SupabaseClient, runToken: string): Promise<{ run: { id: string; driverName: string | null; status: string; expired: boolean }; stops: RunStop[] } | null> {
+  const { data: run } = await admin
+    .from("delivery_runs")
+    .select("id,restaurant_id,status,expires_at,drivers(name)")
+    .eq("run_token", runToken)
+    .maybeSingle();
+  if (!run) return null;
+
+  const { data: dels } = await admin
+    .from("deliveries")
+    .select("id,order_id,driver_token,status,stop_order,cod_collected")
+    .eq("run_id", run.id)
+    .order("stop_order", { ascending: true });
+
+  const rows = (dels ?? []) as { id: string; order_id: string; driver_token: string | null; status: string; stop_order: number | null; cod_collected: boolean }[];
+  const orderIds = rows.map((r) => r.order_id);
+  // Batched lookups (name + payment) so the projection stays cheap for ≤3 stops.
+  const payById = new Map<string, { payment_status?: string }>();
+  const nameByCustomer = new Map<string, string>();
+  if (orderIds.length) {
+    const { data: ords } = await admin.from("orders").select("id,payment_status,customer_id").in("id", orderIds);
+    const custIds: string[] = [];
+    for (const o of (ords ?? []) as { id: string; payment_status?: string; customer_id?: string | null }[]) {
+      payById.set(o.id, { payment_status: o.payment_status });
+      if (o.customer_id) custIds.push(o.customer_id);
+    }
+    if (custIds.length) {
+      const { data: custs } = await admin.from("customers").select("id,name").in("id", [...new Set(custIds)]);
+      for (const c of (custs ?? []) as { id: string; name?: string | null }[]) if (c.name) nameByCustomer.set(c.id, c.name);
+    }
+  }
+
+  const stops: RunStop[] = [];
+  for (const r of rows) {
+    const s = await loadOrderSummary(admin, r.order_id);
+    const paid = payById.get(r.order_id)?.payment_status === "paid";
+    const total = Number(s?.total) || 0;
+    // items ONLY as a count — the array itself is never forwarded to the client.
+    const itemsCount = Array.isArray(s?.items) ? (s!.items as unknown[]).length : 0;
+    const customerId = (s as { customer_id?: string } | null)?.customer_id;
+    stops.push({
+      deliveryId: r.id,
+      driverToken: r.driver_token,
+      stopOrder: r.stop_order,
+      status: r.status,
+      customerName: customerId ? nameByCustomer.get(customerId) ?? null : null,
+      customerPhone: s?.customerPhone ?? null,
+      area: s?.zoneName ?? null,
+      address: (s?.address as string) ?? null,
+      lat: typeof s?.lat === "number" ? (s!.lat as number) : null,
+      lng: typeof s?.lng === "number" ? (s!.lng as number) : null,
+      itemsCount,
+      codAmount: paid ? 0 : total,
+      currency: String(s?.currency ?? ""),
+      codCollected: !!r.cod_collected,
+    });
+  }
+
+  const expired = !!(run.expires_at && new Date(run.expires_at as string).getTime() < Date.now());
+  const driverName = (run as { drivers?: { name?: string } | null }).drivers?.name ?? null;
+  return { run: { id: run.id as string, driverName, status: String(run.status), expired }, stops };
+}
+
+/**
+ * Per-stop COD «حصّلت» flag (WO-DELIVERY-D2). Sets the UI/audit state on the
+ * delivery row ONLY — it complements, never replaces, the cod_collections ledger
+ * (captureCodOnDelivered on `delivered` stays the money record). Token-scoped
+ * (each stop's own driver_token).
+ */
+export async function setCodCollectedByToken(
+  admin: SupabaseClient,
+  tok: string,
+  collected: boolean
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: d } = await admin.from("deliveries").select("id,status").eq("driver_token", tok).maybeSingle();
+  if (!d) return { ok: false, error: "not_found" };
+  await admin.from("deliveries").update({ cod_collected: !!collected, updated_at: new Date().toISOString() }).eq("id", d.id);
+  await admin.from("delivery_events").insert({ delivery_id: d.id, type: `cod_collected:${!!collected}`, payload: {} });
   return { ok: true };
 }
