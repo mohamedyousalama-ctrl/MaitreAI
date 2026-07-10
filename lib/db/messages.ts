@@ -102,7 +102,7 @@ export async function persistInboundMessage(
         status: "delivered",
         // WO-VOICE-1: keep the original audio ref (media id) + STT provenance in meta
         // (the 🎤 chip renders from meta.voice). All additive to the jsonb — no DDL.
-        ...(msg.interactiveId || msg.audioId
+        ...(msg.interactiveId || msg.audioId || msg.location
           ? {
               meta: {
                 ...(msg.interactiveId ? { interactiveId: msg.interactiveId } : {}),
@@ -114,6 +114,9 @@ export async function persistInboundMessage(
                       ...(typeof msg.sttConfidence === "number" ? { stt_confidence: msg.sttConfidence } : {}),
                     }
                   : {}),
+                // WO-DELIVERY-D1 — the location pin, read back by respond-and-send to
+                // route the order to a zone + branch. Additive jsonb; no DDL.
+                ...(msg.location ? { location: msg.location } : {}),
               },
             }
           : {}),

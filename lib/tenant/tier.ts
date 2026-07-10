@@ -28,7 +28,14 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
 // unless the deployment opts in); THIS per-tenant flag is what actually routes an
 // individual restaurant to the new UI. Plumbing-only here — enforcement is wired
 // in the console_v2 layout once tenant resolution lands (kickoff item 4 / R1).
-export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition";
+// delivery_geo_routing (WO-DELIVERY-D1): geography-aware delivery — WhatsApp
+// location-pin parsing, pin→zone point-in-radius matching, and branch routing in
+// the ordering conversation. STRICT per-tenant switch (isFeatureExplicitlyEnabled),
+// DEFAULT OFF, and deliberately NOT implied by tier='pro' — flag-off keeps the
+// ordering conversation byte-identical to today (Wesaya untouched until Mohamed
+// flips it). Gates ONLY the agent-conversation changes; zone geometry data + the
+// console zone editor are visible regardless.
+export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing";
 
 /** A feature is ON when the tenant explicitly enabled THAT feature (narrow,
  *  default-off opt-in) OR the tenant is full 'pro' (gets everything). Keeping a

@@ -55,6 +55,10 @@ export interface BranchRow {
   hours: Record<string, unknown>;
   notes: string;
   active: boolean;
+  // Physical location (0001_init.sql — already present; surfaced for branch routing
+  // WO-DELIVERY-D1: nearest-branch straight-line tie-break on overlapping zones).
+  lat?: number | null;
+  lng?: number | null;
 }
 
 export interface MenuCategoryRow {
@@ -139,6 +143,11 @@ export interface DeliveryZoneRow {
   min_order: number;
   eta_minutes: number | null;
   active: boolean;
+  // Zone geometry (WO-DELIVERY-D1, migration 0081). Optional at the type level so
+  // reads work whether or not the prepare-only migration has been applied yet.
+  center_lat?: number | null;
+  center_lng?: number | null;
+  radius_km?: number | null;
 }
 
 export interface PolicyRow {

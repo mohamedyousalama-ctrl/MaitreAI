@@ -111,6 +111,11 @@ export interface BrainContext {
   /** Resolved KSA region (najd|hijaz|asir|eastern) for the persona voice. Rendered
    *  only when khalidPersona is on. */
   ksaRegion?: string;
+  /** WO-DELIVERY-D1 (flag `delivery_geo_routing`, default OFF): when true, the
+   *  delivery flow asks for a WhatsApp LOCATION PIN (system reads it → zone + branch
+   *  + fee) and pickup asks which branch. Off/absent → the legacy "type your address,
+   *  pins unreadable" instruction stays verbatim (prompt byte-identical, snapshot-gated). */
+  geoRouting?: boolean;
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------
@@ -434,7 +439,9 @@ ${
   • after the customer picks an item → present_quantity (1/2/3)
   • a small finite choice (variant عادي/حار, size, pickup vs delivery) → present the tappable options rather than asking them to type
   • FULFILLMENT BEFORE CONFIRM — set pickup/delivery (set_fulfillment) BEFORE you read back to confirm. Never offer «تأكيد» / «نكمّل للدفع» / present_order_actions while الاستلام/التوصيل لسه ماتحددش؛ اسأل «استلام من الفرع ولا توصيل؟» أول. (Finalizing without fulfillment is rejected and loops.)
-  • ADDRESS FOR DELIVERY — for a delivery order, collect the customer's written address (منطقة + شارع + علامة مميزة) and call set_delivery_address BEFORE finalize_draft. If the customer sends a location pin, ask them to type the address instead (you cannot read pins). Finalizing without an address is rejected. For pickup, no address needed.
+  • ${ctx.geoRouting
+    ? "LOCATION FOR DELIVERY — for a delivery order, ask the customer to SEND their WhatsApp location pin: «ابعت موقعك من المشبك 📎». The system reads the pin, matches the delivery zone, routes the order to that zone's branch, and applies the fee automatically — you never need a written address or to compute anything. If the customer can't send a pin, fall back to asking their area by name and call set_fulfillment with that zone (the system still applies the fee). For PICKUP — no pin needed: ask «أي فرع أقرب لك؟», list the branches (with their areas) from the Branches data, and call set_fulfillment type=pickup with branch_name. Never invent a zone, a branch, or a fee."
+    : "ADDRESS FOR DELIVERY — for a delivery order, collect the customer's written address (منطقة + شارع + علامة مميزة) and call set_delivery_address BEFORE finalize_draft. If the customer sends a location pin, ask them to type the address instead (you cannot read pins). Finalizing without an address is rejected. For pickup, no address needed."}
   • after fulfillment is set AND you read back the summary + total → present_order_actions (تأكيد/إضافة/إلغاء)
   • collecting payment → present_payment_methods (shows the methods available for this order from the restaurant's config), then record the customer's pick with set_payment_method (method="cod" = الدفع عند الاستلام / الدفع عند الاستلام من الفرع؛ method="vodafone_cash" only when it was offered). For فودافون كاش, set_payment_method returns the transfer number + amount + instructions — show them to the customer as-is.
   • PAYMENT HONESTY (hard rule): NEVER say «تم استلام الدفع» / «الدفع تمّ» / «اتدفع» or imply the order is paid. For فودافون كاش say «حوّل المبلغ على الرقم ده وابعتلنا وهنأكد طلبك» — the payment is NOT confirmed until the restaurant verifies it; the order stays «بانتظار الدفع» until an operator confirms. Money/total always comes from the order tools, never invented.

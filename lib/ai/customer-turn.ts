@@ -34,6 +34,7 @@ import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import { emptyDraft, type OrderDraft, type PhotoRequest, type Presentation, type ToolSignal } from "@/lib/ai/tools";
+import { applyPinRouting } from "@/lib/delivery/routing";
 import type { AiToneConfig } from "@/lib/types";
 import { dialectProfile } from "@/lib/ai/dialect";
 
@@ -63,6 +64,11 @@ export interface CustomerTurnInput {
    *  (meta.voice). Lets the phonetic net apply its full STT-recovery near budget to
    *  voice while typed text gets the tightened near path. Undefined ⇒ typed. */
   isVoiceTranscript?: boolean;
+  /** WO-DELIVERY-D1: the customer's WhatsApp location pin, when this turn was a pin.
+   *  Acted on ONLY when the tenant has delivery_geo_routing ON (else ignored, so a
+   *  stray pin never changes behavior). The webhook only ever passes this when the
+   *  flag is on, so flag-off tenants never even reach here. */
+  pinLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
 }
 
 export interface CustomerTurnOutcome {
@@ -273,6 +279,9 @@ export async function runCustomerTurn(
     }
   }
 
+  // WO-DELIVERY-D1 — read the geo-routing flag once (STRICT: never implied by 'pro').
+  const geoRoutingOn = isFeatureExplicitlyEnabled("delivery_geo_routing", tenantFeatures);
+
   const ctx: BrainContext = {
     profile: {
       name: String(row.name ?? ""),
@@ -327,6 +336,10 @@ export async function runCustomerTurn(
     standingInstructions: standingInstructionsOn,
     standingInstructionRules,
     tonightNotes,
+    // WO-DELIVERY-D1 — geography-aware delivery (pin → zone → branch). Default OFF →
+    // the prompt keeps its legacy "type your address, pins unreadable" instruction and
+    // set_fulfillment ignores pickup branches (prompt + tools byte-identical).
+    geoRouting: geoRoutingOn,
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
@@ -384,6 +397,41 @@ export async function runCustomerTurn(
   // P4 cadence cue (consumes the P3 read; fires only on a non-default mood signal).
   const cadenceDirective = ctx.cadence ? cadenceCue(perception) : null;
 
+  // WO-DELIVERY-D1 — pin → zone → branch routing (flag ON only). Resolved BEFORE the
+  // LLM turn so the model receives either a matched zone+branch (confirm + continue)
+  // or the exact soft message (outside all zones). The delivery fee is copied from the
+  // zone's own data here — never computed by the model (money law). Flag OFF or no pin
+  // → geoDirective stays null and initialDraft is untouched (byte-identical).
+  let geoDirective: string | null = null;
+  if (geoRoutingOn && input.pinLocation) {
+    const outcome = applyPinRouting(
+      input.pinLocation,
+      initialDraft ?? emptyDraft(ctx.profile.currency),
+      brain.deliveryAreas,
+      brain.branches
+    );
+    geoDirective = outcome.directive;
+    if (outcome.kind === "matched") {
+      initialDraft = outcome.draft;
+    } else if (conversationId) {
+      // Outside all zones → log the miss (insight feed, spec §2/§4). Best-effort: a
+      // pre-migration missing zone_misses table NEVER breaks the turn. No customer PII
+      // beyond the conversation ref (PM ruling: pin coords + nearest-zone distance only).
+      try {
+        await admin.from("zone_misses").insert({
+          restaurant_id: restaurantId,
+          conversation_id: conversationId,
+          pin_lat: outcome.miss.pinLat,
+          pin_lng: outcome.miss.pinLng,
+          nearest_zone_id: outcome.miss.nearestZoneId,
+          nearest_distance_km: outcome.miss.nearestDistanceKm,
+        });
+      } catch {
+        /* table absent pre-migration — skip silently */
+      }
+    }
+  }
+
   const t0 = Date.now();
   let result: RespondResult;
   if (combinedAllergenHit.fired) {
@@ -394,7 +442,7 @@ export async function runCustomerTurn(
     );
   } else {
     try {
-      result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive });
+      result = await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await admin.from("agent_runs").insert({

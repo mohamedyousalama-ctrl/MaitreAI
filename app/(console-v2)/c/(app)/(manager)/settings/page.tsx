@@ -25,7 +25,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   MessageSquare, Flag, Building2, Clock3, Power, Rocket, Pencil,
-  Check, AlertTriangle, Clock, Lock, Printer, CreditCard,
+  Check, AlertTriangle, Clock, Lock, Printer, CreditCard, MapPin,
 } from "lucide-react";
 import { HeaderRow, PageGrid, MiniModal, TruthChip, type TruthState, type Tier } from "@/components/console-v2/kit";
 import { useConsoleOps } from "@/lib/console-ops-store";
@@ -35,6 +35,7 @@ import type { DictKey } from "@/lib/i18n/dictionary";
 import type { Probe, ProbeStatus, WhatsAppProbeId } from "@/lib/messaging/whatsapp-health";
 import { parsePrinterConfig, PRINT_WIDTHS, type PrinterConfig, type PrintWidth } from "@/lib/print/printer-config";
 import { connectQz, listQzPrinters, type QzStatus } from "@/lib/print/qz-client";
+import ZoneMapEditor from "@/components/console-v2/delivery/ZoneMapEditor";
 
 // Canon §2 hexes — proven=emerald, failing=amber (alarm, NOT red), unobserved=slate.
 // Dark-legible probe tones — proven=emerald, failing=amber (alarm, NOT red),
@@ -122,6 +123,7 @@ export default function SettingsPage() {
       <FeatureFlags flags={flags} onChanged={load} />
       <PspCredentials pspFlagOn={flags?.flags?.psp_payments === true} />
       <QzPrinter qzFlagOn={flags?.flags?.qz_print === true} />
+      <div style={{ gridColumn: "1 / -1" }}><DeliveryZones /></div>
       <div style={{ gridColumn: "1 / -1" }}><GoLiveGate health={health} /></div>
     </div>
   );
@@ -516,6 +518,31 @@ function Emergency() {
           <button onClick={() => setConfirmOpen(false)} disabled={busy} style={ghostBtn}>{t("set.emergency.confirmNo")}</button>
         </div>
       </MiniModal>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Delivery zones (WO-DELIVERY-D1) — opens the reusable map editor (draw circular
+// zones: center + radius + fee + ETA + branch). Same component the Onboarding
+// «التشغيل» step mounts. The pin→zone→branch ROUTING it feeds is gated behind
+// delivery_geo_routing (default off); drawing zones here is always available.
+// ---------------------------------------------------------------------------
+function DeliveryZones() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section style={card}>
+      <SectionHead icon={<MapPin size={16} />} title="التوصيل — مناطق التوصيل" tier="green" />
+      <p style={{ fontSize: 12.5, color: "var(--dim)", lineHeight: 1.7, margin: "0 0 14px" }}>
+        ارسم مناطق التوصيل على الخريطة (مركز + نصف قطر) وحدد رسوم التوصيل ومدة التوصيل والفرع لكل منطقة.
+      </p>
+      <button
+        onClick={() => setOpen(true)}
+        style={{ height: 40, padding: "0 18px", borderRadius: 12, border: "1px solid var(--stroke)", background: "var(--gold, #e0b53a)", color: "#0b0f16", fontSize: 12.5, fontWeight: 900, fontFamily: "inherit", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7 }}
+      >
+        <MapPin size={15} /> افتح محرر المناطق
+      </button>
+      <ZoneMapEditor open={open} onClose={() => setOpen(false)} />
     </section>
   );
 }
