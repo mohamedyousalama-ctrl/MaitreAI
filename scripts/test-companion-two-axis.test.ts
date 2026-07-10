@@ -20,6 +20,8 @@ import {
   crossContactLabelAr,
   prepStatusLabelAr,
 } from "../lib/ai/allergen-prep-vocab.ts";
+import { buildCheckpointRecap, truthStatePhrase } from "../lib/ai/allergen-companion-flow.ts";
+import { scanBannedAllergyPhrases, type DishTruthState } from "../lib/ai/allergen-companion.ts";
 import type { MenuItem } from "../lib/types.ts";
 
 let pass = 0, fail = 0;
@@ -89,6 +91,20 @@ ok("light-up: severe + shared_risk prep → severe_shared_risk",
   const afterPrepEdit = { ...verified, prepVerifiedAt: null };
   ok("degrade: axis-2 stamp cleared → drops to clear_prep_unknown",
     computeDishTruthState(dishDataFromMenuItem(afterPrepEdit), "بيض") === "clear_prep_unknown");
+}
+
+// ── §0 RED LINE over the ENRICHED recap — a lit-up (verified) dish is still clean ──
+{
+  const states: DishTruthState[] = ["contains", "clear_verified", "clear_prep_unknown", "severe_shared_risk", "unknown"];
+  let clean = true;
+  for (const dialect of ["saudi", "egyptian"]) {
+    for (const st of states) {
+      const recap = buildCheckpointRecap(["بيض", "مكسرات"], [{ name: "جريش", state: st }], dialect);
+      if (scanBannedAllergyPhrases(recap).length) { clean = false; console.error("    banned phrase in recap:", st, recap); }
+      if (scanBannedAllergyPhrases(truthStatePhrase(st, dialect)).length) clean = false;
+    }
+  }
+  ok("enriched recap (every lit-up truth-state) contains NO §0 banned phrase", clean);
 }
 
 // ── computeDishTruthState UNCHANGED — pure-fn contract (ruling C: logic fixed) ──

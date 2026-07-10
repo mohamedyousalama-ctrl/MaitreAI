@@ -20,6 +20,9 @@ import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-g
 // checkpoint. Consulted ONLY when brain.allergyCompanion is on (flag OFF → inert).
 import { scanBannedAllergyPhrases, parseAllergyNote, computeDishTruthState, type DishTruthState } from "./allergen-companion";
 import { buildCheckpointRecap, companionBannedRewriteReply, type CheckpointDish } from "./allergen-companion-flow";
+// WO-COMPANION-W2: feed the §6 recap the REAL two-axis MenuItem data so verified
+// dishes surface honestly (computeDishTruthState itself unchanged — ruling C).
+import { dishDataFromMenuItem } from "./dish-allergen-data";
 import {
   emptyDraft,
   executeTool,
@@ -180,21 +183,34 @@ function needsAllergyCheckpoint(brain: BrainContext): boolean {
   );
 }
 
-/** Build the §6 recap for the current draft. Every dish resolves honestly to its
- *  two-axis truth-state (W1: "unknown"/"contains" only — no prep data yet). */
+// Least-safe-wins ranking across the session allergens for one dish (the recap must
+// show the most cautionary honest state, never the rosiest).
+const TRUTH_RANK: Record<DishTruthState, number> = {
+  contains: 5,
+  severe_shared_risk: 4,
+  unknown: 3,
+  clear_prep_unknown: 2,
+  clear_verified: 1,
+};
+
+/** Build the §6 recap for the current draft. WO-COMPANION-W2: each dish resolves
+ *  through the REAL two-axis MenuItem data (dishDataFromMenuItem), so a dish lights up
+ *  to clear_verified / clear_prep_unknown / contains as the W2 data lands — with NO
+ *  data (pre-W2 / unpopulated) it still resolves to "unknown" (byte-identical W1). */
 function buildDraftCheckpointRecap(brain: BrainContext, draft: OrderDraft): string {
   const allergens = parseAllergyNote(brain.sessionAllergyNote);
   const byId = new Map(brain.menuItems.map((m) => [m.id, m]));
   const dishes: CheckpointDish[] = draft.lines.map((line) => {
-    const item = byId.get(line.itemId);
-    const data = { allergens: item?.allergens ?? null };
-    // Worst (most protective) state across all session allergens for this dish.
-    let worst: DishTruthState = "unknown";
+    const data = dishDataFromMenuItem(byId.get(line.itemId));
+    // Take the LEAST-SAFE truth-state across all session allergens for this dish.
+    let worst: DishTruthState = "clear_verified";
     for (const a of allergens) {
       const st = computeDishTruthState(data, a);
-      if (st === "contains") { worst = "contains"; break; }
+      if (TRUTH_RANK[st] > TRUTH_RANK[worst]) worst = st;
     }
-    return { name: line.name, state: worst };
+    // No allergens in session shouldn't reach here (checkpoint gates on a note), but
+    // stay honest if it does: nothing checked → "unknown", never a rosy default.
+    return { name: line.name, state: allergens.length ? worst : "unknown" };
   });
   return buildCheckpointRecap(allergens, dishes, brain.dialect);
 }
