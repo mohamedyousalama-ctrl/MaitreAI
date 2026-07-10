@@ -53,14 +53,16 @@ export default async function ConsoleV2AppLayout({ children }: { children: React
   const { data: r } = admin
     ? await admin.from("restaurants").select("name, feature_flags").eq("id", tenant.restaurantId).maybeSingle()
     : { data: null };
-  const enabled = isFeatureExplicitlyEnabled(
-    "console_v2",
-    (r as { feature_flags?: Record<string, unknown> } | null)?.feature_flags ?? null
-  );
+  const flags = (r as { feature_flags?: Record<string, unknown> } | null)?.feature_flags ?? null;
+  const enabled = isFeatureExplicitlyEnabled("console_v2", flags);
   if (!enabled) redirect(HOME_HREF);
 
-  // 5. Render the authed shell with the real workspace + role.
+  // 5. Render the authed shell with the real workspace + role. WO-DELIVERY-D3: reveal
+  //    the التوصيل rail item only when the tenant has the delivery module on (either
+  //    delivery flag) — off → the rail is byte-identical to today.
   const tenantName = ((r as { name?: string } | null)?.name ?? "").trim() || "Kivo";
   const role = tenant.role === "manager" ? "manager" : "operation";
-  return <AppFrame tenantName={tenantName} role={role}>{children}</AppFrame>;
+  const deliveryModuleOn =
+    isFeatureExplicitlyEnabled("delivery_runs", flags) || isFeatureExplicitlyEnabled("delivery_geo_routing", flags);
+  return <AppFrame tenantName={tenantName} role={role} deliveryModuleOn={deliveryModuleOn}>{children}</AppFrame>;
 }
