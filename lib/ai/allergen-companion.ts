@@ -18,6 +18,53 @@
 import { normalizeAr } from "./allergen-gate";
 
 // ---------------------------------------------------------------------------
+// §1a.2 — the KITCHEN-READABLE allergy note (the note the kitchen cooks from).
+// Human-readable Arabic, never tokens: «⚠️ حساسية: بيض، مكسرات». The session union
+// is MONOTONIC — later mentions only ADD allergens, never drop earlier ones (eggs
+// then nuts → BOTH). order-create copies the full union at that moment onto the order.
+// ---------------------------------------------------------------------------
+const NOTE_PREFIX = "⚠️ حساسية: ";
+/** A generic/unnamed allergy mention (no specific allergen isolated) → this label. */
+const GENERIC_LABEL = "حساسية";
+
+/** Parse the allergen labels out of an existing note (empty ⇒ []). */
+export function parseAllergyNote(note: string | null | undefined): string[] {
+  const s = String(note ?? "").replace(NOTE_PREFIX, "").trim();
+  if (!s) return [];
+  return s.split(/[،,]/).map((x) => x.trim()).filter(Boolean);
+}
+
+/** Build the kitchen-readable note from a list of Arabic allergen labels (dedup, order-preserving). */
+export function buildAllergyNote(allergens: string[]): string {
+  const uniq: string[] = [];
+  for (const a of allergens.map((x) => String(x ?? "").trim()).filter(Boolean)) {
+    if (!uniq.includes(a)) uniq.push(a);
+  }
+  return uniq.length ? NOTE_PREFIX + uniq.join("، ") : "";
+}
+
+/** Normalize a raw detector term into a kitchen label. «الحساسية»/null/empty → generic. */
+export function allergenLabel(term: string | null | undefined): string {
+  const t = String(term ?? "").trim();
+  if (!t || t === "الحساسية") return GENERIC_LABEL;
+  return t;
+}
+
+/**
+ * MONOTONIC union: merge new allergen label(s) into an existing note. NEVER drops an
+ * allergen already present — a re-mention of one allergen cannot clobber another named
+ * earlier in the session. Returns the updated kitchen-readable note.
+ */
+export function mergeAllergyNote(existing: string | null | undefined, newAllergens: Array<string | null | undefined>): string {
+  const merged = parseAllergyNote(existing);
+  for (const raw of newAllergens) {
+    const label = allergenLabel(raw);
+    if (label && !merged.includes(label)) merged.push(label);
+  }
+  return buildAllergyNote(merged);
+}
+
+// ---------------------------------------------------------------------------
 // §0 — BANNED PHRASES (verbatim from the spec). Enforced on every allergy-context
 // reply. Arabic entries are matched on normalizeAr'd text; «safe» on raw (Latin).
 // The short/common Arabic tokens («امن», «عادي») use Arabic-boundary assertions so

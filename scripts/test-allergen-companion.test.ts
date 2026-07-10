@@ -1,6 +1,6 @@
 // Unit tests for the §0 banned-phrase scan + §1b two-axis truth model (pure).
 // Run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/test-allergen-companion.test.ts
-import { scanBannedAllergyPhrases, hasBannedAllergyPhrase, computeDishTruthState } from "../lib/ai/allergen-companion.ts";
+import { scanBannedAllergyPhrases, hasBannedAllergyPhrase, computeDishTruthState, mergeAllergyNote, parseAllergyNote, allergenLabel } from "../lib/ai/allergen-companion.ts";
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.log("  ❌", n); } };
 
@@ -38,6 +38,22 @@ ok("severe_shared_risk (severe + shared prep)",
   T({ ingredients: ["دجاج"], ingredientVerified: true, prepStatus: "shared_risk" }, "فول سوداني", true) === "severe_shared_risk");
 ok("no ingredient data but not verified → unknown",
   T({ ingredients: [] }, "بيض") === "unknown");
+
+// ── §1a.2 note-union — kitchen-readable Arabic + MONOTONIC (never shrinks) ──
+ok("note is kitchen-readable Arabic", mergeAllergyNote(null, ["بيض"]) === "⚠️ حساسية: بيض");
+ok("union adds a second allergen", mergeAllergyNote("⚠️ حساسية: بيض", ["مكسرات"]) === "⚠️ حساسية: بيض، مكسرات");
+// Bound 1: re-mention of one allergen must NOT clobber another named earlier.
+ok("re-mention never drops earlier allergen", mergeAllergyNote("⚠️ حساسية: بيض، مكسرات", ["بيض"]) === "⚠️ حساسية: بيض، مكسرات");
+ok("union dedups", mergeAllergyNote("⚠️ حساسية: بيض", ["بيض"]) === "⚠️ حساسية: بيض");
+ok("eggs then nuts → BOTH", parseAllergyNote(mergeAllergyNote(mergeAllergyNote(null, ["بيض"]), ["مكسرات"])).length === 2);
+ok("parse round-trips", JSON.stringify(parseAllergyNote("⚠️ حساسية: بيض، مكسرات")) === JSON.stringify(["بيض", "مكسرات"]));
+ok("generic mention → حساسية label", allergenLabel("الحساسية") === "حساسية");
+ok("null term → generic label", allergenLabel(null) === "حساسية");
+ok("specific term kept", allergenLabel("فول سوداني") === "فول سوداني");
+// Simulate a multi-allergen session accumulating monotonically across turns.
+let note = "";
+for (const t of ["بيض", "مكسرات", "بيض", "لبن"]) note = mergeAllergyNote(note, [t]);
+ok("session union = all 3 distinct, order-preserving", note === "⚠️ حساسية: بيض، مكسرات، لبن");
 
 console.log(`\nALLERGEN-COMPANION UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
