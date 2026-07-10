@@ -91,10 +91,10 @@ jobs:
 
           echo "::error::Kivo health check failed $attempts consecutive times."
           if [ -n "$WA_TOKEN" ] && [ -n "$WA_PHONE_ID" ] && [ -n "$WA_TO" ]; then
-            BODY='🚨 Kivo — تنبيه حرج
-⚠️ النظام ما يستجيب لفحص الصحة (يمكن قاعدة البيانات أو الموقع متوقف).
-✅ المطلوب: بلّغ فارس فوراً. لو الموقع كامل ما يفتح، اتصل به مباشرة.
-النوع: uptime_down'
+            # Single-line ANSI-C ($'…\n…') so every YAML line stays indented inside
+            # the block scalar — a flush-left continuation line would silently break
+            # the workflow YAML (GitHub marks it active but never runs/dispatches it).
+            BODY=$'🚨 Kivo — تنبيه حرج\n⚠️ النظام ما يستجيب لفحص الصحة (يمكن قاعدة البيانات أو الموقع متوقف).\n✅ المطلوب: بلّغ فارس فوراً. لو الموقع كامل ما يفتح، اتصل به مباشرة.\nالنوع: uptime_down'
             curl -s -X POST \
               "https://graph.facebook.com/v20.0/${WA_PHONE_ID}/messages" \
               -H "Authorization: Bearer ${WA_TOKEN}" \
