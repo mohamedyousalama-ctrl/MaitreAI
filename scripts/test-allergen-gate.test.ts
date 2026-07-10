@@ -67,5 +67,58 @@ ok("ksa-neg: الرجيم (diet, article)", !detectAllergenAvoidance("الرجي
 ok("ksa-neg: الراجل (the man)", !detectAllergenAvoidance("الراجل ده طلب بيتزا").fired);
 ok("ksa-neg: الرجل (leg/man)", !detectAllergenAvoidance("الرجل تعبانة").fired);
 
+// ── WO-ALLERGEN-BOUNDARY — Arabic boundary-aware matching (precision-only) ──
+// The bug: the FIRING decision (detectAllergenAvoidance `hasAllergen`) and the OUTPUT
+// guard used a BARE alternation with no word boundaries, while NAMING already used the
+// boundary-aware matcher — so the gate could FIRE while NAMING nothing (`term:null`),
+// over-triggering on innocent text whose letters merely CONTAIN an allergen sequence
+// mid-word (\b is meaningless for Arabic in JS regex). Fix: all detection paths use the
+// same boundary-aware matcher. These cases FIRED before the fix (see the `term:null`
+// smoking gun) and MUST now be clean; every must-fire case above still fires unchanged.
+
+// 1) RED-FIRST false-positive regressions — innocent phrases whose letters embed an
+//    allergen sequence mid-word. All FIRED (fired:true, term:null) before the fix.
+ok("boundary-neg: اللوزتين (tonsils ⊃ لوز) + الدكتور قالي", !detectAllergenAvoidance("الدكتور قالي عندي التهاب في اللوزتين").fired);
+ok("boundary-neg: اللوزتين (tonsils) + تعب", !detectAllergenAvoidance("تعبان من كتر اللوزتين الملتهبة").fired);
+ok("boundary-neg: الأبيض (white ⊃ بيض) + بيضرني", !detectAllergenAvoidance("القميص الأبيض ده بيضرني للعين").fired);
+ok("boundary-neg: السمكري (plumber ⊃ سمك) + تعب", !detectAllergenAvoidance("عايز اكلم السمكري بيتعبني الحنفية").fired);
+
+// 2) FIRING⇔NAMING agreement invariant — after the fix, firing and naming share ONE
+//    boundary-aware pass, so a fire can NEVER produce a null term (the pre-fix bug).
+const firingCases = [
+  "عندي حساسية", "عندي حساسية من البندق", "الدكتور قالي بلاش لوز",
+  "ممنوع عليا مكسرات", "اتعب لو اكلت بندق", "ألرجيا من البيض",
+];
+for (const s of firingCases) {
+  const h = detectAllergenAvoidance(s);
+  ok(`agreement: fired ⇒ term≠null «${s}»`, h.fired && h.term !== null);
+}
+
+// 3) OUTPUT-GUARD false-positive regression — «آمن» (safe) next to an embedded
+//    allergen sequence must NOT be read as an allergen-safety certification.
+ok("guard boundary-neg: آمن + دقيق أبيض (⊃ بيض)", !assertsAllergenSafety("المنتج ده آمن ومصنوع من دقيق أبيض"));
+ok("guard boundary-neg: آمن تماماً (delivery, no allergen)", !assertsAllergenSafety("الطلب آمن تماماً عند التوصيل"));
+
+// 4) ADVERSARIAL boundary true-positives — boundaries must NOT clip real mentions:
+//    «ال» article, tashkeel, ta-marbuta, sentence edges, punctuation, emoji.
+ok("boundary-pos: البيض + emoji", detectAllergenAvoidance("عندي حساسية من البيض 🥚").fired);
+ok("boundary-pos: name البيض → بيض", term("عندي حساسية من البيض 🥚") === "بيض");
+ok("boundary-pos: البيض at start (البيض بيتعبني)", detectAllergenAvoidance("البيض بيتعبني").fired);
+ok("boundary-pos: بيض at end + punctuation", detectAllergenAvoidance("مينفعش اكل بيض.").fired);
+ok("boundary-pos: بيض at string start", detectAllergenAvoidance("بيض ممنوع عليا").fired);
+ok("boundary-pos: tashkeel البِيْض → fires", detectAllergenAvoidance("عندي حساسية من البِيْض").fired);
+ok("boundary-pos: ta-marbuta الطحينة → طحينه", term("حساس من الطحينة") === "طحينه");
+ok("boundary-pos: الحليب + '!' (بموت لو)", detectAllergenAvoidance("بموت لو كلت الحليب!").fired);
+ok("boundary-pos: اللبن + comma", detectAllergenAvoidance("عندي حساسية من اللبن، بجد").fired);
+ok("boundary-pos: multi-word ماكولات بحرية", detectAllergenAvoidance("حساسية من ماكولات بحرية").fired);
+ok("guard boundary-pos: خالي من البيض + emoji", assertsAllergenSafety("ده خالي من البيض 🥚"));
+ok("guard boundary-pos: مفيهوش لبن + punctuation", assertsAllergenSafety("الصنف ده مفيهوش لبن."));
+
+// 5) The WO's two MIZAN capture strings — the base gate NEVER fired on these (they carry
+//    no avoidance/explicit signal). Pinned as must-stay-clean regressions. (The real MIZAN
+//    handoff came from the phonetic near-matcher — a separate module, out of this WO's scope.)
+ok("mizan-neg: «هلا، إيش عندكم أطباق اليوم؟» clean via base gate", !detectAllergenAvoidance("هلا، إيش عندكم أطباق اليوم؟").fired);
+ok("mizan-neg: «خلص طلبي، شي ثاني؟» clean via base gate", !detectAllergenAvoidance("خلص طلبي، شي ثاني؟").fired);
+
 console.log(`\nALLERGEN-GATE UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
