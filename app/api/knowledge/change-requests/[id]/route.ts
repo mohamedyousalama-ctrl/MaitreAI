@@ -28,6 +28,7 @@ import { requireTenant } from "@/lib/db/require-tenant";
 import { recordAuditEvent } from "@/lib/db/audit";
 import { nextStatus, buildPatch, isAction, type CrTargetType } from "@/lib/knowledge/change-request";
 import { updateMenuItemDb, updateDeliveryAreaDb, updatePoliciesDb } from "@/lib/db/brain";
+import { saveIngredientAxis } from "@/lib/db/menu-allergy-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
@@ -42,11 +43,17 @@ interface CrRow {
  *  write actually landed (helpers swallow errors + RLS 0-row denials). Exact match only. */
 async function verifyApplied(s: SupabaseClient, rid: string, targetType: CrTargetType, targetId: string | null, field: string, patch: Record<string, unknown>): Promise<boolean> {
   if (targetType === "menu_item") {
-    const { data } = await s.from("menu_items").select("price, description").eq("id", targetId).eq("restaurant_id", rid).maybeSingle();
+    const { data } = await s.from("menu_items").select("price, description, allergens, ingredients").eq("id", targetId).eq("restaurant_id", rid).maybeSingle();
     if (!data) return false;
-    const d = data as { price: number; description: string };
+    const d = data as { price: number; description: string; allergens?: string[] | null; ingredients?: string[] | null };
     if (field === "price") return Number(d.price) === patch.price;
     if (field === "description") return d.description === patch.description;
+    // WO-COMPANION-W2: array fields — order-insensitive equality.
+    if (field === "allergens" || field === "ingredients") {
+      const got = [...((d[field] as string[] | null) ?? [])].sort();
+      const want = [...((patch[field] as string[] | undefined) ?? [])].sort();
+      return got.length === want.length && got.every((x, i) => x === want[i]);
+    }
     return false;
   }
   if (targetType === "delivery_zone") {
@@ -106,7 +113,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       if (row.target_type === "menu_item") {
         const { data: exists } = await supabase.from("menu_items").select("id").eq("id", row.target_id).eq("restaurant_id", tenant.restaurantId).maybeSingle();
         if (!exists) throw new Error("target menu item not found for this tenant");
-        await updateMenuItemDb(supabase, tenant.restaurantId, String(row.target_id), built.patch);
+        // WO-COMPANION-W2: an allergen/ingredient apply is a SAFETY content change — route
+        // it through the axis writer so the axis-1 verify stamp is CLEARED (ruling A: a
+        // stamp can never outlive a content change). Other fields keep the existing helper.
+        if (row.field === "allergens" || row.field === "ingredients") {
+          const res = await saveIngredientAxis(supabase, tenant.restaurantId, String(row.target_id), built.patch as { ingredients?: string[]; allergens?: string[] });
+          if (!res.ok) throw new Error(res.error || "ingredient-axis write failed");
+        } else {
+          await updateMenuItemDb(supabase, tenant.restaurantId, String(row.target_id), built.patch);
+        }
       } else if (row.target_type === "delivery_zone") {
         const { data: exists } = await supabase.from("delivery_zones").select("id").eq("id", row.target_id).eq("restaurant_id", tenant.restaurantId).maybeSingle();
         if (!exists) throw new Error("target delivery zone not found for this tenant");

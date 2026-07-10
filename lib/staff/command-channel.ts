@@ -12,6 +12,11 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendWhatsAppText } from "@/lib/messaging/outbound";
 import { normalizePhone } from "@/lib/messaging/phone";
+// WO-COMPANION-W2 — the gated allergen-note command reuses the knowledge change-request
+// allowlist + resolves allergen words to canonical keys. Flag-gated on allergy_companion_mode.
+import { mapAllergenValue, canonicalToArLabel } from "@/lib/ai/allergen-vocab";
+import { buildPatch } from "@/lib/knowledge/change-request";
+import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 
 const PENDING_TTL_MS = 10 * 60 * 1000; // fuzzy-confirm window
 const FUZZY_MIN = 0.5;
@@ -44,6 +49,10 @@ export type ParsedCommand =
   | { kind: "confirm" }
   | { kind: "eightysix"; item: string }
   | { kind: "restore"; item: string }
+  // WO-COMPANION-W2: «(كريم،) سجّل إن {الصنف} فيه {الحساسية}» → a GATED allergen
+  // change-request proposal (never a direct write). Only honored when
+  // allergy_companion_mode is ON; otherwise it falls to help (flag-off byte-identical).
+  | { kind: "note_allergen"; item: string; allergen: string }
   | { kind: "help" };
 
 export function parseStaffCommand(text: string): ParsedCommand {
@@ -55,6 +64,9 @@ export function parseStaffCommand(text: string): ParsedCommand {
   if (n === "الحاله" || n.startsWith("الحاله")) return { kind: "status" };
   if (n === "86" || n.startsWith("86 ")) return { kind: "eightysix", item: n.slice(2).trim() };
   if (n.startsWith("رجع")) return { kind: "restore", item: n.slice(3).trim() };
+  // «سجل ان {dish} فيه/فيها {allergen}» — tolerate a leading «كريم،» vocative.
+  const note = n.replace(/^كريم[،,\s]+/, "").match(/^سجل ان (.+?) في(?:ه|ها) (.+)$/);
+  if (note) return { kind: "note_allergen", item: note[1].trim(), allergen: note[2].trim() };
   return { kind: "help" };
 }
 
@@ -121,6 +133,11 @@ export const REPLY = {
       ? `مالقيتش الصنف ده. أقرب أصناف: ${names.map((n) => `«${n}»`).join("، ")}. اكتب الاسم بالظبط.`
       : "مفيش أصناف مطابقة في القائمة.",
   noPending: "مفيش أمر مستني تأكيد. ابعت الأمر من جديد.",
+  // WO-COMPANION-W2 — GATED allergen note: filed for approval, NEVER applied directly.
+  allergenFiled: (item: string, allergen: string) =>
+    `تمام — سجّلت طلب تعديل: «${item}» فيه «${allergen}» ✍️\nمحتاج موافقة من لوحة التحكم قبل ما يتطبّق على القائمة (مراجعة السلامة).`,
+  allergenUnknown: (word: string) =>
+    `ما عرفت نوع الحساسية «${word}». اكتبها بوضوح (مثال: جلوتين، مكسرات، بيض، فول سوداني، ألبان).`,
   status: (mode: string, ordersToday: number, awaiting: number) =>
     `حالة كريم: ${mode}\nطلبات النهارده: ${ordersToday}\nمحادثات محتاجة موظف: ${awaiting}`,
   help: [
@@ -239,6 +256,46 @@ async function loadMenuItems(admin: SupabaseClient, restaurantId: string): Promi
   return (data ?? []) as MenuItemLite[];
 }
 
+interface MenuItemAllergens extends MenuItemLite { allergens: string[] }
+async function loadMenuItemsWithAllergens(admin: SupabaseClient, restaurantId: string): Promise<MenuItemAllergens[]> {
+  const { data } = await admin.from("menu_items").select("id, name, available, allergens").eq("restaurant_id", restaurantId);
+  return ((data ?? []) as MenuItemAllergens[]).map((i) => ({ ...i, allergens: i.allergens ?? [] }));
+}
+
+/**
+ * WO-COMPANION-W2 — file a GATED allergen change-request from a staff command. NEVER
+ * writes menu_items directly: it resolves the item + the allergen key, computes the
+ * new (monotonic-add) allergen list, validates it through the SAME buildPatch allowlist
+ * the apply step uses, and inserts a `knowledge_change_requests` row (status
+ * 'proposed'). A console manager must approve+apply it. Flag-gated by the caller.
+ */
+async function fileAllergenChangeRequest(
+  admin: SupabaseClient,
+  restaurantId: string,
+  staff: StaffRow,
+  item: MenuItemAllergens,
+  allergenKey: string
+): Promise<boolean> {
+  const current = [...new Set(item.allergens ?? [])];
+  const next = current.includes(allergenKey) ? current : [...current, allergenKey];
+  // Validate through the write boundary — a request that could never be applied is never filed.
+  const built = buildPatch("menu_item", "allergens", next);
+  if (!built.ok) return false;
+  const { error } = await admin.from("knowledge_change_requests").insert({
+    restaurant_id: restaurantId,
+    target_type: "menu_item",
+    target_id: item.id,
+    target_label: item.name,
+    field: "allergens",
+    old_value: current,
+    new_value: next,
+    status: "proposed",
+    requested_by: staff.member_id,
+    reason: "staff WhatsApp: allergen note (companion W2)",
+  });
+  return !error;
+}
+
 async function setPending(admin: SupabaseClient, staff: StaffRow, pending: StaffRow["pending_command"], nowIso: string): Promise<void> {
   await admin.from("staff_numbers").update({ pending_command: pending, pending_at: pending ? nowIso : null }).eq("id", staff.id);
 }
@@ -334,6 +391,38 @@ export async function handleStaffCommand(
           .eq("restaurant_id", restaurantId).in("ownership_state", ["HUMAN_ACTIVE", "HUMAN_IDLE", "SYSTEM_HOLD"]);
         await reply(deps, fromPhone, REPLY.status(mode, ordersToday ?? 0, awaiting ?? 0));
         await auditCommand(admin, restaurantId, staff, "staff_command", "restaurant", restaurantId, "status", text, channel);
+        return;
+      }
+      case "note_allergen": {
+        // WO-COMPANION-W2 — flag-gated: only honored when allergy_companion_mode is ON.
+        // OFF → fall through to help, so the staff lane is byte-identical for flag-off
+        // tenants (the phrase is simply not a recognized command).
+        const { data: rf } = await admin.from("restaurants").select("feature_flags").eq("id", restaurantId).maybeSingle();
+        const companionOn = isFeatureExplicitlyEnabled("allergy_companion_mode", (rf?.feature_flags as Record<string, unknown> | null) ?? null);
+        if (!companionOn) {
+          await reply(deps, fromPhone, REPLY.help);
+          await auditCommand(admin, restaurantId, staff, "staff_command", "restaurant", restaurantId, "help", text, channel);
+          return;
+        }
+        const items = await loadMenuItemsWithAllergens(admin, restaurantId);
+        const match = matchMenuItem(items, cmd.item);
+        if (match.kind === "none") {
+          await reply(deps, fromPhone, REPLY.notFound(match.candidates.map((c) => c.name)));
+          await auditCommand(admin, restaurantId, staff, "knowledge_change_proposed", "restaurant", restaurantId, "no_match", text, channel);
+          return;
+        }
+        const allergenKey = mapAllergenValue(cmd.allergen);
+        if (!allergenKey) {
+          await reply(deps, fromPhone, REPLY.allergenUnknown(cmd.allergen));
+          await auditCommand(admin, restaurantId, staff, "knowledge_change_proposed", "menu_item", match.item.id, "unknown_allergen", text, channel);
+          return;
+        }
+        const target = items.find((i) => i.id === match.item.id)!;
+        const filed = await fileAllergenChangeRequest(admin, restaurantId, staff, target, allergenKey);
+        await reply(deps, fromPhone, filed ? REPLY.allergenFiled(target.name, canonicalToArLabel(allergenKey) ?? cmd.allergen) : REPLY.opFailed);
+        // NOTE: no menu_items write here — a proposal only. The console approve+apply is
+        // the ONLY path that changes the dish (and it clears the verify stamp, ruling A).
+        await auditCommand(admin, restaurantId, staff, "knowledge_change_proposed", "menu_item", target.id, filed ? "proposed" : "failed", text, channel);
         return;
       }
       default: {
