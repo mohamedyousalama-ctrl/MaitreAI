@@ -7,7 +7,7 @@ import { ensureCustomerId } from "@/lib/db/orders";
 import { nextOrderNumber, uuidFromHash } from "@/lib/db/orders-create";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
 import { ensureDeliveryRowForOrder } from "@/lib/db/delivery";
-import { normalizePaymentConfig, DEFAULT_PAYMENT_CONFIG } from "@/lib/payments/config";
+import { loadResolvedPaymentMethods, offeredMethods, recordPaymentSnapshot } from "@/lib/payments/resolve";
 
 type CheckoutLine = {
   itemId: string;
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
 
   const { data: restaurant, error: restaurantError } = await admin
     .from("restaurants")
-    .select("id, name, currency, active, is_open, payment_config")
+    .select("id, name, currency, active, is_open, payment_config, feature_flags")
     .ilike("slug", slug)
     .maybeSingle();
   if (restaurantError) return bad("تعذر تحميل المطعم.", 500);
@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
   if (restaurant.is_open === false) return bad("المطعم مغلق حالياً.");
 
   const restaurantId = restaurant.id as string;
+  const featureFlags = ((restaurant as { feature_flags?: unknown }).feature_flags as Record<string, unknown> | null) ?? null;
   const brain = await loadBrain(admin, restaurantId);
   const branches = brain.branches.filter((b) => b.open);
   const requestedBranchId = clean(payload.branchId);
@@ -107,7 +108,14 @@ export async function POST(req: NextRequest) {
   // client can't submit a method the restaurant hasn't enabled, regardless of what
   // the UI showed. A method enabled-but-unconfigured (VF on with no number) is NOT
   // acceptable — we never take a payment the restaurant can't fulfill.
-  const payConfig = normalizePaymentConfig((restaurant as { payment_config?: unknown }).payment_config ?? DEFAULT_PAYMENT_CONFIG);
+  // WO-T1-PAYMENTS: offer-set truth via the single resolver (flag-off = legacy,
+  // byte-identical). The acceptable-set logic below is unchanged.
+  const payConfig = (
+    await loadResolvedPaymentMethods(admin, restaurantId, {
+      paymentConfig: (restaurant as { payment_config?: unknown }).payment_config,
+      featureFlags,
+    })
+  ).config;
   const acceptableMethods = new Set<string>();
   if (payConfig.cod_enabled) acceptableMethods.add("cod");
   if (payConfig.vodafone_cash.enabled && (payConfig.vodafone_cash.number ?? "").trim()) acceptableMethods.add("vodafone_cash");
@@ -205,6 +213,19 @@ export async function POST(req: NextRequest) {
           .maybeSingle()
       ).data;
   if (!row) return bad("تعذر تأكيد الطلب. حاول مرة أخرى.", 500);
+
+  // WO-T1-PAYMENTS: immutable per-order snapshot of the methods offered + chosen at
+  // order time. Flag-gated + best-effort (no-op flag-off / pre-ceremony); only on a
+  // genuinely-created row so an idempotent re-POST never double-writes.
+  if (created) {
+    await recordPaymentSnapshot(admin, {
+      orderId: id,
+      restaurantId,
+      offered: offeredMethods(payConfig),
+      chosen: paymentMethod,
+      featureFlags,
+    });
+  }
 
   return NextResponse.json({
     orderId: row.id,
