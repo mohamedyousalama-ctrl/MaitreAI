@@ -7,7 +7,7 @@
 
 /** Per-use-case routing key. Lets us run a cheaper/faster model for the
  *  customer agent and a stronger one for admin/promo NL parsing later. */
-export type LlmUseCase = "customer_agent" | "admin_parse" | "conversation_intel" | "perception";
+export type LlmUseCase = "customer_agent" | "admin_parse" | "conversation_intel" | "perception" | "image_perception";
 
 export interface LlmUsage {
   inputTokens: number;
@@ -28,9 +28,15 @@ export interface LlmToolCall {
   input: Record<string, unknown>;
 }
 
-/** Content blocks for tool-use round-trips (Anthropic-shaped, adapter-neutral). */
+/** Content blocks for tool-use round-trips (Anthropic-shaped, adapter-neutral).
+ *  The `image` block reuses the adapter's straight passthrough to the Anthropic SDK
+ *  (claude.ts sends `messages` verbatim) — it is NOT a new vision pipeline, just the
+ *  content shape the SDK already accepts. Used ONLY by the one-shot inbound-image
+ *  vision READ (lib/ai/image-perception.ts, image_perception use case); the customer
+ *  agent turn itself never carries image blocks (it sees the derived TEXT read). */
 export type LlmContentBlock =
   | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean };
 

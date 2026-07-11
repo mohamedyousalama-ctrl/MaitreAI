@@ -18,6 +18,7 @@ import { decideVoiceSend, voiceHardZeroReason, voiceNotesPerDay } from "./voice-
 import { shouldOfferVoiceReply } from "@/lib/ai/voice-reply-trigger";
 import { synthesizeVoiceReply } from "@/lib/ai/tts";
 import { buildPhotoThreadCaptions } from "./photo-thread";
+import { imageHistoryContent } from "./image-turn";
 import { decideMediaSend, CONVERSATION_MEDIA_BUDGET, type MediaZeroReason } from "./media-guard";
 import { isSafetyHeld } from "@/lib/db/safety-hold";
 import { appBaseUrl } from "@/lib/db/delivery";
@@ -842,6 +843,12 @@ export async function respondAndSendWhatsApp(
   // the webhook, ONLY when delivery_geo_routing is on). Undefined for every other
   // turn/tenant → runCustomerTurn ignores it → pipeline byte-identical when off.
   const pinLocation = (rows[lastCustomerIdx].meta as { location?: { lat: number; lng: number; name?: string; address?: string } } | null)?.location;
+  // WO-MEDIA-INBOUND: the image the customer sent THIS turn (persisted in meta by the
+  // webhook, ONLY when media_turn_trigger is on). `caption` is their own words (already
+  // the userMessage / gate input); `description` is the model vision read (context).
+  // Undefined for every other turn/tenant → runCustomerTurn gets no imageContext →
+  // pipeline byte-identical when off.
+  const lastImage = (rows[lastCustomerIdx].meta as { image?: { caption?: string; description?: string | null } } | null)?.image;
   const lastInboundAtMs = new Date(rows[lastCustomerIdx].created_at).getTime();
 
   // HX1 — label human-authored turns so Karim distinguishes its own words from the
@@ -867,7 +874,17 @@ export async function respondAndSendWhatsApp(
       const marker = name ? `«رسالة من فريق المطعم - ${name}»` : "«رسالة من فريق المطعم»";
       return { role: "assistant", content: `${marker}: ${m.text as string}` };
     }
-    return { role: m.sender === "customer" ? "user" : "assistant", content: m.text as string };
+    // WO-MEDIA-INBOUND — a PRIOR customer image turn: fold the vision READ into this
+    // history line so a LATER turn "sees" the image (this is exactly why the next text
+    // after the flyer could reference it). The read is appended ONLY behind its
+    // provenance marker (imageHistoryContent) — clearly NOT customer text, and never
+    // gate input (history is not gated; only the current userMessage is).
+    if (m.sender === "customer") {
+      const desc = (m.meta as { image?: { description?: string | null } } | null)?.image?.description;
+      const content = desc ? imageHistoryContent(m.text as string, desc) : (m.text as string);
+      return { role: "user", content };
+    }
+    return { role: "assistant", content: m.text as string };
   });
 
   // HANDOFF-HARDENING (Fix 1): after a timeout auto-return, open with an honest
@@ -900,7 +917,7 @@ export async function respondAndSendWhatsApp(
   //    human on escalation. Any failure hands the thread to a human + notes it.
   let outcome;
   try {
-    outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage, sttConfidence, isVoiceTranscript: inboundWasVoice, pinLocation });
+    outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage, sttConfidence, isVoiceTranscript: inboundWasVoice, pinLocation, imageContext: lastImage ? { caption: lastImage.caption ?? null, description: lastImage.description ?? null } : null });
   } catch (e) {
     // Fix B: surface the REAL message (was discarding it → «agent_error: agent_error»).
     const detail = e instanceof CustomerTurnError ? (e.message || e.code) : e instanceof Error ? e.message : String(e);

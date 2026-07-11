@@ -55,6 +55,18 @@ const REGISTRY: Record<LlmUseCase, ModelConfig> = {
     priceIn: 1,
     priceOut: 5,
   },
+  // WO-MEDIA-INBOUND — one-shot vision READ of an inbound image (media_turn_trigger).
+  // ONE cheap Haiku read per image (never per turn): describe the image as short
+  // Arabic text so the customer agent can engage with it and later turns can see it,
+  // WITHOUT the customer agent ever carrying image bytes. Vision-capable model; small
+  // output; env-overridable. Cost lands on agent_runs (trigger "image_perception").
+  image_perception: {
+    model: process.env.AI_MODEL_IMAGE_PERCEPTION || "claude-haiku-4-5-20251001",
+    maxTokens: 300,
+    thinking: "disabled",
+    priceIn: 1,
+    priceOut: 5,
+  },
 };
 
 export function modelFor(useCase: LlmUseCase): ModelConfig {

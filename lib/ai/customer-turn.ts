@@ -46,6 +46,7 @@ import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import { emptyDraft, type OrderDraft, type PhotoRequest, type Presentation, type ToolSignal } from "@/lib/ai/tools";
 import { applyPinRouting } from "@/lib/delivery/routing";
+import { buildImageDirective } from "@/lib/messaging/image-turn";
 import type { AiToneConfig } from "@/lib/types";
 import { dialectProfile } from "@/lib/ai/dialect";
 
@@ -80,6 +81,13 @@ export interface CustomerTurnInput {
    *  stray pin never changes behavior). The webhook only ever passes this when the
    *  flag is on, so flag-off tenants never even reach here. */
   pinLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
+  /** WO-MEDIA-INBOUND: set when this turn's inbound was an image (media_turn_trigger).
+   *  `caption` is the customer's own words (already the userMessage / gate input);
+   *  `description` is the MODEL vision read (context only). Drives a provenance-marked
+   *  per-turn directive so Karim engages with the image — or warmly asks when the read
+   *  failed (never silence). The webhook only passes this when the flag is on, so
+   *  flag-off tenants never reach here → pipeline byte-identical when off. */
+  imageContext?: { caption: string | null; description: string | null } | null;
 }
 
 export interface CustomerTurnOutcome {
@@ -536,9 +544,16 @@ export async function runCustomerTurn(
   const companionEmergency = companionOn ? detectAllergenEmergency(input.userMessage) : { fired: false, label: null };
   const enterCompanion = companionOn && (combinedAllergenHit.fired || companionEmergency.fired);
 
+  // WO-MEDIA-INBOUND — a provenance-marked per-turn directive when the inbound was an
+  // image. Built from the customer's caption + the MODEL vision read; never empty, so
+  // an image turn (even a failed read) is answered warmly, never with silence. Context
+  // only — it does NOT touch the deterministic allergen gate, which already ran above
+  // on input.userMessage (the caption / 📷 placeholder), never on the vision read.
+  const imageDirective = input.imageContext ? buildImageDirective(input.imageContext) : null;
+
   const runRespond = async (): Promise<RespondResult> => {
     try {
-      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective });
+      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await admin.from("agent_runs").insert({

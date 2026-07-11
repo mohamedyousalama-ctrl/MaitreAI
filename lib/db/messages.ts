@@ -102,7 +102,7 @@ export async function persistInboundMessage(
         status: "delivered",
         // WO-VOICE-1: keep the original audio ref (media id) + STT provenance in meta
         // (the 🎤 chip renders from meta.voice). All additive to the jsonb — no DDL.
-        ...(msg.interactiveId || msg.audioId || msg.location
+        ...(msg.interactiveId || msg.audioId || msg.location || msg.image
           ? {
               meta: {
                 ...(msg.interactiveId ? { interactiveId: msg.interactiveId } : {}),
@@ -117,6 +117,22 @@ export async function persistInboundMessage(
                 // WO-DELIVERY-D1 — the location pin, read back by respond-and-send to
                 // route the order to a zone + branch. Additive jsonb; no DDL.
                 ...(msg.location ? { location: msg.location } : {}),
+                // WO-MEDIA-INBOUND — the inbound image (media_turn_trigger). `caption`
+                // is the customer's words; `description` is the MODEL vision read, so
+                // `derived:true` marks it as such for every downstream consumer + the
+                // console (PM provenance law). Additive jsonb; no DDL.
+                ...(msg.image
+                  ? {
+                      image: {
+                        id: msg.image.id,
+                        ...(msg.image.mime ? { mime: msg.image.mime } : {}),
+                        ...(msg.image.caption ? { caption: msg.image.caption } : {}),
+                        ...(msg.image.description
+                          ? { description: msg.image.description, derived: true }
+                          : {}),
+                      },
+                    }
+                  : {}),
               },
             }
           : {}),

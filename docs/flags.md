@@ -57,6 +57,7 @@ tenant. Who may flip: **Kivo Ops** (per-tenant `feature_flags` write).
 | `kitchen_ticket` | The money-stripped kitchen print view (`/(console)/orders/[id]/ticket`); route 404s / audit 410s unless on. |
 | `console_v2` | Routes THIS restaurant into the new console_v2 UI (requires the `CONSOLE_V2` deploy flag on too). |
 | `media_guard` | Per-conversation image/media send budget + guard. |
+| `media_turn_trigger` | Inbound WhatsApp **images** trigger a normal customer turn (fixes the 45-min silent-drop). The caption (customer's words) is the turn text + allergen-gate input; a one-shot Haiku vision read is stored provenance-marked (`meta.image.description`, `derived:true`) and injected as context only. Default OFF → flag-off tenants drop images exactly as before (byte-identical). |
 | `khalid_persona` | The Khalid (KSA) persona for the customer agent. |
 | `ksa_encyclopedia` | KSA dish/ingredient encyclopedia knowledge available to the agent. |
 | `callback_requests` | Customer callback-request capture flow. |

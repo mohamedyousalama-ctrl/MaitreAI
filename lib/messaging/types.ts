@@ -57,6 +57,13 @@ export interface InboundMessage {
    *  the webhook, after resolving the flag, chose to ingest the pin. Persisted into
    *  messages.meta.location so the Brain turn can route it to a zone + branch. */
   location?: { lat: number; lng: number; name?: string; address?: string };
+  /** WO-MEDIA-INBOUND — an inbound image (media_turn_trigger). Set only when the
+   *  webhook, after resolving the flag, chose to ingest it. Persisted into
+   *  messages.meta.image so the turn engages with it and later turns see the read.
+   *  `caption` is the customer's OWN words (the current-turn text / allergen-gate
+   *  input); `description` is a MODEL-DERIVED vision read (provenance-marked,
+   *  derived:true) that never becomes gate input. */
+  image?: { id: string; mime?: string; caption?: string; description?: string | null };
   /** Original raw payload fragment, kept for debugging only. */
   raw?: unknown;
 }

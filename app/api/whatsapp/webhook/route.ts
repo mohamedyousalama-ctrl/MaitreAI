@@ -12,7 +12,9 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
-import { extractInboundPhoneNumberId, markWhatsAppRead, normalizeWhatsAppInbound, normalizeWhatsAppLocations, normalizeWhatsAppStatuses, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
+import { downloadWhatsAppMedia, extractInboundPhoneNumberId, markWhatsAppRead, normalizeWhatsAppImages, normalizeWhatsAppInbound, normalizeWhatsAppLocations, normalizeWhatsAppStatuses, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
+import { describeInboundImage } from "@/lib/ai/image-perception";
+import { IMAGE_PLACEHOLDER } from "@/lib/messaging/image-turn";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { isWhatsAppConfigured, readWhatsAppEnv, type WhatsAppEnv } from "@/lib/messaging/config";
 import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
@@ -362,6 +364,87 @@ export async function POST(req: NextRequest) {
           }
         } catch (e) {
           console.error("[whatsapp:webhook] location ingest error (non-blocking)", e);
+        }
+      }
+
+      // WO-MEDIA-INBOUND — INBOUND IMAGES (media_turn_trigger). FIRST statement is the
+      // flag gate: OFF → this whole branch is skipped, no image is parsed/persisted, so
+      // an image message is dropped exactly as today (the main normalizer discards it) →
+      // the webhook is byte-identical to before. ON → each image is persisted as a
+      // customer message: the caption (the customer's words) becomes the turn text AND
+      // the deterministic allergen-gate input; a one-shot Haiku vision READ is stamped
+      // into meta.image.description (provenance-marked, derived:true — NEVER gate input);
+      // and the conversation is queued so the Brain turn engages with the image instead
+      // of 45 minutes of silence. The vision read is best-effort: a failure/timeout still
+      // fires the turn (Karim warmly asks what's needed) — never silence.
+      if (isFeatureExplicitlyEnabled("media_turn_trigger", flags)) {
+        try {
+          const images = normalizeWhatsAppImages(payload);
+          for (const img of images) {
+            // A staff-number image never enters the customer lane (mirrors the loop above).
+            if (isStaffMsg({ from: img.from })) continue;
+            try {
+              let description: string | null = null;
+              let imgRead: { model: string; costUsd: number } | null = null;
+              try {
+                const media = await downloadWhatsAppMedia(img.imageId);
+                if (media) {
+                  const read = await describeInboundImage({ bytes: media.bytes, mime: media.mime, caption: img.caption });
+                  if (read) {
+                    description = read.description;
+                    imgRead = { model: read.model, costUsd: read.costUsd };
+                  }
+                }
+              } catch (e) {
+                // Vision read must never block or silence the turn — swallow + fall back.
+                console.error("[whatsapp:webhook] image vision read error (non-blocking)", e);
+              }
+              const r = await persistInboundMessage(admin, restaurantId, {
+                channel: "whatsapp",
+                externalMessageId: img.externalMessageId,
+                from: img.from,
+                customerName: img.customerName,
+                // The customer's caption is their own words → the turn text + allergen-
+                // gate input. No caption → benign 📷 placeholder, so the gate can never
+                // fire on the image itself (a derived allergen word never reaches it).
+                text: img.caption && img.caption.trim() ? img.caption.trim() : IMAGE_PLACEHOLDER,
+                image: { id: img.imageId, mime: img.mime, caption: img.caption, description },
+                timestamp: img.timestamp,
+              });
+              if (r.inserted) {
+                persisted++;
+                if (r.conversationId) {
+                  toAnswer.add(r.conversationId);
+                  // Log the vision-read cost to agent_runs (like STT/LLM) when a real read ran.
+                  if (imgRead) {
+                    await admin.from("agent_runs").insert({
+                      restaurant_id: restaurantId,
+                      conversation_id: r.conversationId,
+                      trigger: "image_perception",
+                      input: "[inbound image]",
+                      output: description,
+                      model: imgRead.model,
+                      adapter: "claude",
+                      cost_usd: imgRead.costUsd,
+                    });
+                  }
+                }
+              } else {
+                deduped++;
+              }
+            } catch (e) {
+              console.error("[whatsapp:webhook] image persist error", e);
+              persistFailed++;
+              await recordCriticalAlert(admin, {
+                restaurantId,
+                type: "inbound_persist_failed",
+                detail: e instanceof Error ? e.message : String(e),
+                context: { from: img.from, kind: "image" },
+              });
+            }
+          }
+        } catch (e) {
+          console.error("[whatsapp:webhook] image ingest error (non-blocking)", e);
         }
       }
 
