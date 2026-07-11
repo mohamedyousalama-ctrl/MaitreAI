@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { recordAuditEvent } from "@/lib/db/audit";
-import { isSafetyFlag, SAFETY_FLAGS } from "@/lib/settings/safety-flags";
+import { isSafetyFlag, isManagerWritableFlag, SAFETY_FLAGS } from "@/lib/settings/safety-flags";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +56,16 @@ export async function POST(req: Request) {
   // console, by anyone. Rejected server-side regardless of the requested value.
   if (isSafetyFlag(flag)) {
     return NextResponse.json({ error: "safety_flag_locked", detail: `${flag} is a safety flag and cannot be changed from the console` }, { status: 403 });
+  }
+
+  // ALLOWLIST GATE — the manager console may flip ONLY the enumerated operator
+  // capability flags (psp_payments, qz_print). Any other key — console_v2, a
+  // delivery/infra flag, an unknown key — is rejected here, so removing the raw
+  // flag panel from the UI is backed by the API and not defeatable by curl (an
+  // arbitrary flip could brick the tenant back to the old console). Belt matches
+  // the suspenders: same 403 shape as the safety guard above.
+  if (!isManagerWritableFlag(flag)) {
+    return NextResponse.json({ error: "flag_not_writable", detail: `${flag} is not a manager-writable flag` }, { status: 403 });
   }
 
   const { data: cur } = await supabase.from("restaurants").select("feature_flags").eq("id", tenant.restaurantId).maybeSingle();

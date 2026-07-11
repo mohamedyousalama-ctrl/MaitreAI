@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { parseWeeklyHours } from "../lib/settings/hours.ts";
 import { parseAlertRouting } from "../lib/settings/alerts.ts";
-import { isSafetyFlag, SAFETY_FLAGS } from "../lib/settings/safety-flags.ts";
+import { isSafetyFlag, isManagerWritableFlag, SAFETY_FLAGS, MANAGER_WRITABLE_FLAGS } from "../lib/settings/safety-flags.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
@@ -25,6 +25,15 @@ check("deterministic_allergen_safety is a safety flag", isSafetyFlag("determinis
 check("allergen_symptom_detection is a safety flag", isSafetyFlag("allergen_symptom_detection"));
 check("a normal pro flag is NOT a safety flag", !isSafetyFlag("conversation_outcomes"));
 check("SAFETY_FLAGS enumerates the allergen pair", SAFETY_FLAGS.length === 2);
+
+// ---- Manager-writable allowlist: ONLY psp_payments + qz_print --------------
+check("psp_payments is manager-writable", isManagerWritableFlag("psp_payments"));
+check("qz_print is manager-writable", isManagerWritableFlag("qz_print"));
+check("console_v2 is NOT manager-writable (cannot brick the tenant)", !isManagerWritableFlag("console_v2"));
+check("delivery_geo_routing is NOT manager-writable", !isManagerWritableFlag("delivery_geo_routing"));
+check("a safety flag is NOT manager-writable", !isManagerWritableFlag("deterministic_allergen_safety"));
+check("an unknown key is NOT manager-writable", !isManagerWritableFlag("arbitrary_curl_key"));
+check("MANAGER_WRITABLE_FLAGS is exactly the two capability flags", MANAGER_WRITABLE_FLAGS.length === 2);
 
 // ---- Weekly hours validator -------------------------------------------------
 check("valid per-day hours accepted",
@@ -53,9 +62,15 @@ check("missing channels object rejected", !parseAlertRouting({}).ok);
 const flags = read("app/api/settings/flags/route.ts");
 check("(flags) manager-only", /tenant\.role !== "manager"\) return NextResponse\.json\(\{ error: "forbidden_role" \}, \{ status: 403 \}\)/.test(flags));
 check("(flags) safety flag rejected server-side with 403", /isSafetyFlag\(flag\)\) \{[\s\S]*safety_flag_locked[\s\S]*status: 403/.test(flags));
-// The safety gate must sit BEFORE the feature_flags read (so a safety flip never touches the DB).
+// The gates must sit BEFORE the POST's feature_flags read (so a rejected flip never
+// touches the DB). Scope the search to the POST body — GET also reads feature_flags.
+const flagsPost = flags.slice(flags.indexOf("export async function POST"));
 check("(flags) safety gate precedes the DB read",
-  flags.indexOf("isSafetyFlag(flag)") < flags.indexOf('.select("feature_flags")'));
+  flagsPost.indexOf("isSafetyFlag(flag)") < flagsPost.indexOf('.select("feature_flags")'));
+// Allowlist gate: non-writable keys rejected 403, also BEFORE any DB read (curl-proof).
+check("(flags) non-writable flag rejected server-side with 403", /!isManagerWritableFlag\(flag\)\) \{[\s\S]*flag_not_writable[\s\S]*status: 403/.test(flags));
+check("(flags) allowlist gate precedes the DB read",
+  flagsPost.indexOf("isManagerWritableFlag(flag)") < flagsPost.indexOf('.select("feature_flags")'));
 check("(flags) JSONB merge preserves sibling flags (spread, not replace)", /\{ \.\.\.\(\(cur\?\.feature_flags/.test(flags));
 check("(flags) audits settings_flag_flipped with from/to", flags.includes('action: "settings_flag_flipped"') && /metadata: \{ flag, from, to: body\.enabled \}/.test(flags));
 
