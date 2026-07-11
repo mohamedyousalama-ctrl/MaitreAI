@@ -178,7 +178,7 @@ export const COPY: Record<Lang, Copy> = {
       sub: "From the first message to a logged order — all on WhatsApp.",
       steps: [
         { n: "01", title: "The customer messages Karim", body: "A normal message to your restaurant's WhatsApp. Karim replies in the local dialect, understands the order, recommends and answers." },
-        { n: "02", title: "Karim takes the order", body: "Confirms items and address, computes the total from your system (never invents a price), and hands off to your team when needed — allergy-safe." },
+        { n: "02", title: "Karim takes the order", body: "Confirms items and address, computes the total from your system (never invents a price), and hands off to your team when needed — escalating any allergy concern to your staff, never certifying safety itself." },
         { n: "03", title: "Your team runs it from one console", body: "The order lands in your console with its status; your team runs it from one place — with no aggregator commission." },
       ],
       consoleCap: "The console — in Arabic, moment to moment",
