@@ -11,7 +11,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadBrain } from "@/lib/db/brain";
 import { StorefrontMenu } from "@/components/storefront/StorefrontMenu";
-import { normalizePaymentConfig } from "@/lib/payments/config";
+import { loadResolvedPaymentMethods } from "@/lib/payments/resolve";
 import { UtensilsCrossed } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -25,13 +25,19 @@ export default async function StorefrontMenuPage({ params }: { params: { slug: s
 
   const { data: restaurant } = await admin
     .from("restaurants")
-    .select("id, payment_config")
+    .select("id, payment_config, feature_flags")
     .ilike("slug", slug)
     .maybeSingle();
   if (!restaurant) return <NotFound />;
 
   const brain = await loadBrain(admin, restaurant.id as string);
-  const payConfig = normalizePaymentConfig(restaurant.payment_config);
+  // WO-T1-PAYMENTS: offer-set truth via the single resolver (flag-off = legacy, identical).
+  const payConfig = (
+    await loadResolvedPaymentMethods(admin, restaurant.id as string, {
+      paymentConfig: restaurant.payment_config,
+      featureFlags: (restaurant.feature_flags as Record<string, unknown> | null) ?? null,
+    })
+  ).config;
   const currency = brain.profile.currency || "ج.م";
   const availableItems = brain.menuItems.filter((i) => i.available);
 

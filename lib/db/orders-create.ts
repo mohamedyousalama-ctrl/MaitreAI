@@ -19,6 +19,8 @@ import type { OrderDraft } from "@/lib/ai/tools";
 import { loadBrain } from "@/lib/db/brain";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
 import { recordCriticalAlert } from "@/lib/alerts/record";
+import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
+import { loadResolvedPaymentMethods, offeredMethods, recordPaymentSnapshot } from "@/lib/payments/resolve";
 
 /** Deterministic UUID from a string (stable id ⇒ idempotent insert). */
 export function uuidFromHash(input: string): string {
@@ -266,6 +268,33 @@ export async function persistOrderFromDraft(
         conversationId,
         context: { orderId: id, orderNumber, storedFallback: "cod" },
       });
+    }
+
+    // WO-T1-PAYMENTS: immutable per-order snapshot (offered + chosen) so the
+    // WhatsApp path records selection like the web path. Flag-gated + best-effort;
+    // self-loads the tenant's flags/config and NEVER blocks the order.
+    try {
+      const { data: rf } = await admin
+        .from("restaurants")
+        .select("feature_flags, payment_config")
+        .eq("id", restaurantId)
+        .maybeSingle();
+      const flags = (rf?.feature_flags as Record<string, unknown> | null) ?? null;
+      if (isFeatureExplicitlyEnabled("canonical_payment_methods", flags)) {
+        const resolved = await loadResolvedPaymentMethods(admin, restaurantId, {
+          paymentConfig: rf?.payment_config,
+          featureFlags: flags,
+        });
+        await recordPaymentSnapshot(admin, {
+          orderId: id,
+          restaurantId,
+          offered: offeredMethods(resolved.config),
+          chosen: verifiedDraft.paymentMethod ?? "cod",
+          featureFlags: flags,
+        });
+      }
+    } catch {
+      /* best-effort snapshot — never blocks the order */
     }
 
     return { created: true, orderId: id, orderNumber };

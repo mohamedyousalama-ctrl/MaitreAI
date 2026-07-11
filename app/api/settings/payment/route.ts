@@ -11,10 +11,11 @@ import { createClient } from "@/lib/supabase/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import {
   DEFAULT_PAYMENT_CONFIG,
-  normalizePaymentConfig,
   type PaymentConfig,
   type WalletConfig,
 } from "@/lib/payments/config";
+import { loadResolvedPaymentMethods, enforceNeverAllOff } from "@/lib/payments/resolve";
+import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 
 export const runtime = "nodejs";
 
@@ -29,10 +30,15 @@ export async function GET() {
 
   const { data } = await supabase
     .from("restaurants")
-    .select("payment_config")
+    .select("payment_config, feature_flags")
     .eq("id", tenant.restaurantId)
     .single();
-  return NextResponse.json(normalizePaymentConfig(data?.payment_config ?? DEFAULT_PAYMENT_CONFIG));
+  // WO-T1-PAYMENTS: read through the single resolver (flag-off = legacy, identical).
+  const resolved = await loadResolvedPaymentMethods(supabase, tenant.restaurantId, {
+    paymentConfig: data?.payment_config ?? DEFAULT_PAYMENT_CONFIG,
+    featureFlags: (data?.feature_flags as Record<string, unknown> | null) ?? null,
+  });
+  return NextResponse.json(resolved.config);
 }
 
 /** Merge a partial wallet patch over the current wallet, keeping the id field
@@ -60,17 +66,29 @@ export async function POST(req: Request) {
   // Start from the stored config so a partial patch preserves untouched fields.
   const { data } = await supabase
     .from("restaurants")
-    .select("payment_config")
+    .select("payment_config, feature_flags")
     .eq("id", tenant.restaurantId)
     .single();
-  const current = normalizePaymentConfig(data?.payment_config ?? DEFAULT_PAYMENT_CONFIG);
+  const flags = (data?.feature_flags as Record<string, unknown> | null) ?? null;
+  // WO-T1-PAYMENTS: current config comes through the single resolver.
+  const current = (
+    await loadResolvedPaymentMethods(supabase, tenant.restaurantId, {
+      paymentConfig: data?.payment_config ?? DEFAULT_PAYMENT_CONFIG,
+      featureFlags: flags,
+    })
+  ).config;
 
-  const next: PaymentConfig = {
+  let next: PaymentConfig = {
     cod_enabled: typeof body.cod_enabled === "boolean" ? body.cod_enabled : current.cod_enabled,
     wallet_policy: body.wallet_policy === "lenient" || body.wallet_policy === "strict" ? body.wallet_policy : current.wallet_policy,
     vodafone_cash: mergeWallet(current.vodafone_cash, body.vodafone_cash, "number"),
     instapay: mergeWallet(current.instapay, body.instapay, "handle"),
   };
+  // never-all-off at WRITE time — a save that would leave zero enabled methods keeps
+  // COD on (safe default). Flag-gated so flag-off saves stay byte-identical to today.
+  if (isFeatureExplicitlyEnabled("canonical_payment_methods", flags)) {
+    next = enforceNeverAllOff(next);
+  }
 
   const { error } = await supabase
     .from("restaurants")

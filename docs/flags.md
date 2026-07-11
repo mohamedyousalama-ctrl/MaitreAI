@@ -65,6 +65,7 @@ tenant. Who may flip: **Kivo Ops** (per-tenant `feature_flags` write).
 | `voice_notes` | Additive outbound voice-note replies alongside text (WO-VOICE-2). |
 | `photo_thread` | Grouped photo-thread captions for menu/item images. |
 | `manager_command_recognition` | Recognize a manager messaging the business number and treat them accordingly. |
+| `canonical_payment_methods` | Route ALL payment-method truth through the single `lib/payments/resolve` resolver, backed by the `0084` `restaurant_payment_methods` table, with the never-all-off guard (a tenant can never have zero enabled methods; safe default cash/COD) + the immutable per-order `order_payment_snapshot` (offered + chosen). Manual methods only (`cod`/`vodafone_cash`/`instapay`); the PSP/online-card stack is untouched. Default OFF → flag-off returns exactly the legacy normalized `payment_config` at every surface (agent, storefront, settings), byte-identical. Requires the prepare-only `0084` migration applied first. |
 
 ---
 

@@ -18,7 +18,7 @@ import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
 import type { StandingInstruction, TonightNote } from "@/lib/ai/standing-instructions";
-import { normalizePaymentConfig } from "@/lib/payments/config";
+import { loadResolvedPaymentMethods } from "@/lib/payments/resolve";
 import { type Tier, isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { isSafetyHold } from "@/lib/tenant/handoff";
 import { setOwnershipState } from "@/lib/db/ownership";
@@ -231,6 +231,15 @@ export async function runCustomerTurn(
   // branch below is skipped and the legacy allergen path is byte-identical.
   const companionOn = isFeatureExplicitlyEnabled("allergy_companion_mode", tenantFeatures);
 
+  // WO-T1-PAYMENTS: payment-method truth comes ONLY from the resolver. Flag
+  // `canonical_payment_methods` OFF (every current tenant) → exactly the legacy
+  // normalized payment_config with ZERO extra DB work, so Karim's offered methods
+  // are byte-identical. Flag ON → the 0084 canonical table + never-all-off.
+  const resolvedPayments = await loadResolvedPaymentMethods(admin, restaurantId, {
+    paymentConfig: row.payment_config,
+    featureFlags: tenantFeatures,
+  });
+
   const brain = await loadBrain(admin, restaurantId);
 
   const mode = deriveSystemMode({
@@ -404,7 +413,8 @@ export async function runCustomerTurn(
     taxMode: String(row.tax_mode ?? "inclusive"),
     taxRate: Number(row.tax_rate ?? 0),
     // F1.2/F1.6 — per-tenant payment config (gates which methods Karim offers).
-    paymentConfig: normalizePaymentConfig(row.payment_config),
+    // WO-T1-PAYMENTS: sourced from the single resolver (flag-off = legacy, identical).
+    paymentConfig: resolvedPayments.config,
     tier: (row.tier as Tier | null) ?? "standard",
     // Karim Pro P4 (cadence): the prompt's §CAD section is included only when the
     // narrow `cadence` flag is on; default off → no cadence section, no change.
