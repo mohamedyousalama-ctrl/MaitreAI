@@ -36,6 +36,18 @@ Primary CTA everywhere: **«جرّب كريم على واتساب» / "Try Karim
 ## 6. Design direction
 Extend the existing Kivo/Karim design language (terracotta/quiet-luxury explored in the project's design files) — warm, food-adjacent, premium-but-approachable; NOT generic SaaS blue. Real Arabic screenshots, anonymized conversation snippets, Readex Pro / Noto Sans Arabic (the app's existing stack). Fast static build on the existing Next.js app — the landing route already exists at `/` per middleware host mapping: this is a redesign, not new infrastructure.
 
+> **AMENDMENT (WO-C4-LANDING, 11 Jul 2026 — PM ruling):** The terracotta/quiet-luxury
+> direction above PREDATES the Kivo emerald rebrand and actually described the **Wesaya
+> tenant storefront** theme (`wesaya-*`, `#faf6ef`/`#b5502e`), not the Kivo company brand.
+> The public getkivo.io identity is the shipped **Kivo EMERALD** brand (`kv-*` / `#0E9F6E`,
+> Readex Pro + Sora wordmark). The operator console's dark-glass `.kvx` is NOT the public
+> face either. This landing is rendered in EMERALD. §1 (wedge/messaging), §3 (structure),
+> and §5 (locked claim rules) remain the single source of truth; only §6's palette is
+> superseded by the emerald brand. Ratified in the same ruling: replace the stale MaitreAI
+> `public/logo.svg`; replace fabricated proof metrics with honest `[بيانات حقيقية مطلوبة]`
+> placeholders; use a placeholder `wa.me` constant for the demo CTA until the demo tenant is
+> provisioned.
+
 ## 7. Success metrics
 WhatsApp-demo starts/week, call bookings, AR:EN split, KSA:EG split. No vanity metrics.
 
