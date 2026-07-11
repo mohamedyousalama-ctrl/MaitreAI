@@ -10,13 +10,18 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseAllergyNote } from "@/lib/ai/allergen-companion";
 
 export type AllergyEventKind =
   | "mention"             // §1a plain allergy mention → companion flow
   | "post_commit_mention" // §1a.3 mention after confirmation/payment
   | "emergency"           // §5 active emergency → escalate
   | "checkpoint"          // §6 pre-confirmation checkpoint
-  | "recovery";           // §1e pending-human recovery reply
+  | "recovery"            // §1e pending-human recovery reply
+  | "banned_phrase_block"; // §0 output-scan block (WO-LIVE-2-F4): the model drafted a
+                           // banned safety phrase in an allergy context → blocked +
+                           // escalated. event_kind is free-text (no DB CHECK, 0080:36),
+                           // so this new kind needs no migration.
 
 export interface AllergyEventInput {
   restaurantId: string;
@@ -36,6 +41,45 @@ export interface AllergyEventInput {
   bannerWritten?: boolean;
   staffNotified?: boolean;
   netReason?: string | null;
+}
+
+/** A signal as emitted by respond() (ToolSignal-shaped). */
+interface AuditSignal {
+  type: string;
+  detail: Record<string, unknown>;
+}
+
+/**
+ * WO-LIVE-2-F4 — build the §0 banned-phrase-BLOCK audit input from a turn's signals,
+ * or null if this turn had no block. PURE. The block is emitted by respond()'s output
+ * scan as an "escalation" signal with reason "companion_banned_phrase", carrying the
+ * banned phrase(s) and the blocked draft (`reply`). It is NOT on the mention/emergency/
+ * checkpoint audit paths, so without this a companion safety block writes zero audit
+ * rows (the live gap). We record the phrases + blocked draft (in truth_states) and the
+ * rewrite actually sent (agent_reply).
+ */
+export function buildBannedPhraseBlockAudit(
+  signals: readonly AuditSignal[] | null | undefined,
+  ctx: { restaurantId: string; conversationId: string; customerMessage: string; sessionAllergyNote?: string | null; agentReply: string }
+): AllergyEventInput | null {
+  const sig = (signals ?? []).find(
+    (s) => s.type === "escalation" && s.detail?.reason === "companion_banned_phrase"
+  );
+  if (!sig) return null;
+  const phrases = Array.isArray(sig.detail.phrases) ? (sig.detail.phrases as unknown[]).map(String) : [];
+  const blockedDraft = typeof sig.detail.reply === "string" ? (sig.detail.reply as string) : null;
+  return {
+    restaurantId: ctx.restaurantId,
+    conversationId: ctx.conversationId,
+    allergens: parseAllergyNote(ctx.sessionAllergyNote),
+    customerMessage: ctx.customerMessage,
+    eventKind: "banned_phrase_block",
+    agentReply: ctx.agentReply, // the banned-phrase-clean REWRITE actually sent
+    truthStates: { bannedPhrases: phrases, blockedDraft },
+    humanOffered: false,
+    staffNotified: true, // the block escalates to a human (needs-attention / SYSTEM_HOLD)
+    netReason: `banned_phrase_block:${phrases.join(",")}`,
+  };
 }
 
 /**

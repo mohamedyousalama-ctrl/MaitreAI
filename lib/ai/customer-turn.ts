@@ -34,7 +34,7 @@ import {
 } from "@/lib/ai/allergen-companion-flow";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
-import { recordAllergyEvent } from "@/lib/db/allergy-audit";
+import { recordAllergyEvent, buildBannedPhraseBlockAudit } from "@/lib/db/allergy-audit";
 import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
 // WO-KHALID-STEP2: dialect-leakage QUALITY linter (observability only — NOT the safety
@@ -668,6 +668,23 @@ export async function runCustomerTurn(
       humanOffered: true,
       netReason: "checkpoint_recap",
     }).catch(() => {});
+  }
+  // WO-LIVE-2-F4 — §0 output-scan BLOCK audit. The banned-phrase block (respond.ts)
+  // fires from the OUTPUT scan and is NOT on the mention/emergency/checkpoint audit
+  // paths, so a companion safety block wrote ZERO audit rows (live: conv c016a121,
+  // §4 audit empty despite the block firing). Record it from the signal respond()
+  // emits — phrases + blocked draft (truth_states) + the rewrite sent (agent_reply).
+  // Best-effort / deploy-safe (recordAllergyEvent never throws). Post-F2 this fires
+  // only in a real allergy context, so it's a genuine liability record, not noise.
+  if (companionOn && conversationId) {
+    const blockAudit = buildBannedPhraseBlockAudit(result.signals, {
+      restaurantId,
+      conversationId,
+      customerMessage: input.userMessage,
+      sessionAllergyNote,
+      agentReply: result.reply,
+    });
+    if (blockAudit) await recordAllergyEvent(admin, blockAudit).catch(() => {});
   }
 
   const { data: run } = await admin
