@@ -16,7 +16,16 @@ export function isAdminConfigured(): boolean {
   return SUPABASE_URL.length > 0 && SERVICE_ROLE_KEY.length > 0;
 }
 
+// Test-only injection seam (WO-LIVE-3 §6 route-level proofs). Undefined in production
+// → zero behavior change; a test sets a fake client so the webhook POST handler can be
+// driven end-to-end without a live database. Never called by product code.
+let __testAdminClient: unknown | undefined;
+export function __setTestAdminClient(client: unknown | undefined): void {
+  __testAdminClient = client;
+}
+
 export function createAdminClient() {
+  if (__testAdminClient !== undefined) return __testAdminClient as ReturnType<typeof createSupabaseClient>;
   if (!isAdminConfigured()) return null;
   return createSupabaseClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },

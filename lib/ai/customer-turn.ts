@@ -55,8 +55,13 @@ import { dialectProfile } from "@/lib/ai/dialect";
 
 /** Typed error so callers can map to the right HTTP status / timeline note. */
 export class CustomerTurnError extends Error {
-  constructor(public code: "restaurant_not_found" | "agent_error", message?: string) {
+  // Explicit field (not a TS parameter property) so the file loads under Node's
+  // strip-only TypeScript mode — the route-level webhook proofs (WO-LIVE-3 §6) import
+  // this module transitively through the route handler.
+  code: "restaurant_not_found" | "agent_error";
+  constructor(code: "restaurant_not_found" | "agent_error", message?: string) {
     super(message ?? code);
+    this.code = code;
     this.name = "CustomerTurnError";
   }
 }
