@@ -144,5 +144,35 @@ for (let already = 0; already <= 8; already++) {
   }
 }
 
+// ── WO-LIVE-3 §3 — perMessageCap (default 2 at the caller; explicit ask → 3) ──
+eqd("cap=2: requested 3, fresh → 2 (default cap trims)",
+  decideMediaSend({ enabled: true, requested: 3, imagesAlreadySent: 0, hardZero: false, perMessageCap: 2 }),
+  { allowed: 2, fallbackToMenuLink: false, reason: "capped_per_message" });
+eqd("cap=2: requested 2 → 2 (ok)",
+  decideMediaSend({ enabled: true, requested: 2, imagesAlreadySent: 0, hardZero: false, perMessageCap: 2 }),
+  { allowed: 2, fallbackToMenuLink: false, reason: "ok" });
+eqd("cap=3 (explicit more): requested 5 → 3 (raised to ceiling)",
+  decideMediaSend({ enabled: true, requested: 5, imagesAlreadySent: 0, hardZero: false, perMessageCap: 3 }),
+  { allowed: 3, fallbackToMenuLink: false, reason: "capped_per_message" });
+eqd("cap=3 (explicit more): requested 3 → 3 (ok)",
+  decideMediaSend({ enabled: true, requested: 3, imagesAlreadySent: 0, hardZero: false, perMessageCap: 3 }),
+  { allowed: 3, fallbackToMenuLink: false, reason: "ok" });
+eqd("cap never exceeds MAX: perMessageCap 9 → clamped to 3",
+  decideMediaSend({ enabled: true, requested: 5, imagesAlreadySent: 0, hardZero: false, perMessageCap: 9 }),
+  { allowed: 3, fallbackToMenuLink: false, reason: "capped_per_message" });
+eqd("cap=2 + budget: already 5 (remaining 1), requested 3 → 1 (budget below cap)",
+  decideMediaSend({ enabled: true, requested: 3, imagesAlreadySent: 5, hardZero: false, perMessageCap: 2 }),
+  { allowed: 1, fallbackToMenuLink: false, reason: "budget_capped" });
+eqd("cap omitted → MAX default (back-compat): requested 3 → 3",
+  decideMediaSend({ enabled: true, requested: 3, imagesAlreadySent: 0, hardZero: false }),
+  { allowed: 3, fallbackToMenuLink: false, reason: "ok" });
+eqd("cap=2 IGNORED when flag OFF (legacy slice(0,4))",
+  decideMediaSend({ enabled: false, requested: 5, imagesAlreadySent: 0, hardZero: false, perMessageCap: 2 }),
+  { allowed: 4, fallbackToMenuLink: false, reason: "disabled" });
+// hard-zero still wins over any perMessageCap.
+eqd("cap=3 but hard-zero → 0, no link",
+  decideMediaSend({ enabled: true, requested: 3, imagesAlreadySent: 0, hardZero: true, hardZeroReason: "safety_hold", perMessageCap: 3 }),
+  { allowed: 0, fallbackToMenuLink: false, reason: "safety_hold" });
+
 console.log(`\nMEDIA-GUARD UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

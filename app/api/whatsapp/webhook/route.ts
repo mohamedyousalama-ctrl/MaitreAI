@@ -158,6 +158,19 @@ export async function POST(req: NextRequest) {
 
   const messages = normalizeWhatsAppInbound(payload);
 
+  // WO-LIVE-3 §6 — a webhook can carry ONLY location pins or ONLY images (Meta delivers
+  // each message as its own webhook), which normalizeWhatsAppInbound discards → text-less.
+  // The inbound-handling block below must still run for those so the tenant is resolved,
+  // flags are loaded, and the flag-gated location/image ingest branches (+ Brain loop)
+  // execute — otherwise both branches are unreachable in production (the live bug: a
+  // Wesaya pin returned 200 OK but never produced a location row or a zone_miss). The
+  // `messages.length > 0` term is kept FIRST so the text/voice path short-circuits and is
+  // byte-identical (the location/image normalizers only run for a text-less webhook).
+  const hasInboundToHandle =
+    messages.length > 0 ||
+    normalizeWhatsAppLocations(payload).length > 0 ||
+    normalizeWhatsAppImages(payload).length > 0;
+
   // Persist to Supabase when configured (idempotent on channel_message_id);
   // otherwise fall back to console logging (test mode).
   let persisted = 0;
@@ -166,7 +179,7 @@ export async function POST(req: NextRequest) {
   let persistFailed = 0;
   let statusUpdated = 0;
   let resolvedBy: "phone_number_id" | "env_fallback" = "env_fallback";
-  if (admin && messages.length > 0) {
+  if (admin && hasInboundToHandle) {
     // Strict per-tenant routing (decideWebhookRouting — pure, unit-tested):
     // 1. tenant resolved by phone_number_id → use its creds (multi-tenant path)
     // 2. phone_number_id === the configured GLOBAL WHATSAPP_PHONE_NUMBER_ID, or NO

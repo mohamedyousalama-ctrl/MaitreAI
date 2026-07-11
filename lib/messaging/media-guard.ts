@@ -22,6 +22,11 @@
 // ============================================================================
 
 export const MAX_IMAGES_PER_MESSAGE = 3;
+/** WO-LIVE-3 §3 — the DEFAULT per-message photo cap (Mohamed's rule): 2, unless the
+ *  customer explicitly asks for more, which the CALLER raises up to MAX (3). The pure
+ *  guard keeps MAX as its own default so existing callers/tests are unchanged; the
+ *  caller passes `perMessageCap` (2 normally, 3 on an explicit ask). */
+export const DEFAULT_MAX_IMAGES_PER_MESSAGE = 2;
 export const CONVERSATION_MEDIA_BUDGET = 6;
 /** Legacy per-message cap — the exact behavior when the media_guard flag is OFF
  *  (the previous `photoRequests.slice(0, 4)`). Byte-identical fallback. */
@@ -49,6 +54,10 @@ export interface MediaGuardInput {
   hardZero: boolean;
   /** Which hard-zero condition fired (for the timeline note); ignored when hardZero is false. */
   hardZeroReason?: MediaZeroReason | null;
+  /** WO-LIVE-3 §3 — the per-message cap for THIS turn. The caller passes 2 by default
+   *  and MAX (3) when the customer explicitly asked for more. Clamped to [.., MAX].
+   *  Omitted/0 → MAX (back-compat: existing callers behave exactly as before). */
+  perMessageCap?: number;
 }
 
 /**
@@ -100,11 +109,15 @@ export function decideMediaSend(input: MediaGuardInput): MediaGuardDecision {
     return { allowed: 0, fallbackToMenuLink: requested > 0, reason: "budget_exhausted" };
   }
 
-  const allowed = Math.min(requested, MAX_IMAGES_PER_MESSAGE, remaining);
+  // WO-LIVE-3 §3 — the per-message cap: the caller's `perMessageCap` (2 default, 3 on
+  // an explicit "more" ask), never above MAX. Omitted/0 → MAX (existing callers/tests
+  // unchanged). The 6/conversation budget still bounds it via `remaining`.
+  const cap = Math.min(nonNegInt(input.perMessageCap ?? 0) || MAX_IMAGES_PER_MESSAGE, MAX_IMAGES_PER_MESSAGE);
+  const allowed = Math.min(requested, cap, remaining);
   let reason: SendReason = "ok";
   if (allowed < requested) {
-    // Distinguish "the 3-cap trimmed it" from "the budget had fewer than 3 left".
-    reason = remaining < MAX_IMAGES_PER_MESSAGE && remaining === allowed ? "budget_capped" : "capped_per_message";
+    // Distinguish "the per-message cap trimmed it" from "the budget had fewer left".
+    reason = remaining < cap && remaining === allowed ? "budget_capped" : "capped_per_message";
   }
   return { allowed, fallbackToMenuLink: false, reason };
 }
