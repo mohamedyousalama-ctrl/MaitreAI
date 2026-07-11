@@ -1,20 +1,21 @@
-<svg width="232" height="56" viewBox="0 0 232 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MaitreAI">
-  <title>MaitreAI</title>
+<svg width="200" height="56" viewBox="0 0 200 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kivo">
+  <title>Kivo</title>
   <defs>
-    <linearGradient id="lockGrad" x1="6" y1="5" x2="46" y2="49" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#e8a23a"/>
-      <stop offset=".55" stop-color="#c2602f"/>
-      <stop offset="1" stop-color="#a8432a"/>
+    <linearGradient id="kvTile" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#13b07a"/>
+      <stop offset="1" stop-color="#0a6e4c"/>
+    </linearGradient>
+    <linearGradient id="kvStroke" x1="0.1" y1="0.96" x2="0.86" y2="0.04">
+      <stop stop-color="#eafff6"/>
+      <stop offset="1" stop-color="#ffffff"/>
     </linearGradient>
   </defs>
-  <g transform="translate(2,4) scale(0.78)">
-    <rect width="64" height="64" rx="15" fill="url(#lockGrad)"/>
-    <path d="M13 42a19 17 0 0 1 38 0Z" fill="#faf6ef"/>
-    <rect x="10.5" y="42.5" width="43" height="5" rx="2.5" fill="#faf6ef"/>
-    <path d="M29 37 L38.5 16" stroke="#2a211b" stroke-width="3.6" stroke-linecap="round"/>
-    <path d="M31.5 16.5 L39 15 L38 22.4" fill="none" stroke="#2a211b" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Kivo emerald app-icon tile + check-arrow mark -->
+  <g transform="translate(2,4)">
+    <rect width="48" height="48" rx="13" fill="url(#kvTile)"/>
+    <path d="M13.4 25.4 L21.6 34 L36 15.4" fill="none" stroke="#0a5238" stroke-width="5.3" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 .6)"/>
+    <path d="M13.4 25.4 L21.6 34 L36 15.4" fill="none" stroke="url(#kvStroke)" stroke-width="5.3" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-  <text x="62" y="37" font-family="'Readex Pro',system-ui,-apple-system,sans-serif" font-weight="700" font-size="29" letter-spacing="-0.5">
-    <tspan fill="#2a211b">Maitre</tspan><tspan fill="#b5502e">AI</tspan>
-  </text>
+  <!-- Kivo wordmark (emerald ink) -->
+  <text x="62" y="37" font-family="'Sora','Readex Pro',system-ui,-apple-system,sans-serif" font-weight="800" font-size="30" letter-spacing="-0.5" fill="#0a3a2a">Kivo</text>
 </svg>
