@@ -19,6 +19,7 @@ import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-g
 // WO-COMPANION-W1-CORE (§0/§6): companion banned-phrase guard + confirmation
 // checkpoint. Consulted ONLY when brain.allergyCompanion is on (flag OFF → inert).
 import { scanBannedAllergyPhrases, parseAllergyNote, computeDishTruthState, type DishTruthState } from "./allergen-companion";
+import { isAllergyScanContext } from "./allergen-scan-context";
 import { buildCheckpointRecap, companionBannedRewriteReply, type CheckpointDish } from "./allergen-companion-flow";
 // WO-COMPANION-W2: feed the §6 recap the REAL two-axis MenuItem data so verified
 // dishes surface honestly (computeDishTruthState itself unchanged — ruling C).
@@ -459,7 +460,21 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // «ما عليك»/«ما يضرك»/«خالي تماماً»/«بدون أي تلامس»/«يناسب الحساسية»/"safe") over the
   // outbound text (including any legacy rewrite above, which uses «آمن» negated), and
   // REPLACE it with a banned-phrase-clean reply that hands to the kitchen. Off → inert.
-  if (input.brain.allergyCompanion === true && text.trim()) {
+  //
+  // WO-LIVE-2-F2 — the scan now runs ONLY in a real allergy context (session note,
+  // safety hold, or an inbound allergy mention this turn). The vocabulary contains
+  // common non-safety words («عادي» = "regular" flavor, "safe" mid-word); scanning
+  // every reply produced a false SYSTEM_HOLD when the model offered a flavor
+  // («عادي، حار، أو مكس؟») on a normal ordering turn (conv c016a121). The scanner and
+  // its vocabulary are UNCHANGED — only WHETHER to run it this turn is gated. An
+  // allergy-context turn scans exactly as before; flag-off stays byte-identical
+  // (isAllergyScanContext returns false whenever allergyCompanion !== true).
+  if (text.trim() && isAllergyScanContext({
+    allergyCompanion: input.brain.allergyCompanion,
+    sessionAllergyNote: input.brain.sessionAllergyNote,
+    safetyHoldActive: input.safetyHoldActive,
+    userMessage: input.userMessage,
+  })) {
     const banned = scanBannedAllergyPhrases(text);
     if (banned.length) {
       ctx.signals.push({ type: "escalation", detail: { reason: "companion_banned_phrase", phrases: banned, reply: text } });
