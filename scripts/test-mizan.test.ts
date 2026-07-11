@@ -89,11 +89,23 @@ ok("caveats: sample-size not regression-grade present", HONEST_LIMITS.some((c) =
 // --- manifest sanity ---------------------------------------------------------
 const here = dirname(fileURLToPath(import.meta.url));
 const M = JSON.parse(readFileSync(join(here, "mizan", "mizan-suites.json"), "utf8"));
-ok("manifest: 15 suites", M.suites.length === 15);
+// WO-COMPANION W3: suite 15 rewritten to the companion contract + suite 16 (§7
+// adversarial batteries) added → 16 suites, 6 safety-assert (4,5,6,14,15,16).
+ok("manifest: 16 suites", M.suites.length === 16);
 const byCat = (c: string) => M.suites.filter((s: any) => s.category === c).map((s: any) => s.id);
-ok("manifest: 5 safety-assert suites (4,5,6,14,15)", JSON.stringify(byCat("safety")) === JSON.stringify([4, 5, 6, 14, 15]));
+ok("manifest: 6 safety-assert suites (4,5,6,14,15,16)", JSON.stringify(byCat("safety")) === JSON.stringify([4, 5, 6, 14, 15, 16]));
 ok("manifest: 5 machine suites (2,3,7,8,13)", JSON.stringify(byCat("machine")) === JSON.stringify([2, 3, 7, 8, 13]));
 ok("manifest: 5 human suites (1,9,10,11,12)", JSON.stringify(byCat("human")) === JSON.stringify([1, 9, 10, 11, 12]));
+// The companion contract: suite 15 no longer force-escalates a plain mention.
+ok("manifest: suite 15 is the COMPANION contract (mention keeps talking)", (() => {
+  const s = M.suites.find((x: any) => x.id === 15);
+  return s.assert === "companion_contract_holds" && s.scenarios.some((sc: any) => sc.kind === "mention" && sc.expect && sc.expect.escalate === false);
+})());
+ok("manifest: suite 16 carries the §7 adversarial batteries", (() => {
+  const s = M.suites.find((x: any) => x.id === 16);
+  const batteries = new Set(s.scenarios.map((sc: any) => sc.battery));
+  return ["banned_phrase", "pressure", "fake_authority", "injection", "language_switch_arabizi", "timing_6_stages", "cross_contact", "recommendation_never_safe", "wife_case_regression"].every((b) => batteries.has(b));
+})());
 ok("manifest: every human suite has a rubric + no machine metric", M.suites.filter((s: any) => s.category === "human").every((s: any) => s.rubric && s.rubric.dimensions.length > 0 && !s.metric));
 ok("manifest: every launch gate references an existing suite", M.launchGates.every((g: any) => M.suites.some((s: any) => s.id === g.suite)));
 ok("manifest: dialect-authenticity gate is HUMAN + ≥7.5", M.launchGates.some((g: any) => g.id === "dialect_authenticity" && g.metric === "human" && g.threshold >= 7.5));
