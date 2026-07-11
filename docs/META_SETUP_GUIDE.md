@@ -81,13 +81,20 @@ This step connects Meta to our code. Without it, the WhatsApp onboarding step fa
 
    | Variable Name | Where to find the value |
    |---|---|
-   | `WHATSAPP_APP_ID` | The **App ID** number copied above |
-   | `WHATSAPP_APP_SECRET` | The **App Secret** string copied above |
+   | `SIGNUP_APP_ID` | The Embedded Signup app's **App ID** number copied above |
+   | `SIGNUP_APP_SECRET` | The Embedded Signup app's **App Secret** string copied above |
 
 3. Click **Save** for each. These values are **secrets** — never put them in code, chat messages, or emails.
 
-> **Why two separate secrets?**
-> `WHATSAPP_APP_ID` is used when a restaurant owner goes through Embedded Signup — our server exchanges their short-lived auth code for a long-lived access token on their behalf. `WHATSAPP_APP_SECRET` is used for two things: that same token exchange, *and* verifying the cryptographic signature on every inbound WhatsApp message to confirm it really came from Meta (not a spoof).
+> **Why a dedicated signup app (WO-SIGNUP-ENV-SPLIT)?**
+> The Embedded Signup token exchange (short-lived auth code → long-lived token) runs
+> against its **own** Meta app, configured via `SIGNUP_APP_ID` / `SIGNUP_APP_SECRET`.
+> The messaging app's `WHATSAPP_APP_SECRET` is used **only** to verify the signature
+> on inbound WhatsApp messages — it is deliberately **not** reused for the token
+> exchange, so the two apps' secrets can never collide (a single shared secret would
+> break inbound verification the moment the signup app differs from the messaging app).
+> If `SIGNUP_APP_ID` / `SIGNUP_APP_SECRET` are unset, the onboarding endpoint returns a
+> clean "not configured" — it never silently borrows the messaging secret.
 
 ---
 

@@ -18,11 +18,14 @@
 //   - verifyToken:   optional; if omitted a random token is generated
 //
 // Meta prerequisites (env vars required on the server):
-//   WHATSAPP_APP_ID      — Meta App ID (found in Meta App Dashboard)
-//   WHATSAPP_APP_SECRET  — Meta App Secret (Piece 3's wa_app_secret_enc serves
-//                          per-tenant message-signature verification; this env
-//                          var is the platform-level secret used for the token
-//                          exchange, which is separate and set once per deployment)
+//   SIGNUP_APP_ID      — the DEDICATED Embedded Signup Meta App ID (WO-SIGNUP-
+//                        ENV-SPLIT). Used ONLY for this token exchange.
+//   SIGNUP_APP_SECRET  — the dedicated signup app's secret. Deliberately SEPARATE
+//                        from the messaging app's WHATSAPP_APP_SECRET (which stays
+//                        exclusively for inbound webhook-signature verification).
+//                        On success we also persist this secret per-tenant into
+//                        wa_app_secret_enc so signup tenants' inbound verifies
+//                        against THEIR app, not the global messaging secret.
 //
 // Response: { ok: true, configured: true }
 // ============================================================================
@@ -31,6 +34,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { encryptSecret } from "@/lib/crypto/secrets";
+import { buildSignupTokenExchangeUrl, isSignupConfigured, signupAppCreds } from "@/lib/onboarding/signup-oauth";
 import { randomBytes } from "crypto";
 
 export const runtime = "nodejs";
@@ -41,18 +45,14 @@ const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 // ── Meta Graph API helpers ──────────────────────────────────────────────────
 
-/** Exchange a short-lived authorization code for a long-lived access token. */
+/** Exchange a short-lived authorization code for a long-lived access token using
+ *  the DEDICATED signup app. Never borrows the messaging secret — a missing signup
+ *  app throws (the caller has already degraded to not_configured before this). */
 async function exchangeCodeForToken(code: string): Promise<string> {
-  const appId = process.env.WHATSAPP_APP_ID;
-  const appSecret = process.env.WHATSAPP_APP_SECRET;
-  if (!appId || !appSecret) throw new Error("WHATSAPP_APP_ID or WHATSAPP_APP_SECRET not configured");
+  const url = buildSignupTokenExchangeUrl(code);
+  if (!url) throw new Error("SIGNUP_APP_ID or SIGNUP_APP_SECRET not configured");
 
-  const url = new URL(`${GRAPH_BASE}/oauth/access_token`);
-  url.searchParams.set("client_id", appId);
-  url.searchParams.set("client_secret", appSecret);
-  url.searchParams.set("code", code);
-
-  const res = await fetch(url.toString(), { method: "GET", cache: "no-store" });
+  const res = await fetch(url, { method: "GET", cache: "no-store" });
   if (!res.ok) {
     const body = await res.text().catch(() => "(unreadable)");
     throw new Error(`Meta token exchange failed ${res.status}: ${body}`);
@@ -121,6 +121,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  // 3b. Signup app must be configured. WO-SIGNUP-ENV-SPLIT: absent SIGNUP_* → a
+  //     clean not_configured, NEVER a silent fallback to the messaging secret.
+  if (!isSignupConfigured()) {
+    return NextResponse.json(
+      { error: "not_configured", detail: "SIGNUP_APP_ID / SIGNUP_APP_SECRET not set" },
+      { status: 503 }
+    );
+  }
+
   // 4. Exchange the authorization code for a long-lived access token.
   //    This is the security-critical step — errors here abort before any DB write.
   let accessToken: string;
@@ -146,6 +155,14 @@ export async function POST(req: Request) {
       ? body.verifyToken.trim()
       : randomBytes(24).toString("hex");
 
+  // WO-SIGNUP-ENV-SPLIT: persist the signup app's secret per-tenant so this
+  //   tenant's inbound webhook signatures verify against ITS app (the read path at
+  //   lib/db/restaurants.ts decrypts wa_app_secret_enc → tenant.env.appSecret),
+  //   not the global messaging WHATSAPP_APP_SECRET. Mirrors that read exactly:
+  //   encryptSecret is the counterpart of the decryptSecret the read path uses.
+  //   Guarded above (isSignupConfigured) so signupAppCreds() is non-null here.
+  const signupAppSecret = signupAppCreds()!.appSecret;
+
   const now = new Date().toISOString();
   const { error: updateErr } = await admin
     .from("restaurants")
@@ -154,6 +171,7 @@ export async function POST(req: Request) {
       wa_waba_id: wabaId,
       wa_verify_token: verifyToken,
       wa_access_token_enc: encryptSecret(accessToken),
+      wa_app_secret_enc: encryptSecret(signupAppSecret),
       wa_configured_at: now,
       onboarding_completed_at: now,
     })
