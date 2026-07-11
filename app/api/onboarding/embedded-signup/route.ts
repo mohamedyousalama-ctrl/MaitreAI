@@ -40,8 +40,13 @@ import { randomBytes } from "crypto";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const GRAPH_API_VERSION = "v19.0";
+// v25.0 — Meta's current stable (Feb 2026); v19.0 expired 2026-05-21. Signup-only bump.
+const GRAPH_API_VERSION = "v25.0";
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+
+// Meta Graph calls run on the request thread; a stalled response must not hold the
+// onboarding request open indefinitely. Bound every call with a hard timeout.
+const META_FETCH_TIMEOUT_MS = 10_000;
 
 // ── Meta Graph API helpers ──────────────────────────────────────────────────
 
@@ -52,7 +57,7 @@ async function exchangeCodeForToken(code: string): Promise<string> {
   const url = buildSignupTokenExchangeUrl(code);
   if (!url) throw new Error("SIGNUP_APP_ID or SIGNUP_APP_SECRET not configured");
 
-  const res = await fetch(url, { method: "GET", cache: "no-store" });
+  const res = await fetch(url, { method: "GET", cache: "no-store", signal: AbortSignal.timeout(META_FETCH_TIMEOUT_MS) });
   if (!res.ok) {
     const body = await res.text().catch(() => "(unreadable)");
     throw new Error(`Meta token exchange failed ${res.status}: ${body}`);
@@ -70,6 +75,7 @@ async function subscribeWabaWebhook(wabaId: string, accessToken: string): Promis
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
+    signal: AbortSignal.timeout(META_FETCH_TIMEOUT_MS),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "(unreadable)");
