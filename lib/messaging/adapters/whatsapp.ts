@@ -52,6 +52,11 @@ interface WaMessage {
   // WO-DELIVERY-D1 — a WhatsApp location pin. Meta sends lat/lng as decimal
   // degrees; name/address are optional labels the sender's app may attach.
   location?: { latitude?: number; longitude?: number; name?: string; address?: string };
+  // WO-MEDIA-INBOUND — a WhatsApp image. The caption (the customer's words) rides
+  // in image.caption, NOT text.body — which is exactly why extractText() returns ""
+  // for an image and the main normalizer drops it (the silent-drop bug). The bytes
+  // are fetched later by media id (image.id), like a voice note.
+  image?: { id?: string; mime_type?: string; caption?: string; sha256?: string };
   // WB3 — Meta click-to-message ad referral: present on the FIRST inbound message
   // after a customer taps a click-to-WhatsApp ad. Absent for organic messages.
   referral?: {
@@ -269,6 +274,62 @@ export function normalizeWhatsAppLocations(payload: unknown): InboundLocation[] 
           lng,
           name: typeof loc.name === "string" && loc.name.trim() ? loc.name.trim() : undefined,
           address: typeof loc.address === "string" && loc.address.trim() ? loc.address.trim() : undefined,
+          timestamp: m.timestamp ? Number(m.timestamp) * 1000 : Date.now(),
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// WO-MEDIA-INBOUND — inbound IMAGES (media_turn_trigger).
+//
+// SEPARATE from normalizeWhatsAppInbound ON PURPOSE (mirrors the D1 location split):
+// an image message carries no text.body/audio, so the main normalizer's drop rule
+// (line ~201) discards it exactly as it does today — meaning the text/voice pipeline
+// is BYTE-IDENTICAL whether or not this feature exists. Images are handled only when
+// the webhook, AFTER resolving the tenant + the media_turn_trigger flag, chooses to
+// call THIS extractor. Flag OFF → this is never called → the image is dropped, same
+// as today (45-minute-silence bug stays for flag-off tenants until PM flips the flag).
+// ---------------------------------------------------------------------------
+export interface InboundImage {
+  from: string;
+  externalMessageId?: string;
+  customerName?: string;
+  /** WhatsApp media id — resolve + download the bytes with downloadWhatsAppMedia(). */
+  imageId: string;
+  mime?: string;
+  /** The customer's own caption (their words), if any. NOT a model read. */
+  caption?: string;
+  timestamp: number;
+}
+
+/** Extract every inbound WhatsApp image carrying a media id. Pure parse: an image
+ *  without an id is skipped (can't be fetched). The caption is the customer's text. */
+export function normalizeWhatsAppImages(payload: unknown): InboundImage[] {
+  const data = (payload ?? {}) as WaWebhookPayload;
+  const out: InboundImage[] = [];
+  for (const entry of data.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const value = change.value;
+      if (!value?.messages?.length) continue;
+      const nameByWaId = new Map<string, string>();
+      for (const c of value.contacts ?? []) {
+        if (c.wa_id && c.profile?.name) nameByWaId.set(c.wa_id, c.profile.name);
+      }
+      for (const m of value.messages) {
+        const img = m.image;
+        const imageId = img?.id;
+        if (!m.from || !imageId) continue;
+        const caption = typeof img?.caption === "string" && img.caption.trim() ? img.caption.trim() : undefined;
+        out.push({
+          from: m.from,
+          externalMessageId: m.id,
+          customerName: nameByWaId.get(m.from),
+          imageId: String(imageId),
+          mime: typeof img?.mime_type === "string" ? img.mime_type : undefined,
+          caption,
           timestamp: m.timestamp ? Number(m.timestamp) * 1000 : Date.now(),
         });
       }

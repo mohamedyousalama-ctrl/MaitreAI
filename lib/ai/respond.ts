@@ -57,6 +57,11 @@ export interface RespondInput {
    *  inbound location pin was routed (confirm zone+branch) or fell outside all zones
    *  (relay the soft message). Absent on non-pin turns → identical behavior. */
   geoDirective?: string | null;
+  /** WO-MEDIA-INBOUND: a per-turn directive appended when the inbound was an image —
+   *  carries the provenance-marked vision READ (or a warm never-silence fallback when
+   *  the read failed). Context only: it NEVER gates safety (the deterministic allergen
+   *  gate runs on the customer's own text). Absent on non-image turns → identical. */
+  imageDirective?: string | null;
 }
 
 export interface RespondResult {
@@ -243,7 +248,8 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     buildCustomerAgentSystemPrompt(input.brain) +
     (input.perceptionDirective ? `\n\n${input.perceptionDirective}` : "") +
     (input.cadenceDirective ? `\n\n${input.cadenceDirective}` : "") +
-    (input.geoDirective ? `\n\n${input.geoDirective}` : "");
+    (input.geoDirective ? `\n\n${input.geoDirective}` : "") +
+    (input.imageDirective ? `\n\n${input.imageDirective}` : "");
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
   const knownPrices = knownMenuPrices(input.brain);
 

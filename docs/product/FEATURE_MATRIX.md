@@ -107,6 +107,7 @@
 | نص/أزرار/قوائم · Text + interactive in/out | Handles text, button/list replies; builds text, buttons (≤3), lists, templates (outside 24h) | LIVE | always | both | customer |
 | رسائل صوتية واردة · Inbound voice STT | Transcribes voice notes before persist (transcript IS the stored text); mock refused in prod | LIVE (STT env-dependent) | always | both | customer |
 | دبابيس الموقع · Inbound location pins | Parses a pin → `meta.location` for zone routing | BUILT-FLAG-OFF | `delivery_geo_routing` | both | customer |
+| صور واردة · Inbound images | Image triggers a customer turn (caption/📷 = gate input; one-shot vision read stored provenance-marked as context) — fixes the 45-min silent-drop | BUILT-FLAG-OFF | `media_turn_trigger` | both | customer |
 | إحالة إعلان (CTWA) · Ad-referral capture | Captures Meta click-to-WhatsApp referral metadata | LIVE (schema) | always | both | owner |
 | إشعار "تمّت القراءة"/الكتابة · Read + typing | Honest seen/typing signal on inbound | BUILT-FLAG-OFF | `cadence` | both | customer |
 | تسلّم بشري · Operator takeover send | Human replies from the tenant's own number, claims ownership, audits authorship | LIVE | always | both | staff |
@@ -308,7 +309,7 @@ P0 tier flag · P1 `conversation_intelligence` · P2 `customer_memory` (data onl
 ## E. Settings & options appendix (every configurable control)
 
 ### Per-tenant feature flags (`restaurants.feature_flags`; default OFF unless noted)
-`conversation_intelligence` (pro-auto) · `customer_memory` · `conversation_outcomes` · `perception` · `cadence` · `stateful_orders` · `deterministic_allergen_safety` (**default ON, SAFETY-locked**) · `allergen_symptom_detection` (**SAFETY-locked**) · `psp_payments` · `staff_command_channel` · `standing_instructions` · `kitchen_ticket` · `console_v2` · `media_guard` · `khalid_persona` · `ksa_encyclopedia` · `callback_requests` · `qz_print` · `voice_notes` · `photo_thread` · `manager_command_recognition` · `delivery_geo_routing` · `allergy_companion_mode`.
+`conversation_intelligence` (pro-auto) · `customer_memory` · `conversation_outcomes` · `perception` · `cadence` · `stateful_orders` · `deterministic_allergen_safety` (**default ON, SAFETY-locked**) · `allergen_symptom_detection` (**SAFETY-locked**) · `psp_payments` · `staff_command_channel` · `standing_instructions` · `kitchen_ticket` · `console_v2` · `media_guard` · `khalid_persona` · `ksa_encyclopedia` · `callback_requests` · `qz_print` · `voice_notes` · `photo_thread` · `manager_command_recognition` · `delivery_geo_routing` · `allergy_companion_mode` · `media_turn_trigger`.
 Env deploy flags: `CONSOLE_V2`, `ENABLE_DELIVERY_TRACKING` (default ON), `ENABLE_MIZAN_PANEL`, `ENABLE_ADMIN_CHAT_CONSOLE`, `ENABLE_MOCK_PAYMENTS`/`ENABLE_MOCK_STT` (dev).
 
 ### Console settings controls
