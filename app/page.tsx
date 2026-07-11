@@ -195,9 +195,11 @@ export default function Home() {
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 32px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 34, height: 34, borderRadius: 11, background: "rgba(255,255,255,.12)", display: "grid", placeItems: "center" }}><KivoMark size={20} tone="white" sheen={false} title="Kivo" /></div><KivoWordmark size={18} ink="#fff" /></div>
           <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.55)" }}>خلّي طلباتك ماشية</span>
-          <div style={{ marginInlineStart: "auto", display: "flex", gap: 22, fontSize: 12, fontWeight: 700 }}>
+          <div style={{ marginInlineStart: "auto", display: "flex", gap: 22, fontSize: 12, fontWeight: 700, flexWrap: "wrap" }}>
             <a href="#how" style={{ color: "rgba(255,255,255,.7)", textDecoration: "none" }}>إزاي بيشتغل</a>
             <Link href="/insights" style={{ color: "rgba(255,255,255,.7)", textDecoration: "none" }}>اللوحة</Link>
+            <Link href="/privacy" style={{ color: "rgba(255,255,255,.7)", textDecoration: "none" }}>الخصوصية</Link>
+            <Link href="/terms" style={{ color: "rgba(255,255,255,.7)", textDecoration: "none" }}>الشروط</Link>
             <Link href="/login" style={{ color: "rgba(255,255,255,.7)", textDecoration: "none" }}>دخول</Link>
           </div>
         </div>
