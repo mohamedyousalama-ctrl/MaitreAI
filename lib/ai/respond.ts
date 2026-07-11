@@ -63,6 +63,11 @@ export interface RespondInput {
    *  the read failed). Context only: it NEVER gates safety (the deterministic allergen
    *  gate runs on the customer's own text). Absent on non-image turns → identical. */
   imageDirective?: string | null;
+  /** WO-LIVE-3 §4: a per-turn directive appended when the media budget is spent for the
+   *  window, or the customer asked for the menu — so Karim's text points to the web menu
+   *  link and never pretends photos were attached (guard→model coherence). media_guard
+   *  OFF / healthy budget → null → identical behavior. */
+  mediaDirective?: string | null;
 }
 
 export interface RespondResult {
@@ -250,7 +255,8 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     (input.perceptionDirective ? `\n\n${input.perceptionDirective}` : "") +
     (input.cadenceDirective ? `\n\n${input.cadenceDirective}` : "") +
     (input.geoDirective ? `\n\n${input.geoDirective}` : "") +
-    (input.imageDirective ? `\n\n${input.imageDirective}` : "");
+    (input.imageDirective ? `\n\n${input.imageDirective}` : "") +
+    (input.mediaDirective ? `\n\n${input.mediaDirective}` : "");
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
   const knownPrices = knownMenuPrices(input.brain);
 

@@ -35,6 +35,9 @@ import {
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
 import { recordAllergyEvent, buildBannedPhraseBlockAudit } from "@/lib/db/allergy-audit";
+import { asksForMenuLink } from "@/lib/ai/media-intent";
+import { CONVERSATION_MEDIA_BUDGET } from "@/lib/messaging/media-guard";
+import { isMediaWindowReset, buildMediaDirective } from "@/lib/messaging/media-window";
 import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
 // WO-KHALID-STEP2: dialect-leakage QUALITY linter (observability only — NOT the safety
@@ -551,9 +554,52 @@ export async function runCustomerTurn(
   // on input.userMessage (the caption / 📷 placeholder), never on the vision read.
   const imageDirective = input.imageContext ? buildImageDirective(input.imageContext) : null;
 
+  // WO-LIVE-3 §4 — pre-turn media directive (guard→model coherence). Only when
+  // media_guard is ON: decide whether the photo budget is spent for THIS window (24h OR
+  // new-order reset) and whether the customer asked for the menu, then tell Karim to
+  // point to the web menu link honestly instead of pretending photos were attached. The
+  // media guard in respond-and-send remains the hard backstop; this only makes THIS
+  // turn's text truthful. Deploy-safe (pre-0070 columns → treated as not exhausted);
+  // OFF → null → byte-identical. The order read is skipped unless usage hit the budget.
+  let mediaDirective: string | null = null;
+  if (isFeatureExplicitlyEnabled("media_guard", tenantFeatures) && conversationId) {
+    const askedMenu = asksForMenuLink(input.userMessage);
+    let budgetExhausted = false;
+    try {
+      const { data: mrow } = await admin
+        .from("conversations")
+        .select("images_sent, last_media_at")
+        .eq("id", conversationId)
+        .maybeSingle();
+      const imagesSent = Number((mrow as { images_sent?: number } | null)?.images_sent ?? 0);
+      const lastMediaAt = (mrow as { last_media_at?: string | null } | null)?.last_media_at ?? null;
+      if (imagesSent >= CONVERSATION_MEDIA_BUDGET) {
+        // Only a raw usage at/over budget can be "exhausted" — and only if the window
+        // has NOT reset. Read the latest order just here (cheap, and rare).
+        const { data: ord } = await admin
+          .from("orders")
+          .select("created_at")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const oc = (ord as { created_at?: string | null } | null)?.created_at ?? null;
+        const reset = isMediaWindowReset({
+          lastMediaAtMs: lastMediaAt ? Date.parse(lastMediaAt) : null,
+          nowMs: Date.now(),
+          latestOrderAtMs: oc ? Date.parse(oc) : null,
+        });
+        budgetExhausted = !reset;
+      }
+    } catch {
+      /* images_sent/last_media_at absent (pre-0070) → not exhausted; deploy-safe */
+    }
+    mediaDirective = buildMediaDirective({ enabled: true, budgetExhausted, customerAskedForMenu: askedMenu });
+  }
+
   const runRespond = async (): Promise<RespondResult> => {
     try {
-      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective });
+      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective, mediaDirective });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await admin.from("agent_runs").insert({

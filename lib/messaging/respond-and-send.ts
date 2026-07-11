@@ -19,7 +19,9 @@ import { shouldOfferVoiceReply } from "@/lib/ai/voice-reply-trigger";
 import { synthesizeVoiceReply } from "@/lib/ai/tts";
 import { buildPhotoThreadCaptions } from "./photo-thread";
 import { imageHistoryContent } from "./image-turn";
-import { decideMediaSend, CONVERSATION_MEDIA_BUDGET, type MediaZeroReason } from "./media-guard";
+import { decideMediaSend, CONVERSATION_MEDIA_BUDGET, MAX_IMAGES_PER_MESSAGE, DEFAULT_MAX_IMAGES_PER_MESSAGE, type MediaZeroReason } from "./media-guard";
+import { isMediaWindowReset, MEDIA_WINDOW_MS } from "./media-window";
+import { asksForMorePhotos, asksForMenuLink } from "@/lib/ai/media-intent";
 import { isSafetyHeld } from "@/lib/db/safety-hold";
 import { appBaseUrl } from "@/lib/db/delivery";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
@@ -433,7 +435,8 @@ async function sendRequestedPhotos(
   photoRequests: { imageUrl: string; caption: string; name: string }[],
   lastInboundAtMs: number,
   conv: { ownership_state: string | null; escalation_reason: string | null },
-  features: Record<string, unknown> | null
+  features: Record<string, unknown> | null,
+  userMessage: string
 ): Promise<void> {
   // FLAG GATE (standing law): the guard's caps + budget + hard-zero are a behavior
   // change, so they ship behind the explicit-only `media_guard` flag, OFF by default.
@@ -443,12 +446,21 @@ async function sendRequestedPhotos(
   // safety-hold hard-zero ON for a live tenant is its own one-line proposal post-merge.
   const mediaGuardOn = isFeatureExplicitlyEnabled("media_guard", features);
 
+  // WO-LIVE-3 — customer media intent (effective only when the flag is ON): an explicit
+  // "more photos" ask raises the per-message cap 2→3 (§3); an explicit menu/link ask
+  // legitimises an intentional web-menu-link send (§5).
+  const askedForMorePhotos = mediaGuardOn && asksForMorePhotos(userMessage);
+  const askedForMenuLink = mediaGuardOn && asksForMenuLink(userMessage);
+  const perMessageCap = askedForMorePhotos ? MAX_IMAGES_PER_MESSAGE : DEFAULT_MAX_IMAGES_PER_MESSAGE;
+
   // ── Deterministic HARD-ZERO (fail-closed): never intrude media on a safety hold,
   //    an open complaint, or a pending payment. Only evaluated when the flag is ON.
   let hardZero = false;
   let hardZeroReason: MediaZeroReason | null = null;
-  let imagesAlreadySent = 0;
+  let imagesAlreadySent = 0;      // RAW window-to-date count from the counter
   let counterDeployed = false;
+  let windowReset = false;         // §2: a 24h-elapsed OR new-order window → budget fresh
+  let latestOrderAtMs: number | null = null;
   if (mediaGuardOn) {
     let isSafetyHoldFlag: boolean | null = null;
     {
@@ -477,40 +489,86 @@ async function sendRequestedPhotos(
       }
     }
 
-    // ── Deploy-safe budget-counter read: images_sent lands with migration 0070. Until
-    //    it applies, a missing-column read (42703) means "budget not deployed" → treat
-    //    as 0 and skip counter writes; the 3/message cap + hard-zero still fully apply.
+    // ── Deploy-safe budget-counter read: images_sent + last_media_at land with 0070.
+    //    Missing column (42703) → budget inert; the caps + hard-zero still fully apply.
     counterDeployed = true;
     const { data: cRow, error: cErr } = await admin
       .from("conversations")
-      .select("images_sent")
+      .select("images_sent, last_media_at")
       .eq("id", conversationId)
       .maybeSingle();
     if (cErr) {
       if (cErr.code === "42703" || /does not exist/i.test(cErr.message ?? "")) {
-        // Column not deployed yet (pre-0070) → budget inert; the 3/message cap +
-        // hard-zero still fully apply. A KNOWN not-a-failure state, not an error.
         counterDeployed = false;
       } else {
-        // TRANSIENT read failure (network / RLS / timeout) → FAIL SAFE: treat the
-        // budget as fully consumed so we send NO images and offer the web menu
-        // instead. NEVER fall through to 0 (= full budget), which would silently
-        // un-count and over-send on a flaky read. Leave counterDeployed=false so we
-        // never persist a counter computed over unknown state.
+        // TRANSIENT read failure → FAIL SAFE: treat the budget as fully consumed so we
+        // send NO images and offer the web menu. NEVER fall through to 0 (= over-send).
         imagesAlreadySent = CONVERSATION_MEDIA_BUDGET;
         counterDeployed = false;
       }
     } else {
       imagesAlreadySent = Number((cRow as { images_sent?: number } | null)?.images_sent ?? 0);
+      // §2 — budget WINDOW: reset the budget on EITHER a rolling 24h OR when a new order
+      // started since the last media send (whichever first) — computed from existing
+      // timestamps, no new column. The latest-order read is only needed when usage is
+      // non-zero (a reset only matters when there's something to reset).
+      const lastMediaAt = (cRow as { last_media_at?: string | null } | null)?.last_media_at ?? null;
+      if (imagesAlreadySent > 0) {
+        const { data: ord } = await admin
+          .from("orders")
+          .select("created_at")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const oc = (ord as { created_at?: string | null } | null)?.created_at ?? null;
+        latestOrderAtMs = oc ? Date.parse(oc) : null;
+      }
+      windowReset = isMediaWindowReset({
+        lastMediaAtMs: lastMediaAt ? Date.parse(lastMediaAt) : null,
+        nowMs: Date.now(),
+        latestOrderAtMs,
+      });
     }
+  }
+
+  // §1/§5 — has a web-menu link already gone out in THIS budget window? (send once).
+  // Window start mirrors the budget window: max(now−24h, latest order start). Queried
+  // lazily — only when we actually might send a link (an ask or a budget fallback).
+  let linkCheckDone = false;
+  let linkAlreadySentThisWindow = false;
+  const menuLinkSentThisWindow = async (): Promise<boolean> => {
+    if (linkCheckDone) return linkAlreadySentThisWindow;
+    linkCheckDone = true;
+    const windowStartMs = Math.max(Date.now() - MEDIA_WINDOW_MS, latestOrderAtMs ?? 0);
+    const { data } = await admin
+      .from("messages")
+      .select("id")
+      .eq("conversation_id", conversationId)
+      .eq("meta->>kind", "media_budget_menu_link")
+      .gte("created_at", new Date(windowStartMs).toISOString())
+      .limit(1)
+      .maybeSingle();
+    linkAlreadySentThisWindow = !!(data as { id?: string } | null)?.id;
+    return linkAlreadySentThisWindow;
+  };
+
+  // §5 — LINK ON EXPLICIT ASK: an INTENTIONAL web-menu-link send (not a budget fallback),
+  // once per window, and NEVER during a hard-zero (a link is media too). Satisfies the ask.
+  if (mediaGuardOn && askedForMenuLink && !hardZero) {
+    if (!(await menuLinkSentThisWindow())) {
+      await sendMenuLinkFallback(admin, restaurantId, conversationId, phone, lastInboundAtMs);
+    }
+    return;
   }
 
   const decision = decideMediaSend({
     enabled: mediaGuardOn,
     requested: photoRequests.length,
-    imagesAlreadySent,
+    imagesAlreadySent: windowReset ? 0 : imagesAlreadySent,
     hardZero,
     hardZeroReason,
+    perMessageCap,
   });
 
   if (decision.allowed === 0) {
@@ -523,7 +581,11 @@ async function sendRequestedPhotos(
         { kind: "media_suppressed", reason: hardZeroReason }
       );
     } else if (decision.fallbackToMenuLink) {
-      await sendMenuLinkFallback(admin, restaurantId, conversationId, phone, lastInboundAtMs);
+      // §1 — DEDUP: send the fallback web-menu card at most ONCE per window; a further
+      // budget exhaustion is handled by Karim's text (the §4 directive), no repeat card.
+      if (!(await menuLinkSentThisWindow())) {
+        await sendMenuLinkFallback(admin, restaurantId, conversationId, phone, lastInboundAtMs);
+      }
     }
     return;
   }
@@ -562,11 +624,12 @@ async function sendRequestedPhotos(
     }
   }
 
-  // Persist the conversation budget counter (best-effort; only when deployed).
+  // Persist the conversation budget counter (best-effort; only when deployed). §2 — on a
+  // window reset the base is 0 (this send starts a fresh window), else the running count.
   if (counterDeployed && sent > 0) {
     await admin
       .from("conversations")
-      .update({ images_sent: imagesAlreadySent + sent, last_media_at: new Date().toISOString() })
+      .update({ images_sent: (windowReset ? 0 : imagesAlreadySent) + sent, last_media_at: new Date().toISOString() })
       .eq("id", conversationId);
   }
 }
@@ -1094,8 +1157,10 @@ export async function respondAndSendWhatsApp(
   }
 
   if (send.status === "sent") {
-    if (outcome.photoRequests.length) {
-      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null }, outcome.features);
+    // WO-LIVE-3 §5 — also engage the media path on an explicit menu/link ask (even with
+    // no photos requested), so Karim can send the web menu link intentionally (once).
+    if (outcome.photoRequests.length || asksForMenuLink(userMessage)) {
+      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null }, outcome.features, userMessage);
     }
     if (outcome.replyMessageId) {
       await admin
@@ -1108,8 +1173,8 @@ export async function respondAndSendWhatsApp(
 
   if (send.status === "skipped") {
     // Test mode (no credentials): the reply is persisted, just not transmitted.
-    if (outcome.photoRequests.length) {
-      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null }, outcome.features);
+    if (outcome.photoRequests.length || asksForMenuLink(userMessage)) {
+      await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null }, outcome.features, userMessage);
     }
     return { status: "responded", reply: outcome.reply, escalate: outcome.escalate, sendStatus: "skipped" };
   }
