@@ -44,6 +44,7 @@ import { Bdi, Num } from "@/components/kivo";
 import type { DictKey } from "@/lib/i18n/dictionary";
 import type { MenuItem, DeliveryArea } from "@/lib/types";
 import { ALLERGENS, mapAllergenValue, canonicalToArLabel } from "@/lib/ai/allergen-vocab";
+import AllergyAxisEditor from "@/components/console-v2/AllergyAxisEditor";
 
 interface TonightNote { id: string; body: string; expires_at: string }
 interface StandingRow { id: string; version: number; body: string; active: boolean; approved_by: string | null; retired_at: string | null }
@@ -497,6 +498,10 @@ function ItemEditorDrawer({ target, onClose }: { target: EditTarget; onClose: ()
             inputMode={f.kind === "number" ? "decimal" : undefined} dir={f.kind === "number" ? "ltr" : "rtl"} style={fieldInput} />
         </label>
       ))}
+
+      {/* WO-COMPANION-W2 — two-axis allergy editor (self-gates on allergy_companion_mode;
+          renders nothing when the flag is OFF, so a flag-off drawer is byte-identical). */}
+      {isMenu && <AllergyAxisEditor itemId={target.targetId} />}
 
       {/* SOON sections — full designed chrome, no backend yet. */}
       {isMenu && (

@@ -420,6 +420,19 @@ export interface MenuItem {
    *  not yet reviewed = unknown). Set server-side via /api/menu/[id]/allergens-review;
    *  read-only here (the editor shows a reviewed/unreviewed badge from it). */
   allergensReviewedAt?: string | null;
+  // --- WO-COMPANION W2: axis-2 (preparation × cross-contact) data. All OPTIONAL and
+  //     deploy-safe (absent until migration 0083 is applied → mapper falls back to
+  //     unknown/unverified). Consumed by computeDishTruthState via dishDataFromMenuItem. ---
+  /** W2: cross-contact risk tags (controlled vocab, allergen-prep-vocab.ts). */
+  crossContactRisks?: string[];
+  /** W2: preparation status — 'controlled' | 'shared_risk' | 'unknown' (null ⇒ unknown). */
+  prepStatus?: string | null;
+  /** W2: when the kitchen last CONFIRMED this item's PREP data (null = unverified). */
+  prepVerifiedAt?: string | null;
+  /** W2: whether the kitchen can isolate this dish — 'yes' | 'no' | 'unknown' (optional). */
+  kitchenCanIsolate?: string | null;
+  /** W2: free-text preparation notes (operator hint; never asserts safety). */
+  preparationNotes?: string | null;
   variants?: MenuItemVariant[];
   choiceGroups?: MenuItemChoiceGroup[];
 }

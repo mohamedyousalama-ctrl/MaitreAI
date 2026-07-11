@@ -162,6 +162,14 @@ function toMenuItem(
     // WB-ALLERGEN-3 — surface review state for the editor badge (read-only; the
     // prompt/gate don't consume it). Absent (pre-0055) → null = unreviewed.
     allergensReviewedAt: r.allergens_reviewed_at ?? null,
+    // WO-COMPANION W2 — axis-2 (prep/cross-contact). Deploy-safe: select("*") means a
+    // missing 0083 column is simply absent on the row, so each `?? default` yields the
+    // safe unknown/unverified value and the two-axis truth model reads "unknown".
+    crossContactRisks: r.cross_contact_risks ?? [],
+    prepStatus: r.prep_status ?? null,
+    prepVerifiedAt: r.prep_verified_at ?? null,
+    kitchenCanIsolate: r.kitchen_can_isolate ?? null,
+    preparationNotes: r.preparation_notes ?? null,
     variants,
     choiceGroups,
   };

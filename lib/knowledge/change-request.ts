@@ -61,12 +61,28 @@ export type PatchResult =
 // lockstep (a field that can be filed can always be verified). estimatedTime is
 // deliberately excluded: the zone helper stores it as a lossy minutes conversion, so
 // the written value can't be confirmed byte-for-byte (it stays a SOON edit in Knowledge).
-const MENU_FIELDS = new Set(["price", "description"]);
+// WO-COMPANION-W2: `allergens`/`ingredients` are gated (WhatsApp manager command →
+// propose→approve; NEVER direct-write). Both are arrays the existing updateMenuItemDb
+// writes AND the apply verifier re-reads (array equality), so they stay in lockstep.
+const MENU_FIELDS = new Set(["price", "description", "allergens", "ingredients"]);
 const ZONE_FIELDS = new Set(["deliveryFee", "name", "active"]);
 const POLICY_FIELDS = new Set(["refund", "cancellation", "delivery", "replacement", "payment"]);
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+/** Coerce a bounded array of non-empty strings (deduped, order-preserving). Null on
+ *  any non-array / non-string / over-long entry — the write boundary for list fields. */
+const strList = (v: unknown, maxLen = 40, maxItem = 80): string[] | null => {
+  if (!Array.isArray(v) || v.length > maxLen) return null;
+  const out: string[] = [];
+  for (const x of v) {
+    if (typeof x !== "string") return null;
+    const t = x.trim();
+    if (!t || t.length > maxItem) return null;
+    if (!out.includes(t)) out.push(t);
+  }
+  return out;
+};
 
 /**
  * Validate + coerce ONE (target_type, field, newValue) into the exact Partial<> the
@@ -81,6 +97,11 @@ export function buildPatch(targetType: CrTargetType, field: string, newValue: un
         const n = num(newValue);
         if (n === null || n < 0 || n > 10_000_000) return { ok: false, reason: "price must be a number in [0, 10,000,000]" };
         return { ok: true, patch: { price: n } };
+      }
+      if (field === "allergens" || field === "ingredients") {
+        const list = strList(newValue);
+        if (list === null) return { ok: false, reason: `${field} must be an array of ≤40 short strings` };
+        return { ok: true, patch: { [field]: list } };
       }
       const s = str(newValue);
       if (s === null || s.length > 600) return { ok: false, reason: "description must be a string ≤ 600 chars" };
