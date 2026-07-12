@@ -18,19 +18,45 @@
 // Pure so the route/UI and the harness share one source of truth.
 // ============================================================================
 
-import type { LocalOrder } from "@/lib/types";
+import type { LocalOrder, OrderStatusKey } from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// FR-006 — the DIRECT-REVENUE definition (PM-ruled). Only COMMITTED orders count
+// toward the money story: money is in (paid) or the order is being fulfilled
+// (preparing → ready → out_for_delivery → delivered). Every money/order figure below
+// (revenue, orders, aov, delivered, completion, cod, topItem) is aggregated over THIS
+// set, so they stay mutually consistent — an AOV of revenue÷orders can't mix a
+// committed numerator with an all-orders denominator.
+//
+// Explicitly NOT direct revenue:
+//   • cancelled          — NEVER counts, in any figure (hard rule).
+//   • pending_confirmation — surfaced SEPARATELY as «قيد التأكيد» (a promise, not money).
+//   • pending_payment    — a link is out but money is not in → not yet revenue.
+//   • draft              — a pre-persistence Brain working object; the create path
+//     writes orders at `pending_confirmation`, so a `draft` row shouldn't reach the
+//     table — pinned here defensively so a stray one can never be counted as revenue.
+const REVENUE_STATUSES: ReadonlySet<OrderStatusKey> = new Set<OrderStatusKey>([
+  "paid", "preparing", "ready", "out_for_delivery", "delivered",
+]);
+/** True when an order's status counts toward direct revenue. */
+export function countsAsRevenue(status: OrderStatusKey): boolean {
+  return REVENUE_STATUSES.has(status);
+}
+
 export interface WindowKpis {
-  revenue: number;
-  orders: number;
-  aov: number;            // revenue / orders (0 when no orders)
+  revenue: number;        // committed-status order totals only (cancelled/pending excluded)
+  orders: number;         // committed-status order count (the AOV denominator)
+  aov: number;            // revenue / orders (0 when no committed orders)
   delivered: number;
-  completionRate: number; // delivered / orders (0..1; 0 when no orders)
-  codShare: number;       // cod orders / orders (0..1; 0 when no orders)
+  completionRate: number; // delivered / committed orders (0..1; 0 when none)
+  codShare: number;       // cod / committed orders (0..1; 0 when none)
   topItem: { name: string; revenue: number } | null;
-  /** True when the window has ≥1 real (non-test) order — a basis for a comparison. */
+  /** «قيد التأكيد» — orders awaiting confirmation, shown SEPARATELY (not revenue). */
+  pendingConfirmationOrders: number;
+  pendingConfirmationRevenue: number;
+  /** True when the window has ≥1 real (non-test) order of ANY status — a basis for a
+   *  comparison / the "is this window loaded with real data" gate. */
   hasData: boolean;
 }
 
@@ -41,11 +67,21 @@ const itemRevenue = (it: { total?: number; quantity?: number; unitPrice?: number
 /** Aggregate real (non-test) orders whose createdAt falls in [fromMs, toMs). */
 export function windowKpis(orders: LocalOrder[], fromMs: number, toMs: number): WindowKpis {
   let revenue = 0, count = 0, delivered = 0, cod = 0;
+  let realOrders = 0, pendingOrders = 0, pendingRevenue = 0;
   const byItem = new Map<string, number>();
 
   for (const o of orders) {
     if (o.isTest) continue;
     if (o.createdAt < fromMs || o.createdAt >= toMs) continue;
+    realOrders++; // any real order → the window has data (hydration/basis gate)
+
+    if (o.orderStatus === "pending_confirmation") {
+      pendingOrders++;
+      pendingRevenue += o.total;
+      continue; // «قيد التأكيد» is reported separately, never in the revenue figures.
+    }
+    if (!countsAsRevenue(o.orderStatus)) continue; // cancelled / pending_payment / draft
+
     count++;
     revenue += o.total;
     if (o.orderStatus === "delivered") delivered++;
@@ -67,7 +103,9 @@ export function windowKpis(orders: LocalOrder[], fromMs: number, toMs: number): 
     completionRate: count > 0 ? delivered / count : 0,
     codShare: count > 0 ? cod / count : 0,
     topItem,
-    hasData: count > 0,
+    pendingConfirmationOrders: pendingOrders,
+    pendingConfirmationRevenue: pendingRevenue,
+    hasData: realOrders > 0,
   };
 }
 
