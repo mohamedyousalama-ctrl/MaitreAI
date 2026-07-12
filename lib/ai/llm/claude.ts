@@ -72,6 +72,8 @@ export const claudeAdapter: LlmAdapter = {
         inputTokens: res.usage?.input_tokens ?? 0,
         outputTokens: res.usage?.output_tokens ?? 0,
         cacheReadTokens: res.usage?.cache_read_input_tokens ?? 0,
+        // WO-COST-1 honest ledger — the fourth meter the old ledger dropped.
+        cacheCreationTokens: res.usage?.cache_creation_input_tokens ?? 0,
       },
       model: res.model,
       rawContent: res.content as unknown as LlmContentBlock[],

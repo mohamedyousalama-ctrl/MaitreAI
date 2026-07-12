@@ -322,7 +322,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       }
     : { role: "user", content: input.userMessage };
   const messages: LlmMessage[] = [...input.history, userTurn];
-  const usage: LlmUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
+  const usage: LlmUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
   const toolNames: string[] = [];
 
   if (
@@ -413,6 +413,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     usage.inputTokens += res.usage.inputTokens;
     usage.outputTokens += res.usage.outputTokens;
     usage.cacheReadTokens += res.usage.cacheReadTokens;
+    usage.cacheCreationTokens = (usage.cacheCreationTokens ?? 0) + (res.usage.cacheCreationTokens ?? 0);
     // Preserve the last NON-EMPTY text: the model often emits its sentence
     // alongside a tool_use block, then adds nothing after the tool result —
     // overwriting with that empty turn would leave a blank reply.

@@ -13,6 +13,10 @@ export interface LlmUsage {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
+  /** Tokens WRITTEN to the prompt cache this call (Anthropic cache_creation_input_tokens),
+   *  priced at the cache-write rate. Optional so deterministic/mock paths (all zero) stay
+   *  byte-identical; the real adapter always populates it (WO-COST-1 honest ledger). */
+  cacheCreationTokens?: number;
 }
 
 export interface LlmToolDef {
