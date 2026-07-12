@@ -23,8 +23,12 @@ check("base gate runs unconditionally (no flag ternary on allergenHit)",
   /const allergenHit = detectAllergenAvoidance\(input\.userMessage\);/.test(turn));
 check("no allergenSafetyOn gating remains", !turn.includes("allergenSafetyOn"));
 check("symptom EXTENSION stays flagged", /symptomDetectionOn = isFeatureExplicitlyEnabled\("allergen_symptom_detection", tenantFeatures\)/.test(turn));
-check("is_safety_hold write is unconditional (no `if (allergenSafetyOn)` wrapper)",
-  /flipPatch\.is_safety_hold =\s*allergenHit\.fired/.test(turn) && !/if \(allergenSafetyOn\)/.test(turn));
+// WO-SAFETY-MODEL-V3 (SINGLE DOOR): the AUTOMATIC is_safety_hold=true write is GONE — a
+// transfer happens only on an explicit human request and lands HUMAN_ACTIVE with
+// is_safety_hold:false. Child safety is now carried UNCONDITIONALLY by the notify-without-
+// hold alert (recordCriticalAlert), still never flag-gated.
+check("V3 single door: transfer sets is_safety_hold:false unflagged; safety NOTIFY is unconditional",
+  /is_safety_hold: false,/.test(turn) && !/if \(allergenSafetyOn\)/.test(turn) && /recordCriticalAlert\(admin, \{/.test(turn));
 
 // ---- respond: OUTPUT guard UNCONDITIONAL -----------------------------------
 const respond = read("lib/ai/respond.ts");
