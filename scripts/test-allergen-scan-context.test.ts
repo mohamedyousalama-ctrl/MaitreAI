@@ -15,8 +15,13 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.lo
 const FLAVOR_REPLY = "تمام، عرض الكتيبة ✅\n\nعادي، حار، أو مكس؟";
 const FLAVOR_INBOUND = "لا. اقصد الاولاني"; // the customer's actual message that turn
 
-// ── SANITY: the scanner itself STILL flags «عادي» (vocabulary untouched) ──
-ok("scanner still flags «عادي» (vocab unchanged)", scanBannedAllergyPhrases(FLAVOR_REPLY).includes("عادي"));
+// ── SANITY: the scanner still flags a BARE «عادي» assurance (so the CALLER context
+//    gate below is what matters). NOTE: WO-LIVE-2-F2b later exempted «عادي» specifically
+//    when its sentence enumerates a flavor option (حار/مكس/…), so FLAVOR_REPLY itself is
+//    no longer flagged — see scripts/proof-flavor-adi-f2b.test.ts. A bare assurance stays
+//    banned, which is what this sanity check now asserts. ──
+ok("scanner still flags a BARE «عادي» assurance", scanBannedAllergyPhrases("كله عادي متقلقش").includes("عادي"));
+ok("F2b: «عادي» in a flavor enumeration is NOT flagged", !scanBannedAllergyPhrases(FLAVOR_REPLY).includes("عادي"));
 
 // ── THE FIX (binding #1): flavor «عادي» on a normal ordering turn, companion ON,
 //    NO allergy context → NOT a scan context → the block never fires. ──
