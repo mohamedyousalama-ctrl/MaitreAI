@@ -20,7 +20,8 @@ import type { BrainContext } from "@/lib/ai/prompt";
 import type { StandingInstruction, TonightNote } from "@/lib/ai/standing-instructions";
 import { loadResolvedPaymentMethods } from "@/lib/payments/resolve";
 import { type Tier, isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
-import { isSafetyHold } from "@/lib/tenant/handoff";
+import { isExplicitHumanRequest } from "@/lib/ai/human-request";
+import { recordCriticalAlert } from "@/lib/alerts/record";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
@@ -29,7 +30,6 @@ import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
 import {
   decideCompanionAction,
   emergencyReply,
-  emergencyEscalationReason,
   type CompanionDecision,
 } from "@/lib/ai/allergen-companion-flow";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
@@ -147,22 +147,25 @@ function forcedAllergenSafetyResult(
   netReason: string | null = null
 ): RespondResult {
   const t = term && term !== "الحساسية" ? `«${term}»` : "الحساسية";
+  // WO-SAFETY-MODEL-V3 — NOTIFY-WITHOUT-HOLD: honest line + kitchen note + choices +
+  // CONTINUE. NEVER promises a transfer (staff are alerted; the customer chooses). The
+  // conversation stays AI_ACTIVE; a human is offered but never forced.
   const reply =
     dialect === "egyptian"
-      ? `خدت بالي إنك ذكرت ${t} 🙏 صحتك أهم حاجة عندنا — مش هقدر أأكد سلامة الأصناف من غير ما المطبخ يتأكد، فهحوّلك لفريق المطعم يساعدوك تختار بأمان.`
-      : `خذت بالي إنك ذكرت ${t} 🙏 صحتك أهم شي عندنا — ما أقدر أأكد سلامة الأصناف بدون ما المطبخ يتأكد، فبحوّلك لفريق المطعم يساعدونك تختار بأمان.`;
-  const reason = `سلامة الحساسية (بوابة حتمية): العميل ذكر تجنّب/مشكلة مع ${term ?? "الطعام"} — يحتاج تأكيد المطبخ على الأصناف الآمنة قبل الطلب`;
+      ? `خدت بالي إنك ذكرت ${t} 🙏 صحتك تهمّنا — سجّلت الملاحظة للمطبخ ونبّهت الفريق. مش هقدر أأكد ملاءمة الأصناف من نفسي، بس نقدر نكمّل والملاحظة واضحة، أو أوصلك بموظف يتأكد لك — تحب إيه؟`
+      : `خذت بالي إنك ذكرت ${t} 🙏 صحتك تهمّنا — سجّلت الملاحظة للمطبخ ونبّهت الفريق. ما أقدر أأكد ملاءمة الأصناف من نفسي، بس نقدر نكمّل والملاحظة واضحة، أو أوصلك بموظف يتأكد لك — وش تحب؟`;
+  const reason = `سلامة الحساسية (بوابة حتمية): العميل ذكر تجنّب/مشكلة مع ${term ?? "الطعام"} — نُبّه الفريق؛ لا تجميد، كريم يكمل مع ملاحظة واضحة`;
   return {
     reply,
     draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
-    escalate: true,
-    escalationReason: reason,
-    signals: [{ type: "escalation", detail: { reason, source, term, ...(netReason ? { netReason } : {}) } }],
+    escalate: false,
+    escalationReason: null,
+    signals: [{ type: "notify_without_hold", detail: { reason, source, term, ...(netReason ? { netReason } : {}) } }],
     presentation: null,
     photoRequests: [],
     usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
-    toolNames: ["escalate_to_human"],
-    stopReason: "allergen_gate",
+    toolNames: [],
+    stopReason: "allergen_gate_notify",
     model: "deterministic_allergen_gate",
     adapter: "mock",
     resendReceipt: false,
@@ -181,19 +184,22 @@ function companionEmergencyResult(
   initialDraft: OrderDraft | null,
   currency: string
 ): RespondResult {
-  const reason = emergencyEscalationReason(decision.emergencyLabel);
+  // WO-SAFETY-MODEL-V3 (§5): an ACTIVE emergency NO LONGER holds. Karim STAYS with the
+  // urgent-guidance line (advise emergency services, never reassurance) and fires a LOUD
+  // staff alert — silence during a medical emergency was the worst possible behavior.
+  const reason = `طوارئ حساسية نشطة${decision.emergencyLabel ? ` (${decision.emergencyLabel})` : ""} — بُلّغ الفريق فوراً؛ لا تجميد، كريم يكمل بإرشاد الطوارئ`;
   return {
     reply: emergencyReply(dialect),
     draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
-    escalate: true,
-    escalationReason: reason,
+    escalate: false,
+    escalationReason: null,
     signals: [
-      { type: "escalation", detail: { reason, source: "allergen_companion_emergency", label: decision.emergencyLabel, emergencyClass: true } },
+      { type: "notify_without_hold", detail: { reason, source: "emergency", label: decision.emergencyLabel } },
     ],
     presentation: null,
     photoRequests: [],
     usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
-    toolNames: ["escalate_to_human"],
+    toolNames: [],
     stopReason: "allergen_companion_emergency",
     model: "deterministic_allergen_companion",
     adapter: "mock",
@@ -899,51 +905,31 @@ export async function runCustomerTurn(
     );
   }
 
-  // On escalation the AI stops owning the conversation (Amendment 03 §E).
-  if (result.escalate && conversationId) {
-    // Stamp updated_at at the flip so the needs-attention age == the wait time:
-    // once owner=human the AI no longer touches the row, so (now − updated_at) is
-    // the operator wait-time/SLA — derivable with NO new column.
+  // WO-SAFETY-MODEL-V3 (SINGLE DOOR) — exactly ONE path may transfer a conversation: an
+  // EXPLICIT human request. result.escalate is set upstream only via that gate, but we
+  // RE-VERIFY here (defense in depth) so NO path can transfer without an explicit ask.
+  const explicitHuman = isExplicitHumanRequest(input.userMessage);
+  if (result.escalate && explicitHuman && conversationId) {
+    // THE ONE DOOR — a requested handoff is NORMAL service: HUMAN_ACTIVE, resumable,
+    // NEVER a safety hold (SYSTEM_HOLD is a manual staff action only now).
     const escalatedAt = new Date().toISOString();
     const flipPatch: Record<string, unknown> = {
       owner: "human",
       status: "يحتاج تدخل موظف",
       escalation_reason: result.escalationReason,
+      is_safety_hold: false,
       updated_at: escalatedAt,
     };
-    // WO-SAFE-2: set a STRUCTURED is_safety_hold at escalation time UNCONDITIONALLY —
-    // the deterministic source of truth for the #84 carve-out, so "is this a safety
-    // hold?" is never re-derived from the model's free-text reason. Previously
-    // flag-gated (for pre-migration column safety); the 0028 column is applied, and
-    // the safety hold must land regardless of flag so the SYSTEM_HOLD + the WO-SAFE-1
-    // order guard trigger even for a flag-absent tenant. Unchanged for ON tenants.
-    flipPatch.is_safety_hold =
-      allergenHit.fired ||
-      phoneticHit.fired ||
-      isSafetyHold(result.escalationReason) ||
-      perception?.risk === "allergy" ||
-      perception?.risk === "safety";
-    // Ownership axis (spine Step 1): a safety hold lands in SYSTEM_HOLD (never
-    // auto-returns), every other escalation in HUMAN_ACTIVE. Dual-writes the legacy
-    // owner/status/reason fields via `extra` so existing readers are unaffected.
-    const nextOwnership = flipPatch.is_safety_hold === true ? "SYSTEM_HOLD" : "HUMAN_ACTIVE";
-    await setOwnershipState(admin, conversationId, nextOwnership, { extra: flipPatch });
-    // Operator-facing timeline note — reuses the existing system-message timeline
-    // (same mechanism as send-error notes); NOT transmitted to the customer.
-    // Makes "needs human + reason + waiting" explicit so a single operator sees it.
+    await setOwnershipState(admin, conversationId, "HUMAN_ACTIVE", { extra: flipPatch });
     await admin.from("messages").insert({
       restaurant_id: restaurantId,
       conversation_id: conversationId,
       direction: "outbound",
       sender: "system",
-      text: `🔔 تحتاج تدخّل موظف${result.escalationReason ? ` — السبب: ${result.escalationReason}` : ""}. العميل بانتظار رد الفريق.`,
+      text: `🔔 العميل طلب موظف${result.escalationReason ? ` — ${result.escalationReason}` : ""}. العميل بانتظار رد الفريق.`,
       status: "sent",
       meta: { kind: "escalation", reason: result.escalationReason, escalatedAt },
     });
-
-    // Karim Pro P1 terminal hook — ESCALATION. Emit one record (Pro-gated;
-    // standard tenants do nothing). Real reason from the escalation, transcript
-    // includes this turn's exchange.
     await emitConversationReport(admin, {
       restaurantId,
       tier: tenantTier,
@@ -957,6 +943,31 @@ export async function runCustomerTurn(
         { role: "assistant", content: result.reply },
       ],
     });
+  }
+
+  // WO-SAFETY-MODEL-V3 — NOTIFY-WITHOUT-HOLD: every suppressed escalation (a
+  // notify_without_hold signal, OR a wanted transfer that was NOT an explicit request)
+  // alerts staff with the FULL reason but NEVER freezes — ownership stays AI_ACTIVE and
+  // the conversation flows. The reason is audited so nothing the model wanted to say is
+  // lost, it just can't freeze anything. Best-effort; never blocks the turn.
+  if (conversationId) {
+    const notifies: Array<{ reason: string; emergency: boolean }> = [];
+    for (const s of result.signals) {
+      if (s.type !== "notify_without_hold") continue;
+      const reason = String((s.detail as { reason?: string })?.reason ?? "");
+      if (reason) notifies.push({ reason, emergency: (s.detail as { source?: string })?.source === "emergency" });
+    }
+    if (result.escalate && !explicitHuman && result.escalationReason) {
+      notifies.push({ reason: result.escalationReason, emergency: false });
+    }
+    for (const nfy of notifies) {
+      await recordCriticalAlert(admin, {
+        restaurantId,
+        type: nfy.emergency ? "allergy_emergency_active" : "safety_notify_no_hold",
+        detail: nfy.reason,
+        conversationId,
+      });
+    }
   }
 
   // WO-KHALID-STEP2 — dialect-leakage OBSERVABILITY (flag-scoped, quality-only).

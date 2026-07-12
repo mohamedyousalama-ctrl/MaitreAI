@@ -76,7 +76,16 @@ export type CriticalAlertType =
   // committed (confirmed/paid). The order is NEVER auto-cancelled; the kitchen/
   // delivery must review before prep/handoff. Fires even when the post-commit
   // status query fails (fail toward MORE alerting).
-  | "allergy_added_post_commit";
+  | "allergy_added_post_commit"
+  // WO-SAFETY-MODEL-V3 (SINGLE DOOR) — a NOTIFY-WITHOUT-HOLD event: the model/gate wanted
+  // to escalate but the customer did NOT explicitly ask for a human, so ownership stays
+  // AI_ACTIVE (no freeze). The banner carries the FULL composed reason so nothing the model
+  // wanted to say is lost — staff can jump in, but the conversation never froze.
+  | "safety_notify_no_hold"
+  // WO-SAFETY-MODEL-V3 (§5) — an ACTIVE medical emergency. Karim STAYS with the urgent
+  // guidance line (advise emergency services); this fires LOUD so staff act immediately.
+  // No SYSTEM_HOLD — silence during a medical emergency was the worst possible behavior.
+  | "allergy_emergency_active";
 
 export interface CriticalAlertInput {
   restaurantId: string;

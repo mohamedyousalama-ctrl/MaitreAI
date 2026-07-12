@@ -17,6 +17,7 @@ import { dialectProfile } from "./dialect";
 import { fabricatesMoney, knownMenuPrices, offersNonMenuProduct } from "./money-guard";
 import { isExplicitOrderConfirmation } from "./order-confirm";
 import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-gate";
+import { isExplicitHumanRequest } from "./human-request";
 // WO-COMPANION-W1-CORE (§0/§6): companion banned-phrase guard + confirmation
 // checkpoint. Consulted ONLY when brain.allergyCompanion is on (flag OFF → inert).
 import { scanBannedAllergyPhrases, parseAllergyNote, computeDishTruthState, type DishTruthState } from "./allergen-companion";
@@ -289,6 +290,9 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     // path can never commit a phantom order on a non-confirmation (live #1005). The
     // fast-path already gates on the same predicate; this closes the loop path too.
     userConfirmed: isExplicitOrderConfirmation(input.userMessage),
+    // WO-SAFETY-MODEL-V3 (SINGLE DOOR) — whether THIS turn is an explicit human request.
+    // The escalate_to_human tool transfers ONLY when true; otherwise it's notify-without-hold.
+    explicitHuman: isExplicitHumanRequest(input.userMessage),
   };
 
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
@@ -469,15 +473,25 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     // false → escalate exactly as before (genuine avoidance/allergy signal OR active hold
     // → handoff; a benign "without X" filter → answered honestly, no handoff).
     const companion = input.brain.allergyCompanion === true;
-    const escalate = !companion && shouldEscalateOnSafetyClaim(input.userMessage, input.safetyHoldActive === true);
-    ctx.signals.push({ type: escalate ? "escalation" : "missing_data", detail: { reason: "allergen_safety_claim", escalated: escalate, companion, reply: text } });
-    if (escalate) {
-      ctx.escalation = ctx.escalation ?? { reason: "سلامة الحساسية: المساعد حاول تأكيد سلامة صنف بدون بيانات مؤكدة — يحتاج تأكيد المطبخ" };
+    const wantsEscalate = !companion && shouldEscalateOnSafetyClaim(input.userMessage, input.safetyHoldActive === true);
+    // WO-SAFETY-MODEL-V3 (SINGLE DOOR): a safety-claim escalation may TRANSFER only on an
+    // EXPLICIT human request. Otherwise it's NOTIFY-WITHOUT-HOLD — staff alerted with the
+    // reason, Karim STAYS with the honest (no-transfer) line.
+    const transfer = wantsEscalate && ctx.explicitHuman === true;
+    const reason = "سلامة الحساسية: المساعد حاول تأكيد سلامة صنف بدون بيانات مؤكدة — يحتاج تأكيد المطبخ";
+    ctx.signals.push({
+      type: transfer ? "escalation" : wantsEscalate ? "notify_without_hold" : "missing_data",
+      detail: { reason: wantsEscalate ? reason : "allergen_safety_claim", source: "safety_claim_guard", companion, reply: text },
+    });
+    if (transfer) {
+      ctx.escalation = ctx.escalation ?? { reason };
       text = safeAllergenReply(input.brain.dialect);
     } else if (companion) {
       // Repair, never hold. The neutral line is §0 banned-clean and never certifies.
       text = companionNeutralRepairLine(input.brain.dialect);
     } else {
+      // Non-companion severe-allergy claim without an explicit human request → honest,
+      // no-transfer line (staff already notified via the notify_without_hold signal).
       text = safeAllergenNoEscalateReply(input.brain.dialect);
     }
   }

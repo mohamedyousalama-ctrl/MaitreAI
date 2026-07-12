@@ -68,7 +68,10 @@ export interface ToolSignal {
     | "blocked_escalation"
     | "low_confidence"
     | "unknown_question"
-    | "callback_requested";
+    | "callback_requested"
+    // WO-SAFETY-MODEL-V3 — a suppressed escalation (the model/gate wanted a human but the
+    // customer didn't explicitly ask): staff are alerted with the full reason, no hold.
+    | "notify_without_hold";
   detail: Record<string, unknown>;
 }
 
@@ -122,6 +125,12 @@ export interface ToolContext {
    *  «ابعتلي صوره العرض») never commits an order. Optional: undefined (a caller that
    *  doesn't set it, e.g. a unit test) leaves finalize_draft's legacy behavior intact. */
   userConfirmed?: boolean;
+  /** WO-SAFETY-MODEL-V3 (SINGLE DOOR) — whether THIS turn's customer message is an
+   *  EXPLICIT human request (isExplicitHumanRequest). The escalate_to_human tool may
+   *  actually transfer ONLY when this is true; otherwise it becomes a NOTIFY-WITHOUT-HOLD
+   *  (staff alerted, Karim stays). Optional: undefined (a unit-test caller) → treated as
+   *  false, so no prompt reasoning can transfer without an explicit ask. */
+  explicitHuman?: boolean;
 }
 
 // --- interactive presentations (S9-2) ---------------------------------------
@@ -847,9 +856,17 @@ export function executeTool(
           isError: true,
         };
       }
-      ctx.escalation = { reason };
-      ctx.signals.push({ type: "escalation", detail: { reason } });
-      return { content: "حوّلت محادثتك لفريق المطعم، وهيردّوا عليك في أقرب وقت 🙏" };
+      // WO-SAFETY-MODEL-V3 (SINGLE DOOR): the escalate tool may actually TRANSFER only when
+      // the customer EXPLICITLY asked for a human this turn. Otherwise it becomes a
+      // NOTIFY-WITHOUT-HOLD — staff alerted with the full reason, but Karim STAYS (no freeze),
+      // so no model reasoning can transfer a conversation on its own.
+      if (ctx.explicitHuman === true) {
+        ctx.escalation = { reason };
+        ctx.signals.push({ type: "escalation", detail: { reason } });
+        return { content: "حوّلت محادثتك لفريق المطعم، وهيردّوا عليك في أقرب وقت 🙏" };
+      }
+      ctx.signals.push({ type: "notify_without_hold", detail: { reason, source: "model_tool" } });
+      return { content: "سجّلت ملاحظتك ونبّهت فريق المطعم يتابعها 🙏 نقدر نكمّل مع بعض — ولو تحب أوصلك بموظف قولي وأحوّلك على طول." };
     }
     case "present_menu": {
       const avail = ctx.menuItems.filter((i) => i.available);
