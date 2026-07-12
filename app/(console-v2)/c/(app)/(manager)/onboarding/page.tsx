@@ -553,11 +553,16 @@ function TestDriveStep() {
 // Step 3 — Go live (the gate mirror)
 // ---------------------------------------------------------------------------
 interface ChecklistItem { pass: boolean; required: boolean; label: string }
-interface Checklist { whatsapp: ChecklistItem; menu: ChecklistItem; hours: ChecklistItem; zones: ChecklistItem }
-const GATE_ROWS: { key: keyof Checklist; labelKey: DictKey; fixHref: string }[] = [
+interface Checklist { whatsapp: ChecklistItem; menu: ChecklistItem; hours: ChecklistItem; allergyTestDrive: ChecklistItem; zones: ChecklistItem }
+// Rows mirror the SERVER checklist keys 1:1 (go-live/route.ts computeReadiness) so
+// every requirement the gate enforces is visible — including the required allergy
+// test-drive, which is fixed in THIS wizard's «التجربة» step (reachable via the
+// stepper), so it carries no external fixHref.
+const GATE_ROWS: { key: keyof Checklist; labelKey: DictKey; fixHref?: string }[] = [
   { key: "whatsapp", labelKey: "ob.gl.item.whatsapp", fixHref: "/c/settings" },
   { key: "menu", labelKey: "ob.gl.item.menu", fixHref: "/c/knowledge" },
   { key: "hours", labelKey: "ob.gl.item.hours", fixHref: "/c/settings" },
+  { key: "allergyTestDrive", labelKey: "ob.gl.item.allergy" },
   { key: "zones", labelKey: "ob.gl.item.zones", fixHref: "/c/settings" },
 ];
 
@@ -655,7 +660,7 @@ function GoLiveStep() {
                   </span>
                   <span style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 8 }}>
                     <TruthChip state={item.pass ? "live" : item.required ? "gather" : "soon"} label={item.pass ? t("ob.gl.proven") : t("ob.gl.pending")} />
-                    {!item.pass && (
+                    {!item.pass && row.fixHref && (
                       <Link href={row.fixHref} style={{ fontSize: 11.5, fontWeight: 700, color: "var(--teal)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                         {t("ob.gl.fix")} <ExternalLink size={12} />
                       </Link>

@@ -86,11 +86,19 @@ OPEN_DEFECT("D-B onboarding config/hours PUT has no parseWeeklyHours validation"
   !/parseWeeklyHours/.test(obHours) && /patch\.hours = body\.hours/.test(obHours));
 INVARIANT("(settings/hours) DOES validate via parseWeeklyHours", /parseWeeklyHours/.test(setHours));
 
-// D-C: go-live checklist — server requires allergyTestDrive, but the console-v2
-// onboarding UI renders no such row (safety-critical requirement invisible).
+// D-C: go-live checklist — FIXED by WO-GATE-ROW-ALLERGY. The server requires
+// allergyTestDrive, and BOTH client UIs now render it (checklist keys 1:1 with the
+// server). Enforcement is unchanged — this is a visibility fix.
 const obUi = read("app/(console-v2)/c/(app)/(manager)/onboarding/page.tsx");
-OPEN_DEFECT("D-C server go-live requires allergyTestDrive", /allergyTestDrive/.test(goLive));
-OPEN_DEFECT("D-C console-v2 onboarding UI omits an allergyTestDrive checklist row", !/allergyTestDrive/.test(obUi));
+const obPublic = read("app/onboarding/page.tsx");
+const SERVER_CHECKLIST_KEYS = ["whatsapp", "menu", "hours", "allergyTestDrive", "zones"];
+INVARIANT("D-C server go-live requires allergyTestDrive", /allergyTestDrive: ChecklistItem/.test(goLive));
+INVARIANT("D-C FIXED: console-v2 onboarding UI renders the allergyTestDrive row", obUi.includes('key: "allergyTestDrive"'));
+INVARIANT("D-C FIXED: public wizard renders the allergyTestDrive row", obPublic.includes('"allergyTestDrive"'));
+INVARIANT("D-C row parity: console-v2 GATE_ROWS covers all 5 server keys",
+  SERVER_CHECKLIST_KEYS.every((k) => obUi.includes(`key: "${k}"`)));
+INVARIANT("D-C row parity: public wizard items array covers all 5 server keys",
+  SERVER_CHECKLIST_KEYS.every((k) => obPublic.includes(`"${k}"`)));
 
 // D-D: alert_routing is stored but never consumed by the alert emitter.
 const alertRecord = read("lib/alerts/record.ts");
