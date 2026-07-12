@@ -32,6 +32,7 @@ import dynamic from "next/dynamic";
 import { MapPin, X, Plus, Trash2, LocateFixed, Loader2, Check } from "lucide-react";
 import { Bdi } from "@/components/kivo";
 import { DEFAULT_CENTER } from "./zone-constants";
+import { roundRadiusKm, formatKm, parseRadiusKm, sanitizeRadiusInput } from "@/lib/delivery/zone-editor-geom";
 
 const ZoneMapCanvas = dynamic(() => import("./ZoneMapCanvas"), {
   ssr: false,
@@ -150,14 +151,30 @@ export default function ZoneMapEditor({
     }
   }, []);
 
-  useEffect(() => {
-    if (open) void loadZones();
-  }, [open, loadZones]);
+  // Dismissal = FULL discard (D1). The editor is a persistently-mounted controlled
+  // modal, so an unsaved draft would otherwise survive close→reopen and re-appear
+  // with the dragged (unsaved) geometry. resetDraft wipes ALL editing state; every
+  // dismissal path (X / backdrop / ESC) goes through handleClose, and closing the
+  // sheet resets too — so reopening ALWAYS shows the last SAVED state.
+  const resetDraft = useCallback(() => {
+    setDraft(null);
+    setFlyTarget(null);
+    setError(null);
+  }, []);
+  const handleClose = useCallback(() => {
+    resetDraft();
+    onClose();
+  }, [resetDraft, onClose]);
 
-  // Escape closes; lock the page scroll while the sheet owns the screen.
+  useEffect(() => {
+    if (!open) { resetDraft(); return; }
+    void loadZones();
+  }, [open, loadZones, resetDraft]);
+
+  // Escape discards + closes; lock the page scroll while the sheet owns the screen.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") handleClose(); };
     window.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -165,7 +182,7 @@ export default function ZoneMapEditor({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open, handleClose]);
 
   const startNew = () => {
     setError(null);
@@ -182,7 +199,7 @@ export default function ZoneMapEditor({
       eta: (z.estimatedTime || "").replace(/[^\d]/g, ""),
       branchId: z.branchId ?? (singleBranch && branches[0] ? branches[0].id : ""),
       center,
-      radiusKm: z.radiusKm && z.radiusKm > 0 ? z.radiusKm : 3,
+      radiusKm: z.radiusKm && z.radiusKm > 0 ? roundRadiusKm(z.radiusKm) : 3,
     });
     setFlyTarget(center);
   };
@@ -226,7 +243,9 @@ export default function ZoneMapEditor({
       branchId: draft.branchId || (singleBranch && branches[0] ? branches[0].id : undefined),
       centerLat: draft.center.lat,
       centerLng: draft.center.lng,
-      radiusKm: Number(draft.radiusKm.toFixed(3)),
+      // draft.radiusKm is ALREADY canonical (roundRadiusKm at every mutation), so the
+      // saved value is byte-equal to what the operator sees — no toFixed re-round (D2).
+      radiusKm: draft.radiusKm,
     };
     try {
       const url = draft.id ? `/api/onboarding/config/zones/${draft.id}` : "/api/onboarding/config/zones";
@@ -266,7 +285,7 @@ export default function ZoneMapEditor({
       {/* OPAQUE backdrop — no page content bleeds through (D3). Near-solid ink over a
           blur: content is fully obscured (the .86 the reviewer flagged is raised to
           .96 so nothing is legible through it) while a whisper of depth is kept. */}
-      <div style={{ position: "absolute", inset: 0, background: "rgba(6,9,14,.96)", backdropFilter: "blur(8px)" }} onClick={onClose} />
+      <div style={{ position: "absolute", inset: 0, background: "rgba(6,9,14,.96)", backdropFilter: "blur(8px)" }} onClick={handleClose} />
       <div
         role="dialog"
         aria-modal="true"
@@ -292,7 +311,7 @@ export default function ZoneMapEditor({
               <div style={{ fontSize: 10, letterSpacing: ".05em", color: "var(--faint, #66748a)", textTransform: "uppercase", marginTop: 2 }}>على الخريطة · مركز ونصف قطر</div>
             </div>
           </div>
-          <button onClick={onClose} aria-label="إغلاق" style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid var(--stroke, rgba(255,255,255,.1))", background: "transparent", color: "var(--dim, #9aa6ba)", cursor: "pointer", display: "grid", placeItems: "center" }}>
+          <button onClick={handleClose} aria-label="إغلاق" style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid var(--stroke, rgba(255,255,255,.1))", background: "transparent", color: "var(--dim, #9aa6ba)", cursor: "pointer", display: "grid", placeItems: "center" }}>
             <X size={18} />
           </button>
         </div>
@@ -339,10 +358,10 @@ export default function ZoneMapEditor({
                   radiusKm={draft.radiusKm}
                   flyTarget={flyTarget}
                   onCenterChange={(lat, lng) => setDraft((d) => (d ? { ...d, center: { lat, lng } } : d))}
-                  onRadiusChange={(km) => setDraft((d) => (d ? { ...d, radiusKm: km } : d))}
+                  onRadiusChange={(km) => setDraft((d) => (d ? { ...d, radiusKm: roundRadiusKm(km) } : d))}
                 />
                 <div style={{ position: "absolute", insetBlockStart: 10, insetInlineStart: 10, zIndex: 500, pointerEvents: "none", fontSize: 11.5, fontWeight: 800, color: GOLD, background: "rgba(10,14,20,.72)", border: `1px solid rgba(224,181,58,.35)`, padding: "5px 10px", borderRadius: 9 }}>
-                  نصف القطر {toAr(draft.radiusKm.toFixed(1))} كم
+                  نصف القطر {toAr(formatKm(draft.radiusKm))} كم
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: -4 }}>
@@ -351,6 +370,10 @@ export default function ZoneMapEditor({
                   <LocateFixed size={13} /> موقعي
                 </button>
               </div>
+
+              {/* Numeric radius — the EXACT path (type ٣٫٥ and it applies exactly), two-way
+                  with the drag handle. Both write the one canonical draft.radiusKm. */}
+              <RadiusField radiusKm={draft.radiusKm} onRadiusChange={(km) => setDraft((d) => (d ? { ...d, radiusKm: km } : d))} />
 
               <div>
                 <label style={label} htmlFor="zone-name">اسم المنطقة</label>
@@ -415,6 +438,40 @@ function NumberField({ id, label: lbl, unit, value, placeholder, inputMode, onCh
           onBlur={(e) => (e.currentTarget.style.borderColor = "var(--stroke2, rgba(255,255,255,.2))")}
         />
         <span style={{ position: "absolute", insetInlineEnd: 14, top: "50%", transform: "translateY(-50%)", fontSize: 11.5, fontWeight: 700, color: "var(--faint, #66748a)", pointerEvents: "none" }}>{unit}</span>
+      </div>
+    </div>
+  );
+}
+
+// The numeric radius — the EXACT precision path alongside the drag handle. Both feed
+// the one canonical draft.radiusKm, so the field, the map circle, the handle's live
+// label, and the saved value are always the same number. While focused it shows what
+// is being typed (Arabic-Indic accepted via the shared sanitizer); when blurred it
+// mirrors the live radius the drag handle also writes — the two never disagree.
+function RadiusField({ radiusKm, onRadiusChange }: { radiusKm: number; onRadiusChange: (km: number) => void }) {
+  const [focused, setFocused] = useState(false);
+  const [typed, setTyped] = useState("");
+  const shown = focused ? typed : formatKm(radiusKm);
+  return (
+    <div>
+      <label style={label} htmlFor="zone-radius">نصف القطر</label>
+      <div style={{ position: "relative" }}>
+        <input
+          id="zone-radius"
+          style={{ ...field, textAlign: "right", paddingInlineEnd: 52, fontVariantNumeric: "tabular-nums", letterSpacing: ".02em" }}
+          inputMode="decimal"
+          value={toAr(shown)}
+          placeholder="٣"
+          onChange={(e) => {
+            const s = sanitizeRadiusInput(e.target.value);
+            setTyped(s);
+            const n = parseRadiusKm(s);
+            if (n != null) onRadiusChange(n);
+          }}
+          onFocus={(e) => { setFocused(true); setTyped(formatKm(radiusKm)); e.currentTarget.style.borderColor = "var(--teal, #2ecc9a)"; }}
+          onBlur={(e) => { setFocused(false); e.currentTarget.style.borderColor = "var(--stroke2, rgba(255,255,255,.2))"; }}
+        />
+        <span style={{ position: "absolute", insetInlineEnd: 14, top: "50%", transform: "translateY(-50%)", fontSize: 11.5, fontWeight: 700, color: "var(--faint, #66748a)", pointerEvents: "none" }}>كم</span>
       </div>
     </div>
   );
