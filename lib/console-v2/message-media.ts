@@ -37,11 +37,16 @@ export interface MediaView {
   // voice
   /** STT confidence 0–100 (rounded), or null when absent (e.g. outbound TTS). */
   confidencePct?: number | null;
-  // photo (inbound customer image)
+  // photo — inbound customer image OR outbound dish photo (WO-PHOTO-PERSIST)
   caption?: string;
   /** MODEL vision read of the image (provenance-marked when descriptionDerived). */
   description?: string;
   descriptionDerived?: boolean;
+  /** Menu item name (outbound dish photos). */
+  name?: string;
+  /** Public image URL when renderable directly (outbound dish photos). Inbound
+   *  customer images carry only a WhatsApp media-id, so this is absent for them. */
+  imageUrl?: string;
   // interactive
   interactive?: InteractiveView;
 }
@@ -125,6 +130,8 @@ export function classifyMessageMedia(metadata: unknown): MediaView {
       caption: str(img.caption),
       description: str(img.description),
       descriptionDerived: img.derived === true,
+      name: str(img.name),
+      imageUrl: str(img.url),
     };
   }
 

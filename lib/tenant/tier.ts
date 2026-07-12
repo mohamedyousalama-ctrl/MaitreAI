@@ -66,7 +66,7 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
 // DEFAULT OFF, NOT implied by tier='pro'. The directive is appended only on a see-request
 // turn, so flag-off (and every non-see-request turn) is byte-identical; the base prompt and
 // the Khalid snapshot are unchanged.
-export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "allergy_companion_mode" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods" | "inbound_coalescing" | "answer_first";
+export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "allergy_companion_mode" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods" | "inbound_coalescing" | "answer_first" | "persist_outbound_media";
 
 /** A feature is ON when the tenant explicitly enabled THAT feature (narrow,
  *  default-off opt-in) OR the tenant is full 'pro' (gets everything). Keeping a
