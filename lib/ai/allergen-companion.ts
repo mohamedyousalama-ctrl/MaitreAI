@@ -84,13 +84,36 @@ const BANNED_AR: Array<{ re: RegExp; label: string }> = [
 // English — «safe» as a standalone word (NOT «safety»/«safely»).
 const BANNED_EN = /\bsafe\b/i;
 
+// WO-LIVE-2-F2b — «عادي» ("regular") is BOTH a banned safety-assurance token AND a
+// FLAVOR option in Egyptian food ordering («عادي، حار، أو مكس؟»). Blocking the flavor
+// question froze ordering for exactly the allergy-noted customers Wesaya serves. Flavor
+// enumeration ≠ safety assurance: «عادي» is exempt ONLY when EVERY sentence that contains
+// it ALSO enumerates another flavor-option token (حار/سبايسي/مكس + normalized variants).
+// A bare «عادي» in ANY other frame — including a mixed reply where one sentence has it
+// without a flavor token — stays banned. Matched on the normalizeAr'd text.
+const FLAVOR_OPTION_RE = /(?<![ء-ي])(حار|حراق|سبايسي|سبيسي|سبايس|مكس|ميكس)(?![ء-ي])/;
+const ADI_RE = /(?<![ء-ي])عادي(?![ء-ي])/;
+/** True iff every sentence that contains «عادي» also enumerates another flavor option —
+ *  i.e. every «عادي» hit is flavor enumeration, never a bare safety assurance. Sentences
+ *  split on TERMINAL punctuation only (؟ ? . ! newline), NOT commas — a flavor list is
+ *  comma-separated («عادي، حار، مكس»), so it must stay one sentence. */
+function adiIsFlavorEnumerationOnly(normalized: string): boolean {
+  const withAdi = normalized.split(/[؟?.!\n]+/).filter((s) => ADI_RE.test(s));
+  return withAdi.length > 0 && withAdi.every((s) => FLAVOR_OPTION_RE.test(s));
+}
+
 /** Return every banned §0 phrase present in `text` (empty ⇒ clean). Pure. */
 export function scanBannedAllergyPhrases(text: string): string[] {
   const raw = String(text ?? "");
   if (!raw.trim()) return [];
   const n = normalizeAr(raw);
   const hits: string[] = [];
-  for (const { re, label } of BANNED_AR) if (re.test(n) && !hits.includes(label)) hits.push(label);
+  for (const { re, label } of BANNED_AR) {
+    if (!re.test(n)) continue;
+    // F2b flavor-enumeration exemption — applies ONLY to «عادي».
+    if (label === "عادي" && adiIsFlavorEnumerationOnly(n)) continue;
+    if (!hits.includes(label)) hits.push(label);
+  }
   if (BANNED_EN.test(raw)) hits.push("safe");
   return hits;
 }
