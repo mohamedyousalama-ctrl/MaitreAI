@@ -35,7 +35,7 @@ import {
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
 import { recordAllergyEvent, buildBannedPhraseBlockAudit } from "@/lib/db/allergy-audit";
-import { asksForMenuLink } from "@/lib/ai/media-intent";
+import { asksForMenuLink, asksToSeeMedia, buildAnswerFirstDirective } from "@/lib/ai/media-intent";
 import { CONVERSATION_MEDIA_BUDGET } from "@/lib/messaging/media-guard";
 import { isMediaWindowReset, buildMediaDirective } from "@/lib/messaging/media-window";
 import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
@@ -616,9 +616,17 @@ export async function runCustomerTurn(
     mediaDirective = buildMediaDirective({ enabled: true, budgetExhausted, customerAskedForMenu: askedMenu });
   }
 
+  // WO-LIVE5-ANSWER-FIRST — when the customer explicitly asked to SEE a photo/the menu,
+  // force Karim to serve that request THIS turn before advancing checkout (live #1005: two
+  // ignored «ابعتلي صوره»). Per-turn directive, gated on the answer_first flag → OFF, or a
+  // turn with no see-request → null → the prompt is byte-identical.
+  const answerFirstDirective = isFeatureExplicitlyEnabled("answer_first", tenantFeatures)
+    ? buildAnswerFirstDirective({ enabled: true, asked: asksToSeeMedia(input.userMessage) })
+    : null;
+
   const runRespond = async (): Promise<RespondResult> => {
     try {
-      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective, mediaDirective });
+      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective, mediaDirective, answerFirstDirective });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await admin.from("agent_runs").insert({

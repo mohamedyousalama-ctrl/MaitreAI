@@ -69,6 +69,11 @@ export interface RespondInput {
    *  link and never pretends photos were attached (guard→model coherence). media_guard
    *  OFF / healthy budget → null → identical behavior. */
   mediaDirective?: string | null;
+  /** WO-LIVE5-ANSWER-FIRST: a per-turn directive appended when the customer explicitly
+   *  asked to SEE a photo/the menu (asksToSeeMedia) and the answer_first flag is on — it
+   *  forces Karim to serve that see-request this turn before advancing checkout. Absent
+   *  otherwise → identical behavior. */
+  answerFirstDirective?: string | null;
 }
 
 export interface RespondResult {
@@ -258,7 +263,8 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     (input.cadenceDirective ? `\n\n${input.cadenceDirective}` : "") +
     (input.geoDirective ? `\n\n${input.geoDirective}` : "") +
     (input.imageDirective ? `\n\n${input.imageDirective}` : "") +
-    (input.mediaDirective ? `\n\n${input.mediaDirective}` : "");
+    (input.mediaDirective ? `\n\n${input.mediaDirective}` : "") +
+    (input.answerFirstDirective ? `\n\n${input.answerFirstDirective}` : "");
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
   const knownPrices = knownMenuPrices(input.brain);
 
