@@ -50,3 +50,36 @@ export function asksForMenuLink(text: string): boolean {
   if (LINK_WORD_RE.test(n)) return true;
   return MENU_WORD_RE.test(n) && MENU_REQUEST_RE.test(n);
 }
+
+// ── WO-LIVE5-ANSWER-FIRST — the customer explicitly asks to SEE something ─────
+// Live #1005 (03:59:42 «ابعتلي صوره الاكيل», 04:00:28 «ابعتلي صوره العرض»): two explicit
+// photo requests were IGNORED while Karim pushed checkout. A visual NOUN (a photo or the
+// menu — the SHOW_MEDIA vocabulary) must co-occur with a send/show/request frame — which
+// includes the SAME receive-direction morphology (ابعتلي/بعتلي/وريني) the CONFIRM-GATE
+// detector uses — so a bare mention («المنيو حلو») or a plain order never fires. Pure.
+const SEE_NOUN_RE = /صور|صوره|شكل|اشكال|بالصور|منيو|مينيو|قايمه|كتالوج|اصناف/;
+const SEE_REQUEST_RE = /ابعتلي|ابعتلى|ابعت|بعتلي|ارسلي|ارسل|رسل|هات|وريني|ورني|ورينا|فرجيني|عايز|عاوز|ابغي|ابي|ممكن|نفسي|اشوف|شوف|اطلع|اعرض|share|send|show/;
+
+/** True iff the customer explicitly asks to SEE / be SENT a photo or the visual menu this
+ *  turn — the ANSWER-FIRST trigger. High-precision: a visual noun AND a request/receive
+ *  frame must BOTH be present. Pure. */
+export function asksToSeeMedia(text: string): boolean {
+  const n = normalizeAr(text);
+  if (!n) return false;
+  return SEE_NOUN_RE.test(n) && SEE_REQUEST_RE.test(n);
+}
+
+/** WO-LIVE5-ANSWER-FIRST — the per-turn directive appended (flag ON + a see-request) that
+ *  forces Karim to SERVE the customer's explicit see-request THIS turn before advancing
+ *  checkout: real item photos via send_item_photos (or an honest no-photo line + the menu),
+ *  or the full menu via present_menu. Returns null when it must NOT render (byte-identical).
+ *  `enabled` is the flag gate; `asked` is asksToSeeMedia for the turn. */
+export function buildAnswerFirstDirective(opts: { enabled: boolean; asked: boolean }): string | null {
+  if (!opts.enabled || !opts.asked) return null;
+  return (
+    "[أجب-أولاً] العميل طلب صراحةً إنه يشوف صور/أصناف أو المنيو. لبِّ الطلب ده الأول في نفس ردك، " +
+    "قبل ما تسأل عن الدفع أو الاستلام أو تأكيد الطلب: لو طلب صورة صنف مُعيّن استخدم أداة send_item_photos " +
+    "للصنف اللي سمّاه؛ لو مفيش صورة متاحة قوله بصراحة واعرض عليه المنيو؛ لو طلب المنيو كامل استخدم present_menu. " +
+    "متكمّلش للتأكيد أو الدفع قبل ما تخدم طلب المشاهدة."
+  );
+}
