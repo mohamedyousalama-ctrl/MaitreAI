@@ -19,7 +19,7 @@
 //  • assign-to-a-teammate has no backing route yet → rendered SOON, never faked.
 // ============================================================================
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Send, Lock, CornerUpLeft, CheckCircle2, Radio, Users, ShieldAlert, CheckCheck, X, Receipt } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
 import { useHasHydrated, useRestaurantStore } from "@/lib/store";
@@ -282,6 +282,29 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
+
+  // FR-003 — stick-to-bottom transcript (ported from the v1 ChatWindow reference):
+  // jump to the latest on open / conversation switch, follow new messages ONLY while
+  // the operator is parked near the bottom, and never yank them down while they're
+  // scrolled up reading history.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const onThreadScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+  // Switching conversations → jump to the latest instantly.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    stickToBottom.current = true;
+  }, [conv.id]);
+  // New message → auto-scroll ONLY if the operator was already at the bottom.
+  useEffect(() => {
+    if (!stickToBottom.current) return;
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [conv.messages.length]);
   // Conversations whose server ownership claim we've WON this session. The first
   // send always claims (the atomic server proof); once won, later sends skip it.
   const [claimed, setClaimed] = useState<Set<string>>(new Set());
@@ -376,7 +399,7 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
 
       {/* Transcript — each outbound bubble authorship-labeled (R6); photo / voice /
           interactive bubbles render from message meta (WO-CONSOLE-MEDIA-RENDER). */}
-      <div className="kv-scroll" style={{ flex: 1, overflowY: "auto", padding: "12px 0", display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
+      <div ref={scrollRef} onScroll={onThreadScroll} className="kv-scroll" style={{ flex: 1, overflowY: "auto", padding: "12px 0", display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
         {conv.messages.map((m) => <MessageBubble key={m.id} m={m} />)}
       </div>
 
