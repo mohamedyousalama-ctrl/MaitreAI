@@ -35,7 +35,23 @@ const INTENT_VOCAB: string[] = [
   "توصيل", "دليفري", "استلام", "فرع", "كاش", "مدي", "فيزا", "شبكه", "سعر", "كم",
   "وحده", "حبه", "كيلو", "نص", "زياده", "بدون", "مع", "حجز", "طاوله", "كوب",
   "اهلا", "مرحبا", "سلام", "هلا", "مساء", "صباح", "شكرا", "لو سمحت", "من فضلك",
+  // WO-VOICE-QUALITY-2 — NUMBER words (a quantity correction like «التسعة مش التماني»
+  // shares no menu word yet is a perfectly valid ordering turn). Standard + dialectal.
+  "واحد", "اثنين", "ثنين", "ثلاثه", "ثلاث", "اربعه", "اربع", "خمسه", "خمس",
+  "سته", "ست", "سبعه", "سبع", "ثمانيه", "ثمان", "تماني", "تسعه", "تسع", "عشره", "عشر",
+  // QUANTITY / CORRECTION terms (the «not eight, nine» frame).
+  "مش", "غير", "بدل", "قصدي", "يعني", "لا", "كمان", "بس",
+  // CONFIRMATION words.
+  "تمام", "ماشي", "اه", "ايوه",
 ].map(normalizeAr);
+
+// WO-VOICE-QUALITY-2 — above this confidence a CORRECTLY-transcribed turn is trusted
+// regardless of menu/intent overlap; the weak zero-overlap trigger is scoped to
+// uncertain audio only. (Low confidence < VOICE_QUALITY_FLOOR still bounces as before.)
+export const OVERLAP_CONF_CEILING = 0.70;
+// Arabic-Indic (٠-٩) or ASCII digits count as ordering-relevant vocabulary (a spoken
+// «٩ مش ٨») — matched on the whole normalized text since a bare digit is a 1-char token.
+const DIGIT_RE = /[٠-٩0-9]/;
 
 /** Tokenize a normalized string into content tokens (≥2 chars), dropping the «ال»
  *  article so «المنيو» and «منيو» compare equal. */
@@ -83,10 +99,12 @@ export interface VoiceTranscriptClassification {
 
 /**
  * Part (d) — deterministic garbled-transcript classifier. Pure. `garbled` when the
- * transcript is empty, LOW-CONFIDENCE (< VOICE_QUALITY_FLOOR, only when a confidence
- * number is present), OR shares zero content tokens with the tenant menu ∪ intent
- * vocabulary. The caller is responsible for the SAFETY-FIRST gate (only consult this
- * when no allergen/phonetic/emergency signal fired).
+ * transcript is empty, LOW-CONFIDENCE (< VOICE_QUALITY_FLOOR), or — for UNCERTAIN audio
+ * only (confidence < OVERLAP_CONF_CEILING, incl. no confidence) — shares zero tokens
+ * with the tenant menu ∪ intent vocabulary (+ any digit). WO-VOICE-QUALITY-2: a turn at
+ * conf ≥ OVERLAP_CONF_CEILING is trusted regardless of overlap, so a correctly-heard
+ * number correction like «التسعة مش التماني» @0.725 is never bounced. The caller owns the
+ * SAFETY-FIRST gate (only consult this when no allergen/phonetic/emergency signal fired).
  */
 export function classifyVoiceTranscript(args: {
   text: string;
@@ -101,13 +119,19 @@ export function classifyVoiceTranscript(args: {
     return { garbled: true, reason: "low_confidence" };
   }
 
-  const tokens = contentTokens(normalizeAr(text));
-  const vocab = new Set<string>(INTENT_VOCAB);
-  for (const name of args.menuVocab ?? []) {
-    for (const t of contentTokens(normalizeAr(String(name ?? "")))) vocab.add(t);
+  // The zero-overlap trigger is a WEAK signal — only trust it to bounce UNCERTAIN audio.
+  // At conf ≥ OVERLAP_CONF_CEILING the transcript is trusted regardless of overlap.
+  const highConfidence = typeof conf === "number" && Number.isFinite(conf) && conf >= OVERLAP_CONF_CEILING;
+  if (!highConfidence) {
+    const normalized = normalizeAr(text);
+    const tokens = contentTokens(normalized);
+    const vocab = new Set<string>(INTENT_VOCAB);
+    for (const name of args.menuVocab ?? []) {
+      for (const t of contentTokens(normalizeAr(String(name ?? "")))) vocab.add(t);
+    }
+    const overlaps = DIGIT_RE.test(normalized) || tokens.some((t) => vocab.has(t));
+    if (!overlaps) return { garbled: true, reason: "no_vocab_overlap" };
   }
-  const overlaps = tokens.some((t) => vocab.has(t));
-  if (!overlaps) return { garbled: true, reason: "no_vocab_overlap" };
 
   return { garbled: false, reason: null };
 }
