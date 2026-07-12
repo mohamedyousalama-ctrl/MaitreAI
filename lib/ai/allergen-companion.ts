@@ -93,13 +93,35 @@ const BANNED_EN = /\bsafe\b/i;
 // without a flavor token — stays banned. Matched on the normalizeAr'd text.
 const FLAVOR_OPTION_RE = /(?<![ء-ي])(حار|حراق|سبايسي|سبيسي|سبايس|مكس|ميكس)(?![ء-ي])/;
 const ADI_RE = /(?<![ء-ي])عادي(?![ء-ي])/;
-/** True iff every sentence that contains «عادي» also enumerates another flavor option —
- *  i.e. every «عادي» hit is flavor enumeration, never a bare safety assurance. Sentences
- *  split on TERMINAL punctuation only (؟ ? . ! newline), NOT commas — a flavor list is
- *  comma-separated («عادي، حار، مكس»), so it must stay one sentence. */
-function adiIsFlavorEnumerationOnly(normalized: string): boolean {
+// WO-LIVE4-F2c — «عادي» is ALSO a SIZE label in cart/menu recaps («عادي» vs «دوبل»), which
+// carry a price and/or quantity — never a bare safety assurance. Live #1005 (04:26–04:34):
+// the recap line «- **عادي** بـ ١٣٠ ج.م» tripped the §0 guard and looped even on «Hi».
+// Extend the per-sentence exemption: a «عادي» sentence is menu context (not a safety
+// assurance) when it ALSO contains any of —
+//   • a flavor option (F2b),
+//   • the SIZE sibling «دوبل»,
+//   • a PRICE, or
+//   • a QUANTITY marker.
+// The sentence splitter breaks on «.», so «ج.م» splits into «ج»|«م»; PRICE is therefore
+// matched split-robustly as digits adjacent to the currency «ج» (and the dotless «جم»).
+// A bare «عادي» — no flavor, size, price, or quantity in its sentence — STAYS banned.
+const SIZE_SIBLING_RE = /(?<![ء-ي])دوبل(?![ء-ي])/;
+// digits (Arabic-Indic or Latin) next to the currency «ج» — «١٣٠ ج[.م]» survives the split;
+// «ج» must NOT be followed by an Arabic letter so «جنيه»/other words never count.
+const PRICE_RE = /[٠-٩0-9]\s*ج(?![ء-ي])|(?<![ء-ي])جم(?![ء-ي])/;
+const QUANTITY_RE = /×/; // the multiplier used in recaps («×١», «١×»)
+/** True iff EVERY sentence that contains «عادي» also carries menu context — a flavor
+ *  option, the size sibling «دوبل», a price, or a quantity marker — i.e. no «عادي» hit is
+ *  a bare safety assurance. Sentences split on TERMINAL punctuation only (؟ ? . ! newline),
+ *  NOT commas, so a comma-separated flavor list stays one sentence. */
+function adiIsMenuEnumerationOnly(normalized: string): boolean {
   const withAdi = normalized.split(/[؟?.!\n]+/).filter((s) => ADI_RE.test(s));
-  return withAdi.length > 0 && withAdi.every((s) => FLAVOR_OPTION_RE.test(s));
+  return (
+    withAdi.length > 0 &&
+    withAdi.every(
+      (s) => FLAVOR_OPTION_RE.test(s) || SIZE_SIBLING_RE.test(s) || PRICE_RE.test(s) || QUANTITY_RE.test(s)
+    )
+  );
 }
 
 /** Return every banned §0 phrase present in `text` (empty ⇒ clean). Pure. */
@@ -110,8 +132,9 @@ export function scanBannedAllergyPhrases(text: string): string[] {
   const hits: string[] = [];
   for (const { re, label } of BANNED_AR) {
     if (!re.test(n)) continue;
-    // F2b flavor-enumeration exemption — applies ONLY to «عادي».
-    if (label === "عادي" && adiIsFlavorEnumerationOnly(n)) continue;
+    // F2b/F2c menu-enumeration exemption — applies ONLY to «عادي» (flavor option, or a
+    // size/price/quantity recap). A bare «عادي» safety assurance is unaffected.
+    if (label === "عادي" && adiIsMenuEnumerationOnly(n)) continue;
     if (!hits.includes(label)) hits.push(label);
   }
   if (BANNED_EN.test(raw)) hits.push("safe");
