@@ -22,6 +22,7 @@ import { imageHistoryContent } from "./image-turn";
 import { decideMediaSend, CONVERSATION_MEDIA_BUDGET, MAX_IMAGES_PER_MESSAGE, DEFAULT_MAX_IMAGES_PER_MESSAGE, type MediaZeroReason } from "./media-guard";
 import { isMediaWindowReset, MEDIA_WINDOW_MS } from "./media-window";
 import { asksForMorePhotos, asksForMenuLink } from "@/lib/ai/media-intent";
+import { coalesceInbound } from "@/lib/messaging/inbound-coalescing";
 import { isSafetyHeld } from "@/lib/db/safety-hold";
 import { appBaseUrl } from "@/lib/db/delivery";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
@@ -791,9 +792,14 @@ export async function respondAndSendWhatsApp(
   // auto-reply — while test/live (and closed) reply normally. The stored
   // agent_mode (setup|test|live|paused) maps onto SystemMode; a missing value
   // defaults to live so the existing reply path is unchanged.
-  const { data: rest } = await admin.from("restaurants").select("agent_mode").eq("id", restaurantId).single();
+  const { data: rest } = await admin.from("restaurants").select("agent_mode, feature_flags").eq("id", restaurantId).single();
   const agentMode = ((rest?.agent_mode as string) || "live") as SystemMode;
   if (!modeAllowsAgentReply(agentMode)) return { status: "skipped_mode" };
+  // WO-LIVE4-F2 — per-conversation inbound coalescing (flag inbound_coalescing, default
+  // OFF). feature_flags is an existing column, so folding it into the agent_mode read is
+  // deploy-safe; the WATERMARK column read below is the one that must degrade gracefully.
+  const convFlags = (rest?.feature_flags as Record<string, unknown> | null) ?? null;
+  const coalescingOn = isFeatureExplicitlyEnabled("inbound_coalescing", convFlags);
 
   const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
 
@@ -885,34 +891,54 @@ export async function respondAndSendWhatsApp(
   const rows = ([...(msgs ?? [])] as { sender: string; text: string | null; created_at: string; meta: Record<string, unknown> | null }[]).reverse();
   const lastCustomerIdx = rows.map((m) => m.sender).lastIndexOf("customer");
   if (lastCustomerIdx < 0) return { status: "skipped_no_customer_msg" };
-  const rawText = (rows[lastCustomerIdx].text ?? "").trim();
-  // S6 — deterministic interactive routing: if the last inbound was a tap on a
-  // control WE minted (meta.interactiveId ∈ known set), resolve it to an explicit
-  // canonical directive so the tap routes by the controlled id, NOT by the title
-  // text the LLM could misread. Unknown ids / item:<…> / free text fall through to
-  // rawText. This only disambiguates the input — it still flows through the SAME
-  // gated agent (allergen input+output gate in runCustomerTurn/respond; SYSTEM_HOLD
-  // / ownership / mode already gated above), so no safety rule is bypassed.
-  const lastInteractiveId = (rows[lastCustomerIdx].meta as { interactiveId?: string } | null)?.interactiveId;
-  const userMessage = routeInteractive(lastInteractiveId, rawText).text;
+
+  // WO-LIVE4-F2 — INBOUND COALESCING (flag inbound_coalescing). Meta delivers each
+  // message as its own webhook, so a rapid burst (or a pin-then-text) otherwise becomes
+  // N Brain turns = N replies, and only the NEWEST message reaches the gated userMessage
+  // (an allergy that isn't last bypasses the deterministic INPUT gate). Read the 0085
+  // watermark (deploy-safe: a missing column / transient read → coalescing inert, exactly
+  // the legacy single-message path). coalesceInbound then either merges the unanswered
+  // burst into ONE gated turn or, for the second webhook of a burst, returns null (empty
+  // burst) → we stay silent (no double reply). Flag OFF → enabled:false → byte-identical.
+  let watermarkMs: number | null = null;
+  let coalescingActive = false;
+  if (coalescingOn) {
+    const { data: wmRow, error: wmErr } = await admin
+      .from("conversations")
+      .select("last_answered_inbound_at")
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (!wmErr) {
+      coalescingActive = true;
+      const wm = (wmRow as { last_answered_inbound_at?: string | null } | null)?.last_answered_inbound_at ?? null;
+      watermarkMs = wm ? Date.parse(wm) : null;
+    }
+    // wmErr (0085 not applied / transient) → coalescingActive stays false → single-message.
+  }
+  const coalesced = coalesceInbound(rows, { enabled: coalescingActive, watermarkMs });
+  if (!coalesced) return { status: "skipped_no_customer_msg" };
+
+  const rawText = coalesced.mergedText;
+  // S6 — deterministic interactive routing: a SINGLE inbound tap on a control WE minted
+  // (meta.interactiveId ∈ known set) resolves to its canonical directive, routed by the
+  // controlled id, NOT the title text the LLM could misread. A coalesced MULTI-message
+  // burst is conversational text → use the merged text directly (never let a trailing tap
+  // swallow the earlier burst text, incl. a safety word). Either way it flows through the
+  // SAME gated agent (allergen input+output gate in runCustomerTurn); no safety rule is
+  // bypassed. Flag OFF / single message → count===1 → identical to the legacy path.
+  const lastInteractiveId = (coalesced.anchor.meta as { interactiveId?: string } | null)?.interactiveId;
+  const userMessage = coalesced.count > 1 ? rawText : routeInteractive(lastInteractiveId, rawText).text;
   if (!userMessage) return { status: "skipped_no_customer_msg" };
-  // WO-VOICE-1: carry the transcribed voice note's STT confidence (persisted in meta
-  // by the webhook) into the turn so the fail-closed net's SECONDARY tripwire can read
-  // it. Undefined for typed messages → the tripwire is inert (pipeline unchanged).
-  const sttConfidence = (rows[lastCustomerIdx].meta as { stt_confidence?: number } | null)?.stt_confidence;
-  // WO-VOICE-2: did the customer open the voice door this turn (sent a voice note)?
-  const inboundWasVoice = (rows[lastCustomerIdx].meta as { voice?: boolean } | null)?.voice === true;
-  // WO-DELIVERY-D1: a location pin the customer sent this turn (persisted in meta by
-  // the webhook, ONLY when delivery_geo_routing is on). Undefined for every other
-  // turn/tenant → runCustomerTurn ignores it → pipeline byte-identical when off.
-  const pinLocation = (rows[lastCustomerIdx].meta as { location?: { lat: number; lng: number; name?: string; address?: string } } | null)?.location;
-  // WO-MEDIA-INBOUND: the image the customer sent THIS turn (persisted in meta by the
-  // webhook, ONLY when media_turn_trigger is on). `caption` is their own words (already
-  // the userMessage / gate input); `description` is the model vision read (context).
-  // Undefined for every other turn/tenant → runCustomerTurn gets no imageContext →
-  // pipeline byte-identical when off.
-  const lastImage = (rows[lastCustomerIdx].meta as { image?: { caption?: string; description?: string | null } } | null)?.image;
-  const lastInboundAtMs = new Date(rows[lastCustomerIdx].created_at).getTime();
+  // WO-VOICE-1/2 + WO-DELIVERY-D1 + WO-MEDIA-INBOUND — the per-turn signals. The
+  // single-message signals (STT confidence, voice door, interactive id) come from the
+  // ANCHOR (the newest burst message); a location pin / image is honored ANYWHERE in the
+  // burst (coalesceInbound picks the newest row carrying each), so a pin-then-text burst
+  // still routes the pin this turn. All undefined off-flag → runCustomerTurn ignores them.
+  const sttConfidence = (coalesced.anchor.meta as { stt_confidence?: number } | null)?.stt_confidence;
+  const inboundWasVoice = (coalesced.anchor.meta as { voice?: boolean } | null)?.voice === true;
+  const pinLocation = (coalesced.pinRow?.meta as { location?: { lat: number; lng: number; name?: string; address?: string } } | null)?.location;
+  const lastImage = (coalesced.imageRow?.meta as { image?: { caption?: string; description?: string | null } } | null)?.image;
+  const lastInboundAtMs = coalesced.maxCreatedAtMs;
 
   // HX1 — label human-authored turns so Karim distinguishes its own words from the
   // operator's. Human turns stay role:"assistant" (a valid LLM role) but their
@@ -925,7 +951,20 @@ export async function respondAndSendWhatsApp(
   // persisted for the operator UI (this only drops them from the LLM context). The
   // 40-window fetch and lastCustomerIdx (the message-to-answer) are unchanged; we
   // only filter what's fed into `history`.
-  const histRows = rows.slice(0, lastCustomerIdx).filter((m) => m.text && m.sender !== "system");
+  // WO-LIVE4-F2 — when coalescing merged a burst into userMessage, drop those same burst
+  // customer rows from the LLM history (they'd otherwise appear twice — once merged, once
+  // as history). The excluded set mirrors coalesceInbound's floor: customer rows strictly
+  // newer than the watermark, or (cold start) newer than the last reply. Flag OFF /
+  // inactive → nothing excluded → history byte-identical.
+  const burstFloorMs = coalescingActive
+    ? (watermarkMs ?? (() => {
+        const lastReply = [...rows].reverse().find((m) => m.sender === "ai" || m.sender === "human");
+        return lastReply ? Date.parse(lastReply.created_at) : -Infinity;
+      })())
+    : Infinity;
+  const inCoalescedBurst = (m: { sender: string; created_at: string }) =>
+    coalescingActive && m.sender === "customer" && Date.parse(m.created_at) > burstFloorMs;
+  const histRows = rows.slice(0, lastCustomerIdx).filter((m) => m.text && m.sender !== "system" && !inCoalescedBurst(m));
   const authorIds = histRows
     .filter((m) => m.sender === "human")
     .map((m) => (m.meta as { author_member_id?: string } | null)?.author_member_id);
@@ -1004,6 +1043,22 @@ export async function respondAndSendWhatsApp(
     // Critical-failure alert: console banner + email (best-effort, never throws).
     await recordCriticalAlert(admin, { restaurantId, type: "agent_error", detail, conversationId });
     return { status: "agent_error", error: detail };
+  }
+
+  // WO-LIVE4-F2 — the turn answered the whole coalesced burst: advance the watermark to
+  // the newest customer message it covered, so a later webhook for a message at/under it
+  // stays silent (no double reply) while a message that landed mid-turn (strictly newer)
+  // gets its own turn (never dropped). Best-effort, only when the 0085 column is present;
+  // the error path above returns before here, so a failed turn never advances the mark.
+  if (coalescingActive) {
+    try {
+      await admin
+        .from("conversations")
+        .update({ last_answered_inbound_at: new Date(coalesced.maxCreatedAtMs).toISOString() })
+        .eq("id", conversationId);
+    } catch (e) {
+      console.error("[respond-and-send] coalescing watermark update failed (non-blocking)", e);
+    }
   }
 
   // 4.5 (S9-4.5): a finalized draft becomes a real order row BEFORE the

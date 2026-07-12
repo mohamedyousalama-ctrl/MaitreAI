@@ -55,7 +55,12 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
 // switch, DEFAULT OFF, NEVER implied by tier='pro' — flag-off returns exactly the
 // legacy normalized payment_config at every surface, so the ordering conversation,
 // storefront, and settings stay byte-identical for existing tenants (Wesaya) until flipped.
-export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "allergy_companion_mode" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods";
+// inbound_coalescing (WO-LIVE4-F2): merge a rapid burst of inbound messages (each its own
+// Meta webhook) into ONE Brain turn via the 0085 last_answered_inbound_at watermark — kills
+// the double reply and pulls every burst message's text through the allergen INPUT gate.
+// STRICT per-tenant switch, DEFAULT OFF, NOT implied by tier='pro'; the watermark read is
+// deploy-safe → flag-off (and pre-0085) tenants keep the single-message path, byte-identical.
+export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "allergy_companion_mode" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods" | "inbound_coalescing";
 
 /** A feature is ON when the tenant explicitly enabled THAT feature (narrow,
  *  default-off opt-in) OR the tenant is full 'pro' (gets everything). Keeping a
