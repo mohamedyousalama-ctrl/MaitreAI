@@ -24,7 +24,10 @@ export const openaiSttAdapter: SttAdapter = {
     fd.append("file", new Blob([new Uint8Array(audio)], { type: opts?.mimeType || "audio/ogg" }), "audio.ogg");
     fd.append("model", model);
     fd.append("response_format", model === "whisper-1" ? "verbose_json" : "json");
-    if (opts?.languageHint) fd.append("language", opts.languageHint);
+    // WO-VOICE-QUALITY (a) — pass language explicitly, defaulting to Arabic.
+    fd.append("language", opts?.languageHint || "ar");
+    // WO-VOICE-QUALITY (b) — domain prompt-biasing (tenant menu + ordering words).
+    if (opts?.prompt) fd.append("prompt", opts.prompt);
 
     const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
