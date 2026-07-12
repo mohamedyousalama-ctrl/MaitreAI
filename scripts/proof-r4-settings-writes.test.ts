@@ -64,13 +64,19 @@ check("(flags) manager-only", /tenant\.role !== "manager"\) return NextResponse\
 check("(flags) safety flag rejected server-side with 403", /isSafetyFlag\(flag\)\) \{[\s\S]*safety_flag_locked[\s\S]*status: 403/.test(flags));
 // The gates must sit BEFORE the POST's feature_flags read (so a rejected flip never
 // touches the DB). Scope the search to the POST body — GET also reads feature_flags.
-const flagsPost = flags.slice(flags.indexOf("export async function POST"));
+// Every token must EXIST before comparing positions: a stray indexOf() === -1 would
+// otherwise satisfy `-1 < readIndex` and pass a check whose subject had vanished.
+const postIndex = flags.indexOf("export async function POST");
+const flagsPost = postIndex >= 0 ? flags.slice(postIndex) : "";
+const dbReadIndex = flagsPost.indexOf('.select("feature_flags")');
+const safetyGateIndex = flagsPost.indexOf("isSafetyFlag(flag)");
+const allowlistGateIndex = flagsPost.indexOf("isManagerWritableFlag(flag)");
 check("(flags) safety gate precedes the DB read",
-  flagsPost.indexOf("isSafetyFlag(flag)") < flagsPost.indexOf('.select("feature_flags")'));
+  postIndex >= 0 && safetyGateIndex >= 0 && dbReadIndex >= 0 && safetyGateIndex < dbReadIndex);
 // Allowlist gate: non-writable keys rejected 403, also BEFORE any DB read (curl-proof).
 check("(flags) non-writable flag rejected server-side with 403", /!isManagerWritableFlag\(flag\)\) \{[\s\S]*flag_not_writable[\s\S]*status: 403/.test(flags));
 check("(flags) allowlist gate precedes the DB read",
-  flagsPost.indexOf("isManagerWritableFlag(flag)") < flagsPost.indexOf('.select("feature_flags")'));
+  postIndex >= 0 && allowlistGateIndex >= 0 && dbReadIndex >= 0 && allowlistGateIndex < dbReadIndex);
 check("(flags) JSONB merge preserves sibling flags (spread, not replace)", /\{ \.\.\.\(\(cur\?\.feature_flags/.test(flags));
 check("(flags) audits settings_flag_flipped with from/to", flags.includes('action: "settings_flag_flipped"') && /metadata: \{ flag, from, to: body\.enabled \}/.test(flags));
 

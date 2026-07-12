@@ -116,8 +116,8 @@ export default function SettingsPage() {
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16, alignItems: "start" }}>
       <div style={{ gridColumn: "1 / -1" }}><TruthBoard health={health} onReload={load} /></div>
       <Hours hours={hours} />
-      <PspCredentials pspFlagOn={flags?.flags?.psp_payments === true} onFlagChanged={load} />
-      <QzPrinter qzFlagOn={flags?.flags?.qz_print === true} onFlagChanged={load} />
+      <PspCredentials pspFlagOn={flags?.flags ? flags.flags.psp_payments === true : null} onFlagChanged={load} />
+      <QzPrinter qzFlagOn={flags?.flags ? flags.flags.qz_print === true : null} onFlagChanged={load} />
       <div style={{ gridColumn: "1 / -1" }}><DeliveryZones /></div>
       <div style={{ gridColumn: "1 / -1" }}><GoLiveGate health={health} /></div>
     </div>
@@ -244,19 +244,25 @@ function RoundTrip({ onDone, disabled }: { onDone: () => Promise<void>; disabled
 // allowlist (lib/settings/safety-flags) rejects anything else with 403, so this
 // component can never be pointed at an infra or safety flag. Audited server-side.
 // ---------------------------------------------------------------------------
-function CapabilitySwitch({ flag, on, label, onChanged }: { flag: string; on: boolean; label: string; onChanged: () => Promise<void> }) {
+// `on` is TRI-STATE: null = the flags load hasn't resolved (or failed). We must NOT
+// coerce an unknown flag to OFF — an actually-enabled capability would render an OFF
+// switch, and a click would POST enabled:true instead of disabling it. So until the
+// real state is known the switch is disabled (never actionable on a guess).
+function CapabilitySwitch({ flag, on, label, onChanged }: { flag: string; on: boolean | null; label: string; onChanged: () => Promise<void> }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(false);
+  const isOn = on === true;
+  const unknown = on === null;
 
   async function flip() {
-    if (busy) return;
+    if (busy || unknown) return;
     setBusy(true); setErr(false);
     try {
       const r = await fetch("/api/settings/flags", {
         method: "POST", credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ flag, enabled: !on }),
+        body: JSON.stringify({ flag, enabled: !isOn }),
       });
       if (!r.ok) { setErr(true); return; }
       await onChanged(); // re-read the real stored state (never trust the optimistic flip)
@@ -267,14 +273,15 @@ function CapabilitySwitch({ flag, on, label, onChanged }: { flag: string; on: bo
     }
   }
 
+  const disabled = busy || unknown;
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
       {err && <span style={{ fontSize: 11, fontWeight: 700, color: "var(--amber)" }}>{t("set.flags.error")}</span>}
       <button
-        type="button" role="switch" aria-checked={on} aria-label={label} disabled={busy} onClick={flip}
-        style={{ width: 38, height: 22, borderRadius: 99, border: 0, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1, padding: 0, position: "relative", background: on ? "rgba(14,159,110,.5)" : "rgba(255,255,255,.14)", flex: "0 0 auto" }}
+        type="button" role="switch" aria-checked={isOn} aria-label={label} disabled={disabled} onClick={flip}
+        style={{ width: 38, height: 22, borderRadius: 99, border: 0, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.5 : 1, padding: 0, position: "relative", background: isOn ? "rgba(14,159,110,.5)" : "rgba(255,255,255,.14)", flex: "0 0 auto" }}
       >
-        <span style={{ position: "absolute", top: 3, insetInlineStart: on ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: on ? "var(--teal)" : "#8b97a8", boxShadow: "0 1px 3px rgba(0,0,0,.25)", transition: "inset-inline-start .15s" }} />
+        <span style={{ position: "absolute", top: 3, insetInlineStart: isOn ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: isOn ? "var(--teal)" : "#8b97a8", boxShadow: "0 1px 3px rgba(0,0,0,.25)", transition: "inset-inline-start .15s" }} />
       </button>
     </div>
   );
@@ -564,7 +571,7 @@ const QZ_CONN_LABEL: Record<QzStatus, DictKey> = {
   error: "set.printer.conn.failed",
 };
 
-function QzPrinter({ qzFlagOn, onFlagChanged }: { qzFlagOn: boolean; onFlagChanged: () => Promise<void> }) {
+function QzPrinter({ qzFlagOn, onFlagChanged }: { qzFlagOn: boolean | null; onFlagChanged: () => Promise<void> }) {
   const t = useT();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -680,7 +687,7 @@ interface PspResp {
   hasSecretKey: boolean; hasWebhookSecret: boolean; configured: boolean; error?: string;
 }
 
-function PspCredentials({ pspFlagOn, onFlagChanged }: { pspFlagOn: boolean; onFlagChanged: () => Promise<void> }) {
+function PspCredentials({ pspFlagOn, onFlagChanged }: { pspFlagOn: boolean | null; onFlagChanged: () => Promise<void> }) {
   const t = useT();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);

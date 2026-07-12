@@ -263,8 +263,10 @@ export default function ZoneMapEditor({
 
   const sheet = (
     <div className="kvx" dir="rtl" style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", fontFamily: "var(--kvx-font-ar)" }}>
-      {/* OPAQUE backdrop — no page content bleeds through (D3). */}
-      <div style={{ position: "absolute", inset: 0, background: "rgba(6,9,14,.86)", backdropFilter: "blur(6px)" }} onClick={onClose} />
+      {/* OPAQUE backdrop — no page content bleeds through (D3). Near-solid ink over a
+          blur: content is fully obscured (the .86 the reviewer flagged is raised to
+          .96 so nothing is legible through it) while a whisper of depth is kept. */}
+      <div style={{ position: "absolute", inset: 0, background: "rgba(6,9,14,.96)", backdropFilter: "blur(8px)" }} onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
