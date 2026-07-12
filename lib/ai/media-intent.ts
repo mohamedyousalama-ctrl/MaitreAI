@@ -22,7 +22,10 @@ import { normalizeAr } from "./allergen-gate";
 const MORE_RE = /اكتر|اكثر|المزيد|مزيد|باقي|بقيه|كله|الكل|كامل|كامله|جميع|كل ?الاصناف|كل ?الصور|كمان ?صور|زياده/;
 // "photos / items / show me" — a show-media marker. NOTE: literals are in normalizeAr
 // form (ئ→ي, ى→ي, ة→ه) since matching runs on the normalized string — «قائمة»→«قايمه».
-const SHOW_MEDIA_RE = /صور|صوره|اصناف|منيو|مينيو|قايمه|كتالوج|اشوف|شوف|ورني|وريني|ورينا|فرجيني/;
+// Exported so the CONFIRM-GATE order-confirmation detector (lib/ai/order-confirm.ts)
+// can reuse the SAME media-noun vocabulary to disqualify a "send me a photo" request
+// from ever reading as an order confirmation (WO-LIVE5-CONFIRM-GATE).
+export const SHOW_MEDIA_RE = /صور|صوره|اصناف|منيو|مينيو|قايمه|كتالوج|اشوف|شوف|ورني|وريني|ورينا|فرجيني/;
 
 /** True iff the customer explicitly asks to see MORE / ALL photos this turn. Pure. */
 export function asksForMorePhotos(text: string): boolean {

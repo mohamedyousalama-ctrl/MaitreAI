@@ -15,6 +15,7 @@ import { DEFAULT_PAYMENT_CONFIG } from "@/lib/payments/config";
 import { modeAllowsOrders } from "./modes";
 import { dialectProfile } from "./dialect";
 import { fabricatesMoney, knownMenuPrices, offersNonMenuProduct } from "./money-guard";
+import { isExplicitOrderConfirmation } from "./order-confirm";
 import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-gate";
 // WO-COMPANION-W1-CORE (§0/§6): companion banned-phrase guard + confirmation
 // checkpoint. Consulted ONLY when brain.allergyCompanion is on (flag OFF → inert).
@@ -113,10 +114,11 @@ function claimsOrderConfirmed(text: string): boolean {
   return /(تم\s+(?:تأكيد|تسجيل|استلام)\s+الطلب|طلبك\s+(?:اتأكد|تأكد|تسجل|تم)|order\s+(?:confirmed|placed))/iu.test(text);
 }
 
-export function isExplicitOrderConfirmation(text: string): boolean {
-  if (/(?:لا|لأ|مش|ما)\s*(?:تأكد|تاكد|تأكيد|تاكيد|تكمل|تبعت|ترسل)|(?:الغ|إلغاء|cancel)/iu.test(text)) return false;
-  return /(?:أكد|اكد|تأكيد|تاكيد|ابعته|ابعت|ارسله|رسل|كمّل|كمل|تمام|أيوه|ايوه|yes|confirm|send it)/iu.test(text);
-}
+// WO-LIVE5-CONFIRM-GATE — the confirmation detector now lives in its own pure module
+// (lib/ai/order-confirm.ts, imported above) so the SAME rule guards the fast-path AND the
+// finalize_draft tool, and a receive/photo request («ابعتلي صوره») can never read as a
+// confirmation. Re-exported so existing importers (customer-turn) are unchanged.
+export { isExplicitOrderConfirmation };
 
 // Fix D — the «تمام» fast-path may auto-finalize ONLY when the conversation is
 // genuinely at an order-confirmation point. If the last thing كريم said was a
@@ -276,6 +278,11 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     taxRate: input.brain.taxRate ?? 0,
     paymentConfig: input.brain.paymentConfig ?? DEFAULT_PAYMENT_CONFIG,
     resendReceipt: false,
+    // WO-LIVE5-CONFIRM-GATE — whether THIS turn's customer message is an explicit order
+    // confirmation. finalize_draft refuses when this is false, so the model-tool-loop
+    // path can never commit a phantom order on a non-confirmation (live #1005). The
+    // fast-path already gates on the same predicate; this closes the loop path too.
+    userConfirmed: isExplicitOrderConfirmation(input.userMessage),
   };
 
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;

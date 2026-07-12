@@ -116,6 +116,12 @@ export interface ToolContext {
   paymentConfig: PaymentConfig;
   /** Set to true by resend_receipt tool; triggers receipt re-send in respond-and-send. */
   resendReceipt: boolean;
+  /** WO-LIVE5-CONFIRM-GATE — whether THIS turn's triggering customer message is an
+   *  explicit order confirmation (isExplicitOrderConfirmation). finalize_draft refuses
+   *  when this is explicitly false, so a non-confirmation (e.g. a photo request like
+   *  «ابعتلي صوره العرض») never commits an order. Optional: undefined (a caller that
+   *  doesn't set it, e.g. a unit test) leaves finalize_draft's legacy behavior intact. */
+  userConfirmed?: boolean;
 }
 
 // --- interactive presentations (S9-2) ---------------------------------------
@@ -778,6 +784,20 @@ export function executeTool(
       return { content: summary(d) };
     }
     case "finalize_draft": {
+      // WO-LIVE5-CONFIRM-GATE (order integrity) — NEVER commit an order unless THIS
+      // turn's customer message is an explicit confirmation. Live #1005: «ابعتلي صوره
+      // العرض» (a photo request) was consumed as the confirmation after «تأكد الطلب؟».
+      // A non-confirmation → refuse + a directive to re-read the order and ask for an
+      // explicit confirm. Gated on `=== false` so a caller that never sets userConfirmed
+      // (unit tests) keeps the legacy behavior — the live path always sets it.
+      if (ctx.userConfirmed === false) {
+        ctx.signals.push({ type: "missing_data", detail: { reason: "finalize_without_confirmation" } });
+        return {
+          content:
+            "لسه العميل ما أكّدش الطلب صراحةً — رسالته الأخيرة مش تأكيد. اقرأ عليه ملخص الطلب واطلب تأكيد صريح (زي «أكد» أو «تمام») قبل ما تسجّل الطلب.",
+          isError: true,
+        };
+      }
       if (!d.lines.length) return { content: "لا يمكن تأكيد طلب فارغ.", isError: true };
       if (!d.fulfillment) return { content: "لا يمكن تأكيد الطلب قبل اختيار الاستلام أو التوصيل.", isError: true };
       if (d.fulfillment === "delivery" && !d.address?.trim()) {
