@@ -5,7 +5,7 @@
 // one) is an env flip — ZERO code change — exactly like the LLM + WhatsApp seams.
 // ============================================================================
 
-export type SttAdapterName = "mock" | "openai" | "groq";
+export type SttAdapterName = "mock" | "openai" | "groq" | "deepgram";
 
 export interface SttTranscribeOptions {
   /** MIME type of the audio (WhatsApp voice notes are audio/ogg; opus). */
@@ -16,6 +16,10 @@ export interface SttTranscribeOptions {
    *  seeded into Whisper's `prompt` parameter to steer recognition toward the
    *  restaurant's vocabulary. A soft bias, not a transcript. */
   prompt?: string;
+  /** WO-VOICE-DEEPGRAM-SPIKE — Nova-3 native keyterm prompting: menu phrases boosted
+   *  during recognition. Allergen words are NEVER included (buildDeepgramKeyterms). Only
+   *  the deepgram adapter consumes this; other adapters ignore it. */
+  keyterms?: string[];
 }
 
 export interface SttResult {
