@@ -26,3 +26,11 @@ export function isRtl(tag: string | null | undefined): boolean {
 export function dirFor(tag: string | null | undefined): Dir {
   return isRtl(tag) ? "rtl" : "ltr";
 }
+
+/** The reading-direction arrow for a diff / progression ("from → to"). A hardcoded
+ *  «→» points the wrong way on an RTL surface, where the flow runs right-to-left and
+ *  the "to" side sits on the LEFT — so RTL gets «←». FR-010: use this for every
+ *  direction-of-progress glyph instead of a literal arrow. */
+export function arrowForDir(dir: Dir): string {
+  return dir === "rtl" ? "←" : "→";
+}

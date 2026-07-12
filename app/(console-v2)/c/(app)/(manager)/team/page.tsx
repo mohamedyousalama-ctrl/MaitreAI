@@ -27,7 +27,8 @@ import { useState } from "react";
 import { Crown, HardHat, MessageSquare, Truck, Activity, UserPlus, ShieldCheck, Check, Minus } from "lucide-react";
 import { HeaderRow, SectionHeader, TruthChip, MiniModal, Toasts, pushToast } from "@/components/console-v2/kit";
 import { useMembersStore, type TeamMember } from "@/lib/members-store";
-import { useT } from "@/lib/i18n/lang";
+import { useT, useLang } from "@/lib/i18n/lang";
+import { arrowForDir } from "@/lib/i18n/dir";
 import type { DictKey } from "@/lib/i18n/dictionary";
 import { Bdi } from "@/components/kivo";
 
@@ -236,6 +237,7 @@ function InviteModal({ onClose, onDone }: { onClose: () => void; onDone: () => P
 
 function RoleModal({ member, onClose, onDone }: { member: TeamMember; onClose: () => void; onDone: () => Promise<void> }) {
   const t = useT();
+  const { dir } = useLang();
   const target: "manager" | "operation" = member.role === "manager" ? "operation" : "manager";
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -261,7 +263,7 @@ function RoleModal({ member, onClose, onDone }: { member: TeamMember; onClose: (
       <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 14, padding: "12px 14px" }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: "var(--txt)", flex: 1 }}><Bdi>{member.name}</Bdi></span>
         <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--faint)" }}>{t(member.role === "manager" ? "tm.roleLabel.manager" : "tm.roleLabel.operation")}</span>
-        <span style={{ color: "var(--faint)" }}>→</span>
+        <span aria-hidden style={{ color: "var(--faint)" }}>{arrowForDir(dir)}</span>
         <span style={{ fontSize: 11.5, fontWeight: 800, color: "#8ce8cc" }}>{t(target === "manager" ? "tm.roleLabel.manager" : "tm.roleLabel.operation")}</span>
       </div>
       {target === "manager" && <div style={{ ...auditBox, background: "rgba(232,180,90,.1)", borderColor: "rgba(232,180,90,.35)", color: "#ffcf8d" }}>⚠ {t("tm.rl.warnMgr")}</div>}

@@ -39,7 +39,8 @@ import {
   HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, LockedSwitch,
   AuroraDrawer, MiniModal, Toasts, pushToast, type Tier,
 } from "@/components/console-v2/kit";
-import { useT } from "@/lib/i18n/lang";
+import { useT, useLang } from "@/lib/i18n/lang";
+import { arrowForDir } from "@/lib/i18n/dir";
 import { Bdi, Num } from "@/components/kivo";
 import type { DictKey } from "@/lib/i18n/dictionary";
 import type { MenuItem, DeliveryArea } from "@/lib/types";
@@ -452,6 +453,7 @@ function SafetyRoom({ onTestLog, onRequest }: { onTestLog: () => void; onRequest
 // ---------------------------------------------------------------------------
 function ItemEditorDrawer({ target, onClose }: { target: EditTarget; onClose: () => void }) {
   const t = useT();
+  const { dir } = useLang();
   const [vals, setVals] = useState<Record<string, string>>(() => Object.fromEntries(target.fields.map((f) => [f.field, String(f.current)])));
   const [busy, setBusy] = useState(false);
 
@@ -517,7 +519,7 @@ function ItemEditorDrawer({ target, onClose }: { target: EditTarget; onClose: ()
         <span style={{ fontSize: 11.5, color: "var(--dim)", lineHeight: 1.7 }}>{t("kn.edit.soonBanner")}</span>
       </div>
       <button onClick={propose} disabled={busy} style={{ ...primaryBtn, width: "100%", marginTop: 12, height: 40, opacity: busy ? 0.6 : 1 }}>
-        {t("kn.edit.proposeDisabled")} → {t("nav.approvals")}
+        {t("kn.edit.proposeDisabled")} {arrowForDir(dir)} {t("nav.approvals")}
       </button>
     </AuroraDrawer>
   );
