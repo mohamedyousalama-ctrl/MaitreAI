@@ -24,6 +24,7 @@ import { decideMediaSend, CONVERSATION_MEDIA_BUDGET, MAX_IMAGES_PER_MESSAGE, DEF
 import { isMediaWindowReset, MEDIA_WINDOW_MS } from "./media-window";
 import { asksForMorePhotos, asksForMenuLink } from "@/lib/ai/media-intent";
 import { coalesceInbound } from "@/lib/messaging/inbound-coalescing";
+import { claimTurn, releaseTurn } from "@/lib/db/turn-claim";
 import { isSafetyHeld } from "@/lib/db/safety-hold";
 import { appBaseUrl } from "@/lib/db/delivery";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
@@ -913,6 +914,21 @@ export async function respondAndSendWhatsApp(
   const lastCustomerIdx = rows.map((m) => m.sender).lastIndexOf("customer");
   if (lastCustomerIdx < 0) return { status: "skipped_no_customer_msg" };
 
+  // WO-LIVE6-TURN-LOCK — BLOCKING atomic per-conversation claim BEFORE the watermark read,
+  // so two concurrent webhooks for the same conversation can't both read the pre-turn
+  // watermark and both reply (live dup: conv 68966859 — two turns 56ms apart on identical
+  // input; the conversation_locks mutex did not serialize them). The winner runs; a loser
+  // BLOCKS here, then the watermark read + coalescing below re-evaluate against the winner's
+  // freshly-stamped watermark → an already-covered burst returns null (silent), a mid-turn
+  // straggler is answered (never dropped). Gated on coalescingOn (the same flag F2 rides);
+  // deploy-safe — a missing 0086 column / transient error proceeds anyway (never drop), and
+  // flag-off tenants never enter here → byte-identical.
+  let turnClaimDeployed = false;
+  if (coalescingOn) {
+    const claim = await claimTurn(admin, conversationId);
+    turnClaimDeployed = claim.deployed;
+  }
+
   // WO-LIVE4-F2 — INBOUND COALESCING (flag inbound_coalescing). Meta delivers each
   // message as its own webhook, so a rapid burst (or a pin-then-text) otherwise becomes
   // N Brain turns = N replies, and only the NEWEST message reaches the gated userMessage
@@ -937,7 +953,12 @@ export async function respondAndSendWhatsApp(
     // wmErr (0085 not applied / transient) → coalescingActive stays false → single-message.
   }
   const coalesced = coalesceInbound(rows, { enabled: coalescingActive, watermarkMs });
-  if (!coalesced) return { status: "skipped_no_customer_msg" };
+  if (!coalesced) {
+    // WO-LIVE6-TURN-LOCK — the winner already covered this burst (watermark advanced past
+    // it): release the claim we may hold and stay silent (never wedge the conversation).
+    if (turnClaimDeployed) await releaseTurn(admin, conversationId);
+    return { status: "skipped_no_customer_msg" };
+  }
 
   const rawText = coalesced.mergedText;
   // S6 — deterministic interactive routing: a SINGLE inbound tap on a control WE minted
@@ -949,7 +970,10 @@ export async function respondAndSendWhatsApp(
   // bypassed. Flag OFF / single message → count===1 → identical to the legacy path.
   const lastInteractiveId = (coalesced.anchor.meta as { interactiveId?: string } | null)?.interactiveId;
   const userMessage = coalesced.count > 1 ? rawText : routeInteractive(lastInteractiveId, rawText).text;
-  if (!userMessage) return { status: "skipped_no_customer_msg" };
+  if (!userMessage) {
+    if (turnClaimDeployed) await releaseTurn(admin, conversationId); // WO-LIVE6-TURN-LOCK — never wedge
+    return { status: "skipped_no_customer_msg" };
+  }
   // WO-VOICE-1/2 + WO-DELIVERY-D1 + WO-MEDIA-INBOUND — the per-turn signals. The
   // single-message signals (STT confidence, voice door, interactive id) come from the
   // ANCHOR (the newest burst message); a location pin / image is honored ANYWHERE in the
@@ -1063,6 +1087,10 @@ export async function respondAndSendWhatsApp(
     );
     // Critical-failure alert: console banner + email (best-effort, never throws).
     await recordCriticalAlert(admin, { restaurantId, type: "agent_error", detail, conversationId });
+    // WO-LIVE6-TURN-LOCK — release the claim on the error path too (the watermark below is
+    // NOT reached, so it stays a post-success truth; the claim frees the conversation now
+    // rather than waiting out the TTL).
+    if (turnClaimDeployed) await releaseTurn(admin, conversationId);
     return { status: "agent_error", error: detail };
   }
 
@@ -1081,6 +1109,11 @@ export async function respondAndSendWhatsApp(
       console.error("[respond-and-send] coalescing watermark update failed (non-blocking)", e);
     }
   }
+
+  // WO-LIVE6-TURN-LOCK — the watermark is now the post-success truth, so release the claim:
+  // any concurrent arrival re-reads the advanced watermark → empty burst → silent, and a
+  // genuine follow-up (a message strictly newer than the watermark) can claim immediately.
+  if (turnClaimDeployed) await releaseTurn(admin, conversationId);
 
   // 4.5 (S9-4.5): a finalized draft becomes a real order row BEFORE the
   // customer-facing confirmation is transmitted. If the server-side DB recompute
