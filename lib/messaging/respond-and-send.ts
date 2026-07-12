@@ -25,6 +25,14 @@ import { isMediaWindowReset, MEDIA_WINDOW_MS } from "./media-window";
 import { asksForMorePhotos, asksForMenuLink } from "@/lib/ai/media-intent";
 import { coalesceInbound } from "@/lib/messaging/inbound-coalescing";
 import { claimTurn, releaseTurn } from "@/lib/db/turn-claim";
+// WO-LIVE6-REPLY-DAMPENER — silence a RUN of unclear-fragment replies. The safety net +
+// human-request detector run FIRST here and always win (never dampened).
+import { shouldDampenReply } from "@/lib/ai/reply-dampener";
+import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
+import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
+import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
+import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
+import { isExplicitHumanRequest } from "@/lib/ai/human-request";
 import { isSafetyHeld } from "@/lib/db/safety-hold";
 import { appBaseUrl } from "@/lib/db/delivery";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
@@ -59,6 +67,10 @@ export type RespondAndSendStatus =
   | "send_failed"
   | "agent_error"
   | "deduped"
+  // WO-LIVE6-REPLY-DAMPENER — a 3rd+ consecutive unclear fragment within a short window
+  // was silenced (the «مش فاهم» pile-up killer). Never reached for a meaningful message or
+  // anything the allergen net / human-request detector flags.
+  | "dampened"
   // WO-COMPANION-W1-CORE §1e — the recovery reply was sent (never silence). The
   // customer was asked «وصلك أحد من الفريق؟» / re-alerted / told an emergency hold
   // needs a human. Distinct from skipped_takeover so purgatory is observably fixed.
@@ -1057,6 +1069,35 @@ export async function respondAndSendWhatsApp(
         .from("messages")
         .update(rsend.status === "sent" ? { status: "sent", channel_message_id: rsend.externalMessageId ?? null } : { status: "failed" })
         .eq("id", rmsg.id);
+    }
+  }
+
+  // WO-LIVE6-REPLY-DAMPENER — after 2 answered unclear-fragment replies within a short window,
+  // a 3rd+ unclear fragment gets SILENCE (kills the «مش فاهم» pile-up: live conv 68966859,
+  // 15:18–15:19). SAFETY-FIRST (binding): the allergen net + human-request detector run HERE and
+  // ALWAYS win — a safety/human-request message is NEVER dampened; any meaningful message resets
+  // the streak (which is derived from the recent messages already in `rows` — no schema). Flag
+  // OFF → never evaluated → byte-identical. Placed just before the Brain turn so a dampened
+  // fragment costs no LLM call and sends nothing.
+  if (isFeatureExplicitlyEnabled("reply_dampener", convFlags)) {
+    const safetyOrHuman =
+      detectAllergenAvoidance(userMessage).fired ||
+      detectAllergenSymptom(userMessage).fired ||
+      detectPhoneticSafetyNet(userMessage, { sttConfidence, isVoiceTranscript: inboundWasVoice }).fired ||
+      detectAllergenEmergency(userMessage).fired ||
+      isExplicitHumanRequest(userMessage);
+    if (!safetyOrHuman) {
+      const priorCustomer = rows
+        .slice(0, lastCustomerIdx)
+        .filter((m) => m.sender === "customer" && !!m.text)
+        .reverse() // most-recent-first
+        .map((m) => ({ text: m.text as string, createdAtMs: Date.parse(m.created_at) }));
+      if (shouldDampenReply(userMessage, priorCustomer, Date.now())) {
+        // Stay silent — release the turn claim so the conversation never wedges, advance no
+        // watermark (this fragment was not answered), and send nothing.
+        if (turnClaimDeployed) await releaseTurn(admin, conversationId);
+        return { status: "dampened" };
+      }
     }
   }
 
