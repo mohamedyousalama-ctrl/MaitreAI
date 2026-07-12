@@ -40,6 +40,10 @@ const INTENT_VOCAB: string[] = [
   // shares no menu word yet is a perfectly valid ordering turn). Standard + dialectal.
   "واحد", "اثنين", "ثنين", "ثلاثه", "ثلاث", "اربعه", "اربع", "خمسه", "خمس",
   "سته", "ست", "سبعه", "سبع", "ثمانيه", "ثمان", "تماني", "تسعه", "تسع", "عشره", "عشر",
+  // WO-VOICE-PRECISION (finding 3) — Egyptian number forms + tens/hundreds. A quantity
+  // correction like «مية وخمسين مش ميتين» shares no menu word yet is a valid ordering
+  // turn — these keep it from bouncing as zero-overlap gibberish (live msg 1224f0c0).
+  "اتنين", "تلاته", "تمنيه", "عشرين", "خمسين", "ميه", "مية", "ميتين",
   // QUANTITY / CORRECTION terms (the «not eight, nine» frame).
   "مش", "غير", "بدل", "قصدي", "يعني", "لا", "كمان", "بس",
   // CONFIRMATION words.
@@ -213,4 +217,30 @@ export function confirmVoiceReply(dialect: string, heard: string, candidate?: st
   return dialect === "egyptian"
     ? `سمعت منك: «${h}» — كده صح؟ لو تمام أكمّل، ولو لأ اكتبهالي 🙏`
     : `سمعت منك: «${h}» — كذا صحيح؟ لو تمام أكمّل، ولو لا اكتبها لي 🙏`;
+}
+
+// ---------------------------------------------------------------------------
+// WO-VOICE-PRECISION (finding 4) — ASSENT-EXIT. A pure assent token arriving the turn
+// right after a ladder CONFIRM must EXIT the ladder and let the Brain act on the confirmed
+// content — never re-confirm. Without this a second voice note «أيوه» re-enters the ladder
+// and re-confirms forever (live confirm-loop, msg b68666f5). Both detectors are pure.
+// ---------------------------------------------------------------------------
+
+/** Pure assent tokens (normalized) — «أيوه/ايوة/صح/تمام/ماشي» and close variants. */
+const ASSENT_TERMS: ReadonlySet<string> = new Set(
+  ["ايوه", "ايوا", "ايو", "اه", "صح", "صحيح", "تمام", "تمم", "ماشي", "اوك", "اوكي", "زين", "طيب"].map(normalizeAr)
+);
+
+/** True when the WHOLE message is assent (every content token is an assent word) — so
+ *  «أيوه» / «تمام صح» qualify but «أيوه عايز حاجة تانية» (carries real intent) does not. */
+export function isVoiceAssent(message: string): boolean {
+  const toks = normalizeAr(String(message ?? "")).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return toks.length > 0 && toks.every((t) => ASSENT_TERMS.has(t));
+}
+
+/** True when the last assistant turn was a ladder CONFIRM. Keys on the confirm template's
+ *  stable signature «لو تمام أكمّل» (normalized «لو تمام اكمل»), present in every dialect/
+ *  candidate/echo variant of confirmVoiceReply and nowhere else. */
+export function wasVoiceLadderConfirm(lastAssistant: string | null | undefined): boolean {
+  return /لو تمام اكمل/.test(normalizeAr(String(lastAssistant ?? "")));
 }
