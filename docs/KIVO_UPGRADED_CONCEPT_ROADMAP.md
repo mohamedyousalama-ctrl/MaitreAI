@@ -215,3 +215,70 @@ Zero automation risk, and it is **the sales demo** for restaurants #2–#100: th
 | 7 | KSA + industry clones | The company |
 ---
 *Kivo starts as a restaurant-first AI operating console where Karim handles customer conversations and orders, Kivo turns all restaurant data into structured truth and insights, specialized restaurant modules decide growth/marketing/menu/operations/service/margin actions, the Decision Layer checks priority and safety, and Kivo executes those actions while learning from every result — then the same architecture expands industry by industry.*
+
+---
+
+## 12. PM Decision Ledger
+
+> The running record of PM-level decisions, merges, ceremonies, and standing-law
+> additions. Records ≤ 148 are held in the PM's continuous log; the entries below
+> (149–162) continue it in-repo. Each record states verbatim facts.
+
+**149. PM window replaced.** The PM window was rotated. The new PM verified program
+state independently via three sources — `git` history, the production database, and
+Vercel deploy state — and reconciled it against the five-window read-only reports on
+file before issuing any new ruling.
+
+**150. #418 data-honesty merged** (`ef7bacf`). Binding base-prompt additions — truthful
+answers to data/deletion questions and anti-anchoring — applied to all personas.
+
+**151. #410 signup env split merged** (`720a091`). Landed via the replacement Payments
+window; the halt-on-contradiction discipline was honored (work paused for verification
+rather than proceeding on an unresolved conflict).
+
+**152. Ceremony Day executed on test tenants.** Migrations `0080`–`0083` applied;
+Sweet Shop provisioned with 4 flags; KSA Dry-Run with 2; Wesaya proven byte-identical
+through the applies (prepare-only columns inert until a flag flips).
+
+**153. Wesaya status correction — by the owner, out loud.** Wesaya is **pre-launch, not
+selling**. The weight of a flip is reduced accordingly (build-phase caution, not live-
+production caution), and the explicit launch gates were defined (see the Launch Roadmap).
+
+**154. Wesaya activation.** +4 feature flags flipped, then `console_v2` + `photo_thread`
+enabled — Wesaya now at **14 verified keys**.
+
+**155. LIVE-2 batch.** Live findings F1–F4 triaged from the founder's test. **#419 §0
+context gate** merged (`177fbe6`) — root cause was the «عادي» ("regular" flavor) false-
+positive in the context-free banned-phrase scan; the PM's echo-of-marketing hypothesis
+was refuted by the recovered blocked draft. **#420 companion block audit** merged
+(`ed9ba84`) — the §0 output-scan block now writes a `conversation_allergy_events` row.
+
+**156. LIVE-3 batch — #421 merged** (`527e156`). Five media/hospitality rules behind
+`media_guard` (link dedup; 24h-OR-new-order budget window; per-message cap 2→3 on an
+explicit ask; guard→model coherence directive; intentional link-on-ask) **plus a P0
+webhook-reachability fix**: location-only and image-only webhooks were unreachable
+(nested inside the text-gated block). A **route-level red-first proof class** (posting
+real bodies through the actual handler) is now standing law for inbound-path WOs.
+
+**157. WO-T1-PAYMENTS — #422 merged** (`50149be`). A canonical `payment_methods` model:
+`lib/payments/resolve` is the sole-source resolver; a never-all-off guard; an immutable
+per-order snapshot. Flag OFF; the `0084` migration is prepare-only (unapplied).
+
+**158. Zone work + editor defects.** Wesaya has 2 geo delivery zones. Three console-v2
+zone-editor defects were diagnosed — an ASCII `\d` digit-class bug (Arabic-Indic
+numerals), feature-flag-panel over-exposure, and SSR leaflet loading — folded into the
+**#423 rebuild** (held).
+
+**159. GoTrue NULL-token repair.** A NULL-token family across 8 `auth.users` columns was
+repaired, unblocking team invites.
+
+**160. #424 signup hardening.** Embedded Signup moved to Graph `v25.0` with fetch
+timeouts. Separately, the **live messaging** Graph version was flagged **expired**
+(`v19.0`) → **WO-GRAPH-VERSION-LIVE** opened (in flight at the Payments window).
+
+**161. Architecture ADR ratified.** "One brain, two skins" — the persona architecture —
+was owner-ratified (see `docs/decisions/ADR-PERSONA-ARCHITECTURE.md`).
+
+**162. Standing laws added.** (a) One active order per window; (b) route-level,
+type-only-payload proofs are required for every inbound-path WO; (c) the PM checklist
+law (verify state before ruling).
