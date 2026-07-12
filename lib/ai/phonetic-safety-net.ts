@@ -177,7 +177,13 @@ function bestDist(rawNorm: string, term: string): number {
   const stripped = stripAffix(rawNorm);
   const t = phoneticFold(term);
   const d1 = Math.min(levenshtein(rawNorm, term), levenshtein(phoneticFold(rawNorm), t));
-  if (stripped === rawNorm) return d1;
+  // WO-ALLERGEN-FP — only fall back to the AFFIX-STRIPPED stem when it is still a real
+  // stem (≥ MIN_NEAR_LEN). Stripping a leading conjunction/article off a short COMMON
+  // word left a 2-char stem that near-matched a 3-char allergen at edit-distance 1:
+  // «ولو» ("even if / please") → strip «و» → «لو» → dist 1 to «لوز» (almond), a false
+  // positive with no almond word present (live conv f095c714). A genuine garbled
+  // disclosure always leaves a ≥3-char stem («والمكسرات»→«مكسرات»), so recall is intact.
+  if (stripped === rawNorm || stripped.length < MIN_NEAR_LEN) return d1;
   return Math.min(d1, levenshtein(stripped, term), levenshtein(phoneticFold(stripped), t));
 }
 
