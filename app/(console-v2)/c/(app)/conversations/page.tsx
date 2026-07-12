@@ -31,7 +31,8 @@ import {
 } from "@/components/console-v2/kit";
 import { useT } from "@/lib/i18n/lang";
 import { Bdi, Num } from "@/components/kivo";
-import { CONVERSATION_STAGE_LABELS, type Conversation } from "@/lib/types";
+import { CONVERSATION_STAGE_LABELS, type Conversation, type ChatMessage } from "@/lib/types";
+import { classifyMessageMedia, formatConfidence } from "@/lib/console-v2/message-media";
 
 const ownOf = (c: Conversation): ConversationOwnershipState => c.ownershipState ?? "AI_ACTIVE";
 const isHold = (c: Conversation) => c.isSafetyHold === true || ownOf(c) === "SYSTEM_HOLD";
@@ -366,20 +367,10 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
         </div>
       )}
 
-      {/* Transcript — each outbound bubble authorship-labeled (R6). */}
+      {/* Transcript — each outbound bubble authorship-labeled (R6); photo / voice /
+          interactive bubbles render from message meta (WO-CONSOLE-MEDIA-RENDER). */}
       <div className="kv-scroll" style={{ flex: 1, overflowY: "auto", padding: "12px 0", display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
-        {conv.messages.map((m) => {
-          const inbound = m.sender === "customer";
-          return (
-            <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: inbound ? "flex-start" : "flex-end", gap: 3 }}>
-              {!inbound && m.sender !== "system" && <HandledByChip by={m.sender === "ai" ? "karim" : "human"} />}
-              <div style={{ maxWidth: "82%", padding: "9px 13px", borderRadius: 14, fontSize: 12.5, lineHeight: 1.7, fontFamily: "var(--kvx-font-ar)", background: inbound ? "rgba(255,255,255,.07)" : "linear-gradient(135deg,rgba(63,110,220,.85),rgba(45,80,180,.85))", color: inbound ? "var(--txt)" : "#eaf1ff", direction: "rtl" }}>
-                <Bdi>{m.text}</Bdi>
-              </div>
-              <span style={{ fontSize: 9.5, color: "var(--faint)" }}>{m.time}</span>
-            </div>
-          );
-        })}
+        {conv.messages.map((m) => <MessageBubble key={m.id} m={m} />)}
       </div>
 
       {/* Composer — takeover-at-SEND. Closed conversations are read-only. */}
@@ -403,6 +394,94 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Message bubble — text by default; a voice / photo / interactive message renders
+// its own kind from ChatMessage.metadata (WO-CONSOLE-MEDIA-RENDER). Display-only:
+// classifyMessageMedia falls back to plain text on any unexpected meta, so a bubble
+// can never crash the transcript. فصحى, RTL, emerald voice / gold provenance.
+// ---------------------------------------------------------------------------
+function MessageBubble({ m }: { m: ChatMessage }) {
+  const t = useT();
+  const inbound = m.sender === "customer";
+  const media = classifyMessageMedia(m.metadata);
+  const bubble: React.CSSProperties = {
+    maxWidth: "82%", padding: "9px 13px", borderRadius: 14, fontSize: 12.5, lineHeight: 1.7,
+    fontFamily: "var(--kvx-font-ar)", direction: "rtl",
+    background: inbound ? "rgba(255,255,255,.07)" : "linear-gradient(135deg,rgba(63,110,220,.85),rgba(45,80,180,.85))",
+    color: inbound ? "var(--txt)" : "#eaf1ff",
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: inbound ? "flex-start" : "flex-end", gap: 3 }}>
+      {!inbound && m.sender !== "system" && <HandledByChip by={m.sender === "ai" ? "karim" : "human"} />}
+      <div style={bubble}>
+        {media.kind === "voice" ? (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: m.text ? 6 : 0 }}>
+              <span style={{ fontSize: 14 }} aria-hidden>🎤</span>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: inbound ? "#8ce8cc" : "#cfe0ff" }}>{t("conv.media.voice")}</span>
+              {media.confidencePct != null && (
+                <span style={{ marginInlineStart: "auto", fontSize: 9, fontWeight: 800, color: "#e0b53a", background: "rgba(224,181,58,.12)", border: "1px solid rgba(224,181,58,.35)", borderRadius: 99, padding: "2px 7px", whiteSpace: "nowrap" }}>
+                  {t("conv.media.confidence")} {formatConfidence(media.confidencePct)}
+                </span>
+              )}
+            </div>
+            {m.text && <Bdi>{m.text}</Bdi>}
+          </>
+        ) : media.kind === "photo" ? (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 11, background: "rgba(255,255,255,.05)", border: "1px dashed var(--stroke2)", marginBottom: (media.caption || media.description) ? 7 : 0 }}>
+              <span style={{ fontSize: 20 }} aria-hidden>📷</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--dim)" }}>{t("conv.media.photo")}</span>
+            </div>
+            {media.caption && <div style={{ marginBottom: media.description ? 5 : 0 }}><Bdi>{media.caption}</Bdi></div>}
+            {media.description && (
+              <div style={{ fontSize: 11, color: "var(--dim)", display: "flex", gap: 5, lineHeight: 1.6 }}>
+                <span style={{ color: "#e0b53a", fontWeight: 800, whiteSpace: "nowrap" }} aria-hidden>👁</span>
+                <span><span style={{ color: "#e0b53a", fontWeight: 800 }}>{media.descriptionDerived ? t("conv.media.visionRead") : ""}{media.descriptionDerived ? ": " : ""}</span><Bdi>{media.description}</Bdi></span>
+              </div>
+            )}
+          </>
+        ) : media.kind === "interactive" && media.interactive ? (
+          <>
+            {m.text && <div style={{ marginBottom: 8 }}><Bdi>{m.text}</Bdi></div>}
+            <div style={{ border: "1px solid rgba(46,204,154,.4)", borderRadius: 11, padding: "8px 10px", background: "rgba(46,204,154,.08)" }}>
+              <div style={{ fontSize: 8.5, fontWeight: 900, letterSpacing: ".07em", color: "#8ce8cc", marginBottom: 6, textTransform: "uppercase" }}>{t("conv.media.interactive")}</div>
+              {media.interactive.header && <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 6 }}><Bdi>{media.interactive.header}</Bdi></div>}
+              {media.interactive.kind === "buttons" ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {media.interactive.buttons?.map((b, i) => (
+                    <span key={b.id || i} style={{ fontSize: 10.5, fontWeight: 700, padding: "5px 11px", borderRadius: 9, background: "rgba(255,255,255,.08)", border: "1px solid var(--stroke2)" }}><Bdi>{b.title}</Bdi></span>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {media.interactive.button && <span style={{ fontSize: 10, color: "#e0b53a", fontWeight: 800 }}>▾ <Bdi>{media.interactive.button}</Bdi></span>}
+                  {media.interactive.sections?.map((s, si) => (
+                    <div key={si}>
+                      {s.title && <div style={{ fontSize: 9.5, fontWeight: 800, color: "var(--faint)", marginBottom: 4 }}><Bdi>{s.title}</Bdi></div>}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {s.rows.map((r, ri) => (
+                          <div key={r.id || ri} style={{ padding: "6px 9px", borderRadius: 8, background: "rgba(255,255,255,.05)", border: "1px solid var(--stroke)" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700 }}><Bdi>{r.title}</Bdi></div>
+                            {r.description && <div style={{ fontSize: 9.5, color: "var(--faint)", marginTop: 2 }}><Bdi>{r.description}</Bdi></div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <Bdi>{m.text}</Bdi>
+        )}
+      </div>
+      <span style={{ fontSize: 9.5, color: "var(--faint)" }}>{m.time}</span>
     </div>
   );
 }
