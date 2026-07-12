@@ -458,7 +458,9 @@ function MessageBubble({ m }: { m: ChatMessage }) {
           </>
         ) : media.kind === "photo" ? (
           <>
-            <PhotoThumb url={media.imageUrl} label={inbound ? t("conv.media.photo") : t("conv.media.photoOutbound")} />
+            {/* Outbound dish photos have a public URL; inbound customer images are
+                fetched through the session-authed media proxy (WO-MEDIA-PROXY). */}
+            <PhotoThumb url={media.imageUrl ?? (inbound ? `/api/console/media/${encodeURIComponent(m.id)}` : undefined)} label={inbound ? t("conv.media.photo") : t("conv.media.photoOutbound")} />
             {!inbound && media.name && !media.caption && <div style={{ fontWeight: 800, marginTop: 7 }}><Bdi>{media.name}</Bdi></div>}
             {media.caption && <div style={{ marginTop: 7, marginBottom: media.description ? 5 : 0 }}><Bdi>{media.caption}</Bdi></div>}
             {media.description && (
