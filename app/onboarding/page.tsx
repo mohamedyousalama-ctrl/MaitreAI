@@ -19,9 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, ArrowLeft, Plus, Trash2, MessageCircle, PartyPopper } from "lucide-react";
 import { StatePill } from "@/components/kivo";
-
-const AR = "٠١٢٣٤٥٦٧٨٩";
-const toAr = (n: number | string) => String(n).replace(/[0-9]/g, (d) => AR[+d]);
+import { sanitizeDecimalInput, toArabicDigits as toAr } from "@/lib/util/arabic-digits";
 
 // Public Meta app id — only present once the deployment-level Meta integration is
 // configured. Absent ⇒ WhatsApp Embedded Signup isn't available yet (honest gate).
@@ -305,6 +303,19 @@ function StepMenu({ restaurantId, onDone }: { restaurantId: string | null; onDon
 
   const publish = async () => {
     if (!restaurantId) return;
+    // Price MUST be a real positive number — never coerce a blank/zero to 0 and
+    // publish it silently (the fee-bug class). Arabic-Indic input was already
+    // normalized to ASCII on entry (sanitizeDecimalInput), so Number() is safe here.
+    for (const c of cats) {
+      if (!c.name.trim()) continue;
+      for (const it of c.items) {
+        if (!it.name.trim()) continue;
+        const price = Number(it.price);
+        if (!it.price.trim() || !Number.isFinite(price) || price <= 0) {
+          return setErr("اكتب سعرًا صحيحًا أكبر من صفر لكل صنف قبل النشر.");
+        }
+      }
+    }
     const payload = {
       categories: cats
         .filter((c) => c.name.trim())
@@ -312,7 +323,7 @@ function StepMenu({ restaurantId, onDone }: { restaurantId: string | null; onDon
           name: c.name.trim(),
           items: c.items.filter((it) => it.name.trim()).map((it) => ({
             name: it.name.trim(),
-            price: Number(it.price) || 0,
+            price: Number(it.price),
             description: it.description.trim() || undefined,
             allergens: it.allergens.trim() ? it.allergens.split(/[،,]/).map((s) => s.trim()).filter(Boolean) : undefined,
           })),
@@ -349,7 +360,7 @@ function StepMenu({ restaurantId, onDone }: { restaurantId: string | null; onDon
                   {c.items.map((it, ii) => (
                     <div key={ii} style={{ display: "grid", gridTemplateColumns: "1.4fr 70px 1.4fr 28px", gap: 7 }}>
                       <input value={it.name} onChange={(e) => setItem(ci, ii, { name: e.target.value })} placeholder="اسم الصنف" style={{ ...inputStyle, height: 38, fontSize: 12 }} />
-                      <input value={it.price} onChange={(e) => setItem(ci, ii, { price: e.target.value.replace(/[^0-9.]/g, "") })} inputMode="decimal" placeholder="السعر" style={{ ...inputStyle, height: 38, fontSize: 12, textAlign: "center" }} />
+                      <input value={toAr(it.price)} onChange={(e) => setItem(ci, ii, { price: sanitizeDecimalInput(e.target.value) })} inputMode="decimal" placeholder="السعر" style={{ ...inputStyle, height: 38, fontSize: 12, textAlign: "center" }} />
                       <input value={it.allergens} onChange={(e) => setItem(ci, ii, { allergens: e.target.value })} placeholder="حساسية (اختياري)" style={{ ...inputStyle, height: 38, fontSize: 12 }} />
                       {c.items.length > 1 ? <button onClick={() => setCat(ci, { items: c.items.filter((_, j) => j !== ii) })} aria-label="حذف الصنف" style={{ width: 28, height: 38, borderRadius: 9, border: "1px solid var(--kv-border)", background: "#fff", color: "var(--kv-faint)", cursor: "pointer" }}><Trash2 size={13} /></button> : <span />}
                     </div>
