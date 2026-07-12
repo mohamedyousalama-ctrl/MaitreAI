@@ -464,6 +464,10 @@ function recompute(ctx: ToolContext): string | null {
       })),
       fulfillment: d.fulfillment ?? "pickup",
       deliveryZoneName: d.deliveryZone,
+      // WO-LIVE4-F3 (geo-pin-wins): a routed pin overrides the typed area name so
+      // the fee comes from the zone the customer actually pinned. Pin-less → no-op.
+      deliveryPin: d.deliveryPin ?? null,
+      branches: ctx.branches,
       taxMode: ctx.taxMode,
       taxRate: ctx.taxRate,
       currency: d.currency,

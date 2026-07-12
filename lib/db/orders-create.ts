@@ -81,6 +81,11 @@ async function recomputeDraftFromDb(
     })),
     fulfillment: args.draft.fulfillment ?? "pickup",
     deliveryZoneName: args.draft.deliveryZone,
+    // WO-LIVE4-F3 (geo-pin-wins): the authoritative persisted fee + branch come from
+    // the pin's zone, not the model-supplied name. deliveryPin rides on the draft only
+    // for a flag-ON matched pin, so pin-less orders persist exactly as before.
+    deliveryPin: args.draft.deliveryPin ?? null,
+    branches: brain.branches,
     taxMode: brain.taxMode,
     taxRate: brain.taxRate,
     currency: brain.profile.currency || args.draft.currency,
