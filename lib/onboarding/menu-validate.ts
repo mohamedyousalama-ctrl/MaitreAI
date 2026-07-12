@@ -146,8 +146,11 @@ export function validateMenuPayload(payload: unknown): ValidationResult {
       if (typeof item.name !== "string" || !item.name.trim()) {
         errors.push(`${itemLoc}: name is required`);
       }
-      if (!isFiniteNum(item.price) || (item.price as number) < 0) {
-        errors.push(`${itemLoc}: price must be a non-negative finite number`);
+      // Price must be POSITIVE — 0/empty is rejected, not silently published. An
+      // empty or Arabic-Indic-stripped input coerces to 0 upstream; catching it
+      // here (and client-side) is the belt & suspenders against the fee-bug class.
+      if (!isFiniteNum(item.price) || (item.price as number) <= 0) {
+        errors.push(`${itemLoc}: price must be a positive finite number`);
       }
       if (item.available !== undefined && typeof item.available !== "boolean") {
         errors.push(`${itemLoc}: available must be boolean`);

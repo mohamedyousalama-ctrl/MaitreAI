@@ -66,10 +66,17 @@ INVARIANT("(zone editor) fee is required non-empty (no silent 0)", /feeStr === "
 // OPEN DEFECTS (documented; each flips to FAIL when its fix WO lands)
 // ============================================================================
 
-// D-A: public onboarding MENU PRICE strips Arabic-Indic digits → silent price 0.
+// D-A: onboarding MENU PRICE — FIXED by WO-MENU-PRICE-DIGITS. The input now
+// normalizes Arabic-Indic digits via the shared reference sanitizer before any
+// strip, and the validator rejects a non-positive price (no silent 0).
 const onboarding = read("app/onboarding/page.tsx");
-OPEN_DEFECT("D-A menu price strips Arabic-Indic (app/onboarding/page.tsx ~352)",
-  /price:\s*e\.target\.value\.replace\(\/\[\^0-9\.\]\/g/.test(onboarding));
+const menuValidate = read("lib/onboarding/menu-validate.ts");
+INVARIANT("D-A FIXED: menu price input uses sanitizeDecimalInput (Arabic-Indic safe)",
+  /sanitizeDecimalInput\(e\.target\.value\)/.test(onboarding));
+INVARIANT("D-A FIXED: onboarding imports the shared reference sanitizer",
+  /from "@\/lib\/util\/arabic-digits"/.test(onboarding));
+INVARIANT("D-A FIXED: menu validator rejects non-positive price (<= 0)",
+  /<= 0/.test(menuValidate) && /positive/.test(menuValidate));
 
 // D-B: onboarding/config/hours PUT persists `hours` with NO structural validation,
 // while settings/hours validates the SAME column via parseWeeklyHours.
