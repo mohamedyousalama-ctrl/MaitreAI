@@ -141,3 +141,45 @@ export async function POST(req: Request) {
   });
   return NextResponse.json({ ok: true, id: (row as { id: string }).id, expiresAt });
 }
+
+// DELETE /api/settings/tonight-notes?id=<uuid> — manager-only, AUDITED retract
+// ("end now"). Mirrors POST's auth + audit pattern. Deleting the row drops the note
+// from Karim's prompt on the next turn exactly as expiry does: customer-turn reads
+// live notes with `expires_at > now`, and a deleted row is simply no longer returned.
+export async function DELETE(req: Request) {
+  const supabase = createClient();
+  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
+  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden_role" }, { status: 403 });
+
+  const admin = createAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const rid = tenant.restaurantId;
+
+  const id = new URL(req.url).searchParams.get("id")?.trim();
+  if (!id) return NextResponse.json({ error: "bad_request", detail: "id required" }, { status: 400 });
+
+  // Tenant-scoped: only a note belonging to the caller's restaurant is retractable
+  // (no cross-tenant delete, no probing an arbitrary id).
+  const { data: existing } = await admin
+    .from("tonight_notes")
+    .select("id")
+    .eq("id", id)
+    .eq("restaurant_id", rid)
+    .maybeSingle();
+  if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  const memberId = (await admin.from("members").select("id").eq("user_id", tenant.userId).eq("restaurant_id", rid).maybeSingle()).data as { id?: string } | null;
+
+  const { error } = await admin.from("tonight_notes").delete().eq("id", id).eq("restaurant_id", rid);
+  if (error) return NextResponse.json({ error: "delete_failed", detail: error.message }, { status: 502 });
+
+  await recordAuditEvent(admin, {
+    restaurantId: rid, userId: tenant.userId, role: tenant.role,
+    action: "tonight_note_deleted", entityType: "restaurant", entityId: rid,
+    memberId: memberId?.id ?? null, metadata: { note_id: id },
+  });
+  return NextResponse.json({ ok: true, id });
+}

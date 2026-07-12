@@ -365,6 +365,20 @@ function StaffRoom({ standing }: { standing: StandingRow[] | null }) {
     finally { setBusy(false); }
   }
 
+  // FR-007 — retract a tonight note NOW (manager-only, audited server-side). It drops
+  // from Karim's prompt on the next turn exactly as expiry does (the live-notes read
+  // no longer returns it).
+  async function retractNote(id: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/settings/tonight-notes?id=${encodeURIComponent(id)}`, { method: "DELETE", credentials: "include" });
+      if (r.ok) { pushToast(t("kn.staff.tonightRetracted"), "ok"); await loadNotes(); }
+      else pushToast(t("kn.staff.tonightError"), "amber");
+    } catch { pushToast(t("kn.staff.tonightError"), "amber"); }
+    finally { setBusy(false); }
+  }
+
   return (
     <Room icon={<Moon size={15} />} tier="coral" title={t("kn.staff.title")} sub={t("kn.staff.roomJob")}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16 }}>
@@ -407,9 +421,13 @@ function StaffRoom({ standing }: { standing: StandingRow[] | null }) {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               {notes.map((n) => (
-                <div key={n.id} style={{ ...noteBox, background: "rgba(232,180,90,.08)", borderColor: "rgba(232,180,90,.3)" }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--txt)", lineHeight: 1.6, fontFamily: "var(--kvx-font-ar)" }}><Bdi>{n.body}</Bdi></span>
-                  <div style={{ fontSize: 9.5, color: "var(--faint)", marginTop: 4 }}>{t("kn.staff.expires")} <Bdi>{new Date(n.expires_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</Bdi></div>
+                <div key={n.id} style={{ ...noteBox, background: "rgba(232,180,90,.08)", borderColor: "rgba(232,180,90,.3)", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--txt)", lineHeight: 1.6, fontFamily: "var(--kvx-font-ar)" }}><Bdi>{n.body}</Bdi></span>
+                    <div style={{ fontSize: 9.5, color: "var(--faint)", marginTop: 4 }}>{t("kn.staff.expires")} <Bdi>{new Date(n.expires_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</Bdi></div>
+                  </div>
+                  {/* FR-007 — end-now retract (manager-only, audited). */}
+                  <button onClick={() => retractNote(n.id)} disabled={busy} aria-label={t("kn.staff.tonightRetract")} title={t("kn.staff.tonightRetract")} style={retractBtn}><X size={13} /></button>
                 </div>
               ))}
             </div>
@@ -604,6 +622,7 @@ const allergenChip: React.CSSProperties = { fontSize: 9.5, fontWeight: 800, colo
 const zoneChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 8, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "8px 12px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)", fontSize: 11.5 };
 const policyPill: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 11, padding: "7px 12px", cursor: "pointer", fontSize: 11.5, fontWeight: 700, color: "var(--txt)", fontFamily: "var(--kvx-font-ar)" };
 const noteBox: React.CSSProperties = { background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "10px 13px" };
+const retractBtn: React.CSSProperties = { width: 26, height: 26, borderRadius: 8, border: "1px solid rgba(232,180,90,.35)", background: "transparent", color: "#ffcf8d", cursor: "pointer", display: "grid", placeItems: "center", flex: "none" };
 const noteInput: React.CSSProperties = { flex: 1, height: 36, borderRadius: 11, border: "1px solid var(--stroke)", background: "var(--inset2)", padding: "0 11px", fontSize: 12, fontFamily: "var(--kvx-font-ar)", color: "var(--txt)", outline: "none" };
 const vocabChip: React.CSSProperties = { fontSize: 12, fontWeight: 800, color: "#ffc9c9", background: "rgba(255,107,94,.10)", border: "1px solid rgba(255,107,94,.32)", borderRadius: 10, padding: "7px 12px", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--kvx-font-ar)" };
 const safetyLockChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: "#ffc9c9", background: "rgba(255,107,94,.14)", border: "1px solid rgba(255,107,94,.4)", borderRadius: 99, padding: "4px 10px" };

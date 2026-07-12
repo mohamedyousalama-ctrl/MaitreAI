@@ -492,6 +492,8 @@ export const DICTIONARY = {
     "kn.staff.tonightEmpty": "لا ملاحظات لليلة.",
     "kn.staff.tonightSaved": "أُضيفت — يطبّقها كريم الآن، وينساها عند الإغلاق ✓",
     "kn.staff.tonightError": "تعذّرت الإضافة، حاول مجددًا.",
+    "kn.staff.tonightRetract": "إنهاء الآن",
+    "kn.staff.tonightRetracted": "أُنهيت الملاحظة — لن يستخدمها كريم بعد الآن ✓",
     "kn.staff.expires": "تنتهي",
     // Safety Vocabulary room (LOCKED — the one red surface; view-only, no edit path)
     "kn.safe.title": "مفردات السلامة",
@@ -1449,6 +1451,8 @@ export const DICTIONARY = {
     "kn.staff.tonightEmpty": "No notes for tonight.",
     "kn.staff.tonightSaved": "Added — Karim applies it now, forgets it at close ✓",
     "kn.staff.tonightError": "Couldn’t add it, try again.",
+    "kn.staff.tonightRetract": "End now",
+    "kn.staff.tonightRetracted": "Note ended — Karim won’t use it anymore ✓",
     "kn.staff.expires": "expires",
     // Safety Vocabulary room (LOCKED — the one red surface; view-only, no edit path)
     "kn.safe.title": "Safety Vocabulary",
