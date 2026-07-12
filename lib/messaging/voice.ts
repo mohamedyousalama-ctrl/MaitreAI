@@ -16,12 +16,15 @@ export async function transcribeWhatsAppVoice(
   mimeHint?: string,
   // WO-VOICE-QUALITY (b) — the tenant's menu item names, used to seed the STT prompt
   // bias. Optional/back-compat: absent → the generic ordering words alone.
-  menuItemNames?: Array<string | null | undefined>
+  menuItemNames?: Array<string | null | undefined>,
+  // WO-VOICE-ALIASES — state-aware priority terms (the expected answer-class words when
+  // the last AI turn asked for a quantity/size/sauce); front-loaded into the prompt bias.
+  priorityTerms?: Array<string | null | undefined>
 ): Promise<SttResult> {
   const adapter = getSttAdapter();
   const media = await downloadWhatsAppMedia(mediaId);
   const bytes = media?.bytes ?? Buffer.from([]);
   const mime = media?.mime ?? mimeHint ?? "audio/ogg";
-  const prompt = buildSttPromptVocab(menuItemNames ?? []);
+  const prompt = buildSttPromptVocab(menuItemNames ?? [], 200, priorityTerms);
   return adapter.transcribe(bytes, { mimeType: mime, languageHint: "ar", prompt: prompt || undefined });
 }

@@ -87,7 +87,7 @@ const MENU = ["برجر دجاج", "شاورما", "بطاطس", "بيبسي"];
   ok("WIRE: ladder decision via decideVoiceLadder (binary guard replaced)", /decideVoiceLadder\(\{/.test(ct));
   ok("WIRE: three actions handled — retype + confirm + act fall-through",
     /voiceLadder\.action === "retype"/.test(ct) && /voiceLadder\.action === "confirm"/.test(ct));
-  ok("WIRE: confirm sends the deterministic confirm outcome", /result = voiceConfirmResult\(dialect, input\.userMessage, initialDraft, ctx\.profile\.currency\)/.test(ct));
+  ok("WIRE: confirm sends the deterministic confirm outcome", /result = voiceConfirmResult\(dialect, input\.userMessage, initialDraft, ctx\.profile\.currency(, candidates)?\)/.test(ct));
   ok("WIRE: still flag-gated + SAFETY-FIRST (no allergen/emergency signal)",
     /isFeatureExplicitlyEnabled\("voice_garble_guard", tenantFeatures\)/.test(ct) &&
     /!combinedAllergenHit\.fired &&\s*!companionEmergency\.fired/.test(ct));

@@ -64,12 +64,18 @@ function contentTokens(normalized: string): string[] {
 }
 
 /**
- * Part (b) — build the Whisper `prompt` bias string from the tenant's menu. Item
- * names first (the words most likely to be garbled), then the generic ordering
- * words. Deduped, comma-joined, and LENGTH-CAPPED (~200 chars) — the prompt is a
- * soft recognition bias, not a transcript. Pure; empty menu → the intent words alone.
+ * Part (b) — build the Whisper `prompt` bias string from the tenant's menu. Item names
+ * first (the words most likely to be garbled), then the generic ordering words. Deduped,
+ * comma-joined, and LENGTH-CAPPED (~200 chars) — the prompt is a soft recognition bias,
+ * not a transcript. Pure; empty menu → the intent words alone. WO-VOICE-ALIASES: optional
+ * `priorityTerms` (the expected answer-class words when the last AI turn asked for a
+ * quantity/size/sauce) are front-loaded so the bias survives the length cap.
  */
-export function buildSttPromptVocab(itemNames: Array<string | null | undefined>, maxLen = 200): string {
+export function buildSttPromptVocab(
+  itemNames: Array<string | null | undefined>,
+  maxLen = 200,
+  priorityTerms?: Array<string | null | undefined>
+): string {
   const seen = new Set<string>();
   const out: string[] = [];
   const push = (raw: string | null | undefined) => {
@@ -80,6 +86,8 @@ export function buildSttPromptVocab(itemNames: Array<string | null | undefined>,
     seen.add(key);
     out.push(s);
   };
+  // State-aware priority terms first (survive the cap), then item names, then ordering words.
+  for (const p of priorityTerms ?? []) push(p);
   for (const n of itemNames) push(n);
   // A few human-readable ordering words (raw, not normalized — the prompt biases the
   // model's own orthography).
@@ -188,11 +196,19 @@ export function decideVoiceLadder(args: {
   return { action: "confirm", reason: "medium_confidence" };
 }
 
-/** WO-VOICE-LADDER — the warm CONFIRM reply for a medium-confidence voice turn: echo
- *  what was heard and ask the customer to confirm, proceeding on their yes. Dialect-
- *  adapted for Khalid/KSA. NEVER asserts allergen safety (fixed template; the echoed
- *  text is gated banned-clean by decideVoiceLadder's downgrade). */
-export function confirmVoiceReply(dialect: string, heard: string): string {
+/** WO-VOICE-LADDER — the warm CONFIRM reply for a medium-confidence voice turn: confirm
+ *  the uncertain understanding and proceed on the customer's yes. Dialect-adapted for
+ *  Khalid/KSA. NEVER asserts allergen safety (fixed template; the echoed text is gated
+ *  banned-clean by decideVoiceLadder's downgrade). WO-VOICE-ALIASES: when a top menu
+ *  CANDIDATE is resolved, confirm THAT («قصدك «ستربس دجاج»، صح؟») rather than echoing the
+ *  raw transcript — a cleaner, more natural confirmation. */
+export function confirmVoiceReply(dialect: string, heard: string, candidate?: string | null): string {
+  const cand = String(candidate ?? "").trim();
+  if (cand) {
+    return dialect === "egyptian"
+      ? `قصدك «${cand}»، صح؟ لو تمام أكمّل، ولو لأ اكتبهالي 🙏`
+      : `قصدك «${cand}»، صح؟ لو تمام أكمّل، ولو لا اكتبها لي 🙏`;
+  }
   const h = String(heard ?? "").trim();
   return dialect === "egyptian"
     ? `سمعت منك: «${h}» — كده صح؟ لو تمام أكمّل، ولو لأ اكتبهالي 🙏`
