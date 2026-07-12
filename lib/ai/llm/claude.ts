@@ -11,6 +11,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { LlmAdapter, LlmContentBlock, LlmResult, LlmToolCall } from "./types";
 import { modelFor } from "./models";
+import { buildSystemBlocks } from "./system-blocks";
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic {
@@ -29,7 +30,10 @@ export const claudeAdapter: LlmAdapter = {
     const params: Record<string, unknown> = {
       model: cfg.model,
       max_tokens: req.maxTokens ?? cfg.maxTokens,
-      system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
+      // WO-COST-1: STATIC block carries the cache breakpoint; the per-turn DYNAMIC tail
+      // (req.systemTail) sits AFTER it, uncached — so a firing directive no longer forces
+      // a full ~21.7k-token cache write. No tail → the single cached block, as before.
+      system: buildSystemBlocks(req.system, req.systemTail),
       messages: req.messages,
     };
     if (req.tools?.length) params.tools = req.tools;

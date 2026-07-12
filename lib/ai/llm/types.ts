@@ -46,8 +46,14 @@ export interface LlmMessage {
 }
 
 export interface LlmRequest {
-  /** Cacheable system prompt (restaurant brain + dialect + guardrails). */
+  /** Cacheable STATIC system prompt (persona + rulebook + menu). Carries the single
+   *  cache_control breakpoint; must be byte-stable across turns of the same tenant +
+   *  menu-version so it is billed at cache-read rates (WO-COST-1). */
   system: string;
+  /** Per-turn DYNAMIC directives appended AFTER the cache breakpoint (uncached), so a
+   *  firing directive never busts the cached static block. The model receives
+   *  system + systemTail concatenated — identical instructions, re-layered. */
+  systemTail?: string;
   messages: LlmMessage[];
   tools?: LlmToolDef[];
   /** Override the use-case default. */

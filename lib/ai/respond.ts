@@ -11,6 +11,7 @@
 import { getAdapter } from "./llm";
 import type { LlmContentBlock, LlmMessage, LlmUsage } from "./llm/types";
 import { buildCustomerAgentSystemPrompt, type BrainContext } from "./prompt";
+import { composeSystemTail } from "./llm/system-blocks";
 import { DEFAULT_PAYMENT_CONFIG } from "@/lib/payments/config";
 import { modeAllowsOrders } from "./modes";
 import { dialectProfile } from "./dialect";
@@ -260,14 +261,20 @@ function checkpointResult(brain: BrainContext, ctx: ToolContext): RespondResult 
 
 export async function respond(input: RespondInput): Promise<RespondResult> {
   const adapter = await getAdapter();
-  const system =
-    buildCustomerAgentSystemPrompt(input.brain) +
-    (input.perceptionDirective ? `\n\n${input.perceptionDirective}` : "") +
-    (input.cadenceDirective ? `\n\n${input.cadenceDirective}` : "") +
-    (input.geoDirective ? `\n\n${input.geoDirective}` : "") +
-    (input.imageDirective ? `\n\n${input.imageDirective}` : "") +
-    (input.mediaDirective ? `\n\n${input.mediaDirective}` : "") +
-    (input.answerFirstDirective ? `\n\n${input.answerFirstDirective}` : "");
+  // WO-COST-1 — cache breakpoint: the STATIC block (persona + rulebook + menu) is
+  // byte-stable across turns and carries the cache_control breakpoint; the per-turn
+  // DYNAMIC directives move into an uncached tail AFTER the breakpoint. composeSystemTail
+  // reproduces the previous inline concatenation byte-for-byte, so the model still
+  // receives systemStatic + systemTail — identical instructions, re-layered for caching.
+  const systemStatic = buildCustomerAgentSystemPrompt(input.brain);
+  const systemTail = composeSystemTail([
+    input.perceptionDirective,
+    input.cadenceDirective,
+    input.geoDirective,
+    input.imageDirective,
+    input.mediaDirective,
+    input.answerFirstDirective,
+  ]);
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
   const knownPrices = knownMenuPrices(input.brain);
 
@@ -402,7 +409,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   let model: string = adapter.name;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const res = await adapter.generate({ system, messages, tools }, "customer_agent");
+    const res = await adapter.generate({ system: systemStatic, systemTail: systemTail || undefined, messages, tools }, "customer_agent");
     usage.inputTokens += res.usage.inputTokens;
     usage.outputTokens += res.usage.outputTokens;
     usage.cacheReadTokens += res.usage.cacheReadTokens;
