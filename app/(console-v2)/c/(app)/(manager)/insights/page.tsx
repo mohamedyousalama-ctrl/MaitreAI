@@ -115,6 +115,9 @@ export default function InsightsPage() {
           <KpiCard title={t("ins.revenue")} model={live(money(ins.current.revenue), pctDelta(ins.current.revenue, ins.prior.revenue), "gold")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
           <KpiCard title={t("ins.orders")} model={live(<Num>{ins.current.orders}</Num>, pctDelta(ins.current.orders, ins.prior.orders), "blue")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
           <KpiCard title={t("ins.aov")} model={live(money(ins.current.aov), pctDelta(ins.current.aov, ins.prior.aov), "green")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
+          {/* FR-006 — orders awaiting confirmation, shown SEPARATELY (a promise, not
+              revenue). Revenue above counts committed orders only; cancelled never. */}
+          <KpiCard title={t("ins.pendingConfirmation")} model={live(<Num>{ins.current.pendingConfirmationOrders}</Num>, null, "blue")} baseKey={baseKey} priorHasData={ins.prior.hasData} />
         </Grid>
 
         {/* ── THE FUNNEL — chat to order (needs outcomes → GATHERING shell) ─ */}
