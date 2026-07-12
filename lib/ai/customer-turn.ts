@@ -34,6 +34,7 @@ import {
 } from "@/lib/ai/allergen-companion-flow";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { decideVoiceLadder, garbledVoiceReply, confirmVoiceReply } from "@/lib/ai/voice-quality";
+import { resolveVoiceCandidates, expectedAnswerClass, type VoiceCandidate } from "@/lib/ai/voice-aliases";
 import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
 import { recordAllergyEvent, buildBannedPhraseBlockAudit } from "@/lib/db/allergy-audit";
 import { asksForMenuLink, asksToSeeMedia, buildAnswerFirstDirective } from "@/lib/ai/media-intent";
@@ -236,14 +237,17 @@ function voiceConfirmResult(
   dialect: string,
   heard: string,
   initialDraft: OrderDraft | null,
-  currency: string
+  currency: string,
+  candidates: VoiceCandidate[] = []
 ): RespondResult {
+  const top = candidates[0]?.item ?? null;
   return {
-    reply: confirmVoiceReply(dialect, heard),
+    reply: confirmVoiceReply(dialect, heard, top),
     draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
     escalate: false,
     escalationReason: null,
-    signals: [{ type: "missing_data", detail: { reason: "voice_confirm", source: "voice_ladder" } }],
+    // Provenance-marked «قراءة» — the deterministic candidate READ, never silent truth.
+    signals: [{ type: "missing_data", detail: { reason: "voice_confirm", source: "voice_ladder", provenance: "قراءة", candidates } }],
     presentation: null,
     photoRequests: [],
     usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
@@ -742,7 +746,15 @@ export async function runCustomerTurn(
   if (voiceLadder.action === "retype") {
     result = voiceGarbleResult(dialect, initialDraft, ctx.profile.currency, voiceLadder.reason);
   } else if (voiceLadder.action === "confirm") {
-    result = voiceConfirmResult(dialect, input.userMessage, initialDraft, ctx.profile.currency);
+    // WO-VOICE-ALIASES — deterministic candidate matching before the Brain. State-aware:
+    // the last AI question's expected class (quantity/size/sauce) biases the candidates.
+    // HARD LAW (in resolveVoiceCandidates): allergen-class tokens never become candidates.
+    const lastAssistant = [...input.history].reverse().find((m) => m.role === "assistant" && typeof m.content === "string")?.content as string | undefined;
+    const candidates = resolveVoiceCandidates(input.userMessage, {
+      menuItemNames: ctx.menuItems.map((i) => i.name),
+      expectedClass: expectedAnswerClass(lastAssistant),
+    });
+    result = voiceConfirmResult(dialect, input.userMessage, initialDraft, ctx.profile.currency, candidates);
   } else if (combinedAllergenHit.fired && !companionOn) {
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
     result = forcedAllergenSafetyResult(
