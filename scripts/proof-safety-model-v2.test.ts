@@ -99,18 +99,20 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.er
     !r.includes("سلامة الحساسية (رفيق): عبارة ممنوعة"));
   // Legacy safety-claim block is COMPANION-GATED: no escalation in companion mode.
   ok("LEG5: legacy block reads the companion flag", /const companion = input\.brain\.allergyCompanion === true;/.test(r));
-  ok("LEG5: legacy block does NOT escalate in companion mode", /const escalate = !companion && shouldEscalateOnSafetyClaim/.test(r));
+  ok("LEG5: legacy block does NOT escalate in companion mode", /const wantsEscalate = !companion && shouldEscalateOnSafetyClaim/.test(r));
   ok("LEG5: legacy block repairs with the neutral line in companion mode", /text = companionNeutralRepairLine\(input\.brain\.dialect\)/.test(r));
 }
 
 // ══ LEG 6 — FLAG-OFF byte-identical: the legacy escalation path is preserved ══
 {
   const r = read("lib/ai/respond.ts");
-  // With companion=false the gate collapses to the ORIGINAL shouldEscalateOnSafetyClaim,
-  // and the ORIGINAL escalating + non-escalating replies are still emitted verbatim.
-  ok("FLAG-OFF: escalate still routes escalation↔missing_data signal", /escalate \? "escalation" : "missing_data"/.test(r));
-  ok("FLAG-OFF: escalating variant still sets ctx.escalation + safeAllergenReply",
-    /ctx\.escalation = ctx\.escalation \?\? \{ reason: "سلامة الحساسية: المساعد حاول/.test(r) && /text = safeAllergenReply\(input\.brain\.dialect\)/.test(r));
+  // WO-SAFETY-MODEL-V3: the safety-claim block now routes three ways (SINGLE DOOR) — the
+  // §0 REPAIR path (companion neutral line) is unchanged; the transfer only happens on an
+  // explicit human request, else notify_without_hold.
+  ok("V3: safety-claim routes transfer↔notify_without_hold↔missing_data",
+    /type: transfer \? "escalation" : wantsEscalate \? "notify_without_hold" : "missing_data"/.test(r));
+  ok("V3: the EXPLICIT-request transfer variant sets ctx.escalation + safeAllergenReply",
+    /if \(transfer\) \{\s*ctx\.escalation = ctx\.escalation \?\? \{ reason \};/.test(r) && /text = safeAllergenReply\(input\.brain\.dialect\)/.test(r));
   ok("FLAG-OFF: non-companion non-escalating variant still uses safeAllergenNoEscalateReply",
     /text = safeAllergenNoEscalateReply\(input\.brain\.dialect\)/.test(r));
 }
@@ -139,11 +141,13 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.er
   // Human-request / genuine-avoidance escalation path (allergen gate) is untouched.
   ok("INV: the genuine-avoidance escalation path (allergen gate) is intact",
     /shouldEscalateOnSafetyClaim/.test(r) && /assertsAllergenSafety/.test(r));
-  // Manual «إيقاف للسلامة» remains: SYSTEM_HOLD is still reachable (emergency + operator),
-  // and the customer-turn flip still lands emergencies in SYSTEM_HOLD.
+  // WO-SAFETY-MODEL-V3: the AUTOMATIC SYSTEM_HOLD flip is gone — a transfer now lands in
+  // HUMAN_ACTIVE and only on an explicit human request; the manual «إيقاف للسلامة» lives in
+  // the console operator path (conversation-store), untouched.
   const ct = read("lib/ai/customer-turn.ts");
-  ok("INV: SYSTEM_HOLD flip still exists for emergency/operator (manual hold preserved)",
-    /nextOwnership = flipPatch\.is_safety_hold === true \? "SYSTEM_HOLD"/.test(ct));
+  ok("INV: V3 SINGLE DOOR — explicit transfer → HUMAN_ACTIVE; the automatic SYSTEM_HOLD flip is gone",
+    /setOwnershipState\(admin, conversationId, "HUMAN_ACTIVE"/.test(ct) &&
+    !/nextOwnership = flipPatch\.is_safety_hold === true \? "SYSTEM_HOLD"/.test(ct));
 }
 
 console.log(`\nWO-SAFETY-MODEL-V2 PROOF: ${pass} passed, ${fail} failed`);

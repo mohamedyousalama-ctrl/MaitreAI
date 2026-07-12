@@ -117,9 +117,13 @@ assertSrc(
   "forcedAllergenSafetyResult called with combinedAllergenHit.term",
   /forcedAllergenSafetyResult\s*\(\s*combinedAllergenHit\.term/
 );
+// WO-SAFETY-MODEL-V3 (SINGLE DOOR): forcedAllergenSafetyResult NO LONGER escalates — it
+// is a NOTIFY-WITHOUT-HOLD (escalate:false + a notify_without_hold signal carrying the
+// reason). Child safety is preserved: staff are alerted and the note is stamped; only the
+// automatic freeze is gone.
 assertSrc(
-  "forcedAllergenSafetyResult returns escalate: true (the literal)",
-  /escalate:\s*true/
+  "forcedAllergenSafetyResult is notify-without-hold (escalate:false + notify_without_hold)",
+  /function forcedAllergenSafetyResult[\s\S]*?escalate: false,[\s\S]*?type: "notify_without_hold"/
 );
 // respond() must NOT be called in the allergen-hit branch (it's in the else)
 // Verify the structure: allergenHit branch uses forcedAllergenSafetyResult,
