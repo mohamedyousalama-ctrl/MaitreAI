@@ -15,6 +15,8 @@ import { DEFAULT_PAYMENT_CONFIG } from "@/lib/payments/config";
 import { modeAllowsOrders } from "./modes";
 import { dialectProfile } from "./dialect";
 import { fabricatesMoney, knownMenuPrices, offersNonMenuProduct } from "./money-guard";
+// WO-LIVE6-PRICE-TRUTH — deterministic item→price REPAIR guard (flag price_truth_guard).
+import { repairPriceTruth } from "./price-truth";
 import { isExplicitOrderConfirmation } from "./order-confirm";
 import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-gate";
 import { isExplicitHumanRequest } from "./human-request";
@@ -442,6 +444,23 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // fabricated/computed order total or any non-menu amount (Type 2). Order totals
   // in the actual order flow come from the tools (which set usedMoneyTool).
   const usedMoneyTool = toolNames.some((name) => MONEY_TOOL_NAMES.has(name));
+  // WO-LIVE6-PRICE-TRUTH — item→price PAIR repair (flag price_truth_guard). Runs BEFORE
+  // fabricatesMoney so a mis-attributed-but-known figure (live: «عرض كاديا — ١٥٠» when its
+  // real price is ٣٢٠; ١٥٠ IS a real price for OTHER items, so fabricatesMoney waves it
+  // through) is CORRECTED in place — never blocked, never held. Only on model free prose
+  // (no money tool ran → engine/tool figures are truth and are never touched). Every repair
+  // AND every skipped-ambiguous/multi-price bind emits a signal {item, quoted, real} (FR-013).
+  // Flag OFF → never runs → byte-identical.
+  if (input.brain.priceTruthGuard && text.trim() && !usedMoneyTool) {
+    const pt = repairPriceTruth(text, currency, input.brain.menuItems);
+    for (const r of pt.repairs) {
+      ctx.signals.push({ type: "money_mismatch", detail: { reason: "price_repaired", item: r.item, quoted: r.quoted, real: r.real } });
+    }
+    for (const s of pt.skipped) {
+      ctx.signals.push({ type: "money_mismatch", detail: { reason: "price_repair_skipped", subreason: s.reason, item: s.item, quoted: s.quoted, real: s.real, validPrices: s.validPrices } });
+    }
+    text = pt.text;
+  }
   if (text.trim() && !usedMoneyTool && fabricatesMoney(text, currency, knownPrices)) {
     ctx.signals.push({ type: "money_mismatch", detail: { reason: "money_without_tool", reply: text } });
     text = safeMoneyReply(input.brain.dialect);
