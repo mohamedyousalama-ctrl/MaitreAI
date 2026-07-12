@@ -46,6 +46,11 @@ import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
 // gate). Separate lane from allergen-gate/safety-hold/escalation; never blocks a turn.
 import { findLeakage } from "@/lib/ai/personas/khalid-dialect-linter.mjs";
 import { detectCallbackRequest } from "@/lib/ai/callback-trigger";
+// WO-LIVE6-DUP-ORDER-AWARENESS — deterministic "refers to an order I already placed"
+// detector + Arabic-Indic order-number rendering for the recap. Consulted ONLY when the
+// dup_order_awareness flag is ON and a registered order exists this conversation.
+import { refersToRegisteredOrder } from "@/lib/ai/order-reference";
+import { toArabicDigits } from "@/lib/util/arabic-digits";
 import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
@@ -167,6 +172,48 @@ function forcedAllergenSafetyResult(
     toolNames: [],
     stopReason: "allergen_gate_notify",
     model: "deterministic_allergen_gate",
+    adapter: "mock",
+    resendReceipt: false,
+  };
+}
+
+/** WO-LIVE6-DUP-ORDER-AWARENESS — the already-registered order surfaced into the turn so a
+ *  reference to «طلبي القديم» resolves to it instead of re-finalizing a duplicate. */
+interface RegisteredOrderRef {
+  orderNumber: string;
+  /** One-line item summary, e.g. «١× عرض الكتيبة» (Arabic-Indic quantities). */
+  itemsSummary: string;
+  /** Friendly Arabic status line, e.g. «بانتظار تأكيد المطعم». */
+  statusLabel: string;
+}
+
+/** WO-LIVE6-DUP-ORDER-AWARENESS — deterministic recap outcome (flag: dup_order_awareness).
+ *  No LLM: the customer referred to an order they ALREADY placed this conversation, so
+ *  resolve to THAT order (never re-finalize a duplicate — live #1009→#1010). Non-escalating,
+ *  draft untouched (NOT finalized → the persist path never runs). The SAFETY-FIRST gate in
+ *  the dispatch chain guarantees no allergen/emergency/human-request signal was present. */
+function dupOrderRecapResult(
+  order: RegisteredOrderRef,
+  dialect: string,
+  initialDraft: OrderDraft | null,
+  currency: string
+): RespondResult {
+  const num = toArabicDigits(order.orderNumber);
+  const openDoor =
+    dialect === "egyptian" ? "ولو حابب تطلب حاجة جديدة قولّي 😊" : "ولو تحب تطلب شي جديد قول لي 😊";
+  const reply = `طلبك رقم #${num} مسجّل بالفعل ✅\n${order.itemsSummary}\n${order.statusLabel}\n${openDoor}`;
+  return {
+    reply,
+    draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
+    escalate: false,
+    escalationReason: null,
+    signals: [{ type: "missing_data", detail: { reason: "dup_order_reference", orderNumber: order.orderNumber } }],
+    presentation: null,
+    photoRequests: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
+    toolNames: [],
+    stopReason: "dup_order_reference",
+    model: "deterministic_dup_order",
     adapter: "mock",
     resendReceipt: false,
   };
@@ -632,6 +679,53 @@ export async function runCustomerTurn(
   const companionEmergency = companionOn ? detectAllergenEmergency(input.userMessage) : { fired: false, label: null };
   const enterCompanion = companionOn && (combinedAllergenHit.fired || companionEmergency.fired);
 
+  // WO-LIVE6-DUP-ORDER-AWARENESS (flag `dup_order_awareness`, default OFF) — surface the
+  // most-recent order the customer ALREADY registered this conversation so a reference to it
+  // («طلبي القديم/اللي فات») resolves to THAT order instead of re-finalizing a duplicate
+  // (live #1009→#1010: same basket, 23 min apart, past the 120s double-tap window). Read is
+  // gated + best-effort: OFF or no conversation → null → byte-identical. Cancelled/rejected
+  // orders are excluded (a customer may legitimately re-order after a cancel). The intercept
+  // itself sits AFTER every safety branch in the dispatch below (safety-first).
+  const dupOrderAwarenessOn = isFeatureExplicitlyEnabled("dup_order_awareness", tenantFeatures);
+  let registeredOrder: RegisteredOrderRef | null = null;
+  if (dupOrderAwarenessOn && conversationId) {
+    try {
+      const { data: ord } = await admin
+        .from("orders")
+        .select("order_number, items, order_status")
+        .eq("restaurant_id", restaurantId)
+        .eq("conversation_id", conversationId)
+        .not("order_status", "in", "(cancelled,canceled,rejected)")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const row2 = ord as { order_number?: string | null; items?: unknown; order_status?: string | null } | null;
+      if (row2?.order_number) {
+        const lines = Array.isArray(row2.items) ? (row2.items as { name?: string; quantity?: number }[]) : [];
+        const itemsSummary =
+          lines
+            .map((l) => `${toArabicDigits(Number(l.quantity ?? 1))}× ${String(l.name ?? "").trim()}`.trim())
+            .filter((s) => s && !s.endsWith("× "))
+            .join("، ") || "طلبك المسجّل";
+        const statusLabel =
+          row2.order_status === "pending_confirmation" ? "بانتظار تأكيد المطعم" : "مسجّل في النظام";
+        registeredOrder = { orderNumber: String(row2.order_number), itemsSummary, statusLabel };
+      }
+    } catch {
+      /* orders read failed → no registered-order awareness this turn (never breaks a turn) */
+    }
+  }
+  // The intercept fires ONLY on a normal turn — never when a safety/emergency/human-request
+  // signal is present (LAWS: a deterministic short-circuit must never swallow safety). The
+  // detector requires an explicit old-order reference AND a real registered referent.
+  const dupOrderIntercept =
+    dupOrderAwarenessOn &&
+    registeredOrder != null &&
+    !combinedAllergenHit.fired &&
+    !companionEmergency.fired &&
+    !isExplicitHumanRequest(input.userMessage) &&
+    refersToRegisteredOrder(input.userMessage);
+
   // WO-MEDIA-INBOUND — a provenance-marked per-turn directive when the inbound was an
   // image. Built from the customer's caption + the MODEL vision read; never empty, so
   // an image turn (even a failed read) is answered warmly, never with silence. Context
@@ -785,6 +879,12 @@ export async function runCustomerTurn(
       await maybeRecordCheckpointAck();
       result = await runRespond();
     }
+  } else if (dupOrderIntercept && registeredOrder) {
+    // WO-LIVE6-DUP-ORDER-AWARENESS — the customer referred to an order they ALREADY placed
+    // this conversation (live «خلينا على طلبي القديم» at 15:01:37). Resolve to THAT order —
+    // recap «طلبك #N مسجّل بالفعل ✅» + an open door for a genuinely new order — instead of
+    // re-building and re-finalizing a duplicate (#1010). No LLM, no finalize, money untouched.
+    result = dupOrderRecapResult(registeredOrder, dialect, initialDraft, ctx.profile.currency);
   } else {
     // Normal turn. In companion mode this MAY be a §6 checkpoint ACKNOWLEDGEMENT: a
     // pending checkpoint + an explicit confirmation → log the verbatim ack now so
