@@ -24,7 +24,7 @@ import { Send, Lock, CornerUpLeft, CheckCircle2, Radio, Users, ShieldAlert, Chec
 import { useConversationStore } from "@/lib/conversation-store";
 import { useHasHydrated, useRestaurantStore } from "@/lib/store";
 import { useOrderStore } from "@/lib/order-store";
-import { deriveConversationDisplay, derivePaymentDisplay, type ConversationOwnershipState, type ConversationDisplayState } from "@/lib/console-v2/display-state";
+import { deriveConversationDisplay, derivePaymentDisplay, conversationBucket, type ConversationOwnershipState, type ConversationDisplayState } from "@/lib/console-v2/display-state";
 import type { DisplayState } from "@/lib/console-v2/display-state";
 import {
   HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, HandledByChip, AuroraDrawer, MiniModal, Toasts, pushToast,
@@ -63,11 +63,13 @@ export default function ConversationsPage() {
     const stage: Conversation[] = [], hall: Conversation[] = [];
     const counts = { karim: 0, gate: 0, lock: 0, harvest: 0 };
     for (const c of conversations) {
-      const own = ownOf(c);
-      if (own === "CLOSED") { counts.harvest++; continue; }
-      if (isHold(c)) { counts.lock++; hall.push(c); continue; }
-      if (own === "AI_ACTIVE") { counts.karim++; stage.push(c); }
-      else { if (own === "HUMAN_IDLE") counts.gate++; hall.push(c); }
+      // FR-004 — the 🧑 gate counts EVERY human-owned state via the shared bucket
+      // (HUMAN_ACTIVE + HUMAN_IDLE), so a fresh escalation increments immediately.
+      const bucket = conversationBucket(ownOf(c), isHold(c));
+      counts[bucket]++;
+      if (bucket === "harvest") continue;    // closed — counted, off the live floor
+      if (bucket === "karim") stage.push(c); // 🤖 Karim's stage
+      else hall.push(c);                     // 🧑 gate + ⚠ lock → the human hall
     }
     // Safety holds first in the hall (never missed).
     hall.sort((a, b) => Number(isHold(b)) - Number(isHold(a)));

@@ -208,6 +208,31 @@ export function deriveConversationDisplay(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Conversations "right now" bucket — which floor tile a live conversation counts
+// toward, derived from the SAME ownership spine (read-only; no ownership writes).
+// FR-004: the 🧑 gate tile must count EVERY human-owned unattended state, not just
+// HUMAN_IDLE — a fresh escalation (HUMAN_ACTIVE) is in human hands the instant it
+// lands and must increment immediately. Both human states resolve to `gate` here;
+// the ownership-state writes (V3's spine) are untouched.
+// ---------------------------------------------------------------------------
+export type ConversationBucket =
+  | "karim"   // 🤖 AI is handling it
+  | "gate"    // 🧑 in human hands (HUMAN_ACTIVE or HUMAN_IDLE) — awaiting/attended by a person
+  | "lock"    // ⚠ safety hold — the one red surface
+  | "harvest"; // ✓ closed
+
+export function conversationBucket(
+  ownershipState: ConversationOwnershipState,
+  isSafetyHold: boolean
+): ConversationBucket {
+  if (ownershipState === "CLOSED") return "harvest";
+  if (isSafetyHold || ownershipState === "SYSTEM_HOLD") return "lock";
+  if (ownershipState === "AI_ACTIVE") return "karim";
+  // HUMAN_ACTIVE | HUMAN_IDLE — both are human-owned → the 🧑 gate counts them all.
+  return "gate";
+}
+
+// ---------------------------------------------------------------------------
 // Attribution (R6) — WHO authored a turn / handled a conversation. The message
 // senders `agent` and `human` both attribute to a human teammate; `customer` is
 // inbound (not an attribution) and returns null so callers render nothing.

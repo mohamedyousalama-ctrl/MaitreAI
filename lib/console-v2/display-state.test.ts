@@ -14,6 +14,7 @@ import {
   deriveConversationDisplay,
   deriveAttribution,
   displayState,
+  conversationBucket,
   TONE_TOKENS,
   type Tone,
 } from "./display-state.ts";
@@ -26,6 +27,23 @@ const ORDER_STATUSES: OrderStatusKey[] = [
 const POS_STATUSES: PosStatus[] = ["not_entered", "entered", "sent_to_kitchen"];
 const PAY_STATUSES: PaymentStatusKey[] = ["unpaid", "payment_link_sent", "paid", "failed", "refunded"];
 const CONV_STATES = ["AI_ACTIVE", "HUMAN_ACTIVE", "HUMAN_IDLE", "SYSTEM_HOLD", "CLOSED"] as const;
+
+// ---------------------------------------------------------------------------
+// FR-004 — the 🧑 gate tile counts EVERY human-owned state, not just HUMAN_IDLE.
+// ---------------------------------------------------------------------------
+test("conversationBucket — both human-owned states count to the gate (FR-004)", () => {
+  // The fix: a fresh escalation (HUMAN_ACTIVE) increments the gate immediately.
+  assert.equal(conversationBucket("HUMAN_ACTIVE", false), "gate");
+  assert.equal(conversationBucket("HUMAN_IDLE", false), "gate");
+});
+test("conversationBucket — AI / closed / safety route elsewhere", () => {
+  assert.equal(conversationBucket("AI_ACTIVE", false), "karim");
+  assert.equal(conversationBucket("CLOSED", false), "harvest");
+  assert.equal(conversationBucket("SYSTEM_HOLD", false), "lock");
+  // A safety hold overrides ownership → lock, even a human-owned one.
+  assert.equal(conversationBucket("HUMAN_ACTIVE", true), "lock");
+  assert.equal(conversationBucket("AI_ACTIVE", true), "lock");
+});
 
 // ---------------------------------------------------------------------------
 // Every DB state maps to a display state (no throw / no undefined).
