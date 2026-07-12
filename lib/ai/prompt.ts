@@ -138,6 +138,12 @@ export interface BrainContext {
    *  a picture. Off/absent → the legacy "can't view images, ask them to TYPE" instruction
    *  stays verbatim (prompt byte-identical, snapshot-gated). */
   mediaTurnTrigger?: boolean;
+  /** WO-LIVE6-PRICE-TRUTH (flag `price_truth_guard`, default OFF): when true, the outbound
+   *  money-truth guard in respond.ts additionally verifies each item→price PAIR the model
+   *  wrote in free prose against menu_items truth and REPAIRS a mis-attributed figure before
+   *  send. Read ONLY by respond.ts's guard — never by the prompt — so the prompt stays
+   *  byte-identical (snapshot-gated); off/absent → the guard never runs. */
+  priceTruthGuard?: boolean;
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------

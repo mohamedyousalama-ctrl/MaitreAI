@@ -571,6 +571,11 @@ export async function runCustomerTurn(
     // buildImageDirective, so the prompt tells the model to follow that read instead of
     // claiming it can't see a picture. Default OFF → legacy "can't view images" verbatim.
     mediaTurnTrigger: isFeatureExplicitlyEnabled("media_turn_trigger", tenantFeatures),
+    // WO-LIVE6-PRICE-TRUTH — when ON, respond.ts's money guard verifies each item→price pair
+    // the model wrote in free prose against menu_items truth and repairs a mis-attributed
+    // figure (live #كاديا — ١٥٠ when real is ٣٢٠). Default OFF → the guard never runs, prompt
+    // + behavior byte-identical.
+    priceTruthGuard: isFeatureExplicitlyEnabled("price_truth_guard", tenantFeatures),
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
