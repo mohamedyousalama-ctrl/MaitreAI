@@ -21,6 +21,7 @@
 // ============================================================================
 
 import { normalizeAr } from "./allergen-gate";
+import { scanBannedAllergyPhrases } from "./allergen-companion";
 
 /** QUALITY floor for the garble-reply guard — deliberately LOWER than the safety
  *  net's aggressive fail-closed floor (0.66) so borderline-but-usable audio is still
@@ -142,4 +143,58 @@ export function garbledVoiceReply(dialect: string): string {
   return dialect === "egyptian"
     ? "معلش، الصوت مش واضح 🙏 ممكن تكتبلي طلبك أو تبعت الرسالة تاني؟"
     : "معليش، الصوت مو واضح 🙏 تقدر تكتب لي طلبك أو تعيد إرسال الرسالة؟";
+}
+
+// ---------------------------------------------------------------------------
+// WO-VOICE-LADDER — replace the binary garble guard with a confidence→behavior
+// ladder. Same voice_garble_guard flag governs the whole ladder; the SAFETY-FIRST
+// ordering from WO-VOICE-QUALITY stays binding (the caller only consults this when no
+// allergen/emergency signal fired). Bands:
+//   • conf ≥ OVERLAP_CONF_CEILING (0.70)  → ACT (today's behavior — proceed to the Brain)
+//   • MEDIUM 0.55–0.70 (with overlap)     → CONFIRM (warm "did I get this right?", proceed on yes)
+//   • < 0.55, or zero-overlap-under-ceiling → RETYPE (the existing warm retype line)
+// ---------------------------------------------------------------------------
+export type VoiceLadderAction = "act" | "confirm" | "retype";
+export interface VoiceLadderDecision {
+  action: VoiceLadderAction;
+  reason: string | null;
+}
+
+/**
+ * Decide the ladder action for a voice turn. Pure. Builds on classifyVoiceTranscript:
+ * a garbled classification → RETYPE; otherwise a MEDIUM-confidence turn (0.55 ≤ conf <
+ * 0.70) → CONFIRM, and anything else (high confidence, or no-confidence-with-overlap) →
+ * ACT. A confirm whose transcript would ECHO a §0 banned safety phrase is DOWNGRADED to
+ * RETYPE — Karim must never voice a safety assurance, even quoting the customer.
+ */
+export function decideVoiceLadder(args: {
+  text: string;
+  confidence?: number | null;
+  menuVocab?: Array<string | null | undefined>;
+}): VoiceLadderDecision {
+  const c = classifyVoiceTranscript(args);
+  if (c.garbled) return { action: "retype", reason: c.reason };
+
+  const conf = args.confidence;
+  const medium =
+    typeof conf === "number" && Number.isFinite(conf) &&
+    conf >= VOICE_QUALITY_FLOOR && conf < OVERLAP_CONF_CEILING;
+  if (!medium) return { action: "act", reason: null };
+
+  // CONFIRM band — but never echo a §0 safety assurance back to the customer.
+  if (scanBannedAllergyPhrases(String(args.text ?? "")).length > 0) {
+    return { action: "retype", reason: "banned_echo" };
+  }
+  return { action: "confirm", reason: "medium_confidence" };
+}
+
+/** WO-VOICE-LADDER — the warm CONFIRM reply for a medium-confidence voice turn: echo
+ *  what was heard and ask the customer to confirm, proceeding on their yes. Dialect-
+ *  adapted for Khalid/KSA. NEVER asserts allergen safety (fixed template; the echoed
+ *  text is gated banned-clean by decideVoiceLadder's downgrade). */
+export function confirmVoiceReply(dialect: string, heard: string): string {
+  const h = String(heard ?? "").trim();
+  return dialect === "egyptian"
+    ? `سمعت منك: «${h}» — كده صح؟ لو تمام أكمّل، ولو لأ اكتبهالي 🙏`
+    : `سمعت منك: «${h}» — كذا صحيح؟ لو تمام أكمّل، ولو لا اكتبها لي 🙏`;
 }

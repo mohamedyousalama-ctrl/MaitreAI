@@ -102,10 +102,11 @@ const MENU = ["برجر دجاج", "شاورما", "بطاطس", "بيبسي"];
   ok("WIRE(d): garble guard is FLAGGED voice_garble_guard", /isFeatureExplicitlyEnabled\("voice_garble_guard", tenantFeatures\)/.test(ct));
   ok("WIRE(d): SAFETY-FIRST — only when NO allergen/emergency signal fired",
     /!combinedAllergenHit\.fired &&\s*!companionEmergency\.fired/.test(ct));
-  ok("WIRE(d): the garble branch precedes the allergen/companion cascade (first)",
-    ct.indexOf("if (voiceGarble.garbled)") < ct.indexOf("} else if (combinedAllergenHit.fired && !companionOn)") &&
-    ct.indexOf("if (voiceGarble.garbled)") > 0);
-  ok("WIRE(d): the guard sends the deterministic garble outcome (no LLM)", /result = voiceGarbleResult\(dialect, initialDraft, ctx\.profile\.currency, voiceGarble\.reason\)/.test(ct));
+  // WO-VOICE-LADDER replaced the binary guard: the voice ladder branch precedes the cascade.
+  ok("WIRE(d): the voice branch precedes the allergen/companion cascade (first)",
+    ct.indexOf('if (voiceLadder.action === "retype")') < ct.indexOf("} else if (combinedAllergenHit.fired && !companionOn)") &&
+    ct.indexOf('if (voiceLadder.action === "retype")') > 0);
+  ok("WIRE(d): the retype path sends the deterministic garble outcome (no LLM)", /result = voiceGarbleResult\(dialect, initialDraft, ctx\.profile\.currency, voiceLadder\.reason\)/.test(ct));
 }
 
 console.log(`\nWO-VOICE-QUALITY PROOF: ${pass} passed, ${fail} failed`);

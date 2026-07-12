@@ -33,7 +33,7 @@ import {
   type CompanionDecision,
 } from "@/lib/ai/allergen-companion-flow";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
-import { classifyVoiceTranscript, garbledVoiceReply } from "@/lib/ai/voice-quality";
+import { decideVoiceLadder, garbledVoiceReply, confirmVoiceReply } from "@/lib/ai/voice-quality";
 import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
 import { recordAllergyEvent, buildBannedPhraseBlockAudit } from "@/lib/db/allergy-audit";
 import { asksForMenuLink, asksToSeeMedia, buildAnswerFirstDirective } from "@/lib/ai/media-intent";
@@ -222,6 +222,34 @@ function voiceGarbleResult(
     toolNames: [],
     stopReason: "voice_garble_guard",
     model: "deterministic_voice_garble_guard",
+    adapter: "mock",
+    resendReceipt: false,
+  };
+}
+
+/** WO-VOICE-LADDER — deterministic MEDIUM-confidence CONFIRM outcome (flag:
+ *  voice_garble_guard). No LLM: Karim warmly confirms the uncertain understanding
+ *  (echoes what was heard, asks "is this right?") and keeps the draft; the customer's
+ *  yes proceeds normally next turn. NON-escalating; never asserts allergen safety
+ *  (the ladder downgrades a §0-echo to retype, and safety signals outrank the ladder). */
+function voiceConfirmResult(
+  dialect: string,
+  heard: string,
+  initialDraft: OrderDraft | null,
+  currency: string
+): RespondResult {
+  return {
+    reply: confirmVoiceReply(dialect, heard),
+    draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
+    escalate: false,
+    escalationReason: null,
+    signals: [{ type: "missing_data", detail: { reason: "voice_confirm", source: "voice_ladder" } }],
+    presentation: null,
+    photoRequests: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
+    toolNames: [],
+    stopReason: "voice_ladder_confirm",
+    model: "deterministic_voice_ladder",
     adapter: "mock",
     resendReceipt: false,
   };
@@ -694,25 +722,27 @@ export async function runCustomerTurn(
     });
   };
 
-  // WO-VOICE-QUALITY (d) — GARBLED-VOICE guard (flag voice_garble_guard, default OFF).
+  // WO-VOICE-LADDER — confidence→behavior ladder (flag voice_garble_guard, default OFF).
   // SAFETY-FIRST (binding): evaluated ONLY when NO allergen/phonetic/emergency signal
-  // fired — a garbled allergy disclosure escalates via the branches below and is never
-  // dismissed as "unclear". A low-confidence OR zero-vocabulary-overlap voice transcript
-  // is unintelligible → send Karim's honest retype line instead of engaging the gibberish.
-  const voiceGarble =
+  // fired — a garbled allergy disclosure escalates via the branches below, never handled
+  // here. Bands: conf ≥ 0.70 ACT (fall through to the Brain) · MEDIUM 0.55–0.70 CONFIRM
+  // (warm "did I get this right?") · < 0.55 or zero-overlap-under-ceiling RETYPE.
+  const voiceLadder =
     isFeatureExplicitlyEnabled("voice_garble_guard", tenantFeatures) &&
     input.isVoiceTranscript === true &&
     !combinedAllergenHit.fired &&
     !companionEmergency.fired
-      ? classifyVoiceTranscript({
+      ? decideVoiceLadder({
           text: input.userMessage,
           confidence: typeof input.sttConfidence === "number" ? input.sttConfidence : null,
           menuVocab: ctx.menuItems.map((i) => i.name),
         })
-      : { garbled: false, reason: null };
+      : { action: "act" as const, reason: null };
 
-  if (voiceGarble.garbled) {
-    result = voiceGarbleResult(dialect, initialDraft, ctx.profile.currency, voiceGarble.reason);
+  if (voiceLadder.action === "retype") {
+    result = voiceGarbleResult(dialect, initialDraft, ctx.profile.currency, voiceLadder.reason);
+  } else if (voiceLadder.action === "confirm") {
+    result = voiceConfirmResult(dialect, input.userMessage, initialDraft, ctx.profile.currency);
   } else if (combinedAllergenHit.fired && !companionOn) {
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
     result = forcedAllergenSafetyResult(
