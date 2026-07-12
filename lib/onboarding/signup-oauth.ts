@@ -13,7 +13,10 @@
 // the messaging secret. Pure (no server-only, no next) so it is unit-testable.
 // ============================================================================
 
-export const SIGNUP_GRAPH_API_VERSION = "v19.0";
+// v25.0 — Meta's current stable (Feb 2026). v19.0 expired 2026-05-21, so the
+// signup token exchange must target a supported version. Bumped signup-only; the
+// live messaging Graph version (lib/messaging/config.ts) is deliberately untouched.
+export const SIGNUP_GRAPH_API_VERSION = "v25.0";
 export const SIGNUP_GRAPH_BASE = `https://graph.facebook.com/${SIGNUP_GRAPH_API_VERSION}`;
 
 export interface SignupAppCreds {
