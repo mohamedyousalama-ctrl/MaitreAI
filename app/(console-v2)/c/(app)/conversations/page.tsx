@@ -404,6 +404,31 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
 // classifyMessageMedia falls back to plain text on any unexpected meta, so a bubble
 // can never crash the transcript. فصحى, RTL, emerald voice / gold provenance.
 // ---------------------------------------------------------------------------
+// Photo thumbnail — renders the real image when a public URL is present (outbound
+// dish photos, WO-PHOTO-PERSIST). Inbound customer images carry only a WhatsApp
+// media-id (no URL) → the 📷 placeholder. A broken/blocked URL falls back to the
+// same placeholder, so a dead image link never leaves an empty bubble.
+function PhotoThumb({ url, label }: { url?: string; label: string }) {
+  const [broken, setBroken] = useState(false);
+  if (url && !broken) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- external, arbitrary tenant asset URL; next/image adds no value on a thumbnail and would require per-tenant domain config
+      <img
+        src={url}
+        alt={label}
+        onError={() => setBroken(true)}
+        style={{ display: "block", maxWidth: "100%", maxHeight: 220, borderRadius: 11, border: "1px solid var(--stroke)", objectFit: "cover" }}
+      />
+    );
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 11, background: "rgba(255,255,255,.05)", border: "1px dashed var(--stroke2)" }}>
+      <span style={{ fontSize: 20 }} aria-hidden>📷</span>
+      <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--dim)" }}>{label}</span>
+    </div>
+  );
+}
+
 function MessageBubble({ m }: { m: ChatMessage }) {
   const t = useT();
   const inbound = m.sender === "customer";
@@ -433,13 +458,11 @@ function MessageBubble({ m }: { m: ChatMessage }) {
           </>
         ) : media.kind === "photo" ? (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 11, background: "rgba(255,255,255,.05)", border: "1px dashed var(--stroke2)", marginBottom: (media.caption || media.description) ? 7 : 0 }}>
-              <span style={{ fontSize: 20 }} aria-hidden>📷</span>
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--dim)" }}>{t("conv.media.photo")}</span>
-            </div>
-            {media.caption && <div style={{ marginBottom: media.description ? 5 : 0 }}><Bdi>{media.caption}</Bdi></div>}
+            <PhotoThumb url={media.imageUrl} label={inbound ? t("conv.media.photo") : t("conv.media.photoOutbound")} />
+            {!inbound && media.name && !media.caption && <div style={{ fontWeight: 800, marginTop: 7 }}><Bdi>{media.name}</Bdi></div>}
+            {media.caption && <div style={{ marginTop: 7, marginBottom: media.description ? 5 : 0 }}><Bdi>{media.caption}</Bdi></div>}
             {media.description && (
-              <div style={{ fontSize: 11, color: "var(--dim)", display: "flex", gap: 5, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 11, color: "var(--dim)", display: "flex", gap: 5, lineHeight: 1.6, marginTop: 5 }}>
                 <span style={{ color: "#e0b53a", fontWeight: 800, whiteSpace: "nowrap" }} aria-hidden>👁</span>
                 <span><span style={{ color: "#e0b53a", fontWeight: 800 }}>{media.descriptionDerived ? t("conv.media.visionRead") : ""}{media.descriptionDerived ? ": " : ""}</span><Bdi>{media.description}</Bdi></span>
               </div>

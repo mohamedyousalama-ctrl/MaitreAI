@@ -18,6 +18,7 @@ import { decideVoiceSend, voiceHardZeroReason, voiceNotesPerDay } from "./voice-
 import { shouldOfferVoiceReply } from "@/lib/ai/voice-reply-trigger";
 import { synthesizeVoiceReply } from "@/lib/ai/tts";
 import { buildPhotoThreadCaptions } from "./photo-thread";
+import { buildDishPhotoMessage } from "./dish-photo-message";
 import { imageHistoryContent } from "./image-turn";
 import { decideMediaSend, CONVERSATION_MEDIA_BUDGET, MAX_IMAGES_PER_MESSAGE, DEFAULT_MAX_IMAGES_PER_MESSAGE, type MediaZeroReason } from "./media-guard";
 import { isMediaWindowReset, MEDIA_WINDOW_MS } from "./media-window";
@@ -603,6 +604,12 @@ async function sendRequestedPhotos(
   const photoThreadOn = isFeatureExplicitlyEnabled("photo_thread", features);
   const captions = photoThreadOn ? buildPhotoThreadCaptions(shown) : shown.map((p) => p.caption);
 
+  // WO-PHOTO-PERSIST — record each successfully-sent photo as a real message row so
+  // the console transcript is complete (a dish photo was previously send-only, leaving
+  // nothing to render). Behind persist_outbound_media, DEFAULT OFF → flag-off never
+  // inserts, so the send path is byte-identical; the Wesaya flip happens post-merge.
+  const persistOutboundMedia = isFeatureExplicitlyEnabled("persist_outbound_media", features);
+
   let sent = 0;
   for (let i = 0; i < shown.length; i++) {
     const photo = shown[i];
@@ -622,6 +629,20 @@ async function sendRequestedPhotos(
       );
     } else if (send.status === "sent") {
       sent++;
+      // Best-effort: the photo is already delivered; a persist failure must never
+      // throw out of the send loop or undo the send.
+      if (persistOutboundMedia) {
+        try {
+          await admin.from("messages").insert(buildDishPhotoMessage({
+            restaurantId,
+            conversationId,
+            imageUrl: photo.imageUrl,
+            name: photo.name,
+            caption: captions[i],
+            externalMessageId: send.externalMessageId ?? null,
+          }));
+        } catch { /* transcript row is bookkeeping — never fail the turn on it */ }
+      }
     }
   }
 
