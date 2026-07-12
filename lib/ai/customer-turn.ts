@@ -33,7 +33,7 @@ import {
   type CompanionDecision,
 } from "@/lib/ai/allergen-companion-flow";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
-import { decideVoiceLadder, garbledVoiceReply, confirmVoiceReply } from "@/lib/ai/voice-quality";
+import { decideVoiceLadder, garbledVoiceReply, confirmVoiceReply, isVoiceAssent, wasVoiceLadderConfirm } from "@/lib/ai/voice-quality";
 import { resolveVoiceCandidates, expectedAnswerClass, type VoiceCandidate } from "@/lib/ai/voice-aliases";
 import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
 import { recordAllergyEvent, buildBannedPhraseBlockAudit } from "@/lib/db/allergy-audit";
@@ -831,17 +831,25 @@ export async function runCustomerTurn(
   // fired — a garbled allergy disclosure escalates via the branches below, never handled
   // here. Bands: conf ≥ 0.70 ACT (fall through to the Brain) · MEDIUM 0.55–0.70 CONFIRM
   // (warm "did I get this right?") · < 0.55 or zero-overlap-under-ceiling RETYPE.
-  const voiceLadder =
+  const lastAssistant = [...input.history].reverse().find((m) => m.role === "assistant" && typeof m.content === "string")?.content as string | undefined;
+  const voiceGuardOn =
     isFeatureExplicitlyEnabled("voice_garble_guard", tenantFeatures) &&
     input.isVoiceTranscript === true &&
     !combinedAllergenHit.fired &&
-    !companionEmergency.fired
+    !companionEmergency.fired;
+  // WO-VOICE-PRECISION (finding 4) — assent-exit: a pure assent («أيوه/تمام/صح») the turn
+  // right after a ladder CONFIRM exits the ladder and lets the Brain act on the confirmed
+  // content, never re-confirming (kills the live confirm-loop, msg b68666f5). Guarded by the
+  // same safety-first condition, so an assent can never bypass an allergen/emergency signal.
+  const assentExit = voiceGuardOn && isVoiceAssent(input.userMessage) && wasVoiceLadderConfirm(lastAssistant);
+  const voiceLadder =
+    voiceGuardOn && !assentExit
       ? decideVoiceLadder({
           text: input.userMessage,
           confidence: typeof input.sttConfidence === "number" ? input.sttConfidence : null,
           menuVocab: ctx.menuItems.map((i) => i.name),
         })
-      : { action: "act" as const, reason: null };
+      : { action: "act" as const, reason: assentExit ? "assent_exit" : null };
 
   if (voiceLadder.action === "retype") {
     result = voiceGarbleResult(dialect, initialDraft, ctx.profile.currency, voiceLadder.reason);
@@ -849,7 +857,6 @@ export async function runCustomerTurn(
     // WO-VOICE-ALIASES — deterministic candidate matching before the Brain. State-aware:
     // the last AI question's expected class (quantity/size/sauce) biases the candidates.
     // HARD LAW (in resolveVoiceCandidates): allergen-class tokens never become candidates.
-    const lastAssistant = [...input.history].reverse().find((m) => m.role === "assistant" && typeof m.content === "string")?.content as string | undefined;
     const candidates = resolveVoiceCandidates(input.userMessage, {
       menuItemNames: ctx.menuItems.map((i) => i.name),
       expectedClass: expectedAnswerClass(lastAssistant),
