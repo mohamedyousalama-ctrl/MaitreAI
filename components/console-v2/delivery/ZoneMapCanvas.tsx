@@ -23,9 +23,6 @@ import { haversineKm } from "@/lib/delivery/geo";
 const CARTO_DARK = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 const CARTO_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-// Default center: الرياض (KSA) — a sane starting camera when a zone has no center yet.
-export const DEFAULT_CENTER = { lat: 24.7136, lng: 46.6753 };
-
 const centerIcon = L.divIcon({
   className: "",
   html: `<svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg">

@@ -27,3 +27,31 @@ const SAFETY_FLAG_SET = new Set<string>(SAFETY_FLAGS);
 export function isSafetyFlag(flag: string): boolean {
   return SAFETY_FLAG_SET.has(flag);
 }
+
+/**
+ * Feature flags a MANAGER may flip from the console — an explicit ALLOWLIST, not a
+ * denylist. Removing the raw flag panel from the UI is not enough: POST
+ * /api/settings/flags is still reachable by curl from any authed manager, and an
+ * arbitrary key like `console_v2` would brick a tenant back to the old console (or
+ * a delivery/infra flag would flip surfaces no manager should touch). So the write
+ * route accepts ONLY these operator-facing capability flags; every other key is
+ * rejected 403, exactly as a safety flag is. Enumerated explicitly so widening a
+ * manager's write surface is a conscious, reviewed edit here.
+ *
+ *   psp_payments — the tenant's own online-payment credentials card
+ *   qz_print     — silent (QZ) receipt printing
+ *
+ * Safety flags are intentionally absent (they are never writable). This list and
+ * SAFETY_FLAGS together are the single source of truth for flag write-policy.
+ */
+export const MANAGER_WRITABLE_FLAGS: readonly string[] = [
+  "psp_payments",
+  "qz_print",
+] as const;
+
+const MANAGER_WRITABLE_FLAG_SET = new Set<string>(MANAGER_WRITABLE_FLAGS);
+
+/** True when `flag` is an operator-facing capability a manager may flip. */
+export function isManagerWritableFlag(flag: string): boolean {
+  return MANAGER_WRITABLE_FLAG_SET.has(flag);
+}

@@ -24,7 +24,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  MessageSquare, Flag, Building2, Clock3, Power, Rocket, Pencil,
+  MessageSquare, Building2, Clock3, Power, Rocket, Pencil,
   Check, AlertTriangle, Clock, Lock, Printer, CreditCard, MapPin,
 } from "lucide-react";
 import { HeaderRow, PageGrid, MiniModal, TruthChip, type TruthState, type Tier } from "@/components/console-v2/kit";
@@ -64,10 +64,6 @@ const DAY_ORDER = ["sunday", "monday", "tuesday", "wednesday", "thursday", "frid
 const DAY_LABEL: Record<string, DictKey> = {
   sunday: "set.day.sunday", monday: "set.day.monday", tuesday: "set.day.tuesday",
   wednesday: "set.day.wednesday", thursday: "set.day.thursday", friday: "set.day.friday", saturday: "set.day.saturday",
-};
-const SAFETY_DESC: Record<string, DictKey> = {
-  deterministic_allergen_safety: "set.flags.desc.deterministic_allergen_safety",
-  allergen_symptom_detection: "set.flags.desc.allergen_symptom_detection",
 };
 
 interface HealthResp { probes?: Probe[]; rollup?: ProbeStatus }
@@ -120,9 +116,8 @@ export default function SettingsPage() {
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16, alignItems: "start" }}>
       <div style={{ gridColumn: "1 / -1" }}><TruthBoard health={health} onReload={load} /></div>
       <Hours hours={hours} />
-      <FeatureFlags flags={flags} onChanged={load} />
-      <PspCredentials pspFlagOn={flags?.flags?.psp_payments === true} />
-      <QzPrinter qzFlagOn={flags?.flags?.qz_print === true} />
+      <PspCredentials pspFlagOn={flags?.flags ? flags.flags.psp_payments === true : null} onFlagChanged={load} />
+      <QzPrinter qzFlagOn={flags?.flags ? flags.flags.qz_print === true : null} onFlagChanged={load} />
       <div style={{ gridColumn: "1 / -1" }}><DeliveryZones /></div>
       <div style={{ gridColumn: "1 / -1" }}><GoLiveGate health={health} /></div>
     </div>
@@ -240,81 +235,36 @@ function RoundTrip({ onDone, disabled }: { onDone: () => Promise<void>; disabled
 }
 
 // ---------------------------------------------------------------------------
-// R4 — feature flags. Safety locked (server-mirrored); per-tenant flippable, audited.
+// Curated capability switch — the ONLY console flag control. The raw feature-flag
+// board (English keys, delete affordances, every non-safety flag) was removed: it
+// leaked infra flags a manager could brick the tenant with (e.g. console_v2) and
+// showed safety keys that must never be a console surface. This is its replacement
+// — a single labelled ON/OFF for ONE named operator capability, folded into that
+// capability's own card. It flips ONLY psp_payments / qz_print; the server route's
+// allowlist (lib/settings/safety-flags) rejects anything else with 403, so this
+// component can never be pointed at an infra or safety flag. Audited server-side.
 // ---------------------------------------------------------------------------
-function FeatureFlags({ flags, onChanged }: { flags: FlagsResp | null; onChanged: () => Promise<void> }) {
-  const t = useT();
-  const safety = flags?.safety ?? [];
-  const all = flags?.flags ?? {};
-  // Tenant (flippable) flags = everything that isn't a safety flag.
-  const tenantKeys = Object.keys(all).filter((k) => !safety.includes(k)).sort();
-
-  // Couldn't load (no tenant / 503) — say so honestly, don't render an empty board.
-  if (!flags) {
-    return (
-      <section style={card}>
-        <SectionHead icon={<Flag size={16} />} title={t("set.flags.title")} sub={t("set.flags.sub")} />
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <TruthChip state="gather" />
-          <span style={{ fontSize: 12.5, color: "var(--faint)" }}>{t("set.loadError")}</span>
-          <button onClick={() => void onChanged()} style={retryBtn}>↻ {t("set.retry")}</button>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section style={card}>
-      <SectionHead icon={<Flag size={16} />} title={t("set.flags.title")} sub={t("set.flags.sub")} />
-
-      {/* SAFETY — locked ON, not flippable (mirror of the server 403 guard). */}
-      <div style={subHead}>{t("set.flags.safetyHeader")}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-        {safety.map((f) => (
-          <div key={f} style={flagRow}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "var(--kv-text)", fontFamily: "var(--kv-mono, monospace)" }}>{f}</div>
-              {SAFETY_DESC[f] && <div style={{ fontSize: 11, color: "var(--kv-faint)", marginTop: 2 }}>{t(SAFETY_DESC[f])}</div>}
-            </div>
-            <span style={{ fontSize: 10, fontWeight: 800, color: "#b9822a", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <Lock size={11} strokeWidth={2.6} /> {t("set.flags.alwaysOn")}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* PER-TENANT — flippable, audited. */}
-      <div style={subHead}>{t("set.flags.tenantHeader")}</div>
-      {tenantKeys.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--kv-faint)", padding: "6px 2px" }}>{t("set.flags.empty")}</div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {tenantKeys.map((f) => (
-            <FlagToggle key={f} flag={f} on={all[f] === true} onChanged={onChanged} />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function FlagToggle({ flag, on, onChanged }: { flag: string; on: boolean; onChanged: () => Promise<void> }) {
+// `on` is TRI-STATE: null = the flags load hasn't resolved (or failed). We must NOT
+// coerce an unknown flag to OFF — an actually-enabled capability would render an OFF
+// switch, and a click would POST enabled:true instead of disabling it. So until the
+// real state is known the switch is disabled (never actionable on a guess).
+function CapabilitySwitch({ flag, on, label, onChanged }: { flag: string; on: boolean | null; label: string; onChanged: () => Promise<void> }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const isOn = on === true;
+  const unknown = on === null;
 
   async function flip() {
-    if (busy) return;
-    setBusy(true); setErr(false); setSaved(false);
+    if (busy || unknown) return;
+    setBusy(true); setErr(false);
     try {
       const r = await fetch("/api/settings/flags", {
         method: "POST", credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ flag, enabled: !on }),
+        body: JSON.stringify({ flag, enabled: !isOn }),
       });
       if (!r.ok) { setErr(true); return; }
-      setSaved(true);
       await onChanged(); // re-read the real stored state (never trust the optimistic flip)
     } catch {
       setErr(true);
@@ -323,18 +273,15 @@ function FlagToggle({ flag, on, onChanged }: { flag: string; on: boolean; onChan
     }
   }
 
+  const disabled = busy || unknown;
   return (
-    <div style={flagRow}>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: "var(--kv-text)", fontFamily: "var(--kv-mono, monospace)" }}>{flag}</div>
-        {err && <div style={{ fontSize: 11, fontWeight: 700, color: "var(--kv-amber)", marginTop: 2 }}>{t("set.flags.error")}</div>}
-        {saved && !err && <div style={{ fontSize: 11, fontWeight: 700, color: "var(--kv-deep)", marginTop: 2 }}>{t("set.flags.saved")}</div>}
-      </div>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      {err && <span style={{ fontSize: 11, fontWeight: 700, color: "var(--amber)" }}>{t("set.flags.error")}</span>}
       <button
-        type="button" role="switch" aria-checked={on} aria-label={flag} disabled={busy} onClick={flip}
-        style={{ width: 38, height: 22, borderRadius: 99, border: 0, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1, padding: 0, position: "relative", background: on ? "rgba(14,159,110,.5)" : "rgba(255,255,255,.14)", flex: "0 0 auto" }}
+        type="button" role="switch" aria-checked={isOn} aria-label={label} disabled={disabled} onClick={flip}
+        style={{ width: 38, height: 22, borderRadius: 99, border: 0, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.5 : 1, padding: 0, position: "relative", background: isOn ? "rgba(14,159,110,.5)" : "rgba(255,255,255,.14)", flex: "0 0 auto" }}
       >
-        <span style={{ position: "absolute", top: 3, insetInlineStart: on ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: on ? "var(--teal)" : "#8b97a8", boxShadow: "0 1px 3px rgba(0,0,0,.25)", transition: "inset-inline-start .15s" }} />
+        <span style={{ position: "absolute", top: 3, insetInlineStart: isOn ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: isOn ? "var(--teal)" : "#8b97a8", boxShadow: "0 1px 3px rgba(0,0,0,.25)", transition: "inset-inline-start .15s" }} />
       </button>
     </div>
   );
@@ -624,7 +571,7 @@ const QZ_CONN_LABEL: Record<QzStatus, DictKey> = {
   error: "set.printer.conn.failed",
 };
 
-function QzPrinter({ qzFlagOn }: { qzFlagOn: boolean }) {
+function QzPrinter({ qzFlagOn, onFlagChanged }: { qzFlagOn: boolean | null; onFlagChanged: () => Promise<void> }) {
   const t = useT();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -637,8 +584,8 @@ function QzPrinter({ qzFlagOn }: { qzFlagOn: boolean }) {
   // `next` from current state (not a stale closure) and the POST body is synchronous.
   const configRef = useRef<PrinterConfig>(config);
 
-  // Re-fetch whenever the qz_print flag changes (a manager can flip it in the
-  // FeatureFlags card on THIS page) — the server route is the authority on
+  // Re-fetch whenever the qz_print flag changes (the manager flips it via this
+  // card's own CapabilitySwitch) — the server route is the authority on
   // enabled/config, so an off→on flip re-hydrates the card without a reload.
   useEffect(() => {
     let alive = true;
@@ -687,6 +634,7 @@ function QzPrinter({ qzFlagOn }: { qzFlagOn: boolean }) {
     <section style={card}>
       <SectionHead icon={<Printer size={16} />} title={t("set.printer.title")} sub={t("set.printer.sub")}>
         {enabled ? <TruthChip state={QZ_CONN_STATE[conn]} label={t(QZ_CONN_LABEL[conn])} /> : null}
+        <CapabilitySwitch flag="qz_print" on={qzFlagOn} label={t("set.printer.title")} onChanged={onFlagChanged} />
       </SectionHead>
       {!enabled ? (
         <p style={{ fontSize: 12.5, color: loadFailed ? "var(--kv-amber)" : "var(--kv-faint)" }}>
@@ -739,7 +687,7 @@ interface PspResp {
   hasSecretKey: boolean; hasWebhookSecret: boolean; configured: boolean; error?: string;
 }
 
-function PspCredentials({ pspFlagOn }: { pspFlagOn: boolean }) {
+function PspCredentials({ pspFlagOn, onFlagChanged }: { pspFlagOn: boolean | null; onFlagChanged: () => Promise<void> }) {
   const t = useT();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -815,6 +763,7 @@ function PspCredentials({ pspFlagOn }: { pspFlagOn: boolean }) {
     <section style={card}>
       <SectionHead icon={<CreditCard size={16} />} title={t("set.psp.title")} sub={t("set.psp.sub")}>
         {enabled ? <TruthChip state={configured ? "live" : "gather"} label={t(configured ? "set.psp.configured" : "set.psp.notconfigured")} /> : null}
+        <CapabilitySwitch flag="psp_payments" on={pspFlagOn} label={t("set.psp.title")} onChanged={onFlagChanged} />
       </SectionHead>
       {!enabled ? (
         <p style={{ fontSize: 12.5, color: loadFailed ? "var(--kv-amber)" : "var(--kv-faint)" }}>
@@ -881,13 +830,6 @@ const pill: React.CSSProperties = {
 const probeRow: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: 10, background: "var(--inset2)",
   border: "1px solid var(--stroke)", borderRadius: 12, padding: "9px 12px",
-};
-const flagRow: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 10, background: "var(--inset2)",
-  border: "1px solid var(--stroke)", borderRadius: 12, padding: "9px 12px",
-};
-const subHead: React.CSSProperties = {
-  fontSize: 10, fontWeight: 900, letterSpacing: ".08em", color: "var(--faint)", margin: "4px 0 8px",
 };
 const primaryBtn: React.CSSProperties = {
   height: 34, padding: "0 14px", borderRadius: 12, border: 0,
