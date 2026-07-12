@@ -5,7 +5,8 @@
 // ============================================================================
 
 import "server-only";
-import type { DeliveryArea, LocalOrderItem, MenuItem, Modifier } from "@/lib/types";
+import type { Branch, DeliveryArea, LocalOrderItem, MenuItem, Modifier } from "@/lib/types";
+import { routeDeliveryPin, type RoutableBranch, type RoutableZone } from "./delivery/geo";
 
 export type PricingFulfillment = "pickup" | "delivery";
 export type PricingTaxMode = "inclusive" | "added" | string;
@@ -66,6 +67,14 @@ export interface RecomputeOrderPricingInput {
   deliveryZoneId?: string | null;
   deliveryZoneName?: string | null;
   branchId?: string | null;
+  // WO-LIVE4-F3 (geo-pin-wins) — when a delivery order carries a routed location
+  // pin, the zone it geometrically falls in is authoritative over any typed area
+  // name. `deliveryPin` is set ONLY when delivery_geo_routing is ON and the pin
+  // matched a zone at ingestion, so its presence alone gates the precedence; a
+  // pin-less input (all flag-off drafts, all typed-address orders) prices exactly
+  // as before. `branches` feeds the overlap tie-break (nearest branch).
+  deliveryPin?: { lat: number; lng: number } | null;
+  branches?: Branch[];
   taxMode?: PricingTaxMode | null;
   taxRate?: number | null;
   currency: string;
@@ -172,8 +181,47 @@ function resolveModifiers(item: MenuItem, modifiers: Modifier[], line: PricingLi
   }));
 }
 
+/** WO-LIVE4-F3 (geo-pin-wins): the delivery zone a routed pin geometrically falls
+ *  in, or null when the pin lies outside every routable zone. PURE — reuses the geo
+ *  core (routeDeliveryPin) so the match rule is identical to pin ingestion. This
+ *  only picks WHICH zone; the fee is still copied off that zone's row (money law). */
+function pinZone(
+  pin: { lat: number; lng: number },
+  areas: DeliveryArea[],
+  branches: Branch[]
+): DeliveryArea | null {
+  const zones: RoutableZone[] = areas.map((a) => ({
+    id: a.id,
+    name: a.name,
+    branchId: a.branchId,
+    centerLat: a.centerLat,
+    centerLng: a.centerLng,
+    radiusKm: a.radiusKm,
+    active: a.active,
+  }));
+  const routableBranches: RoutableBranch[] = branches.map((b) => ({ id: b.id, name: b.name, lat: b.lat, lng: b.lng }));
+  const route = routeDeliveryPin(pin, zones, routableBranches);
+  if (route.kind === "outside") return null;
+  return areas.find((a) => a.id === route.zone.id) ?? null;
+}
+
 function resolveDeliveryZone(args: RecomputeOrderPricingInput, subtotal: number): DeliveryArea | null {
   if (args.fulfillment !== "delivery") return null;
+
+  // WO-LIVE4-F3 (geo-pin-wins) — a routed pin's geometry is authoritative over any
+  // typed area name the model supplied (live #1004: pin fell in «الجيزه كلها» fee 30,
+  // yet the text name «العشرين» priced the order at 41). `deliveryPin` is present ONLY
+  // for a flag-ON, matched pin, so this branch never runs for pin-less drafts →
+  // flag-off pricing is byte-identical. A pin that now falls outside every zone (a
+  // zone edited/deactivated mid-order) falls through to the id/name resolution below.
+  if (args.deliveryPin) {
+    const zone = pinZone(args.deliveryPin, args.deliveryAreas, args.branches ?? []);
+    if (zone) {
+      if (subtotal < Number(zone.minOrder)) throw new Error(`delivery_min_order:${zone.name}`);
+      return zone;
+    }
+  }
+
   const zoneId = String(args.deliveryZoneId ?? "").trim();
   const zoneName = String(args.deliveryZoneName ?? "").trim();
   const branchId = String(args.branchId ?? "").trim();
