@@ -117,6 +117,15 @@ export default function ApprovalsPage() {
                     MEASURED = applied, but the measurement engine is SOON → gather. */}
                 <StatTile tier="blue" label={t("ap.col.waiting")} value={<Num>{counts.proposed}</Num>} fact={t("ap.col.waitingSub")} />
                 <StatTile tier="green" label={t("ap.col.motion")} value={<Num>{counts.approved}</Num>} fact={t("ap.status.approved")} />
+                {/* FR-008 — rejected count (was computed but never shown). Slate/muted
+                    per §6 (rejected=slate), not a vivid alarm tile. */}
+                <div style={gatherTileBox}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <XCircle size={13} color="var(--faint)" />
+                    <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{t("ap.status.rejected")}</span>
+                    <span style={{ fontSize: 17, fontWeight: 900, color: "var(--dim)", fontFamily: "var(--kvx-font-ui)" }}><Num>{counts.rejected}</Num></span>
+                  </div>
+                </div>
                 <div style={gatherTileBox}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <Trophy size={14} color="var(--gold)" />
