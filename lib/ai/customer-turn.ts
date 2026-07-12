@@ -633,6 +633,31 @@ export async function runCustomerTurn(
     }
   };
 
+  // §6.5 checkpoint ACK — a PENDING checkpoint + an explicit confirmation THIS turn logs
+  // the verbatim ack (so respond() permits the finalize now) and marks the session
+  // acknowledged. WO-LIVE4-F5: this must fire even when the SAME message ALSO mentions an
+  // allergen (routing it through the companion §1a MENTION branch). The live ack «لا مفيش
+  // اي حساسه اكد الاوردر» is BOTH a mention AND a checkpoint ack, but only the else branch
+  // recorded it before — so the checkpoint re-fired forever. Mention-merge is UNCHANGED and
+  // the customer's denial NEVER suppresses the recorded allergy note (standing law — a
+  // denial never removes safety data); we ONLY ADD the ack. Idempotent per turn.
+  const maybeRecordCheckpointAck = async (): Promise<void> => {
+    if (checkpointJustAcknowledged) return;
+    if (!(companionOn && checkpointPending && sessionAllergyNote && isExplicitOrderConfirmation(input.userMessage))) return;
+    checkpointJustAcknowledged = true;
+    ctx.allergyAcknowledged = true;
+    await recordAllergyEvent(admin, {
+      restaurantId,
+      conversationId: conversationId ?? "",
+      allergens: [],
+      customerMessage: input.userMessage,
+      eventKind: "checkpoint",
+      checkpointAckText: input.userMessage,
+      checkpointAckAt: new Date().toISOString(),
+      netReason: "checkpoint_ack",
+    });
+  };
+
   if (combinedAllergenHit.fired && !companionOn) {
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
     result = forcedAllergenSafetyResult(
@@ -651,26 +676,17 @@ export async function runCustomerTurn(
       // §1a mention → keep talking. Carry the freshly-merged union note into the
       // prompt so the model's recap/checkpoint read the FULL session union.
       ctx.sessionAllergyNote = companionDecision.note;
+      // WO-LIVE4-F5 — the SAME message can be BOTH a mention AND a checkpoint ack (live
+      // «لا مفيش اي حساسه اكد الاوردر»): record the ack here too so the checkpoint isn't
+      // re-fired. The note merge above is untouched — the denial never removes the note.
+      await maybeRecordCheckpointAck();
       result = await runRespond();
     }
   } else {
     // Normal turn. In companion mode this MAY be a §6 checkpoint ACKNOWLEDGEMENT: a
     // pending checkpoint + an explicit confirmation → log the verbatim ack now so
     // respond() permits the finalize this turn (§6.5).
-    if (companionOn && checkpointPending && sessionAllergyNote && isExplicitOrderConfirmation(input.userMessage)) {
-      checkpointJustAcknowledged = true;
-      ctx.allergyAcknowledged = true;
-      await recordAllergyEvent(admin, {
-        restaurantId,
-        conversationId: conversationId ?? "",
-        allergens: [],
-        customerMessage: input.userMessage,
-        eventKind: "checkpoint",
-        checkpointAckText: input.userMessage,
-        checkpointAckAt: new Date().toISOString(),
-        netReason: "checkpoint_ack",
-      });
-    }
+    await maybeRecordCheckpointAck();
     result = await runRespond();
   }
   const latencyMs = Date.now() - t0;
