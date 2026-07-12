@@ -72,7 +72,10 @@ interface ConversationState {
   selectConversation: (id: string) => void;
   findOrCreateByPhone: (args: { phone: string; name?: string; channel?: ChannelKey; branch?: string }) => string;
   addCustomerMessage: (convId: string, text: string) => string;
-  addHumanMessage: (convId: string, text: string) => void;
+  // Returns the WhatsApp wire outcome so the console can surface an HONEST failure
+  // (FR-005): `code` is the /api/whatsapp/send code ("outside_24h_window" | "send_failed").
+  // null → no wire attempt (test/demo mode, or no persisted row); callers may ignore it.
+  addHumanMessage: (convId: string, text: string) => Promise<{ ok: boolean; code?: string } | null>;
   addSystemMessage: (convId: string, text: string) => void;
   setStatus: (convId: string, status: Conversation["status"]) => void;
   setStage: (convId: string, stage: ConversationStage) => Promise<boolean>;
@@ -196,7 +199,7 @@ export const useConversationStore = create<ConversationState>()(
           return id;
         },
 
-        addHumanMessage: (convId, text) => {
+        addHumanMessage: async (convId, text) => {
           const id = msgId();
           const time = nowTime();
           set((s) => ({
@@ -212,9 +215,19 @@ export const useConversationStore = create<ConversationState>()(
           }));
           const { _sb, _rid } = get();
           // Persist first, then put it on the WhatsApp wire (so the send route
-          // can reconcile the row by id). No-ops in test/non-WhatsApp mode.
-          if (_sb && _rid)
-            fire(insertMessageDb(_sb, _rid, convId, { id, sender: "human", text }).then(() => sendOverWhatsApp(convId, id, text)));
+          // can reconcile the row by id). No-ops in test/non-WhatsApp mode → null.
+          if (!_sb || !_rid) return null;
+          // Return the wire outcome (FR-005) so the console can show an honest
+          // failure (e.g. outside the 24h window) instead of a silent send.
+          try {
+            await insertMessageDb(_sb, _rid, convId, { id, sender: "human", text });
+            const res = await sendOverWhatsApp(convId, id, text);
+            const j = (await res.json().catch(() => ({}))) as { code?: string };
+            return { ok: res.ok, code: j.code };
+          } catch (e) {
+            console.error("[conv:db]", e);
+            return { ok: false };
+          }
         },
 
         addSystemMessage: (convId, text) => {

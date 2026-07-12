@@ -26,6 +26,7 @@ import { useHasHydrated, useRestaurantStore } from "@/lib/store";
 import { useOrderStore } from "@/lib/order-store";
 import { deriveConversationDisplay, derivePaymentDisplay, conversationBucket, type ConversationOwnershipState, type ConversationDisplayState } from "@/lib/console-v2/display-state";
 import type { DisplayState } from "@/lib/console-v2/display-state";
+import { sendFailureMessageKey } from "@/lib/console-v2/send-failure";
 import {
   HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, HandledByChip, AuroraDrawer, MiniModal, Toasts, pushToast,
 } from "@/components/console-v2/kit";
@@ -319,8 +320,12 @@ function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conver
         }
         setClaimed((s) => new Set(s).add(conv.id));
       }
-      addHuman(conv.id, text);
+      const wire = await addHuman(conv.id, text);
       setDraft("");
+      // FR-005 — an honest failure: outside WhatsApp's 24h window free-form sending
+      // isn't available (needs a template), which is NOT a "try again" situation. The
+      // send route already distinguishes it; surface the specific line, not a generic.
+      if (wire && !wire.ok) pushToast(t(sendFailureMessageKey(wire.code)), "amber");
     } finally {
       setBusy(false);
     }

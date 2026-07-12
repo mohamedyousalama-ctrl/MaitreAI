@@ -211,6 +211,7 @@ export const DICTIONARY = {
     "conv.assignSub": "التحويل ≠ الاستلام: تنتقل القيادة عند أول رد — ويُسجَّل الأمران.",
     "conv.assignDone": "تم التحويل — تنتقل القيادة عند أول رد.",
     "conv.sendError": "تعذّر الإرسال، حاول مجددًا.",
+    "conv.sendError.outside24h": "مرّ أكثر من ٢٤ ساعة على آخر رسالة من العميل — الإرسال الحر غير متاح.",
     "conv.closeError": "تعذّر الإغلاق، حاول مجددًا.",
     "conv.assignError": "تعذّر التحويل، حاول مجددًا.",
     // Conversations v2 (console_v2 rebuild) — the broadcast wall.
@@ -1173,6 +1174,7 @@ export const DICTIONARY = {
     "conv.assignSub": "Assign ≠ take: the wheel passes on their first reply — logged either way.",
     "conv.assignDone": "Assigned — the wheel passes on their first reply.",
     "conv.sendError": "Couldn’t send, try again.",
+    "conv.sendError.outside24h": "More than 24 hours since the customer's last message — free-form sending isn't available.",
     "conv.closeError": "Couldn’t close, try again.",
     "conv.assignError": "Couldn’t assign, try again.",
     // Conversations v2 (console_v2 rebuild) — the broadcast wall.
