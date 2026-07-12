@@ -454,6 +454,10 @@ export async function runCustomerTurn(
     // the prompt keeps its legacy "type your address, pins unreadable" instruction and
     // set_fulfillment ignores pickup branches (prompt + tools byte-identical).
     geoRouting: geoRoutingOn,
+    // WO-LIVE4-F1b — media_turn_trigger: when ON the system reads inbound images via
+    // buildImageDirective, so the prompt tells the model to follow that read instead of
+    // claiming it can't see a picture. Default OFF → legacy "can't view images" verbatim.
+    mediaTurnTrigger: isFeatureExplicitlyEnabled("media_turn_trigger", tenantFeatures),
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
