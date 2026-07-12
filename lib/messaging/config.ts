@@ -41,8 +41,13 @@ export interface WhatsAppEnvStatus {
 /** Connection mode derived from which credentials are present. */
 export type WhatsAppMode = "connected" | "not_configured" | "test";
 
-/** Graph API version used when (and if) real sending is enabled. */
-export const WHATSAPP_GRAPH_VERSION = "v19.0";
+/** Graph API version for OUTBOUND WhatsApp Cloud API calls (send message, media
+ *  get/upload, template + capacity sync). v25.0 is Meta's current stable (Feb 2026);
+ *  v19.0 EXPIRED 2026-05-21, so live sends must target a supported version. This
+ *  governs OUTBOUND request URLs ONLY — inbound webhook signature verification uses
+ *  WHATSAPP_APP_SECRET (HMAC) and is independent of the Graph version. Rollback: set
+ *  this back to "v19.0" (one-line revert; no other change). */
+export const WHATSAPP_GRAPH_VERSION = "v25.0";
 
 /** Read the active WhatsApp credentials: the request-scoped per-tenant override
  *  if one is set (webhook resolved a tenant by phone_number_id), otherwise the
