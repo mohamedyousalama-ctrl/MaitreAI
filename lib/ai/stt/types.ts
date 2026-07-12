@@ -12,6 +12,10 @@ export interface SttTranscribeOptions {
   mimeType?: string;
   /** BCP-47 language hint (e.g. "ar") to bias recognition. */
   languageHint?: string;
+  /** WO-VOICE-QUALITY (b) — domain prompt-bias string (tenant menu + ordering words)
+   *  seeded into Whisper's `prompt` parameter to steer recognition toward the
+   *  restaurant's vocabulary. A soft bias, not a transcript. */
+  prompt?: string;
 }
 
 export interface SttResult {

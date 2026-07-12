@@ -33,6 +33,7 @@ import {
   type CompanionDecision,
 } from "@/lib/ai/allergen-companion-flow";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
+import { classifyVoiceTranscript, garbledVoiceReply } from "@/lib/ai/voice-quality";
 import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
 import { recordAllergyEvent, buildBannedPhraseBlockAudit } from "@/lib/db/allergy-audit";
 import { asksForMenuLink, asksToSeeMedia, buildAnswerFirstDirective } from "@/lib/ai/media-intent";
@@ -194,6 +195,33 @@ function companionEmergencyResult(
     toolNames: ["escalate_to_human"],
     stopReason: "allergen_companion_emergency",
     model: "deterministic_allergen_companion",
+    adapter: "mock",
+    resendReceipt: false,
+  };
+}
+
+/** WO-VOICE-QUALITY (d) — deterministic GARBLED-VOICE outcome (flag: voice_garble_guard).
+ *  No LLM: the transcript is unintelligible, so send Karim's honest "audio unclear, please
+ *  retype" line and keep the in-progress draft. NON-escalating (a quality nudge, not a
+ *  safety event) — the SAFETY-FIRST gate upstream guarantees no allergen signal was present. */
+function voiceGarbleResult(
+  dialect: string,
+  initialDraft: OrderDraft | null,
+  currency: string,
+  reason: string | null
+): RespondResult {
+  return {
+    reply: garbledVoiceReply(dialect),
+    draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
+    escalate: false,
+    escalationReason: null,
+    signals: [{ type: "missing_data", detail: { reason: "voice_garbled_retry", source: "voice_garble_guard", garbleReason: reason } }],
+    presentation: null,
+    photoRequests: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
+    toolNames: [],
+    stopReason: "voice_garble_guard",
+    model: "deterministic_voice_garble_guard",
     adapter: "mock",
     resendReceipt: false,
   };
@@ -666,7 +694,26 @@ export async function runCustomerTurn(
     });
   };
 
-  if (combinedAllergenHit.fired && !companionOn) {
+  // WO-VOICE-QUALITY (d) — GARBLED-VOICE guard (flag voice_garble_guard, default OFF).
+  // SAFETY-FIRST (binding): evaluated ONLY when NO allergen/phonetic/emergency signal
+  // fired — a garbled allergy disclosure escalates via the branches below and is never
+  // dismissed as "unclear". A low-confidence OR zero-vocabulary-overlap voice transcript
+  // is unintelligible → send Karim's honest retype line instead of engaging the gibberish.
+  const voiceGarble =
+    isFeatureExplicitlyEnabled("voice_garble_guard", tenantFeatures) &&
+    input.isVoiceTranscript === true &&
+    !combinedAllergenHit.fired &&
+    !companionEmergency.fired
+      ? classifyVoiceTranscript({
+          text: input.userMessage,
+          confidence: typeof input.sttConfidence === "number" ? input.sttConfidence : null,
+          menuVocab: ctx.menuItems.map((i) => i.name),
+        })
+      : { garbled: false, reason: null };
+
+  if (voiceGarble.garbled) {
+    result = voiceGarbleResult(dialect, initialDraft, ctx.profile.currency, voiceGarble.reason);
+  } else if (combinedAllergenHit.fired && !companionOn) {
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
     result = forcedAllergenSafetyResult(
       combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency,

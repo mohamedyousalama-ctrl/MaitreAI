@@ -267,6 +267,17 @@ export async function POST(req: NextRequest) {
       }
 
       // Persist first (dedupe on redelivery), collecting NEW conversations to answer.
+      // WO-VOICE-QUALITY (b) — when this batch carries a voice note to transcribe, load
+      // the tenant's menu item names ONCE to seed the STT prompt bias (item names are the
+      // words most likely to be garbled). Names-only select; best-effort (no bias on fail).
+      let sttMenuNames: string[] = [];
+      if (messages.some((m) => m.audioId && !m.text) && (getSttAdapter().name !== "mock" || mockSttAllowed())) {
+        try {
+          const { data: mi } = await admin.from("menu_items").select("name").eq("restaurant_id", restaurantId).limit(200);
+          sttMenuNames = ((mi ?? []) as Array<{ name?: string | null }>).map((r) => r.name ?? "").filter(Boolean);
+        } catch { /* best-effort — no prompt bias on failure */ }
+      }
+
       const toAnswer = new Set<string>();
       for (const m of messages) {
         // SUPREMACY: a staff-lane message NEVER enters the customer lane — no
@@ -286,7 +297,7 @@ export async function POST(req: NextRequest) {
             if (getSttAdapter().name === "mock" && !mockSttAllowed()) {
               m.text = "[رسالة صوتية — التفريغ الصوتي غير متاح حاليًا. اطلب من العميل بلطف يكتب طلبه نصيًا.]";
             } else {
-              const t = await transcribeWhatsAppVoice(m.audioId, m.audioMime);
+              const t = await transcribeWhatsAppVoice(m.audioId, m.audioMime, sttMenuNames);
               m.text = t.text || "[رسالة صوتية — تعذّر التفريغ]";
               // WO-VOICE-1: keep the STT provenance so the audio ref + confidence land
               // in messages.meta and the fail-closed net's secondary tripwire can read
