@@ -1,6 +1,6 @@
 # Feature Flag Registry
 
-> **Owner:** Engineering · **Status:** Active · **Last reviewed:** 2026-07-10
+> **Owner:** Engineering · **Status:** Active · **Last reviewed:** 2026-07-12
 
 The single index of every feature flag in the codebase. Generated from and verified
 against `lib/feature-flags.ts` (deploy/env flags) and `lib/tenant/tier.ts` (per-tenant
@@ -66,6 +66,9 @@ tenant. Who may flip: **Kivo Ops** (per-tenant `feature_flags` write).
 | `photo_thread` | Grouped photo-thread captions for menu/item images. |
 | `manager_command_recognition` | Recognize a manager messaging the business number and treat them accordingly. |
 | `canonical_payment_methods` | Route ALL payment-method truth through the single `lib/payments/resolve` resolver, backed by the `0084` `restaurant_payment_methods` table, with the never-all-off guard (a tenant can never have zero enabled methods; safe default cash/COD) + the immutable per-order `order_payment_snapshot` (offered + chosen). Manual methods only (`cod`/`vodafone_cash`/`instapay`); the PSP/online-card stack is untouched. Default OFF → flag-off returns exactly the legacy normalized `payment_config` at every surface (agent, storefront, settings), byte-identical. Requires the prepare-only `0084` migration applied first. |
+| `delivery_geo_routing` | Geography-aware delivery: a WhatsApp location pin → zone → branch routing + delivery fee, with unmatched pins logged to `zone_misses` (WO-DELIVERY-D1, #402). Requires the prepare-only `0081` migration. Default OFF → pins are ignored exactly as before (byte-identical). **Live-flipped ON for Wesaya** (2 geo zones) per the ceremony records. |
+| `delivery_runs` | Multi-order delivery runs: a driver carries up to N active deliveries as one run, with run-level token auth + COD roll-up and customer active-leg tracking on `/t` (WO-DELIVERY-D2, #409). Requires the prepare-only `0082` migration; every runtime read is deploy-safe. Default OFF → byte-identical. **Live-flipped ON for Wesaya** per the ceremony records. |
+| `allergy_companion_mode` | Allergy-Companion Mode: swaps the legacy forced-escalation for the companion contract — acknowledge + keep talking, the §6 pre-confirmation checkpoint, the §0 never-assert-safety output guard, and the two-axis (ingredient × preparation) per-dish truth model (WO-COMPANION W1 `160db60`, extended by W2/W3). Requires the prepare-only `0080`/`0083` migrations. Default OFF → legacy path, byte-identical. **Live-flipped ON for Wesaya + the test tenants** per the ceremony records. |
 
 ---
 
