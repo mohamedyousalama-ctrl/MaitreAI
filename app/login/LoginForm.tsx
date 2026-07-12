@@ -25,27 +25,11 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { useRiseIn } from "@/components/kivo";
 import { KivoMark } from "@/components/brand/KivoLogo";
 import { LoginScenes } from "./LoginScenes";
+// Supabase auth errors come back in English; friendlyAuthError surfaces short,
+// friendly Arabic (SPEC 01 §3). Extracted so the mapping is unit-testable (FR-001).
+import { friendlyAuthError } from "@/lib/auth/friendly-auth-error";
 
 type Step = "request" | "verify";
-
-// Supabase auth errors come back in English; surface short, friendly Arabic
-// (SPEC 01 §3) instead of leaking raw provider codes.
-function friendlyAuthError(message: string): string {
-  const m = (message || "").toLowerCase();
-  if (m.includes("rate") || m.includes("too many") || m.includes("limit")) {
-    return "حاولت كتير في وقت قصير، استنى دقيقة وجرّب تاني.";
-  }
-  if (m.includes("invalid") || m.includes("expired") || m.includes("token") || m.includes("otp")) {
-    return "الرمز غلط أو خلصت صلاحيته، اطلب رمز جديد.";
-  }
-  if (m.includes("network") || m.includes("fetch") || m.includes("failed")) {
-    return "في مشكلة في الاتصال، اطمئن على النت وجرّب تاني.";
-  }
-  if (m.includes("not allowed") || m.includes("disabled") || m.includes("locked")) {
-    return "الحساب ده مش متاح حالياً، كلّم الدعم.";
-  }
-  return "معرفناش نكمّل، اتأكد من البيانات وجرّب تاني.";
-}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

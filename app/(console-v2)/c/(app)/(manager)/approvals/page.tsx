@@ -27,9 +27,17 @@ import {
   HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, AuroraDrawer, MiniModal, Toasts, pushToast,
 } from "@/components/console-v2/kit";
 import { useRestaurantStore } from "@/lib/store";
-import { useT } from "@/lib/i18n/lang";
+import { useT, useLang } from "@/lib/i18n/lang";
+import { arrowForDir } from "@/lib/i18n/dir";
 import { Bdi, Num } from "@/components/kivo";
 import type { DictKey } from "@/lib/i18n/dictionary";
+
+// FR-010 — direction-aware diff arrow. A hardcoded «→» points the wrong way on the
+// RTL board (where "to" sits on the LEFT); arrowForDir yields «←» in RTL, «→» in LTR.
+function DiffArrow() {
+  const { dir } = useLang();
+  return <span aria-hidden style={{ color: "var(--faint)", fontWeight: 800 }}>{arrowForDir(dir)}</span>;
+}
 
 type Status = "proposed" | "approved" | "rejected" | "applied";
 type TargetType = "menu_item" | "delivery_zone" | "policy";
@@ -117,6 +125,15 @@ export default function ApprovalsPage() {
                     MEASURED = applied, but the measurement engine is SOON → gather. */}
                 <StatTile tier="blue" label={t("ap.col.waiting")} value={<Num>{counts.proposed}</Num>} fact={t("ap.col.waitingSub")} />
                 <StatTile tier="green" label={t("ap.col.motion")} value={<Num>{counts.approved}</Num>} fact={t("ap.status.approved")} />
+                {/* FR-008 — rejected count (was computed but never shown). Slate/muted
+                    per §6 (rejected=slate), not a vivid alarm tile. */}
+                <div style={gatherTileBox}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <XCircle size={13} color="var(--faint)" />
+                    <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{t("ap.status.rejected")}</span>
+                    <span style={{ fontSize: 17, fontWeight: 900, color: "var(--dim)", fontFamily: "var(--kvx-font-ui)" }}><Num>{counts.rejected}</Num></span>
+                  </div>
+                </div>
                 <div style={gatherTileBox}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <Trophy size={14} color="var(--gold)" />
@@ -300,7 +317,7 @@ function RequestCard({ req, currency, onChanged, onEvidence }: { req: ChangeRequ
       {/* The diff — current → proposed. */}
       <div style={diffBox}>
         <ValueBlock label={t("ap.from")} value={req.old_value} field={req.field} currency={currency} muted />
-        <span style={{ color: "var(--faint)", fontWeight: 800 }}>→</span>
+        <DiffArrow />
         <ValueBlock label={t("ap.to")} value={req.new_value} field={req.field} currency={currency} />
       </div>
 
@@ -370,7 +387,7 @@ function EvidenceBody({ req, currency, onClose }: { req: ChangeRequest; currency
       </div>
       <div style={{ ...diffBox, marginBottom: 14 }}>
         <ValueBlock label={t("ap.from")} value={req.old_value} field={req.field} currency={currency} muted />
-        <span style={{ color: "var(--faint)", fontWeight: 800 }}>→</span>
+        <DiffArrow />
         <ValueBlock label={t("ap.to")} value={req.new_value} field={req.field} currency={currency} />
       </div>
       <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: ".1em", color: "var(--faint)", textTransform: "uppercase", marginBottom: 8 }}>{t("ap.evidence")}</div>
