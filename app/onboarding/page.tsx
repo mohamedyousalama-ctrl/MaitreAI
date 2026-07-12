@@ -461,7 +461,10 @@ function StepConfig({ restaurantId, dialect, hoursDone, onHours, onNext }: { res
 
 // ── Step 5: go-live (real checklist + gate) ──
 type ChecklistItem = { pass: boolean; required: boolean; label: string };
-type Checklist = { whatsapp: ChecklistItem; menu: ChecklistItem; hours: ChecklistItem; zones: ChecklistItem };
+type Checklist = { whatsapp: ChecklistItem; menu: ChecklistItem; hours: ChecklistItem; allergyTestDrive: ChecklistItem; zones: ChecklistItem };
+// allergyTestDrive has no step in THIS public wizard (the test-drive lives in the
+// console cockpit), so it maps to no «أكمل» jump — the row is shown for visibility
+// with its real server state; the «أكمل» button is only rendered where a step exists.
 const STEP_FOR: Record<string, number> = { whatsapp: 2, menu: 3, hours: 4, zones: 4 };
 
 function StepGoLive({ restaurantId, goToStep }: { restaurantId: string | null; goToStep: (n: number) => void }) {
@@ -505,7 +508,7 @@ function StepGoLive({ restaurantId, goToStep }: { restaurantId: string | null; g
     );
   }
 
-  const items = checklist ? (["whatsapp", "menu", "hours", "zones"] as const).map((k) => ({ key: k, ...checklist[k] })) : [];
+  const items = checklist ? (["whatsapp", "menu", "hours", "allergyTestDrive", "zones"] as const).map((k) => ({ key: k, ...checklist[k] })) : [];
 
   return (
     <div>
@@ -522,7 +525,7 @@ function StepGoLive({ restaurantId, goToStep }: { restaurantId: string | null; g
                   <span style={{ fontSize: 12.5, fontWeight: 800 }}>{it.label}</span>
                   <span style={{ fontSize: 9.5, fontWeight: 800, marginInlineStart: 8, color: it.required ? "#9a6a14" : "var(--kv-faint)" }}>{it.required ? "مطلوب" : "اختياري"}</span>
                 </div>
-                {!it.pass && <button onClick={() => goToStep(STEP_FOR[it.key])} style={{ height: 30, padding: "0 12px", borderRadius: 9, border: "1px solid var(--kv-border)", background: "#fff", color: "var(--kv-deep)", fontSize: 11, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>أكمل</button>}
+                {!it.pass && STEP_FOR[it.key] != null && <button onClick={() => goToStep(STEP_FOR[it.key])} style={{ height: 30, padding: "0 12px", borderRadius: 9, border: "1px solid var(--kv-border)", background: "#fff", color: "var(--kv-deep)", fontSize: 11, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>أكمل</button>}
               </div>
             ))}
           </div>
