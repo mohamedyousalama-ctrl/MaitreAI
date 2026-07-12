@@ -74,6 +74,51 @@ ok("D: a CORRECT quote «عرض كاديا — ٣٢٠ ج.م» is left exactly as
 }
 ok("D: empty / priceless prose → no-op", repairPriceTruth("تحب تطلب إيه؟ 😊", "ج.م", ITEMS).repairs.length === 0);
 
+// ── F — FR-013 GOLDEN CONTROLS (honest corpus): ~41 correct prices across the 7-day audit,
+//    exactly ONE mismatch (the كاديا anchor above). Every control here is a TRUE quote — the
+//    guard must fire ZERO repairs. False positives here would be worse than the bug it fixes. ─
+const toArabicDigitsLocal = (n: number | string) => String(n).replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
+const mkItem = (name: string, price: number, variants: number[] = []) =>
+  ({ id: name, name, price, variants: variants.map((p, i) => ({ id: name + i, name: String(p), price: p, sort: i, active: true })) }) as unknown as import("../lib/types.ts").MenuItem;
+
+// F1 — exact-fit positive control (msg 183b532a): سناك بلس quoted at its real ٢٥٠.
+ok("F1: exact-fit «سناك بلس بـ ٢٥٠ ج.م» (real ٢٥٠) → untouched",
+  repairPriceTruth("بس في ميزانيتك ٢٥٠ ج.م، أقترح عليك **سناك بلس** بـ ٢٥٠ ج.م — فيها ريزو + بروست 👌", "ج.م",
+    [mkItem("سناك بلس", 250)]).repairs.length === 0);
+
+// F2 — honest near-miss control (msg 435c1f70): a budget list that HONESTLY flags «فوق الميزانية».
+{
+  const items = [mkItem("عرض دبل", 169), mkItem("سوبر دينر", 270), mkItem("ستربس ٧ قطع", 270), mkItem("عرض أكيل", 170)];
+  const t = "- **عرض دبل** — ٢ ساندويتش زنجر بـ **١٦٩ ج.م**\n- **سوبر دينر** — ٤ قطع بروست بـ **٢٧٠ ج.م** (بس شوية فوق الميزانية)\n- **ستربس ٧ قطع** — ٧ قطع ستربس بـ **٢٧٠ ج.م**\n- **عرض أكيل** — ريزو + زنجر بـ **١٧٠ ج.م**";
+  const r = repairPriceTruth(t, "ج.م", items);
+  ok("F2: honest over-budget list (all real prices) → zero repairs, nothing flagged", r.repairs.length === 0 && r.skipped.length === 0);
+}
+
+// F3 — variant ladder control (msg 537264b4): وجبة وصاية العائلية 6/9/12/15 قطع = 425/595/750/860.
+ok("F3: variant ladder «وجبة وصاية العائلية» (425/595/750/860) → zero repairs",
+  repairPriceTruth("**وجبة وصاية العائلية** بأحجام مختلفة:\n- **٦ قطع** — ٤٢٥ ج.م\n- **٩ قطع** — ٥٩٥ ج.م\n- **١٢ قطعة** — ٧٥٠ ج.م\n- **١٥ قطعة** — ٨٦٠ ج.م", "ج.م",
+    [mkItem("وجبة وصاية العائلية", 425, [425, 595, 750, 860])]).repairs.length === 0);
+
+// F4 — 12-pizza base-price grid control (msg d7bfd71b): every pizza at its own correct price.
+{
+  const grid: [string, number][] = [
+    ["بيتزا ببروني", 120], ["بيتزا خضار", 105], ["بيتزا سماش لحم", 135], ["بيتزا هوت دوج", 115],
+    ["بيتزا باربكيو", 135], ["بيتزا تشيكن رانش", 145], ["بيتزا دجاج", 125], ["بيتزا ميكس جبن", 130],
+    ["بيتزا سوبر كرانشي", 145], ["بيتزا كرانشي سموك", 140], ["بيتزا كيري بسطرمة", 135], ["بيتزا سوبر رانش", 170],
+  ];
+  const t = grid.map(([n, p]) => `- ${n} — ${toArabicDigitsLocal(p)} ج.م`).join("\n");
+  ok("F4: the 12-pizza grid (each at its correct base price) → zero repairs",
+    repairPriceTruth(t, "ج.م", grid.map(([n, p]) => mkItem(n, p))).repairs.length === 0);
+}
+
+// F5 — pizza three-size grid control (msg 514fe5fa): each pizza's size prices are all valid.
+{
+  const items = [mkItem("بيتزا خضار", 105, [105, 145, 185]), mkItem("بيتزا هوت دوج", 115, [115, 165, 205])];
+  const t = "- **بيتزا خضار** — صغير بـ **١٠٥ ج.م** / وسط بـ **١٤٥ ج.م** / كبير بـ **١٨٥ ج.م**\n- **بيتزا هوت دوج** — صغير بـ **١١٥ ج.م** / وسط بـ **١٦٥ ج.م** / كبير بـ **٢٠٥ ج.م**";
+  const r = repairPriceTruth(t, "ج.م", items);
+  ok("F5: pizza three-size grid (all variant prices valid) → zero repairs, zero skips", r.repairs.length === 0 && r.skipped.length === 0);
+}
+
 // ── E — source wiring: the guard runs before fabricatesMoney, flag+tool gated, emits signals ─
 const rs = readFileSync(resolve(process.cwd(), "lib/ai/respond.ts"), "utf8");
 const ct = readFileSync(resolve(process.cwd(), "lib/ai/customer-turn.ts"), "utf8");
