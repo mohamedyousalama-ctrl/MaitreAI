@@ -21,7 +21,7 @@
 
 import { detectAllergenEmergency } from "./allergen-emergency";
 import { detectAllergenAvoidance } from "./allergen-gate";
-import { mergeAllergyNote, type DishTruthState } from "./allergen-companion";
+import { mergeAllergyNote, scanBannedAllergyPhrases, type DishTruthState } from "./allergen-companion";
 
 // A stable, human-readable marker embedded in the escalation_reason of an
 // EMERGENCY-class SYSTEM_HOLD. §1e·d: emergency holds are NEVER customer-resumable,
@@ -122,6 +122,71 @@ export function companionBannedRewriteReply(dialect: string): string {
   return dialect === "egyptian"
     ? "صحتك تهمّنا 🙏 ما أقدرش أجزم عن سلامة الأصناف من غير ما المطبخ يتأكد — أوصلك بفريق المطعم يساعدوك تختاروا براحة."
     : "صحتك تهمّنا 🙏 ما أقدر أجزم عن سلامة الأصناف بدون ما المطبخ يتأكد — أوصلك بفريق المطعم يساعدونك تختارون براحة.";
+}
+
+// ---------------------------------------------------------------------------
+// WO-SAFETY-MODEL-V2 (§0) — the founder's out-loud abolition of the hold/freeze:
+// a §0 banned-phrase trip NEVER holds and NEVER forces escalation. Instead the draft
+// is REPAIRED deterministically (strip the offending assurance sentence, splice in the
+// neutral honest line) and the reply SENDS — the conversation always flows. Escalation
+// is reserved for a human request or a §6 checkpoint decline; «إيقاف للسلامة» stays a
+// manual staff action; §5 emergency is unaffected (an active reaction is not a §0 trip).
+// ---------------------------------------------------------------------------
+
+// The RATIFIED neutral repair line (founder ruling — "Option A"), dialect-adapted; the
+// Khalid/KSA variant mirrors the same swap. Itself §0 banned-clean — «مناسب لحساسيتك»
+// deliberately avoids the «يناسب الحساسية» ban (ة→ه normalization → line-82 match), so
+// it is a SAFE terminal for the double-lock below (asserted by this module's unit test).
+export function companionNeutralRepairLine(dialect: string): string {
+  return dialect === "egyptian"
+    ? "صحتك تهمنا 🙏 ماقدرش أأكد من نفسي إن الصنف مناسب لحساسيتك — الملاحظة واصلة للمطبخ وبيتأكدوا منها. نكمل؟"
+    : "صحتك تهمنا 🙏 ما أقدر أأكد من نفسي إن الصنف مناسب لحساسيتك — الملاحظة واصلة للمطبخ ويتأكدون منها. نكمل؟";
+}
+
+/**
+ * DETERMINISTIC draft repair — replaces the hold/freeze. SENTENCE-LEVEL (ruling 1):
+ * strip every sentence that trips the §0 scanner and splice the neutral line in place
+ * of the FIRST one, so the rest of the reply (menu, prices, the follow-up question)
+ * survives and the conversation keeps flowing.
+ *
+ * DOUBLE-LOCK (ruling 1, the second lock): after reassembly RE-SCAN the final reply in
+ * code — if ANYTHING still trips, collapse to the neutral line ALONE. The neutral line
+ * is itself banned-clean, so this terminal is guaranteed safe (never an infinite trip).
+ *
+ * Pure. Sentences split on TERMINAL punctuation only (؟ ? . ! newline) — the SAME
+ * delimiter set the §0 scanner uses for its «عادي» per-sentence menu exemption, so a
+ * comma-separated flavor list stays one sentence and keeps that exemption intact.
+ */
+export function repairBannedAllergyReply(text: string, dialect: string): string {
+  const neutral = companionNeutralRepairLine(dialect);
+  const raw = String(text ?? "");
+  if (!raw.trim()) return neutral;
+  // Keep the terminators (captured group) so surviving sentences read naturally.
+  const parts = raw.split(/([؟?.!\n]+)/);
+  const out: string[] = [];
+  let neutralInserted = false;
+  let anyStripped = false;
+  for (let i = 0; i < parts.length; i += 2) {
+    const sentence = parts[i] ?? "";
+    const delim = parts[i + 1] ?? "";
+    if (!sentence.trim()) continue;
+    if (scanBannedAllergyPhrases(sentence).length > 0) {
+      anyStripped = true;
+      // Replace the FIRST offending sentence in place with the neutral line; drop the rest.
+      if (!neutralInserted) {
+        out.push(neutral);
+        neutralInserted = true;
+      }
+      continue;
+    }
+    out.push((sentence.trim() + delim).trim());
+  }
+  // Defensive: the caller only invokes on a real hit, but if nothing stripped, keep as-is.
+  if (!anyStripped) return raw;
+  const assembled = out.join(" ").replace(/[ \t]+/g, " ").trim();
+  // DOUBLE-LOCK: the assembled reply must be banned-clean; else collapse to neutral alone.
+  if (!assembled || scanBannedAllergyPhrases(assembled).length > 0) return neutral;
+  return assembled;
 }
 
 // ---------------------------------------------------------------------------

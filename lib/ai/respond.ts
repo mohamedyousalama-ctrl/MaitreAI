@@ -21,7 +21,7 @@ import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-g
 // checkpoint. Consulted ONLY when brain.allergyCompanion is on (flag OFF → inert).
 import { scanBannedAllergyPhrases, parseAllergyNote, computeDishTruthState, type DishTruthState } from "./allergen-companion";
 import { isAllergyScanContext } from "./allergen-scan-context";
-import { buildCheckpointRecap, companionBannedRewriteReply, type CheckpointDish } from "./allergen-companion-flow";
+import { buildCheckpointRecap, repairBannedAllergyReply, companionNeutralRepairLine, type CheckpointDish } from "./allergen-companion-flow";
 // WO-COMPANION-W2: feed the §6 recap the REAL two-axis MenuItem data so verified
 // dishes surface honestly (computeDishTruthState itself unchanged — ruling C).
 import { dishDataFromMenuItem } from "./dish-allergen-data";
@@ -456,14 +456,21 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // Safety beats the sale, always. Behavior-unchanged for tenants that had the flag
   // ON (all current tenants); now also protects a flag-absent tenant + agent/suggest.
   if (text.trim() && assertsAllergenSafety(text)) {
-    // ALWAYS block the unverifiable allergen-safety claim. ESCALATE to a human only
-    // on a genuine avoidance/allergy signal (stated this turn OR an active safety
-    // hold) — a benign "without X" filter is answered honestly, no handoff.
-    const escalate = shouldEscalateOnSafetyClaim(input.userMessage, input.safetyHoldActive === true);
-    ctx.signals.push({ type: escalate ? "escalation" : "missing_data", detail: { reason: "allergen_safety_claim", escalated: escalate, reply: text } });
+    // ALWAYS block the unverifiable allergen-safety claim. WO-SAFETY-MODEL-V2: in
+    // COMPANION mode a safety-assertion NEVER holds — replace the draft with the honest
+    // neutral line and keep flowing (no ctx.escalation). Escalation is reserved for a
+    // human request or a §6 checkpoint decline. FLAG-OFF is byte-identical: companion is
+    // false → escalate exactly as before (genuine avoidance/allergy signal OR active hold
+    // → handoff; a benign "without X" filter → answered honestly, no handoff).
+    const companion = input.brain.allergyCompanion === true;
+    const escalate = !companion && shouldEscalateOnSafetyClaim(input.userMessage, input.safetyHoldActive === true);
+    ctx.signals.push({ type: escalate ? "escalation" : "missing_data", detail: { reason: "allergen_safety_claim", escalated: escalate, companion, reply: text } });
     if (escalate) {
       ctx.escalation = ctx.escalation ?? { reason: "سلامة الحساسية: المساعد حاول تأكيد سلامة صنف بدون بيانات مؤكدة — يحتاج تأكيد المطبخ" };
       text = safeAllergenReply(input.brain.dialect);
+    } else if (companion) {
+      // Repair, never hold. The neutral line is §0 banned-clean and never certifies.
+      text = companionNeutralRepairLine(input.brain.dialect);
     } else {
       text = safeAllergenNoEscalateReply(input.brain.dialect);
     }
@@ -490,9 +497,13 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   })) {
     const banned = scanBannedAllergyPhrases(text);
     if (banned.length) {
-      ctx.signals.push({ type: "escalation", detail: { reason: "companion_banned_phrase", phrases: banned, reply: text } });
-      ctx.escalation = ctx.escalation ?? { reason: "سلامة الحساسية (رفيق): عبارة ممنوعة تؤكّد السلامة — يحتاج تأكيد المطبخ" };
-      text = companionBannedRewriteReply(input.brain.dialect);
+      // WO-SAFETY-MODEL-V2: the §0 trip NO LONGER holds/escalates (founder abolition).
+      // Deterministically REPAIR the draft (sentence-level strip + neutral line + a
+      // re-scan double-lock) and let the reply SEND — the conversation always flows.
+      // Non-escalating signal (audit only); no ctx.escalation → no SYSTEM_HOLD. The §0
+      // scanner + its vocabulary are UNTOUCHED; only the consumer changed hold→repair.
+      ctx.signals.push({ type: "missing_data", detail: { reason: "companion_banned_phrase_repaired", phrases: banned, reply: text } });
+      text = repairBannedAllergyReply(text, input.brain.dialect);
     }
   }
 
