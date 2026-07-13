@@ -60,13 +60,33 @@ const PROBE_STATUS_LABEL: Record<ProbeStatus, DictKey> = {
   fail: "set.probe.fail",
   unknown: "set.probe.unknown",
 };
+type SttGaugeStatus = "working" | "not-configured" | "test-mode-on" | "unverified";
+const STT_TONE: Record<SttGaugeStatus, { fg: string; bg: string }> = {
+  working: PROBE_TONE.pass,
+  "not-configured": PROBE_TONE.unknown,
+  "test-mode-on": PROBE_TONE.fail,
+  unverified: PROBE_TONE.fail,
+};
+const STT_STATUS_LABEL: Record<SttGaugeStatus, string> = {
+  working: "working",
+  "not-configured": "not-configured",
+  "test-mode-on": "test-mode-on",
+  unverified: "unverified",
+};
 const DAY_ORDER = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
 const DAY_LABEL: Record<string, DictKey> = {
   sunday: "set.day.sunday", monday: "set.day.monday", tuesday: "set.day.tuesday",
   wednesday: "set.day.wednesday", thursday: "set.day.thursday", friday: "set.day.friday", saturday: "set.day.saturday",
 };
 
-interface HealthResp { probes?: Probe[]; rollup?: ProbeStatus }
+interface SttHealthResp {
+  adapterName?: string;
+  status?: SttGaugeStatus;
+  explicitAdapter?: boolean;
+  mockTranscriptMode?: { enabled?: boolean; status?: "working" | "test-mode-on" };
+  aiTimeout?: { enabled?: boolean; status?: "working" | "not-configured" };
+}
+interface HealthResp { probes?: Probe[]; rollup?: ProbeStatus; stt?: SttHealthResp }
 interface FlagsResp { flags?: Record<string, unknown>; safety?: string[] }
 interface IdentityResp { name?: string | null; agentPersonaName?: string | null; timezone?: string | null }
 type DayHours = { open?: string; close?: string; closed?: boolean };
@@ -174,8 +194,41 @@ function TruthBoard({ health, onReload }: { health: HealthResp | null; onReload:
         </div>
       )}
 
+      <SttHealthGauge stt={health?.stt} />
       <RoundTrip onDone={onReload} disabled={probes.length === 0} />
     </section>
+  );
+}
+
+function SttHealthGauge({ stt }: { stt?: SttHealthResp }) {
+  if (!stt) return null;
+  const serviceStatus = stt.status ?? "not-configured";
+  const mockStatus = stt.mockTranscriptMode?.status ?? "working";
+  const timeoutStatus = stt.aiTimeout?.status ?? "not-configured";
+  const rows: Array<{ label: string; value: string; status: SttGaugeStatus }> = [
+    { label: "Speech-to-text service", value: stt.adapterName ?? "unknown", status: serviceStatus },
+    { label: "Pretend/test transcripts", value: stt.mockTranscriptMode?.enabled ? "ON" : "OFF", status: mockStatus },
+    { label: "AI timeout safety", value: stt.aiTimeout?.enabled ? "ON" : "OFF", status: timeoutStatus },
+  ];
+
+  return (
+    <div style={{ marginTop: 12, background: "var(--inset2)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "11px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+      {serviceStatus === "unverified" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: STT_TONE.unverified.fg, fontSize: 12, fontWeight: 900 }}>
+          <AlertTriangle size={14} strokeWidth={2.5} />
+          <span>UNVERIFIED</span>
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 6 }}>
+        {rows.map((r) => (
+          <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--stroke)", borderRadius: 10, padding: "8px 9px", background: "rgba(255,255,255,.03)" }}>
+            <span style={{ fontSize: 11.5, fontWeight: 750, color: "var(--dim)", flex: 1 }}>{r.label}</span>
+            <span style={{ fontSize: 11.5, fontWeight: 850, color: "var(--txt)" }}>{r.value}</span>
+            <span style={{ ...pill, ...STT_TONE[r.status], fontSize: 9.5 }}>{STT_STATUS_LABEL[r.status]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
