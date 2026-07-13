@@ -14,6 +14,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { subscribeWithReload } from "@/lib/realtime/resubscribe";
 
 export function subscribeMembers(
   s: SupabaseClient,
@@ -21,19 +22,13 @@ export function subscribeMembers(
   onChange: () => void
 ): () => void {
   const filter = `restaurant_id=eq.${restaurantId}`;
-  const ch = s
-    .channel(`members-${restaurantId}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "members", filter }, onChange)
-    .subscribe((status) => {
-      // (e) reconnect-reload — catch role/invite changes missed while disconnected.
-      if (status === "SUBSCRIBED") {
-        onChange();
-      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        // (d) fail quietly — Supabase retries; never throw into the UI.
-        console.warn("[realtime:members] channel status:", status);
-      }
-    });
-  return () => {
-    void s.removeChannel(ch);
-  };
+  // WO-REALTIME-AUTH-REFRESH: (e) reconnect-reload + active resubscribe-with-backoff
+  // (flag-ON) on the members roster. Flag-OFF = prior fail-quietly, byte-identical.
+  return subscribeWithReload(s, {
+    channelName: `members-${restaurantId}`,
+    bind: (ch) =>
+      ch.on("postgres_changes", { event: "*", schema: "public", table: "members", filter }, onChange),
+    onChange,
+    label: "members",
+  });
 }

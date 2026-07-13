@@ -47,3 +47,14 @@ export const ENABLE_DELIVERY_TRACKING =
 // flag; set NEXT_PUBLIC_ENABLE_MIZAN_PANEL="true" (and redeploy) to reveal it.
 export const ENABLE_MIZAN_PANEL =
   process.env.NEXT_PUBLIC_ENABLE_MIZAN_PANEL === "true";
+
+// REALTIME_RESUBSCRIBE — the active resubscribe-with-backoff on the console's
+// realtime channels (WO-REALTIME-AUTH-REFRESH, PART 2). ON by default: when a
+// live channel drops (CHANNEL_ERROR/TIMED_OUT/CLOSED) we tear it down and rebuild
+// with exponential backoff (cap 30s) instead of failing quietly. This is the
+// kill-switch: set the env var explicitly to "false" (and redeploy) and every one
+// of the 8 DB-changes subscriptions reverts to the prior fail-quietly behavior,
+// byte-identical to before this WO. PART 1 (setAuth propagation on token refresh)
+// is NOT gated by this — it ships unconditionally. Client + server.
+export const REALTIME_RESUBSCRIBE =
+  process.env.NEXT_PUBLIC_REALTIME_RESUBSCRIBE !== "false";
