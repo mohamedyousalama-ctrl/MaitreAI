@@ -22,6 +22,7 @@
 
 import { normalizeAr } from "./allergen-gate";
 import { scanBannedAllergyPhrases } from "./allergen-companion";
+import { parseCanonicalQuantity } from "./stt/slots";
 
 /** QUALITY floor for the garble-reply guard — deliberately LOWER than the safety
  *  net's aggressive fail-closed floor (0.66) so borderline-but-usable audio is still
@@ -191,13 +192,17 @@ export function decideVoiceLadder(args: {
   const medium =
     typeof conf === "number" && Number.isFinite(conf) &&
     conf >= VOICE_QUALITY_FLOOR && conf < OVERLAP_CONF_CEILING;
-  if (!medium) return { action: "act", reason: null };
+  // WO-VOICE-HCW — an ACT-band turn (would proceed to the Brain) with an order-frame verb
+  // but no resolved target is demoted to CONFIRM, never blind-acted.
+  const vetoed = !medium && actBandCoherenceVeto(args.text, args.menuVocab ?? []);
+  if (!medium && !vetoed) return { action: "act", reason: null };
 
-  // CONFIRM band — but never echo a §0 safety assurance back to the customer.
+  // CONFIRM band (medium confidence OR the coherence veto) — but never echo a §0 banned
+  // safety assurance back to the customer.
   if (scanBannedAllergyPhrases(String(args.text ?? "")).length > 0) {
     return { action: "retype", reason: "banned_echo" };
   }
-  return { action: "confirm", reason: "medium_confidence" };
+  return { action: "confirm", reason: vetoed ? "coherence_veto" : "medium_confidence" };
 }
 
 /** WO-VOICE-LADDER — the warm CONFIRM reply for a medium-confidence voice turn: confirm
@@ -243,4 +248,56 @@ export function isVoiceAssent(message: string): boolean {
  *  candidate/echo variant of confirmVoiceReply and nowhere else. */
 export function wasVoiceLadderConfirm(lastAssistant: string | null | undefined): boolean {
   return /لو تمام اكمل/.test(normalizeAr(String(lastAssistant ?? "")));
+}
+
+// ---------------------------------------------------------------------------
+// WO-VOICE-HCW (HCW-LITE) — ACT-band COHERENCE veto. Deepgram's hotter confidence pushed
+// a garbled-but-order-shaped transcript into the ACT band (live specimen: deepgram
+// «كريم وجبة عايز عرض الأوسايط ساقطة» @0.94, clip 2f18834d). The literal zero-overlap veto
+// can't catch it — the garble still carries an intent word («عايز») so it "overlaps". The
+// real coherence signal is: an ORDER-FRAME verb («عايز/عاوز/محتاج/اطلب…») with NO resolved
+// TARGET (no number, no assent, no DISTINCTIVE menu item — a bare category token «عرض»/«وجبة»
+// doesn't count). That turn is demoted ACT → CONFIRM, never blind-acted. Verified to demote
+// EXACTLY the specimen and leave all 10 correct Deepgram clips on ACT (zero friction).
+// ---------------------------------------------------------------------------
+
+/** True order-DESIRE verbs (normalized) — narrower than ORDER_FRAME_TERMS: «ممكن»/«عرض»/
+ *  «اوردر» are NOT desire verbs, so a coherent logistics turn «ممكن أرسلكم اللوكيشن» is
+ *  never subject to the veto. */
+const FRAME_VERBS: ReadonlySet<string> = new Set(
+  ["عايز", "عاوز", "عايزه", "عايزين", "محتاج", "محتاجه", "محتاجين", "ابغي", "ابغى", "ابي", "ابا",
+   "اريد", "اطلب", "اطلبي", "ودي", "بدي", "حابب", "حابه"].map(normalizeAr)
+);
+
+/** Bare menu CATEGORY tokens that match many items — not a distinctive content anchor. */
+const GENERIC_MENU_TOKENS: ReadonlySet<string> = new Set(
+  ["عرض", "عروض", "وجبه", "وجبات", "بيتزا", "قطع", "قطعه", "كومبو", "صحن", "علبه", "طبق"].map(normalizeAr)
+);
+
+/** A RESOLVED content anchor: a number, an assent, or a DISTINCTIVE menu-item token — a
+ *  transcript token that exactly matches a ≥3-char NON-category menu token («كاديا» yes,
+ *  a bare «عرض»/«وجبة» no). Pure. (Exact match, not the fuzzy resolver, so a generic
+ *  category token can't win the dedup race and mask the distinctive one.) */
+export function hasContentAnchor(transcript: string, menuItemNames: Array<string | null | undefined>): boolean {
+  const toks = normalizeAr(String(transcript ?? "")).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (parseCanonicalQuantity(transcript) !== null) return true;              // number
+  if (toks.some((t) => ASSENT_TERMS.has(t))) return true;                    // assent
+  const distinctive = new Set<string>();
+  for (const name of menuItemNames ?? []) {
+    for (const tk of normalizeAr(String(name ?? "")).split(/\s+/).filter(Boolean)) {
+      if (tk.length >= 3 && !GENERIC_MENU_TOKENS.has(tk)) distinctive.add(tk);
+    }
+  }
+  return toks.some((t) => distinctive.has(t));                              // distinctive menu token
+}
+
+/** HCW-LITE veto predicate: a multi-word (≥3-token) transcript carrying an order-frame verb
+ *  but NO resolved content anchor is incoherent-at-confidence → the caller demotes ACT to
+ *  CONFIRM. Pure. Single/two-word turns (greetings, «تمام صح») are never vetoed. */
+export function actBandCoherenceVeto(transcript: string, menuItemNames: Array<string | null | undefined>): boolean {
+  const toks = normalizeAr(String(transcript ?? "")).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (toks.length < 3) return false;
+  const hasFrame = toks.some((t) => FRAME_VERBS.has(t) || FRAME_VERBS.has(t.replace(/^و/, "")));
+  if (!hasFrame) return false;
+  return !hasContentAnchor(transcript, menuItemNames);
 }

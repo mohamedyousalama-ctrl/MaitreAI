@@ -26,6 +26,16 @@ const NUM: Record<string, number> = {
 
 /** Negation / correction tokens (normalized). */
 const NEG = new Set(["مش", "غير", "بدل", "بدون", "لا", "مو", "مب"]);
+/** WO-VOICE-HCW honesty-note 1 — negation words that keep meaning a NEGATION when a leading
+ *  conjunction «و» is attached («ومش محتاج» → neg). Deliberately EXCLUDES «لا», because
+ *  «ولا» is usually the disjunction "or" («حار ولا عادي»), not a negation. */
+const NEG_WAW_STRIPPABLE = new Set(["مش", "غير", "بدل", "بدون", "مو", "مب"]);
+function isNegToken(t: string): boolean {
+  return NEG.has(t) || (t.startsWith("و") && NEG_WAW_STRIPPABLE.has(t.slice(1)));
+}
+/** WO-VOICE-HCW honesty-note 2 — address-context words: a number right after one of these
+ *  is a STREET/building number, not an order quantity («شارع عشرة» → not qty 10). */
+const ADDRESS_WORDS = new Set(["شارع", "طريق", "حي", "ميدان", "عماره", "مبني", "دور", "شقه", "بلوك", "كمبوند"]);
 
 /** Value of a number token: try the raw form, then with a leading conjunction «و» and/or
  *  the definite article «ال» stripped («التسعة»→«تسعة», «وخمسين»→«خمسين»), then digits. */
@@ -55,9 +65,12 @@ function combine(vals: number[]): number {
  *  correction («٩ مش ٨») the ASSERTED (pre-negation) number wins. Null when no number. */
 export function parseCanonicalQuantity(transcript: string): number | null {
   const toks = normalizeAr(String(transcript ?? "")).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  const nums = toks.map((t, i) => ({ i, v: numValue(t) })).filter((x): x is { i: number; v: number } => x.v !== null);
+  const nums = toks
+    .map((t, i) => ({ i, v: numValue(t) }))
+    // honesty-note 2: drop a number that directly follows an address word (street/building #).
+    .filter((x): x is { i: number; v: number } => x.v !== null && !(x.i > 0 && ADDRESS_WORDS.has(toks[x.i - 1])));
   if (nums.length === 0) return null;
-  const negIdx = toks.findIndex((t) => NEG.has(t));
+  const negIdx = toks.findIndex((t) => isNegToken(t));
   if (negIdx >= 0) {
     const before = nums.filter((x) => x.i < negIdx);
     if (before.length) return combine(before.map((x) => x.v));
@@ -89,7 +102,7 @@ export function extractCanonicalSlots(
   return {
     items,
     quantity: parseCanonicalQuantity(transcript),
-    negation: norm.split(/[^\p{L}\p{N}]+/u).some((t) => NEG.has(t)),
+    negation: norm.split(/[^\p{L}\p{N}]+/u).some((t) => isNegToken(t)),
   };
 }
 
