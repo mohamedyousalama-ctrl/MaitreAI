@@ -11,6 +11,7 @@
 // ============================================================================
 
 import { NextResponse, type NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createHmac, timingSafeEqual } from "crypto";
 import { downloadWhatsAppMedia, extractInboundPhoneNumberId, markWhatsAppRead, normalizeWhatsAppImages, normalizeWhatsAppInbound, normalizeWhatsAppLocations, normalizeWhatsAppStatuses, verifyWhatsAppWebhook } from "@/lib/messaging/adapters/whatsapp";
 import { describeInboundImage } from "@/lib/ai/image-perception";
@@ -20,7 +21,7 @@ import { isWhatsAppConfigured, readWhatsAppEnv, type WhatsAppEnv } from "@/lib/m
 import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMessage } from "@/lib/db/messages";
-import { resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/restaurants";
+import { resolveWebhookAlertRestaurantId, resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/restaurants";
 import { decideWebhookRouting } from "@/lib/messaging/webhook-routing";
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
 import { withConversationLock } from "@/lib/db/conversation-lock";
@@ -41,6 +42,47 @@ export const dynamic = "force-dynamic";
 function maskPhone(p: string | undefined | null): string {
   const s = (p ?? "").replace(/\D/g, "");
   return s.length >= 4 ? `…${s.slice(-4)}` : "unknown";
+}
+
+type TenantResolutionSurface = "inbound" | "status";
+
+async function failClosedTenantResolution(
+  admin: SupabaseClient,
+  args: {
+    surface: TenantResolutionSurface;
+    phoneNumberId: string | null;
+    messageCount?: number;
+    statusCount?: number;
+  }
+) {
+  const alertRestaurantId = resolveWebhookAlertRestaurantId();
+  const context = {
+    surface: args.surface,
+    phoneNumberId: args.phoneNumberId,
+    messageCount: args.messageCount ?? 0,
+    statusCount: args.statusCount ?? 0,
+    nodeEnv: process.env.NODE_ENV ?? null,
+    hasWhatsAppRestaurantId: !!(process.env.WHATSAPP_RESTAURANT_ID ?? "").trim(),
+    hasAlertPlatformRestaurantId: !!(process.env.ALERT_PLATFORM_RESTAURANT_ID ?? "").trim(),
+  };
+  const detail = "WhatsApp webhook tenant resolution failed: env fallback has no explicit restaurant id.";
+
+  if (!alertRestaurantId) {
+    console.error(
+      "[whatsapp:webhook] CRITICAL tenant_resolution_failed: WHATSAPP_RESTAURANT_ID and ALERT_PLATFORM_RESTAURANT_ID are unset; failing closed without system_alerts insert",
+      context
+    );
+  } else {
+    console.error("[whatsapp:webhook] CRITICAL tenant_resolution_failed: failing closed", context);
+    await recordCriticalAlert(admin, {
+      restaurantId: alertRestaurantId,
+      type: "webhook_tenant_resolution_failed",
+      detail,
+      context,
+    });
+  }
+
+  return NextResponse.json({ ok: false, error: "tenant_resolution_failed" }, { status: 503 });
 }
 
 // --- GET: verification handshake -------------------------------------------
@@ -213,6 +255,9 @@ export async function POST(req: NextRequest) {
       });
     } else {
       restaurantId = await resolveWebhookRestaurantId(admin);
+      if (!restaurantId) {
+        return await failClosedTenantResolution(admin, { surface: "inbound", phoneNumberId, messageCount: messages.length });
+      }
       perTenantEnv = null;
       resolvedBy = "env_fallback";
     }
@@ -542,9 +587,13 @@ export async function POST(req: NextRequest) {
         // Tenant scope mirrors inbound (same decideWebhookRouting rule): the
         // phone_number_id tenant, else env fallback when there's no PNID OR it's the
         // configured global number; any other unmapped PNID is skipped (can't scope safely).
-        const statusRid = tenant?.restaurantId
-          ?? (decideWebhookRouting(false, phoneNumberId, readWhatsAppEnv().phoneNumberId) === "env_fallback"
-            ? await resolveWebhookRestaurantId(admin) : null);
+        let statusRid = tenant?.restaurantId ?? null;
+        if (!statusRid && decideWebhookRouting(false, phoneNumberId, readWhatsAppEnv().phoneNumberId) === "env_fallback") {
+          statusRid = await resolveWebhookRestaurantId(admin);
+          if (!statusRid) {
+            return await failClosedTenantResolution(admin, { surface: "status", phoneNumberId, statusCount: statuses.length });
+          }
+        }
         if (statusRid) {
           for (const s of statuses) {
             try {

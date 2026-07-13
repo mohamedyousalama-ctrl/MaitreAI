@@ -71,7 +71,7 @@ ok("spend handles negative/NaN spend safely", evaluateDailySpend(NaN, 10).fire =
 // ── guidance: every synthetic alert type is actionable in Arabic ────────────
 const SYNTHETIC = [
   "delivery_silence", "webhook_signature_spike", "webhook_unresolved_spike",
-  "agent_error_rate", "daily_spend", "uptime_down",
+  "webhook_tenant_resolution_failed", "agent_error_rate", "daily_spend", "uptime_down",
 ];
 for (const t of SYNTHETIC) {
   const g = alertGuidance(t);

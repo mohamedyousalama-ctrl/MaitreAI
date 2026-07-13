@@ -10,10 +10,9 @@
 // the caller cleanly falls back to the env behavior. NEVER logs/returns secrets
 // except inside the returned WhatsAppEnv (which is consumed server-side only).
 //
-// resolveWebhookRestaurantId(): the EXISTING env fallback — honors an explicit
-// WHATSAPP_RESTAURANT_ID, else the single/most-recent active restaurant. Used
-// whenever per-tenant resolution yields null, so Wesaya's current number keeps
-// working unchanged.
+// resolveWebhookRestaurantId(): the env fallback — honors an explicit
+// WHATSAPP_RESTAURANT_ID. Production fails closed when it is unset; local/test
+// keeps the single/most-recent active restaurant convenience fallback.
 // ============================================================================
 
 import "server-only";
@@ -177,6 +176,7 @@ export async function resolveWebhookRestaurantId(
 ): Promise<string | null> {
   const envId = process.env.WHATSAPP_RESTAURANT_ID;
   if (envId) return envId;
+  if (process.env.NODE_ENV === "production") return null;
 
   const { data } = await admin
     .from("restaurants")
@@ -187,4 +187,11 @@ export async function resolveWebhookRestaurantId(
     .maybeSingle();
 
   return (data?.id as string) ?? null;
+}
+
+export function resolveWebhookAlertRestaurantId(): string | null {
+  const explicit =
+    (process.env.ALERT_PLATFORM_RESTAURANT_ID ?? "").trim() ||
+    (process.env.WHATSAPP_RESTAURANT_ID ?? "").trim();
+  return explicit || null;
 }
