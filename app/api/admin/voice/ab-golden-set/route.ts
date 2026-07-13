@@ -93,10 +93,22 @@ async function runAb(): Promise<NextResponse> {
   return NextResponse.json({ ok: failures.length === 0, goldenClips: golden.length, compared: entries.length, summary, failures });
 }
 
-async function run(req: Request): Promise<NextResponse> {
+/** Cheap read path: a time-limited signed URL to the existing ab-report.json (no re-run,
+ *  no public exposure) so the report can be fetched + delivered without a bucket download. */
+async function signReport(): Promise<NextResponse> {
+  const admin = createAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const { data, error } = await admin.storage.from(GOLDEN_BUCKET).createSignedUrl("ab-report.json", 3600);
+  if (error || !data?.signedUrl) return NextResponse.json({ error: "sign_failed", detail: error?.message }, { status: 404 });
+  return NextResponse.json({ ok: true, signedUrl: data.signedUrl, expiresInSec: 3600 });
+}
+
+// GET → sign the existing report (cheap); POST → run the A/B + write the report.
+export async function GET(req: Request) {
+  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  return signReport();
+}
+export async function POST(req: Request) {
   if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   return runAb();
 }
-
-export async function GET(req: Request) { return run(req); }
-export async function POST(req: Request) { return run(req); }
