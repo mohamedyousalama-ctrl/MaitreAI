@@ -267,6 +267,20 @@ body {
   --kv-bg-console:transparent;
 }
 
+/* ---- Native <select> option lists on dark (FR-020) ------------------
+   A native <option> dropdown is painted by the browser/OS, not app CSS, so an
+   un-themed <select> shows white-on-light unreadable options against the dark
+   console. Force a dark colour-scheme + explicit option colours so every console
+   select's OPEN list is legible — systemic, covering all console selects (current
+   AND future), not just the allergen prep-status one the report flagged. Literal
+   hexes (not var()) because native option painting doesn't reliably inherit vars. */
+.kvx select { color-scheme: dark; }
+.kvx select option,
+.kvx select optgroup {
+  background-color: #141924;
+  color: #f2f5f9;
+}
+
 /* ---- Shell: misty-slate page + glass device ------------------------- */
 .kvx-page{ min-height:100vh; display:flex; align-items:safe center; justify-content:center; padding:22px;
   color:var(--txt); font-family:var(--kvx-font-ar);

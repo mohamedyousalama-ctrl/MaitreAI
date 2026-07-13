@@ -95,7 +95,10 @@ export function buildPatch(targetType: CrTargetType, field: string, newValue: un
       if (!MENU_FIELDS.has(field)) return { ok: false, reason: `menu_item field not allowed: ${field}` };
       if (field === "price") {
         const n = num(newValue);
-        if (n === null || n < 0 || n > 10_000_000) return { ok: false, reason: "price must be a number in [0, 10,000,000]" };
+        // FR-022 — reject a non-positive price: a cleared/fat-fingered field parses to 0
+        // and would put a FREE item on the live menu (price>0 is only a completeness
+        // signal, not a sell-block; order-pricing flows 0 through as a literal 0.00 line).
+        if (n === null || n <= 0 || n > 10_000_000) return { ok: false, reason: "price must be a number in (0, 10,000,000]" };
         return { ok: true, patch: { price: n } };
       }
       if (field === "allergens" || field === "ingredients") {
