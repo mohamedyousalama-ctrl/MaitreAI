@@ -20,6 +20,23 @@ import {
 
 export const runtime = "nodejs";
 
+// The editor's data projection — the ONE shape both GET (initial state) and POST (the
+// authoritative post-write row) return, so the client applies server truth identically
+// on load and after every write (WO-ALLERGEN-EDITOR: no client-optimistic guessing on a
+// safety surface). Deploy-safe: a pre-0083 row simply has null axis-2 fields.
+function allergyView(row: Record<string, unknown>) {
+  return {
+    ingredients: row.ingredients ?? [],
+    allergens: row.allergens ?? [],
+    ingredientVerifiedAt: row.allergens_reviewed_at ?? null,
+    prepStatus: row.prep_status ?? null,
+    crossContactRisks: row.cross_contact_risks ?? [],
+    kitchenCanIsolate: row.kitchen_can_isolate ?? null,
+    preparationNotes: row.preparation_notes ?? null,
+    prepVerifiedAt: row.prep_verified_at ?? null,
+  };
+}
+
 // GET — the editor's initial state + the companion flag (so the UI gates on the
 // server's authority, no client flag plumbing). Deploy-safe: select("*") tolerates a
 // pre-0083 row (axis-2 fields simply absent → nulls).
@@ -34,18 +51,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   if (!enabled) return NextResponse.json({ enabled: false });
   const { data: row } = await admin.from("menu_items").select("*").eq("id", params.id).eq("restaurant_id", tenant.restaurantId).maybeSingle();
   if (!row) return NextResponse.json({ error: "item_not_found" }, { status: 404 });
-  const r = row as Record<string, unknown>;
-  return NextResponse.json({
-    enabled: true,
-    ingredients: r.ingredients ?? [],
-    allergens: r.allergens ?? [],
-    ingredientVerifiedAt: r.allergens_reviewed_at ?? null,
-    prepStatus: r.prep_status ?? null,
-    crossContactRisks: r.cross_contact_risks ?? [],
-    kitchenCanIsolate: r.kitchen_can_isolate ?? null,
-    preparationNotes: r.preparation_notes ?? null,
-    prepVerifiedAt: r.prep_verified_at ?? null,
-  });
+  return NextResponse.json({ enabled: true, ...allergyView(row as Record<string, unknown>) });
 }
 
 type Action = "save_ingredient" | "verify_ingredient" | "save_prep" | "verify_prep";
@@ -98,5 +104,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   if (res.columnsMissing) return NextResponse.json({ error: "not_provisioned" }, { status: 409 });
   if (!res.ok) return NextResponse.json({ error: res.error ?? "write_failed" }, { status: 400 });
-  return NextResponse.json({ ok: true });
+
+  // WO-ALLERGEN-EDITOR — return the AUTHORITATIVE post-write row so the client applies
+  // server truth directly (no separate refetch to race, no client-optimistic guess on a
+  // safety surface). Same projection GET uses. A read miss still reports ok so the write
+  // isn't misreported as failed; the client keeps its local state until the next load.
+  const { data: fresh } = await admin.from("menu_items").select("*").eq("id", params.id).eq("restaurant_id", tenant.restaurantId).maybeSingle();
+  if (!fresh) return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...allergyView(fresh as Record<string, unknown>) });
 }
