@@ -577,6 +577,10 @@ export async function runCustomerTurn(
     // figure (live #كاديا — ١٥٠ when real is ٣٢٠). Default OFF → the guard never runs, prompt
     // + behavior byte-identical.
     priceTruthGuard: isFeatureExplicitlyEnabled("price_truth_guard", tenantFeatures),
+    // WO-V1.0-GOAL-LOGIC (Slice 1) — front-of-turn intent reasoning + Final Validator in
+    // respond.ts. Default OFF → the reactive pipeline runs unchanged (byte-identical). Bundles
+    // perception ON below so the Goal Interpreter's read is available.
+    goalLogic: isFeatureExplicitlyEnabled("goal_logic", tenantFeatures),
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
@@ -628,7 +632,9 @@ export async function runCustomerTurn(
 
   // P3 perception — skip the Haiku read entirely when the deterministic gate already
   // fired (the decision is made; no LLM needed). Otherwise unchanged.
-  const perceptionOn = isFeatureExplicitlyEnabled("perception", tenantFeatures) && !combinedAllergenHit.fired;
+  // WO-V1.0-GOAL-LOGIC bundles perception ON — the Goal Interpreter reuses this read (no new call).
+  const goalLogicOn = isFeatureExplicitlyEnabled("goal_logic", tenantFeatures);
+  const perceptionOn = (isFeatureExplicitlyEnabled("perception", tenantFeatures) || goalLogicOn) && !combinedAllergenHit.fired;
   const perception = perceptionOn ? await perceiveTurn(input.userMessage, input.history) : null;
   const perceptionDirective = perceptionOn ? recoveryDirective(perception) : null;
   // P4 cadence cue (consumes the P3 read; fires only on a non-default mood signal).
@@ -794,7 +800,7 @@ export async function runCustomerTurn(
 
   const runRespond = async (): Promise<RespondResult> => {
     try {
-      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective, mediaDirective, answerFirstDirective });
+      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective, mediaDirective, answerFirstDirective, perceptionRead: perception });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await admin.from("agent_runs").insert({

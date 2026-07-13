@@ -144,6 +144,13 @@ export interface BrainContext {
    *  send. Read ONLY by respond.ts's guard — never by the prompt — so the prompt stays
    *  byte-identical (snapshot-gated); off/absent → the guard never runs. */
   priceTruthGuard?: boolean;
+  /** WO-V1.0-GOAL-LOGIC (flag `goal_logic`, default OFF): when true, respond.ts runs the
+   *  front-of-turn Goal Interpreter (ambiguous→ask / price→tool-only / clear→act) and the Final
+   *  Validator (numeral-provenance + banned-word scrub), and the legacy fabricatesMoney /
+   *  price_truth guards demote to a backstop. Read ONLY by respond.ts — never by the prompt — so
+   *  the base prompt stays byte-identical (snapshot-gated). Off/absent → the reactive pipeline
+   *  runs unchanged. Bundles the `perception` flag ON (else the interpreter's read is null). */
+  goalLogic?: boolean;
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------
