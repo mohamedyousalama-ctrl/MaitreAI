@@ -58,12 +58,19 @@ export function imageHistoryContent(baseText: string, description: string | null
  * to a warm question when the image is unclear. It does NOT touch the deterministic
  * allergen gate, which runs on the customer's own text independently and earlier.
  */
-export function buildImageDirective(ctx: ImageTurnContext): string {
+export function buildImageDirective(ctx: ImageTurnContext, opts?: { deictic?: boolean }): string {
   const desc = (ctx.description ?? "").trim();
+  // WO-IMAGE-BINDING — when the customer says «ده/دي/الصورة», the referent is THIS image:
+  // bind and answer, never ask "which one?" with the image in front of you (fixes FR-011
+  // fail 3, the products-photo non-answer). Availability stays guarded deterministically.
+  const deicticLine = opts?.deictic
+    ? "العميل بيقول «ده/دي» — ده إشارة مباشرة للصورة دي بالذات: اقرأها واربطها بالمنيو وجاوب فوراً، ممنوع تسأل «تقصد إيه» والصورة قدامك."
+    : null;
   if (desc) {
     return [
       "## 👀 صورة من العميل (قراءة داخلية — ليست حقيقة)",
       `العميل بعت صورة. قراءة بصرية بتوصفها: «${desc}».`,
+      ...(deicticLine ? [deicticLine] : []),
       "اتعامل معاها طبيعي: لو عرض/كتيبة أو صنف واضح، اربطه بالمنيو الحقيقي وأكمّل بدفء (مثال: «شفت الصورة 👀 ده عرض الكتيبة — موجود! تحبه؟»).",
       "ممنوع تماماً: تخترع سعر أو صنف مش موجود فعلاً في المنيو؛ أو تأكّد توفّر حاجة من غير ما تتأكد منها. القراءة دي مجرد وصف — لو مش متطابقة مع المنيو، اسأل توضيحاً.",
       "لو الصورة مش واضحة أو مش متعلّقة بالأكل/الطلب، اسأل العميل بلطف محتاج إيه بالظبط. ممنوع الصمت أو تجاهل الصورة.",
