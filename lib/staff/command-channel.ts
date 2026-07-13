@@ -176,7 +176,10 @@ export async function loadStaffNumbers(
     .eq("active", true);
   const map = new Map<string, StaffRow>();
   for (const r of (data ?? []) as StaffRow[]) {
-    map.set(normalizePhone(r.wa_phone, country), r);
+    // WO-RACE-1 — normalizePhone now returns "" for an unnormalizable staff row; skip it so
+    // bad rows don't collide on the "" key and false-match a lookup (which is never "").
+    const key = normalizePhone(r.wa_phone, country);
+    if (key) map.set(key, r);
   }
   return map;
 }

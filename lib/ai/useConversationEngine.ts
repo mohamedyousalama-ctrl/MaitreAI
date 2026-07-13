@@ -157,6 +157,9 @@ export function useConversationEngine() {
         name: args.name,
         channel: args.channel,
       });
+      // WO-RACE-1 — findOrCreateByPhone returns "" for an un-normalizable phone (nothing
+      // created); surface the failure instead of running a turn against an empty id.
+      if (!convId) return "";
       useConversationStore.getState().addCustomerMessage(convId, trimmed);
       runAiTurn(convId, trimmed, { channel: args.channel, to: phone });
       return convId;

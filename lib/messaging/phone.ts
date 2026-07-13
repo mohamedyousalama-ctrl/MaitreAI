@@ -59,9 +59,13 @@ function applyRule(d: string, r: DialRule): string | null {
  *                 10-digit "05…" never collide), so existing mis-stored rows
  *                 still send correctly.
  *
- * Never corrupts: if no rule fits (junk, unknown country, partial input) the
- * bare digits are returned unchanged — the caller's worst case is the status
- * quo, never a silently mangled number.
+ * WO-RACE-1 (FR-014): on NO match — after the country rule AND the cross-country recovery
+ * loop both miss — return "" (an explicit invalid signal), NOT the raw digits. Handing back
+ * a local/partial number (e.g. "0103003"/EG, a Saudi landline "0112345678") stored it as the
+ * customer phone and used it as the WhatsApp recipient, where Meta rejects it (#131030) as a
+ * later "message failed" instead of an input error at creation. Callers reject "" at entry.
+ * The recovery loop runs FIRST, so cross-country recovery (SA-mobile-in-EG → 966…) is intact;
+ * only genuinely-unmatched shapes become "".
  */
 export function normalizePhone(raw: string, country?: string | null): string {
   let d = (raw ?? "").replace(/\D/g, "");
@@ -79,5 +83,5 @@ export function normalizePhone(raw: string, country?: string | null): string {
     const hit = applyRule(d, r);
     if (hit) return hit;
   }
-  return d;
+  return ""; // unmatched shape → explicit invalid signal (was: raw digits, a send-doomed store)
 }
