@@ -71,7 +71,10 @@ export interface ToolSignal {
     | "callback_requested"
     // WO-SAFETY-MODEL-V3 — a suppressed escalation (the model/gate wanted a human but the
     // customer didn't explicitly ask): staff are alerted with the full reason, no hold.
-    | "notify_without_hold";
+    | "notify_without_hold"
+    // WO-IMAGE-BINDING — the availability guard rewrote a reply that affirmed availability
+    // on an image turn with no resolved menu candidate (measurement, like the price-truth log).
+    | "image_binding_rewrite";
   detail: Record<string, unknown>;
 }
 

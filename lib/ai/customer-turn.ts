@@ -57,6 +57,7 @@ import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import { emptyDraft, type OrderDraft, type PhotoRequest, type Presentation, type ToolSignal } from "@/lib/ai/tools";
 import { applyPinRouting } from "@/lib/delivery/routing";
 import { buildImageDirective } from "@/lib/messaging/image-turn";
+import { imageAvailabilityGuard, isDeicticImageReference } from "@/lib/ai/image-binding";
 import type { AiToneConfig } from "@/lib/types";
 import { dialectProfile } from "@/lib/ai/dialect";
 
@@ -736,7 +737,9 @@ export async function runCustomerTurn(
   // an image turn (even a failed read) is answered warmly, never with silence. Context
   // only — it does NOT touch the deterministic allergen gate, which already ran above
   // on input.userMessage (the caption / 📷 placeholder), never on the vision read.
-  const imageDirective = input.imageContext ? buildImageDirective(input.imageContext) : null;
+  const imageDirective = input.imageContext
+    ? buildImageDirective(input.imageContext, { deictic: isDeicticImageReference(input.imageContext.caption ?? "") })
+    : null;
 
   // WO-LIVE-3 §4 — pre-turn media directive (guard→model coherence). Only when
   // media_guard is ON: decide whether the photo budget is spent for THIS window (24h OR
@@ -904,6 +907,29 @@ export async function runCustomerTurn(
     await maybeRecordCheckpointAck();
     result = await runRespond();
   }
+
+  // WO-IMAGE-BINDING — the FR-011 availability guard. INSIDE the media_turn_trigger gate,
+  // so flag-off is byte-identical (Khalid 24/0 protected). If the reply affirmed availability
+  // on an image turn but no distinctive menu candidate resolved from the image, rewrite to an
+  // honest no-match (never a false «موجود») + closest suggestion, and emit the measurement
+  // signal {image_desc, affirmed_wrongly, resolved_candidate}. Mirrors assertsAllergenSafety.
+  if (input.imageContext && isFeatureExplicitlyEnabled("media_turn_trigger", tenantFeatures)) {
+    const imgGuard = imageAvailabilityGuard({
+      customerMessage: input.userMessage,
+      replyText: result.reply,
+      description: input.imageContext.description,
+      menuItemNames: ctx.menuItems.map((i) => i.name),
+      dialect,
+    });
+    if (imgGuard.rewritten && imgGuard.signal) {
+      result = {
+        ...result,
+        reply: imgGuard.rewritten,
+        signals: [...result.signals, { type: "image_binding_rewrite", detail: { ...imgGuard.signal } }],
+      };
+    }
+  }
+
   const latencyMs = Date.now() - t0;
 
   const cfg = modelFor("customer_agent");
