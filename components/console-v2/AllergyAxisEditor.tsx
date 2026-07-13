@@ -13,15 +13,15 @@
 // ============================================================================
 
 import { useEffect, useState } from "react";
-import { ShieldCheck, AlertTriangle, Loader2 } from "lucide-react";
+import { ShieldCheck, AlertTriangle, Loader2, Check } from "lucide-react";
 import { ALLERGENS, canonicalToArLabel } from "@/lib/ai/allergen-vocab";
 import { CROSS_CONTACT_TAGS, PREP_STATUSES, ISOLATE_VALUES, crossContactLabelAr, prepStatusLabelAr, kitchenCanIsolateLabelAr } from "@/lib/ai/allergen-prep-vocab";
+// WO-ALLERGEN-EDITOR — the pure, race-closed state model (proven in
+// scripts/proof-allergen-editor-races.test.ts). The component is a thin view over it:
+// server-authoritative per-axis apply (no refetch to race) + advisory dirty detection.
+import { mergeAxisResponse, isAxisDirty, type AllergyData, type Axis } from "@/lib/console-v2/allergy-editor-state";
 
-interface State {
-  ingredients: string[]; allergens: string[]; ingredientVerifiedAt: string | null;
-  prepStatus: string | null; crossContactRisks: string[]; kitchenCanIsolate: string | null;
-  preparationNotes: string | null; prepVerifiedAt: string | null;
-}
+type State = AllergyData;
 
 const coral = "#c0492f";
 const label: React.CSSProperties = { fontSize: 9, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--faint)", fontWeight: 700 };
@@ -50,33 +50,68 @@ function VerifiedBadge({ at }: { at: string | null }) {
     : <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "#e8b45a", fontWeight: 700 }}><AlertTriangle size={12} /> لم تُراجع</span>;
 }
 
+type AxisMsg = "saved" | "error" | "not_provisioned" | null;
+const parseIngredients = (text: string) => text.split(/[،,]/).map((x) => x.trim()).filter(Boolean);
+
 export default function AllergyAxisEditor({ itemId }: { itemId: string }) {
   const [s, setS] = useState<State | null>(null);
+  // Last SERVER-applied values, per axis — the baseline the advisory dirty indicator
+  // compares against (WO-ALLERGEN-EDITOR).
+  const [baseline, setBaseline] = useState<State | null>(null);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [ingredientsText, setIngredientsText] = useState("");
+  const [msg, setMsg] = useState<{ ingredient: AxisMsg; prep: AxisMsg }>({ ingredient: null, prep: null });
 
   async function load() {
     const r = await fetch(`/api/menu/${itemId}/allergy-data`, { credentials: "include" }).then((x) => x.json()).catch(() => null);
     if (!r || !r.enabled) { setEnabled(false); return; }
-    setEnabled(true); setS(r);
+    setEnabled(true); setS(r); setBaseline(r);
     setNotes(r.preparationNotes ?? ""); setIngredientsText((r.ingredients ?? []).join("، "));
   }
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [itemId]);
 
   if (enabled === false) return null;
-  if (!s) return <div style={{ padding: 16, color: "var(--faint)", fontSize: 12 }}><Loader2 size={13} className="spin" /> …</div>;
+  if (!s || !baseline) return <div style={{ padding: 16, color: "var(--faint)", fontSize: 12 }}><Loader2 size={13} className="spin" /> …</div>;
 
-  async function post(body: Record<string, unknown>, key: string) {
+  // The current EDITABLE data (s + the text-field mirrors) — used for advisory dirty
+  // detection against the per-axis baseline.
+  const current: State = { ...s, ingredients: parseIngredients(ingredientsText), preparationNotes: notes };
+  const dirty = (axis: Axis) => isAxisDirty(current, baseline, axis);
+
+  // ONE write, end to end (WO-ALLERGEN-EDITOR): SERIALIZED (refused while busy), and the
+  // authoritative post-write row is applied PER-AXIS — the other axis's unsaved edits are
+  // never touched, and there is NO refetch to race. busy is cleared in `finally`, AFTER
+  // the response is applied, so a second action can't interleave the apply.
+  async function post(body: Record<string, unknown>, key: string, axis: Axis) {
+    if (busy) return;
     setBusy(key);
-    const r = await fetch(`/api/menu/${itemId}/allergy-data`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
-    setBusy(null);
-    if (r && r.ok) await load();
+    setMsg((m) => ({ ...m, [axis]: null }));
+    try {
+      const r = await fetch(`/api/menu/${itemId}/allergy-data`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      if (r.status === 409) { setMsg((m) => ({ ...m, [axis]: "not_provisioned" })); return; }
+      if (!r.ok) { setMsg((m) => ({ ...m, [axis]: "error" })); return; }
+      const row = (await r.json()) as AllergyData;
+      // Server-authoritative, per-axis: apply ONLY this axis from the response; sync its
+      // text mirror; leave the other axis's local (possibly-unsaved) edits intact.
+      setS((p) => (p ? mergeAxisResponse(p, axis, row) : p));
+      setBaseline((p) => (p ? mergeAxisResponse(p, axis, row) : p));
+      if (axis === "ingredient") setIngredientsText((row.ingredients ?? []).join("، "));
+      else setNotes(row.preparationNotes ?? "");
+      setMsg((m) => ({ ...m, [axis]: "saved" }));
+    } catch {
+      setMsg((m) => ({ ...m, [axis]: "error" }));
+    } finally {
+      setBusy(null);
+    }
   }
 
-  const toggleAllergen = (k: string) => setS((p) => p && ({ ...p, allergens: p.allergens.includes(k) ? p.allergens.filter((x) => x !== k) : [...p.allergens, k] }));
-  const toggleTag = (k: string) => setS((p) => p && ({ ...p, crossContactRisks: p.crossContactRisks.includes(k) ? p.crossContactRisks.filter((x) => x !== k) : [...p.crossContactRisks, k] }));
+  // Local, unsaved edits — clear this axis's saved/error signal so it never lingers stale.
+  const editIngredient = (patch: Partial<State>) => { setS((p) => p && ({ ...p, ...patch })); setMsg((m) => ({ ...m, ingredient: null })); };
+  const editPrep = (patch: Partial<State>) => { setS((p) => p && ({ ...p, ...patch })); setMsg((m) => ({ ...m, prep: null })); };
+  const toggleAllergen = (k: string) => editIngredient({ allergens: s.allergens.includes(k) ? s.allergens.filter((x) => x !== k) : [...s.allergens, k] });
+  const toggleTag = (k: string) => editPrep({ crossContactRisks: s.crossContactRisks.includes(k) ? s.crossContactRisks.filter((x) => x !== k) : [...s.crossContactRisks, k] });
 
   return (
     <div style={{ marginTop: 16, borderTop: `1px solid ${coral}44`, paddingTop: 14 }}>
@@ -84,13 +119,16 @@ export default function AllergyAxisEditor({ itemId }: { itemId: string }) {
       <div style={{ fontSize: 10.5, color: "var(--faint)", marginBottom: 12 }}>تعديل البيانات يلغي «تمّت المراجعة» — لازم تأكيد جديد بعد أي تغيير.</div>
 
       {/* ── Axis 1 — ingredients + allergens ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
         <span style={label}>المحور ١ — المكونات والحساسية</span>
-        <VerifiedBadge at={s.ingredientVerifiedAt} />
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <AxisStatus dirty={dirty("ingredient")} msg={msg.ingredient} />
+          <VerifiedBadge at={s.ingredientVerifiedAt} />
+        </span>
       </div>
       <label style={{ display: "block", marginBottom: 8 }}>
         <span style={{ ...label, display: "block", marginBottom: 4 }}>المكونات (افصل بفاصلة)</span>
-        <input value={ingredientsText} onChange={(e) => setIngredientsText(e.target.value)} dir="rtl" style={inputStyle} placeholder="دجاج، رز، بهارات" />
+        <input value={ingredientsText} onChange={(e) => { setIngredientsText(e.target.value); setMsg((m) => ({ ...m, ingredient: null })); }} dir="rtl" style={inputStyle} placeholder="دجاج، رز، بهارات" />
       </label>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
         {ALLERGENS.map((a) => (
@@ -98,18 +136,21 @@ export default function AllergyAxisEditor({ itemId }: { itemId: string }) {
         ))}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <button disabled={!!busy} style={btn("save")} onClick={() => post({ action: "save_ingredient", ingredients: ingredientsText.split(/[،,]/).map((x) => x.trim()).filter(Boolean), allergens: s.allergens }, "si")}>حفظ المكونات</button>
-        <button disabled={!!busy} style={btn("verify")} onClick={() => post({ action: "verify_ingredient" }, "vi")}>تأكيد المراجعة</button>
+        <button disabled={!!busy} style={btn("save")} onClick={() => post({ action: "save_ingredient", ingredients: parseIngredients(ingredientsText), allergens: s.allergens }, "si", "ingredient")}>حفظ المكونات</button>
+        <button disabled={!!busy} style={btn("verify")} onClick={() => post({ action: "verify_ingredient" }, "vi", "ingredient")}>تأكيد المراجعة</button>
       </div>
 
       {/* ── Axis 2 — preparation ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
         <span style={label}>المحور ٢ — التحضير والتلامس</span>
-        <VerifiedBadge at={s.prepVerifiedAt} />
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <AxisStatus dirty={dirty("prep")} msg={msg.prep} />
+          <VerifiedBadge at={s.prepVerifiedAt} />
+        </span>
       </div>
       <label style={{ display: "block", marginBottom: 8 }}>
         <span style={{ ...label, display: "block", marginBottom: 4 }}>حالة التحضير</span>
-        <select value={s.prepStatus ?? "unknown"} onChange={(e) => setS((p) => p && ({ ...p, prepStatus: e.target.value }))} dir="rtl" style={selectStyle}>
+        <select value={s.prepStatus ?? "unknown"} onChange={(e) => editPrep({ prepStatus: e.target.value })} dir="rtl" style={selectStyle}>
           {PREP_STATUSES.map((v) => <option key={v} value={v} style={optionStyle}>{prepStatusLabelAr(v)}</option>)}
         </select>
       </label>
@@ -121,18 +162,33 @@ export default function AllergyAxisEditor({ itemId }: { itemId: string }) {
       </div>
       <label style={{ display: "block", marginBottom: 8 }}>
         <span style={{ ...label, display: "block", marginBottom: 4 }}>هل يقدر المطبخ يعزل؟</span>
-        <select value={s.kitchenCanIsolate ?? "unknown"} onChange={(e) => setS((p) => p && ({ ...p, kitchenCanIsolate: e.target.value }))} dir="rtl" style={selectStyle}>
+        <select value={s.kitchenCanIsolate ?? "unknown"} onChange={(e) => editPrep({ kitchenCanIsolate: e.target.value })} dir="rtl" style={selectStyle}>
           {ISOLATE_VALUES.map((v) => <option key={v} value={v} style={optionStyle}>{kitchenCanIsolateLabelAr(v)}</option>)}
         </select>
       </label>
       <label style={{ display: "block", marginBottom: 8 }}>
         <span style={{ ...label, display: "block", marginBottom: 4 }}>ملاحظات التحضير</span>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} dir="rtl" rows={2} style={{ ...inputStyle, resize: "vertical" }} />
+        <textarea value={notes} onChange={(e) => { setNotes(e.target.value); setMsg((m) => ({ ...m, prep: null })); }} dir="rtl" rows={2} style={{ ...inputStyle, resize: "vertical" }} />
       </label>
       <div style={{ display: "flex", gap: 8 }}>
-        <button disabled={!!busy} style={btn("save")} onClick={() => post({ action: "save_prep", prepStatus: s.prepStatus ?? "unknown", crossContactRisks: s.crossContactRisks, kitchenCanIsolate: s.kitchenCanIsolate ?? "unknown", preparationNotes: notes }, "sp")}>حفظ التحضير</button>
-        <button disabled={!!busy} style={btn("verify")} onClick={() => post({ action: "verify_prep" }, "vp")}>تأكيد المراجعة</button>
+        <button disabled={!!busy} style={btn("save")} onClick={() => post({ action: "save_prep", prepStatus: s.prepStatus ?? "unknown", crossContactRisks: s.crossContactRisks, kitchenCanIsolate: s.kitchenCanIsolate ?? "unknown", preparationNotes: notes }, "sp", "prep")}>حفظ التحضير</button>
+        <button disabled={!!busy} style={btn("verify")} onClick={() => post({ action: "verify_prep" }, "vp", "prep")}>تأكيد المراجعة</button>
       </div>
     </div>
   );
+}
+
+// Advisory per-axis status: an unsaved-edit dot «● تغييرات غير محفوظة» (NEVER a blocker —
+// the operator can always save), a «تم الحفظ ✓» confirmation on a successful write (the
+// positive safety signal the surface previously never gave), or an honest error line.
+function AxisStatus({ dirty, msg }: { dirty: boolean; msg: AxisMsg }) {
+  if (msg === "saved" && !dirty)
+    return <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, color: "#7fd3a0", fontWeight: 700 }}><Check size={11} /> تم الحفظ</span>;
+  if (msg === "error")
+    return <span style={{ fontSize: 10, color: "#e8b45a", fontWeight: 700 }}>تعذّر الحفظ — حاول مجددًا</span>;
+  if (msg === "not_provisioned")
+    return <span style={{ fontSize: 10, color: "#e8b45a", fontWeight: 700 }}>الميزة غير مفعّلة بعد</span>;
+  if (dirty)
+    return <span style={{ fontSize: 10, color: "#e8b45a", fontWeight: 700 }}>● تغييرات غير محفوظة</span>;
+  return null;
 }
