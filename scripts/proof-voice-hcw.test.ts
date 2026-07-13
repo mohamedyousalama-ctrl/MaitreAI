@@ -75,5 +75,19 @@ const band = (text: string, conf: number) => decideVoiceLadder({ text, confidenc
     hasContentAnchor("عايز عرض", MENU) === false && hasContentAnchor("عايز وجبة", MENU) === false);
 }
 
+// ══ LEG 5 — honesty note 1: negation و-strip, but «ولا» (or) stays non-negation ══
+{
+  ok("LEG5: «ومش محتاج» → negation true", extractCanonicalSlots("عايز حاجة ومش محتاج مشروب", MENU).negation === true);
+  ok("LEG5: «حار ولا عادي» (or) stays NON-negation", extractCanonicalSlots("حار ولا عادي", MENU).negation === false);
+  ok("LEG5: a bare «لا» still counts as negation", extractCanonicalSlots("لا مش كده", MENU).negation === true);
+}
+
+// ══ LEG 6 — honesty note 2: address numbers excluded, real quantities preserved ══
+{
+  ok("LEG6: «شارع عشرة» is NOT a quantity", parseCanonicalQuantity("التوصيل إلى شارع عشرة") === null);
+  ok("LEG6: a real «عشرة قطع» quantity is preserved", parseCanonicalQuantity("عايز عشرة قطع") === 10);
+  ok("LEG6: a number NOT after an address word still counts", parseCanonicalQuantity("عايز تسعة") === 9);
+}
+
 console.log(`\nWO-VOICE-HCW PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
