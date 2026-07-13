@@ -62,7 +62,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .update({ role, updated_at: new Date().toISOString() })
     .eq("id", params.id)
     .eq("restaurant_id", tenant.restaurantId);
-  if (error) return NextResponse.json({ error: "update_failed" }, { status: 502 });
+  if (error) {
+    // WO-RACE-1 — the 0089 trigger is the atomic backstop the pre-check can't guarantee
+    // under a concurrent race: it REJECTS a demotion that would leave zero managers. Map
+    // that exception to the same 409 last_manager the pre-check returns (never a 502).
+    if (error.message?.includes("last_manager") || error.code === "23514") {
+      return NextResponse.json({ error: "last_manager", message: "لازم يفضل مدير واحد على الأقل" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "update_failed" }, { status: 502 });
+  }
 
   // Attribution law — a role change is a mutating action, so it's stamped WHO did it.
   const admin = createAdminClient();

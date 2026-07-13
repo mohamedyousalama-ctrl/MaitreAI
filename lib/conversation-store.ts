@@ -154,12 +154,16 @@ export const useConversationStore = create<ConversationState>()(
           // Match on the canonical (normalized) form so a re-typed local number
           // (01030036000) finds the existing conversation stored canonically
           // (201030036000) instead of forking a duplicate thread.
-          const target = normalizePhone(phone) || digits(phone);
+          const normalized = normalizePhone(phone);
+          const target = normalized || digits(phone);
           const existing = get().conversations.find((c) => (normalizePhone(c.phone) || digits(c.phone)) === target);
           if (existing) {
             set({ selectedId: existing.id });
             return existing.id;
           }
+          // WO-RACE-1 (FR-014) — an un-normalizable phone is send-doomed (Meta #131030). Don't
+          // create a broken conversation; return "" so the caller surfaces it to the operator.
+          if (!normalized) return "";
           const { _sb, _rid } = get();
           const id = _sb ? crypto.randomUUID() : newId("conv");
           const palette = ["#2563eb", "#9333ea", "#059669", "#f97316", "#06b6d4", "#db2777"];

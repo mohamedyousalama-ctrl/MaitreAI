@@ -121,12 +121,16 @@ export async function loadConversations(s: SupabaseClient, restaurantId: string)
 const digits = (p: string) => p.replace(/\D/g, "");
 
 /** Upsert customer + ensure a conversation exists; writes use the given ids. */
+/** WO-RACE-1 — ensureConversationDb rejects an un-normalizable phone at creation instead of
+ *  storing a send-doomed row; the caller surfaces `invalid_phone` to the operator. */
+export type EnsureConversationResult = { ok: true } | { ok: false; reason: "invalid_phone" };
+
 export async function ensureConversationDb(
   s: SupabaseClient,
   restaurantId: string,
   conversationId: string,
   args: { phone: string; name?: string; channel: ChannelKey }
-): Promise<void> {
+): Promise<EnsureConversationResult> {
   // Canonical phone (Step 2): an operator may type a local number (01030036000)
   // or paste one with +/spaces — WhatsApp wants international, trunk-less digits
   // (201030036000) or it rejects the recipient with #131030. Normalize on the
@@ -134,6 +138,9 @@ export async function ensureConversationDb(
   // (restaurant_id, phone) unique key dedups against the canonical form.
   const { data: rc } = await s.from("restaurants").select("country").eq("id", restaurantId).maybeSingle();
   const phone = normalizePhone(args.phone, (rc?.country as string | null) ?? null);
+  // WO-RACE-1 (FR-014) — a phone that doesn't normalize is send-doomed (Meta #131030). Reject
+  // at creation and surface it, rather than storing an empty/broken customer + conversation.
+  if (!phone) return { ok: false, reason: "invalid_phone" };
   // Launch rule: ensure the customers row + link customer_id (same
   // (restaurant_id, phone) key the canonical ensureCustomerId helper uses; kept
   // inline here because this module is client-reachable and can't import the
@@ -158,6 +165,7 @@ export async function ensureConversationDb(
     },
     { onConflict: "id" }
   );
+  return { ok: true };
 }
 
 export async function insertMessageDb(

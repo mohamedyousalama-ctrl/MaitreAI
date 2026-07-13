@@ -27,10 +27,11 @@ eq("agnostic SA 10-digit local", normalizePhone("0512345678"), "966512345678");
 eq("agnostic EG canonical passes through", normalizePhone("201030036000"), "201030036000");
 eq("agnostic SA canonical passes through", normalizePhone("966512345678"), "966512345678");
 
-// --- Never corrupt: unknown/junk/partial returns bare digits unchanged ---
+// --- WO-RACE-1 (FR-014): a genuinely-unmatched shape returns "" (invalid signal), NOT the
+// raw digits — a local/partial number stored as a customer phone is send-doomed (Meta #131030).
 eq("junk letters", normalizePhone("dddd"), "");
-eq("short junk", normalizePhone("123"), "123");
-eq("malformed 12-digit EG-ish (no rule)", normalizePhone("011137987878", "EG"), "011137987878");
+eq("short junk", normalizePhone("123"), "");
+eq("malformed 12-digit EG-ish (no rule)", normalizePhone("011137987878", "EG"), "");
 eq("unknown country falls back to agnostic", normalizePhone("01030036000", "XX"), "201030036000");
 eq("empty", normalizePhone(""), "");
 
