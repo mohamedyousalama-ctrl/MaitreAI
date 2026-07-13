@@ -32,6 +32,9 @@ import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
 import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
+// WO-SAFETY-BRIDGE — a safety-class inbound during HUMAN_ACTIVE with nobody attending gets a
+// caution ACK + a loud re-alert (ownership unchanged). Gated on the safety_bridge flag.
+import { isSafetyClassInbound, safetyBridgeAck, SAFETY_BRIDGE_WINDOW_MINUTES } from "@/lib/ai/safety-bridge";
 import { isExplicitHumanRequest } from "@/lib/ai/human-request";
 import { isSafetyHeld } from "@/lib/db/safety-hold";
 import { appBaseUrl } from "@/lib/db/delivery";
@@ -67,6 +70,10 @@ export type RespondAndSendStatus =
   | "send_failed"
   | "agent_error"
   | "deduped"
+  // WO-SAFETY-BRIDGE — a safety-class inbound during HUMAN_ACTIVE with an absent operator was
+  // acknowledged (caution ACK) + the team loudly re-alerted; ownership stays human, the wait
+  // clock is NOT bumped. Silent (already-bridged this window) collapses to skipped_takeover.
+  | "safety_bridged"
   // WO-LIVE6-REPLY-DAMPENER — a 3rd+ consecutive unclear fragment within a short window
   // was silenced (the «مش فاهم» pile-up killer). Never reached for a meaningful message or
   // anything the allergen net / human-request detector flags.
@@ -764,6 +771,81 @@ export async function respondAndSendWhatsApp(
       // preserved — SKIP the legacy idle logic and fall through to the Brain turn.
       if (rec.kind === "resume") {
         resumedByRecovery = true;
+      }
+    }
+
+    // WO-SAFETY-BRIDGE (FR-012 residual) — a SAFETY-CLASS inbound during HUMAN_ACTIVE with an
+    // ABSENT operator must never sit unacknowledged. Runs BEFORE the readHandoffConfig / 772 bail
+    // (so it also covers the handoff_timeout-OFF and not-yet-idle cases). Presence proxy = the
+    // wait clock (updated_at, reset only by operator replies) stale past the short bridge window.
+    // Effect: a caution ACK to the customer + a LOUD re-alert. Ownership stays human (NO
+    // setOwnershipState); the wait clock is NOT bumped (an automated ack is not operator activity,
+    // so the operator's absence stays truthful and the next re-alert is not suppressed). Deduped
+    // to ≤1 per window via a `safety_bridge_ack` system-note marker. Flag OFF → never evaluated →
+    // byte-identical.
+    if (!resumedByRecovery && isFeatureExplicitlyEnabled("safety_bridge", features) &&
+        isIdleBeyond(conv.updated_at as string | null, SAFETY_BRIDGE_WINDOW_MINUTES)) {
+      const { data: lastInbound } = await admin
+        .from("messages")
+        .select("text, created_at")
+        .eq("conversation_id", conversationId)
+        .eq("sender", "customer")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const inboundText = (lastInbound as { text?: string | null } | null)?.text ?? "";
+      if (inboundText && isSafetyClassInbound(inboundText)) {
+        // Dedup: did we already bridge within this window? (Mirrors realertOperator's marker check.)
+        const sinceIso = new Date(Date.now() - SAFETY_BRIDGE_WINDOW_MINUTES * 60 * 1000).toISOString();
+        const { data: marks } = await admin
+          .from("messages")
+          .select("meta")
+          .eq("conversation_id", conversationId)
+          .eq("sender", "system")
+          .gte("created_at", sinceIso)
+          .order("created_at", { ascending: false })
+          .limit(5);
+        const alreadyBridged = (marks ?? []).some((m) => (m.meta as Record<string, unknown> | null)?.kind === "safety_bridge_ack");
+        if (alreadyBridged) return { status: "skipped_takeover" }; // already acked this window — stay silent
+
+        const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
+        const ackDialect = String((rFlags as { dialect?: string } | null)?.dialect ?? "egyptian");
+        const ackText = safetyBridgeAck(ackDialect);
+        // 1. CUSTOMER ACK — persist + send. NOTE: we do NOT bump conversations.updated_at (unlike
+        //    the recovery send): an automated ack is not operator activity.
+        const { data: ackMsg } = await admin
+          .from("messages")
+          .insert({
+            restaurant_id: restaurantId,
+            conversation_id: conversationId,
+            direction: "outbound",
+            sender: "ai",
+            text: ackText,
+            status: "sent",
+            meta: { kind: "safety_bridge_ack" },
+          })
+          .select("id")
+          .single();
+        const ackSend = await sendWhatsAppText({ to: phone, text: ackText, lastInboundAtMs: Date.now() });
+        if (ackMsg?.id) {
+          await admin
+            .from("messages")
+            .update(ackSend.status === "sent" ? { status: "sent", channel_message_id: ackSend.externalMessageId ?? null } : { status: "failed" })
+            .eq("id", ackMsg.id);
+        }
+        // Dedup marker (system note) — the window guard above keys on this.
+        await noteToTimeline(admin, restaurantId, conversationId,
+          "🔒 رسالة سلامة/حساسية وصلت والمحادثة مع موظف — بعتنا للعميل إشعار مبدئي ونبّهنا الفريق للمتابعة.",
+          { kind: "safety_bridge_ack" });
+        // 2. LOUD re-alert (banner + WhatsApp-to-admin + email), deduped per-conversation while active.
+        await recordCriticalAlert(admin, {
+          restaurantId,
+          type: "safety_unattended_handoff",
+          detail: "وصلت رسالة سلامة/حساسية من العميل والمحادثة محوّلة لموظف بدون متابعة — محتاجة تدخّل بشري فوري.",
+          conversationId,
+        });
+        // Ownership UNCHANGED (no setOwnershipState) — the human still owns the thread.
+        return { status: "safety_bridged", reply: ackText, sendStatus: ackSend.status };
       }
     }
 

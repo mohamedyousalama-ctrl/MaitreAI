@@ -85,7 +85,12 @@ export type CriticalAlertType =
   // WO-SAFETY-MODEL-V3 (§5) — an ACTIVE medical emergency. Karim STAYS with the urgent
   // guidance line (advise emergency services); this fires LOUD so staff act immediately.
   // No SYSTEM_HOLD — silence during a medical emergency was the worst possible behavior.
-  | "allergy_emergency_active";
+  | "allergy_emergency_active"
+  // WO-SAFETY-BRIDGE (FR-012 residual) — a SAFETY-CLASS customer message arrived while the
+  // conversation is HUMAN_ACTIVE and the operator has been quiet past the short bridge window.
+  // The customer got a caution ACK; this fires LOUD (banner + WhatsApp-to-admin) so the absent
+  // operator returns. Ownership stays human — this is an acknowledgment + re-alert, not a takeover.
+  | "safety_unattended_handoff";
 
 export interface CriticalAlertInput {
   restaurantId: string;
