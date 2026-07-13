@@ -18,6 +18,13 @@ import { dialectProfile } from "./dialect";
 import { fabricatesMoney, knownMenuPrices, offersNonMenuProduct } from "./money-guard";
 // WO-LIVE6-PRICE-TRUTH — deterministic item→price REPAIR guard (flag price_truth_guard).
 import { repairPriceTruth } from "./price-truth";
+// WO-V1.0-GOAL-LOGIC (Slice 1, flag goal_logic) — front-of-turn intent reasoning + the Final
+// Validator (numeral-provenance + banned-word scrub). Supersedes fabricatesMoney/price_truth
+// as the money-truth layer when ON; flag OFF → none of it runs → byte-identical.
+import { classifyGoal, type GoalRead } from "./goal-interpreter";
+import { buildClarifyingQuestion } from "./clarification";
+import { validateNumerals, stripBlockedNumerals } from "./numeral-provenance";
+import { scrubBannedWords } from "./banned-words";
 import { isExplicitOrderConfirmation } from "./order-confirm";
 import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-gate";
 import { isExplicitHumanRequest } from "./human-request";
@@ -78,6 +85,10 @@ export interface RespondInput {
    *  forces Karim to serve that see-request this turn before advancing checkout. Absent
    *  otherwise → identical behavior. */
   answerFirstDirective?: string | null;
+  /** WO-V1.0-GOAL-LOGIC: the per-turn perception read (perceiveTurn) — the Goal Interpreter's
+   *  intent/understood signal. Passed only when goal_logic + perception are on; null otherwise
+   *  (the interpreter then leans on its deterministic backstops). */
+  perceptionRead?: GoalRead | null;
 }
 
 export interface RespondResult {
@@ -307,6 +318,47 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
   const tools = canOrder ? orderToolsWithGeo(geoRouting) : NON_ORDER_TOOLS;
 
+  // WO-V1.0-GOAL-LOGIC (Slice 1) — FRONT-OF-TURN intent reasoning. Before composing a reply,
+  // classify the inbound: AMBIGUOUS → ask ONE grounded question (short-circuit, no model call);
+  // PRICE / ACTIONABLE → fall through to the model+tool loop (the Final Validator below enforces
+  // numeral provenance so a price is never model-fabricated). Flag OFF → skipped → byte-identical.
+  if (input.brain.goalLogic && canOrder) {
+    const offerNames = input.brain.menuItems.filter((i) => /عرض/.test(i.name)).map((i) => i.name);
+    const decision = classifyGoal({
+      userMessage: input.userMessage,
+      read: input.perceptionRead ?? null,
+      state: {
+        itemNames: input.brain.menuItems.map((i) => i.name),
+        offerNames,
+        atConfirmationPoint: atConfirmationPoint(input.history),
+        hasOpenDraft: !!input.initialDraft?.lines.length,
+      },
+    });
+    if (decision.action === "ask") {
+      // ASK — one grounded clarifying question, banned-word-clean. No model loop, no canned line.
+      const q = scrubBannedWords(
+        buildClarifyingQuestion({ kind: decision.kind, candidates: decision.candidates, dialect: input.brain.dialect })
+      ).text;
+      ctx.signals.push({ type: "missing_data", detail: { reason: "goal_clarify", kind: decision.kind, candidates: decision.candidates } });
+      return {
+        reply: q,
+        draft: ctx.draft,
+        escalate: false,
+        escalationReason: null,
+        signals: ctx.signals,
+        presentation: null,
+        photoRequests: [],
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        toolNames: [],
+        stopReason: "goal_clarify",
+        model: "deterministic_goal_interpreter",
+        adapter: "mock",
+        resendReceipt: false,
+      };
+    }
+    // decision.action === "price" | "act" → continue to the model loop; the validator is the net.
+  }
+
   // Real-time 86ing: if a saved-cart item went out-of-stock since it was added,
   // append a per-turn availability alert to the (uncached) user message so «كريم»
   // surfaces it proactively. Tool guards (finalize_draft) still enforce it hard.
@@ -452,26 +504,45 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // fabricated/computed order total or any non-menu amount (Type 2). Order totals
   // in the actual order flow come from the tools (which set usedMoneyTool).
   const usedMoneyTool = toolNames.some((name) => MONEY_TOOL_NAMES.has(name));
-  // WO-LIVE6-PRICE-TRUTH — item→price PAIR repair (flag price_truth_guard). Runs BEFORE
-  // fabricatesMoney so a mis-attributed-but-known figure (live: «عرض كاديا — ١٥٠» when its
-  // real price is ٣٢٠; ١٥٠ IS a real price for OTHER items, so fabricatesMoney waves it
-  // through) is CORRECTED in place — never blocked, never held. Only on model free prose
-  // (no money tool ran → engine/tool figures are truth and are never touched). Every repair
-  // AND every skipped-ambiguous/multi-price bind emits a signal {item, quoted, real} (FR-013).
-  // Flag OFF → never runs → byte-identical.
-  if (input.brain.priceTruthGuard && text.trim() && !usedMoneyTool) {
-    const pt = repairPriceTruth(text, currency, input.brain.menuItems);
-    for (const r of pt.repairs) {
-      ctx.signals.push({ type: "money_mismatch", detail: { reason: "price_repaired", item: r.item, quoted: r.quoted, real: r.real } });
+  if (input.brain.goalLogic) {
+    // WO-V1.0-GOAL-LOGIC — the FINAL VALIDATOR (numeral-provenance) SUPERSEDES price_truth +
+    // fabricatesMoney as the money-truth layer. Every customer-facing numeral must trace to
+    // {C}∪{M}∪{Q}∪{D}: a mis-bound item price is repaired to its {M} value (the «كاديا@١٥٠» class);
+    // an untraceable stray numeral is stripped (block→regenerate, strip-for-stray); banned words
+    // are scrubbed. No canned line, no second model call. Only on model free prose (no tool ran).
+    if (text.trim() && !usedMoneyTool) {
+      const custNums = (input.userMessage.match(/[0-9٠-٩۰-۹]+(?:[.,][0-9٠-٩۰-۹]+)?/g) ?? [])
+        .map((s) => parseFloat(
+          s.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+           .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+           .replace(",", ".")))
+        .filter((n) => Number.isFinite(n));
+      const v = validateNumerals({
+        text, currency, menuItems: input.brain.menuItems,
+        // {M}∪{D} = knownPrices (menu + delivery fees/minimums + promo amounts); {C} = customer
+        // numerals; {Q} = empty here (no money tool ran this turn → no engine number to trust).
+        sources: { customer: custNums, tool: [], deliveryPromo: [...knownPrices] },
+      });
+      for (const r of v.repaired) ctx.signals.push({ type: "money_mismatch", detail: { reason: "provenance_repaired", item: r.item, quoted: r.quoted, real: r.real } });
+      if (v.blocked.length) ctx.signals.push({ type: "money_mismatch", detail: { reason: "provenance_blocked", numerals: v.blocked } });
+      text = stripBlockedNumerals(v.text, v.blocked, currency);
     }
-    for (const s of pt.skipped) {
-      ctx.signals.push({ type: "money_mismatch", detail: { reason: "price_repair_skipped", subreason: s.reason, item: s.item, quoted: s.quoted, real: s.real, validPrices: s.validPrices } });
+  } else {
+    // Legacy money-truth layer (flag OFF) — byte-identical.
+    if (input.brain.priceTruthGuard && text.trim() && !usedMoneyTool) {
+      const pt = repairPriceTruth(text, currency, input.brain.menuItems);
+      for (const r of pt.repairs) {
+        ctx.signals.push({ type: "money_mismatch", detail: { reason: "price_repaired", item: r.item, quoted: r.quoted, real: r.real } });
+      }
+      for (const s of pt.skipped) {
+        ctx.signals.push({ type: "money_mismatch", detail: { reason: "price_repair_skipped", subreason: s.reason, item: s.item, quoted: s.quoted, real: s.real, validPrices: s.validPrices } });
+      }
+      text = pt.text;
     }
-    text = pt.text;
-  }
-  if (text.trim() && !usedMoneyTool && fabricatesMoney(text, currency, knownPrices)) {
-    ctx.signals.push({ type: "money_mismatch", detail: { reason: "money_without_tool", reply: text } });
-    text = safeMoneyReply(input.brain.dialect);
+    if (text.trim() && !usedMoneyTool && fabricatesMoney(text, currency, knownPrices)) {
+      ctx.signals.push({ type: "money_mismatch", detail: { reason: "money_without_tool", reply: text } });
+      text = safeMoneyReply(input.brain.dialect);
+    }
   }
   if (text.trim() && !ctx.draft.finalized && claimsOrderConfirmed(text)) {
     ctx.signals.push({ type: "money_mismatch", detail: { reason: "confirmation_without_finalized_draft", reply: text } });
@@ -551,6 +622,18 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       // scanner + its vocabulary are UNTOUCHED; only the consumer changed hold→repair.
       ctx.signals.push({ type: "missing_data", detail: { reason: "companion_banned_phrase_repaired", phrases: banned, reply: text } });
       text = repairBannedAllergyReply(text, input.brain.dialect);
+    }
+  }
+
+  // WO-V1.0-GOAL-LOGIC — the Final Validator's banned-word lock: the very last thing before the
+  // reply leaves, scrub any waiter-jargon word from ANY source (the model, a demoted guard's
+  // fallback like safeConfirmReply/safeMoneyReply, a legacy string) so a banned word can NEVER
+  // reach the customer and can never seed the anchoring loop. Flag OFF → not run → byte-identical.
+  if (input.brain.goalLogic && text.trim()) {
+    const sc = scrubBannedWords(text);
+    if (sc.scrubbed.length) {
+      ctx.signals.push({ type: "off_menu", detail: { reason: "banned_word_scrubbed", words: sc.scrubbed } });
+      text = sc.text;
     }
   }
 
