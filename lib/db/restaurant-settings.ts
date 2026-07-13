@@ -15,6 +15,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { subscribeWithReload } from "@/lib/realtime/resubscribe";
 
 export interface OpsSnapshot {
   /** Karim answering customers? restaurants.agent_mode !== "paused". */
@@ -49,27 +50,20 @@ export function subscribeRestaurants(
   restaurantId: string,
   onChange: () => void
 ): () => void {
-  const ch = s
-    .channel(`restaurants-${restaurantId}`)
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "restaurants", filter: `id=eq.${restaurantId}` },
-      onChange
-    )
-    .subscribe((status) => {
-      // (e) reconnect-reload: SUBSCRIBED fires on the initial subscribe AND after
-      // the channel re-establishes following a drop — reload to catch anything
-      // missed while offline. The store debounces, so the first-load double is a
-      // no-op in practice.
-      if (status === "SUBSCRIBED") {
-        onChange();
-      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        // (d) fail quietly — never throw into the UI; the next resubscribe will
-        // reconnect-reload. Supabase retries the channel automatically.
-        console.warn("[realtime:restaurants] channel status:", status);
-      }
-    });
-  return () => {
-    void s.removeChannel(ch);
-  };
+  // WO-REALTIME-AUTH-REFRESH: (e) reconnect-reload on every (re)SUBSCRIBED — now with
+  // active resubscribe-with-backoff (flag-ON) instead of relying on supabase-js's
+  // internal retry, which stalls once the socket's JWT goes stale. Flag-OFF is the
+  // prior fail-quietly behavior, byte-identical. The store debounces, so the
+  // first-load double is a no-op in practice.
+  return subscribeWithReload(s, {
+    channelName: `restaurants-${restaurantId}`,
+    bind: (ch) =>
+      ch.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "restaurants", filter: `id=eq.${restaurantId}` },
+        onChange
+      ),
+    onChange,
+    label: "restaurants",
+  });
 }

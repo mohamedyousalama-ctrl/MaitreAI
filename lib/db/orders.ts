@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { subscribeWithReload } from "@/lib/realtime/resubscribe";
 import type {
   KitchenStatusKey,
   LocalOrder,
@@ -179,21 +180,14 @@ export async function updateOrderDb(
 }
 
 export function subscribeOrders(s: SupabaseClient, restaurantId: string, onChange: () => void): () => void {
-  const ch = s
-    .channel(`orders-${restaurantId}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` }, onChange)
-    .subscribe((status) => {
-      // LIVE0 reconnect-reload guardrail (retrofit, mirrors lib/db/restaurant-settings.ts):
-      // on (re)subscribe — including recovery after a drop — trigger the store's
-      // (debounced) reload so changes missed while offline are caught instead of
-      // leaving the orders board silently stale.
-      if (status === "SUBSCRIBED") {
-        onChange();
-      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        console.warn("[realtime:orders] channel status:", status); // fail quietly; Supabase retries
-      }
-    });
-  return () => {
-    void s.removeChannel(ch);
-  };
+  // WO-REALTIME-AUTH-REFRESH: reconnect-reload on (re)SUBSCRIBED, now with active
+  // resubscribe-with-backoff (flag-ON) so a dropped socket rebuilds instead of
+  // leaving the orders board silently stale. Flag-OFF = prior behavior, byte-identical.
+  return subscribeWithReload(s, {
+    channelName: `orders-${restaurantId}`,
+    bind: (ch) =>
+      ch.on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` }, onChange),
+    onChange,
+    label: "orders",
+  });
 }

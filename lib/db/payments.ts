@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { subscribeWithReload } from "@/lib/realtime/resubscribe";
 import type { PaymentMethodKey, PaymentSession, PaymentSessionStatus } from "@/lib/types";
 
 interface SessionRowJoined extends Record<string, unknown> {
@@ -101,11 +102,16 @@ export async function updateSessionStatusDb(
 }
 
 export function subscribeSessions(s: SupabaseClient, restaurantId: string, onChange: () => void): () => void {
-  const ch = s
-    .channel(`pay-${restaurantId}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "payment_sessions", filter: `restaurant_id=eq.${restaurantId}` }, onChange)
-    .subscribe();
-  return () => {
-    void s.removeChannel(ch);
-  };
+  // WO-REALTIME-AUTH-REFRESH: previously a bare .subscribe() with NO status callback —
+  // the socket could die silently with no reconnect-reload. Flag-ON now gives it the
+  // same active resubscribe-with-backoff + reconnect-reload as the other channels;
+  // flag-OFF ("bare") preserves the prior no-callback behavior byte-identically.
+  return subscribeWithReload(s, {
+    channelName: `pay-${restaurantId}`,
+    bind: (ch) =>
+      ch.on("postgres_changes", { event: "*", schema: "public", table: "payment_sessions", filter: `restaurant_id=eq.${restaurantId}` }, onChange),
+    onChange,
+    label: "payments",
+    legacyMode: "bare",
+  });
 }

@@ -15,6 +15,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { subscribeWithReload } from "@/lib/realtime/resubscribe";
 
 const DISPATCH_REALTIME_TABLES = ["deliveries", "drivers"] as const;
 
@@ -24,20 +25,18 @@ export function subscribeDispatch(
   onChange: () => void
 ): () => void {
   const filter = `restaurant_id=eq.${restaurantId}`;
-  let ch = s.channel(`dispatch-${restaurantId}`);
-  for (const table of DISPATCH_REALTIME_TABLES) {
-    ch = ch.on("postgres_changes", { event: "*", schema: "public", table, filter }, onChange);
-  }
-  ch.subscribe((status) => {
-    // (e) reconnect-reload — catch assignments missed while disconnected.
-    if (status === "SUBSCRIBED") {
-      onChange();
-    } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-      // (d) fail quietly — Supabase retries; never throw into the UI.
-      console.warn("[realtime:dispatch] channel status:", status);
-    }
+  // WO-REALTIME-AUTH-REFRESH: (e) reconnect-reload + active resubscribe-with-backoff
+  // (flag-ON) across the dispatch tables. Flag-OFF = prior fail-quietly, byte-identical.
+  return subscribeWithReload(s, {
+    channelName: `dispatch-${restaurantId}`,
+    bind: (ch) => {
+      let out = ch;
+      for (const table of DISPATCH_REALTIME_TABLES) {
+        out = out.on("postgres_changes", { event: "*", schema: "public", table, filter }, onChange);
+      }
+      return out;
+    },
+    onChange,
+    label: "dispatch",
   });
-  return () => {
-    void s.removeChannel(ch);
-  };
 }

@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { subscribeWithReload } from "@/lib/realtime/resubscribe";
 import type { ChannelKey, ChatMessage, Conversation, MessageSender } from "@/lib/types";
 import { normalizePhone } from "@/lib/messaging/phone";
 
@@ -209,24 +210,19 @@ export function subscribeConversations(
   onChange: () => void
 ): () => void {
   const filter = `restaurant_id=eq.${restaurantId}`;
-  const ch = s
-    .channel(`conv-${restaurantId}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter }, onChange)
-    .subscribe((status) => {
-      // LIVE0 reconnect-reload guardrail (retrofit, mirrors lib/db/restaurant-settings.ts):
-      // on (re)subscribe — including recovery after a drop — trigger the store's
-      // (debounced, ephemeral-preserving) reload so changes missed while offline are
-      // caught instead of leaving the conversation list silently stale.
-      if (status === "SUBSCRIBED") {
-        onChange();
-      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        console.warn("[realtime:conversations] channel status:", status); // fail quietly; Supabase retries
-      }
-    });
-  return () => {
-    void s.removeChannel(ch);
-  };
+  // WO-REALTIME-AUTH-REFRESH: active resubscribe-with-backoff (flag-ON) or the prior
+  // fail-quietly reconnect-reload (flag-OFF, byte-identical). On (re)SUBSCRIBED the
+  // store's (debounced, ephemeral-preserving) reload fires so changes missed while
+  // offline are caught instead of leaving the conversation list silently stale.
+  return subscribeWithReload(s, {
+    channelName: `conv-${restaurantId}`,
+    bind: (ch) =>
+      ch
+        .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter }, onChange)
+        .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter }, onChange),
+    onChange,
+    label: "conversations",
+  });
 }
 
 export { digits };

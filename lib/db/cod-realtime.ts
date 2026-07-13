@@ -16,6 +16,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { subscribeWithReload } from "@/lib/realtime/resubscribe";
 
 // cod_collections + cod_settlements fire on every ledger-visible change
 // (capture/collect/settle). cod_cash_events (audit) is intentionally not watched.
@@ -27,20 +28,18 @@ export function subscribeCOD(
   onChange: () => void
 ): () => void {
   const filter = `restaurant_id=eq.${restaurantId}`;
-  let ch = s.channel(`cod-${restaurantId}`);
-  for (const table of COD_REALTIME_TABLES) {
-    ch = ch.on("postgres_changes", { event: "*", schema: "public", table, filter }, onChange);
-  }
-  ch.subscribe((status) => {
-    // (e) reconnect-reload — catch settles missed while disconnected.
-    if (status === "SUBSCRIBED") {
-      onChange();
-    } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-      // (d) fail quietly — Supabase retries; never throw into the UI.
-      console.warn("[realtime:cod] channel status:", status);
-    }
+  // WO-REALTIME-AUTH-REFRESH: (e) reconnect-reload + active resubscribe-with-backoff
+  // (flag-ON) across the COD ledger tables. Flag-OFF = prior fail-quietly, byte-identical.
+  return subscribeWithReload(s, {
+    channelName: `cod-${restaurantId}`,
+    bind: (ch) => {
+      let out = ch;
+      for (const table of COD_REALTIME_TABLES) {
+        out = out.on("postgres_changes", { event: "*", schema: "public", table, filter }, onChange);
+      }
+      return out;
+    },
+    onChange,
+    label: "cod",
   });
-  return () => {
-    void s.removeChannel(ch);
-  };
 }
