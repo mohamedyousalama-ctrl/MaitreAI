@@ -25,6 +25,7 @@ import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readWhatsAppEnv, whatsAppEnvStatus, whatsAppMode } from "@/lib/messaging/config";
 import { buildWhatsAppProbes, rollUpProbes } from "@/lib/messaging/whatsapp-health";
+import { readSttHealth } from "@/lib/ai/stt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -93,6 +94,7 @@ export async function GET() {
       probes,
       rollup: rollUpProbes(probes),
       mode: whatsAppMode(),
+      stt: readSttHealth(),
     });
   } catch (e) {
     // Health is best-effort facts; never hard-fail the settings page.
