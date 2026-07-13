@@ -1,21 +1,26 @@
 // ============================================================================
 // MaitreAI — STT adapter resolver (Sprint 9, S9-6)
 // Selection (env flip, zero code change to switch providers):
-//   STT_ADAPTER = mock | openai | groq  (explicit), else auto:
+//   STT_ADAPTER = mock | openai | groq | deepgram  (explicit), else auto:
 //   GROQ_API_KEY → groq, OPENAI_API_KEY → openai, else mock.
 // Default is mock so the voice path works end-to-end with no spend until a real
 // provider is provisioned + selected (owner approval — new paid key).
+// WO-VOICE-DEEPGRAM-SPIKE: `deepgram` is EXPLICIT-ONLY (STT_ADAPTER=deepgram) — it is
+// deliberately NOT in the auto-fallback chain, so provisioning DEEPGRAM_API_KEY alone
+// never changes the default; the spike is opt-in.
 // ============================================================================
 
 import type { SttAdapter } from "./types";
 import { mockSttAdapter } from "./mock";
 import { openaiSttAdapter } from "./openai";
 import { groqSttAdapter } from "./groq";
+import { deepgramSttAdapter } from "./deepgram";
 
 export function getSttAdapter(): SttAdapter {
   const sel = (process.env.STT_ADAPTER || "").toLowerCase();
   if (sel === "openai") return openaiSttAdapter;
   if (sel === "groq") return groqSttAdapter;
+  if (sel === "deepgram") return deepgramSttAdapter;
   if (sel === "mock") return mockSttAdapter;
   if (process.env.GROQ_API_KEY) return groqSttAdapter;
   if (process.env.OPENAI_API_KEY) return openaiSttAdapter;

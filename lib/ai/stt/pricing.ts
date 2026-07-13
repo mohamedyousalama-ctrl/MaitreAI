@@ -12,6 +12,9 @@ export const STT_RATE_PER_MIN: Record<string, number> = {
   // Groq-hosted Whisper (OpenAI-compatible endpoint) — markedly cheaper
   "groq:whisper-large-v3": 0.00185, // ~$0.111/hr
   "groq:whisper-large-v3-turbo": 0.00067, // ~$0.04/hr
+  // Deepgram Nova-3 pre-recorded (WO-VOICE-DEEPGRAM-SPIKE) — APPROX, confirm on the
+  // dashboard before go-live (pay-as-you-go pre-recorded rate).
+  "deepgram:nova-3": 0.0043, // ~$0.258/hr
 };
 
 export function sttCostUsd(providerModel: string, durationSec?: number): number {
