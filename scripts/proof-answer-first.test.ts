@@ -42,8 +42,11 @@ ok("C: customer-turn gates the directive on the answer_first flag + asksToSeeMed
   /isFeatureExplicitlyEnabled\("answer_first"[\s\S]{0,240}?asksToSeeMedia\(input\.userMessage\)/.test(ct));
 ok("C: customer-turn passes answerFirstDirective into respond()",
   /respond\(\{[\s\S]{0,600}?answerFirstDirective/.test(ct));
-ok("C: respond() appends answerFirstDirective to the system prompt",
-  /input\.answerFirstDirective\s*\?\s*`\\n\\n\$\{input\.answerFirstDirective\}`/.test(rp));
+// WO-COST-1 — the directive now rides the UNCACHED system tail (after the cache
+// breakpoint), not inline in the cached static block. Same instruction to the model,
+// re-layered so a firing directive no longer forces a full cache write.
+ok("C: respond() delivers answerFirstDirective via the uncached system tail",
+  /composeSystemTail\(\[[\s\S]{0,240}?input\.answerFirstDirective/.test(rp) && /systemTail: systemTail \|\| undefined/.test(rp));
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} answer-first: ${pass}/${pass + fail} passed`);
 if (fail > 0) process.exit(1);

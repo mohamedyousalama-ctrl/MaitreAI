@@ -73,7 +73,26 @@ export function modelFor(useCase: LlmUseCase): ModelConfig {
   return REGISTRY[useCase];
 }
 
-/** Cost in USD for a single call, from the use-case price table. */
-export function costUsd(cfg: ModelConfig, inputTokens: number, outputTokens: number): number {
-  return (inputTokens / 1_000_000) * cfg.priceIn + (outputTokens / 1_000_000) * cfg.priceOut;
+// Anthropic prompt-cache multipliers, relative to the base input price: a cache READ is
+// 0.1× and a 5-minute cache WRITE is 1.25×. For the Sonnet customer agent (priceIn $3)
+// that is $0.30/M read and $3.75/M write — the two meters the old ledger dropped.
+const CACHE_READ_MULT = 0.1;
+const CACHE_WRITE_MULT = 1.25;
+
+/** Cost in USD for a single call across ALL FOUR meters: fresh input, output, cache read,
+ *  and cache write (WO-COST-1 honest ledger). cacheRead/cacheCreation default to 0, so an
+ *  existing 2-arg caller is unchanged and a no-cache call equals the old figure exactly. */
+export function costUsd(
+  cfg: ModelConfig,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens = 0,
+  cacheCreationTokens = 0,
+): number {
+  return (
+    (inputTokens / 1_000_000) * cfg.priceIn +
+    (outputTokens / 1_000_000) * cfg.priceOut +
+    (cacheReadTokens / 1_000_000) * cfg.priceIn * CACHE_READ_MULT +
+    (cacheCreationTokens / 1_000_000) * cfg.priceIn * CACHE_WRITE_MULT
+  );
 }

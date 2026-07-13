@@ -907,7 +907,17 @@ export async function runCustomerTurn(
   const latencyMs = Date.now() - t0;
 
   const cfg = modelFor("customer_agent");
-  const cost = costUsd(cfg, result.usage.inputTokens, result.usage.outputTokens);
+  // WO-COST-1 — price ALL FOUR meters (fresh in, out, cache read, cache write). The old
+  // ledger priced only in+out, so a full-cache-write turn (the breakpoint bug) was
+  // undercounted. This is correct regardless of whether the cache_creation_tokens column
+  // has been applied yet — cost comes from the in-memory usage, not the DB column.
+  const cost = costUsd(
+    cfg,
+    result.usage.inputTokens,
+    result.usage.outputTokens,
+    result.usage.cacheReadTokens,
+    result.usage.cacheCreationTokens ?? 0,
+  );
 
   // Persist the AI reply (optimistically "sent"; the channel sender downgrades
   // it to "failed" and notes the timeline if real delivery fails).
@@ -1005,6 +1015,17 @@ export async function runCustomerTurn(
     })
     .select("id")
     .single();
+
+  // WO-COST-1 (PREPARE-ONLY, migration 0087): store the cache-write meter best-effort so
+  // the ledger keeps working BEFORE the ceremony applies the column. cost_usd already
+  // prices this meter above; only the stored count waits. An unknown-column error
+  // pre-migration is swallowed and never disturbs the turn.
+  const runId = (run as { id?: string } | null)?.id;
+  if (runId) {
+    try {
+      await admin.from("agent_runs").update({ cache_creation_tokens: result.usage.cacheCreationTokens ?? 0 }).eq("id", runId);
+    } catch { /* column not applied yet — PREPARE-ONLY */ }
+  }
 
   if (result.signals.length) {
     await admin.from("conversation_signals").insert(
