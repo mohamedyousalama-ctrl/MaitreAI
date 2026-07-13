@@ -20,7 +20,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordCriticalAlert, type CriticalAlertType } from "@/lib/alerts/record";
-import { resolveWebhookRestaurantId } from "@/lib/db/restaurants";
+import { resolveWebhookAlertRestaurantId } from "@/lib/db/restaurants";
 import { loadMonitorConfig, type MonitorConfig } from "./config";
 import {
   evaluateDeliverySilence,
@@ -99,11 +99,9 @@ export async function runMonitorSweep(admin: SupabaseClient): Promise<SweepSumma
     summary.errors.push(`load_state:${e instanceof Error ? e.message : String(e)}`);
   }
 
-  // A restaurant to attach PLATFORM-wide alerts (webhook/spend/error-rate) to, so
-  // they also surface on the console banner. WhatsApp-to-Mohamed fires regardless.
-  const platformRid =
-    (process.env.ALERT_PLATFORM_RESTAURANT_ID ?? "").trim() ||
-    (await resolveWebhookRestaurantId(admin).catch(() => null));
+  // A restaurant to attach PLATFORM-wide alerts (webhook/spend/error-rate) to.
+  // Explicit env only: never guess by active-restaurant recency.
+  const platformRid = resolveWebhookAlertRestaurantId();
 
   // --- b. Webhook anomaly spikes (global) -----------------------------------
   try {

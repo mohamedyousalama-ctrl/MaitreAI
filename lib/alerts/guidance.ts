@@ -32,6 +32,10 @@ const GUIDANCE: Record<string, AlertGuidance> = {
     what: "رسائل كثيرة جاية من رقم واتساب مو معروف في النظام، فتم تجاهلها — يمكن رقم مطعم خرج من الربط.",
     action: "بلّغ فارس عشان يتأكد إن أرقام المطاعم (phone_number_id) مربوطة صح في النظام.",
   },
+  webhook_tenant_resolution_failed: {
+    what: "رسالة واتساب وصلت لكن النظام رفض يربطها بأي مطعم لأن إعداد WHATSAPP_RESTAURANT_ID ناقص، ورفض التخمين حتى لا يرسلها لمطعم غلط.",
+    action: "بلّغ فارس فوراً عشان يضبط WHATSAPP_RESTAURANT_ID أو ALERT_PLATFORM_RESTAURANT_ID في Vercel ويتأكد من ربط رقم واتساب بالمطعم الصحيح.",
+  },
   agent_error_rate: {
     what: "المساعد الذكي (كريم) يفشل في الرد على نسبة عالية من العملaء — غالباً خدمة Claude فيها مشكلة أو بطء.",
     action: "افحص حالة Anthropic/Claude. المحادثات المتأثرة تحوّلت لموظف تلقائياً — تابعها من شاشة المحادثات.",

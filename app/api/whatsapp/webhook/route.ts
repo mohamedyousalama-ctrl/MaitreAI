@@ -20,7 +20,7 @@ import { isWhatsAppConfigured, readWhatsAppEnv, type WhatsAppEnv } from "@/lib/m
 import { runWithWhatsAppCreds } from "@/lib/messaging/creds-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMessage } from "@/lib/db/messages";
-import { resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/restaurants";
+import { resolveWebhookAlertRestaurantId, resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/restaurants";
 import { decideWebhookRouting } from "@/lib/messaging/webhook-routing";
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
 import { withConversationLock } from "@/lib/db/conversation-lock";
@@ -41,6 +41,49 @@ export const dynamic = "force-dynamic";
 function maskPhone(p: string | undefined | null): string {
   const s = (p ?? "").replace(/\D/g, "");
   return s.length >= 4 ? `…${s.slice(-4)}` : "unknown";
+}
+
+type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>;
+type FailClosedTenantSource = "inbound_env_fallback" | "status_env_fallback";
+
+async function failClosedTenantResolution(
+  admin: AdminClient,
+  phoneNumberId: string | null | undefined,
+  source: FailClosedTenantSource
+): Promise<NextResponse> {
+  const alertRestaurantId = resolveWebhookAlertRestaurantId();
+  const detail =
+    "WhatsApp webhook tenant resolution failed closed: WHATSAPP_RESTAURANT_ID is unset and no per-tenant phone_number_id matched. Refusing to guess by active restaurant recency.";
+  const context = { phoneNumberId: phoneNumberId ?? null, source };
+
+  console.error("[whatsapp:webhook] CRITICAL tenant_resolution_failed_fail_closed", {
+    ...context,
+    alertRestaurantId,
+  });
+  void recordWebhookAnomaly(admin, "unresolved_phone_number_id", {
+    phoneNumberId,
+    restaurantId: alertRestaurantId,
+  });
+
+  if (alertRestaurantId) {
+    await recordCriticalAlert(admin, {
+      restaurantId: alertRestaurantId,
+      type: "webhook_tenant_resolution_failed",
+      detail,
+      context,
+    });
+  } else {
+    console.error(
+      "[whatsapp:webhook] CRITICAL tenant_resolution_failed_no_alert_restaurant",
+      "Set ALERT_PLATFORM_RESTAURANT_ID or WHATSAPP_RESTAURANT_ID so fail-closed webhook routing can create a system_alert row.",
+      context
+    );
+  }
+
+  return NextResponse.json(
+    { ok: false, error: "tenant_resolution_failed" },
+    { status: 503 }
+  );
 }
 
 // --- GET: verification handshake -------------------------------------------
@@ -213,6 +256,9 @@ export async function POST(req: NextRequest) {
       });
     } else {
       restaurantId = await resolveWebhookRestaurantId(admin);
+      if (!restaurantId && process.env.NODE_ENV === "production") {
+        return failClosedTenantResolution(admin, phoneNumberId, "inbound_env_fallback");
+      }
       perTenantEnv = null;
       resolvedBy = "env_fallback";
     }
@@ -542,9 +588,14 @@ export async function POST(req: NextRequest) {
         // Tenant scope mirrors inbound (same decideWebhookRouting rule): the
         // phone_number_id tenant, else env fallback when there's no PNID OR it's the
         // configured global number; any other unmapped PNID is skipped (can't scope safely).
-        const statusRid = tenant?.restaurantId
-          ?? (decideWebhookRouting(false, phoneNumberId, readWhatsAppEnv().phoneNumberId) === "env_fallback"
-            ? await resolveWebhookRestaurantId(admin) : null);
+        let statusRid = tenant?.restaurantId ?? null;
+        const statusRouting = decideWebhookRouting(false, phoneNumberId, readWhatsAppEnv().phoneNumberId);
+        if (!statusRid && statusRouting === "env_fallback") {
+          statusRid = await resolveWebhookRestaurantId(admin);
+          if (!statusRid && process.env.NODE_ENV === "production") {
+            return failClosedTenantResolution(admin, phoneNumberId, "status_env_fallback");
+          }
+        }
         if (statusRid) {
           for (const s of statuses) {
             try {

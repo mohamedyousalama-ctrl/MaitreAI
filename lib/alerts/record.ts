@@ -64,6 +64,9 @@ export type CriticalAlertType =
   // ── webhook_unresolved_spike: a burst of inbound dropped as unresolved_phone_
   //    number_id (a tenant's number fell out of routing) within the window.
   | "webhook_unresolved_spike"
+  // ── webhook_tenant_resolution_failed: prod fail-closed because no per-tenant
+  //    phone_number_id matched and WHATSAPP_RESTAURANT_ID was unset. Never guess.
+  | "webhook_tenant_resolution_failed"
   // ── agent_error_rate: Claude/agent error ratio over threshold across recent turns
   //    (API errors/timeouts above threshold — Mohamed's scale concern #6).
   | "agent_error_rate"

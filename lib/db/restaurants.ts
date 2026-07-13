@@ -10,10 +10,9 @@
 // the caller cleanly falls back to the env behavior. NEVER logs/returns secrets
 // except inside the returned WhatsAppEnv (which is consumed server-side only).
 //
-// resolveWebhookRestaurantId(): the EXISTING env fallback — honors an explicit
-// WHATSAPP_RESTAURANT_ID, else the single/most-recent active restaurant. Used
-// whenever per-tenant resolution yields null, so Wesaya's current number keeps
-// working unchanged.
+// resolveWebhookRestaurantId(): the env fallback — honors an explicit
+// WHATSAPP_RESTAURANT_ID. In production it FAILS CLOSED when unset; only non-prod
+// keeps the old newest-active convenience fallback for local/proof harnesses.
 // ============================================================================
 
 import "server-only";
@@ -172,11 +171,20 @@ export async function resolveWebhookTenant(
   }
 }
 
+/** Explicit tenant to attach platform/webhook alerts to. Never guesses. */
+export function resolveWebhookAlertRestaurantId(): string | null {
+  const alertId = (process.env.ALERT_PLATFORM_RESTAURANT_ID ?? "").trim();
+  if (alertId) return alertId;
+  const envId = (process.env.WHATSAPP_RESTAURANT_ID ?? "").trim();
+  return envId || null;
+}
+
 export async function resolveWebhookRestaurantId(
   admin: SupabaseClient
 ): Promise<string | null> {
-  const envId = process.env.WHATSAPP_RESTAURANT_ID;
+  const envId = (process.env.WHATSAPP_RESTAURANT_ID ?? "").trim();
   if (envId) return envId;
+  if (process.env.NODE_ENV === "production") return null;
 
   const { data } = await admin
     .from("restaurants")
