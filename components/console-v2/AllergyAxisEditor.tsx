@@ -31,6 +31,12 @@ const chip = (on: boolean): React.CSSProperties => ({
   color: on ? "#f4b9ab" : "var(--dim)", fontWeight: on ? 700 : 500,
 });
 const inputStyle: React.CSSProperties = { background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 10, padding: "8px 10px", color: "var(--txt)", fontSize: 13, width: "100%" };
+// FR-020 — a native <select>'s OPEN option list is OS-painted (white-on-light,
+// unreadable on the dark console). Give the control an OPAQUE dark base + colorScheme,
+// and each <option> an explicit dark bg / light text, so the prep-status + isolate
+// dropdowns (safety-sensitive) are legible. Styling ONLY — no logic/state change.
+const selectStyle: React.CSSProperties = { ...inputStyle, background: "#141924", colorScheme: "dark" };
+const optionStyle: React.CSSProperties = { backgroundColor: "#141924", color: "#f2f5f9" };
 const btn = (kind: "save" | "verify"): React.CSSProperties => ({
   height: 34, padding: "0 14px", borderRadius: 10, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: "1px solid",
   borderColor: kind === "verify" ? "rgba(74,167,110,.5)" : "rgba(255,255,255,.16)",
@@ -103,8 +109,8 @@ export default function AllergyAxisEditor({ itemId }: { itemId: string }) {
       </div>
       <label style={{ display: "block", marginBottom: 8 }}>
         <span style={{ ...label, display: "block", marginBottom: 4 }}>حالة التحضير</span>
-        <select value={s.prepStatus ?? "unknown"} onChange={(e) => setS((p) => p && ({ ...p, prepStatus: e.target.value }))} dir="rtl" style={inputStyle}>
-          {PREP_STATUSES.map((v) => <option key={v} value={v}>{prepStatusLabelAr(v)}</option>)}
+        <select value={s.prepStatus ?? "unknown"} onChange={(e) => setS((p) => p && ({ ...p, prepStatus: e.target.value }))} dir="rtl" style={selectStyle}>
+          {PREP_STATUSES.map((v) => <option key={v} value={v} style={optionStyle}>{prepStatusLabelAr(v)}</option>)}
         </select>
       </label>
       <div style={{ ...label, marginBottom: 4 }}>مخاطر التلامس المشترك</div>
@@ -115,8 +121,8 @@ export default function AllergyAxisEditor({ itemId }: { itemId: string }) {
       </div>
       <label style={{ display: "block", marginBottom: 8 }}>
         <span style={{ ...label, display: "block", marginBottom: 4 }}>هل يقدر المطبخ يعزل؟</span>
-        <select value={s.kitchenCanIsolate ?? "unknown"} onChange={(e) => setS((p) => p && ({ ...p, kitchenCanIsolate: e.target.value }))} dir="rtl" style={inputStyle}>
-          {ISOLATE_VALUES.map((v) => <option key={v} value={v}>{kitchenCanIsolateLabelAr(v)}</option>)}
+        <select value={s.kitchenCanIsolate ?? "unknown"} onChange={(e) => setS((p) => p && ({ ...p, kitchenCanIsolate: e.target.value }))} dir="rtl" style={selectStyle}>
+          {ISOLATE_VALUES.map((v) => <option key={v} value={v} style={optionStyle}>{kitchenCanIsolateLabelAr(v)}</option>)}
         </select>
       </label>
       <label style={{ display: "block", marginBottom: 8 }}>

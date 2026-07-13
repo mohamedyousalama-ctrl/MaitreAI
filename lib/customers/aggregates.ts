@@ -81,6 +81,10 @@ export function computeCustomerAggregates(
   };
 
   const topBySpend = [...rows]
+    // FR-024 — a "top spender" must have actually ordered. Without this, a low-activity
+    // tenant (all 0-spend customers) fills the top-N with «٠ طلبات» rows — a fake "top
+    // loyal customer" metric. Mirrors the atRisk guard (orders_count >= 1) below.
+    .filter((r) => num(r.orders_count) >= 1)
     .sort((a, b) => num(b.ltv) - num(a.ltv))
     .slice(0, topN)
     .map((r) => ({ id: r.id, name: r.name, phone: r.phone, ltv: num(r.ltv), orders_count: num(r.orders_count) }));
