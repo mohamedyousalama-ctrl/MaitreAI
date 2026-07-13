@@ -8,6 +8,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { subscribeWithReload } from "@/lib/realtime/resubscribe";
+import { paginateRange } from "@/lib/db/message-pagination";
 import type { ChannelKey, ChatMessage, Conversation, MessageSender } from "@/lib/types";
 import { normalizePhone } from "@/lib/messaging/phone";
 
@@ -60,15 +61,47 @@ function toMessage(m: MsgRow): ChatMessage {
   };
 }
 
+// WO-CONV-LIST-PAGINATION — PostgREST caps a single response at db-max-rows (Supabase
+// default 1000). The old un-ranged messages SELECT therefore returned only the OLDEST
+// 1000 rows (ordered created_at ASC) once a tenant crossed 1000 messages, so the
+// newest messages were silently dropped and every list preview (messages[last]) froze
+// on a stale row. We now page through with .range() until a short page, so the full
+// history — and thus the true newest message — is loaded.
+const MESSAGES_PAGE = 1000; // one PostgREST page (matches the default db-max-rows cap)
+// REFINEMENT 1 (binding) — hard cap the loop so no pathological case can spin forever
+// against the live DB. 20 pages = 20k messages, well beyond current launch scale; a
+// tenant that ever exceeds this is the trigger for the WO-CONV-LIST-SCALE follow-up
+// (previews-only list + per-conversation history loader), not an unbounded client pull.
+const MESSAGES_MAX_PAGES = 20;
+
+/** Fetch ALL of a tenant's messages, paging past the PostgREST 1000-row cap. Ordered
+ *  created_at ASC (with an id tiebreaker for a STABLE total order, so no row is dropped
+ *  or duplicated at a page boundary), so the caller's messages[last] is the newest. */
+async function loadAllMessages(s: SupabaseClient, restaurantId: string): Promise<MsgRow[]> {
+  return paginateRange<MsgRow>(
+    async (from, toInclusive) => {
+      const { data } = await s
+        .from("messages")
+        .select("id, conversation_id, sender, text, created_at, status, meta")
+        .eq("restaurant_id", restaurantId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, toInclusive);
+      return (data ?? []) as MsgRow[];
+    },
+    { pageSize: MESSAGES_PAGE, maxPages: MESSAGES_MAX_PAGES },
+  );
+}
+
 /** Load all conversations for the tenant, newest activity first. */
 export async function loadConversations(s: SupabaseClient, restaurantId: string): Promise<Conversation[]> {
-  const [{ data: convs }, { data: msgs }] = await Promise.all([
+  const [{ data: convs }, msgs] = await Promise.all([
     s.from("conversations").select("*, customers(name, phone)").eq("restaurant_id", restaurantId).order("updated_at", { ascending: false }),
-    s.from("messages").select("id, conversation_id, sender, text, created_at, status, meta").eq("restaurant_id", restaurantId).order("created_at", { ascending: true }),
+    loadAllMessages(s, restaurantId),
   ]);
 
   const byConv = new Map<string, ChatMessage[]>();
-  for (const m of (msgs ?? []) as MsgRow[]) {
+  for (const m of msgs) {
     const arr = byConv.get(m.conversation_id) ?? [];
     arr.push(toMessage(m));
     byConv.set(m.conversation_id, arr);
