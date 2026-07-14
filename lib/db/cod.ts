@@ -547,50 +547,30 @@ export async function settleDriver(
   restaurantId: string,
   args: { driverId: string; settledBy?: string | null; settledByRole?: string | null; note?: string | null }
 ): Promise<{ ok: boolean; total?: number; orderCount?: number; settlementId?: string; error?: string }> {
-  const { data: held } = await db
-    .from("cod_collections")
-    .select("id,driver_name,cash_collected")
-    .eq("restaurant_id", restaurantId)
-    .eq("driver_id", args.driverId)
-    .eq("settlement_status", "held_by_driver");
-  const rows = (held ?? []) as Array<{ id: string; driver_name: string | null; cash_collected: number | null }>;
-  if (!rows.length) return { ok: false, error: "nothing_to_settle" };
-
-  const total = round2(rows.reduce((s, r) => s + Number(r.cash_collected ?? 0), 0));
-  const driverName = rows.find((r) => r.driver_name)?.driver_name ?? null;
-
-  const { data: settlement } = await db
-    .from("cod_settlements")
-    .insert({
-      restaurant_id: restaurantId,
-      driver_id: args.driverId,
-      driver_name: driverName,
-      total_amount: total,
-      order_count: rows.length,
-      settled_by: args.settledBy ?? null,
-      settled_by_role: args.settledByRole ?? null,
-      note: args.note ?? null,
-    })
-    .select("id")
-    .single();
-  const settlementId = (settlement?.id as string) ?? "";
-
-  await db
-    .from("cod_collections")
-    .update({ settlement_status: "settled", settlement_id: settlementId, settled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq("restaurant_id", restaurantId)
-    .eq("driver_id", args.driverId)
-    .eq("settlement_status", "held_by_driver");
-
-  await audit(db, restaurantId, {
-    driverId: args.driverId,
-    type: "settled",
-    amount: total,
-    actorUserId: args.settledBy,
-    actorRole: args.settledByRole,
-    payload: { settlementId, orderCount: rows.length },
+  const { data, error } = await db.rpc("settle_cod_driver_atomic", {
+    p_restaurant_id: restaurantId,
+    p_driver_id: args.driverId,
+    p_settled_by: args.settledBy ?? null,
+    p_settled_by_role: args.settledByRole ?? null,
+    p_note: args.note ?? null,
   });
-  return { ok: true, total, orderCount: rows.length, settlementId };
+  if (error) {
+    console.error("[cod] settle_cod_driver_atomic failed:", error.message);
+    return { ok: false, error: "settlement_failed" };
+  }
+
+  type RpcRow = { total?: number | string | null; order_count?: number | string | null; settlement_id?: string | null };
+  const row = (Array.isArray(data) ? data[0] : data) as RpcRow | null;
+  const orderCount = Number(row?.order_count ?? 0);
+  const settlementId = row?.settlement_id ?? "";
+  if (!row || orderCount <= 0 || !settlementId) return { ok: false, error: "nothing_to_settle" };
+
+  return {
+    ok: true,
+    total: round2(Number(row.total ?? 0)),
+    orderCount,
+    settlementId,
+  };
 }
 
 function round2(n: number): number {
