@@ -12,16 +12,27 @@
 import { NextResponse } from "next/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { parseRefundMetadata, recordOrderRefund } from "@/lib/db/cod";
 
 export const runtime = "nodejs";
 
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+function refundErrorResponse(error: string) {
+  const status =
+    error === "order_not_found" ? 404
+      : error === "order_not_paid" ? 409
+        : error === "bad_refund_amount" || error === "bad_order_total" || error === "bad_refund_metadata" ? 400
+          : 502;
+  return NextResponse.json({ error }, { status });
+}
+
+export async function POST(req: Request, { params }: { params: { id: string } }) {
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const gate = await requireTenant();
   if (!gate.ok) return gate.response;
   const tenant = gate.tenant;
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
   // Tenant-scoped read to compute the refund-state transition.
   const { data: order } = await admin
@@ -32,10 +43,21 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     .maybeSingle();
   if (!order) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
 
-  const paymentStatus =
-    (order as { payment_status: string }).payment_status === "paid"
-      ? "refunded"
-      : (order as { payment_status: string }).payment_status;
+  let refundEventId: string | null = null;
+  let paymentStatus = (order as { payment_status: string }).payment_status;
+  if (paymentStatus === "paid") {
+    const parsed = parseRefundMetadata(body);
+    if (!parsed.ok) return refundErrorResponse(parsed.error);
+    const refund = await recordOrderRefund(admin, tenant.restaurantId, {
+      orderId: params.id,
+      ...parsed.refund,
+      actorUserId: tenant.userId,
+      actorRole: tenant.role,
+    });
+    if (!refund.ok) return refundErrorResponse(refund.error);
+    refundEventId = refund.eventId;
+    paymentStatus = "refunded";
+  }
 
   // Tenant-scoped write: id AND restaurant_id (admin bypasses RLS).
   const { error } = await admin
@@ -44,5 +66,5 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     .eq("id", params.id)
     .eq("restaurant_id", tenant.restaurantId);
   if (error) return NextResponse.json({ error: "update_failed" }, { status: 502 });
-  return NextResponse.json({ ok: true, paymentStatus });
+  return NextResponse.json({ ok: true, paymentStatus, refundEventId });
 }
