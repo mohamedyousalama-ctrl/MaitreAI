@@ -8,6 +8,7 @@ import { nextOrderNumber, uuidFromHash } from "@/lib/db/orders-create";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
 import { ensureDeliveryRowForOrder } from "@/lib/db/delivery";
 import { loadResolvedPaymentMethods, offeredMethods, recordPaymentSnapshot } from "@/lib/payments/resolve";
+import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 
 type CheckoutLine = {
   itemId: string;
@@ -34,6 +35,9 @@ type CheckoutPayload = {
 
 const clean = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
+const STOREFRONT_DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+const ALLERGEN_REVIEW_MESSAGE =
+  "طلبك وصل ووقفناه لمراجعة ملاحظة الحساسية. الفريق هيتواصل معاك قبل أي تأكيد أو تحضير.";
 
 export async function POST(req: NextRequest) {
   const admin = createAdminClient();
@@ -143,10 +147,24 @@ export async function POST(req: NextRequest) {
 
   const customerId = await ensureCustomerId(admin, restaurantId, customerPhone, customerName);
   const notes = clean(payload.notes) || null;
-  const fingerprint = JSON.stringify({
+  const allergenText = [
+    notes ?? "",
+    ...priced.lines.flatMap((line) => [
+      line.name,
+      line.variant?.name ?? "",
+      ...line.choices.map((choice) => `${choice.groupName} ${choice.label}`),
+      ...line.modifiers.map((modifier) => modifier.name),
+    ]),
+  ].filter(Boolean).join("\n");
+  const allergenHit = detectAllergenAvoidance(allergenText);
+  const allergyNote = allergenHit.fired
+    ? `تنبيه مراجعة حساسية: ${allergenHit.term ?? "الحساسية"}`
+    : null;
+
+  const fingerprint = {
     source: "web",
     r: restaurantId,
-    c: { name: customerName, phone: customerPhone },
+    c: customerId ?? customerPhone,
     b: branch.id,
     f: fulfillment,
     z: priced.deliveryZone?.id ?? "",
@@ -154,9 +172,87 @@ export async function POST(req: NextRequest) {
     n: notes ?? "",
     lines: priced.lines.map((line) => line.fingerprint),
     total: priced.total,
-  });
-  const id = uuidFromHash(fingerprint);
+  };
+  const dedupeBucket = Math.floor(Date.now() / STOREFRONT_DEDUPE_WINDOW_MS);
+  const id = uuidFromHash(JSON.stringify({ ...fingerprint, dedupeBucket }));
+
+  const responseFor = (row: {
+    id: string;
+    order_number: string;
+    total: number | string;
+    subtotal: number | string;
+    delivery_fee: number | string;
+    tax_amount: number | string;
+    tax_rate: number | string;
+    currency: string;
+  }, created: boolean) => {
+    const body = {
+      orderId: row.id,
+      orderNumber: row.order_number,
+      subtotal: Number(row.subtotal),
+      deliveryFee: Number(row.delivery_fee),
+      taxAmount: Number(row.tax_amount),
+      taxRate: Number(row.tax_rate),
+      total: Number(row.total),
+      currency: row.currency,
+      created,
+      ...(allergenHit.fired
+        ? { safetyReview: true, orderStatus: "pending_confirmation", message: ALLERGEN_REVIEW_MESSAGE }
+        : {}),
+    };
+    return NextResponse.json(body, allergenHit.fired ? { status: 202 } : undefined);
+  };
+
+  // For allergen-triggering submissions, avoid orphaning a second SYSTEM_HOLD
+  // conversation on an idempotent retry of the same checkout window.
+  if (allergenHit.fired) {
+    const { data: existing, error: existingErr } = await admin
+      .from("orders")
+      .select("id, order_number, total, subtotal, delivery_fee, tax_amount, tax_rate, currency")
+      .eq("id", id)
+      .maybeSingle();
+    if (existingErr) return bad("تعذر إنشاء الطلب. حاول مرة أخرى.", 500);
+    if (existing) return responseFor(existing as Parameters<typeof responseFor>[0], false);
+  }
+
   const orderNumber = await nextOrderNumber(admin, restaurantId);
+
+  let safetyConversationId: string | null = null;
+  if (allergenHit.fired) {
+    const { data: conv, error: convErr } = await admin
+      .from("conversations")
+      .insert({
+        restaurant_id: restaurantId,
+        customer_id: customerId,
+        channel: "website",
+        status: "مراجعة حساسية",
+        owner: "human",
+        ownership_state: "SYSTEM_HOLD",
+        is_safety_hold: true,
+        escalation_reason: "storefront_allergen",
+        allergy_note: allergyNote,
+      })
+      .select("id")
+      .single();
+    if (convErr || !conv?.id) return bad("تعذر تسجيل مراجعة الحساسية. حاول مرة أخرى.", 500);
+    safetyConversationId = conv.id as string;
+
+    const { error: msgErr } = await admin.from("messages").insert({
+      restaurant_id: restaurantId,
+      conversation_id: safetyConversationId,
+      direction: "inbound",
+      sender: "customer",
+      text: [
+        "Storefront order needs allergy review.",
+        `Customer: ${customerName} (${customerPhone})`,
+        notes ? `Notes: ${notes}` : "",
+        `Items: ${priced.lines.map((line) => `${line.quantity}x ${line.name}`).join(", ")}`,
+      ].filter(Boolean).join("\n"),
+      status: "sent",
+      meta: { source: "storefront_order", allergen_gate: true, term: allergenHit.term },
+    });
+    if (msgErr) console.error("[storefront/orders] safety review message create error", msgErr);
+  }
 
   const { data, error } = await admin
     .from("orders")
@@ -165,8 +261,10 @@ export async function POST(req: NextRequest) {
         id,
         restaurant_id: restaurantId,
         order_number: orderNumber,
+        conversation_id: safetyConversationId,
         customer_id: customerId,
         branch_id: branch.id,
+        ...(allergyNote ? { allergy_note: allergyNote } : {}),
         fulfillment,
         source: "web",
         items: priced.lines.map((line) => line.orderItem),
@@ -192,13 +290,18 @@ export async function POST(req: NextRequest) {
 
   // DLV1 — every delivery order gets a pending delivery row so it appears in
   // التوصيل and can be assigned a driver (R3b then lets it be delivered). Same
-  // idempotent helper the WhatsApp path uses; best-effort so it never blocks the
-  // order response. The helper no-ops for pickup orders.
+  // idempotent helper the WhatsApp path uses. Storefront must not return success
+  // if this row cannot be created: a delivery order without a delivery row is not
+  // actually dispatchable.
   if (fulfillment === "delivery") {
     try {
-      await ensureDeliveryRowForOrder(admin, id, restaurantId);
+      const delivery = await ensureDeliveryRowForOrder(admin, id, restaurantId);
+      if (!delivery.deliveryId && !delivery.skipped) {
+        return bad("تعذر إنشاء سجل التوصيل. حاول مرة أخرى.", 502);
+      }
     } catch (e) {
       console.error("[storefront/orders] delivery row create error", e);
+      return bad("تعذر إنشاء سجل التوصيل. حاول مرة أخرى.", 502);
     }
   }
 
@@ -227,15 +330,5 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({
-    orderId: row.id,
-    orderNumber: row.order_number,
-    subtotal: Number(row.subtotal),
-    deliveryFee: Number(row.delivery_fee),
-    taxAmount: Number(row.tax_amount),
-    taxRate: Number(row.tax_rate),
-    total: Number(row.total),
-    currency: row.currency,
-    created,
-  });
+  return responseFor(row as Parameters<typeof responseFor>[0], created);
 }
