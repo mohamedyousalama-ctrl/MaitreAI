@@ -142,7 +142,7 @@ async function proof3_sweetShopRegression() {
   }
 
   const SWEET_SHOP_ID = "9244d8ef-66b1-417a-a012-41a389ab1abf";
-  const WESAYA_ID     = "01fcf62d-bd0f-4a72-b406-df8cd4bbbe61";
+  const WESAYA_ID     = "5acbc72f-def3-46cd-ad6c-bf0ff4a23642";
 
   // Fetch Sweet Shop's phone_number_id from DB
   const ss = await fetch(
