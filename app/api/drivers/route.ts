@@ -42,6 +42,7 @@ export async function POST(req: Request) {
     const driver = await addDriver(supabase, tenant.restaurantId, { name, phone, vehicle });
     return NextResponse.json({ driver });
   } catch (e) {
-    return NextResponse.json({ error: "create_failed", detail: e instanceof Error ? e.message : String(e) }, { status: 502 });
+    const status = e instanceof Error && e.message === "not_configured" ? 503 : 502;
+    return NextResponse.json({ error: "create_failed", detail: e instanceof Error ? e.message : String(e) }, { status });
   }
 }
