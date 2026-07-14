@@ -47,6 +47,15 @@ const releaseAssignee = (conversationId: string, reason?: "returned" | "closed")
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "release", reason }),
   });
+const releaseSafetyHold = async (conversationId: string, note?: string): Promise<unknown> => {
+  const res = await fetch(`/api/conversations/${conversationId}/release-hold`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note: note || null }),
+  });
+  if (!res.ok) throw new Error(`[conv:release-hold] ${res.status}`);
+  return res;
+};
 const digits = (p: string) => p.replace(/\D/g, "");
 
 /** Push an operator/takeover message onto the real WhatsApp transport (S9-1).
@@ -88,7 +97,7 @@ interface ConversationState {
   // R5 — return-to-Karim chooser: park with the team (HUMAN_IDLE) / close (CLOSED).
   // Return the REAL server result so the caller can surface it via R1.
   setConversationIdle: (convId: string) => Promise<boolean>;
-  closeConversation: (convId: string) => Promise<boolean>;
+  closeConversation: () => Promise<boolean>;
   resetConversations: () => void;
 }
 
@@ -443,18 +452,17 @@ export const useConversationStore = create<ConversationState>()(
             // §E7: persist the handover summary so the Brain honors it on resume.
             // Ownership axis (spine Step 1): a deliberate human release → AI_ACTIVE
             // (the ONLY way SYSTEM_HOLD legally returns to the AI).
-            // Safety-hold clearance: a deliberate Return-to-AI is the human's explicit
-            // release of a safety hold, so reset is_safety_hold=false in the SAME write
-            // that flips ownership — otherwise the flag stays stale (the server-side
-            // canonicalization guard only resets it on the owner='ai'+SYSTEM_HOLD mismatch
-            // path, which never fires when this browser write succeeds). #87 holds: this
-            // ONLY runs on the deliberate operator action, never automatically and never on
-            // a live hold where owner is still 'human'.
-            const ownWrite = setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null, is_safety_hold: false } });
+            // Safety-hold clearance: the browser may no longer clear is_safety_hold
+            // directly. A held thread goes through the dedicated service-role route,
+            // which re-checks tenant membership and records the deliberate release.
+            const ownWrite = wasHold
+              ? releaseSafetyHold(convId, summary)
+              : setOwnershipState(_sb, convId, "AI_ACTIVE", { extra: { owner: "ai", status: "AI نشط", escalation_reason: null, handover_note: summary || null } });
             fire(ownWrite);
             fire(insertMessageDb(_sb, _rid, convId, { id, sender: "system", text: sysText }));
-            // MO1 — return-to-Karim clears named ownership server-side. MO4 — audited.
-            fire(releaseAssignee(convId, "returned"));
+            // MO1 — non-held return-to-Karim clears named ownership server-side.
+            // Held return clears assigned_member_id in release-hold with the audit row.
+            if (!wasHold) fire(releaseAssignee(convId, "returned"));
             // HX3 — active handback: once the state has flipped to AI_ACTIVE, ask the
             // server to answer a pending customer message with ONE Karim turn. Chained
             // off the ownership write so the resume route reads AI_ACTIVE. SUPPRESSED
