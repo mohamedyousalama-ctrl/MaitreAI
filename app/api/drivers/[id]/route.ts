@@ -40,6 +40,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   } catch (e) {
-    return NextResponse.json({ error: "update_failed", detail: e instanceof Error ? e.message : String(e) }, { status: 502 });
+    const status = e instanceof Error && e.message === "not_configured" ? 503 : 502;
+    return NextResponse.json({ error: "update_failed", detail: e instanceof Error ? e.message : String(e) }, { status });
   }
 }
