@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseRefundMetadata, recordOrderRefund } from "@/lib/db/cod";
+import { isOrderStatus, validateOrderStatusTransition } from "@/lib/orders/transitions";
 
 export const runtime = "nodejs";
 
@@ -34,14 +35,30 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-  // Tenant-scoped read to compute the refund-state transition.
+  // Tenant-scoped read to validate the status transition before any money record.
   const { data: order } = await admin
     .from("orders")
-    .select("payment_status")
+    .select("order_status,payment_status")
     .eq("id", params.id)
     .eq("restaurant_id", tenant.restaurantId)
     .maybeSingle();
   if (!order) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
+
+  const current = order as { order_status: string | null; payment_status: string | null };
+  const currentStatus = current.order_status ?? "";
+  if (!isOrderStatus(currentStatus)) return NextResponse.json({ error: "bad_current_status" }, { status: 409 });
+
+  const transition = validateOrderStatusTransition({
+    from: currentStatus,
+    to: "cancelled",
+    paymentStatus: current.payment_status,
+  });
+  if (!transition.ok || currentStatus === "cancelled") {
+    return NextResponse.json(
+      { error: transition.ok ? "illegal_transition" : transition.error, from: currentStatus, to: "cancelled" },
+      { status: 409 }
+    );
+  }
 
   let refundEventId: string | null = null;
   let paymentStatus = (order as { payment_status: string }).payment_status;
