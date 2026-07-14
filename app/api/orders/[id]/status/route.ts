@@ -13,13 +13,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { orderHasAssignedDriver } from "@/lib/db/delivery";
 import { recordAuditEvent } from "@/lib/db/audit";
 import { checkOrderSafetyHold, isCommittedStatus } from "@/lib/db/safety-hold-guard";
+import { isOrderStatus, validateOrderStatusTransition } from "@/lib/orders/transitions";
 
 export const runtime = "nodejs";
-
-const ORDER_STATUSES = new Set([
-  "draft", "pending_confirmation", "pending_payment", "paid",
-  "preparing", "ready", "out_for_delivery", "delivered", "cancelled",
-]);
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const admin = createAdminClient();
@@ -31,12 +27,47 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const status = String(body.status ?? "");
-  if (!ORDER_STATUSES.has(status)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+  if (!isOrderStatus(status)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
   // MO2 — optimistic concurrency: the client sends the status it BELIEVES is current.
   // When provided, the write is conditional on it (see the conditional UPDATE below),
   // so a stale advance (another operator already moved the order) is rejected, not
   // clobbered. Optional → omitted callers keep the prior unconditional behavior.
   const expectedStatus = typeof body.expectedStatus === "string" ? body.expectedStatus : null;
+
+  const { data: order, error: orderErr } = await admin
+    .from("orders")
+    .select("order_status,fulfillment,payment_method,payment_status")
+    .eq("id", params.id)
+    .eq("restaurant_id", tenant.restaurantId)
+    .maybeSingle();
+  if (orderErr || !order) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
+  const current = order as {
+    order_status: string | null;
+    fulfillment: string | null;
+    payment_method: string | null;
+    payment_status: string | null;
+  };
+  const currentStatus = current.order_status ?? "";
+  if (!isOrderStatus(currentStatus)) return NextResponse.json({ error: "bad_current_status" }, { status: 409 });
+
+  if (expectedStatus && currentStatus !== expectedStatus) {
+    return NextResponse.json(
+      { error: "status_conflict", currentStatus },
+      { status: 409 }
+    );
+  }
+
+  const transition = validateOrderStatusTransition({
+    from: currentStatus,
+    to: status,
+    paymentStatus: current.payment_status,
+  });
+  if (!transition.ok) {
+    return NextResponse.json(
+      { error: transition.error, from: currentStatus, to: status },
+      { status: 409 }
+    );
+  }
 
   // WO-SAFE-1 — SAFETY-HOLD GUARD. An order linked to a conversation under an
   // active SYSTEM_HOLD (unresolved allergy/safety concern) must NOT be committed
@@ -70,17 +101,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // exempt. FAIL-CLOSED: if a confirmed assigned driver can't be verified (none,
   // or a lookup error), the delivered write is rejected.
   if (status === "delivered") {
-    const { data: ord, error: ordErr } = await admin
-      .from("orders")
-      .select("fulfillment,payment_method,payment_status")
-      .eq("id", params.id)
-      .eq("restaurant_id", tenant.restaurantId)
-      .maybeSingle();
-    if (ordErr || !ord) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
-    const o = ord as { fulfillment: string | null; payment_method: string | null; payment_status: string | null };
-    const isDelivery = o.fulfillment === "delivery";
-    const isPaid = o.payment_status === "paid";
-    const isCod = o.payment_method == null || o.payment_method === "cod";
+    const isDelivery = current.fulfillment === "delivery";
+    const isPaid = current.payment_status === "paid";
+    const isCod = current.payment_method == null || current.payment_method === "cod";
     if (isDelivery && !isPaid && isCod) {
       let hasDriver = false;
       try {
@@ -123,8 +146,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   // MO4 — audit the advance (actor = the member who advanced it, server-resolved).
-  // {from,to} from the OCC expectedStatus (authoritative: the write succeeded only
-  // when order_status == expectedStatus). Best-effort; never blocks the response.
+  // {from,to} is the server-read current status and requested target. Best-effort;
+  // never blocks the response.
   await recordAuditEvent(admin, {
     restaurantId: tenant.restaurantId,
     userId: tenant.userId,
@@ -132,7 +155,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     action: "order_status_changed",
     entityType: "order",
     entityId: params.id,
-    metadata: { from: expectedStatus, to: status },
+    metadata: { from: currentStatus, to: status },
   });
 
   return NextResponse.json({ ok: true });
