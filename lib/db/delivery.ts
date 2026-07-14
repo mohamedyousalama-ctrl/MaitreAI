@@ -15,6 +15,7 @@ import { runWithTenantWhatsAppCreds } from "@/lib/messaging/tenant-creds";
 import { captureCodOnDelivered } from "@/lib/db/cod";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 import { withinRunCap } from "@/lib/delivery/runs";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const DELIVERY_STATUSES = [
   "pending",
@@ -32,6 +33,12 @@ const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 function token(): string {
   return randomBytes(24).toString("base64url");
+}
+
+function requireDeliveryAdmin(): SupabaseClient {
+  const admin = createAdminClient();
+  if (!admin) throw new Error("not_configured");
+  return admin;
 }
 
 export function appBaseUrl(): string {
@@ -150,8 +157,9 @@ export async function listDrivers(db: SupabaseClient, restaurantId: string) {
   return data ?? [];
 }
 
-export async function addDriver(db: SupabaseClient, restaurantId: string, input: { name: string; phone: string; vehicle?: string | null }) {
-  const { data, error } = await db
+export async function addDriver(_db: SupabaseClient, restaurantId: string, input: { name: string; phone: string; vehicle?: string | null }) {
+  const admin = requireDeliveryAdmin();
+  const { data, error } = await admin
     .from("drivers")
     .insert({ restaurant_id: restaurantId, name: input.name.trim(), phone: input.phone.trim(), vehicle: input.vehicle?.trim() || null })
     .select("id,name,phone,vehicle,active,created_at")
@@ -160,20 +168,22 @@ export async function addDriver(db: SupabaseClient, restaurantId: string, input:
   return data;
 }
 
-export async function setDriverActive(db: SupabaseClient, restaurantId: string, driverId: string, active: boolean) {
-  const { error } = await db.from("drivers").update({ active }).eq("id", driverId).eq("restaurant_id", restaurantId);
+export async function setDriverActive(_db: SupabaseClient, restaurantId: string, driverId: string, active: boolean) {
+  const admin = requireDeliveryAdmin();
+  const { error } = await admin.from("drivers").update({ active }).eq("id", driverId).eq("restaurant_id", restaurantId);
   if (error) throw error;
 }
 
 /** Edit a driver's profile (name/phone/vehicle only). The row id (driver_id) is
  *  unchanged, so existing deliveries/COD attribution is unaffected. Tenant-scoped. */
 export async function updateDriver(
-  db: SupabaseClient,
+  _db: SupabaseClient,
   restaurantId: string,
   driverId: string,
   input: { name: string; phone: string; vehicle?: string | null }
 ) {
-  const { error } = await db
+  const admin = requireDeliveryAdmin();
+  const { error } = await admin
     .from("drivers")
     .update({ name: input.name.trim(), phone: input.phone.trim(), vehicle: input.vehicle?.trim() || null })
     .eq("id", driverId)
