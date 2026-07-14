@@ -106,12 +106,6 @@ export async function createMoyasarSession(
   } catch {
     return { ok: false, error: "psp_secret_undecryptable" };
   }
-  // DIAGNOSTIC (one-off): SAFE metadata on the decrypted secret — length, first-4/
-  // last-4, and sk_test_ prefix only. NEVER the full value. Distinguishes a decrypt/
-  // key-roundtrip corruption (garbage, no sk_test_ prefix) from a clean-but-rejected key.
-  const secretDiag = `len=${secretKey.length} head=${secretKey.slice(0, 4)} tail=${secretKey.slice(-4)} sk_test=${secretKey.startsWith("sk_test_")}`;
-  console.error("[psp/create] secret roundtrip:", secretDiag);
-
   // 2) SERVER-PRICED amount — order total from the DB, never client input.
   const { data: order, error: orderErr } = await admin
     .from("orders")
@@ -201,17 +195,14 @@ export async function createMoyasarSession(
       secretKey,
       expiresAt: expiresAtIso, // WO-PAYLINK-EXPIRY — provider dead-links at session expiry
     });
-  } catch (e) {
-    // DIAGNOSTIC (one-off): surface Moyasar's raw rejection body (moyasar.ts throws
-    // `moyasar_create_failed status=<code> <body>`), previously swallowed here.
-    const detail = `${e instanceof Error ? e.message : String(e)} || secretDiag: ${secretDiag}`;
-    console.error("[psp/create] moyasar_create_failed:", detail);
+  } catch {
+    console.error("[psp/create] moyasar_create_failed");
     // A failed create must NOT present as link_sent. Mark failed, report back.
     await admin
       .from("payment_sessions")
       .update({ status: "failed", updated_at: new Date().toISOString() })
       .eq("id", sessionId);
-    return { ok: false, error: "provider_create_failed", detail };
+    return { ok: false, error: "provider_create_failed", detail: "provider_create_failed" };
   }
 
   // 5) Persist provider_ref + link and advance → link_sent.
