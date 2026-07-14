@@ -97,7 +97,7 @@ interface ConversationState {
   // R5 — return-to-Karim chooser: park with the team (HUMAN_IDLE) / close (CLOSED).
   // Return the REAL server result so the caller can surface it via R1.
   setConversationIdle: (convId: string) => Promise<boolean>;
-  closeConversation: () => Promise<boolean>;
+  closeConversation: (convId: string) => Promise<boolean>;
   resetConversations: () => void;
 }
 
