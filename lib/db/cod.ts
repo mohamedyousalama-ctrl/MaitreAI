@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SettlementSlipData } from "@/lib/render/receipt";
 
 export type SettlementStatus = "pending" | "held_by_driver" | "settled";
+export type RefundMethod = "cash" | "provider";
 
 export interface CodCollectionRow {
   id: string;
@@ -57,6 +58,98 @@ async function audit(
     actor_role: e.actorRole ?? null,
     payload: e.payload ?? {},
   });
+}
+
+export function parseRefundMetadata(body: Record<string, unknown>):
+  | { ok: true; refund: { amount: number; method: RefundMethod; reason: string; evidence: string | null } }
+  | { ok: false; error: "bad_refund_metadata" } {
+  const rawAmount = body.refundAmount ?? body.amount;
+  const amount =
+    typeof rawAmount === "number"
+      ? rawAmount
+      : typeof rawAmount === "string" && rawAmount.trim()
+        ? Number(rawAmount)
+        : NaN;
+  const method = String(body.refundMethod ?? body.method ?? "").trim();
+  const reason = String(body.refundReason ?? body.reason ?? "").trim();
+  const rawEvidence = body.refundEvidence ?? body.evidence ?? null;
+  const evidence =
+    rawEvidence == null
+      ? null
+      : typeof rawEvidence === "string"
+        ? rawEvidence.trim() || null
+        : String(rawEvidence);
+
+  if (!Number.isFinite(amount) || (method !== "cash" && method !== "provider") || !reason) {
+    return { ok: false, error: "bad_refund_metadata" };
+  }
+  return { ok: true, refund: { amount, method, reason, evidence } };
+}
+
+export async function recordOrderRefund(
+  db: SupabaseClient,
+  restaurantId: string,
+  args: {
+    orderId: string;
+    amount: number;
+    method: RefundMethod;
+    reason: string;
+    evidence?: string | null;
+    actorUserId?: string | null;
+    actorRole?: string | null;
+  }
+): Promise<{ ok: true; eventId: string; expected: number } | { ok: false; error: string }> {
+  const { data: order } = await db
+    .from("orders")
+    .select("id,total,payment_status,payment_method")
+    .eq("id", args.orderId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (!order) return { ok: false, error: "order_not_found" };
+
+  const row = order as { total: number | string | null; payment_status: string | null; payment_method: string | null };
+  if (row.payment_status !== "paid") return { ok: false, error: "order_not_paid" };
+
+  const expected = Number(row.total);
+  const amount = Number(args.amount);
+  if (!Number.isFinite(expected) || expected <= 0) return { ok: false, error: "bad_order_total" };
+  if (!Number.isFinite(amount) || amount <= 0 || amount > expected) return { ok: false, error: "bad_refund_amount" };
+
+  const { data: collection, error: collectionError } = await db
+    .from("cod_collections")
+    .select("id,driver_id")
+    .eq("order_id", args.orderId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (collectionError) return { ok: false, error: "collection_read_failed" };
+  const codCollection = collection as { id?: string | null; driver_id?: string | null } | null;
+
+  const { data: event, error: eventError } = await db
+    .from("cod_cash_events")
+    .insert({
+      restaurant_id: restaurantId,
+      cod_collection_id: codCollection?.id ?? null,
+      driver_id: codCollection?.driver_id ?? null,
+      type: "refund_recorded",
+      amount,
+      expected,
+      actor_user_id: args.actorUserId ?? null,
+      actor_role: args.actorRole ?? null,
+      payload: {
+        orderId: args.orderId,
+        method: args.method,
+        reason: args.reason,
+        evidence: args.evidence ?? null,
+        paymentMethod: row.payment_method ?? null,
+        paymentStatusBefore: row.payment_status,
+      },
+    })
+    .select("id")
+    .single();
+  const eventId = (event as { id?: string } | null)?.id;
+  if (eventError || !eventId) return { ok: false, error: "refund_record_failed" };
+
+  return { ok: true, eventId, expected };
 }
 
 /**

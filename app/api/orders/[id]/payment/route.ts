@@ -12,10 +12,20 @@ import { NextResponse } from "next/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkOrderSafetyHold } from "@/lib/db/safety-hold-guard";
+import { parseRefundMetadata, recordOrderRefund } from "@/lib/db/cod";
 
 export const runtime = "nodejs";
 
 const PAYMENT_STATUSES = new Set(["unpaid", "payment_link_sent", "paid", "failed", "refunded"]);
+
+function refundErrorResponse(error: string) {
+  const status =
+    error === "order_not_found" ? 404
+      : error === "order_not_paid" ? 409
+        : error === "bad_refund_amount" || error === "bad_order_total" || error === "bad_refund_metadata" ? 400
+          : 502;
+  return NextResponse.json({ error }, { status });
+}
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const admin = createAdminClient();
@@ -28,6 +38,20 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const paymentStatus = String(body.paymentStatus ?? "");
   if (!PAYMENT_STATUSES.has(paymentStatus)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
+
+  let refundEventId: string | null = null;
+  if (paymentStatus === "refunded") {
+    const parsed = parseRefundMetadata(body);
+    if (!parsed.ok) return refundErrorResponse(parsed.error);
+    const refund = await recordOrderRefund(admin, tenant.restaurantId, {
+      orderId: params.id,
+      ...parsed.refund,
+      actorUserId: tenant.userId,
+      actorRole: tenant.role,
+    });
+    if (!refund.ok) return refundErrorResponse(refund.error);
+    refundEventId = refund.eventId;
+  }
 
   // WO-SAFE-1 — block marking an order PAID while its linked conversation is under
   // an active safety hold (paid also flips order_status→paid, a commitment). Release
@@ -61,5 +85,5 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     .eq("id", params.id)
     .eq("restaurant_id", tenant.restaurantId);
   if (error) return NextResponse.json({ error: "update_failed" }, { status: 502 });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, refundEventId });
 }
