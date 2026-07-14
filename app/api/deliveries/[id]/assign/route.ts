@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { assignDriver } from "@/lib/db/delivery";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
@@ -13,11 +13,11 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   if (!ENABLE_DELIVERY_TRACKING) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  const supabase = createClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const gate = await requireTenant();
   if (!gate.ok) return gate.response;
   const tenant = gate.tenant;
+  const admin = createAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   // Dispatch is an operational action (any member); driver-roster management
   // (add/deactivate) stays manager-only on the /api/drivers routes.
 
@@ -26,7 +26,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!driverId) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   try {
-    const result = await assignDriver(supabase, { deliveryId: params.id, driverId, restaurantId: tenant.restaurantId });
+    const result = await assignDriver(admin, { deliveryId: params.id, driverId, restaurantId: tenant.restaurantId });
     return NextResponse.json(result);
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);

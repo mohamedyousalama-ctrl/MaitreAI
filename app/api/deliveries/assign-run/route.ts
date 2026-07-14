@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { assignDeliveriesToRun } from "@/lib/db/delivery";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
@@ -17,13 +17,13 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   if (!ENABLE_DELIVERY_TRACKING) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  const supabase = createClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const gate = await requireTenant();
   if (!gate.ok) return gate.response;
   const tenant = gate.tenant;
+  const admin = createAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
-  const { data: rRow } = await supabase.from("restaurants").select("feature_flags").eq("id", tenant.restaurantId).single();
+  const { data: rRow } = await admin.from("restaurants").select("feature_flags").eq("id", tenant.restaurantId).single();
   const flags = (rRow?.feature_flags as Record<string, unknown> | null) ?? null;
   if (!isFeatureExplicitlyEnabled("delivery_runs", flags)) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   if (!driverId || deliveryIds.length === 0) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   try {
-    const result = await assignDeliveriesToRun(supabase, { restaurantId: tenant.restaurantId, driverId, deliveryIds });
+    const result = await assignDeliveriesToRun(admin, { restaurantId: tenant.restaurantId, driverId, deliveryIds });
     return NextResponse.json(result);
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
