@@ -270,11 +270,14 @@ export async function assignDriver(
   const customerTok = (delivery.customer_token as string) || token();
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
 
-  await admin
+  const { error: assignErr } = await admin
     .from("deliveries")
     .update({ driver_id: driverId, status: "assigned", driver_token: driverTok, customer_token: customerTok, token_used: false, assigned_at: new Date().toISOString(), expires_at: expiresAt, updated_at: new Date().toISOString() })
-    .eq("id", deliveryId);
-  await admin.from("delivery_events").insert({ delivery_id: deliveryId, type: "assigned", payload: { driverId, driverName: driver.name } });
+    .eq("id", deliveryId)
+    .eq("restaurant_id", restaurantId);
+  if (assignErr) throw new Error("assign_failed");
+  const { error: eventErr } = await admin.from("delivery_events").insert({ delivery_id: deliveryId, type: "assigned", payload: { driverId, driverName: driver.name } });
+  if (eventErr) throw new Error("assign_event_failed");
 
   const base = appBaseUrl();
   const driverLink = `${base}/d/${driverTok}`;
@@ -570,11 +573,14 @@ export async function assignDeliveriesToRun(
     const del = byId.get(id)!;
     const driverTok = (del.driver_token as string) || token();
     const customerTok = (del.customer_token as string) || token();
-    await admin
+    const { error: assignErr } = await admin
       .from("deliveries")
       .update({ driver_id: driverId, run_id: runId, stop_order: stopOrder, status: "assigned", driver_token: driverTok, customer_token: customerTok, token_used: false, assigned_at: now, expires_at: expiresAt, updated_at: now })
-      .eq("id", id);
-    await admin.from("delivery_events").insert({ delivery_id: id, type: "assigned", payload: { driverId, driverName: driver.name, runId, stopOrder } });
+      .eq("id", id)
+      .eq("restaurant_id", restaurantId);
+    if (assignErr) throw new Error("assign_failed");
+    const { error: eventErr } = await admin.from("delivery_events").insert({ delivery_id: id, type: "assigned", payload: { driverId, driverName: driver.name, runId, stopOrder } });
+    if (eventErr) throw new Error("assign_event_failed");
     stops.push({ deliveryId: id, driverLink: `${base}/d/${driverTok}`, customerLink: `${base}/t/${customerTok}` });
     stopOrder++;
   }
