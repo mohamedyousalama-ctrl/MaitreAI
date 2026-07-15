@@ -62,6 +62,26 @@ async function orderWrite(
   }
 }
 
+function codCaptureCode(raw: unknown, fallback = "cod_capture_failed"): string {
+  const s = typeof raw === "string" && raw.trim() ? raw.trim() : fallback;
+  return s.startsWith("cod_capture_") ? s : `cod_capture_${s}`;
+}
+
+async function captureDeliveredCod(orderId: string): Promise<{ ok: boolean; code?: string; skipped?: boolean }> {
+  try {
+    const res = await fetch("/api/cod/capture-delivered", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: unknown; skipped?: unknown; error?: unknown };
+    if (res.ok && data.ok !== false) return { ok: true, skipped: data.skipped === true };
+    return { ok: false, code: codCaptureCode(data.error, res.ok ? "cod_capture_failed" : `http_${res.status}`) };
+  } catch {
+    return { ok: false, code: "cod_capture_network_failed" };
+  }
+}
+
 export interface CreateOrderInput {
   conversationId?: string;
   customerId?: string;
@@ -215,19 +235,6 @@ export const useOrderStore = create<OrderState>()(
           if (order.conversationId) {
             useConversationStore.getState().setStatus(order.conversationId, "طلب مكتمل");
           }
-          // COD capture: fire for unpaid delivery orders completed via the order screen.
-          // The server route double-guards (fulfillment=delivery, payment_status!=paid).
-          // captureCodOnDelivered is idempotent on order_id — safe if the driver dispatch
-          // path already fired it (no double-capture). UNCHANGED by R2.
-          if (order.fulfillmentType === "delivery" && order.paymentStatus !== "paid") {
-            fire(
-              fetch("/api/cod/capture-delivered", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ orderId: id }),
-              }).catch((e) => console.error("[order] COD capture error", e))
-            );
-          }
         }
         // R2 — surface the REAL server result. Demo mode (no DB) = local-only success.
         const { _sb } = get();
@@ -244,6 +251,49 @@ export const useOrderStore = create<OrderState>()(
           set((s) => ({
             orders: s.orders.map((o) => (o.id === id ? { ...o, orderStatus: prior } : o)),
           }));
+          return res;
+        }
+
+        // COD capture: await it for unpaid delivery orders completed via the order screen.
+        // The server route double-guards (fulfillment=delivery, payment_status!=paid).
+        // captureCodOnDelivered is idempotent on order_id — safe if the driver dispatch
+        // path already fired it (no double-capture). A failed capture is money-visible:
+        // keep the delivered status, but mark payment failed so refreshes do not hide it.
+        if (status === "delivered" && order.fulfillmentType === "delivery" && order.paymentStatus !== "paid") {
+          const capture = await captureDeliveredCod(id);
+          if (!capture.ok) {
+            const failedEvent = ev("payment", "فشل تسجيل تحصيل COD", "system");
+            set((s) => ({
+              orders: s.orders.map((o) =>
+                o.id === id
+                  ? { ...o, paymentStatus: "failed", updatedAt: failedEvent.timestamp, events: [...o.events, failedEvent] }
+                  : o
+              ),
+            }));
+            const flag = await orderWrite(id, "payment", { paymentStatus: "failed" });
+            if (!flag.ok) console.error("[order] COD capture failure flag persist failed", flag.code ?? "unknown");
+            return { ok: false, code: capture.code ?? "cod_capture_failed" };
+          }
+
+          const current = get().orders.find((o) => o.id === id);
+          if (!capture.skipped && current?.paymentStatus === "failed") {
+            const clearEvent = ev("payment", "تم تسجيل تحصيل COD", "system");
+            set((s) => ({
+              orders: s.orders.map((o) =>
+                o.id === id
+                  ? {
+                      ...o,
+                      paymentStatus: "unpaid",
+                      paymentMethod: o.paymentMethod ?? "cod",
+                      updatedAt: clearEvent.timestamp,
+                      events: [...o.events, clearEvent],
+                    }
+                  : o
+              ),
+            }));
+            const clear = await orderWrite(id, "payment", { paymentStatus: "unpaid" });
+            if (!clear.ok) console.error("[order] COD capture failure clear persist failed", clear.code ?? "unknown");
+          }
         }
         return res;
       },
