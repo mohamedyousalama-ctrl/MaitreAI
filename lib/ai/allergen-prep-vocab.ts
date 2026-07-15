@@ -12,6 +12,12 @@
 // ============================================================================
 
 // --- cross-contact risk tags ------------------------------------------------
+export const ALLERGEN_ESCALATION_MARKER_AR = "يتطلب تصعيد";
+
+export function hasAllergenEscalationMarker(notes: string | null | undefined): boolean {
+  return typeof notes === "string" && notes.includes(ALLERGEN_ESCALATION_MARKER_AR);
+}
+
 export const CROSS_CONTACT_TAGS = [
   "shared_fryer",
   "shared_grill",

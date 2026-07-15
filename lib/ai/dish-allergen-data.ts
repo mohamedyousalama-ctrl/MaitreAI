@@ -17,9 +17,7 @@
 
 import type { MenuItem } from "@/lib/types";
 import type { DishAllergenData, PrepStatus } from "@/lib/ai/allergen-companion";
-import { isValidPrepStatus } from "@/lib/ai/allergen-prep-vocab";
-
-const ESCALATION_MARKER_AR = "يتطلب تصعيد";
+import { hasAllergenEscalationMarker, isValidPrepStatus } from "@/lib/ai/allergen-prep-vocab";
 
 /** Map a MenuItem (or nothing) to the DishAllergenData shape computeDishTruthState
  *  reads. Pure + defensive: a null item, or an item without any W2 data, resolves to
@@ -37,7 +35,7 @@ export function dishDataFromMenuItem(item: MenuItem | null | undefined): DishAll
     prepStatus: prep,
     // Axis 2 verified ⇔ the prep review stamp is present.
     prepVerified: !!item.prepVerifiedAt,
-    requiresEscalation: typeof item.preparationNotes === "string" && item.preparationNotes.includes(ESCALATION_MARKER_AR),
+    requiresEscalation: hasAllergenEscalationMarker(item.preparationNotes),
     crossContactRisks: item.crossContactRisks ?? null,
   };
 }
