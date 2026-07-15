@@ -305,7 +305,7 @@ export default function OrdersPage() {
     // assign-driver prompt rather than the generic failure toast.
     let code: string | undefined;
     const ok = await runAction(
-      { pending: "جارٍ التحديث…", success: "تم تحديث الحالة", error: "تعذّر تحديث الحالة", retry: true },
+      { pending: "جارٍ التحديث…", success: "تم تحديث الحالة", error: n === "delivered" ? "تعذّر تحديث التسليم أو تسجيل تحصيل COD" : "تعذّر تحديث الحالة", retry: true },
       async () => {
         const res = await updateOrderStatus(o.id, n, "human");
         code = res.code;
@@ -779,6 +779,7 @@ function SourceTag({ source }: { source?: string }) {
 function PaymentPill({ o }: { o: LocalOrder }) {
   // Vodafone Cash is a distinct method — show it apart from COD (red brand tint).
   if (o.paymentMethod === "vodafone_cash") return <Pill label="فودافون كاش" dot="#e60000" bg="rgba(230,0,0,.10)" fg="#c40000" />;
+  if (o.paymentStatus === "failed") return <Pill label="فشل الدفع" dot="var(--kv-red)" bg="rgba(192,73,47,.12)" fg="#c0492f" />;
   if (o.paymentStatus === "paid") return <Pill label="مدفوع" dot="var(--kv-primary)" bg="rgba(14,159,110,.12)" fg="#0a8a5f" />;
   // F1.7 Fix 5 — assert COD only when the order is ACTUALLY cod, not for any delivery
   // order with a null/unknown method. Unknown method + unpaid → "awaiting payment".
