@@ -45,6 +45,7 @@ import { buildKsaEncyclopediaBlock, shouldInjectEncyclopedia } from "@/lib/ai/pe
 // companion contract ONLY when allergy_companion_mode is ON. Flag-OFF → the legacy
 // always-escalate block, preserved BYTE-IDENTICAL (snapshot-gated).
 import { legacyAllergyBlock, companionAllergyBlock } from "@/lib/ai/prompt-allergy";
+import { crossContactLabelAr, hasAllergenEscalationMarker } from "@/lib/ai/allergen-prep-vocab";
 
 export interface BrainContext {
   profile: Pick<RestaurantProfile, "name" | "currency" | "timezone" | "businessType">;
@@ -241,6 +242,8 @@ function menuBlock(items: MenuItem[], modifiers: Modifier[], currency: string): 
     if (variants.length) parts.push(`  sizes: ${variants.join(" / ")}`);
     if (groups.length) parts.push(`  picks: ${groups.join(" | ")}`);
     if (i.allergens.length) parts.push(`  allergens: ${i.allergens.join("، ")}`);
+    if (hasAllergenEscalationMarker(i.preparationNotes)) parts.push("  ⚠️ تحذير سلامة: لا تؤكد أبداً خلو هذا الصنف من أي مادة مسببة للحساسية. لو سأل العميل عن حساسية، قل إنك تحتاج تتأكد مع المطبخ واعرض توصيله بموظف.");
+    if (i.crossContactRisks?.length) parts.push(`  تلامس محتمل: ${i.crossContactRisks.map(crossContactLabelAr).join("، ")}`);
     if (mods.length) parts.push(`  add-ons: ${mods.join(" / ")}`);
     return parts.join("\n");
   };
