@@ -15,6 +15,7 @@
 
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { mustSucceed } from "@/lib/db/checked";
 import type { SettlementSlipData } from "@/lib/render/receipt";
 
 export type SettlementStatus = "pending" | "held_by_driver" | "settled";
@@ -262,62 +263,39 @@ export async function captureCodOnDelivered(
 
   const collected = args.cashCollected ?? expected;
 
-  // Open or fetch the cash record (expected from the order total).
-  const { data: existing } = await db
-    .from("cod_collections")
-    .select("id,settlement_status")
-    .eq("order_id", orderId)
-    .maybeSingle();
+  type CaptureRpcRow = {
+    collected?: number | string | null;
+    expected?: number | string | null;
+    collection_id?: string | null;
+    event_type?: string | null;
+  };
 
-  let collectionId: string;
-  let isAdjust = false;
-  if (existing) {
-    collectionId = (existing as { id: string }).id;
-    isAdjust = (existing as { settlement_status: string }).settlement_status !== "pending";
-    await db
-      .from("cod_collections")
-      .update({
-        delivery_id: deliveryId,
-        driver_id: driverId,
-        driver_name: driverName,
-        expected_cash: expected,
-        cash_collected: collected,
-        collected_at: new Date().toISOString(),
-        settlement_status: "held_by_driver",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", collectionId);
-  } else {
-    const { data: created } = await db
-      .from("cod_collections")
-      .insert({
-        restaurant_id: restaurantId,
-        order_id: orderId,
-        delivery_id: deliveryId,
-        driver_id: driverId,
-        driver_name: driverName,
-        expected_cash: expected,
-        cash_collected: collected,
-        collected_at: new Date().toISOString(),
-        settlement_status: "held_by_driver",
-      })
-      .select("id")
-      .single();
-    collectionId = (created?.id as string) ?? "";
+  try {
+    const data = await mustSucceed<CaptureRpcRow | CaptureRpcRow[]>(
+      db.rpc("capture_cod_on_delivered_atomic", {
+        p_restaurant_id: restaurantId,
+        p_order_id: orderId,
+        p_delivery_id: deliveryId,
+        p_driver_id: driverId,
+        p_driver_name: driverName,
+        p_expected: expected,
+        p_collected: collected,
+        p_actor_user_id: args.actorUserId ?? null,
+        p_actor_role: args.actorRole ?? null,
+      }),
+      "cod.capture_on_delivered_atomic",
+    );
+    const row = (Array.isArray(data) ? data[0] : data) as CaptureRpcRow | null | undefined;
+    if (!row?.collection_id) return { ok: false, error: "capture_failed" };
+    return {
+      ok: true,
+      collected: round2(Number(row.collected ?? collected)),
+      expected: round2(Number(row.expected ?? expected)),
+    };
+  } catch (e) {
+    console.error("[cod] capture_cod_on_delivered_atomic failed:", e instanceof Error ? e.message : e);
+    return { ok: false, error: "capture_failed" };
   }
-  await db.from("orders").update({ payment_method: "cod" }).eq("id", orderId).eq("restaurant_id", restaurantId);
-
-  await audit(db, restaurantId, {
-    collectionId,
-    driverId,
-    type: isAdjust ? "adjusted" : "collected",
-    amount: collected,
-    expected,
-    actorUserId: args.actorUserId,
-    actorRole: args.actorRole,
-    payload: { orderId, deliveryId },
-  });
-  return { ok: true, collected, expected };
 }
 
 /**
