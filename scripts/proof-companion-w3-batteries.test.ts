@@ -106,7 +106,7 @@ const companionPrompt = buildCustomerAgentSystemPrompt({ profile: { name: "م", 
 
 // ══ BATTERY 8 — RECOMMENDATION: filtered lists never say safe ════════════════
 {
-  const states = ["contains", "clear_verified", "clear_prep_unknown", "severe_shared_risk", "unknown"] as const;
+  const states = ["escalation_required", "contains", "clear_verified", "clear_prep_unknown", "severe_shared_risk", "unknown"] as const;
   ok("B8: every recommendation truth-phrase is banned-phrase-clean (both dialects)",
     states.every((s) => scanBannedAllergyPhrases(truthStatePhrase(s, "saudi")).length === 0 && scanBannedAllergyPhrases(truthStatePhrase(s, "egyptian")).length === 0));
   ok("B8: the strongest positive is a DATA statement, not a guarantee", /ما يظهر فيها/.test(truthStatePhrase("clear_verified", "saudi")));

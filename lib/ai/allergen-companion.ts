@@ -153,6 +153,7 @@ export function hasBannedAllergyPhrase(text: string): boolean {
 /** The honest truth-state Kivo may report for one dish × one allergen. Never a
  *  guarantee — always a statement about DATA. Ordered protective-first. */
 export type DishTruthState =
+  | "escalation_required" // explicit kitchen-escalation marker/cross-contact → stop and verify
   | "contains"            // ingredient/allergen data lists the allergen → recommend against
   | "clear_verified"      // no allergen listed AND prep controlled/verified
   | "clear_prep_unknown"  // no allergen listed as ingredient, but prep/cross-contact unknown
@@ -175,6 +176,10 @@ export interface DishAllergenData {
   prepStatus?: PrepStatus | null;
   /** W2: whether prep_status was human-verified. */
   prepVerified?: boolean | null;
+  /** Kitchen marker that this dish's allergy status needs human verification. */
+  requiresEscalation?: boolean | null;
+  /** W2: explicit cross-contact risk tags/labels for this dish. */
+  crossContactRisks?: string[] | null;
 }
 
 /**
@@ -195,10 +200,14 @@ export function computeDishTruthState(
   const listed = (arr: string[] | null | undefined) =>
     Array.isArray(arr) && arr.some((a) => normalizeAr(a).includes(key) || key.includes(normalizeAr(a)));
 
+  if (d.requiresEscalation === true) return "escalation_required";
+
   // Axis 1 — ingredient: does verified data list the allergen?
   const inAllergens = listed(d.allergens);
   const inIngredients = listed(d.ingredients);
   if (inAllergens || inIngredients) return "contains";
+
+  if (listed(d.crossContactRisks)) return "escalation_required";
 
   // No allergen listed — but is the INGREDIENT data itself trustworthy/present?
   const haveIngredientData = d.ingredientVerified === true || (Array.isArray(d.ingredients) && d.ingredients.length > 0);

@@ -219,6 +219,7 @@ function needsAllergyCheckpoint(brain: BrainContext): boolean {
 // Least-safe-wins ranking across the session allergens for one dish (the recap must
 // show the most cautionary honest state, never the rosiest).
 const TRUTH_RANK: Record<DishTruthState, number> = {
+  escalation_required: 6,
   contains: 5,
   severe_shared_risk: 4,
   unknown: 3,

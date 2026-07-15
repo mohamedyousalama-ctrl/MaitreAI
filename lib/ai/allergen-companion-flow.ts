@@ -223,6 +223,8 @@ export function recoveryChoiceTitles(dialect: string): { realert: string; contin
 export function truthStatePhrase(state: DishTruthState, dialect: string): string {
   const eg = dialect === "egyptian";
   switch (state) {
+    case "escalation_required":
+      return eg ? "محتاج أتأكد مع المطبخ قبل ما نكمل — تحب أوصلك بموظف؟" : "محتاج أتأكد مع المطبخ قبل ما نكمل — تحب أوصلك بموظف؟";
     case "contains":
       return eg ? "بياناتها المعتمدة بتبيّن إنها تحتوي المادة — الأفضل نستبعدها" : "بياناتها المعتمدة تبيّن إنها تحتوي المادة — الأفضل نستبعدها";
     case "clear_verified":

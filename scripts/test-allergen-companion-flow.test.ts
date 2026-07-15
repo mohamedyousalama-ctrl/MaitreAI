@@ -138,7 +138,7 @@ ok("recovery: ambiguous answer → send_question (never inferred resume)", decid
     recoveryChoiceTitles("egyptian").realert, recoveryChoiceTitles("egyptian").continue,
     buildCheckpointRecap(["مكسرات"], [{ name: "بروست", state: "unknown" }], "saudi"),
     buildCheckpointRecap(["مكسرات"], [{ name: "بروست", state: "clear_verified" }], "egyptian"),
-    ...(["contains", "clear_verified", "clear_prep_unknown", "severe_shared_risk", "unknown"] as const).flatMap(
+    ...(["escalation_required", "contains", "clear_verified", "clear_prep_unknown", "severe_shared_risk", "unknown"] as const).flatMap(
       (s) => [truthStatePhrase(s, "saudi"), truthStatePhrase(s, "egyptian")]
     ),
   ];
