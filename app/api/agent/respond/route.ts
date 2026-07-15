@@ -15,8 +15,10 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
+import { CustomerTurnError } from "@/lib/ai/customer-turn";
 import type { LlmMessage } from "@/lib/ai/llm/types";
+import { maybeSucceed } from "@/lib/db/checked";
+import { runAgentRespondTurn } from "@/lib/ai/agent-respond-runner";
 
 export const runtime = "nodejs";
 
@@ -62,10 +64,24 @@ export async function POST(req: Request) {
   // is NOT pre-persisted by this route — history is whatever already exists.
   let history: LlmMessage[] = [];
   if (conversationId) {
+    const ownedConversation = await maybeSucceed(
+      admin
+        .from("conversations")
+        .select("id")
+        .eq("id", conversationId)
+        .eq("restaurant_id", restaurantId)
+        .maybeSingle(),
+      "agent.respond.conversation_owner",
+    );
+    if (!ownedConversation) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
     const { data: msgs } = await admin
       .from("messages")
       .select("sender,text,created_at")
       .eq("conversation_id", conversationId)
+      .eq("restaurant_id", restaurantId)
       .order("created_at")
       .limit(40);
     history = ((msgs ?? []) as { sender: string; text: string | null }[])
@@ -74,7 +90,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const outcome = await runCustomerTurn(admin, { restaurantId, conversationId, history, userMessage: text });
+    const outcome = await runAgentRespondTurn(admin, { restaurantId, conversationId, history, userMessage: text });
     return NextResponse.json({
       reply: outcome.reply,
       mode: outcome.mode,
