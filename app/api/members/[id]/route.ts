@@ -1,11 +1,11 @@
 // ============================================================================
-// MaitreAI — UI1 member role change (manager ↔ operation) — SERVER ONLY.
+// MaitreAI — UI1 member role change/removal — SERVER ONLY.
 // Manager-gated (tenant.role !== "manager" → 403) AND tenant-scoped (the target
 // member must belong to the actor's restaurant — verified before any write). Role
 // is whitelisted server-side (manager|operation only). RLS already grants managers
-// member-write; this uses it (no policy change).
+// member-write/delete; this uses it (no policy change).
 //
-// CRITICAL GUARD — last-manager / self-lockout: demoting the LAST remaining
+// CRITICAL GUARD — last-manager / self-lockout: demoting/deleting the LAST remaining
 // manager is refused (409), so a tenant can never be locked out of management.
 // ============================================================================
 
@@ -14,10 +14,23 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { recordAuditEvent } from "@/lib/db/audit";
+import { DatabaseOperationError, maybeSucceed, mustWrite } from "@/lib/db/checked";
 
 export const runtime = "nodejs";
 
 const ROLES = new Set(["manager", "operation"]);
+const LAST_MANAGER_MESSAGE = "لازم يفضل مدير واحد على الأقل";
+
+function isLastManagerError(error: unknown): boolean {
+  if (error instanceof DatabaseOperationError) {
+    return error.pgError.message?.includes("last_manager") === true || error.pgError.code === "23514";
+  }
+  if (error && typeof error === "object") {
+    const pgError = error as { message?: unknown; code?: unknown };
+    return (typeof pgError.message === "string" && pgError.message.includes("last_manager")) || pgError.code === "23514";
+  }
+  return false;
+}
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const supabase = createClient();
@@ -83,4 +96,57 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   return NextResponse.json({ ok: true, role });
+}
+
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const supabase = createClient();
+  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const gate = await requireTenant();
+  if (!gate.ok) return gate.response;
+  const tenant = gate.tenant;
+  if (tenant.role !== "manager") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+
+  try {
+    const target = await maybeSucceed<{ id: string; role: string }>(
+      supabase
+        .from("members")
+        .select("id, role")
+        .eq("id", params.id)
+        .eq("restaurant_id", tenant.restaurantId)
+        .maybeSingle(),
+      "members.delete.lookup",
+    );
+    if (!target) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+    if (target.role === "manager") {
+      const { count, error } = await supabase
+        .from("members")
+        .select("id", { count: "exact", head: true })
+        .eq("restaurant_id", tenant.restaurantId)
+        .eq("role", "manager")
+        .neq("id", params.id);
+      if (error) return NextResponse.json({ error: "delete_failed" }, { status: 502 });
+      if ((count ?? 0) <= 0) {
+        return NextResponse.json({ error: "last_manager", message: LAST_MANAGER_MESSAGE }, { status: 409 });
+      }
+    }
+
+    await mustWrite<{ id: string }>(
+      supabase
+        .from("members")
+        .delete()
+        .eq("id", params.id)
+        .eq("restaurant_id", tenant.restaurantId)
+        .select("id"),
+      "members.delete",
+      { exactRows: 1 },
+    );
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (isLastManagerError(error)) {
+      return NextResponse.json({ error: "last_manager", message: LAST_MANAGER_MESSAGE }, { status: 409 });
+    }
+    return NextResponse.json({ error: "delete_failed" }, { status: 502 });
+  }
 }
