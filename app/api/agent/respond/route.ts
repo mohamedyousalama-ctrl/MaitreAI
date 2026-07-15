@@ -15,17 +15,12 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
+import { CustomerTurnError } from "@/lib/ai/customer-turn";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 import { maybeSucceed } from "@/lib/db/checked";
+import { runAgentRespondTurn } from "@/lib/ai/agent-respond-runner";
 
 export const runtime = "nodejs";
-
-type CustomerTurnRunner = typeof runCustomerTurn;
-let __testRunCustomerTurn: CustomerTurnRunner | undefined;
-export function __setTestRunCustomerTurn(runner: CustomerTurnRunner | undefined): void {
-  __testRunCustomerTurn = runner;
-}
 
 /** Parse AGENT_ROUTE_SECRET ("restaurantId:token") → null if unset/malformed. */
 function parseAgentSecret(env: string | undefined): { boundRestaurantId: string; token: string } | null {
@@ -95,8 +90,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const runTurn = __testRunCustomerTurn ?? runCustomerTurn;
-    const outcome = await runTurn(admin, { restaurantId, conversationId, history, userMessage: text });
+    const outcome = await runAgentRespondTurn(admin, { restaurantId, conversationId, history, userMessage: text });
     return NextResponse.json({
       reply: outcome.reply,
       mode: outcome.mode,

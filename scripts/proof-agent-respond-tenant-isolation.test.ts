@@ -2,7 +2,8 @@
 // Run: node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-agent-respond-tenant-isolation.test.ts
 
 import { __setTestAdminClient } from "../lib/supabase/admin.ts";
-import { __setTestRunCustomerTurn, POST } from "../app/api/agent/respond/route.ts";
+import { __setTestAgentRespondTurn } from "../lib/ai/agent-respond-runner.ts";
+import { POST } from "../app/api/agent/respond/route.ts";
 
 const TENANT_A = "tenant-a";
 const TENANT_B = "tenant-b";
@@ -130,7 +131,7 @@ async function runCase(body: Record<string, unknown>) {
   const fake = makeAdmin();
   const turnCalls: Row[] = [];
   __setTestAdminClient(fake.client);
-  __setTestRunCustomerTurn((async (_admin: unknown, input: Row) => {
+  __setTestAgentRespondTurn((async (_admin: unknown, input: Row) => {
     turnCalls.push(input);
     return {
       reply: "stub reply",
@@ -182,7 +183,7 @@ ok("null conversationId does not query messages", fresh.state.calls.every((call)
 ok("null conversationId calls runCustomerTurn once", fresh.turnCalls.length === 1);
 ok("null conversationId passes null id and empty history", fresh.turnCalls[0]?.conversationId === null && Array.isArray(fresh.turnCalls[0]?.history) && fresh.turnCalls[0].history.length === 0);
 
-__setTestRunCustomerTurn(undefined);
+__setTestAgentRespondTurn(undefined);
 __setTestAdminClient(undefined);
 
 console.log(`\nAGENT-RESPOND-TENANT-ISOLATION PROOF: ${pass} passed, ${fail} failed`);
