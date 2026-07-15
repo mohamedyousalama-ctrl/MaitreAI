@@ -95,7 +95,7 @@ ok("light-up: severe + shared_risk prep → severe_shared_risk",
 
 // ── §0 RED LINE over the ENRICHED recap — a lit-up (verified) dish is still clean ──
 {
-  const states: DishTruthState[] = ["contains", "clear_verified", "clear_prep_unknown", "severe_shared_risk", "unknown"];
+  const states: DishTruthState[] = ["escalation_required", "contains", "clear_verified", "clear_prep_unknown", "severe_shared_risk", "unknown"];
   let clean = true;
   for (const dialect of ["saudi", "egyptian"]) {
     for (const st of states) {
