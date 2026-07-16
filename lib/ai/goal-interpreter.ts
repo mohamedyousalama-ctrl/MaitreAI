@@ -55,6 +55,7 @@ const BARE_ASSENT_RE = /^(?:اه|ايوه|ايوا|اي|تمام|ماشي|اوك
 const HEADCOUNT_RE = /(يكفي|تكفي|يكفّي|كفايه|كفاية|عشان|علشان|ل)\s*[\d٠-٩]+\s*(?:نفر|اشخاص|أشخاص|ناس|فرد|افراد|أفراد)|[\d٠-٩]+\s*(?:نفر|اشخاص|أشخاص|ناس|أفراد)/u;
 // Referent words that need a concrete antecedent («العرض»/«الكبير»/«الوسط»/«الصغير»/«ده»).
 const REFERENT_RE = /(?<![ء-ي])(العرض|العروض|الكبير|الكبيره|الوسط|الصغير|الصغيره|الحجم|ده|دي|هو ده)(?![ء-ي])/u;
+const LEGIT_ORDER_INTENTS = new Set(["build_order", "browse", "modify", "ask_item", "ask_offers"]);
 
 /** Digits (Arabic-Indic or Western) → Western, for the bare-number test. */
 function toWestern(s: string): string {
@@ -118,9 +119,14 @@ export function classifyGoal(args: { userMessage: string; read: GoalRead | null;
 
   // 6. The perception read says Karim did NOT understand → ambiguous (skip-on-doubt → ASK),
   // except mid-order / at-confirmation where the model has the draft/history needed to decide.
+  // If Haiku still tagged a concrete order/menu intent, defer to the capable model:
+  // a correct intent read must not be discarded just because the read was unsure.
   const readNotUnderstood = read && (read.understood === false || read.confidence === "low" || read.intent === "unknown");
   if (readNotUnderstood && (state.hasOpenDraft || state.atConfirmationPoint)) {
     return { action: "act", reason: "read_unsure_defer_to_model" };
+  }
+  if (readNotUnderstood && read.intent && LEGIT_ORDER_INTENTS.has(read.intent)) {
+    return { action: "act", reason: "read_unsure_but_order_intent" };
   }
   if (readNotUnderstood) {
     return { action: "ask", reason: "read_not_understood", kind: "unclear", candidates: [] };
