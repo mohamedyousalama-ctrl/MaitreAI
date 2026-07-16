@@ -38,7 +38,21 @@ ok("A: «ماشي» off a confirmation point → ASK (agree to what?)", classify
 ok("A: «ماشي» AT a confirmation point → ACT (confirm)", classifyGoal({ userMessage: "ماشي", read: READ_OK, state: STATE({ atConfirmationPoint: true }) }).action === "act");
 ok("A: headcount «يكفي ١٠ أشخاص» → ASK honestly (Slice-2 planner not built — never a fabricated plan)",
   classifyGoal({ userMessage: "عايز أكل يكفي ١٠ أشخاص", read: READ_OK, state: STATE() }).kind === "headcount");
-ok("A: read-not-understood → ASK (skip-on-doubt toward asking)", classifyGoal({ userMessage: "حاجة مبهمة", read: READ_BAD, state: STATE() }).action === "ask");
+{
+  const d = classifyGoal({ userMessage: "حاجة مبهمة", read: READ_BAD, state: STATE() });
+  ok("A: cold-open read-not-understood → ASK/unclear (skip-on-doubt preserved)",
+    d.action === "ask" && d.kind === "unclear" && d.reason === "read_not_understood");
+}
+for (const phrase of ["خمسة حار وخمسة عادي", "خلي الماء 4", "تأكيد الطلب"]) {
+  const d = classifyGoal({ userMessage: phrase, read: READ_BAD, state: STATE({ hasOpenDraft: true }) });
+  ok(`A: open draft + unsure read defers to model for «${phrase}»`,
+    d.action === "act" && d.reason === "read_unsure_defer_to_model");
+}
+{
+  const d = classifyGoal({ userMessage: "تأكيد الطلب", read: READ_BAD, state: STATE({ atConfirmationPoint: true }) });
+  ok("A: confirmation point + unsure read defers to model for «تأكيد الطلب»",
+    d.action === "act" && d.reason === "read_unsure_defer_to_model");
+}
 ok("A: isPriceRequest is a pure predicate", isPriceRequest("بكام") === true && isPriceRequest("عايز بيتزا") === false);
 
 // ── B — Clarification questions are GROUNDED (name real candidates), never canned/evasive ─

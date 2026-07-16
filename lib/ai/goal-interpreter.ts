@@ -116,8 +116,13 @@ export function classifyGoal(args: { userMessage: string; read: GoalRead | null;
     return { action: "ask", reason: "referent_ambiguous", kind: "referent", candidates: cand };
   }
 
-  // 6. The perception read says Karim did NOT understand → ambiguous (skip-on-doubt → ASK).
-  if (read && (read.understood === false || read.confidence === "low" || read.intent === "unknown")) {
+  // 6. The perception read says Karim did NOT understand → ambiguous (skip-on-doubt → ASK),
+  // except mid-order / at-confirmation where the model has the draft/history needed to decide.
+  const readNotUnderstood = read && (read.understood === false || read.confidence === "low" || read.intent === "unknown");
+  if (readNotUnderstood && (state.hasOpenDraft || state.atConfirmationPoint)) {
+    return { action: "act", reason: "read_unsure_defer_to_model" };
+  }
+  if (readNotUnderstood) {
     return { action: "ask", reason: "read_not_understood", kind: "unclear", candidates: [] };
   }
 
