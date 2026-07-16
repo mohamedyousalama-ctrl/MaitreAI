@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { maybeSucceed, mustWrite } from "@/lib/db/checked";
 import { subscribeWithReload } from "@/lib/realtime/resubscribe";
 import type {
   KitchenStatusKey,
@@ -131,14 +132,18 @@ export async function ensureCustomerId(
   name?: string
 ): Promise<string | null> {
   if (!phone) return null;
-  const { data } = await s
-    .from("customers")
-    .upsert(
-      { restaurant_id: restaurantId, phone, ...(name ? { name } : {}) },
-      { onConflict: "restaurant_id,phone" }
-    )
-    .select("id")
-    .single();
+  // Storefront-local nullable helper; WhatsApp uses lib/db/ensure-customer.ts.
+  const data = await maybeSucceed<{ id: string }>(
+    s
+      .from("customers")
+      .upsert(
+        { restaurant_id: restaurantId, phone, ...(name ? { name } : {}) },
+        { onConflict: "restaurant_id,phone" }
+      )
+      .select("id")
+      .maybeSingle(),
+    "customers.ensure_order_customer",
+  );
   return (data?.id as string) ?? null;
 }
 
@@ -149,26 +154,33 @@ export async function insertOrderDb(
   order: LocalOrder,
   customerId: string | null
 ): Promise<void> {
-  await s.from("orders").insert({
-    id: order.id,
-    restaurant_id: restaurantId,
-    order_number: order.orderNumber,
-    conversation_id: isUuid(order.conversationId) ? order.conversationId : null,
-    customer_id: customerId,
-    branch_id: isUuid(order.branchId) ? order.branchId : null,
-    fulfillment: order.fulfillmentType,
-    items: order.items,
-    subtotal: order.subtotal,
-    delivery_fee: order.deliveryFee,
-    total: order.total,
-    currency: order.currency,
-    source: order.source ?? "whatsapp",
-    order_status: order.orderStatus,
-    payment_status: order.paymentStatus,
-    address: order.deliveryAddress ?? null,
-    zone_id: isUuid(order.deliveryAreaId) ? order.deliveryAreaId : null,
-    notes: order.notes ?? null,
-  });
+  await mustWrite<{ id: string }>(
+    s
+      .from("orders")
+      .insert({
+        id: order.id,
+        restaurant_id: restaurantId,
+        order_number: order.orderNumber,
+        conversation_id: isUuid(order.conversationId) ? order.conversationId : null,
+        customer_id: customerId,
+        branch_id: isUuid(order.branchId) ? order.branchId : null,
+        fulfillment: order.fulfillmentType,
+        items: order.items,
+        subtotal: order.subtotal,
+        delivery_fee: order.deliveryFee,
+        total: order.total,
+        currency: order.currency,
+        source: order.source ?? "whatsapp",
+        order_status: order.orderStatus,
+        payment_status: order.paymentStatus,
+        address: order.deliveryAddress ?? null,
+        zone_id: isUuid(order.deliveryAreaId) ? order.deliveryAreaId : null,
+        notes: order.notes ?? null,
+      })
+      .select("id"),
+    "orders.insert",
+    { exactRows: 1 },
+  );
 }
 
 export async function updateOrderDb(
@@ -176,7 +188,15 @@ export async function updateOrderDb(
   id: string,
   patch: { order_status?: OrderStatusKey; payment_status?: PaymentStatusKey }
 ): Promise<void> {
-  await s.from("orders").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+  await mustWrite<{ id: string }>(
+    s
+      .from("orders")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("id"),
+    "orders.update",
+    { exactRows: 1 },
+  );
 }
 
 export function subscribeOrders(s: SupabaseClient, restaurantId: string, onChange: () => void): () => void {
