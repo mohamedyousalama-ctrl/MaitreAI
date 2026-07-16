@@ -26,6 +26,16 @@ import { SHOW_MEDIA_RE } from "./media-intent";
 // normalizeAr'd text. «ابعتلي» = ابعت+لي; «ارسل لي»; «وريني» = وري+ني; «شوفني» = شوف+ني.
 const RECEIVE_DIRECTION_RE = /(?:ابعت|بعت|ابعث|ارسل|رسل)\s*(?:لي|لى)|(?:وري|ورين|فرجي|شوف|اشوف|ورجي)(?:ني|نى)/;
 
+// Tight new-order intent: the order noun must be an unarticled token immediately followed
+// by the new/repeat qualifier. This catches «عاوز طلب جديد» / «اوردر تاني» but NOT
+// «أكد الطلب الجديد» (the article binds it as the order object being confirmed).
+const NEW_ORDER_INTENT_RE =
+  /(?<![ء-ي])(?:طلب|اوردر|اورد)\s+(?:جديد|تاني|ثاني)(?![ء-ي])|(?<![ء-ي])(?:اطلب|نطلب|اعمل|اعمللي|عاوز\s+اطلب|عايز\s+اطلب|حاب\s+اطلب|حابب\s+اطلب|ابغي\s+اطلب|ابي\s+اطلب)\s+(?:من\s+جديد|تاني|ثاني|كمان\s*مره|مره\s*تانيه)(?![ء-ي])/;
+
+const CONFIRM_VERB_RE = /(?:ا+كد|تاكيد)/;
+const ALLERGY_STATUS_RE = /(?:حساسيه|حساسه|allerg(?:y|ic|en)?)/;
+const ORDER_BOUND_CONFIRM_RE = /(?:ا+كد|تاكيد)\s+(?:ال)?(?:طلب|طلبيه|اوردر|اورد)/;
+
 /**
  * True iff `text` is an EXPLICIT order confirmation. Negations («لا تأكد», «الغِ»,
  * «cancel») and receive/photo/menu requests are disqualified first; the positive
@@ -37,6 +47,11 @@ export function isExplicitOrderConfirmation(text: string): boolean {
   // CONFIRM-GATE — a receive / photo / menu request is never an order confirmation,
   // even though «ابعت» ("send") is a confirmation verb (live #1005 phantom-order bug).
   if (RECEIVE_DIRECTION_RE.test(n) || SHOW_MEDIA_RE.test(n)) return false;
+  // A request to start/repeat an order is not confirmation of the current pending order.
+  if (NEW_ORDER_INTENT_RE.test(n)) return false;
+  // «أأكد إني ما عنديش حساسية» confirms allergy status, not the order. If the confirm
+  // verb is explicitly bound to the order object («أكد الطلب/الأوردر»), keep it valid.
+  if (ALLERGY_STATUS_RE.test(n) && CONFIRM_VERB_RE.test(n) && !ORDER_BOUND_CONFIRM_RE.test(n)) return false;
   // Negation / cancellation → not a confirmation (unchanged).
   if (/(?:لا|لأ|مش|ما)\s*(?:تأكد|تاكد|تأكيد|تاكيد|تكمل|تبعت|ترسل)|(?:الغ|إلغاء|cancel)/iu.test(text)) return false;
   // Positive confirmation lexicon (unchanged — matched on the raw text).

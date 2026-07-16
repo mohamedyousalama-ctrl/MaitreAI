@@ -19,14 +19,33 @@ ok("«ابعتلي المنيو» (menu request) is NOT a confirmation", !isExpl
 ok("«وريني الصور» (show me) is NOT a confirmation", !isExplicitOrderConfirmation("وريني الصور"));
 ok("«شوفني كتالوج العروض» is NOT a confirmation", !isExplicitOrderConfirmation("شوفني كتالوج العروض"));
 
+// Live #1018-class: confirming allergy status / asking for a new order is NOT a
+// confirmation of the stale pending order.
+ok("live #1018: new-order + allergy-status confirm is NOT an order confirmation",
+  !isExplicitOrderConfirmation("عاوز طلب جديد بس قبل الطلب الجديد حاب ااكد انه ما عندي حساسية من البيض"));
+ok("new-order intent «عاوز طلب جديد» is NOT a confirmation", !isExplicitOrderConfirmation("عاوز طلب جديد"));
+ok("new-order intent «اوردر تاني» is NOT a confirmation", !isExplicitOrderConfirmation("اوردر تاني"));
+ok("new-order intent «اطلب من جديد» is NOT a confirmation", !isExplicitOrderConfirmation("اطلب من جديد"));
+ok("allergy-status confirm «حاب اكد اني ما عندي حساسية» is NOT an order confirmation",
+  !isExplicitOrderConfirmation("حاب اكد اني ما عندي حساسية"));
+
 // LEGITIMATE confirmations — ALL unchanged (byte-identical requirement).
 ok("«أكد» → confirmation", isExplicitOrderConfirmation("أكد"));
 ok("«تمام» → confirmation", isExplicitOrderConfirmation("تمام"));
 ok("«أكد الطلب» → confirmation", isExplicitOrderConfirmation("أكد الطلب"));
+ok("«تأكيد الطلب» → confirmation", isExplicitOrderConfirmation("تأكيد الطلب"));
+ok("«أكد الطلب الجديد» → confirmation (new-order disqualifier stays tight)",
+  isExplicitOrderConfirmation("أكد الطلب الجديد"));
+ok("«أكد الطلب وأنا ما عندي حساسية» → confirmation (explicit order object wins)",
+  isExplicitOrderConfirmation("أكد الطلب وأنا ما عندي حساسية"));
+ok("«أكد الأوردر» → confirmation", isExplicitOrderConfirmation("أكد الأوردر"));
+ok("«كمل الطلب» → confirmation", isExplicitOrderConfirmation("كمل الطلب"));
 ok("«ابعت الطلب» (send the ORDER) → confirmation", isExplicitOrderConfirmation("ابعت الطلب"));
 ok("«ابعتها» → confirmation", isExplicitOrderConfirmation("ابعتها"));
 ok("«أيوه» → confirmation", isExplicitOrderConfirmation("أيوه"));
 ok("«yes» → confirmation", isExplicitOrderConfirmation("yes"));
+ok("«confirm» → confirmation", isExplicitOrderConfirmation("confirm"));
+ok("«send it» → confirmation", isExplicitOrderConfirmation("send it"));
 // the minted confirm BUTTON routes to this exact text (interactive-router) → must confirm.
 ok("confirm-tap text «تأكيد الطلب.» → confirmation (no regression)", isExplicitOrderConfirmation("تأكيد الطلب."));
 
