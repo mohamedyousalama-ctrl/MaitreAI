@@ -3,6 +3,7 @@
   "extends": ["next/core-web-vitals"],
   "plugins": ["local-rules"],
   "rules": {
-    "local-rules/no-arabic-name-number-interpolation": "warn"
+    "local-rules/no-arabic-name-number-interpolation": "warn",
+    "local-rules/no-unchecked-supabase-write": "warn"
   }
 }
