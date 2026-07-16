@@ -11,7 +11,7 @@
 // string), so a banned word can NEVER reach the customer.
 //
 // Rewrite, don't blank: preserve the sentence's meaning in host voice («من السيستم» → dropped,
-// «أبني الطلب» → «أجهّز الطلب»). Conservative + high-confidence only (never touches «البيانات»
+// «أبني الطلب» → «أرتّب الطلب»). Conservative + high-confidence only (never touches «البيانات»
 // as a bare word — too ambiguous — only clear jargon collocations).
 // ============================================================================
 
@@ -27,11 +27,11 @@ const REWRITES: Rewrite[] = [
   // «أحسبهولك بدقة من السيستم» → «أحسبهولك بدقة».
   { re: /\s*من\s+(?:ال)?سيستم/gu, to: "", label: "من السيستم" },
   { re: /\s*من\s+النظام/gu, to: "", label: "من النظام" },
-  // «أبني الطلب» / «أبنيه» / «بناء الطلب» → waiter «أجهّز».
-  { re: /أبني\s+الطلب/gu, to: "أجهّز الطلب", label: "أبني الطلب" },
-  { re: /بناء\s+الطلب/gu, to: "تجهيز الطلب", label: "بناء الطلب" },
-  { re: /أبنيه(?![ء-ي])/gu, to: "أجهّزه", label: "أبنيه" },
-  { re: /نبني\s+الطلب/gu, to: "نجهّز الطلب", label: "نبني الطلب" },
+  // «أبني الطلب» / «أبنيه» / «بناء الطلب» → waiter «أرتّب».
+  { re: /أبني\s+الطلب/gu, to: "أرتّب الطلب", label: "أبني الطلب" },
+  { re: /بناء\s+الطلب/gu, to: "ترتيب الطلب", label: "بناء الطلب" },
+  { re: /أبنيه(?![ء-ي])/gu, to: "أرتّبه", label: "أبنيه" },
+  { re: /نبني\s+الطلب/gu, to: "نرتّب الطلب", label: "نبني الطلب" },
   // «قاعدة البيانات» / «الباك إند» / «الداتا» — pure jargon, drop.
   { re: /\s*(?:من\s+)?قاعدة\s+البيانات/gu, to: "", label: "قاعدة البيانات" },
   { re: /\s*(?:ال)?باك\s?إند/gu, to: "", label: "الباك إند" },

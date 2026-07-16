@@ -88,7 +88,21 @@ ok("A: isPriceRequest is a pure predicate", isPriceRequest("بكام") === true 
 {
   const eg = scrubBannedWords("أقدر أحسبهولك بدقة من السيستم، بس لازم أبني الطلب الأول. تحب أضيف إيه؟");
   ok("D: safeMoneyReply leak «من السيستم» + «أبني الطلب» is scrubbed to waiter language",
-    eg.scrubbed.length === 2 && !hasBannedWord(eg.text) && eg.text.includes("أجهّز الطلب") && !eg.text.includes("السيستم"));
+    eg.scrubbed.length === 2 && !hasBannedWord(eg.text) && eg.text.includes("أرتّب الطلب") && !eg.text.includes("السيستم"));
+  const live = scrubBannedWords("حاضر! وبدأ نبني الطلب 👇");
+  ok("D: live prep-implying bug is closed — «نبني الطلب» never rewrites to «نجهّز الطلب»",
+    live.text.includes("نرتّب الطلب") && !/نجهّز|نجهز|تجهيز|أجهّز|أجهز|أجهّزه|أجهزه/.test(live.text));
+  ok("D: all 4 build-verb rewrites map to the neutral «رتّب» family",
+    scrubBannedWords("أبني الطلب").text === "أرتّب الطلب" &&
+    scrubBannedWords("بناء الطلب").text === "ترتيب الطلب" &&
+    scrubBannedWords("أبنيه").text === "أرتّبه" &&
+    scrubBannedWords("نبني الطلب").text === "نرتّب الطلب");
+  const mixed = scrubBannedWords("نبني الطلب من السيستم");
+  ok("D: mixed jargon keeps both behaviors — drops «السيستم» and rewrites «نبني» neutrally",
+    mixed.text === "نرتّب الطلب" && mixed.scrubbed.includes("نبني الطلب") && mixed.scrubbed.includes("من السيستم"));
+  ok("D: other jargon drops still work",
+    scrubBannedWords("من قاعدة البيانات").text === "" &&
+    scrubBannedWords("أنا الذكاء الاصطناعي").text === "أنا");
   const clean = scrubBannedWords("تمام ✅ أضفتلك بيتزا ببروني لطلبك.");
   ok("D: a clean reply is returned byte-identical (scrubbed = [])", clean.scrubbed.length === 0 && clean.text === "تمام ✅ أضفتلك بيتزا ببروني لطلبك.");
 }
