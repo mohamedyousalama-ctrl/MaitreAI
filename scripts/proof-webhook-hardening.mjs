@@ -248,6 +248,10 @@ async function main() {
 
   console.log("\n" + "=".repeat(70));
   console.log(`SUMMARY: ${passed}/${total} proofs passed`);
+  if (total === 0) {
+    console.log("FAIL: 0 proofs executed (all skipped — env unavailable). A green result requires at least 1 executed assertion.");
+    process.exit(1);
+  }
   if (passed < total) {
     console.log("FAILED proofs require investigation before merge.");
     process.exit(1);
