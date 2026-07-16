@@ -51,6 +51,13 @@ both("jargon: bans أبني الطلب", "«أبني الطلب»");
 both("jargon: bans الداتا", "«الداتا»");
 both("jargon: waiter alternative أجهّزلك الطلب", "أجهّزلك الطلب؟");
 
+// ── Fix 2b: BUNDLED GREETING + SUBSTANCE (ack greeting without re-greeting loops) ──
+both("greeting: bundled greeting+substance instruction", "BUNDLED GREETING + SUBSTANCE");
+both("greeting: examples include Egyptian + Saudi/Gulf greeting forms", "هاي/سلام/أهلاً/مساء الخير/إزيك/هلا/حياك/السلام عليكم");
+both("greeting: brief dialect-register return then substance", "briefly return the greeting in the same dialect/register");
+both("greeting: greet-once discipline still intact", "Greet ONCE at the start of the chat; afterwards continue the conversation naturally without re-greeting");
+both("greeting: bundled rule does not override greet-once", "does NOT override greet-once discipline");
+
 // ── Fix 3: REFERENCE RESOLUTION («هات ذا/ده» after a single quoted item) ──
 both("reference: REFERENCE RESOLUTION heading", "REFERENCE RESOLUTION");
 both("reference: «هات ذا / هات ده» resolves to the last quoted item", "هات ذا / هات ده");
