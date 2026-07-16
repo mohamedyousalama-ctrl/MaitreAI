@@ -6,9 +6,11 @@
 //
 // Heuristic, intentionally narrow for the first sweep:
 //   - only lib/db/** and app/api/**
-//   - only direct expression statements (`await ...;`)
+//   - direct expression statements (`await ...;`)
+//   - destructured `{ error } = await ...` writes that discard returned rows
 //   - mutation chain must include `.from(...)` plus insert/update/delete/upsert
-// Captured/destructured results and mustWrite/mustSucceed wrappers are not flagged.
+// Capturing `{ data }` or `{ count }` is treated as row-count-aware; checked
+// helper wrappers are not flagged.
 // ============================================================================
 
 "use strict";
@@ -70,6 +72,28 @@ function isSupabaseWriteChain(node) {
   return hasFrom && hasMutation;
 }
 
+function objectPatternKeys(pattern) {
+  const keys = new Set();
+  if (!pattern || pattern.type !== "ObjectPattern") return keys;
+
+  for (const property of pattern.properties) {
+    if (property.type !== "Property") continue;
+    const name = propName(property.key);
+    if (name) keys.add(name);
+  }
+
+  return keys;
+}
+
+function destructuresErrorWithoutRows(node) {
+  const parent = node.parent;
+  if (!parent || parent.type !== "VariableDeclarator") return false;
+  if (!parent.id || parent.id.type !== "ObjectPattern") return false;
+
+  const keys = objectPatternKeys(parent.id);
+  return keys.has("error") && !keys.has("data") && !keys.has("count");
+}
+
 /** @type {import('eslint').Rule.RuleModule} */
 module.exports = {
   meta: {
@@ -82,6 +106,8 @@ module.exports = {
     messages: {
       unchecked:
         "Supabase writes return { error } instead of throwing. Check the result or wrap this mutation in mustWrite/mustSucceed.",
+      uncheckedErrorOnly:
+        "Supabase write result destructures { error } but not the affected rows — a zero-row write passes silently. Capture { data } and check the row count, or use mustWrite({ exactRows }).",
     },
   },
   create(context) {
@@ -89,9 +115,15 @@ module.exports = {
 
     return {
       AwaitExpression(node) {
-        if (!node.parent || node.parent.type !== "ExpressionStatement") return;
-        if (isSupabaseWriteChain(node.argument)) {
+        if (!isSupabaseWriteChain(node.argument)) return;
+
+        if (node.parent && node.parent.type === "ExpressionStatement") {
           context.report({ node, messageId: "unchecked" });
+          return;
+        }
+
+        if (destructuresErrorWithoutRows(node)) {
+          context.report({ node, messageId: "uncheckedErrorOnly" });
         }
       },
     };
