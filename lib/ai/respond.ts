@@ -8,7 +8,7 @@
 // and Claude (when ANTHROPIC_API_KEY is set).
 // ============================================================================
 
-import { getAdapter } from "./llm";
+import { getAdapter } from "./llm/index";
 import type { LlmContentBlock, LlmMessage, LlmUsage } from "./llm/types";
 import { buildCustomerAgentSystemPrompt, type BrainContext } from "./prompt";
 import { composeSystemTail } from "./llm/system-blocks";
@@ -26,7 +26,7 @@ import { buildClarifyingQuestion } from "./clarification";
 import { validateNumerals, stripBlockedNumerals } from "./numeral-provenance";
 import { scrubBannedWords } from "./banned-words";
 import { isExplicitOrderConfirmation } from "./order-confirm";
-import { assertsAllergenSafety, shouldEscalateOnSafetyClaim } from "./allergen-gate";
+import { assertsAllergenSafety, normalizeAr, shouldEscalateOnSafetyClaim } from "./allergen-gate";
 import { isExplicitHumanRequest } from "./human-request";
 // WO-COMPANION-W1-CORE (§0/§6): companion banned-phrase guard + confirmation
 // checkpoint. Consulted ONLY when brain.allergyCompanion is on (flag OFF → inert).
@@ -155,6 +155,30 @@ function lastAssistantText(history: LlmMessage[]): string {
     if (m.role === "assistant" && typeof m.content === "string") return m.content;
   }
   return "";
+}
+
+function messageText(m: LlmMessage | undefined): string {
+  if (!m) return "";
+  if (typeof m.content === "string") return m.content;
+  return m.content
+    .filter((b) => b.type === "text")
+    .map((b) => b.type === "text" ? b.text : "")
+    .join(" ");
+}
+
+const ITEM_SIZE_CLARIFIER_RE =
+  /(?:اختار|اختاري|اختارلي|تختار|تختاري|تحب|حاب|حابب|حابه)\s+(?:الحجم|حجم)|(?:الحجم|حجم|احجام|الاحجام)|(?:عادي|دوبل|دبل|صغير|وسط|كبير)\s+(?:ولا|او)\s+(?:عادي|دوبل|دبل|صغير|وسط|كبير)/u;
+const ITEM_CHOICE_CLARIFIER_RE =
+  /(?:اختار|اختاري|اختارلي|تختار|تختاري|تحب|حاب|حابب|حابه)\s+(?:اختيار|الاختيار|من)|(?:اختيار|اختيارات|الاختيارات)/u;
+const OPTION_PAIR_QUESTION_RE =
+  /(?<![ء-ي])[\p{L}\d٠-٩]+(?:\s+[\p{L}\d٠-٩]+){0,2}\s+(?:ولا|او)\s+[\p{L}\d٠-٩]+(?:\s+[\p{L}\d٠-٩]+){0,2}\s*[؟?]/u;
+
+export function isMidItemClarifier(history: LlmMessage[]): boolean {
+  const last = history.at(-1);
+  if (last?.role !== "assistant") return false;
+  const text = normalizeAr(messageText(last));
+  if (!text) return false;
+  return ITEM_SIZE_CLARIFIER_RE.test(text) || ITEM_CHOICE_CLARIFIER_RE.test(text) || OPTION_PAIR_QUESTION_RE.test(text);
 }
 
 /** True only when the last assistant turn looks like a real order readback/confirm
@@ -325,6 +349,10 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // numeral provenance so a price is never model-fabricated). Flag OFF → skipped → byte-identical.
   if (input.brain.goalLogic && canOrder) {
     const offerNames = input.brain.menuItems.filter((i) => /عرض/.test(i.name)).map((i) => i.name);
+    // hasOrderContext: true open draft OR mid-item-collection (last AI turn was an
+    // item clarifier). Week-1 soft signal; superseded by the session-store phase
+    // field (roadmap W3).
+    const hasOrderContext = !!input.initialDraft?.lines.length || isMidItemClarifier(input.history);
     const decision = classifyGoal({
       userMessage: input.userMessage,
       read: input.perceptionRead ?? null,
@@ -332,7 +360,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         itemNames: input.brain.menuItems.map((i) => i.name),
         offerNames,
         atConfirmationPoint: atConfirmationPoint(input.history),
-        hasOpenDraft: !!input.initialDraft?.lines.length,
+        hasOpenDraft: hasOrderContext,
       },
     });
     if (decision.action === "ask") {
