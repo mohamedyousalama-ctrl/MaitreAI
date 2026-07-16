@@ -44,6 +44,31 @@ ok("A: headcount «يكفي ١٠ أشخاص» → ASK honestly (Slice-2 planner 
   ok("A: cold-open read-not-understood → ASK/unclear (skip-on-doubt preserved)",
     d.action === "ask" && d.kind === "unclear" && d.reason === "read_not_understood");
 }
+{
+  const d = classifyGoal({
+    userMessage: "عايز فيليه سوبر حار",
+    read: { intent: "build_order", confidence: "medium", understood: false },
+    state: STATE(),
+  });
+  ok("A: live cold-open build_order + unsure read defers to model for «عايز فيليه سوبر حار»",
+    d.action === "act" && d.reason === "read_unsure_but_order_intent");
+}
+for (const intent of ["browse", "modify", "ask_item", "ask_offers"] as const) {
+  const d = classifyGoal({
+    userMessage: intent === "ask_offers" ? "فيه عروض؟" : "عايز أطلب",
+    read: { intent, confidence: "medium", understood: false },
+    state: STATE(),
+  });
+  ok(`A: cold-open ${intent} + unsure read defers to model`, d.action === "act" && d.reason === "read_unsure_but_order_intent");
+}
+for (const intent of ["unknown", "smalltalk"] as const) {
+  const d = classifyGoal({
+    userMessage: intent === "smalltalk" ? "عامل ايه" : "حاجة مبهمة",
+    read: { intent, confidence: "medium", understood: false },
+    state: STATE(),
+  });
+  ok(`A: cold-open ${intent} + unsure read STILL asks`, d.action === "ask" && d.kind === "unclear" && d.reason === "read_not_understood");
+}
 for (const phrase of ["خمسة حار وخمسة عادي", "خلي الماء 4", "تأكيد الطلب"]) {
   const d = classifyGoal({ userMessage: phrase, read: READ_BAD, state: STATE({ hasOpenDraft: true }) });
   ok(`A: open draft + unsure read defers to model for «${phrase}»`,
