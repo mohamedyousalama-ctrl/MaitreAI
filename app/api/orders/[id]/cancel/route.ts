@@ -10,6 +10,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseRefundMetadata, recordOrderRefund } from "@/lib/db/cod";
@@ -24,6 +25,13 @@ function refundErrorResponse(error: string) {
         : error === "bad_refund_amount" || error === "bad_order_total" || error === "bad_refund_metadata" ? 400
           : 502;
   return NextResponse.json({ error }, { status });
+}
+
+function orderUpdateErrorResponse(error: unknown) {
+  if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+    return NextResponse.json({ ok: false, error: "order_not_found" }, { status: 404 });
+  }
+  return NextResponse.json({ error: "update_failed" }, { status: 502 });
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -77,11 +85,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   // Tenant-scoped write: id AND restaurant_id (admin bypasses RLS).
-  const { error } = await admin
-    .from("orders")
-    .update({ order_status: "cancelled", payment_status: paymentStatus, updated_at: new Date().toISOString() })
-    .eq("id", params.id)
-    .eq("restaurant_id", tenant.restaurantId);
-  if (error) return NextResponse.json({ error: "update_failed" }, { status: 502 });
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("orders")
+        .update({ order_status: "cancelled", payment_status: paymentStatus, updated_at: new Date().toISOString() })
+        .eq("id", params.id)
+        .eq("restaurant_id", tenant.restaurantId)
+        .select("id"),
+      "orders.cancel",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    return orderUpdateErrorResponse(error);
+  }
   return NextResponse.json({ ok: true, paymentStatus, refundEventId });
 }
