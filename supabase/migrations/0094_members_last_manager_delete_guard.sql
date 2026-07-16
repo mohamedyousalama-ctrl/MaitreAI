@@ -1,5 +1,5 @@
 -- ============================================================================
--- FR-026 (PREPARE-ONLY): extend the last-manager guard to member DELETE.
+-- FR-026: extend the last-manager guard to member DELETE.
 --
 -- Migration 0089 protects manager demotion with a BEFORE UPDATE trigger, but a
 -- DELETE of the last manager bypasses that path. This companion trigger is the
@@ -7,8 +7,8 @@
 -- tenant's manager rows FOR UPDATE, re-counts the managers excluding the row
 -- being deleted, and rejects the delete if it would leave zero managers.
 --
--- PREPARE-ONLY: application is a founder/PM ceremony. Do not apply from the app
--- branch.
+-- APPLIED to prod via founder/PM ceremony: trigger
+-- trg_enforce_min_one_manager_on_delete is live on public.members.
 -- ============================================================================
 
 create or replace function public.enforce_min_one_manager_on_delete()
