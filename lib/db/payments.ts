@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { mustWrite } from "@/lib/db/checked";
 import { subscribeWithReload } from "@/lib/realtime/resubscribe";
 import type { PaymentMethodKey, PaymentSession, PaymentSessionStatus } from "@/lib/types";
 
@@ -83,7 +84,8 @@ export async function insertSessionDb(
   const { error } = await s.from("payment_sessions").insert(row);
   if (error && /foreign key|violates/i.test(error.message)) {
     await new Promise((r) => setTimeout(r, 600));
-    await s.from("payment_sessions").insert(row);
+    const { error: retryError } = await s.from("payment_sessions").insert(row);
+    if (retryError) throw retryError;
   } else if (error) {
     throw error;
   }
@@ -95,10 +97,15 @@ export async function updateSessionStatusDb(
   status: PaymentSessionStatus,
   method?: PaymentMethodKey
 ): Promise<void> {
-  await s
-    .from("payment_sessions")
-    .update({ status, ...(method ? { provider_ref: method } : {}), updated_at: new Date().toISOString() })
-    .eq("id", id);
+  await mustWrite<{ id: string }>(
+    s
+      .from("payment_sessions")
+      .update({ status, ...(method ? { provider_ref: method } : {}), updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("id"),
+    "payment_sessions.update_status",
+    { exactRows: 1 },
+  );
 }
 
 export function subscribeSessions(s: SupabaseClient, restaurantId: string, onChange: () => void): () => void {

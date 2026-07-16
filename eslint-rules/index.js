@@ -10,5 +10,6 @@
 module.exports = {
   rules: {
     "no-arabic-name-number-interpolation": require("./no-arabic-name-number-interpolation.js"),
+    "no-unchecked-supabase-write": require("./no-unchecked-supabase-write.js"),
   },
 };
