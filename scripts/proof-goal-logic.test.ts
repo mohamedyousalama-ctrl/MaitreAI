@@ -8,6 +8,7 @@
 // Run: node --conditions=react-server --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-goal-logic.test.ts
 import { readFileSync } from "fs";
 import { resolve } from "path";
+import { isMidItemClarifier, respond } from "../lib/ai/respond.ts";
 import { classifyGoal, isPriceRequest } from "../lib/ai/goal-interpreter.ts";
 import { buildClarifyingQuestion } from "../lib/ai/clarification.ts";
 import { validateNumerals, stripBlockedNumerals } from "../lib/ai/numeral-provenance.ts";
@@ -97,8 +98,11 @@ const rs = readFileSync(resolve(process.cwd(), "lib/ai/respond.ts"), "utf8");
 const ct = readFileSync(resolve(process.cwd(), "lib/ai/customer-turn.ts"), "utf8");
 const fl = readFileSync(resolve(process.cwd(), "lib/tenant/tier.ts"), "utf8");
 ok("E: respond.ts runs the front Goal Interpreter gated on goalLogic, before the model loop",
-  /if \(input\.brain\.goalLogic && canOrder\)\s*\{[\s\S]{0,400}?classifyGoal\(/.test(rs) &&
+  /if \(input\.brain\.goalLogic && canOrder\)\s*\{[\s\S]{0,700}?classifyGoal\(/.test(rs) &&
   rs.indexOf("classifyGoal(") < rs.indexOf("for (let i = 0; i < MAX_ITERATIONS"));
+ok("E: respond.ts widens goal state with the Week-1 hasOrderContext soft signal",
+  /const hasOrderContext = !!input\.initialDraft\?\.lines\.length \|\| isMidItemClarifier\(input\.history\);/.test(rs) &&
+  /hasOpenDraft: hasOrderContext/.test(rs));
 ok("E: AMBIGUOUS short-circuits with a grounded clarify + banned scrub (no model loop)",
   /decision\.action === "ask"[\s\S]{0,400}?buildClarifyingQuestion\(/.test(rs) && /stopReason: "goal_clarify"/.test(rs));
 ok("E: the Final Validator SUPERSEDES fabricatesMoney/price_truth when goalLogic ON",
@@ -111,6 +115,56 @@ ok("E: customer-turn sets goalLogic from the flag AND bundles perception ON",
   /goalLogicOn[\s\S]{0,160}?perceptionOn = \(isFeatureExplicitlyEnabled\("perception", tenantFeatures\) \|\| goalLogicOn\)/.test(ct) &&
   /perceptionRead: perception/.test(ct));
 ok("E: the flag is registered in the ProFeature union", /"goal_logic"/.test(fl));
+
+// ── F — Week-1 soft order context: a just-asked item clarifier is mid-order even
+// with no committed draft line yet (variant/choice missing → add_to_order cannot push).
+process.env.AI_ADAPTER = "mock";
+const SOFT_CONTEXT_BRAIN = {
+  profile: { name: "Wesaya", currency: "ج.م", timezone: "Africa/Cairo", businessType: "restaurant" },
+  dialect: "egyptian",
+  menuItems: [
+    {
+      id: "water", name: "مياه", category: "مشروبات", price: 20, available: true,
+      description: "", imageUrl: "", modifierIds: [], ingredients: [], allergens: [],
+    },
+  ],
+  modifiers: [],
+  branches: [],
+  deliveryAreas: [],
+  policies: {},
+  faqs: [],
+  aiTone: { responseLength: "balanced", emojiUsage: "balanced" },
+  mode: "test",
+  isOpen: true,
+  autoAccept: false,
+  goalLogic: true,
+} as never;
+ok("F: standard item clarifier «عادي ولا دوبل؟» is detected",
+  isMidItemClarifier([{ role: "assistant", content: "عادي ولا دوبل؟" }]));
+ok("F: old clarifier is ignored when the immediately preceding turn is not assistant",
+  !isMidItemClarifier([{ role: "assistant", content: "عادي ولا دوبل؟" }, { role: "user", content: "بعدها رسالة تانية" }]));
+{
+  const out = await respond({
+    brain: SOFT_CONTEXT_BRAIN,
+    history: [{ role: "assistant", content: "تمام ٢ برجر، تحب الحجم عادي ولا دوبل؟" }],
+    userMessage: "خلي الماء ٤",
+    initialDraft: null,
+    perceptionRead: READ_BAD,
+  });
+  ok("F: live shape after item clarifier + empty draft + bad read reaches model (not goal_clarify)",
+    out.stopReason !== "goal_clarify" && out.model === "mock");
+}
+{
+  const out = await respond({
+    brain: SOFT_CONTEXT_BRAIN,
+    history: [],
+    userMessage: "خلي الماء ٤",
+    initialDraft: null,
+    perceptionRead: READ_BAD,
+  });
+  ok("F: cold-open empty draft + no clarifier + bad read still deflects",
+    out.stopReason === "goal_clarify");
+}
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} goal-logic: ${pass}/${pass + fail} passed`);
 if (fail > 0) process.exit(1);
