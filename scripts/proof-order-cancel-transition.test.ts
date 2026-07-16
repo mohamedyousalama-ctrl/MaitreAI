@@ -4,6 +4,7 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+import { DatabaseOperationError, mustWrite } from "../lib/db/checked.ts";
 import { isOrderStatus, validateOrderStatusTransition } from "../lib/orders/transitions.ts";
 
 let pass = 0;
@@ -77,7 +78,7 @@ function loadCancelPost(args: {
             sequence.push("order_update");
             writes.push({ kind: "order_update", payload: state.payload ?? undefined, filters: { ...state.filters } });
           }
-          return Promise.resolve({ error: null }).then(resolve, reject);
+          return Promise.resolve({ data: [{ id: state.filters.id ?? "order-1" }], error: null }).then(resolve, reject);
         },
       };
       return api;
@@ -87,6 +88,8 @@ function loadCancelPost(args: {
   const context = {
     console,
     NextResponse,
+    DatabaseOperationError,
+    mustWrite,
     isOrderStatus,
     validateOrderStatusTransition,
     createAdminClient: () => admin,
