@@ -237,6 +237,7 @@ export async function POST(req: NextRequest) {
     if (convErr || !conv?.id) return bad("تعذر تسجيل مراجعة الحساسية. حاول مرة أخرى.", 500);
     safetyConversationId = conv.id as string;
 
+    // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- best-effort safety-review message insert; failure is logged, not a zero-row update hazard.
     const { error: msgErr } = await admin.from("messages").insert({
       restaurant_id: restaurantId,
       conversation_id: safetyConversationId,

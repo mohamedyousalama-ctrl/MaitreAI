@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 
 export const runtime = "nodejs";
 
@@ -23,11 +24,22 @@ export async function POST(req: Request) {
   const id = String(body.id ?? "");
   if (!id) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
-  const { error } = await admin
-    .from("system_alerts")
-    .update({ dismissed_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("restaurant_id", tenant.restaurantId);
-  if (error) return NextResponse.json({ error: "update_failed" }, { status: 502 });
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("system_alerts")
+        .update({ dismissed_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("restaurant_id", tenant.restaurantId)
+        .select("id"),
+      "alerts.dismiss.update",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    return NextResponse.json({ error: "update_failed" }, { status: 502 });
+  }
   return NextResponse.json({ ok: true });
 }

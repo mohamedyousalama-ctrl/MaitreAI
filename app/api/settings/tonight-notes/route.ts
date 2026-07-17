@@ -15,6 +15,7 @@ import { TONIGHT_MAX } from "@/lib/ai/standing-instructions";
 import { computeTonightExpiryMs } from "@/lib/settings/tonight-expiry";
 import { WEEK_DAYS } from "@/lib/settings/hours";
 import { effectiveHours, type RestaurantHoursFields } from "@/lib/settings/effective-hours";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -173,8 +174,19 @@ export async function DELETE(req: Request) {
 
   const memberId = (await admin.from("members").select("id").eq("user_id", tenant.userId).eq("restaurant_id", rid).maybeSingle()).data as { id?: string } | null;
 
-  const { error } = await admin.from("tonight_notes").delete().eq("id", id).eq("restaurant_id", rid);
-  if (error) return NextResponse.json({ error: "delete_failed", detail: error.message }, { status: 502 });
+  try {
+    await mustWrite<{ id: string }>(
+      admin.from("tonight_notes").delete().eq("id", id).eq("restaurant_id", rid).select("id"),
+      "settings.tonight_notes.delete",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "delete_failed", detail }, { status: 502 });
+  }
 
   await recordAuditEvent(admin, {
     restaurantId: rid, userId: tenant.userId, role: tenant.role,

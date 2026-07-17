@@ -48,6 +48,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -282,13 +283,22 @@ export async function POST(req: Request) {
   }
 
   // All required conditions confirmed on the server — activate.
-  const { error: updateErr } = await admin
-    .from("restaurants")
-    .update({ active: true, agent_mode: "live" })
-    .eq("id", restaurantId);
-
-  if (updateErr) {
-    return NextResponse.json({ error: "activation_failed", detail: updateErr.message }, { status: 502 });
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("restaurants")
+        .update({ active: true, agent_mode: "live" })
+        .eq("id", restaurantId)
+        .select("id"),
+      "onboarding.go_live.update",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "activation_failed", detail }, { status: 502 });
   }
 
   return NextResponse.json({ ok: true, activated: true, alreadyLive: false, checklist: readiness.checklist });

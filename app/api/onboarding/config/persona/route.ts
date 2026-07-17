@@ -21,6 +21,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import type { AiToneConfig, AiPersonality, AiResponseLength, AiEmojiUsage, AiLanguage } from "@/lib/types";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -138,12 +139,23 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "bad_request", detail: "no recognised fields to update" }, { status: 400 });
   }
 
-  const { error } = await supabase
-    .from("restaurants")
-    .update(patch)
-    .eq("id", tenant.restaurantId);
-
-  if (error) return NextResponse.json({ error: "update_failed", detail: error.message }, { status: 502 });
+  try {
+    await mustWrite<{ id: string }>(
+      supabase
+        .from("restaurants")
+        .update(patch)
+        .eq("id", tenant.restaurantId)
+        .select("id"),
+      "onboarding.persona.update",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "update_failed", detail }, { status: 502 });
+  }
 
   return NextResponse.json({ ok: true });
 }

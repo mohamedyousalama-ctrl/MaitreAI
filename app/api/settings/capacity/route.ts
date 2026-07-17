@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { requireManager } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizeTier, normalizeQuality, TIER_LIMITS } from "@/lib/messaging/capacity";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,16 +29,27 @@ export async function POST(req: Request) {
   }
   const quality = normalizeQuality(body.quality);
 
-  const { error } = await admin
-    .from("restaurants")
-    .update({
-      wa_messaging_tier: tier,
-      wa_phone_quality: quality,
-      wa_capacity_source: "manual",
-      wa_capacity_fetched_at: new Date().toISOString(),
-    })
-    .eq("id", tenant.restaurantId);
-  if (error) return NextResponse.json({ error: "update_failed" }, { status: 503 });
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("restaurants")
+        .update({
+          wa_messaging_tier: tier,
+          wa_phone_quality: quality,
+          wa_capacity_source: "manual",
+          wa_capacity_fetched_at: new Date().toISOString(),
+        })
+        .eq("id", tenant.restaurantId)
+        .select("id"),
+      "settings.capacity.update",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    return NextResponse.json({ error: "update_failed" }, { status: 503 });
+  }
 
   return NextResponse.json({ ok: true, tier, quality, source: "manual" });
 }

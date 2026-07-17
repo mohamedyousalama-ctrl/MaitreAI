@@ -16,6 +16,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { WHATSAPP_GRAPH_VERSION } from "@/lib/messaging/config";
 import { resolveTenantWhatsAppEnvById } from "@/lib/db/restaurants";
 import { normalizeTier, normalizeQuality } from "@/lib/messaging/capacity";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,16 +60,27 @@ export async function POST() {
   const quality = normalizeQuality(payload.quality_rating);
   const fetchedAt = new Date().toISOString();
 
-  const { error } = await admin
-    .from("restaurants")
-    .update({
-      wa_messaging_tier: tier,
-      wa_phone_quality: quality,
-      wa_capacity_source: "meta_sync",
-      wa_capacity_fetched_at: fetchedAt,
-    })
-    .eq("id", tenant.restaurantId);
-  if (error) return NextResponse.json({ error: "update_failed" }, { status: 503 });
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("restaurants")
+        .update({
+          wa_messaging_tier: tier,
+          wa_phone_quality: quality,
+          wa_capacity_source: "meta_sync",
+          wa_capacity_fetched_at: fetchedAt,
+        })
+        .eq("id", tenant.restaurantId)
+        .select("id"),
+      "settings.capacity_sync.update",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    return NextResponse.json({ error: "update_failed" }, { status: 503 });
+  }
 
   return NextResponse.json({ synced: true, tier, quality, source: "meta_sync", fetched_at: fetchedAt });
 }

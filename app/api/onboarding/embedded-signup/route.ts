@@ -35,6 +35,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { encryptSecret } from "@/lib/crypto/secrets";
 import { buildSignupTokenExchangeUrl, isSignupConfigured, signupAppCreds } from "@/lib/onboarding/signup-oauth";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 import { randomBytes } from "crypto";
 
 export const runtime = "nodejs";
@@ -170,21 +171,30 @@ export async function POST(req: Request) {
   const signupAppSecret = signupAppCreds()!.appSecret;
 
   const now = new Date().toISOString();
-  const { error: updateErr } = await admin
-    .from("restaurants")
-    .update({
-      wa_phone_number_id: phoneNumberId,
-      wa_waba_id: wabaId,
-      wa_verify_token: verifyToken,
-      wa_access_token_enc: encryptSecret(accessToken),
-      wa_app_secret_enc: encryptSecret(signupAppSecret),
-      wa_configured_at: now,
-      onboarding_completed_at: now,
-    })
-    .eq("id", restaurantId);
-
-  if (updateErr) {
-    return NextResponse.json({ error: "persist_failed", detail: updateErr.message }, { status: 502 });
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("restaurants")
+        .update({
+          wa_phone_number_id: phoneNumberId,
+          wa_waba_id: wabaId,
+          wa_verify_token: verifyToken,
+          wa_access_token_enc: encryptSecret(accessToken),
+          wa_app_secret_enc: encryptSecret(signupAppSecret),
+          wa_configured_at: now,
+          onboarding_completed_at: now,
+        })
+        .eq("id", restaurantId)
+        .select("id"),
+      "onboarding.embedded_signup.update",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "persist_failed", detail }, { status: 502 });
   }
 
   return NextResponse.json({ ok: true, configured: true });

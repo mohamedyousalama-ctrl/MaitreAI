@@ -57,6 +57,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     /* no/invalid body → default width; the audit still records the print */
   }
 
+  // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- audit insert with explicit error response; no zero-row update hazard.
   const { error: insErr } = await admin.from("order_events").insert({
     restaurant_id: tenant.restaurantId,
     order_id: params.id,
