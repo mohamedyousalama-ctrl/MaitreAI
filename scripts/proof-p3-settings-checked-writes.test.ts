@@ -105,9 +105,7 @@ const storefrontSource = sourceFor("app/api/storefront/orders/route.ts");
 ok("storefront safety-review message remains insert-based", storefrontSource.includes('from("messages").insert({'));
 ok("storefront safety-review insert has reasoned eslint disable", storefrontSource.includes("best-effort safety-review message insert; failure is logged, not a zero-row update hazard"));
 
-const deferredKnowledge = sourceFor("app/api/knowledge/change-requests/[id]/route.ts");
 const deferredProvision = sourceFor("app/api/onboarding/provision-tenant/route.ts");
-ok("knowledge change-request state machine remains deferred", deferredKnowledge.includes("await admin.from(\"knowledge_change_requests\").update"));
 ok("provision tenant rollback remains deferred", deferredProvision.includes('await admin.from("restaurants").delete().eq("id", restaurant.id);'));
 
 async function lintUncheckedWarnings(paths: string[]) {
@@ -146,12 +144,11 @@ for (const warning of lintWarnings) {
 }
 
 const remainingAllowed = new Set([
-  "app/api/knowledge/change-requests/[id]/route.ts",
   "app/api/onboarding/provision-tenant/route.ts",
 ]);
-ok("scoped unchecked-write lint drops from 27 to 5", lintWarnings.length === 5);
+ok("scoped unchecked-write lint drops from 27 to 1", lintWarnings.length === 1);
 ok("remaining unchecked-write warnings are only deferred sites", lintWarnings.every((warning) => remainingAllowed.has(warning.file)));
-console.log("P3_UNCHECKED_WRITE_DROP=27->5");
+console.log("P3_UNCHECKED_WRITE_DROP=27->1");
 
 console.log(`\nP3-SETTINGS-CHECKED-WRITES PROOF: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
