@@ -91,6 +91,7 @@ export async function POST(req: Request) {
 
   if (memberErr || !member) {
     // Roll back the restaurant to avoid orphaned rows.
+    // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- best-effort rollback cleanup after member-creation failure; zero-row is acceptable (row may already be gone) and must not throw over the original membership_failed error.
     await admin.from("restaurants").delete().eq("id", restaurant.id);
     return NextResponse.json({ error: "membership_failed", detail: memberErr?.message }, { status: 502 });
   }
