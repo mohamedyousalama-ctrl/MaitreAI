@@ -12,7 +12,12 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadBrain } from "@/lib/db/brain";
 import { isPromoActiveNow } from "@/lib/promo";
-import { respond, isExplicitOrderConfirmation, type RespondResult } from "@/lib/ai/respond";
+import {
+  respond,
+  isExplicitOrderConfirmation,
+  RULE6_ANNOTATION_PIVOT_SHADOW_REASON,
+  type RespondResult,
+} from "@/lib/ai/respond";
 import { deriveSystemMode } from "@/lib/ai/modes";
 import { costUsd, modelFor } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
@@ -138,6 +143,18 @@ function isOpenDraft(value: unknown): value is OrderDraft {
   if (!value || typeof value !== "object") return false;
   const draft = value as Partial<OrderDraft>;
   return Array.isArray(draft.lines) && draft.lines.length > 0 && draft.finalized !== true;
+}
+
+function isRule6ReadNotUnderstoodClarify(result: RespondResult): boolean {
+  return (
+    result.model === "deterministic_goal_interpreter" &&
+    result.stopReason === "goal_clarify" &&
+    result.signals.some((signal) =>
+      signal.type === "missing_data" &&
+      signal.detail?.reason === "goal_clarify" &&
+      signal.detail?.kind === "unclear"
+    )
+  );
 }
 
 /** Allergen-safety INPUT GATE (Fix 1) — the deterministic forced outcome when the
@@ -502,6 +519,8 @@ export async function runCustomerTurn(
 
   // WO-DELIVERY-D1 — read the geo-routing flag once (STRICT: never implied by 'pro').
   const geoRoutingOn = isFeatureExplicitlyEnabled("delivery_geo_routing", tenantFeatures);
+  const goalLogicOn = isFeatureExplicitlyEnabled("goal_logic", tenantFeatures);
+  const goalLogicRule6AnnotationPivotOn = isFeatureExplicitlyEnabled("goal_logic_rule6_annotation_pivot", tenantFeatures);
 
   const ctx: BrainContext = {
     profile: {
@@ -580,7 +599,8 @@ export async function runCustomerTurn(
     // WO-V1.0-GOAL-LOGIC (Slice 1) — front-of-turn intent reasoning + Final Validator in
     // respond.ts. Default OFF → the reactive pipeline runs unchanged (byte-identical). Bundles
     // perception ON below so the Goal Interpreter's read is available.
-    goalLogic: isFeatureExplicitlyEnabled("goal_logic", tenantFeatures),
+    goalLogic: goalLogicOn,
+    goalLogicRule6AnnotationPivot: goalLogicRule6AnnotationPivotOn,
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
@@ -633,7 +653,6 @@ export async function runCustomerTurn(
   // P3 perception — skip the Haiku read entirely when the deterministic gate already
   // fired (the decision is made; no LLM needed). Otherwise unchanged.
   // WO-V1.0-GOAL-LOGIC bundles perception ON — the Goal Interpreter reuses this read (no new call).
-  const goalLogicOn = isFeatureExplicitlyEnabled("goal_logic", tenantFeatures);
   const perceptionOn = (isFeatureExplicitlyEnabled("perception", tenantFeatures) || goalLogicOn) && !combinedAllergenHit.fired;
   const perception = perceptionOn ? await perceiveTurn(input.userMessage, input.history) : null;
   const perceptionDirective = perceptionOn ? recoveryDirective(perception) : null;
@@ -1057,6 +1076,39 @@ export async function runCustomerTurn(
     try {
       await admin.from("agent_runs").update({ cache_creation_tokens: result.usage.cacheCreationTokens ?? 0 }).eq("id", runId);
     } catch { /* column not applied yet — PREPARE-ONLY */ }
+  }
+
+  if (
+    conversationId &&
+    goalLogicOn &&
+    !goalLogicRule6AnnotationPivotOn &&
+    isRule6ReadNotUnderstoodClarify(result)
+  ) {
+    try {
+      const { error } = await admin.from("conversation_signals").insert({
+        restaurant_id: restaurantId,
+        conversation_id: conversationId,
+        type: "missing_data",
+        detail: {
+          reason: RULE6_ANNOTATION_PIVOT_SHADOW_REASON,
+          previousReason: "read_not_understood",
+          kind: "unclear",
+          source: "goal_logic_rule6",
+          wouldHave: "model_with_annotation",
+          flag: "goal_logic_rule6_annotation_pivot",
+          perception: perception
+            ? {
+                intent: perception.intent ?? null,
+                confidence: perception.confidence ?? null,
+                understood: perception.understood ?? null,
+              }
+            : null,
+        },
+      });
+      if (error) console.error("[goal_logic] rule6 annotation pivot shadow log failed", error);
+    } catch (e) {
+      console.error("[goal_logic] rule6 annotation pivot shadow log failed", e);
+    }
   }
 
   if (result.signals.length) {

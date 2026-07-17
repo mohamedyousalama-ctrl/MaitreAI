@@ -150,8 +150,9 @@ ok("E: the Final Validator SUPERSEDES fabricatesMoney/price_truth when goalLogic
 ok("E: a final banned-word scrub runs before the reply returns (goalLogic ON)",
   /input\.brain\.goalLogic && text\.trim\(\)\)\s*\{[\s\S]{0,200}?scrubBannedWords\(text\)/.test(rs));
 ok("E: customer-turn sets goalLogic from the flag AND bundles perception ON",
-  /goalLogic: isFeatureExplicitlyEnabled\("goal_logic", tenantFeatures\)/.test(ct) &&
-  /goalLogicOn[\s\S]{0,160}?perceptionOn = \(isFeatureExplicitlyEnabled\("perception", tenantFeatures\) \|\| goalLogicOn\)/.test(ct) &&
+  /const goalLogicOn = isFeatureExplicitlyEnabled\("goal_logic", tenantFeatures\);/.test(ct) &&
+  /goalLogic: goalLogicOn/.test(ct) &&
+  /const perceptionOn = \(isFeatureExplicitlyEnabled\("perception", tenantFeatures\) \|\| goalLogicOn\) && !combinedAllergenHit\.fired;/.test(ct) &&
   /perceptionRead: perception/.test(ct));
 ok("E: the flag is registered in the ProFeature union", /"goal_logic"/.test(fl));
 
