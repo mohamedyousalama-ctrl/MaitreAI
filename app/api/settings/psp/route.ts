@@ -19,6 +19,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret } from "@/lib/crypto/secrets";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { getPaymentProvider } from "@/lib/payments/provider";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -125,7 +126,18 @@ export async function POST(req: Request) {
   // can't read a stale timestamp and report configured:true inconsistently.
   patch.psp_configured_at = configured ? new Date().toISOString() : null;
 
-  const { error } = await admin.from("restaurants").update(patch).eq("id", tenant.restaurantId);
-  if (error) return NextResponse.json({ error: "update_failed", detail: error.message }, { status: 502 });
+  try {
+    await mustWrite<{ id: string }>(
+      admin.from("restaurants").update(patch).eq("id", tenant.restaurantId).select("id"),
+      "settings.psp.update",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "update_failed", detail }, { status: 502 });
+  }
   return NextResponse.json({ ok: true, configured });
 }

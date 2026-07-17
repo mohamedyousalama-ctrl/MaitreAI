@@ -26,6 +26,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAuditEvent } from "@/lib/db/audit";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 
 export const runtime = "nodejs";
 
@@ -66,12 +67,23 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // ── release: clear named ownership (return-to-Karim / close). Not the contended
   // race; a plain tenant-scoped clear is sufficient. ──────────────────────────────
   if (action === "release") {
-    const { error } = await admin
-      .from("conversations")
-      .update({ assigned_member_id: null })
-      .eq("id", params.id)
-      .eq("restaurant_id", tenant.restaurantId);
-    if (error) return NextResponse.json({ error: "update_failed" }, { status: 502 });
+    try {
+      await mustWrite<{ id: string }>(
+        admin
+          .from("conversations")
+          .update({ assigned_member_id: null })
+          .eq("id", params.id)
+          .eq("restaurant_id", tenant.restaurantId)
+          .select("id"),
+        "conversations.assignee.release",
+        { exactRows: 1 },
+      );
+    } catch (error) {
+      if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+        return NextResponse.json({ error: "not_found" }, { status: 404 });
+      }
+      return NextResponse.json({ error: "update_failed" }, { status: 502 });
+    }
     // MO4 — audit the deliberate release. `reason` distinguishes return-to-Karim
     // vs close (the ownership_state flip itself happens on the browser spine path).
     const reason = String(body.reason ?? "");

@@ -70,17 +70,26 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
 
-  const { error } = await supabase
-    .from("members")
-    .update({ role, updated_at: new Date().toISOString() })
-    .eq("id", params.id)
-    .eq("restaurant_id", tenant.restaurantId);
-  if (error) {
+  try {
+    await mustWrite<{ id: string }>(
+      supabase
+        .from("members")
+        .update({ role, updated_at: new Date().toISOString() })
+        .eq("id", params.id)
+        .eq("restaurant_id", tenant.restaurantId)
+        .select("id"),
+      "members.update_role",
+      { exactRows: 1 },
+    );
+  } catch (error) {
     // WO-RACE-1 — the 0089 trigger is the atomic backstop the pre-check can't guarantee
     // under a concurrent race: it REJECTS a demotion that would leave zero managers. Map
     // that exception to the same 409 last_manager the pre-check returns (never a 502).
-    if (error.message?.includes("last_manager") || error.code === "23514") {
+    if (isLastManagerError(error)) {
       return NextResponse.json({ error: "last_manager", message: "لازم يفضل مدير واحد على الأقل" }, { status: 409 });
+    }
+    if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
     return NextResponse.json({ error: "update_failed" }, { status: 502 });
   }
