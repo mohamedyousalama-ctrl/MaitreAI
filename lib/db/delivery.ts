@@ -16,6 +16,7 @@ import { captureCodOnDelivered } from "@/lib/db/cod";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 import { withinRunCap } from "@/lib/delivery/runs";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { mustWrite } from "@/lib/db/checked";
 
 export const DELIVERY_STATUSES = [
   "pending",
@@ -170,8 +171,16 @@ export async function addDriver(_db: SupabaseClient, restaurantId: string, input
 
 export async function setDriverActive(_db: SupabaseClient, restaurantId: string, driverId: string, active: boolean) {
   const admin = requireDeliveryAdmin();
-  const { error } = await admin.from("drivers").update({ active }).eq("id", driverId).eq("restaurant_id", restaurantId);
-  if (error) throw error;
+  await mustWrite<{ id: string }>(
+    admin
+      .from("drivers")
+      .update({ active })
+      .eq("id", driverId)
+      .eq("restaurant_id", restaurantId)
+      .select("id"),
+    "delivery.set_driver_active",
+    { exactRows: 1 },
+  );
 }
 
 /** Edit a driver's profile (name/phone/vehicle only). The row id (driver_id) is
@@ -183,12 +192,16 @@ export async function updateDriver(
   input: { name: string; phone: string; vehicle?: string | null }
 ) {
   const admin = requireDeliveryAdmin();
-  const { error } = await admin
-    .from("drivers")
-    .update({ name: input.name.trim(), phone: input.phone.trim(), vehicle: input.vehicle?.trim() || null })
-    .eq("id", driverId)
-    .eq("restaurant_id", restaurantId);
-  if (error) throw error;
+  await mustWrite<{ id: string }>(
+    admin
+      .from("drivers")
+      .update({ name: input.name.trim(), phone: input.phone.trim(), vehicle: input.vehicle?.trim() || null })
+      .eq("id", driverId)
+      .eq("restaurant_id", restaurantId)
+      .select("id"),
+    "delivery.update_driver",
+    { exactRows: 1 },
+  );
 }
 
 // --- operator deliveries list (+ latest location for in-progress) ------------
@@ -270,12 +283,21 @@ export async function assignDriver(
   const customerTok = (delivery.customer_token as string) || token();
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
 
-  const { error: assignErr } = await admin
-    .from("deliveries")
-    .update({ driver_id: driverId, status: "assigned", driver_token: driverTok, customer_token: customerTok, token_used: false, assigned_at: new Date().toISOString(), expires_at: expiresAt, updated_at: new Date().toISOString() })
-    .eq("id", deliveryId)
-    .eq("restaurant_id", restaurantId);
-  if (assignErr) throw new Error("assign_failed");
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("deliveries")
+        .update({ driver_id: driverId, status: "assigned", driver_token: driverTok, customer_token: customerTok, token_used: false, assigned_at: new Date().toISOString(), expires_at: expiresAt, updated_at: new Date().toISOString() })
+        .eq("id", deliveryId)
+        .eq("restaurant_id", restaurantId)
+        .select("id"),
+      "delivery.assign",
+      { exactRows: 1 },
+    );
+  } catch {
+    throw new Error("assign_failed");
+  }
+  // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- event-log insert with explicit throw-on-error; no zero-row update hazard.
   const { error: eventErr } = await admin.from("delivery_events").insert({ delivery_id: deliveryId, type: "assigned", payload: { driverId, driverName: driver.name } });
   if (eventErr) throw new Error("assign_event_failed");
 
@@ -573,12 +595,21 @@ export async function assignDeliveriesToRun(
     const del = byId.get(id)!;
     const driverTok = (del.driver_token as string) || token();
     const customerTok = (del.customer_token as string) || token();
-    const { error: assignErr } = await admin
-      .from("deliveries")
-      .update({ driver_id: driverId, run_id: runId, stop_order: stopOrder, status: "assigned", driver_token: driverTok, customer_token: customerTok, token_used: false, assigned_at: now, expires_at: expiresAt, updated_at: now })
-      .eq("id", id)
-      .eq("restaurant_id", restaurantId);
-    if (assignErr) throw new Error("assign_failed");
+    try {
+      await mustWrite<{ id: string }>(
+        admin
+          .from("deliveries")
+          .update({ driver_id: driverId, run_id: runId, stop_order: stopOrder, status: "assigned", driver_token: driverTok, customer_token: customerTok, token_used: false, assigned_at: now, expires_at: expiresAt, updated_at: now })
+          .eq("id", id)
+          .eq("restaurant_id", restaurantId)
+          .select("id"),
+        "delivery.assign_run_stop",
+        { exactRows: 1 },
+      );
+    } catch {
+      throw new Error("assign_failed");
+    }
+    // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- event-log insert with explicit throw-on-error; no zero-row update hazard.
     const { error: eventErr } = await admin.from("delivery_events").insert({ delivery_id: id, type: "assigned", payload: { driverId, driverName: driver.name, runId, stopOrder } });
     if (eventErr) throw new Error("assign_event_failed");
     stops.push({ deliveryId: id, driverLink: `${base}/d/${driverTok}`, customerLink: `${base}/t/${customerTok}` });

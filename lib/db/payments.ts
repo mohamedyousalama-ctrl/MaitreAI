@@ -81,9 +81,11 @@ export async function insertSessionDb(
     expires_at: session.expiresAt ? new Date(session.expiresAt).toISOString() : null,
     provider_ref: session.method ?? null,
   };
+  // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- insert with explicit throw-on-error/FK retry; no zero-row update hazard.
   const { error } = await s.from("payment_sessions").insert(row);
   if (error && /foreign key|violates/i.test(error.message)) {
     await new Promise((r) => setTimeout(r, 600));
+    // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- retry insert with explicit throw-on-error; no zero-row update hazard.
     const { error: retryError } = await s.from("payment_sessions").insert(row);
     if (retryError) throw retryError;
   } else if (error) {

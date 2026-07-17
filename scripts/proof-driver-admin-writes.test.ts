@@ -15,13 +15,22 @@ function ok(name: string, cond: boolean) {
   }
 }
 
+async function catchMessage(fn: () => Promise<unknown>): Promise<string | null> {
+  try {
+    await fn();
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 type DriverRow = { id: string; restaurant_id: string; name: string; phone: string; vehicle: string | null; active: boolean; created_at: string };
 type ClientKind = "member" | "admin";
 
 function makeClient(kind: ClientKind, rows: DriverRow[], calls: Array<{ kind: ClientKind; op: string; table: string; payload?: Record<string, unknown>; filters: Record<string, unknown> }>) {
   return {
     from(table: string) {
-      const state = { op: "select", payload: null as Record<string, unknown> | null, filters: {} as Record<string, unknown> };
+      const state = { op: "select", payload: null as Record<string, unknown> | null, filters: {} as Record<string, unknown>, selected: null as string | null };
       const record = () => calls.push({ kind, op: state.op, table, payload: state.payload ?? undefined, filters: { ...state.filters } });
       const finish = async (single = false) => {
         record();
@@ -40,18 +49,20 @@ function makeClient(kind: ClientKind, rows: DriverRow[], calls: Array<{ kind: Cl
           return { data: row, error: null };
         }
         if (state.op === "update") {
+          const updated: DriverRow[] = [];
           for (const row of rows) {
             if (state.filters.id && row.id !== state.filters.id) continue;
             if (state.filters.restaurant_id && row.restaurant_id !== state.filters.restaurant_id) continue;
             Object.assign(row, state.payload ?? {});
+            updated.push(row);
           }
-          return { data: null, error: null };
+          return { data: state.selected ? updated.map((row) => ({ id: row.id })) : null, error: null };
         }
         const filtered = rows.filter((row) => !state.filters.restaurant_id || row.restaurant_id === state.filters.restaurant_id);
         return { data: single ? (filtered[0] ?? null) : filtered, error: null };
       };
       const api: Record<string, unknown> = {
-        select() { return api; },
+        select(cols?: string) { state.selected = cols ?? null; return api; },
         order() { return api; },
         eq(k: string, v: unknown) { state.filters[k] = v; return api; },
         insert(payload: Record<string, unknown>) { state.op = "insert"; state.payload = payload; return api; },
@@ -103,8 +114,10 @@ try {
   const updated = rows.find((row) => row.id === "driver-1");
   ok("updateDriver succeeds through service-role admin path", updated?.name === "Updated Driver" && updated.phone === "300" && updated.vehicle === "car");
 
-  await setDriverActive(member as never, "other-tenant", "driver-1", true);
-  await updateDriver(member as never, "other-tenant", "driver-1", { name: "Cross Tenant", phone: "999", vehicle: null });
+  const crossActiveErr = await catchMessage(() => setDriverActive(member as never, "other-tenant", "driver-1", true));
+  const crossUpdateErr = await catchMessage(() => updateDriver(member as never, "other-tenant", "driver-1", { name: "Cross Tenant", phone: "999", vehicle: null }));
+  ok("cross-tenant setDriverActive throws row-count mismatch", crossActiveErr?.includes("KIVO_ROW_COUNT_MISMATCH") === true);
+  ok("cross-tenant updateDriver throws row-count mismatch", crossUpdateErr?.includes("KIVO_ROW_COUNT_MISMATCH") === true);
   ok("cross-tenant restaurant_id filter does not write", updated?.active === false && updated?.name === "Updated Driver" && updated?.phone === "300");
 } finally {
   __setTestAdminClient(undefined);
