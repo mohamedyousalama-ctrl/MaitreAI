@@ -26,6 +26,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { recordAuditEvent } from "@/lib/db/audit";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 import { nextStatus, buildPatch, isAction, type CrTargetType } from "@/lib/knowledge/change-request";
 import { updateMenuItemDb, updateDeliveryAreaDb, updatePoliciesDb } from "@/lib/db/brain";
 import { saveIngredientAxis } from "@/lib/db/menu-allergy-data";
@@ -37,6 +38,10 @@ export const dynamic = "force-dynamic";
 interface CrRow {
   id: string; restaurant_id: string; status: "proposed" | "approved" | "rejected" | "applied";
   target_type: CrTargetType; target_id: string | null; field: string; new_value: unknown;
+}
+
+function isRowCountMismatch(error: unknown): boolean {
+  return error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH";
 }
 
 /** Re-read the target field and confirm it now equals `patch` — the apply's proof the
@@ -105,6 +110,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
     const built = buildPatch(row.target_type, row.field, row.new_value);
     if (!built.ok) { // defense — was validated at create; refuse, stay approved
+      // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- best-effort apply_error annotation on an already-failing path; zero-row must not throw over the original error.
       await admin.from("knowledge_change_requests").update({ apply_error: built.reason.slice(0, 300) }).eq("id", id);
       return NextResponse.json({ error: "unappliable", detail: built.reason }, { status: 400 });
     }
@@ -133,11 +139,26 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       if (!confirmed) throw new Error("post-write verification failed — the value did not change");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- best-effort apply_error annotation on an already-failing path; zero-row must not throw over the original error.
       await admin.from("knowledge_change_requests").update({ apply_error: msg.slice(0, 300) }).eq("id", id); // stays 'approved'
       return NextResponse.json({ error: "apply_failed", detail: msg }, { status: 502 });
     }
 
-    await admin.from("knowledge_change_requests").update({ status: "applied", applied_by: memberId, applied_at: now, apply_error: null }).eq("id", id);
+    try {
+      await mustWrite<{ id: string }>(
+        admin
+          .from("knowledge_change_requests")
+          .update({ status: "applied", applied_by: memberId, applied_at: now, apply_error: null })
+          .eq("id", id)
+          .select("id"),
+        "knowledge_change.apply_status",
+        { exactRows: 1 },
+      );
+    } catch (error) {
+      if (isRowCountMismatch(error)) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      const detail = error instanceof Error ? error.message : "update_failed";
+      return NextResponse.json({ error: "update_failed", detail }, { status: 502 });
+    }
     await recordAuditEvent(admin, {
       restaurantId: tenant.restaurantId, userId: tenant.userId, role: tenant.role,
       action: "knowledge_change_applied", entityType: "restaurant", entityId: tenant.restaurantId,
@@ -148,9 +169,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   // ---- APPROVE / REJECT ----
   const reason = action === "reject" ? (String(body.reason ?? "").trim().slice(0, 500) || null) : null;
-  const { error } = await admin.from("knowledge_change_requests")
-    .update({ status: trans.to, reviewed_by: memberId, reviewed_at: now, reason }).eq("id", id);
-  if (error) return NextResponse.json({ error: "update_failed", detail: error.message }, { status: 502 });
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("knowledge_change_requests")
+        .update({ status: trans.to, reviewed_by: memberId, reviewed_at: now, reason })
+        .eq("id", id)
+        .select("id"),
+      "knowledge_change.review_status",
+      { exactRows: 1 },
+    );
+  } catch (error) {
+    if (isRowCountMismatch(error)) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    const detail = error instanceof Error ? error.message : "update_failed";
+    return NextResponse.json({ error: "update_failed", detail }, { status: 502 });
+  }
   await recordAuditEvent(admin, {
     restaurantId: tenant.restaurantId, userId: tenant.userId, role: tenant.role,
     action: "knowledge_change_reviewed", entityType: "restaurant", entityId: tenant.restaurantId,
