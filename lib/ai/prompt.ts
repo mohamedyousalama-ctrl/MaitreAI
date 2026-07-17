@@ -152,6 +152,11 @@ export interface BrainContext {
    *  the base prompt stays byte-identical (snapshot-gated). Off/absent → the reactive pipeline
    *  runs unchanged. Bundles the `perception` flag ON (else the interpreter's read is null). */
   goalLogic?: boolean;
+  /** Week-2 annotation pivot (flag `goal_logic_rule6_annotation_pivot`, default OFF):
+   *  when true, ONLY the residual rule-6 read_not_understood path routes to the model
+   *  with an explicit no-fabrication clarification annotation instead of deterministic
+   *  goal_clarify. Rules 1-5 and existing rule-6 defer paths are unchanged. */
+  goalLogicRule6AnnotationPivot?: boolean;
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------

@@ -111,6 +111,12 @@ export interface RespondResult {
 
 const MAX_ITERATIONS = 6;
 const MONEY_TOOL_NAMES = new Set(["add_to_order", "remove_from_order", "set_fulfillment", "get_order_summary", "finalize_draft"]);
+export const RULE6_ANNOTATION_PIVOT_LIVE_REASON = "annotation_pivot_rule6_live";
+export const RULE6_ANNOTATION_PIVOT_SHADOW_REASON = "annotation_pivot_rule6_shadow";
+export const RULE6_ANNOTATION_PIVOT_DIRECTIVE =
+  "Goal-logic annotation: the quick perception pre-read was unsure about this customer message. " +
+  "You have the full conversation history that the pre-read lacked. If the customer's intent is clear from history, continue normally. " +
+  "If it is genuinely unclear, ask ONE specific clarifying question. Do not invent items, quantities, delivery details, or a final order; when truly ambiguous, ask.";
 
 // Real-time 86ing: an item already in the saved cart may have been marked
 // out-of-stock since it was added. Surface it (per turn, on the uncached user
@@ -303,14 +309,15 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // reproduces the previous inline concatenation byte-for-byte, so the model still
   // receives systemStatic + systemTail — identical instructions, re-layered for caching.
   const systemStatic = buildCustomerAgentSystemPrompt(input.brain);
-  const systemTail = composeSystemTail([
+  const baseSystemTailParts = [
     input.perceptionDirective,
     input.cadenceDirective,
     input.geoDirective,
     input.imageDirective,
     input.mediaDirective,
     input.answerFirstDirective,
-  ]);
+  ];
+  let systemTail = composeSystemTail(baseSystemTailParts);
   const currency = input.brain.profile.currency || dialectProfile(input.brain.dialect).currencyDefault;
   const knownPrices = knownMenuPrices(input.brain);
 
@@ -363,7 +370,18 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         hasOpenDraft: hasOrderContext,
       },
     });
-    if (decision.action === "ask") {
+    if (decision.action === "ask" && decision.reason === "read_not_understood" && input.brain.goalLogicRule6AnnotationPivot === true) {
+      ctx.signals.push({
+        type: "missing_data",
+        detail: {
+          reason: RULE6_ANNOTATION_PIVOT_LIVE_REASON,
+          previousReason: "read_not_understood",
+          kind: decision.kind,
+          source: "goal_logic_rule6",
+        },
+      });
+      systemTail = composeSystemTail([...baseSystemTailParts, RULE6_ANNOTATION_PIVOT_DIRECTIVE]);
+    } else if (decision.action === "ask") {
       // ASK — one grounded clarifying question, banned-word-clean. No model loop, no canned line.
       const q = scrubBannedWords(
         buildClarifyingQuestion({ kind: decision.kind, candidates: decision.candidates, dialect: input.brain.dialect })
