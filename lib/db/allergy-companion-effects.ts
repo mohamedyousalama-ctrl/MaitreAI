@@ -17,6 +17,7 @@ import { recordAllergyEvent } from "@/lib/db/allergy-audit";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 import { parseAllergyNote } from "@/lib/ai/allergen-companion";
 import type { CompanionDecision } from "@/lib/ai/allergen-companion-flow";
+import { mustWrite } from "@/lib/db/checked";
 
 export interface CompanionEffectInput {
   restaurantId: string;
@@ -53,11 +54,16 @@ export async function applyCompanionSideEffects(
   let noteWritten = false;
   if (decision.note) {
     try {
-      const { error } = await admin
-        .from("conversations")
-        .update({ allergy_note: decision.note })
-        .eq("id", conversationId);
-      noteWritten = !error;
+      await mustWrite<{ id: string }>(
+        admin
+          .from("conversations")
+          .update({ allergy_note: decision.note })
+          .eq("id", conversationId)
+          .select("id"),
+        "allergy_companion_effects.write_note",
+        { exactRows: 1 },
+      );
+      noteWritten = true;
     } catch {
       /* column absent (0080 not applied) → inert */
     }

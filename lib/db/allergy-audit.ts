@@ -89,6 +89,7 @@ export function buildBannedPhraseBlockAudit(
  */
 export async function recordAllergyEvent(admin: SupabaseClient, input: AllergyEventInput): Promise<boolean> {
   try {
+    // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- best-effort observability insert; failure is intentionally non-fatal and returned as boolean.
     const { error } = await admin.from("conversation_allergy_events").insert({
       restaurant_id: input.restaurantId,
       conversation_id: input.conversationId,

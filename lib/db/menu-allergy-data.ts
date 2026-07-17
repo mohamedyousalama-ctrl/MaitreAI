@@ -20,10 +20,24 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isValidAllergenKey } from "@/lib/ai/allergen-vocab";
 import { sanitizeCrossContactTags, isValidPrepStatus, isValidKitchenCanIsolate } from "@/lib/ai/allergen-prep-vocab";
+import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 
 const UNDEFINED_COLUMN = "42703";
-function isColumnMissing(error: { code?: string; message?: string } | null): boolean {
-  return !!error && (error.code === UNDEFINED_COLUMN || /column .* does not exist|does not exist/i.test(error.message ?? ""));
+function pgErrorShape(error: unknown): { code?: string | null; message?: string } | null {
+  if (error instanceof DatabaseOperationError) return error.pgError;
+  if (error && typeof error === "object") return error as { code?: string | null; message?: string };
+  return null;
+}
+
+function isColumnMissing(error: unknown): boolean {
+  const pgError = pgErrorShape(error);
+  return !!pgError && (pgError.code === UNDEFINED_COLUMN || /column .* does not exist|does not exist/i.test(pgError.message ?? ""));
+}
+
+function writeErrorMessage(error: unknown): string {
+  if (error instanceof DatabaseOperationError && error.code === "KIVO_ROW_COUNT_MISMATCH") return "row_count_mismatch";
+  if (error instanceof Error) return error.message;
+  return "write_failed";
 }
 
 export interface AxisWriteResult {
@@ -64,8 +78,21 @@ export async function saveIngredientAxis(
   update.allergens_reviewed_at = null;
   update.allergens_reviewed_by = null;
   update.updated_at = new Date().toISOString();
-  const { error } = await admin.from("menu_items").update(update).eq("id", itemId).eq("restaurant_id", restaurantId);
-  return { ok: !error, error: error?.message };
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("menu_items")
+        .update(update)
+        .eq("id", itemId)
+        .eq("restaurant_id", restaurantId)
+        .select("id"),
+      "menu_allergy_data.save_ingredient_axis",
+      { exactRows: 1 },
+    );
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: writeErrorMessage(error) };
+  }
 }
 
 /** Axis 1 VERIFY: stamp the allergen review (mirrors the existing allergens-review
@@ -77,12 +104,21 @@ export async function verifyIngredientAxis(
   verifiedBy: string
 ): Promise<AxisWriteResult> {
   const now = new Date().toISOString();
-  const { error } = await admin
-    .from("menu_items")
-    .update({ allergens_reviewed_at: now, allergens_reviewed_by: verifiedBy, updated_at: now })
-    .eq("id", itemId)
-    .eq("restaurant_id", restaurantId);
-  return { ok: !error, error: error?.message };
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("menu_items")
+        .update({ allergens_reviewed_at: now, allergens_reviewed_by: verifiedBy, updated_at: now })
+        .eq("id", itemId)
+        .eq("restaurant_id", restaurantId)
+        .select("id"),
+      "menu_allergy_data.verify_ingredient_axis",
+      { exactRows: 1 },
+    );
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: writeErrorMessage(error) };
+  }
 }
 
 export interface PrepAxisPatch {
@@ -118,9 +154,22 @@ export async function savePrepAxis(
   update.prep_verified_at = null;
   update.prep_verified_by = null;
   update.updated_at = new Date().toISOString();
-  const { error } = await admin.from("menu_items").update(update).eq("id", itemId).eq("restaurant_id", restaurantId);
-  if (isColumnMissing(error)) return { ok: false, columnsMissing: true };
-  return { ok: !error, error: error?.message };
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("menu_items")
+        .update(update)
+        .eq("id", itemId)
+        .eq("restaurant_id", restaurantId)
+        .select("id"),
+      "menu_allergy_data.save_prep_axis",
+      { exactRows: 1 },
+    );
+    return { ok: true };
+  } catch (error) {
+    if (isColumnMissing(error)) return { ok: false, columnsMissing: true };
+    return { ok: false, error: writeErrorMessage(error) };
+  }
 }
 
 /** Axis 2 VERIFY: stamp the prep review. DEPLOY-SAFE (0083 columns). */
@@ -131,11 +180,20 @@ export async function verifyPrepAxis(
   verifiedBy: string
 ): Promise<AxisWriteResult> {
   const now = new Date().toISOString();
-  const { error } = await admin
-    .from("menu_items")
-    .update({ prep_verified_at: now, prep_verified_by: verifiedBy, updated_at: now })
-    .eq("id", itemId)
-    .eq("restaurant_id", restaurantId);
-  if (isColumnMissing(error)) return { ok: false, columnsMissing: true };
-  return { ok: !error, error: error?.message };
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("menu_items")
+        .update({ prep_verified_at: now, prep_verified_by: verifiedBy, updated_at: now })
+        .eq("id", itemId)
+        .eq("restaurant_id", restaurantId)
+        .select("id"),
+      "menu_allergy_data.verify_prep_axis",
+      { exactRows: 1 },
+    );
+    return { ok: true };
+  } catch (error) {
+    if (isColumnMissing(error)) return { ok: false, columnsMissing: true };
+    return { ok: false, error: writeErrorMessage(error) };
+  }
 }
