@@ -80,6 +80,10 @@ const BANNED_AR: Array<{ re: RegExp; label: string }> = [
   { re: /خالي ?تماما/, label: "خالي تماماً" },
   { re: /بدون ?اي ?تلامس/, label: "بدون أي تلامس" },
   { re: /يناسب ?الحساسيه/, label: "يناسب الحساسية" },
+  { re: /سلامتك ?فوق ?كل ?حاجه/, label: "سلامتك فوق كل حاجة" },
+  { re: /بضمير/, label: "بضمير" },
+  { re: /اهم ?من ?اي ?بيع/, label: "أهم من أي بيع" },
+  { re: /اهم ?من ?البيع/, label: "أهم من البيع" },
 ];
 // English — «safe» as a standalone word (NOT «safety»/«safely»).
 const BANNED_EN = /\bsafe\b/i;

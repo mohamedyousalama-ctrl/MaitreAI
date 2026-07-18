@@ -130,6 +130,7 @@ export async function applyCompanionSideEffects(
     : firePostCommit
       ? "post_commit_mention"
       : "mention";
+  const staffNotifiedForAudit = staffNotified || decision.path === "emergency" || decision.systemHold === true;
   await recordAllergyEvent(admin, {
     restaurantId,
     conversationId,
@@ -141,8 +142,12 @@ export async function applyCompanionSideEffects(
     dataSource: "none", // W1: no per-dish data yet; every dish resolves to "unknown"
     humanOffered: decision.offerHuman,
     bannerWritten: noteWritten,
-    staffNotified: staffNotified || decision.path === "emergency",
-    netReason: decision.path === "emergency" ? `emergency:${decision.emergencyLabel ?? ""}` : "companion_mention",
+    staffNotified: staffNotifiedForAudit,
+    netReason: decision.path === "emergency"
+      ? `emergency:${decision.emergencyLabel ?? ""}`
+      : decision.systemHold
+        ? "calm_hold_mention"
+        : "companion_mention",
   });
 
   return { noteWritten, staffNotified, postCommit, postCommitQueryFailed };
