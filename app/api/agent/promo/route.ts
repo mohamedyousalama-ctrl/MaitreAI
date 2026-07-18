@@ -14,7 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { loadBrain } from "@/lib/db/brain";
-import { getAdapter } from "@/lib/ai/llm";
+import { getAdapter, recordUsageEvent } from "@/lib/ai/llm";
 import { dialectProfile } from "@/lib/ai/dialect";
 import { computeAffected, draftToRow, offerSummary, isComplete, type PromoDraft } from "@/lib/promo";
 import { renderPromoPng } from "@/lib/render/promo";
@@ -61,12 +61,24 @@ export async function POST(req: Request) {
       `استخدم فقط تفاصيل العرض المعطاة ولا تخترع أي سعر أو رقم. أعد الجملة فقط بدون شرح. إيموجي واحد على الأكثر.`;
     let caption = "";
     try {
+      const t0 = Date.now();
       const res = await adapter.generate({ system, messages: [{ role: "user", content: `العرض: ${summary}` }], tools: [] }, "customer_agent");
       caption = (res.text || "").trim().split("\n")[0].slice(0, 120);
+      const cost = await recordUsageEvent({
+        admin,
+        tenantId: restaurantId,
+        surface: "agent_promo.caption",
+        useCase: "customer_agent",
+        model: res.model,
+        usage: res.usage,
+        latencyMs: Date.now() - t0,
+        trigger: "owner",
+        meta: { action: "caption", adapter: adapter.name },
+      });
       if (admin) await admin.from("agent_runs").insert({
         restaurant_id: restaurantId, trigger: "owner", input: `promo_caption:${summary}`, output: caption,
         model: res.model, adapter: adapter.name, input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens,
-        cost_usd: 0, tokens: res.usage.inputTokens + res.usage.outputTokens, tools_used: ["promo_caption"],
+        cost_usd: cost, tokens: res.usage.inputTokens + res.usage.outputTokens, tools_used: ["promo_caption"],
       });
     } catch {
       caption = summary;

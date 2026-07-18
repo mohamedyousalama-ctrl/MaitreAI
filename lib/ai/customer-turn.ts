@@ -19,7 +19,7 @@ import {
   type RespondResult,
 } from "@/lib/ai/respond";
 import { deriveSystemMode } from "@/lib/ai/modes";
-import { costUsd, modelFor } from "@/lib/ai/llm";
+import { costUsd, modelFor, recordUsageEvent } from "@/lib/ai/llm";
 import { seedAiTone } from "@/lib/seed-data";
 import type { BrainContext } from "@/lib/ai/prompt";
 import type { StandingInstruction, TonightNote } from "@/lib/ai/standing-instructions";
@@ -56,7 +56,7 @@ import { detectCallbackRequest } from "@/lib/ai/callback-trigger";
 // dup_order_awareness flag is ON and a registered order exists this conversation.
 import { refersToRegisteredOrder } from "@/lib/ai/order-reference";
 import { toArabicDigits } from "@/lib/util/arabic-digits";
-import { perceiveTurn, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
+import { perceiveTurnWithUsage, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import { emptyDraft, type OrderDraft, type PhotoRequest, type Presentation, type ToolSignal } from "@/lib/ai/tools";
@@ -607,7 +607,7 @@ export async function runCustomerTurn(
   // standard tenants + Pro-without-perception do NOTHING here). Layer A: read +
   // log. Layer B: a low-confidence/unknown/safety read produces a recovery
   // directive injected for THIS turn so Karim recovers instead of dead-ending.
-  // perceiveTurn never throws (null on failure → no log, no directive).
+  // perceiveTurn never throws (null on failure -> no directive; usage is still ledgered when a call completed).
   // Allergen-safety INPUT GATE (Fix 1, flag-gated): a deterministic floor evaluated
   // BEFORE the model — a customer avoidance/medical intent toward a food/allergen
   // term (incl. euphemisms like «اتعب لو اكلت بندق», NOT only «حساسية») FORCES a
@@ -654,7 +654,22 @@ export async function runCustomerTurn(
   // fired (the decision is made; no LLM needed). Otherwise unchanged.
   // WO-V1.0-GOAL-LOGIC bundles perception ON — the Goal Interpreter reuses this read (no new call).
   const perceptionOn = (isFeatureExplicitlyEnabled("perception", tenantFeatures) || goalLogicOn) && !combinedAllergenHit.fired;
-  const perception = perceptionOn ? await perceiveTurn(input.userMessage, input.history) : null;
+  const perceptionResult = perceptionOn ? await perceiveTurnWithUsage(input.userMessage, input.history) : null;
+  const perception = perceptionResult?.read ?? null;
+  if (perceptionResult?.usage && perceptionResult.model) {
+    await recordUsageEvent({
+      admin,
+      tenantId: restaurantId,
+      conversationId,
+      surface: "perception",
+      useCase: "perception",
+      model: perceptionResult.model,
+      usage: perceptionResult.usage,
+      latencyMs: perceptionResult.latencyMs,
+      trigger: "customer",
+      meta: { path: "perceiveTurn", parsed: !!perception },
+    });
+  }
   const perceptionDirective = perceptionOn ? recoveryDirective(perception) : null;
   // P4 cadence cue (consumes the P3 read; fires only on a non-default mood signal).
   const cadenceDirective = ctx.cadence ? cadenceCue(perception) : null;

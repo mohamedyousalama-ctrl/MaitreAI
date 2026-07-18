@@ -14,7 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { setItemAvailabilityDb, ensureCategoryId } from "@/lib/db/brain";
-import { getAdapter, modelFor, costUsd } from "@/lib/ai/llm";
+import { getAdapter, recordUsageEvent } from "@/lib/ai/llm";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export const runtime = "nodejs";
@@ -202,8 +202,17 @@ export async function POST(req: Request) {
   const adapter = await getAdapter();
   const messages: LlmMessage[] = [{ role: "user", content: text }];
   const res = await adapter.generate({ system: ROUTER_SYSTEM, messages, maxTokens: 300 }, "admin_parse");
-  const cfg = modelFor("admin_parse");
-  const cost = costUsd(cfg, res.usage.inputTokens, res.usage.outputTokens);
+  const cost = await recordUsageEvent({
+    admin,
+    tenantId: restaurantId,
+    surface: "agent_admin.router",
+    useCase: "admin_parse",
+    model: res.model,
+    usage: res.usage,
+    latencyMs: Date.now() - t0,
+    trigger: "owner",
+    meta: { adapter: adapter.name },
+  });
   const parsed = parseRouter(res.text) ?? { intent: "off_scope", params: {}, sentence: "أساعدك في تشغيل مطعمك فقط." };
 
   // Log the admin turn (per-surface cost visibility, §P5).
