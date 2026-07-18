@@ -37,6 +37,7 @@ import {
   emergencyReply,
   type CompanionDecision,
 } from "@/lib/ai/allergen-companion-flow";
+import { calmHoldReply } from "@/lib/ai/allergy-calm-hold";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { decideVoiceLadder, garbledVoiceReply, confirmVoiceReply, isVoiceAssent, wasVoiceLadderConfirm } from "@/lib/ai/voice-quality";
 import { resolveVoiceCandidates, expectedAnswerClass, type VoiceCandidate } from "@/lib/ai/voice-aliases";
@@ -324,6 +325,83 @@ function companionEmergencyResult(
   };
 }
 
+type CalmHoldSource = "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" | "emergency";
+
+function calmHoldReason(decision: CompanionDecision, source: CalmHoldSource): string {
+  const label = decision.term ?? decision.emergencyLabel ?? "حساسية";
+  return decision.path === "emergency"
+    ? `تعليق حساسية حتمي: أعراض طارئة (${label}) — الطلب موقوف لحين متابعة بشرية/المطبخ`
+    : `تعليق حساسية حتمي: العميل ذكر ${label} (${source}) — الطلب موقوف لحين تأكيد المطبخ`;
+}
+
+/** WO-CALM — deterministic allergy hold outcome. No LLM, no notify_without_hold:
+ *  ownership is flipped to SYSTEM_HOLD before this customer-facing reply is sent. */
+function calmHoldResult(
+  decision: CompanionDecision,
+  dialect: string,
+  initialDraft: OrderDraft | null,
+  currency: string,
+  source: CalmHoldSource
+): RespondResult {
+  const emergency = decision.path === "emergency";
+  return {
+    reply: emergency ? emergencyReply(dialect) : calmHoldReply(dialect),
+    draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
+    escalate: false,
+    escalationReason: null,
+    signals: [
+      { type: "missing_data", detail: { reason: "allergy_calm_hold", source, term: decision.term, emergency: decision.emergencyClass } },
+    ],
+    presentation: null,
+    photoRequests: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    toolNames: [],
+    stopReason: emergency ? "allergy_calm_hold_emergency" : "allergy_calm_hold",
+    model: "deterministic_allergy_calm_hold",
+    adapter: "mock",
+    resendReceipt: false,
+    calls_used: 0,
+  };
+}
+
+async function enterCalmAllergyHold(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string;
+    conversationId: string | null;
+    decision: CompanionDecision;
+    source: CalmHoldSource;
+  }
+): Promise<string> {
+  const reason = calmHoldReason(args.decision, args.source);
+  if (!args.conversationId) return reason;
+
+  const extra: Record<string, unknown> = {
+    owner: "human",
+    status: "تعليق أمان · حساسية",
+    escalation_reason: reason,
+    is_safety_hold: true,
+    updated_at: new Date().toISOString(),
+  };
+  if (args.decision.note) extra.allergy_note = args.decision.note;
+
+  // Binding order: hold state first, then any staff/customer notification.
+  await setOwnershipState(admin, args.conversationId, "SYSTEM_HOLD", { extra });
+  await recordCriticalAlert(admin, {
+    restaurantId: args.restaurantId,
+    conversationId: args.conversationId,
+    type: args.decision.path === "emergency" ? "allergy_emergency_active" : "allergy_calm_hold",
+    detail: reason,
+    context: {
+      source: args.source,
+      term: args.decision.term,
+      emergencyLabel: args.decision.emergencyLabel,
+      allergyNote: args.decision.note,
+    },
+  });
+  return reason;
+}
+
 /** WO-VOICE-QUALITY (d) — deterministic GARBLED-VOICE outcome (flag: voice_garble_guard).
  *  No LLM: the transcript is unintelligible, so send Karim's honest "audio unclear, please
  *  retype" line and keep the in-progress draft. NON-escalating (a quality nudge, not a
@@ -415,6 +493,7 @@ export async function runCustomerTurn(
   // WO-COMPANION-W1-CORE: the master switch. Default OFF → every companion read/
   // branch below is skipped and the legacy allergen path is byte-identical.
   const companionOn = isFeatureExplicitlyEnabled("allergy_companion_mode", tenantFeatures);
+  const calmHoldOn = isFeatureExplicitlyEnabled("allergy_calm_hold", tenantFeatures);
 
   // WO-T1-PAYMENTS: payment-method truth comes ONLY from the resolver. Flag
   // `canonical_payment_methods` OFF (every current tenant) → exactly the legacy
@@ -506,7 +585,7 @@ export async function runCustomerTurn(
   let sessionAllergyNote: string | null = null;
   let checkpointPending = false; // a checkpoint recap was shown but not yet acknowledged
   let allergyAcknowledged = false;
-  if (companionOn && conversationId) {
+  if ((companionOn || calmHoldOn) && conversationId) {
     try {
       const { data: an } = await admin
         .from("conversations")
@@ -517,21 +596,23 @@ export async function runCustomerTurn(
     } catch {
       /* column absent → inert */
     }
-    try {
-      const { data: ck } = await admin
-        .from("conversation_allergy_events")
-        .select("checkpoint_ack_at")
-        .eq("conversation_id", conversationId)
-        .eq("event_kind", "checkpoint")
-        .order("created_at", { ascending: false })
-        .limit(1);
-      const last = (ck as { checkpoint_ack_at?: string | null }[] | null)?.[0];
-      if (last) {
-        if (last.checkpoint_ack_at) allergyAcknowledged = true;
-        else checkpointPending = true;
+    if (companionOn) {
+      try {
+        const { data: ck } = await admin
+          .from("conversation_allergy_events")
+          .select("checkpoint_ack_at")
+          .eq("conversation_id", conversationId)
+          .eq("event_kind", "checkpoint")
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const last = (ck as { checkpoint_ack_at?: string | null }[] | null)?.[0];
+        if (last) {
+          if (last.checkpoint_ack_at) allergyAcknowledged = true;
+          else checkpointPending = true;
+        }
+      } catch {
+        /* table absent → no checkpoint state */
       }
-    } catch {
-      /* table absent → no checkpoint state */
     }
   }
 
@@ -687,7 +768,7 @@ export async function runCustomerTurn(
   const allergenHit = detectAllergenAvoidance(input.userMessage);
   // Additive symptom/condition/English layer — evaluated when the base gate did NOT
   // fire and the tenant has allergen_symptom_detection explicitly enabled (still flagged).
-  const symptomDetectionOn = isFeatureExplicitlyEnabled("allergen_symptom_detection", tenantFeatures);
+  const symptomDetectionOn = isFeatureExplicitlyEnabled("allergen_symptom_detection", tenantFeatures) || calmHoldOn;
   const symptomHit = (!allergenHit.fired && symptomDetectionOn)
     ? detectAllergenSymptom(input.userMessage)
     : { fired: false, term: null };
@@ -708,13 +789,20 @@ export async function runCustomerTurn(
     : symptomHit.fired
       ? "allergen_symptom"
       : "phonetic_safety_net";
+  const safetyEmergencyHit = (companionOn || calmHoldOn)
+    ? detectAllergenEmergency(input.userMessage)
+    : { fired: false, label: null };
+  const calmEmergency = calmHoldOn ? safetyEmergencyHit : { fired: false, label: null };
 
-  // P3 perception — skip the Haiku read entirely when the deterministic gate already
-  // fired (the decision is made; no LLM needed). Otherwise unchanged.
   // WO-V1.0-GOAL-LOGIC bundles perception ON by default — the Goal Interpreter reuses
   // this read in the sync path (no new call). `perception_async` splits that read out
   // post-send, so the interpreter falls back to its deterministic backstops.
-  const perceptionShouldRun = (isFeatureExplicitlyEnabled("perception", tenantFeatures) || goalLogicOn) && !combinedAllergenHit.fired;
+  // WO-CALM: a calm emergency is also deterministic, so neither sync nor async
+  // perception runs before the mandatory hold.
+  const perceptionShouldRun =
+    (isFeatureExplicitlyEnabled("perception", tenantFeatures) || goalLogicOn) &&
+    !combinedAllergenHit.fired &&
+    !(calmHoldOn && calmEmergency.fired);
   const perceptionAsyncOn = isFeatureExplicitlyEnabled("perception_async", tenantFeatures);
   const perceptionOn = perceptionShouldRun && !perceptionAsyncOn;
   const perceptionResult = perceptionOn ? await perceiveTurnWithUsage(input.userMessage, input.history) : null;
@@ -786,8 +874,9 @@ export async function runCustomerTurn(
   // In companion mode an ACTIVE emergency (§5) must escalate even when the plain
   // avoidance gate did NOT fire (an emergency phrase like «حلقي يتورم» names no
   // allergen) — so evaluate it independently and let it enter the companion path.
-  const companionEmergency = companionOn ? detectAllergenEmergency(input.userMessage) : { fired: false, label: null };
+  const companionEmergency = companionOn ? safetyEmergencyHit : { fired: false, label: null };
   const enterCompanion = companionOn && (combinedAllergenHit.fired || companionEmergency.fired);
+  const calmHoldCandidate = calmHoldOn && (combinedAllergenHit.fired || calmEmergency.fired);
 
   // WO-LIVE6-DUP-ORDER-AWARENESS (flag `dup_order_awareness`, default OFF) — surface the
   // most-recent order the customer ALREADY registered this conversation so a reference to it
@@ -833,6 +922,7 @@ export async function runCustomerTurn(
     registeredOrder != null &&
     !combinedAllergenHit.fired &&
     !companionEmergency.fired &&
+    !calmEmergency.fired &&
     !isExplicitHumanRequest(input.userMessage) &&
     refersToRegisteredOrder(input.userMessage);
 
@@ -948,7 +1038,8 @@ export async function runCustomerTurn(
     isFeatureExplicitlyEnabled("voice_garble_guard", tenantFeatures) &&
     input.isVoiceTranscript === true &&
     !combinedAllergenHit.fired &&
-    !companionEmergency.fired;
+    !companionEmergency.fired &&
+    !calmEmergency.fired;
   // WO-VOICE-PRECISION (finding 4) — assent-exit: a pure assent («أيوه/تمام/صح») the turn
   // right after a ladder CONFIRM exits the ladder and lets the Brain act on the confirmed
   // content, never re-confirming (kills the live confirm-loop, msg b68666f5). Guarded by the
@@ -974,6 +1065,17 @@ export async function runCustomerTurn(
       expectedClass: expectedAnswerClass(lastAssistant),
     });
     result = voiceConfirmResult(dialect, input.userMessage, initialDraft, ctx.profile.currency, candidates);
+  } else if (calmHoldCandidate) {
+    companionDecision = {
+      ...decideCompanionAction(input.userMessage, sessionAllergyNote, { term: combinedAllergenHit.term }),
+      escalate: true,
+      systemHold: true,
+      offerHuman: false,
+    };
+    ctx.sessionAllergyNote = companionDecision.note;
+    const source: CalmHoldSource = companionDecision.path === "emergency" ? "emergency" : holdSource;
+    await enterCalmAllergyHold(admin, { restaurantId, conversationId, decision: companionDecision, source });
+    result = calmHoldResult(companionDecision, dialect, initialDraft, ctx.profile.currency, source);
   } else if (combinedAllergenHit.fired && !companionOn) {
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
     result = forcedAllergenSafetyResult(

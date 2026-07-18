@@ -53,9 +53,12 @@ import { sendReceiptToCustomer } from "./send-receipt";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { checkAndNotifyStuck } from "@/lib/intelligence/stuck-detection";
 import { recordCriticalAlert } from "@/lib/alerts/record";
+import { calmHoldingReply, calmNewAllergyReply } from "@/lib/ai/allergy-calm-hold";
+import { mergeAllergyNote, parseAllergyNote } from "@/lib/ai/allergen-companion";
 // WO-COMPANION-W1-CORE §1e — the no-purgatory recovery. Pure decision + authored texts.
 import {
   decideRecoveryAction,
+  emergencyReply,
   recoveryReply,
   recoveryChoiceTitles,
   RECOVERY_CHOICE_REALERT,
@@ -88,7 +91,11 @@ export type RespondAndSendStatus =
   // needs a human. Distinct from skipped_takeover so purgatory is observably fixed.
   | "recovery_prompt"
   | "recovery_realert"
-  | "recovery_emergency_held";
+  | "recovery_emergency_held"
+  // WO-CALM — safety-held allergy turns are answered by fixed templates, never the Brain.
+  | "allergy_calm_holding"
+  | "allergy_calm_new_allergy"
+  | "allergy_calm_emergency";
 
 export interface RespondAndSendResult {
   status: RespondAndSendStatus;
@@ -299,6 +306,127 @@ async function handleAllergyRecovery(
     console.error("[companion:recovery] error (falling through to legacy)", e);
     return { kind: "none" };
   }
+}
+
+async function handleCalmHeldInbound(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string;
+    conversationId: string;
+    ownershipState: string | null;
+    isSafetyHold: boolean | null;
+    phone: string;
+    dialect: string;
+    features: Record<string, unknown> | null;
+  }
+): Promise<RespondAndSendResult | null> {
+  const { restaurantId, conversationId, ownershipState, isSafetyHold, phone, dialect, features } = args;
+  if (!isFeatureExplicitlyEnabled("allergy_calm_hold", features)) return null;
+  if (!isSafetyHeld({ ownership_state: ownershipState, is_safety_hold: isSafetyHold })) return null;
+
+  const { data: recentMsgs } = await admin
+    .from("messages")
+    .select("sender, text, meta, created_at")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(12);
+  const rows = (recentMsgs ?? []) as { sender: string; text: string | null; meta: Record<string, unknown> | null; created_at: string }[];
+  const lastOutbound = rows.find((m) => m.sender === "ai" || m.sender === "human" || m.sender === "system");
+  const lastOutboundAtMs = lastOutbound ? Date.parse(lastOutbound.created_at) : null;
+  const customerRows = rows.filter(
+    (m) => m.sender === "customer" && (lastOutboundAtMs == null || Date.parse(m.created_at) > lastOutboundAtMs)
+  );
+  const latestCustomer = rows.find((m) => m.sender === "customer");
+  const inboundRows = customerRows.length ? customerRows : latestCustomer ? [latestCustomer] : [];
+  if (!inboundRows.length) return null;
+  const chronological = [...inboundRows].reverse();
+  const messageText = chronological.map((m) => (m.text ?? "").trim()).filter(Boolean).join("\n").trim();
+  if (!messageText) return null;
+  const newestInbound = inboundRows[0];
+  const lastInboundAtMs = Math.max(...inboundRows.map((m) => Date.parse(m.created_at)).filter((n) => Number.isFinite(n)));
+  const sttConfidence = (newestInbound.meta as { stt_confidence?: number } | null)?.stt_confidence;
+  const isVoiceTranscript = (newestInbound.meta as { voice?: boolean } | null)?.voice === true;
+
+  // Safety-critical detectors run before any human-door branch and are never skipped.
+  const allergenHit = detectAllergenAvoidance(messageText);
+  const symptomHit = detectAllergenSymptom(messageText);
+  const phoneticHit = detectPhoneticSafetyNet(messageText, { sttConfidence, isVoiceTranscript });
+  const emergencyHit = detectAllergenEmergency(messageText);
+  const explicitHuman = isExplicitHumanRequest(messageText);
+
+  if (!allergenHit.fired && !symptomHit.fired && !phoneticHit.fired && !emergencyHit.fired && explicitHuman) {
+    return null;
+  }
+
+  const { data: noteRow } = await admin
+    .from("conversations")
+    .select("allergy_note")
+    .eq("id", conversationId)
+    .maybeSingle();
+  const existingNote = ((noteRow as { allergy_note?: string | null } | null)?.allergy_note ?? "").trim();
+  const noteTerms: Array<string | null> = [];
+  if (allergenHit.fired) noteTerms.push(allergenHit.term);
+  if (symptomHit.fired) noteTerms.push(symptomHit.term);
+  if (phoneticHit.fired) noteTerms.push(phoneticHit.term);
+  const nextNote = noteTerms.length ? mergeAllergyNote(existingNote, noteTerms) : existingNote;
+  if (nextNote && nextNote !== existingNote) {
+    await admin.from("conversations").update({ allergy_note: nextNote }).eq("id", conversationId);
+  }
+
+  const emergency = emergencyHit.fired || symptomHit.fired;
+  const newAllergy = allergenHit.fired || phoneticHit.fired;
+  const text = emergency ? emergencyReply(dialect) : newAllergy ? calmNewAllergyReply(dialect) : calmHoldingReply(dialect);
+  const metaKind = emergency ? "allergy_calm_hold_emergency" : newAllergy ? "allergy_calm_hold_new_allergy" : "allergy_calm_hold_wait";
+  const { data: rmsg } = await admin
+    .from("messages")
+    .insert({
+      restaurant_id: restaurantId,
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender: "ai",
+      text,
+      status: "sent",
+      meta: { kind: metaKind },
+    })
+    .select("id")
+    .single();
+  const send = await sendWhatsAppText({ to: phone, text, lastInboundAtMs: Number.isFinite(lastInboundAtMs) ? lastInboundAtMs : Date.now() });
+  if (rmsg?.id) {
+    await admin.from("messages")
+      .update(send.status === "sent" ? { status: "sent", channel_message_id: send.externalMessageId ?? null } : { status: "failed" })
+      .eq("id", rmsg.id);
+  }
+
+  if (emergency) {
+    await recordCriticalAlert(admin, {
+      restaurantId,
+      type: "allergy_emergency_active",
+      detail: "رسالة أعراض/طوارئ وصلت أثناء تعليق حساسية — أرسلنا إرشاد الطوارئ وبقي الطلب متوقفاً.",
+      conversationId,
+      context: { emergencyLabel: emergencyHit.label, symptomTerm: symptomHit.term, allergyNote: nextNote || null },
+    });
+  }
+  if (emergency || newAllergy) {
+    await recordAllergyEvent(admin, {
+      restaurantId,
+      conversationId,
+      allergens: parseAllergyNote(nextNote),
+      customerMessage: messageText,
+      eventKind: emergency ? "emergency" : "mention",
+      agentReply: text,
+      humanOffered: false,
+      staffNotified: emergency,
+      netReason: emergency
+        ? `calm_hold_emergency:${emergencyHit.label ?? symptomHit.term ?? ""}`
+        : `calm_hold_new_allergy:${allergenHit.term ?? phoneticHit.term ?? ""}`,
+    }).catch(() => {});
+  }
+
+  return {
+    status: emergency ? "allergy_calm_emergency" : newAllergy ? "allergy_calm_new_allergy" : "allergy_calm_holding",
+    reply: text,
+    sendStatus: send.status,
+  };
 }
 
 /** Send the full web-menu link once — the budget-exhaustion fallback (browse the
@@ -690,7 +818,7 @@ export async function respondAndSendWhatsApp(
   //    and reason for the idle policy below).
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, owner, channel, customer_id, escalation_reason, updated_at, ownership_state, customers(phone)")
+    .select("id, owner, channel, customer_id, escalation_reason, updated_at, ownership_state, is_safety_hold, customers(phone)")
     .eq("id", conversationId)
     .single();
   if (!conv) return { status: "skipped_not_found", error: "conversation_not_found" };
@@ -748,6 +876,19 @@ export async function respondAndSendWhatsApp(
 
     const { data: rFlags } = await admin.from("restaurants").select("feature_flags, dialect").eq("id", restaurantId).single();
     const features = (rFlags?.feature_flags as Record<string, unknown> | null) ?? null;
+    const dialect = String((rFlags as { dialect?: string } | null)?.dialect ?? "egyptian");
+    const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
+
+    const calmHeld = await handleCalmHeldInbound(admin, {
+      restaurantId,
+      conversationId,
+      ownershipState,
+      isSafetyHold: (conv as { is_safety_hold?: boolean | null }).is_safety_hold ?? null,
+      phone,
+      dialect,
+      features,
+    });
+    if (calmHeld) return calmHeld;
 
     // WO-COMPANION-W1-CORE §1e — RECOVERY (no purgatory, ever). A pending-human thread
     // that stalls must NEVER meet the customer with silence: ask «وصلك أحد من الفريق؟»
@@ -768,8 +909,8 @@ export async function respondAndSendWhatsApp(
         ownershipState,
         escalationReason: conv.escalation_reason as string | null,
         updatedAt: conv.updated_at as string | null,
-        phone: (conv.customers as { phone?: string } | null)?.phone ?? "",
-        dialect: String((rFlags as { dialect?: string } | null)?.dialect ?? "egyptian"),
+        phone,
+        dialect,
       });
       if (rec.kind === "reply") return rec.result;
       // rec.kind === "resume": ownership is now AI_ACTIVE, staff re-alerted, context

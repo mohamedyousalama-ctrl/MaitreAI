@@ -89,6 +89,9 @@ export type CriticalAlertType =
   // guidance line (advise emergency services); this fires LOUD so staff act immediately.
   // No SYSTEM_HOLD — silence during a medical emergency was the worst possible behavior.
   | "allergy_emergency_active"
+  // WO-CALM — allergy_calm_hold ON: deterministic allergen stop has already entered
+  // SYSTEM_HOLD before this alert is recorded. The alert is staff visibility, not the hold.
+  | "allergy_calm_hold"
   // WO-SAFETY-BRIDGE (FR-012 residual) — a SAFETY-CLASS customer message arrived while the
   // conversation is HUMAN_ACTIVE and the operator has been quiet past the short bridge window.
   // The customer got a caution ACK; this fires LOUD (banner + WhatsApp-to-admin) so the absent
