@@ -16,8 +16,8 @@
 
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getAdapter, modelFor } from "@/lib/ai/llm";
-import type { LlmMessage } from "@/lib/ai/llm/types";
+import { getAdapter, modelFor, recordUsageEvent } from "@/lib/ai/llm";
+import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import { isFeatureEnabled, type Tier } from "@/lib/tenant/tier";
 import { updateCustomerMemory } from "./customer-memory";
 
@@ -132,19 +132,20 @@ function parseInferred(raw: string): InferredSoftLayer | null {
  *  failure (so a spine-only record is still saved). */
 async function inferSoftLayer(
   transcript: LlmMessage[]
-): Promise<{ inferred: InferredSoftLayer | null; model: string | null }> {
+): Promise<{ inferred: InferredSoftLayer | null; model: string | null; usage: LlmUsage | null; latencyMs: number | null }> {
   const text = renderTranscript(transcript);
-  if (!text.trim()) return { inferred: null, model: null };
+  if (!text.trim()) return { inferred: null, model: null, usage: null, latencyMs: null };
   try {
     const adapter = await getAdapter();
+    const t0 = Date.now();
     const res = await adapter.generate(
       { system: SOFT_LAYER_SYSTEM, messages: [{ role: "user", content: text }], maxTokens: 700 },
       "conversation_intel"
     );
     const inferred = parseInferred(res.text ?? "");
-    return { inferred, model: inferred ? res.model || modelFor("conversation_intel").model : null };
+    return { inferred, model: res.model || modelFor("conversation_intel").model, usage: res.usage, latencyMs: Date.now() - t0 };
   } catch {
-    return { inferred: null, model: null };
+    return { inferred: null, model: null, usage: null, latencyMs: null };
   }
 }
 
@@ -189,7 +190,22 @@ export async function emitConversationReport(
     const orderPlaced = terminalTrigger === "finalized" && !!order?.id;
 
     // ---- INFERRED SOFT LAYER (one cheap LLM read; labeled) ----
-    const { inferred, model } = await inferSoftLayer(args.transcript);
+    const { inferred, model, usage, latencyMs } = await inferSoftLayer(args.transcript);
+    if (usage && model) {
+      await recordUsageEvent({
+        admin,
+        tenantId: restaurantId,
+        conversationId,
+        orderId: order?.id ?? null,
+        surface: "conversation_intel.report",
+        useCase: "conversation_intel",
+        model,
+        usage,
+        latencyMs,
+        trigger: "system",
+        meta: { terminal_trigger: terminalTrigger, parsed: !!inferred },
+      });
+    }
 
     const record = {
       restaurant_id: restaurantId,
@@ -219,7 +235,7 @@ export async function emitConversationReport(
 
       // inferred (labeled)
       inferred: inferred ?? null,
-      inferred_model: model,
+      inferred_model: inferred ? model : null,
       inferred_at: inferred ? endedAt : null,
     };
 

@@ -29,3 +29,4 @@ export async function getAdapter(): Promise<LlmAdapter> {
 
 export * from "./types";
 export { modelFor, costUsd } from "./models";
+export { recordUsageEvent } from "./usage-events";

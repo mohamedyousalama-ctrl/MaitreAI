@@ -20,7 +20,7 @@
 
 import "server-only";
 import { getAdapter, modelFor } from "@/lib/ai/llm";
-import type { LlmMessage } from "@/lib/ai/llm/types";
+import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 
 export type Confidence = "low" | "medium" | "high";
 export type PerceptionRisk = "none" | "allergy" | "safety" | "frustration" | "escalation_cue";
@@ -34,6 +34,13 @@ export interface PerceptionRead {
   sentiment: "positive" | "neutral" | "negative";
   risk: PerceptionRisk;
   model: string;
+}
+
+export interface PerceptionTurnResult {
+  read: PerceptionRead | null;
+  model: string | null;
+  usage: LlmUsage | null;
+  latencyMs: number | null;
 }
 
 const INTENTS = [
@@ -95,18 +102,25 @@ function transcript(history: LlmMessage[], userMessage: string): string {
  * ONE cheap per-turn read. Returns the labeled perception, or null on any
  * failure (so the turn proceeds unchanged — perception never blocks a reply).
  */
-export async function perceiveTurn(userMessage: string, history: LlmMessage[]): Promise<PerceptionRead | null> {
-  if (!userMessage.trim()) return null;
+export async function perceiveTurnWithUsage(userMessage: string, history: LlmMessage[]): Promise<PerceptionTurnResult> {
+  if (!userMessage.trim()) return { read: null, model: null, usage: null, latencyMs: null };
   try {
     const adapter = await getAdapter();
+    const t0 = Date.now();
     const res = await adapter.generate(
       { system: SYSTEM, messages: [{ role: "user", content: transcript(history, userMessage) }], maxTokens: 200 },
       "perception"
     );
-    return parse(res.text ?? "", res.model || modelFor("perception").model);
+    const model = res.model || modelFor("perception").model;
+    return { read: parse(res.text ?? "", model), model, usage: res.usage, latencyMs: Date.now() - t0 };
   } catch {
-    return null;
+    return { read: null, model: null, usage: null, latencyMs: null };
   }
+}
+
+export async function perceiveTurn(userMessage: string, history: LlmMessage[]): Promise<PerceptionRead | null> {
+  const { read } = await perceiveTurnWithUsage(userMessage, history);
+  return read;
 }
 
 /**
