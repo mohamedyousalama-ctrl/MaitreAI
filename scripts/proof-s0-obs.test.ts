@@ -61,7 +61,7 @@ const docs = read("docs/flags.md");
 ok("message coalescing flag remains inbound_coalescing", /\| `inbound_coalescing` \|/.test(docs));
 ok("new observability flag is documented default-off", /\| `call_count_observability` \|[\s\S]*Default OFF/.test(docs));
 
-const migration = read("supabase/migrations/0095_agent_runs_meta.sql");
+const migration = read("supabase/migrations/0098_agent_runs_meta.sql");
 ok("migration adds agent_runs.meta idempotently", /add column if not exists meta jsonb/.test(migration));
 
 console.info("turn_call_count", {
