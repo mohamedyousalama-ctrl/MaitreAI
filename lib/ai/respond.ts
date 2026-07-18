@@ -107,6 +107,8 @@ export interface RespondResult {
   model: string;
   adapter: "claude" | "mock";
   resendReceipt: boolean;
+  /** Model invocations used by this customer turn. Deterministic paths report 0. */
+  calls_used: number;
 }
 
 const MAX_ITERATIONS = 6;
@@ -281,7 +283,7 @@ function buildDraftCheckpointRecap(brain: BrainContext, draft: OrderDraft): stri
 
 /** The RespondResult for an intercepted §6 checkpoint — the recap reply, the draft
  *  NOT finalized, no escalation (Kivo keeps talking; the customer acknowledges next). */
-function checkpointResult(brain: BrainContext, ctx: ToolContext): RespondResult {
+function checkpointResult(brain: BrainContext, ctx: ToolContext, calls_used = 0): RespondResult {
   const recap = buildDraftCheckpointRecap(brain, ctx.draft);
   ctx.signals.push({ type: "missing_data", detail: { reason: "allergy_checkpoint", recap } });
   return {
@@ -298,6 +300,7 @@ function checkpointResult(brain: BrainContext, ctx: ToolContext): RespondResult 
     model: "deterministic_allergen_companion",
     adapter: "mock",
     resendReceipt: false,
+    calls_used,
   };
 }
 
@@ -401,6 +404,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         model: "deterministic_goal_interpreter",
         adapter: "mock",
         resendReceipt: false,
+        calls_used: 0,
       };
     }
     // decision.action === "price" | "act" → continue to the model loop; the validator is the net.
@@ -432,7 +436,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   ) {
     // §6 checkpoint — intercept the fast-path finalize when an unacknowledged allergy
     // is in the session. Recap + require ack instead of committing the order.
-    if (needsAllergyCheckpoint(input.brain)) return checkpointResult(input.brain, ctx);
+    if (needsAllergyCheckpoint(input.brain)) return checkpointResult(input.brain, ctx, 0);
     toolNames.push("finalize_draft");
     const out = executeTool("finalize_draft", {}, ctx);
     if (!out.isError) {
@@ -450,6 +454,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         model: adapter.name,
         adapter: adapter.name,
         resendReceipt: false,
+        calls_used: 0,
       };
     }
     // Finalize refused — surface the ACTIONABLE blocker, NEVER the generic deferral
@@ -481,6 +486,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         model: adapter.name,
         adapter: adapter.name,
         resendReceipt: false,
+        calls_used: 0,
       };
     }
     // Any OTHER finalize precondition (e.g. below-minimum / invalid-zone delivery):
@@ -500,15 +506,18 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       model: adapter.name,
       adapter: adapter.name,
       resendReceipt: false,
+      calls_used: 0,
     };
   }
 
   let text = "";
   let stopReason = "end_turn";
   let model: string = adapter.name;
+  let calls_used = 0;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const res = await adapter.generate({ system: systemStatic, systemTail: systemTail || undefined, messages, tools }, "customer_agent");
+    calls_used += 1;
     usage.inputTokens += res.usage.inputTokens;
     usage.outputTokens += res.usage.outputTokens;
     usage.cacheReadTokens += res.usage.cacheReadTokens;
@@ -528,7 +537,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       // §6 checkpoint — the model tried to finalize with an unacknowledged allergy in
       // the session. Intercept: recap + require ack instead of committing the order.
       if (call.name === "finalize_draft" && needsAllergyCheckpoint(input.brain)) {
-        return checkpointResult(input.brain, ctx);
+        return checkpointResult(input.brain, ctx, calls_used);
       }
       toolNames.push(call.name);
       const out = executeTool(call.name, call.input, ctx);
@@ -698,5 +707,6 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     model,
     adapter: adapter.name,
     resendReceipt: ctx.resendReceipt,
+    calls_used,
   };
 }
