@@ -1,6 +1,6 @@
 # Replay Corpus Harness
 
-`pnpm replay` runs the frozen JSONL corpus in dry-run mode. The harness exercises
+`npm run replay` runs the frozen JSONL corpus in dry-run mode. The harness exercises
 the real order-tool executor, but it never calls WhatsApp senders and never calls
 the DB order-create boundary. Those boundaries are represented as stubs in the
 summary output.
