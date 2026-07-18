@@ -140,10 +140,52 @@ export interface CustomerTurnOutcome {
   /** Karim Pro P3: the per-turn perception read (labeled inference), or null when
    *  perception is off / the read failed. For the harness dump + observability. */
   perception: PerceptionRead | null;
+  /** True when the post-send caller should fire a priced async perception read. */
+  perceptionAsync: boolean;
   /** True when the model called resend_receipt; triggers receipt re-send downstream. */
   resendReceipt: boolean;
   /** Model invocations used by this turn. */
   callsUsed: number;
+}
+
+export interface AsyncPerceptionInput {
+  restaurantId: string;
+  conversationId: string | null;
+  userMessage: string;
+  history: LlmMessage[];
+}
+
+export async function recordAsyncPerception(
+  admin: SupabaseClient,
+  input: AsyncPerceptionInput
+): Promise<void> {
+  const perceptionResult = await perceiveTurnWithUsage(input.userMessage, input.history, {
+    onError: (e) => console.error("[perception_async] read error", e),
+  });
+  if (perceptionResult.usage && perceptionResult.model) {
+    await recordUsageEvent({
+      admin,
+      tenantId: input.restaurantId,
+      conversationId: input.conversationId,
+      surface: "perception.async",
+      useCase: "perception",
+      model: perceptionResult.model,
+      usage: perceptionResult.usage,
+      latencyMs: perceptionResult.latencyMs,
+      trigger: "perception_async",
+      meta: { path: "perceiveTurn", parsed: !!perceptionResult.read, async: true },
+    });
+  }
+}
+
+export function scheduleAsyncPerceptionAfterReply(
+  admin: SupabaseClient,
+  input: AsyncPerceptionInput
+): void {
+  const job = { ...input, history: input.history.slice() };
+  queueMicrotask(() => {
+    void recordAsyncPerception(admin, job).catch((e) => console.error("[perception_async] job error", e));
+  });
 }
 
 function isOpenDraft(value: unknown): value is OrderDraft {
@@ -610,8 +652,8 @@ export async function runCustomerTurn(
     // + behavior byte-identical.
     priceTruthGuard: isFeatureExplicitlyEnabled("price_truth_guard", tenantFeatures),
     // WO-V1.0-GOAL-LOGIC (Slice 1) — front-of-turn intent reasoning + Final Validator in
-    // respond.ts. Default OFF → the reactive pipeline runs unchanged (byte-identical). Bundles
-    // perception ON below so the Goal Interpreter's read is available.
+    // respond.ts. Default OFF → the reactive pipeline runs unchanged (byte-identical). Uses
+    // sync perception below unless WO-S0-PERC's `perception_async` switch is explicitly ON.
     goalLogic: goalLogicOn,
     goalLogicRule6AnnotationPivot: goalLogicRule6AnnotationPivotOn,
   };
@@ -621,6 +663,10 @@ export async function runCustomerTurn(
   // log. Layer B: a low-confidence/unknown/safety read produces a recovery
   // directive injected for THIS turn so Karim recovers instead of dead-ending.
   // perceiveTurn never throws (null on failure -> no directive; usage is still ledgered when a call completed).
+  //
+  // WO-S0-PERC: when `perception_async` is explicitly ON, this turn does NOT await
+  // perception and does NOT feed its output into the reply path. The caller queues a
+  // priced read only after the reply send has resolved.
   // Allergen-safety INPUT GATE (Fix 1, flag-gated): a deterministic floor evaluated
   // BEFORE the model — a customer avoidance/medical intent toward a food/allergen
   // term (incl. euphemisms like «اتعب لو اكلت بندق», NOT only «حساسية») FORCES a
@@ -665,8 +711,12 @@ export async function runCustomerTurn(
 
   // P3 perception — skip the Haiku read entirely when the deterministic gate already
   // fired (the decision is made; no LLM needed). Otherwise unchanged.
-  // WO-V1.0-GOAL-LOGIC bundles perception ON — the Goal Interpreter reuses this read (no new call).
-  const perceptionOn = (isFeatureExplicitlyEnabled("perception", tenantFeatures) || goalLogicOn) && !combinedAllergenHit.fired;
+  // WO-V1.0-GOAL-LOGIC bundles perception ON by default — the Goal Interpreter reuses
+  // this read in the sync path (no new call). `perception_async` splits that read out
+  // post-send, so the interpreter falls back to its deterministic backstops.
+  const perceptionShouldRun = (isFeatureExplicitlyEnabled("perception", tenantFeatures) || goalLogicOn) && !combinedAllergenHit.fired;
+  const perceptionAsyncOn = isFeatureExplicitlyEnabled("perception_async", tenantFeatures);
+  const perceptionOn = perceptionShouldRun && !perceptionAsyncOn;
   const perceptionResult = perceptionOn ? await perceiveTurnWithUsage(input.userMessage, input.history) : null;
   const perception = perceptionResult?.read ?? null;
   if (perceptionResult?.usage && perceptionResult.model) {
@@ -686,6 +736,7 @@ export async function runCustomerTurn(
   const perceptionDirective = perceptionOn ? recoveryDirective(perception) : null;
   // P4 cadence cue (consumes the P3 read; fires only on a non-default mood signal).
   const cadenceDirective = ctx.cadence ? cadenceCue(perception) : null;
+  const perceptionAsync = perceptionShouldRun && perceptionAsyncOn;
 
   // WO-DELIVERY-D1 — pin → zone → branch routing (flag ON only). Resolved BEFORE the
   // LLM turn so the model receives either a matched zone+branch (confirm + continue)
@@ -1281,6 +1332,7 @@ export async function runCustomerTurn(
     tier: tenantTier,
     features: tenantFeatures,
     perception,
+    perceptionAsync,
     resendReceipt: result.resendReceipt,
     callsUsed: result.calls_used,
   };

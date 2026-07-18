@@ -149,10 +149,12 @@ ok("E: the Final Validator SUPERSEDES fabricatesMoney/price_truth when goalLogic
   /\} else \{[\s\S]{0,700}?fabricatesMoney\(text, currency, knownPrices\)/.test(rs));
 ok("E: a final banned-word scrub runs before the reply returns (goalLogic ON)",
   /input\.brain\.goalLogic && text\.trim\(\)\)\s*\{[\s\S]{0,200}?scrubBannedWords\(text\)/.test(rs));
-ok("E: customer-turn sets goalLogic from the flag AND bundles perception ON",
+ok("E: customer-turn sets goalLogic from the flag AND bundles sync perception unless perception_async is ON",
   /const goalLogicOn = isFeatureExplicitlyEnabled\("goal_logic", tenantFeatures\);/.test(ct) &&
   /goalLogic: goalLogicOn/.test(ct) &&
-  /const perceptionOn = \(isFeatureExplicitlyEnabled\("perception", tenantFeatures\) \|\| goalLogicOn\) && !combinedAllergenHit\.fired;/.test(ct) &&
+  /const perceptionShouldRun = \(isFeatureExplicitlyEnabled\("perception", tenantFeatures\) \|\| goalLogicOn\) && !combinedAllergenHit\.fired;/.test(ct) &&
+  /const perceptionAsyncOn = isFeatureExplicitlyEnabled\("perception_async", tenantFeatures\);/.test(ct) &&
+  /const perceptionOn = perceptionShouldRun && !perceptionAsyncOn;/.test(ct) &&
   /perceptionRead: perception/.test(ct));
 ok("E: the flag is registered in the ProFeature union", /"goal_logic"/.test(fl));
 
