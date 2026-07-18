@@ -18,7 +18,7 @@
 
 // Fixed control buttons Kivo emits (lib/ai/tools.ts present_* + respond.ts).
 // id → canonical Arabic directive (explicit, single-meaning).
-const FIXED_CONTROLS: Record<string, string> = {
+export const FIXED_INTERACTIVE_CONTROLS: Record<string, string> = {
   set_pickup: "تأكيد: استلام من الفرع.",
   set_delivery: "تأكيد: توصيل.",
   confirm_order: "تأكيد الطلب.",
@@ -28,6 +28,10 @@ const FIXED_CONTROLS: Record<string, string> = {
   pay_vodafone_cash: "الدفع بفودافون كاش.",
   pay_counter: "الدفع كاش عند الاستلام من الفرع.",
 };
+
+export const FIXED_INTERACTIVE_CONTROL_IDS = Object.freeze(
+  Object.keys(FIXED_INTERACTIVE_CONTROLS)
+);
 
 export interface RoutedInteraction {
   /** The message text to feed the agent (canonical when routed, else the raw title). */
@@ -50,8 +54,8 @@ export function routeInteractive(
   if (!id) return { text: fallbackText, routedId: null };
 
   // Fixed single-meaning controls.
-  if (Object.prototype.hasOwnProperty.call(FIXED_CONTROLS, id)) {
-    return { text: FIXED_CONTROLS[id], routedId: id };
+  if (Object.prototype.hasOwnProperty.call(FIXED_INTERACTIVE_CONTROLS, id)) {
+    return { text: FIXED_INTERACTIVE_CONTROLS[id], routedId: id };
   }
 
   // Parametric quantity: qty:N (1..99, matching the quantity() clamp downstream).

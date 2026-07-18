@@ -11,6 +11,11 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError, scheduleAsyncPerceptionAfterReply } from "@/lib/ai/customer-turn";
 import { routeInteractive } from "@/lib/messaging/interactive-router";
+import {
+  handleTypedInteractiveAction,
+  isTypedInteractiveActionId,
+  type TypedInteractiveActionResult,
+} from "@/lib/messaging/typed-actions";
 import { evaluateTesterAllowlist } from "@/lib/messaging/tester-allowlist";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink, sendWhatsAppAudio } from "./outbound";
@@ -1055,6 +1060,97 @@ export async function respondAndSendWhatsApp(
   }
 
   const rawText = coalesced.mergedText;
+  const lastInteractiveId = (coalesced.anchor.meta as { interactiveId?: string } | null)?.interactiveId;
+  const lastInboundAtMs = coalesced.maxCreatedAtMs;
+
+  // WO-S0-TYPED — explicit-only deterministic tap handling. A recognized SINGLE
+  // interactive id no longer becomes Arabic text for the agent when the tenant flips
+  // typed_interactive_actions. Multi-message bursts stay on the legacy merged-text
+  // path so a typed/tapped safety word earlier in the burst cannot be swallowed.
+  let typedConfirmMessage: string | null = null;
+  if (
+    coalesced.count === 1 &&
+    isFeatureExplicitlyEnabled("typed_interactive_actions", convFlags) &&
+    isTypedInteractiveActionId(lastInteractiveId)
+  ) {
+    // Structured-intake gate law: a bare tap carries no customer text, but the
+    // sentinel still runs on the empty string before any typed state change.
+    const tapSafetyProbe = {
+      allergenAvoidance: detectAllergenAvoidance("").fired,
+      allergenSymptom: detectAllergenSymptom("").fired,
+      phoneticSafetyNet: detectPhoneticSafetyNet("", { sttConfidence: null, isVoiceTranscript: false }).fired,
+      allergenEmergency: detectAllergenEmergency("").fired,
+    };
+    let typed: TypedInteractiveActionResult;
+    try {
+      typed = await handleTypedInteractiveAction(admin, {
+        restaurantId,
+        conversationId,
+        interactiveId: lastInteractiveId ?? "",
+        features: convFlags,
+        safetyProbe: tapSafetyProbe,
+      });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      await sendAgentErrorFallbackToCustomer(admin, restaurantId, conversationId, phone, lastInboundAtMs);
+      await setOwnershipState(admin, conversationId, "HUMAN_ACTIVE", {
+        extra: { owner: "human", status: "يحتاج تدخل موظف", escalation_reason: `typed_action_error: ${detail}` },
+      });
+      await noteToTimeline(
+        admin,
+        restaurantId,
+        conversationId,
+        "تعذّر تنفيذ الإجراء التفاعلي تلقائياً — تم تحويل المحادثة لموظف للمتابعة.",
+        { kind: "typed_action_error", detail }
+      );
+      await recordCriticalAlert(admin, { restaurantId, type: "agent_error", detail: `typed_action_error: ${detail}`, conversationId });
+      if (turnClaimDeployed) await releaseTurn(admin, conversationId);
+      return { status: "agent_error", error: detail };
+    }
+    if (typed.kind === "confirm_gate") {
+      // confirm_order must still pass through the existing confirm/allergen gate.
+      // At a real confirmation point that path is deterministic and performs no
+      // LLM generation; stale/invalid confirms keep today's guarded behavior.
+      typedConfirmMessage = typed.userMessage;
+    } else {
+      if (coalescingActive) {
+        try {
+          await admin
+            .from("conversations")
+            .update({ last_answered_inbound_at: new Date(coalesced.maxCreatedAtMs).toISOString() })
+            .eq("id", conversationId);
+        } catch (e) {
+          console.error("[respond-and-send] typed-action watermark update failed (non-blocking)", e);
+        }
+      }
+      if (turnClaimDeployed) await releaseTurn(admin, conversationId);
+      const send = typed.presentation
+        ? await sendWhatsAppInteractive({ to: phone, body: typed.reply, presentation: typed.presentation, lastInboundAtMs })
+        : await sendWhatsAppText({ to: phone, text: typed.reply, lastInboundAtMs });
+      if (typed.replyMessageId) {
+        await admin
+          .from("messages")
+          .update(
+            send.status === "sent"
+              ? { status: "sent", channel_message_id: send.externalMessageId ?? null }
+              : { status: send.status === "skipped" ? "sent" : "failed" }
+          )
+          .eq("id", typed.replyMessageId);
+      }
+      if (send.status === "failed") {
+        await noteToTimeline(
+          admin,
+          restaurantId,
+          conversationId,
+          `تعذّر إرسال رد الإجراء التفاعلي عبر واتساب: ${send.error ?? "خطأ غير معروف"}. الرسالة محفوظة ويمكن إعادة المحاولة.`,
+          { kind: "send_error", source: "typed_interactive_action", action: typed.action, windowState: send.windowState, attempts: send.attempts }
+        );
+        return { status: "send_failed", reply: typed.reply, sendStatus: "failed", error: send.error };
+      }
+      return { status: "responded", reply: typed.reply, escalate: false, sendStatus: send.status };
+    }
+  }
+
   // S6 — deterministic interactive routing: a SINGLE inbound tap on a control WE minted
   // (meta.interactiveId ∈ known set) resolves to its canonical directive, routed by the
   // controlled id, NOT the title text the LLM could misread. A coalesced MULTI-message
@@ -1062,8 +1158,7 @@ export async function respondAndSendWhatsApp(
   // swallow the earlier burst text, incl. a safety word). Either way it flows through the
   // SAME gated agent (allergen input+output gate in runCustomerTurn); no safety rule is
   // bypassed. Flag OFF / single message → count===1 → identical to the legacy path.
-  const lastInteractiveId = (coalesced.anchor.meta as { interactiveId?: string } | null)?.interactiveId;
-  const userMessage = coalesced.count > 1 ? rawText : routeInteractive(lastInteractiveId, rawText).text;
+  const userMessage = typedConfirmMessage ?? (coalesced.count > 1 ? rawText : routeInteractive(lastInteractiveId, rawText).text);
   if (!userMessage) {
     if (turnClaimDeployed) await releaseTurn(admin, conversationId); // WO-LIVE6-TURN-LOCK — never wedge
     return { status: "skipped_no_customer_msg" };
@@ -1077,7 +1172,6 @@ export async function respondAndSendWhatsApp(
   const inboundWasVoice = (coalesced.anchor.meta as { voice?: boolean } | null)?.voice === true;
   const pinLocation = (coalesced.pinRow?.meta as { location?: { lat: number; lng: number; name?: string; address?: string } } | null)?.location;
   const lastImage = (coalesced.imageRow?.meta as { image?: { caption?: string; description?: string | null } } | null)?.image;
-  const lastInboundAtMs = coalesced.maxCreatedAtMs;
 
   // HX1 — label human-authored turns so Karim distinguishes its own words from the
   // operator's. Human turns stay role:"assistant" (a valid LLM role) but their
