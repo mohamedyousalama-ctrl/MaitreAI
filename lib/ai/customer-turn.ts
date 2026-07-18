@@ -65,6 +65,11 @@ import { buildImageDirective } from "@/lib/messaging/image-turn";
 import { imageAvailabilityGuard, isDeicticImageReference } from "@/lib/ai/image-binding";
 import type { AiToneConfig } from "@/lib/types";
 import { dialectProfile } from "@/lib/ai/dialect";
+import {
+  buildTurnCallObservabilityMeta,
+  hasCapShadowViolation,
+  logCapShadowViolation,
+} from "@/lib/ai/call-observability";
 
 /** Typed error so callers can map to the right HTTP status / timeline note. */
 export class CustomerTurnError extends Error {
@@ -137,6 +142,8 @@ export interface CustomerTurnOutcome {
   perception: PerceptionRead | null;
   /** True when the model called resend_receipt; triggers receipt re-send downstream. */
   resendReceipt: boolean;
+  /** Model invocations used by this turn. */
+  callsUsed: number;
 }
 
 function isOpenDraft(value: unknown): value is OrderDraft {
@@ -192,6 +199,7 @@ function forcedAllergenSafetyResult(
     model: "deterministic_allergen_gate",
     adapter: "mock",
     resendReceipt: false,
+    calls_used: 0,
   };
 }
 
@@ -234,6 +242,7 @@ function dupOrderRecapResult(
     model: "deterministic_dup_order",
     adapter: "mock",
     resendReceipt: false,
+    calls_used: 0,
   };
 }
 
@@ -269,6 +278,7 @@ function companionEmergencyResult(
     model: "deterministic_allergen_companion",
     adapter: "mock",
     resendReceipt: false,
+    calls_used: 0,
   };
 }
 
@@ -296,6 +306,7 @@ function voiceGarbleResult(
     model: "deterministic_voice_garble_guard",
     adapter: "mock",
     resendReceipt: false,
+    calls_used: 0,
   };
 }
 
@@ -327,6 +338,7 @@ function voiceConfirmResult(
     model: "deterministic_voice_ladder",
     adapter: "mock",
     resendReceipt: false,
+    calls_used: 0,
   };
 }
 
@@ -521,6 +533,7 @@ export async function runCustomerTurn(
   const geoRoutingOn = isFeatureExplicitlyEnabled("delivery_geo_routing", tenantFeatures);
   const goalLogicOn = isFeatureExplicitlyEnabled("goal_logic", tenantFeatures);
   const goalLogicRule6AnnotationPivotOn = isFeatureExplicitlyEnabled("goal_logic_rule6_annotation_pivot", tenantFeatures);
+  const callCountObservabilityOn = isFeatureExplicitlyEnabled("call_count_observability", tenantFeatures);
 
   const ctx: BrainContext = {
     profile: {
@@ -984,6 +997,26 @@ export async function runCustomerTurn(
     result.usage.cacheReadTokens,
     result.usage.cacheCreationTokens ?? 0,
   );
+  const callObservabilityMeta = callCountObservabilityOn
+    ? buildTurnCallObservabilityMeta(result.calls_used, cost)
+    : null;
+  if (callObservabilityMeta) {
+    console.info("turn_call_count", {
+      tenant: restaurantId,
+      conversation: conversationId,
+      calls_used: result.calls_used,
+      cost,
+    });
+    if (hasCapShadowViolation(callObservabilityMeta)) {
+      logCapShadowViolation({
+        tenant: restaurantId,
+        conversation: conversationId,
+        calls_used: result.calls_used,
+        cost,
+        meta: callObservabilityMeta,
+      });
+    }
+  }
 
   // Persist the AI reply (optimistically "sent"; the channel sender downgrades
   // it to "failed" and notes the timeline if real delivery fails).
@@ -1088,6 +1121,11 @@ export async function runCustomerTurn(
   // pre-migration is swallowed and never disturbs the turn.
   const runId = (run as { id?: string } | null)?.id;
   if (runId) {
+    if (callObservabilityMeta) {
+      try {
+        await admin.from("agent_runs").update({ meta: callObservabilityMeta }).eq("id", runId);
+      } catch { /* column not applied yet — PREPARE-ONLY */ }
+    }
     try {
       await admin.from("agent_runs").update({ cache_creation_tokens: result.usage.cacheCreationTokens ?? 0 }).eq("id", runId);
     } catch { /* column not applied yet — PREPARE-ONLY */ }
@@ -1244,5 +1282,6 @@ export async function runCustomerTurn(
     features: tenantFeatures,
     perception,
     resendReceipt: result.resendReceipt,
+    callsUsed: result.calls_used,
   };
 }
