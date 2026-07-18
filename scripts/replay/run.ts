@@ -3,11 +3,18 @@ import path from "node:path";
 import { costUsd, modelFor } from "@/lib/ai/llm/models";
 import { emptyDraft, executeTool, type OrderDraft, type ToolContext } from "@/lib/ai/tools";
 import { isExplicitHumanRequest } from "@/lib/ai/human-request";
+import type { PaymentConfig } from "@/lib/payments/config";
 import { replayBranches, replayDeliveryAreas, replayMenuItems, replayModifiers } from "./fixture-brain";
 import type { ReplayExpectedItem, ReplayRecord, ReplayTurn } from "./types";
 
 const DEFAULT_CORPUS = "scripts/replay/corpus/seed-v0.jsonl";
 const CURRENCY = "ر.س";
+const REPLAY_PAYMENT_CONFIG: PaymentConfig = {
+  cod_enabled: true,
+  wallet_policy: "strict",
+  vodafone_cash: { enabled: false, number: "", instructions: "" },
+  instapay: { enabled: false, handle: "", instructions: "" },
+};
 
 type ReplayOutcome = {
   order_created: boolean;
@@ -154,7 +161,7 @@ function makeContext(draft: OrderDraft): ToolContext {
     photoRequests: [],
     taxMode: "inclusive",
     taxRate: 0,
-    paymentConfig: {},
+    paymentConfig: REPLAY_PAYMENT_CONFIG,
     resendReceipt: false,
     userConfirmed: false,
     explicitHuman: false,
