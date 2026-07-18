@@ -9,7 +9,7 @@
 
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
+import { runCustomerTurn, CustomerTurnError, scheduleAsyncPerceptionAfterReply } from "@/lib/ai/customer-turn";
 import { routeInteractive } from "@/lib/messaging/interactive-router";
 import { evaluateTesterAllowlist } from "@/lib/messaging/tester-allowlist";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
@@ -1317,6 +1317,10 @@ export async function respondAndSendWhatsApp(
   const send = outcome.presentation
     ? await sendWhatsAppInteractive({ to: phone, body: outcome.reply, presentation: outcome.presentation, lastInboundAtMs })
     : await sendWhatsAppText({ to: phone, text: outcome.reply, lastInboundAtMs });
+
+  if ((send.status === "sent" || send.status === "skipped") && outcome.perceptionAsync) {
+    scheduleAsyncPerceptionAfterReply(admin, { restaurantId, conversationId, history, userMessage });
+  }
 
   // WO-VOICE-2 — ADDITIVE voice note. The text reply above already went (voice is
   // never a replacement). Flag-gated (voice_notes, default OFF); fires only when the

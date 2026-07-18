@@ -150,7 +150,8 @@ export interface BrainContext {
    *  Validator (numeral-provenance + banned-word scrub), and the legacy fabricatesMoney /
    *  price_truth guards demote to a backstop. Read ONLY by respond.ts — never by the prompt — so
    *  the base prompt stays byte-identical (snapshot-gated). Off/absent → the reactive pipeline
-   *  runs unchanged. Bundles the `perception` flag ON (else the interpreter's read is null). */
+   *  runs unchanged. Bundles a sync perception read unless `perception_async` is ON
+   *  (then the interpreter's read is null and the read is logged after send). */
   goalLogic?: boolean;
   /** Week-2 annotation pivot (flag `goal_logic_rule6_annotation_pivot`, default OFF):
    *  when true, ONLY the residual rule-6 read_not_understood path routes to the model

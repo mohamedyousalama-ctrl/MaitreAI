@@ -102,7 +102,11 @@ function transcript(history: LlmMessage[], userMessage: string): string {
  * ONE cheap per-turn read. Returns the labeled perception, or null on any
  * failure (so the turn proceeds unchanged — perception never blocks a reply).
  */
-export async function perceiveTurnWithUsage(userMessage: string, history: LlmMessage[]): Promise<PerceptionTurnResult> {
+export async function perceiveTurnWithUsage(
+  userMessage: string,
+  history: LlmMessage[],
+  opts: { onError?: (error: unknown) => void } = {}
+): Promise<PerceptionTurnResult> {
   if (!userMessage.trim()) return { read: null, model: null, usage: null, latencyMs: null };
   try {
     const adapter = await getAdapter();
@@ -113,7 +117,8 @@ export async function perceiveTurnWithUsage(userMessage: string, history: LlmMes
     );
     const model = res.model || modelFor("perception").model;
     return { read: parse(res.text ?? "", model), model, usage: res.usage, latencyMs: Date.now() - t0 };
-  } catch {
+  } catch (e) {
+    opts.onError?.(e);
     return { read: null, model: null, usage: null, latencyMs: null };
   }
 }
