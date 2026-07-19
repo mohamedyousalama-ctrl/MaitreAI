@@ -12,6 +12,7 @@ import { recomputeOrderPricing } from "@/lib/order-pricing";
 import type { PaymentConfig } from "@/lib/payments/config";
 import type { LlmToolDef } from "./llm/types";
 import { optionValueOnly } from "@/lib/util/customer-visible-format";
+import { matchAddressToZones } from "@/lib/delivery/address";
 
 export interface DraftModifier {
   name: string;
@@ -108,6 +109,10 @@ export interface ToolContext {
   /** WO-DELIVERY-D1: when true, set_fulfillment accepts a pickup branch_name and
    *  routes the order to it. Default false → set_fulfillment behaves exactly as before. */
   geoRouting: boolean;
+  /** WO-ADDR (flag `address_flow_v2`, default OFF): when true, written delivery
+   *  addresses are matched deterministically against named tenant zones before any
+   *  pin fallback. Off → set_delivery_address is legacy byte-identical. */
+  addressFlowV2?: boolean;
   draft: OrderDraft;
   signals: ToolSignal[];
   escalation: { reason: string } | null;
@@ -379,7 +384,7 @@ export const NON_ORDER_TOOLS: LlmToolDef[] = ORDER_TOOLS.filter(
  *  `branch_name` when delivery_geo_routing is ON. Flag OFF → returns ORDER_TOOLS by
  *  reference (identical object), so the tool definitions the model sees are
  *  byte-identical to before (snapshot-safe). */
-export function orderToolsWithGeo(geoRouting: boolean): LlmToolDef[] {
+function orderToolsWithGeoOnly(geoRouting: boolean): LlmToolDef[] {
   if (!geoRouting) return ORDER_TOOLS;
   return ORDER_TOOLS.map((t) =>
     t.name === "set_fulfillment"
@@ -402,6 +407,34 @@ export function orderToolsWithGeo(geoRouting: boolean): LlmToolDef[] {
         }
       : t
   );
+}
+
+export function orderToolsWithGeo(geoRouting: boolean): LlmToolDef[] {
+  return orderToolsWithGeoOnly(geoRouting);
+}
+
+export function orderToolsForDelivery(geoRouting: boolean, addressFlowV2: boolean): LlmToolDef[] {
+  const base = orderToolsWithGeoOnly(geoRouting);
+  if (!addressFlowV2) return base;
+  return base.map((t) => {
+    if (t.name === "set_fulfillment") {
+      return {
+        ...t,
+        description:
+          "Set pickup or delivery. For delivery under address_flow_v2, you may set type=delivery first without a zone, then collect the written address and call set_delivery_address. " +
+          "If the customer already picked an exact delivery zone name from the zones list, pass zone_name so the fee is applied. For pickup, pass branch_name when available.",
+      };
+    }
+    if (t.name === "set_delivery_address") {
+      return {
+        ...t,
+        description:
+          "Store the customer's written street address for a delivery order and match it against the tenant's named delivery zones. " +
+          "Exactly one confident zone match applies that zone's fee. Ambiguous matches return one targeted zone question. No match offers the pin only as an option and may apply the catch-all fee as preliminary.",
+      };
+    }
+    return t;
+  });
 }
 
 // --- helpers ----------------------------------------------------------------
@@ -764,6 +797,10 @@ export function executeTool(
         // draft never gains a branchId key (serialization stays byte-identical).
         if (ctx.geoRouting) d.branchId = null;
         const zoneName = String(input.zone_name ?? "");
+        if (ctx.addressFlowV2 && !zoneName.trim()) {
+          d.deliveryPin = null;
+          return { content: "تم اختيار التوصيل. اطلب العنوان المكتوب، ثم استدعِ set_delivery_address ليطابق المنطقة ويطبّق الرسوم." };
+        }
         const zone = ctx.deliveryAreas.find((z) => z.active && norm(z.name) === norm(zoneName)) ||
           ctx.deliveryAreas.find((z) => z.active && (norm(z.name).includes(norm(zoneName)) || norm(zoneName).includes(norm(z.name))));
         if (!zone) {
@@ -788,11 +825,87 @@ export function executeTool(
     }
     case "set_delivery_address": {
       if (d.fulfillment !== "delivery") {
-        return { content: "set_delivery_address يُستخدم فقط لطلبات التوصيل. اختر التوصيل أولاً.", isError: true };
+        if (ctx.addressFlowV2 && d.fulfillment !== "pickup") {
+          d.fulfillment = "delivery";
+        } else {
+          return { content: "set_delivery_address يُستخدم فقط لطلبات التوصيل. اختر التوصيل أولاً.", isError: true };
+        }
       }
       const addr = String(input.address ?? "").trim();
       if (!addr) return { content: "العنوان فارغ — اطلب من العميل كتابة العنوان.", isError: true };
-      d.address = addr;
+      const addressToStore =
+        d.address && d.address.trim() && addr.length < d.address.length && !norm(d.address).includes(norm(addr))
+          ? `${d.address} — ${addr}`
+          : addr;
+      d.address = addressToStore;
+      if (ctx.addressFlowV2) {
+        d.deliveryPin = null;
+        const match = matchAddressToZones(addressToStore, ctx.deliveryAreas);
+        if (match.kind === "unique") {
+          d.deliveryZone = match.zone.name;
+          d.deliveryFee = Number(match.zone.deliveryFee) || 0;
+          if (ctx.geoRouting) d.branchId = match.zone.branchId ?? null;
+          const notice = d.lines.length ? recompute(ctx) : null;
+          if (notice) return { content: notice };
+          return {
+            content:
+              `العنوان يطابق منطقة «${match.zone.name}». ` +
+              `تم تطبيق رسوم التوصيل من صف المنطقة نفسه: ${d.deliveryFee} ${d.currency}.\n${d.lines.length ? summary(d) : "كمّل بناء الطلب ثم اقرأ الرسوم من الملخص."}`,
+          };
+        }
+        if (match.kind === "ambiguous") {
+          d.deliveryZone = null;
+          d.deliveryFee = 0;
+          if (ctx.geoRouting) d.branchId = null;
+          ctx.signals.push({
+            type: "missing_data",
+            detail: {
+              reason: "address_zone_ambiguous",
+              address: addressToStore,
+              candidates: match.candidates.map((candidate) => candidate.zone.name),
+              question: match.question,
+            },
+          });
+          return {
+            content:
+              `العنوان ممكن يطابق أكثر من منطقة: ${match.candidates.map((candidate) => `«${candidate.zone.name}»`).join("، ")}. ` +
+              `اسأل العميل سؤال واحد بالصيغة دي: «${match.question}». لا تطلب لوكيشن ولا تقول إنه مطلوب لحساب الرسوم.`,
+            isError: true,
+          };
+        }
+        const fallback = match.catchAllZone;
+        ctx.signals.push({
+          type: "missing_data",
+          detail: {
+            reason: "address_zone_no_match",
+            address: addressToStore,
+            catchAllZoneId: fallback?.id ?? null,
+            catchAllZoneName: fallback?.name ?? null,
+            catchAllFee: fallback?.deliveryFee ?? null,
+          },
+        });
+        if (fallback) {
+          d.deliveryZone = fallback.name;
+          d.deliveryFee = Number(fallback.deliveryFee) || 0;
+          if (ctx.geoRouting) d.branchId = fallback.branchId ?? null;
+          const notice = d.lines.length ? recompute(ctx) : null;
+          if (notice) return { content: notice };
+          return {
+            content:
+              `العنوان مش مطابق بثقة لأي منطقة مسمّاة. استخدم «${fallback.name}» كرسوم مبدئية فقط: ` +
+              `${d.deliveryFee} ${d.currency} لحد ما نحدد منطقة العميل. ` +
+              "اعرض عليه اختيارين: يبعت اللوكيشن من المشبك 📎 أو يقول أقرب منطقة/علامة مميزة. لا تقول إن اللوكيشن مطلوب.",
+          };
+        }
+        d.deliveryZone = null;
+        d.deliveryFee = 0;
+        if (ctx.geoRouting) d.branchId = null;
+        return {
+          content:
+            "العنوان مش مطابق بثقة لأي منطقة مسمّاة، ومفيش منطقة عامة مفعّلة. اعرض على العميل اختيارين: يبعت اللوكيشن من المشبك 📎 أو يقول أقرب منطقة/علامة مميزة. لا تقول إن اللوكيشن مطلوب.",
+          isError: true,
+        };
+      }
       return { content: `تم تسجيل عنوان التوصيل: ${addr}` };
     }
     case "get_order_summary": {

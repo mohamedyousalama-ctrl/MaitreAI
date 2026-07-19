@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "proof-address-flow": "node --conditions=react-server --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-address-flow.test.ts",
+    "proof-provenance": "node --conditions=react-server --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-provenance.test.ts",
     "replay": "node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/replay/run.ts",
     "replay:deid": "node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/replay/deidentify.ts",
     "replay:export:sweet-shop": "node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/replay/export-sweet-shop.ts",
