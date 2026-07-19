@@ -57,6 +57,11 @@ import { dishDataFromMenuItem } from "./dish-allergen-data";
 // it nor carries real content, APPEND the question (or replace a contentless
 // pleasantry-only reply with greeting+question). String ops only; only ADDS content.
 import { pendingDeterministicQuestion, injectPendingQuestion } from "./askback-injection";
+// WO-STATE-TRUTH (PART A) — the deterministic zone-selection net: when the customer's
+// reply picks one of the offered ambiguity candidates, persist the zone-of-truth onto the
+// draft so ambiguity stays silent and finalize prices the persisted zone (never re-matches
+// raw text). Mirrors the ask-back settle: a deterministic net, no model call.
+import { selectZoneFromReply, persistZoneToDraft, hasPersistedZone } from "./zone-state";
 import { matchAddressToZones } from "@/lib/delivery/address";
 import {
   emptyDraft,
@@ -819,6 +824,35 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     }
   }
 
+  // WO-STATE-TRUTH (PART A) — ZONE-SELECTION NET. Before the ask-back settle, resolve a
+  // pending zone ambiguity when THIS turn's message picks one of the offered candidates.
+  // Runs when address_flow_v2 is on, the delivery draft has a written address, and no zone
+  // is resolved yet (neither a persisted selection nor a legacy deliveryZone). selectZoneFromReply
+  // re-derives the offered candidates from the stored address and returns a single confident
+  // pick (a non-answer like «الهرم» stays null → the ask-back re-asks ONCE below). On a pick we
+  // PERSIST the zone-of-truth, re-price, and surface the applied fee + recap so the customer
+  // sees the number and the next turn is a real confirmation point. Deterministic; no model call.
+  if (
+    addressFlowV2 &&
+    ctx.draft.fulfillment === "delivery" &&
+    ctx.draft.address?.trim() &&
+    !hasPersistedZone(ctx.draft) &&
+    !ctx.draft.deliveryZone
+  ) {
+    const picked = selectZoneFromReply(input.userMessage, ctx.draft.address, input.brain.deliveryAreas);
+    if (picked) {
+      persistZoneToDraft(ctx.draft, picked);
+      if (geoRouting) ctx.draft.branchId = picked.branchId ?? null;
+      const recap = executeTool("get_order_summary", {}, ctx); // recomputes totals with the fee
+      ctx.signals.push({
+        type: "missing_data",
+        detail: { reason: "zone_selected_persisted", source: "zone_state_net", zoneName: picked.name, deliveryFee: ctx.draft.deliveryFee },
+      });
+      const feeLine = `تمام، منطقتك «${picked.name}» — رسوم التوصيل ${ctx.draft.deliveryFee} ${ctx.draft.currency}.`;
+      text = ctx.draft.lines.length ? `${feeLine}\n${recap.content}` : feeLine;
+    }
+  }
+
   // WO-ASKBACK — FINAL SETTLE (runs after every guard, so it catches text stripped by
   // ANY of them). Recover the pending deterministic question: prefer the one this turn's
   // tools already produced (address_zone_ambiguous signal); otherwise RE-DETECT a still-open
@@ -826,10 +860,18 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // address_flow_v2 on) so the question survives a turn where the customer stalled without
   // re-triggering the tool. If a pending question exists and the settled reply doesn't carry
   // it (or is a contentless pleasantry), inject it. Deterministic string ops; no model call.
-  let pendingQuestion = pendingDeterministicQuestion(ctx.signals);
-  if (!pendingQuestion && addressFlowV2 && ctx.draft.address?.trim() && !ctx.draft.deliveryZone) {
-    const rematch = matchAddressToZones(ctx.draft.address, input.brain.deliveryAreas);
-    if (rematch.kind === "ambiguous") pendingQuestion = rematch.question;
+  //
+  // WO-STATE-TRUTH (PART B, suppression) — once a zone is resolved (persisted selection OR a
+  // legacy deliveryZone) the ambiguity subject is SETTLED: never inject, even if this turn's
+  // signals still carry a now-stale address_zone_ambiguous question. This kills the "stale
+  // question re-asked after resolution" loop.
+  let pendingQuestion: string | null = null;
+  if (!hasPersistedZone(ctx.draft) && !ctx.draft.deliveryZone) {
+    pendingQuestion = pendingDeterministicQuestion(ctx.signals);
+    if (!pendingQuestion && addressFlowV2 && ctx.draft.address?.trim()) {
+      const rematch = matchAddressToZones(ctx.draft.address, input.brain.deliveryAreas);
+      if (rematch.kind === "ambiguous") pendingQuestion = rematch.question;
+    }
   }
   if (pendingQuestion) {
     const injected = injectPendingQuestion(text, pendingQuestion);

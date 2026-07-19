@@ -13,6 +13,7 @@ import type { PaymentConfig } from "@/lib/payments/config";
 import type { LlmToolDef } from "./llm/types";
 import { optionValueOnly } from "@/lib/util/customer-visible-format";
 import { matchAddressToZones } from "@/lib/delivery/address";
+import { selectZoneFromReply, persistZoneToDraft, clearPersistedZone, hasPersistedZone } from "./zone-state";
 
 export interface DraftModifier {
   name: string;
@@ -50,6 +51,13 @@ export interface OrderDraft {
   // or the customer's chosen pickup branch). deliveryPin: the raw location pin.
   branchId?: string | null;
   deliveryPin?: { lat: number; lng: number } | null;
+  // WO-STATE-TRUTH (PART A) — the persisted delivery-zone SELECTION, set ONLY when the
+  // customer confidently picks one of the offered ambiguity candidates (or a written
+  // address matches a single named zone). Once set, ambiguity detection stays silent and
+  // finalize validates delivery against THIS zone instead of re-matching the raw address
+  // text. Cleared when the address text changes. Additive + optional → a draft that never
+  // selects a zone has no `zone` key and serializes byte-identically (no schema change).
+  zone?: { zoneId: string | null; zoneName: string; deliveryFee: number } | null;
   subtotal: number;
   tax: number; // VAT amount (0 when tax-inclusive)
   taxRate: number; // applied rate (0 when inclusive)
@@ -520,6 +528,10 @@ function recompute(ctx: ToolContext): string | null {
         modifierNames: l.modifiers.map((m) => m.name),
       })),
       fulfillment: d.fulfillment ?? "pickup",
+      // WO-STATE-TRUTH — when a zone was confidently SELECTED, validate delivery against
+      // the persisted zone id (stable identity) rather than re-resolving the name. Absent on
+      // every non-selection draft → id is empty → byte-identical name-based resolution.
+      deliveryZoneId: d.zone?.zoneId ?? null,
       deliveryZoneName: d.deliveryZone,
       // WO-LIVE4-F3 (geo-pin-wins): a routed pin overrides the typed area name so
       // the fee comes from the zone the customer actually pinned. Pin-less → no-op.
@@ -773,6 +785,9 @@ export function executeTool(
       d.fulfillment = type;
       d.deliveryZone = null;
       d.deliveryFee = 0;
+      // WO-STATE-TRUTH — a fulfillment reset drops any confidently-selected zone; the
+      // zone is re-derived from the address / the model-supplied zone_name below.
+      clearPersistedZone(d);
       if (type === "pickup") {
         d.address = null;
         // WO-DELIVERY-D1 (geo routing ON): the customer picks a pickup branch and the
@@ -836,17 +851,42 @@ export function executeTool(
       }
       const addr = String(input.address ?? "").trim();
       if (!addr) return { content: "العنوان فارغ — اطلب من العميل كتابة العنوان.", isError: true };
+      // WO-STATE-TRUTH (PART A) — CANDIDATE SELECTION. When a prior turn stored a
+      // zone-ambiguous address and no zone is persisted yet, the customer's reply may be
+      // PICKING one of the offered candidates (not a fresh address). Match it against ONLY
+      // those candidates: on a single confident pick, PERSIST the zone-of-truth and keep the
+      // original address text (never fold the pick's tokens into the address). This stops the
+      // re-detection loop dead — from here on ambiguity stays silent and finalize prices this
+      // zone. A non-answer («الهرم» — still shared by several candidates) returns null → the
+      // existing ambiguity path re-asks ONCE.
+      if (ctx.addressFlowV2 && d.address?.trim() && !hasPersistedZone(d)) {
+        const picked = selectZoneFromReply(addr, d.address, ctx.deliveryAreas);
+        if (picked) {
+          persistZoneToDraft(d, picked);
+          d.deliveryPin = null;
+          if (ctx.geoRouting) d.branchId = picked.branchId ?? null;
+          const notice = d.lines.length ? recompute(ctx) : null;
+          if (notice) return { content: notice };
+          return {
+            content:
+              `تمام، اخترت «${picked.name}». ` +
+              `تم تطبيق رسوم التوصيل من صف المنطقة نفسه: ${d.deliveryFee} ${d.currency}.\n${d.lines.length ? summary(d) : "كمّل بناء الطلب ثم اقرأ الرسوم من الملخص."}`,
+          };
+        }
+      }
       const addressToStore =
         d.address && d.address.trim() && addr.length < d.address.length && !norm(d.address).includes(norm(addr))
           ? `${d.address} — ${addr}`
           : addr;
+      // WO-STATE-TRUTH — a genuine address CHANGE invalidates a previously-selected zone.
+      if (hasPersistedZone(d) && norm(addressToStore) !== norm(d.address ?? "")) clearPersistedZone(d);
       d.address = addressToStore;
       if (ctx.addressFlowV2) {
         d.deliveryPin = null;
         const match = matchAddressToZones(addressToStore, ctx.deliveryAreas);
         if (match.kind === "unique") {
-          d.deliveryZone = match.zone.name;
-          d.deliveryFee = Number(match.zone.deliveryFee) || 0;
+          // A single named-zone match is itself a confident resolution → persist it.
+          persistZoneToDraft(d, match.zone);
           if (ctx.geoRouting) d.branchId = match.zone.branchId ?? null;
           const notice = d.lines.length ? recompute(ctx) : null;
           if (notice) return { content: notice };
@@ -859,6 +899,7 @@ export function executeTool(
         if (match.kind === "ambiguous") {
           d.deliveryZone = null;
           d.deliveryFee = 0;
+          clearPersistedZone(d); // ambiguity is NOT a confident selection
           if (ctx.geoRouting) d.branchId = null;
           ctx.signals.push({
             type: "missing_data",
@@ -890,6 +931,7 @@ export function executeTool(
         if (fallback) {
           d.deliveryZone = fallback.name;
           d.deliveryFee = Number(fallback.deliveryFee) || 0;
+          clearPersistedZone(d); // catch-all is a PRELIMINARY fee, never a confident selection
           if (ctx.geoRouting) d.branchId = fallback.branchId ?? null;
           const notice = d.lines.length ? recompute(ctx) : null;
           if (notice) return { content: notice };
@@ -902,6 +944,7 @@ export function executeTool(
         }
         d.deliveryZone = null;
         d.deliveryFee = 0;
+        clearPersistedZone(d);
         if (ctx.geoRouting) d.branchId = null;
         return {
           content:

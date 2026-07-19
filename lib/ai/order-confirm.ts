@@ -36,6 +36,16 @@ const CONFIRM_VERB_RE = /(?:ا+كد|تاكيد)/;
 const ALLERGY_STATUS_RE = /(?:حساسيه|حساسه|allerg(?:y|ic|en)?)/;
 const ORDER_BOUND_CONFIRM_RE = /(?:ا+كد|تاكيد)\s+(?:ال)?(?:طلب|طلبيه|اوردر|اورد)/;
 
+// WO-STATE-TRUTH (PART C) — the deterministic ASSENT list at the recap/confirmation
+// checkpoint, matched on normalizeAr'd text (أ/إ/آ→ا، ة→ه، ى→ي، diacritics/tatweel folded):
+// اكد / أكد / تأكيد / تأكيد الطلب / تمام / أيوه / ايوه / موافق / اوكي / ok / يلا (+ latin
+// okay/yes/confirm). Arabic tokens are boundary-guarded so «يلا» never fires inside «يلاقي»
+// and «موافق» never inside a larger word. RECOGNITION ONLY — checkpoint semantics unchanged.
+const ASSENT_RE =
+  /(?<![ء-ي])(?:اكد|تاكيد|تمام|ايوه|موافق|اوكي|اوكيه|اوك|يلا)(?![ء-ي])|(?<![a-z])(?:ok|okay|okey|yes|confirm)(?![a-z])/i;
+// A negated agreement («مش موافق» / «غير موافق») stays NEGATIVE.
+const NEGATED_ASSENT_RE = /(?:لا|لأ|مش|ما|غير|مو)\s*مواف/;
+
 /**
  * True iff `text` is an EXPLICIT order confirmation. Negations («لا تأكد», «الغِ»,
  * «cancel») and receive/photo/menu requests are disqualified first; the positive
@@ -54,6 +64,10 @@ export function isExplicitOrderConfirmation(text: string): boolean {
   if (ALLERGY_STATUS_RE.test(n) && CONFIRM_VERB_RE.test(n) && !ORDER_BOUND_CONFIRM_RE.test(n)) return false;
   // Negation / cancellation → not a confirmation (unchanged).
   if (/(?:لا|لأ|مش|ما)\s*(?:تأكد|تاكد|تأكيد|تاكيد|تكمل|تبعت|ترسل)|(?:الغ|إلغاء|cancel)/iu.test(text)) return false;
+  // WO-STATE-TRUTH (PART C) — a negated agreement is not assent; the extended assent list
+  // (normalized) then recognizes موافق/اوكي/ok/يلا (and the existing أكد/تأكيد/تمام/أيوه).
+  if (NEGATED_ASSENT_RE.test(n)) return false;
+  if (ASSENT_RE.test(n)) return true;
   // Positive confirmation lexicon (unchanged — matched on the raw text).
   return /(?:أكد|اكد|تأكيد|تاكيد|ابعته|ابعت|ارسله|رسل|كمّل|كمل|تمام|أيوه|ايوه|yes|confirm|send it)/iu.test(text);
 }

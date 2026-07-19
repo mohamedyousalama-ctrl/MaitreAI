@@ -56,8 +56,13 @@ const INJECT_GREETING = "تمام!";
  *  diacritics + tatweel, folds alef/ya/ta-marbuta variants, collapses whitespace,
  *  lowercases. Deliberately preserves letters so containment stays meaningful. */
 function normalize(input: string): string {
+  // WO-STATE-TRUTH (PART B) — strip markdown emphasis (*bold* / _italic_) BEFORE folding so
+  // the containment check catches the model's formatted relay of the pending question. The
+  // DB-proven double-ask: the model bolded the question, the raw-string check missed the
+  // asterisks, and the injector appended it a second time. Emphasis carries no content.
   return input
     .normalize("NFKD")
+    .replace(/[*_]/g, "")
     .replace(/[ً-ٰٟـ]/g, "")
     .replace(/[إأآ]/g, "ا")
     .replace(/ى/g, "ي")
