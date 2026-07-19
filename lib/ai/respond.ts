@@ -644,6 +644,17 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     }
   }
 
+  // WO-GUARD-ORDER (safety-first precedence) — capture the model's FINAL text BEFORE any
+  // money / confirmation / non-menu REPLACEMENT below. The bug: a reply that both fabricates
+  // a price AND falsely certifies allergen-safety (or a disease/diet suitability) on a
+  // genuine-safety turn was being wholesale-replaced by safeMoneyReply FIRST, so the safety
+  // detectors further down saw the clean deferral and their escalation/notify signals never
+  // fired — the safety event was lost. We keep every money guard exactly as-is (they still
+  // fire their money_mismatch signal), then re-expose this ORIGINAL text to the UNCHANGED
+  // safety guards so the safety detection, escalation and notify decisions run against what
+  // the model actually said — and the safety line wins the final text (strictest outcome).
+  const originalModelText = text;
+
   // Money-truth guard: when no pricing tool ran this turn, allow the model to
   // QUOTE real menu prices while describing the menu (Type 1), but still block a
   // fabricated/computed order total or any non-menu amount (Type 2). Order totals
@@ -701,6 +712,19 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       ctx.signals.push({ type: "off_menu", detail: { reason: "non_menu_upsell", term: offending, reply: text } });
       text = safeNonMenuReply(input.brain.dialect);
     }
+  }
+  // WO-GUARD-ORDER — SAFETY SEES THE ORIGINAL TEXT (strictest-outcome precedence). If the
+  // model's ORIGINAL reply asserted allergen-safety or a disease/diet suitability claim, a
+  // money / confirmation / non-menu guard above may have already replaced `text` (e.g. with
+  // safeMoneyReply) and hidden that safety event from the detectors below. Restore the original
+  // HERE — and ONLY when it actually carried such a claim — so the two UNCHANGED safety guards
+  // that follow evaluate it, fire their signals + escalation/notify decision, and their honest
+  // careful/repair line WINS the final delivered text over any money-deferral. Their
+  // money_mismatch signal already fired above, so BOTH the money and the safety signals survive.
+  // When the original carried no safety claim this is a no-op → money-only / neither behavior is
+  // byte-identical, and a safety-only turn (no money replacement) restores to itself (no-op).
+  if (assertsAllergenSafety(originalModelText) || assertsDiseaseDietClaim(originalModelText)) {
+    text = originalModelText;
   }
   // Allergen-safety OUTPUT GUARD (Fix 3) — WO-SAFE-2: now UNCONDITIONAL (was
   // flag-gated). NEVER let the agent certify an item is allergen-safe («مفيهوش بندق»
