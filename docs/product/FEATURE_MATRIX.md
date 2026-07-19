@@ -309,7 +309,7 @@ P0 tier flag · P1 `conversation_intelligence` · P2 `customer_memory` (data onl
 ## E. Settings & options appendix (every configurable control)
 
 ### Per-tenant feature flags (`restaurants.feature_flags`; default OFF unless noted)
-`conversation_intelligence` (pro-auto) · `customer_memory` · `conversation_outcomes` · `perception` · `cadence` · `stateful_orders` · `deterministic_allergen_safety` (**default ON, SAFETY-locked**) · `allergen_symptom_detection` (**SAFETY-locked**) · `psp_payments` · `staff_command_channel` · `standing_instructions` · `kitchen_ticket` · `console_v2` · `media_guard` · `khalid_persona` · `ksa_encyclopedia` · `callback_requests` · `qz_print` · `voice_notes` · `photo_thread` · `manager_command_recognition` · `delivery_geo_routing` · `allergy_companion_mode` · `media_turn_trigger`.
+`conversation_intelligence` (pro-auto) · `customer_memory` · `conversation_outcomes` · `perception` · `cadence` · `stateful_orders` · `deterministic_allergen_safety` (**default ON, SAFETY-locked**) · `allergen_symptom_detection` (**SAFETY-locked**) · `psp_payments` · `staff_command_channel` · `standing_instructions` · `kitchen_ticket` · `console_v2` · `media_guard` · `khalid_persona` · `ksa_encyclopedia` · `callback_requests` · `qz_print` · `voice_notes` · `photo_thread` · `manager_command_recognition` · `delivery_geo_routing` · `allergy_companion_mode` · `media_turn_trigger` · `typed_quantity_fill`.
 Env deploy flags: `CONSOLE_V2`, `ENABLE_DELIVERY_TRACKING` (default ON), `ENABLE_MIZAN_PANEL`, `ENABLE_ADMIN_CHAT_CONSOLE`, `ENABLE_MOCK_PAYMENTS`/`ENABLE_MOCK_STT` (dev).
 
 ### Console settings controls
