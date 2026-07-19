@@ -30,6 +30,11 @@ import { recordCriticalAlert } from "@/lib/alerts/record";
 import { setOwnershipState } from "@/lib/db/ownership";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
+import {
+  EMPTY_MEMORY_ALLERGY_GATE_HIT,
+  detectMemoryAllergyDraftIntersection,
+  extractMemoryAllergyLabels,
+} from "@/lib/ai/memory-allergy-gate";
 // WO-COMPANION-W1-CORE (§1a/§5): the deterministic companion FLOW spine + authored
 // texts + the write-side effects. Consulted ONLY when allergy_companion_mode is ON.
 import {
@@ -216,7 +221,7 @@ function forcedAllergenSafetyResult(
   dialect: string,
   initialDraft: OrderDraft | null,
   currency: string,
-  source: "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" = "allergen_gate",
+  source: "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" | "memory_allergy_gate" = "allergen_gate",
   netReason: string | null = null
 ): RespondResult {
   const t = term && term !== "الحساسية" ? `«${term}»` : "الحساسية";
@@ -325,7 +330,7 @@ function companionEmergencyResult(
   };
 }
 
-type CalmHoldSource = "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" | "emergency";
+type CalmHoldSource = "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" | "memory_allergy_gate" | "emergency";
 
 function calmHoldReason(decision: CompanionDecision, source: CalmHoldSource): string {
   const label = decision.term ?? decision.emergencyLabel ?? "حساسية";
@@ -494,6 +499,7 @@ export async function runCustomerTurn(
   // branch below is skipped and the legacy allergen path is byte-identical.
   const companionOn = isFeatureExplicitlyEnabled("allergy_companion_mode", tenantFeatures);
   const calmHoldOn = isFeatureExplicitlyEnabled("allergy_calm_hold", tenantFeatures);
+  const memoryAllergyGateOn = isFeatureExplicitlyEnabled("memory_allergy_gate", tenantFeatures);
 
   // WO-T1-PAYMENTS: payment-method truth comes ONLY from the resolver. Flag
   // `canonical_payment_methods` OFF (every current tenant) → exactly the legacy
@@ -519,13 +525,15 @@ export async function runCustomerTurn(
   let handoverNote: string | undefined;
   let safetyHoldActive = false;
   let initialDraft: OrderDraft | null = null;
+  let conversationCustomerId: string | null = null;
   if (conversationId) {
     const { data: conv } = await admin
       .from("conversations")
-      .select("handover_note, is_safety_hold")
+      .select("handover_note, is_safety_hold, customer_id")
       .eq("id", conversationId)
       .single();
     handoverNote = (conv?.handover_note as string | null) ?? undefined;
+    conversationCustomerId = (conv as { customer_id?: string | null } | null)?.customer_id ?? null;
     // Allergen-safety: an active safety hold lets the Fix-3 output guard escalate a
     // repeated unsafe claim (vs only blocking it). Column exists (migration 0028).
     safetyHoldActive = (conv as { is_safety_hold?: boolean } | null)?.is_safety_hold === true;
@@ -613,6 +621,25 @@ export async function runCustomerTurn(
       } catch {
         /* table absent → no checkpoint state */
       }
+    }
+  }
+
+  // WO-MEMGATE — customer-memory allergies become deterministic gate input only
+  // behind the strict flag. OFF does not read customer_memory, preserving today's
+  // byte path. The stored notes are operator-memory labels; the pure helper maps
+  // them into the same kitchen-readable allergen labels the session note uses.
+  let memoryAllergyLabels: string[] = [];
+  if (memoryAllergyGateOn && conversationCustomerId) {
+    try {
+      const { data: mem } = await admin
+        .from("customer_memory")
+        .select("inferred")
+        .eq("restaurant_id", restaurantId)
+        .eq("customer_id", conversationCustomerId)
+        .maybeSingle();
+      memoryAllergyLabels = extractMemoryAllergyLabels((mem as { inferred?: unknown } | null)?.inferred);
+    } catch {
+      memoryAllergyLabels = [];
     }
   }
 
@@ -781,14 +808,23 @@ export async function runCustomerTurn(
   const phoneticHit = (!allergenHit.fired && !symptomHit.fired)
     ? detectPhoneticSafetyNet(input.userMessage, { sttConfidence: input.sttConfidence, isVoiceTranscript: input.isVoiceTranscript })
     : { fired: false, term: null, reason: null as string | null };
-  const combinedAllergenHit = allergenHit.fired ? allergenHit : (symptomHit.fired ? symptomHit : phoneticHit);
+  const memoryAllergyHit = (!allergenHit.fired && !symptomHit.fired && !phoneticHit.fired && memoryAllergyGateOn)
+    ? detectMemoryAllergyDraftIntersection({
+        memoryAllergens: memoryAllergyLabels,
+        draft: initialDraft,
+        menuItems: ctx.menuItems,
+      })
+    : EMPTY_MEMORY_ALLERGY_GATE_HIT;
+  const combinedAllergenHit = allergenHit.fired ? allergenHit : (symptomHit.fired ? symptomHit : (phoneticHit.fired ? phoneticHit : memoryAllergyHit));
   // Distinct source for observability (net-trip vs vocabulary-hit) — carried into the
   // escalation signal metadata so the live net false-positive rate is watchable.
   const holdSource = allergenHit.fired
     ? "allergen_gate"
     : symptomHit.fired
       ? "allergen_symptom"
-      : "phonetic_safety_net";
+      : phoneticHit.fired
+        ? "phonetic_safety_net"
+        : "memory_allergy_gate";
   const safetyEmergencyHit = (companionOn || calmHoldOn)
     ? detectAllergenEmergency(input.userMessage)
     : { fired: false, label: null };
@@ -1053,6 +1089,9 @@ export async function runCustomerTurn(
           menuVocab: ctx.menuItems.map((i) => i.name),
         })
       : { action: "act" as const, reason: assentExit ? "assent_exit" : null };
+  const allergenDecisionHint = holdSource === "memory_allergy_gate" && memoryAllergyHit.fired
+    ? { term: memoryAllergyHit.term, terms: memoryAllergyHit.matchedAllergens }
+    : { term: combinedAllergenHit.term };
 
   if (voiceLadder.action === "retype") {
     result = voiceGarbleResult(dialect, initialDraft, ctx.profile.currency, voiceLadder.reason);
@@ -1067,7 +1106,7 @@ export async function runCustomerTurn(
     result = voiceConfirmResult(dialect, input.userMessage, initialDraft, ctx.profile.currency, candidates);
   } else if (calmHoldCandidate) {
     companionDecision = {
-      ...decideCompanionAction(input.userMessage, sessionAllergyNote, { term: combinedAllergenHit.term }),
+      ...decideCompanionAction(input.userMessage, sessionAllergyNote, allergenDecisionHint),
       escalate: true,
       systemHold: true,
       offerHuman: false,
@@ -1086,7 +1125,7 @@ export async function runCustomerTurn(
     // FLAG ON — companion path. decideCompanionAction checks the emergency detector
     // FIRST (wins), else it's a §1a mention. The gate's term (if any) is passed as the
     // note hint so a symptom/phonetic hit still captures a named allergen.
-    companionDecision = decideCompanionAction(input.userMessage, sessionAllergyNote, { term: combinedAllergenHit.term });
+    companionDecision = decideCompanionAction(input.userMessage, sessionAllergyNote, allergenDecisionHint);
     if (companionDecision.path === "emergency") {
       // ACTIVE emergency → deterministic escalate, SYSTEM_HOLD, emergency-class.
       result = companionEmergencyResult(companionDecision, dialect, initialDraft, ctx.profile.currency);

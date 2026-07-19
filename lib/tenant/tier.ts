@@ -43,6 +43,10 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
 // sentinel fires, enter SYSTEM_HOLD before notifying and send fixed templates only; while
 // held, inbound messages run deterministic safety detectors and never call the Brain.
 // STRICT per-tenant switch, DEFAULT OFF, NOT implied by tier='pro'.
+// memory_allergy_gate (WO-MEMGATE): customer-memory allergy notes arm the same
+// deterministic allergen gate when a current draft item carries that allergen in
+// verified/two-axis menu data. STRICT per-tenant switch, DEFAULT OFF, NOT implied by
+// tier='pro'. OFF never reads customer_memory and keeps today's path byte-identical.
 // delivery_runs (WO-DELIVERY-D2): multi-order delivery runs — a driver carries up
 // to 3 deliveries as one run (grouping over existing rows), the /d run stop-list,
 // KIVO grouping suggestions, and /t active-leg gating. STRICT per-tenant switch,
@@ -92,7 +96,7 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
 // registered in lib/messaging/interactive-router.ts can run deterministic server
 // handlers instead of being converted to Arabic text for the customer agent.
 // STRICT per-tenant switch, DEFAULT OFF, never implied by tier='pro'.
-export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "perception_async" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "allergy_companion_mode" | "allergy_calm_hold" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods" | "inbound_coalescing" | "answer_first" | "persist_outbound_media" | "voice_garble_guard" | "dup_order_awareness" | "price_truth_guard" | "reply_dampener" | "safety_bridge" | "handoff_timeout" | "goal_logic" | "goal_logic_rule6_annotation_pivot" | "call_count_observability" | "typed_interactive_actions";
+export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "perception_async" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "allergy_companion_mode" | "allergy_calm_hold" | "memory_allergy_gate" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods" | "inbound_coalescing" | "answer_first" | "persist_outbound_media" | "voice_garble_guard" | "dup_order_awareness" | "price_truth_guard" | "reply_dampener" | "safety_bridge" | "handoff_timeout" | "goal_logic" | "goal_logic_rule6_annotation_pivot" | "call_count_observability" | "typed_interactive_actions";
 
 /** A feature is ON when the tenant explicitly enabled THAT feature (narrow,
  *  default-off opt-in) OR the tenant is full 'pro' (gets everything). Keeping a
