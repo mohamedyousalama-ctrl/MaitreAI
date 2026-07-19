@@ -35,6 +35,7 @@ import {
   detectMemoryAllergyDraftIntersection,
   extractMemoryAllergyLabels,
 } from "@/lib/ai/memory-allergy-gate";
+import { filterAllergenEntities } from "@/lib/ai/allergen-canonical";
 // WO-COMPANION-W1-CORE (§1a/§5): the deterministic companion FLOW spine + authored
 // texts + the write-side effects. Consulted ONLY when allergy_companion_mode is ON.
 import {
@@ -660,7 +661,11 @@ export async function runCustomerTurn(
         .eq("restaurant_id", restaurantId)
         .eq("customer_id", conversationCustomerId)
         .maybeSingle();
-      memoryAllergyLabels = extractMemoryAllergyLabels((mem as { inferred?: unknown } | null)?.inferred);
+      // WO-MEMFIX read-time defense: the memory-allergy gate receives real allergen
+      // ENTITIES only. A legacy garbage note in customer_memory (a stored symptom/trigger
+      // word) is filtered out here VERBATIM-safe, so it can never arm the gate or flow
+      // into the session note as a bogus substance.
+      memoryAllergyLabels = filterAllergenEntities(extractMemoryAllergyLabels((mem as { inferred?: unknown } | null)?.inferred));
     } catch {
       memoryAllergyLabels = [];
     }

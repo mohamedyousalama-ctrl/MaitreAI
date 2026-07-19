@@ -16,6 +16,7 @@
 // ============================================================================
 
 import { normalizeAr } from "./allergen-gate";
+import { isCanonicalAllergen, isGenericAllergyMention } from "./allergen-canonical";
 
 // ---------------------------------------------------------------------------
 // §1a.2 — the KITCHEN-READABLE allergy note (the note the kitchen cooks from).
@@ -43,11 +44,21 @@ export function buildAllergyNote(allergens: string[]): string {
   return uniq.length ? NOTE_PREFIX + uniq.join("، ") : "";
 }
 
-/** Normalize a raw detector term into a kitchen label. «الحساسية»/null/empty → generic. */
+/**
+ * Normalize a raw detector term into a kitchen label used inside the note. «الحساسية»/
+ * null/empty → generic. WO-MEMFIX: a term is admitted as a SUBSTANCE only when it names a
+ * real allergen entity; a symptom/trigger word («حساسه» sensitive, «حكه» itching, «تعب»)
+ * resolves to "" and is dropped by mergeAllergyNote — it can NEVER be stored/rendered as a
+ * substance (historically it was kept verbatim, exactly how «حساسه، حكه» reached a
+ * customer-facing substance list). Real allergen substances are kept VERBATIM (the
+ * customer's own word — «لبن» stays «لبن»); canonicalization to a display entity happens at
+ * READ time (allergen-canonical.canonicalizeAllergens), never by mutating the kitchen note.
+ */
 export function allergenLabel(term: string | null | undefined): string {
   const t = String(term ?? "").trim();
-  if (!t || t === "الحساسية") return GENERIC_LABEL;
-  return t;
+  if (!t || isGenericAllergyMention(t)) return GENERIC_LABEL;
+  if (isCanonicalAllergen(t)) return t;
+  return "";
 }
 
 /**
@@ -61,7 +72,12 @@ export function mergeAllergyNote(existing: string | null | undefined, newAllerge
     const label = allergenLabel(raw);
     if (label && !merged.includes(label)) merged.push(label);
   }
-  return buildAllergyNote(merged);
+  // WO-MEMFIX: the generic mention marker «حساسية» is a LAST-RESORT placeholder (kitchen
+  // still gets a note when nothing specific is named). Keep it ONLY when no real substance
+  // is present — otherwise drop it so it can never render as a pseudo-substance beside real
+  // allergens («قمح، حساسية، بيض» → «قمح، بيض»).
+  const substances = merged.filter((m) => m !== GENERIC_LABEL);
+  return buildAllergyNote(substances.length ? substances : merged);
 }
 
 // ---------------------------------------------------------------------------
