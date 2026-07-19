@@ -379,7 +379,26 @@ async function handleCalmHeldInbound(
 
   const emergency = emergencyHit.fired || symptomHit.fired;
   const newAllergy = allergenHit.fired || phoneticHit.fired;
-  const text = emergency ? emergencyReply(dialect) : newAllergy ? calmNewAllergyReply(dialect) : calmHoldingReply(dialect);
+  // WO escalate-mode: the plain HOLD reply rotates across three deterministic
+  // templates by the count of hold replies already sent (text-only; hold state is
+  // untouched). Read the branch's stored display phone for the T3 direct-contact
+  // line; when absent, the template omits it cleanly.
+  const { count: priorHoldCount } = await admin
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", conversationId)
+    .eq("meta->>kind", "allergy_calm_hold_wait");
+  const { data: branchRow } = await admin
+    .from("restaurants")
+    .select("phone")
+    .eq("id", restaurantId)
+    .maybeSingle();
+  const branchPhone = ((branchRow as { phone?: string | null } | null)?.phone ?? "").trim() || null;
+  const text = emergency
+    ? emergencyReply(dialect)
+    : newAllergy
+      ? calmNewAllergyReply(dialect)
+      : calmHoldingReply(dialect, priorHoldCount ?? 0, branchPhone);
   const outboundText = formatCustomerVisibleText(text, dialect);
   const metaKind = emergency ? "allergy_calm_hold_emergency" : newAllergy ? "allergy_calm_hold_new_allergy" : "allergy_calm_hold_wait";
   const { data: rmsg } = await admin
