@@ -707,6 +707,7 @@ export async function runCustomerTurn(
   const goalLogicOn = isFeatureExplicitlyEnabled("goal_logic", tenantFeatures);
   const goalLogicRule6AnnotationPivotOn = isFeatureExplicitlyEnabled("goal_logic_rule6_annotation_pivot", tenantFeatures);
   const callCountObservabilityOn = isFeatureExplicitlyEnabled("call_count_observability", tenantFeatures);
+  const actionClaimGuardOn = isFeatureExplicitlyEnabled("action_claim_guard", tenantFeatures);
 
   const ctx: BrainContext = {
     profile: {
@@ -790,6 +791,9 @@ export async function runCustomerTurn(
     // sync perception below unless WO-S0-PERC's `perception_async` switch is explicitly ON.
     goalLogic: goalLogicOn,
     goalLogicRule6AnnotationPivot: goalLogicRule6AnnotationPivotOn,
+    // WO-ACTION-CLAIM-GUARD — the post-turn fabricated-action guard in respond.ts. Default OFF →
+    // the guard never runs (byte-identical); read ONLY by respond.ts, never by the prompt.
+    actionClaimGuard: actionClaimGuardOn,
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;

@@ -25,6 +25,17 @@ import { classifyGoal, type GoalRead } from "./goal-interpreter";
 import { buildClarifyingQuestion } from "./clarification";
 import { validateNumerals, stripBlockedNumerals } from "./numeral-provenance";
 import { scrubBannedWords } from "./banned-words";
+// WO-ACTION-CLAIM-GUARD (flag `action_claim_guard`, default OFF) — deterministic post-turn guard:
+// blocks a reply that CLAIMS a draft modification when no draft mutation actually happened, and
+// re-runs the model ONCE with a strict use-the-tools directive. Flag OFF → never invoked.
+import {
+  detectModificationClaim,
+  draftFingerprint,
+  claimNeedsMutationRetry,
+  retrySucceeded,
+  actionClaimClarify,
+  ACTION_CLAIM_RETRY_DIRECTIVE,
+} from "./action-claim-guard";
 import { isExplicitOrderConfirmation } from "./order-confirm";
 import { assertsAllergenSafety, normalizeAr, shouldEscalateOnSafetyClaim } from "./allergen-gate";
 import { isExplicitHumanRequest } from "./human-request";
@@ -518,6 +529,11 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   let model: string = adapter.name;
   let calls_used = 0;
 
+  // WO-ACTION-CLAIM-GUARD — snapshot the draft BEFORE the model loop so the post-turn guard can
+  // tell whether the draft actually changed this turn. Flag OFF → "" (never read) → no-op.
+  const actionGuardOn = input.brain.actionClaimGuard === true && canOrder;
+  const draftFpBefore = actionGuardOn ? draftFingerprint(ctx.draft) : "";
+
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const res = await adapter.generate({ system: systemStatic, systemTail: systemTail || undefined, messages, tools }, "customer_agent");
     calls_used += 1;
@@ -557,6 +573,65 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // A presentation needs a non-empty body (WhatsApp rejects empty interactive
   // bodies); if the model left the text blank, give it a friendly opener.
   if (!text.trim() && ctx.presentation) text = "تفضّل 👇";
+
+  // WO-ACTION-CLAIM-GUARD — the fabricated-action net. When the flag is ON and the reply CLAIMS a
+  // draft modification but NO draft mutation actually happened this turn (no mutation tool ran AND
+  // the fingerprint is unchanged), do NOT send: re-run the model turn ONCE with a strict
+  // use-the-tools directive. If the retry actually mutates the draft → send the retry reply; if the
+  // retry ALSO claims without mutating → discard and send a fixed honest clarify + log a guard
+  // signal. Flag OFF → skipped entirely → byte-identical.
+  if (actionGuardOn && text.trim()) {
+    const itemNames = input.brain.menuItems.map((it) => it.name);
+    const draftFpAfter = draftFingerprint(ctx.draft);
+    if (
+      claimNeedsMutationRetry({
+        replyText: text,
+        itemNames,
+        executedTools: toolNames,
+        beforeFingerprint: draftFpBefore,
+        afterFingerprint: draftFpAfter,
+      })
+    ) {
+      // Re-run the model turn ONCE with the strict directive appended to the (uncached) tail.
+      const toolCountBeforeRetry = toolNames.length;
+      systemTail = composeSystemTail([...baseSystemTailParts, ACTION_CLAIM_RETRY_DIRECTIVE]);
+      for (let i = 0; i < MAX_ITERATIONS; i++) {
+        const res = await adapter.generate({ system: systemStatic, systemTail: systemTail || undefined, messages, tools }, "customer_agent");
+        calls_used += 1;
+        usage.inputTokens += res.usage.inputTokens;
+        usage.outputTokens += res.usage.outputTokens;
+        usage.cacheReadTokens += res.usage.cacheReadTokens;
+        usage.cacheCreationTokens = (usage.cacheCreationTokens ?? 0) + (res.usage.cacheCreationTokens ?? 0);
+        if (res.text && res.text.trim()) text = res.text;
+        stopReason = res.stopReason;
+        model = res.model;
+        if (!res.toolCalls.length) break;
+        messages.push({ role: "assistant", content: res.rawContent });
+        const results: LlmContentBlock[] = [];
+        for (const call of res.toolCalls) {
+          if (call.name === "finalize_draft" && needsAllergyCheckpoint(input.brain)) {
+            return checkpointResult(input.brain, ctx, calls_used);
+          }
+          toolNames.push(call.name);
+          const out = executeTool(call.name, call.input, ctx);
+          results.push({ type: "tool_result", tool_use_id: call.id, content: out.content, is_error: out.isError });
+        }
+        messages.push({ role: "user", content: results });
+      }
+      const mutated = retrySucceeded({
+        executedToolsSinceRetry: toolNames.slice(toolCountBeforeRetry),
+        fingerprintBeforeRetry: draftFpAfter,
+        fingerprintAfterRetry: draftFingerprint(ctx.draft),
+      });
+      if (!mutated) {
+        // Retry still fabricated — never send a false ✅. Honest deterministic clarify + audit row.
+        ctx.signals.push({ type: "guard", detail: { reason: "action_claim_without_mutation", reply: text } });
+        text = actionClaimClarify(input.brain.dialect);
+      }
+      // Restore the base (directive-free) tail so downstream stays as it was.
+      systemTail = composeSystemTail(baseSystemTailParts);
+    }
+  }
 
   // Money-truth guard: when no pricing tool ran this turn, allow the model to
   // QUOTE real menu prices while describing the menu (Type 1), but still block a
