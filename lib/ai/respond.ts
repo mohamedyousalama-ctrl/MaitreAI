@@ -38,6 +38,10 @@ import {
 } from "./action-claim-guard";
 import { isExplicitOrderConfirmation } from "./order-confirm";
 import { assertsAllergenSafety, normalizeAr, shouldEscalateOnSafetyClaim } from "./allergen-gate";
+// WO escalate-mode — UNCONDITIONAL disease/diet no-reassure output floor. Extends
+// the allergen-safety guard: a health/diet suitability claim in a draft is stripped
+// and replaced with the honest careful line. No flag; only ADDS caution.
+import { assertsDiseaseDietClaim, diseaseDietCarefulLine } from "./disease-diet-guard";
 import { isExplicitHumanRequest } from "./human-request";
 // WO-COMPANION-W1-CORE (§0/§6): companion banned-phrase guard + confirmation
 // checkpoint. Consulted ONLY when brain.allergyCompanion is on (flag OFF → inert).
@@ -726,6 +730,19 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       // no-transfer line (staff already notified via the notify_without_hold signal).
       text = safeAllergenNoEscalateReply(input.brain.dialect);
     }
+  }
+  // DISEASE/DIET NO-REASSURE OUTPUT FLOOR (WO escalate-mode) — UNCONDITIONAL, no flag.
+  // Karim must NEVER reassure that a dish is suitable for a health/diet condition
+  // (diabetes, blood pressure, cholesterol, "diet", sugar-free …) — that is a health-
+  // suitability claim with no operator-verified data. Detect any such claim in the draft
+  // and REPLACE it with the honest careful line that offers a human. Non-escalating audit
+  // signal only (no ctx.escalation, no hold): this ADDS caution and removes no guard.
+  if (text.trim() && assertsDiseaseDietClaim(text)) {
+    ctx.signals.push({
+      type: "missing_data",
+      detail: { reason: "disease_diet_suitability_claim", source: "disease_diet_guard", reply: text },
+    });
+    text = diseaseDietCarefulLine(input.brain.dialect);
   }
   // WO-COMPANION-W1-CORE §0 — companion banned-phrase guard. In companion mode Kivo
   // must NEVER assert food safety: scan the FULL §0 vocabulary («آمن»/«مضمون»/«عادي»/
