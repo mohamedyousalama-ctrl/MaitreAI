@@ -51,6 +51,13 @@ import { buildCheckpointRecap, repairBannedAllergyReply, companionNeutralRepairL
 // WO-COMPANION-W2: feed the §6 recap the REAL two-axis MenuItem data so verified
 // dishes surface honestly (computeDishTruthState itself unchanged — ruling C).
 import { dishDataFromMenuItem } from "./dish-allergen-data";
+// WO-ASKBACK — deterministic ask-back injection at the final settle: if this turn
+// produced (or re-detected) a pending deterministic question — an address-zone
+// ambiguity from the address_flow_v2 path — and the settled reply neither contains
+// it nor carries real content, APPEND the question (or replace a contentless
+// pleasantry-only reply with greeting+question). String ops only; only ADDS content.
+import { pendingDeterministicQuestion, injectPendingQuestion } from "./askback-injection";
+import { matchAddressToZones } from "@/lib/delivery/address";
 import {
   emptyDraft,
   executeTool,
@@ -785,6 +792,29 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     if (sc.scrubbed.length) {
       ctx.signals.push({ type: "off_menu", detail: { reason: "banned_word_scrubbed", words: sc.scrubbed } });
       text = sc.text;
+    }
+  }
+
+  // WO-ASKBACK — FINAL SETTLE (runs after every guard, so it catches text stripped by
+  // ANY of them). Recover the pending deterministic question: prefer the one this turn's
+  // tools already produced (address_zone_ambiguous signal); otherwise RE-DETECT a still-open
+  // address-zone ambiguity from the current draft (address written, no zone resolved yet,
+  // address_flow_v2 on) so the question survives a turn where the customer stalled without
+  // re-triggering the tool. If a pending question exists and the settled reply doesn't carry
+  // it (or is a contentless pleasantry), inject it. Deterministic string ops; no model call.
+  let pendingQuestion = pendingDeterministicQuestion(ctx.signals);
+  if (!pendingQuestion && addressFlowV2 && ctx.draft.address?.trim() && !ctx.draft.deliveryZone) {
+    const rematch = matchAddressToZones(ctx.draft.address, input.brain.deliveryAreas);
+    if (rematch.kind === "ambiguous") pendingQuestion = rematch.question;
+  }
+  if (pendingQuestion) {
+    const injected = injectPendingQuestion(text, pendingQuestion);
+    if (injected.mode !== "unchanged") {
+      ctx.signals.push({
+        type: "missing_data",
+        detail: { reason: "askback_injected", source: "askback_final_settle", mode: injected.mode, question: pendingQuestion },
+      });
+      text = injected.text;
     }
   }
 
