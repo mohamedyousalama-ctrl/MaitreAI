@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError, scheduleAsyncPerceptionAfterReply } from "@/lib/ai/customer-turn";
 import { routeInteractive } from "@/lib/messaging/interactive-router";
 import {
+  handleTypedQuantityFill,
   handleTypedInteractiveAction,
   isTypedInteractiveActionId,
   type TypedInteractiveActionResult,
@@ -1300,6 +1301,89 @@ export async function respondAndSendWhatsApp(
         return { status: "send_failed", reply: typedReply, sendStatus: "failed", error: send.error };
       }
       return { status: "responded", reply: typedReply, escalate: false, sendStatus: send.status };
+    }
+  }
+
+  // WO-QTY — typed_quantity_fill (default OFF): when Karim's last turn asked a
+  // quantity question for the current draft item, a bare numeric answer (or a
+  // qty:N button id when the typed-actions flag is otherwise off) is handled by
+  // the same deterministic server rail as quantity taps. Non-numeric input, a
+  // stale/no pending quantity prompt, or an ambiguous draft falls through below
+  // unchanged to the existing model path.
+  if (
+    coalesced.count === 1 &&
+    typedConfirmMessage == null &&
+    isFeatureExplicitlyEnabled("typed_quantity_fill", convFlags)
+  ) {
+    const quantitySafetyProbe = {
+      allergenAvoidance: detectAllergenAvoidance(rawText).fired,
+      allergenSymptom: detectAllergenSymptom(rawText).fired,
+      phoneticSafetyNet: detectPhoneticSafetyNet(rawText, { sttConfidence: null, isVoiceTranscript: false }).fired,
+      allergenEmergency: detectAllergenEmergency(rawText).fired,
+    };
+    let typed;
+    try {
+      typed = await handleTypedQuantityFill(admin, {
+        restaurantId,
+        conversationId,
+        userMessage: rawText,
+        interactiveId: lastInteractiveId,
+        features: convFlags,
+        safetyProbe: quantitySafetyProbe,
+      });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      await sendAgentErrorFallbackToCustomer(admin, restaurantId, conversationId, phone, lastInboundAtMs);
+      await setOwnershipState(admin, conversationId, "HUMAN_ACTIVE", {
+        extra: { owner: "human", status: "يحتاج تدخل موظف", escalation_reason: `typed_quantity_fill_error: ${detail}` },
+      });
+      await noteToTimeline(
+        admin,
+        restaurantId,
+        conversationId,
+        "تعذّر ضبط الكمية تلقائياً — تم تحويل المحادثة لموظف للمتابعة.",
+        { kind: "typed_quantity_fill_error", detail }
+      );
+      await recordCriticalAlert(admin, { restaurantId, type: "agent_error", detail: `typed_quantity_fill_error: ${detail}`, conversationId });
+      if (turnClaimDeployed) await releaseTurn(admin, conversationId);
+      return { status: "agent_error", error: detail };
+    }
+    if (typed.kind === "handled") {
+      if (coalescingActive) {
+        try {
+          await admin
+            .from("conversations")
+            .update({ last_answered_inbound_at: new Date(coalesced.maxCreatedAtMs).toISOString() })
+            .eq("id", conversationId);
+        } catch (e) {
+          console.error("[respond-and-send] typed-quantity watermark update failed (non-blocking)", e);
+        }
+      }
+      if (turnClaimDeployed) await releaseTurn(admin, conversationId);
+      const send = typed.presentation
+        ? await sendWhatsAppInteractive({ to: phone, body: typed.reply, presentation: typed.presentation, lastInboundAtMs })
+        : await sendWhatsAppText({ to: phone, text: typed.reply, lastInboundAtMs });
+      if (typed.replyMessageId) {
+        await admin
+          .from("messages")
+          .update(
+            send.status === "sent"
+              ? { status: "sent", channel_message_id: send.externalMessageId ?? null }
+              : { status: send.status === "skipped" ? "sent" : "failed" }
+          )
+          .eq("id", typed.replyMessageId);
+      }
+      if (send.status === "failed") {
+        await noteToTimeline(
+          admin,
+          restaurantId,
+          conversationId,
+          `تعذّر إرسال رد ضبط الكمية عبر واتساب: ${send.error ?? "خطأ غير معروف"}. الرسالة محفوظة ويمكن إعادة المحاولة.`,
+          { kind: "send_error", source: "typed_quantity_fill", action: typed.action, windowState: send.windowState, attempts: send.attempts }
+        );
+        return { status: "send_failed", reply: typed.reply, sendStatus: "failed", error: send.error };
+      }
+      return { status: "responded", reply: typed.reply, escalate: false, sendStatus: send.status };
     }
   }
 

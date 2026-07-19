@@ -14,6 +14,11 @@ import { loadResolvedPaymentMethods } from "@/lib/payments/resolve";
 import { DEFAULT_PAYMENT_CONFIG } from "@/lib/payments/config";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import {
+  draftFromQuantityPrompt,
+  parseBareQuantityAnswer,
+  quantityFromInteractiveId,
+} from "@/lib/messaging/quantity-fill";
+import {
   emptyDraft,
   executeTool,
   type OrderDraft,
@@ -49,6 +54,13 @@ export type TypedInteractiveActionResult =
       kind: "confirm_gate";
       id: "confirm_order";
       userMessage: string;
+    };
+
+export type TypedQuantityFillResult =
+  | Extract<TypedInteractiveActionResult, { kind: "handled" }>
+  | {
+      kind: "pass_through";
+      reason: "non_numeric" | "no_pending_quantity" | "ambiguous_draft";
     };
 
 type Dialect = "egyptian" | "saudi" | string;
@@ -196,6 +208,28 @@ async function loadLatestOpenDraft(
   const ageMs = Date.now() - new Date(firstWithDraft.created_at as string).getTime();
   if (ageMs > DRAFT_FRESHNESS_MS) return emptyDraft(currency);
   return structuredClone((firstWithDraft.meta as Record<string, unknown>).draft as OrderDraft);
+}
+
+async function loadLatestPendingQuantityDraft(
+  admin: SupabaseClient,
+  conversationId: string
+): Promise<OrderDraft | null> {
+  const { data: priorDraftRows } = await admin
+    .from("messages")
+    .select("text, meta, created_at")
+    .eq("conversation_id", conversationId)
+    .eq("sender", "ai")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const latest = (priorDraftRows ?? [])[0] as
+    | { text: string | null; meta: Record<string, unknown> | null; created_at: string }
+    | undefined;
+  if (!latest) return null;
+  const draft = draftFromQuantityPrompt(latest);
+  if (!draft) return null;
+  const ageMs = Date.now() - new Date(latest.created_at).getTime();
+  if (ageMs > DRAFT_FRESHNESS_MS) return null;
+  return structuredClone(draft as OrderDraft);
 }
 
 function buildToolContext(args: {
@@ -350,6 +384,94 @@ export async function handleTypedInteractiveAction(
     kind: "handled",
     id,
     action,
+    reply,
+    replyMessageId: (msg?.id as string) ?? null,
+    presentation,
+    signals: ctx.signals,
+    toolNames: applied.toolNames,
+  };
+}
+
+export async function handleTypedQuantityFill(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string;
+    conversationId: string;
+    userMessage: string;
+    interactiveId?: string | null;
+    features: Record<string, unknown> | null;
+    safetyProbe: Record<string, unknown>;
+  }
+): Promise<TypedQuantityFillResult> {
+  const qty = quantityFromInteractiveId(args.interactiveId) ?? parseBareQuantityAnswer(args.userMessage);
+  if (qty == null) return { kind: "pass_through", reason: "non_numeric" };
+
+  const draft = await loadLatestPendingQuantityDraft(admin, args.conversationId);
+  if (!draft) return { kind: "pass_through", reason: "no_pending_quantity" };
+  if (draft.lines.length !== 1) return { kind: "pass_through", reason: "ambiguous_draft" };
+
+  const { data: r } = await admin
+    .from("restaurants")
+    .select("dialect,currency,tax_mode,tax_rate,payment_config,feature_flags")
+    .eq("id", args.restaurantId)
+    .single();
+  const restaurant = (r ?? {}) as Record<string, unknown>;
+  const dialect = String(restaurant.dialect ?? "egyptian");
+  const features = (restaurant.feature_flags as Record<string, unknown> | null) ?? args.features;
+  const brain = await loadBrain(admin, args.restaurantId);
+  const payments = await loadResolvedPaymentMethods(admin, args.restaurantId, {
+    paymentConfig: restaurant.payment_config ?? DEFAULT_PAYMENT_CONFIG,
+    featureFlags: features,
+  });
+  const ctx = buildToolContext({
+    brain,
+    draft,
+    features,
+    taxMode: String(restaurant.tax_mode ?? "inclusive"),
+    taxRate: Number(restaurant.tax_rate ?? 0),
+    paymentConfig: payments.config,
+  });
+  const id = `qty:${qty}`;
+  const applied = applyTypedAction(ctx, "qty", id);
+  if (applied.replyKey !== "qty") return { kind: "pass_through", reason: "ambiguous_draft" };
+  const reply = stringFor(applied.replyKey, dialect, applied.qty);
+  const presentation = ctx.draft.lines.length > 0 && !ctx.draft.fulfillment ? fulfillmentPresentation() : orderActionsPresentation();
+
+  const { data: msg } = await admin
+    .from("messages")
+    .insert({
+      restaurant_id: args.restaurantId,
+      conversation_id: args.conversationId,
+      direction: "outbound",
+      sender: "ai",
+      text: reply,
+      status: "sent",
+      meta: {
+        model: "deterministic_typed_quantity_fill",
+        typedAction: { id, action: "qty", source: "typed_quantity_fill", safetyProbe: args.safetyProbe },
+        draft: ctx.draft,
+        presentation,
+        photoRequests: [],
+      },
+    })
+    .select("id")
+    .single();
+  await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", args.conversationId);
+  if (ctx.signals.length) {
+    await admin.from("conversation_signals").insert(
+      ctx.signals.map((s) => ({
+        restaurant_id: args.restaurantId,
+        conversation_id: args.conversationId,
+        type: s.type,
+        detail: s.detail,
+      }))
+    );
+  }
+
+  return {
+    kind: "handled",
+    id,
+    action: "qty",
     reply,
     replyMessageId: (msg?.id as string) ?? null,
     presentation,
