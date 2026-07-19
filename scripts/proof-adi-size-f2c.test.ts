@@ -18,7 +18,7 @@ const banned = (t: string) => scanBannedAllergyPhrases(t).includes("عادي");
 // sentence, so F2b blocked it and the thread looped even on «Hi». (normalizeAr collapses
 // newlines to spaces, so a «sentence» here is bounded only by ؟ ? . ! — «ج.م» splits at
 // its «.» → the surviving price signal is «١٣٠ ج».)
-const LIVE_1005 = "طلبك: ميسي زنجر (عادي) ×١ — ١٣٠ ج.م. تأكد الطلب؟";
+const LIVE_1005 = "طلبك: ميسي زنجر (عادي) ×١ — ١٣٠ ج.م. أجهّزلك الطلب؟";
 ok("live #1005 cart recap: «عادي» NOT banned (the fix)", !banned(LIVE_1005));
 ok("live #1005 cart recap: clean (no §0 hit at all)", scanBannedAllergyPhrases(LIVE_1005).length === 0);
 

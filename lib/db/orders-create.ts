@@ -157,7 +157,7 @@ export async function persistOrderFromDraft(
     quantity: l.quantity,
     unitPrice: l.unitPrice,
     variant: l.variant?.name,
-    choices: l.choices.map((c) => `${c.groupName}: ${c.label}`),
+    choices: l.choices.map((c) => c.label),
     modifiers: l.modifiers.map((m) => m.name),
     total: l.lineTotal,
   }));

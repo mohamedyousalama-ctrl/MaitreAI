@@ -10,6 +10,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { Resvg } from "@resvg/resvg-js";
+import { formatCustomerVisibleNumbers, optionValueOnly, type CustomerDigitStyle } from "@/lib/util/customer-visible-format";
 
 // --- fonts (loaded + cached once) -------------------------------------------
 const FONT_DIR = join(process.cwd(), "public", "fonts");
@@ -55,6 +56,8 @@ export interface ReceiptData {
   taxRegNo?: string;
   total: number;
   currency: string;
+  /** Customer-facing digit style for this tenant. Egypt uses Arabic-Indic. */
+  digitStyle?: CustomerDigitStyle;
   paymentStatus?: string;
   /** "cod" | "vodafone_cash" | … — drives the amount-to-collect vs VF-pending line. */
   paymentMethod?: string;
@@ -80,7 +83,10 @@ const esc = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"
 // Force an LTR run (order numbers, "#1048") so neutrals like # don't jump sides
 // inside the surrounding RTL text. U+202A LRE … U+202C PDF.
 const ltr = (s: string) => `‪${s}‬`;
-const money = (n: number, cur: string) => `${Math.round(Number(n) * 100) / 100} ${cur}`;
+const formatDigits = (s: number | string, digitStyle: CustomerDigitStyle = "western") =>
+  formatCustomerVisibleNumbers(String(s), digitStyle, { preserveQuotedText: false });
+const money = (n: number, cur: string, digitStyle: CustomerDigitStyle = "western") =>
+  formatDigits(`${Math.round(Number(n) * 100) / 100} ${cur}`, digitStyle);
 const FULFILL_AR = { delivery: "توصيل", pickup: "استلام" } as const;
 const PAYMENT_AR: Record<string, string> = {
   paid: "مدفوع",
@@ -89,7 +95,7 @@ const PAYMENT_AR: Record<string, string> = {
   pending: "بانتظار الدفع",
 };
 
-function fmtDate(iso?: string): string {
+function fmtDate(iso?: string, digitStyle: CustomerDigitStyle = "western"): string {
   const d = iso ? new Date(iso) : new Date();
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -97,7 +103,7 @@ function fmtDate(iso?: string): string {
   const min = String(d.getMinutes()).padStart(2, "0");
   const mer = h < 12 ? "ص" : "م";
   h = h % 12 || 12;
-  return `${dd}/${mm} · ${h}:${min} ${mer}`;
+  return formatDigits(`${dd}/${mm} · ${h}:${min} ${mer}`, digitStyle);
 }
 
 // Width presets. Thermal widths print clean on the rolls restaurants actually
@@ -133,24 +139,26 @@ function layout(width: ReceiptWidth) {
 // --- customer receipt (branded) ---------------------------------------------
 export function buildReceiptSvg(d: ReceiptData, width: ReceiptWidth = "standard"): { svg: string; width: number } {
   const { W, s, PAD, tRight, tLeft, tMid, rule } = layout(width);
+  const digitStyle = d.digitStyle ?? "western";
+  const f = (s: number | string) => formatDigits(s, digitStyle);
   const parts: string[] = [];
   let y = s(80);
-  parts.push(tMid(y, d.restaurantName, 38, "#2a211b", 600));
+  parts.push(tMid(y, f(d.restaurantName), 38, "#2a211b", 600));
   y += s(34);
-  parts.push(tMid(y, `إيصال طلب · ${ltr(d.orderNumber)}`, 20, "#b5502e", 500));
+  parts.push(tMid(y, `إيصال طلب · ${ltr(f(d.orderNumber))}`, 20, "#b5502e", 500));
   y += s(26);
-  parts.push(tMid(y, `${FULFILL_AR[d.fulfillment]} · ${fmtDate(d.createdAt)}`, 18, "#9b8b7c"));
+  parts.push(tMid(y, `${FULFILL_AR[d.fulfillment]} · ${fmtDate(d.createdAt, digitStyle)}`, 18, "#9b8b7c"));
   y += s(28);
   parts.push(rule(y));
   y += s(36);
 
   for (const it of d.items) {
-    parts.push(tRight(y, `${it.quantity}×  ${it.name}`, 26, "#2a211b", 500));
-    parts.push(tLeft(y, money(it.total, d.currency), 26, "#2a211b", 500));
+    parts.push(tRight(y, `${f(it.quantity)}×  ${f(it.name)}`, 26, "#2a211b", 500));
+    parts.push(tLeft(y, money(it.total, d.currency, digitStyle), 26, "#2a211b", 500));
     y += s(34);
-    const opts = [it.variant, ...(it.choices ?? []), ...(it.modifiers ?? [])].filter(Boolean) as string[];
+    const opts = ([it.variant, ...(it.choices ?? []), ...(it.modifiers ?? [])].filter(Boolean) as string[]).map(optionValueOnly);
     if (opts.length) {
-      parts.push(tRight(y, opts.join("، "), 20, "#9b8b7c"));
+      parts.push(tRight(y, f(opts.join("، ")), 20, "#9b8b7c"));
       y += s(28);
     }
     if (it.notes) {
@@ -167,14 +175,14 @@ export function buildReceiptSvg(d: ReceiptData, width: ReceiptWidth = "standard"
     parts.push(tLeft(y, amount, bold ? 28 : 22, bold ? "#b5502e" : "#6a5c4e", bold ? 600 : 400));
     y += bold ? s(40) : s(32);
   };
-  totalsRow("المجموع الفرعي", money(d.subtotal, d.currency));
-  if (d.fulfillment === "delivery") totalsRow("رسوم التوصيل", money(d.deliveryFee, d.currency));
-  if (d.discountTotal && d.discountTotal > 0) totalsRow("الخصم", `- ${money(d.discountTotal, d.currency)}`);
-  if (d.taxAmount && d.taxAmount > 0) totalsRow(`ضريبة القيمة المضافة (${d.taxRate}%)`, money(d.taxAmount, d.currency));
-  totalsRow("الإجمالي", money(d.total, d.currency), true);
+  totalsRow("المجموع الفرعي", money(d.subtotal, d.currency, digitStyle));
+  if (d.fulfillment === "delivery") totalsRow("رسوم التوصيل", money(d.deliveryFee, d.currency, digitStyle));
+  if (d.discountTotal && d.discountTotal > 0) totalsRow("الخصم", `- ${money(d.discountTotal, d.currency, digitStyle)}`);
+  if (d.taxAmount && d.taxAmount > 0) totalsRow(`ضريبة القيمة المضافة (${f(d.taxRate ?? 0)}%)`, money(d.taxAmount, d.currency, digitStyle));
+  totalsRow("الإجمالي", money(d.total, d.currency, digitStyle), true);
 
   if (d.taxRegNo) {
-    parts.push(tRight(y, `الرقم الضريبي: ${ltr(d.taxRegNo)}`, 18, "#9b8b7c"));
+    parts.push(tRight(y, `الرقم الضريبي: ${ltr(f(d.taxRegNo))}`, 18, "#9b8b7c"));
     y += s(28);
   }
 
@@ -190,7 +198,7 @@ export function buildReceiptSvg(d: ReceiptData, width: ReceiptWidth = "standard"
   y += s(10);
   parts.push(rule(y));
   y += s(36);
-  parts.push(tMid(y, `شكراً لطلبك من ${d.restaurantName}`, 20, "#b5502e", 500));
+  parts.push(tMid(y, `شكراً لطلبك من ${f(d.restaurantName)}`, 20, "#b5502e", 500));
   y += s(30);
 
   const H = y + PAD;
@@ -210,6 +218,8 @@ const SOURCE_AR: Record<string, string> = { whatsapp: "واتساب", web: "ال
 // (word-wrapped). Money is shown from STORED values — never recomputed here.
 export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "standard"): { svg: string; width: number } {
   const { W, s, PAD, tRight, tLeft, tMid, rule } = layout(width);
+  const digitStyle = d.digitStyle ?? "western";
+  const f = (s: number | string) => formatDigits(s, digitStyle);
   const LEFT = PAD;
   const CW = W - 2 * PAD;
   const cur = d.currency;
@@ -239,17 +249,17 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
 
   let y = s(48);
   // 1. Restaurant + branch + print timestamp (small, top).
-  parts.push(tRight(y, d.restaurantName || "", 22, "#000", 700));
-  if (d.branchName) parts.push(tLeft(y, d.branchName, 18, "#444"));
+  parts.push(tRight(y, f(d.restaurantName || ""), 22, "#000", 700));
+  if (d.branchName) parts.push(tLeft(y, f(d.branchName), 18, "#444"));
   y += s(24);
-  parts.push(tRight(y, `طُبع: ${fmtDate()}`, 16, "#666"));
-  if (d.createdAt) parts.push(tLeft(y, `الطلب: ${fmtDate(d.createdAt)}`, 16, "#666"));
+  parts.push(tRight(y, `طُبع: ${fmtDate(undefined, digitStyle)}`, 16, "#666"));
+  if (d.createdAt) parts.push(tLeft(y, `الطلب: ${fmtDate(d.createdAt, digitStyle)}`, 16, "#666"));
   y += s(18);
   parts.push(rule(y, "#000"));
   y += s(46);
 
   // 2. Order # (large) + fulfillment (large) + source.
-  parts.push(tRight(y, `طلب ${ltr(d.orderNumber)}`, 42, "#000", 800));
+  parts.push(tRight(y, `طلب ${ltr(f(d.orderNumber))}`, 42, "#000", 800));
   parts.push(tLeft(y, d.fulfillment === "delivery" ? "توصيل" : "استلام من الفرع", 26, "#000", 800));
   y += s(26);
   if (d.source) { parts.push(tRight(y, `المصدر: ${SOURCE_AR[d.source] ?? d.source}`, 16, "#666")); y += s(18); }
@@ -262,7 +272,7 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
     const h = note ? s(70) : s(42);
     parts.push(boxRect(y, h, "#fdecec", "#c0392b"));
     parts.push(tMid(y + s(27), "⚠️ حساسية — لا يتم التحضير قبل مراجعة المطعم", 19, "#a01b0b", 800));
-    if (note) parts.push(tMid(y + s(54), note, 21, "#a01b0b", 800));
+    if (note) parts.push(tMid(y + s(54), f(note), 21, "#a01b0b", 800));
     y += h + s(12);
   }
   y += s(8);
@@ -285,23 +295,23 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
     const h = s(50);
     parts.push(boxRect(y, h, "#fff7e6", "#000"));
     parts.push(tRight(y + s(32), `${d.fulfillment === "delivery" ? "المطلوب تحصيله نقداً" : "يُحصّل عند الاستلام"}:`, 23, "#000", 800));
-    parts.push(tLeft(y + s(34), money(d.total, cur), 34, "#000", 800));
+    parts.push(tLeft(y + s(34), money(d.total, cur, digitStyle), 34, "#000", 800));
     y += h + s(14);
   }
   // Subtotal | delivery-fee split (small, stored values).
-  parts.push(tRight(y, "المجموع الفرعي", 18, "#444")); parts.push(tLeft(y, money(d.subtotal, cur), 18, "#444")); y += s(24);
-  if (d.fulfillment === "delivery") { parts.push(tRight(y, "رسوم التوصيل", 18, "#444")); parts.push(tLeft(y, money(d.deliveryFee, cur), 18, "#444")); y += s(24); }
-  if (d.discountTotal && d.discountTotal > 0) { parts.push(tRight(y, "الخصم", 18, "#444")); parts.push(tLeft(y, `- ${money(d.discountTotal, cur)}`, 18, "#444")); y += s(24); }
-  parts.push(tRight(y, "الإجمالي", 22, "#000", 800)); parts.push(tLeft(y, money(d.total, cur), 22, "#000", 800)); y += s(30);
+  parts.push(tRight(y, "المجموع الفرعي", 18, "#444")); parts.push(tLeft(y, money(d.subtotal, cur, digitStyle), 18, "#444")); y += s(24);
+  if (d.fulfillment === "delivery") { parts.push(tRight(y, "رسوم التوصيل", 18, "#444")); parts.push(tLeft(y, money(d.deliveryFee, cur, digitStyle), 18, "#444")); y += s(24); }
+  if (d.discountTotal && d.discountTotal > 0) { parts.push(tRight(y, "الخصم", 18, "#444")); parts.push(tLeft(y, `- ${money(d.discountTotal, cur, digitStyle)}`, 18, "#444")); y += s(24); }
+  parts.push(tRight(y, "الإجمالي", 22, "#000", 800)); parts.push(tLeft(y, money(d.total, cur, digitStyle), 22, "#000", 800)); y += s(30);
   parts.push(rule(y, "#000"));
   y += s(42);
 
   // 4. Items + quantities + modifiers (large, readable).
   for (const it of d.items) {
-    parts.push(tRight(y, `${it.quantity}×  ${it.name}`, 32, "#000", 700));
+    parts.push(tRight(y, `${f(it.quantity)}×  ${f(it.name)}`, 32, "#000", 700));
     y += s(38);
-    const opts = [it.variant, ...(it.choices ?? []), ...(it.modifiers ?? [])].filter(Boolean) as string[];
-    if (opts.length) { for (const ln of wrap(`+ ${opts.join("، ")}`, 22)) { parts.push(tRight(y, ln, 22, "#333")); y += s(28); } }
+    const opts = ([it.variant, ...(it.choices ?? []), ...(it.modifiers ?? [])].filter(Boolean) as string[]).map(optionValueOnly);
+    if (opts.length) { for (const ln of wrap(`+ ${f(opts.join("، "))}`, 22)) { parts.push(tRight(y, ln, 22, "#333")); y += s(28); } }
     if (it.notes) { for (const ln of wrap(`ملاحظة: ${it.notes}`, 22)) { parts.push(tRight(y, ln, 22, "#000", 700)); y += s(28); } }
     y += s(6);
   }
@@ -320,7 +330,7 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
       parts.push(tMid(y + s(26), "⚠️ العنوان ناقص — تواصل مع العميل", 19, "#a01b0b", 800));
       y += h + s(12);
     }
-    if (d.zoneName) { parts.push(tRight(y, `المنطقة: ${d.zoneName}`, 20, "#000")); y += s(28); }
+    if (d.zoneName) { parts.push(tRight(y, `المنطقة: ${f(d.zoneName)}`, 20, "#000")); y += s(28); }
   }
   if (d.customerName) { parts.push(tRight(y, `العميل: ${d.customerName}`, 20, "#000")); y += s(28); }
   if (d.customerPhone) {

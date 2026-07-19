@@ -67,6 +67,7 @@ import {
 } from "@/lib/ai/allergen-companion-flow";
 import { recordAllergyEvent } from "@/lib/db/allergy-audit";
 import type { LlmMessage } from "@/lib/ai/llm/types";
+import { formatCustomerVisiblePresentation, formatCustomerVisibleText } from "@/lib/util/customer-visible-format";
 
 export type RespondAndSendStatus =
   | "responded"
@@ -275,19 +276,21 @@ async function handleAllergyRecovery(
 
     // Persist + send the reply (marked so the next turn recognizes the pending question).
     const metaKind = action === "send_question" ? "allergy_recovery_question" : "allergy_recovery_ack";
+    const outboundText = formatCustomerVisibleText(text, dialect);
     const { data: rmsg } = await admin
       .from("messages")
       .insert({
         restaurant_id: restaurantId, conversation_id: conversationId,
-        direction: "outbound", sender: "ai", text, status: "sent",
+        direction: "outbound", sender: "ai", text: outboundText, status: "sent",
         meta: { kind: metaKind },
       })
       .select("id")
       .single();
     let sendStatus = "sent";
+    const recoveryPresentation = formatCustomerVisiblePresentation({ kind: "buttons" as const, buttons }, dialect);
     const send = buttons.length
-      ? await sendWhatsAppInteractive({ to: phone, body: text, presentation: { kind: "buttons", buttons }, lastInboundAtMs })
-      : await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
+      ? await sendWhatsAppInteractive({ to: phone, body: outboundText, presentation: recoveryPresentation, lastInboundAtMs })
+      : await sendWhatsAppText({ to: phone, text: outboundText, lastInboundAtMs });
     sendStatus = send.status;
     if (rmsg?.id) {
       await admin.from("messages")
@@ -297,11 +300,11 @@ async function handleAllergyRecovery(
     await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
     await recordAllergyEvent(admin, {
       restaurantId, conversationId, allergens: [], customerMessage: messageText,
-      eventKind: "recovery", agentReply: text, humanOffered: action === "send_question",
+      eventKind: "recovery", agentReply: outboundText, humanOffered: action === "send_question",
       staffNotified: action !== "send_question", netReason: auditReason,
     }).catch(() => {});
 
-    return { kind: "reply", result: { status: statusKind, reply: text, sendStatus } };
+    return { kind: "reply", result: { status: statusKind, reply: outboundText, sendStatus } };
   } catch (e) {
     console.error("[companion:recovery] error (falling through to legacy)", e);
     return { kind: "none" };
@@ -376,6 +379,7 @@ async function handleCalmHeldInbound(
   const emergency = emergencyHit.fired || symptomHit.fired;
   const newAllergy = allergenHit.fired || phoneticHit.fired;
   const text = emergency ? emergencyReply(dialect) : newAllergy ? calmNewAllergyReply(dialect) : calmHoldingReply(dialect);
+  const outboundText = formatCustomerVisibleText(text, dialect);
   const metaKind = emergency ? "allergy_calm_hold_emergency" : newAllergy ? "allergy_calm_hold_new_allergy" : "allergy_calm_hold_wait";
   const { data: rmsg } = await admin
     .from("messages")
@@ -384,13 +388,13 @@ async function handleCalmHeldInbound(
       conversation_id: conversationId,
       direction: "outbound",
       sender: "ai",
-      text,
+      text: outboundText,
       status: "sent",
       meta: { kind: metaKind },
     })
     .select("id")
     .single();
-  const send = await sendWhatsAppText({ to: phone, text, lastInboundAtMs: Number.isFinite(lastInboundAtMs) ? lastInboundAtMs : Date.now() });
+  const send = await sendWhatsAppText({ to: phone, text: outboundText, lastInboundAtMs: Number.isFinite(lastInboundAtMs) ? lastInboundAtMs : Date.now() });
   if (rmsg?.id) {
     await admin.from("messages")
       .update(send.status === "sent" ? { status: "sent", channel_message_id: send.externalMessageId ?? null } : { status: "failed" })
@@ -413,7 +417,7 @@ async function handleCalmHeldInbound(
       allergens: parseAllergyNote(nextNote),
       customerMessage: messageText,
       eventKind: emergency ? "emergency" : "mention",
-      agentReply: text,
+      agentReply: outboundText,
       humanOffered: false,
       staffNotified: emergency,
       netReason: emergency
@@ -424,7 +428,7 @@ async function handleCalmHeldInbound(
 
   return {
     status: emergency ? "allergy_calm_emergency" : newAllergy ? "allergy_calm_new_allergy" : "allergy_calm_holding",
-    reply: text,
+    reply: outboundText,
     sendStatus: send.status,
   };
 }
@@ -438,10 +442,11 @@ async function sendMenuLinkFallback(
   phone: string,
   lastInboundAtMs: number
 ): Promise<void> {
-  const { data: r } = await admin.from("restaurants").select("slug").eq("id", restaurantId).maybeSingle();
+  const { data: r } = await admin.from("restaurants").select("slug,dialect").eq("id", restaurantId).maybeSingle();
   const slug = (r as { slug?: string | null } | null)?.slug ?? null;
+  const dialect = (r as { dialect?: string | null } | null)?.dialect ?? null;
   const url = slug ? `${appBaseUrl()}/order/${slug}` : appBaseUrl();
-  const text = `تقدر تتصفّح المنيو كامل بالصور من هنا 👇\n${url}`;
+  const text = `${formatCustomerVisibleText("تقدر تتصفّح المنيو كامل بالصور من هنا 👇", dialect)}\n${url}`;
   const send = await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
   await admin.from("messages").insert({
     restaurant_id: restaurantId,
@@ -478,7 +483,8 @@ async function sendAgentErrorFallbackToCustomer(
   try {
     if (!phone) return;
     const { data: r } = await admin.from("restaurants").select("dialect").eq("id", restaurantId).maybeSingle();
-    const text = agentErrorFallbackText((r as { dialect?: string | null } | null)?.dialect);
+    const dialect = (r as { dialect?: string | null } | null)?.dialect;
+    const text = formatCustomerVisibleText(agentErrorFallbackText(dialect), dialect);
     const send = await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
     await admin.from("messages").insert({
       restaurant_id: restaurantId,
@@ -956,7 +962,7 @@ export async function respondAndSendWhatsApp(
 
         const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
         const ackDialect = String((rFlags as { dialect?: string } | null)?.dialect ?? "egyptian");
-        const ackText = safetyBridgeAck(ackDialect);
+        const ackText = formatCustomerVisibleText(safetyBridgeAck(ackDialect), ackDialect);
         // 1. CUSTOMER ACK — persist + send. NOTE: we do NOT bump conversations.updated_at (unlike
         //    the recovery send): an automated ack is not operator activity.
         const { data: ackMsg } = await admin
@@ -1054,13 +1060,14 @@ export async function respondAndSendWhatsApp(
   // auto-reply — while test/live (and closed) reply normally. The stored
   // agent_mode (setup|test|live|paused) maps onto SystemMode; a missing value
   // defaults to live so the existing reply path is unchanged.
-  const { data: rest } = await admin.from("restaurants").select("agent_mode, feature_flags").eq("id", restaurantId).single();
+  const { data: rest } = await admin.from("restaurants").select("agent_mode, feature_flags, dialect").eq("id", restaurantId).single();
   const agentMode = ((rest?.agent_mode as string) || "live") as SystemMode;
   if (!modeAllowsAgentReply(agentMode)) return { status: "skipped_mode" };
   // WO-LIVE4-F2 — per-conversation inbound coalescing (flag inbound_coalescing, default
   // OFF). feature_flags is an existing column, so folding it into the agent_mode read is
   // deploy-safe; the WATERMARK column read below is the one that must degrade gracefully.
   const convFlags = (rest?.feature_flags as Record<string, unknown> | null) ?? null;
+  const outboundDialect = String((rest as { dialect?: string | null } | null)?.dialect ?? "egyptian");
   const coalescingOn = isFeatureExplicitlyEnabled("inbound_coalescing", convFlags);
 
   const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
@@ -1265,16 +1272,20 @@ export async function respondAndSendWhatsApp(
         }
       }
       if (turnClaimDeployed) await releaseTurn(admin, conversationId);
-      const send = typed.presentation
-        ? await sendWhatsAppInteractive({ to: phone, body: typed.reply, presentation: typed.presentation, lastInboundAtMs })
-        : await sendWhatsAppText({ to: phone, text: typed.reply, lastInboundAtMs });
+      const typedReply = formatCustomerVisibleText(typed.reply, outboundDialect);
+      const typedPresentation = typed.presentation
+        ? formatCustomerVisiblePresentation(typed.presentation, outboundDialect)
+        : null;
+      const send = typedPresentation
+        ? await sendWhatsAppInteractive({ to: phone, body: typedReply, presentation: typedPresentation, lastInboundAtMs })
+        : await sendWhatsAppText({ to: phone, text: typedReply, lastInboundAtMs });
       if (typed.replyMessageId) {
         await admin
           .from("messages")
           .update(
             send.status === "sent"
-              ? { status: "sent", channel_message_id: send.externalMessageId ?? null }
-              : { status: send.status === "skipped" ? "sent" : "failed" }
+              ? { text: typedReply, status: "sent", channel_message_id: send.externalMessageId ?? null }
+              : { text: typedReply, status: send.status === "skipped" ? "sent" : "failed" }
           )
           .eq("id", typed.replyMessageId);
       }
@@ -1286,9 +1297,9 @@ export async function respondAndSendWhatsApp(
           `تعذّر إرسال رد الإجراء التفاعلي عبر واتساب: ${send.error ?? "خطأ غير معروف"}. الرسالة محفوظة ويمكن إعادة المحاولة.`,
           { kind: "send_error", source: "typed_interactive_action", action: typed.action, windowState: send.windowState, attempts: send.attempts }
         );
-        return { status: "send_failed", reply: typed.reply, sendStatus: "failed", error: send.error };
+        return { status: "send_failed", reply: typedReply, sendStatus: "failed", error: send.error };
       }
-      return { status: "responded", reply: typed.reply, escalate: false, sendStatus: send.status };
+      return { status: "responded", reply: typedReply, escalate: false, sendStatus: send.status };
     }
   }
 
@@ -1366,7 +1377,7 @@ export async function respondAndSendWhatsApp(
   // HANDOFF-HARDENING (Fix 1): after a timeout auto-return, open with an honest
   // resume line that acknowledges the wait BEFORE the Brain answers the message.
   if (resumedAfterTimeout) {
-    const resumeText = "معلش اتأخرنا عليك 🙏 أنا معاك دلوقتي ونكمّل على طول.";
+    const resumeText = formatCustomerVisibleText("معلش اتأخرنا عليك 🙏 أنا معاك دلوقتي ونكمّل على طول.", outboundDialect);
     const { data: rmsg } = await admin
       .from("messages")
       .insert({
@@ -1549,9 +1560,13 @@ export async function respondAndSendWhatsApp(
 
   // 4. Put the reply on the WhatsApp wire — as an interactive message when the
   //    Brain presented options (degrades to numbered text on failure), else text.
-  const send = outcome.presentation
-    ? await sendWhatsAppInteractive({ to: phone, body: outcome.reply, presentation: outcome.presentation, lastInboundAtMs })
-    : await sendWhatsAppText({ to: phone, text: outcome.reply, lastInboundAtMs });
+  const outboundReply = formatCustomerVisibleText(outcome.reply, outboundDialect);
+  const outboundPresentation = outcome.presentation
+    ? formatCustomerVisiblePresentation(outcome.presentation, outboundDialect)
+    : null;
+  const send = outboundPresentation
+    ? await sendWhatsAppInteractive({ to: phone, body: outboundReply, presentation: outboundPresentation, lastInboundAtMs })
+    : await sendWhatsAppText({ to: phone, text: outboundReply, lastInboundAtMs });
 
   if ((send.status === "sent" || send.status === "skipped") && outcome.perceptionAsync) {
     scheduleAsyncPerceptionAfterReply(admin, { restaurantId, conversationId, history, userMessage });
@@ -1566,7 +1581,7 @@ export async function respondAndSendWhatsApp(
       restaurantId,
       conversationId,
       phone,
-      replyText: outcome.reply,
+      replyText: outboundReply,
       inboundWasVoice,
       userMessage,
       safetyHold: outcome.escalate === true,
@@ -1636,10 +1651,10 @@ export async function respondAndSendWhatsApp(
     if (outcome.replyMessageId) {
       await admin
         .from("messages")
-        .update({ status: "sent", channel_message_id: send.externalMessageId ?? null })
+        .update({ text: outboundReply, status: "sent", channel_message_id: send.externalMessageId ?? null })
         .eq("id", outcome.replyMessageId);
     }
-    return { status: "responded", reply: outcome.reply, escalate: outcome.escalate, sendStatus: "sent" };
+    return { status: "responded", reply: outboundReply, escalate: outcome.escalate, sendStatus: "sent" };
   }
 
   if (send.status === "skipped") {
@@ -1647,13 +1662,16 @@ export async function respondAndSendWhatsApp(
     if (outcome.photoRequests.length || asksForMenuLink(userMessage)) {
       await sendRequestedPhotos(admin, restaurantId, conversationId, phone, outcome.photoRequests, lastInboundAtMs, { ownership_state: ownershipState, escalation_reason: (conv.escalation_reason as string | null) ?? null }, outcome.features, userMessage);
     }
-    return { status: "responded", reply: outcome.reply, escalate: outcome.escalate, sendStatus: "skipped" };
+    if (outcome.replyMessageId) {
+      await admin.from("messages").update({ text: outboundReply }).eq("id", outcome.replyMessageId);
+    }
+    return { status: "responded", reply: outboundReply, escalate: outcome.escalate, sendStatus: "skipped" };
   }
 
   // Real failure (network / 4xx after retries, or outside the 24h window) —
   // mark the reply failed and surface it so an operator can act. Nothing dropped.
   if (outcome.replyMessageId) {
-    await admin.from("messages").update({ status: "failed" }).eq("id", outcome.replyMessageId);
+    await admin.from("messages").update({ text: outboundReply, status: "failed" }).eq("id", outcome.replyMessageId);
   }
   await noteToTimeline(
     admin,
@@ -1672,7 +1690,7 @@ export async function respondAndSendWhatsApp(
   });
   return {
     status: "send_failed",
-    reply: outcome.reply,
+    reply: outboundReply,
     escalate: outcome.escalate,
     sendStatus: send.status,
     error: send.error,

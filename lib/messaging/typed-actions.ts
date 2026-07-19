@@ -55,8 +55,8 @@ type Dialect = "egyptian" | "saudi" | string;
 
 export const TYPED_ACTION_STRINGS = Object.freeze({
   set_pickup: {
-    egyptian: "تمام، استلام من الفرع. تحب أأكد الطلب ولا تضيف حاجة؟",
-    saudi: "تمام، استلام من الفرع. تبي أأكد الطلب ولا تضيف شي؟",
+    egyptian: "تمام، استلام من الفرع. أجهّزلك الطلب؟ ولا تضيف حاجة؟",
+    saudi: "تمام، استلام من الفرع. أجهّزلك الطلب؟ ولا تضيف شي؟",
   },
   set_delivery: {
     egyptian: "تمام، التوصيل. ابعت عنوان التوصيل الكامل عشان نكمل الطلب.",

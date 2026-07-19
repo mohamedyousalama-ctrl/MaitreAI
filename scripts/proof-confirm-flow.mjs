@@ -6,7 +6,7 @@ const H = { apikey: SR, Authorization: `Bearer ${SR}`, "Content-Type": "applicat
 const REP = { ...H, Prefer: "return=representation" };
 const j = (r) => r.json();
 const draft = (fulfillment) => ({ lines:[{itemId:ITEM,name:"ساندويتش فراخ مشوية",quantity:1,unitPrice:65,choices:[],modifiers:[],lineTotal:65}], fulfillment, deliveryZone:fulfillment==="delivery"?"مدينة نصر":null, deliveryFee:0, subtotal:65, tax:0, taxRate:0, total:65, currency:"ج.م", finalized:false });
-const RECAP = "طلبك دلوقتي:\n- ١× ساندويتش فراخ مشوية — ٦٥ ج.م\n**الإجمالي: ٦٥ ج.م**\nتأكد الطلب؟";
+const RECAP = "طلبك دلوقتي:\n- ١× ساندويتش فراخ مشوية — ٦٥ ج.م\n*الإجمالي: ٦٥ ج.م*\nأجهّزلك الطلب؟";
 async function seed(fulfillment){
   const phone=`2010${Math.floor(1e8+Math.random()*8e8)}`;
   const c=await fetch(`${SB}/rest/v1/customers`,{method:"POST",headers:REP,body:JSON.stringify({restaurant_id:RID,phone,name:"confirm test"})}).then(j);

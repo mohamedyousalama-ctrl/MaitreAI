@@ -155,7 +155,7 @@ export { isExplicitOrderConfirmation };
 // (possibly stale) basket (#1017). The model loop then handles it instead.
 const RESET_ESCALATION_RE = /(أحوّل|أحول|نحوّل|نحول|حوّلت|حولت|الفريق|موظف|مش بتتمسح|ما بتتمسح|ماتتمسح|بتتمسح|نبدأ من الأول|نبدا من الأول|من الأول|نمسح|أمسح|امسح|تتمسح)/u;
 // Positive signal that كريم just read the order back / asked to confirm it.
-const ORDER_READBACK_RE = /(الإجمالي|الاجمالي|المجموع|تأكيد الطلب|تأكد الطلب|تؤكد الطلب|أأكد|نأكد|أكدّ|تأكيد|أرسل الطلب|نكمل للدفع)/u;
+const ORDER_READBACK_RE = /(الإجمالي|الاجمالي|المجموع|تأكيد الطلب|تأكد الطلب|تؤكد الطلب|أجهّزلك|أجهزلك|أأكد|نأكد|أكدّ|تأكيد|أرسل الطلب|نكمل للدفع)/u;
 
 function lastAssistantText(history: LlmMessage[]): string {
   for (let i = history.length - 1; i >= 0; i--) {
@@ -340,6 +340,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     taxRate: input.brain.taxRate ?? 0,
     paymentConfig: input.brain.paymentConfig ?? DEFAULT_PAYMENT_CONFIG,
     resendReceipt: false,
+    sessionAllergyNote: input.brain.sessionAllergyNote,
     // WO-LIVE5-CONFIRM-GATE — whether THIS turn's customer message is an explicit order
     // confirmation. finalize_draft refuses when this is false, so the model-tool-loop
     // path can never commit a phantom order on a non-confirmation (live #1005). The

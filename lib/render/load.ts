@@ -7,6 +7,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ReceiptData, ReceiptItem } from "./receipt";
+import { dialectProfile } from "@/lib/ai/dialect";
+import { optionValueOnly } from "@/lib/util/customer-visible-format";
 
 interface RawItem {
   name?: unknown;
@@ -21,7 +23,7 @@ interface RawItem {
 export async function loadReceiptData(client: SupabaseClient, orderId: string): Promise<ReceiptData | null> {
   const { data: o } = await client
     .from("orders")
-    .select("*, customers(name,phone), branches(name), restaurants(name,currency,tax_registration_no), conversations(is_safety_hold,ownership_state), delivery_zones(name)")
+    .select("*, customers(name,phone), branches(name), restaurants(name,currency,tax_registration_no,dialect), conversations(is_safety_hold,ownership_state), delivery_zones(name)")
     .eq("id", orderId)
     .single();
   if (!o) return null;
@@ -46,14 +48,14 @@ export async function loadReceiptData(client: SupabaseClient, orderId: string): 
   const items: ReceiptItem[] = rawItems.map((it) => ({
     name: String(it.name ?? ""),
     quantity: Number(it.quantity ?? 1),
-    modifiers: Array.isArray(it.modifiers) ? (it.modifiers as unknown[]).map(String) : [],
+    modifiers: Array.isArray(it.modifiers) ? (it.modifiers as unknown[]).map(String).map(optionValueOnly) : [],
     variant: it.variant ? String(it.variant) : undefined,
-    choices: Array.isArray(it.choices) ? (it.choices as unknown[]).map(String) : [],
+    choices: Array.isArray(it.choices) ? (it.choices as unknown[]).map(String).map(optionValueOnly) : [],
     total: Number(it.total ?? 0),
     notes: it.notes ? String(it.notes) : undefined,
   }));
 
-  const rest = (row.restaurants as { name?: string; currency?: string; tax_registration_no?: string } | null) ?? {};
+  const rest = (row.restaurants as { name?: string; currency?: string; tax_registration_no?: string; dialect?: string } | null) ?? {};
   const cust = (row.customers as { name?: string; phone?: string } | null) ?? {};
   const branch = (row.branches as { name?: string } | null) ?? {};
   const conv = (row.conversations as { is_safety_hold?: boolean; ownership_state?: string } | null) ?? {};
@@ -78,6 +80,7 @@ export async function loadReceiptData(client: SupabaseClient, orderId: string): 
     taxAmount: Number(row.tax_amount ?? 0),
     taxRate: Number(row.tax_rate ?? 0),
     taxRegNo: rest.tax_registration_no ?? undefined,
+    digitStyle: dialectProfile(rest.dialect).digitStyle,
     total: Number(row.total ?? 0),
     currency: String(row.currency ?? rest.currency ?? "ر.س"),
     paymentStatus: row.payment_status ? String(row.payment_status) : undefined,
