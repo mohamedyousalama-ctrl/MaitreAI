@@ -7,8 +7,36 @@ export function digitStyleForDialect(dialect: string | null | undefined): Custom
   return dialectProfile(dialect).digitStyle;
 }
 
+function isWordChar(ch: string | undefined): boolean {
+  return !!ch && /[\p{L}\p{N}]/u.test(ch);
+}
+
 export function sanitizeWhatsAppBold(text: string): string {
-  return String(text).replace(/(^|[^*])\*\*([^*\n]+?)\*\*(?!\*)/g, "$1*$2*");
+  const markdownNormalized = String(text).replace(/(^|[^*])\*\*([^*\n]+?)\*\*(?!\*)/g, "$1*$2*");
+  let out = "";
+  let lastIndex = 0;
+  const pairRe = /\*([^*\n]+?)\*/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pairRe.exec(markdownNormalized))) {
+    out += markdownNormalized.slice(lastIndex, match.index).replace(/\*/g, "");
+
+    const content = match[1] ?? "";
+    const trimmed = content.trim();
+    if (!trimmed || trimmed !== content) {
+      out += trimmed;
+    } else {
+      const next = markdownNormalized[match.index + match[0].length];
+      if (isWordChar(out.at(-1))) out += " ";
+      out += `*${content}*`;
+      if (isWordChar(next)) out += " ";
+    }
+
+    lastIndex = pairRe.lastIndex;
+  }
+
+  out += markdownNormalized.slice(lastIndex).replace(/\*/g, "");
+  return out;
 }
 
 export function formatCustomerVisibleNumbers(

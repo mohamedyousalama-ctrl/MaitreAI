@@ -103,6 +103,8 @@ eq("bold sanitizer: markdown bold → WhatsApp bold", sanitizeWhatsAppBold("**ا
 eq("bold sanitizer: idempotent", sanitizeWhatsAppBold(sanitizeWhatsAppBold("**الإجمالي**")), "*الإجمالي*");
 eq("bold sanitizer: keeps single-star WhatsApp bold unchanged", sanitizeWhatsAppBold("*الإجمالي*"), "*الإجمالي*");
 eq("bold sanitizer: preserves price digits", sanitizeWhatsAppBold("**الإجمالي: 120 ج.م**"), "*الإجمالي: 120 ج.م*");
+eq("bold sanitizer: attached waw fixed idempotently", sanitizeWhatsAppBold(sanitizeWhatsAppBold("و*بيتزا*")), "و *بيتزا*");
+eq("bold sanitizer: malformed star fallback strips markers", sanitizeWhatsAppBold("اختيار * بيتزا*"), "اختيار بيتزا");
 
 // 5-8: shared numeral formatter.
 eq("numerals: Egyptian converts Latin digits", formatCustomerVisibleText("طلب 123 — 45 ج.م", "egyptian"), "طلب ١٢٣ — ٤٥ ج.م");
@@ -113,6 +115,19 @@ eq(
   "presentations: customer-visible button digits convert",
   formatCustomerVisiblePresentation({ kind: "buttons", buttons: [{ id: "qty:1", title: "1" }] }, "egyptian").buttons[0]?.title,
   "١"
+);
+eq(
+  "presentations: list-row price digits convert",
+  formatCustomerVisiblePresentation(
+    { kind: "list", button: "اختيار", sections: [{ rows: [{ id: "item:1", title: "بيتزا 145 ج.م" }] }] },
+    "egyptian"
+  ).sections[0]?.rows[0]?.title,
+  "بيتزا ١٤٥ ج.م"
+);
+eq(
+  "presentations: button price digits convert",
+  formatCustomerVisiblePresentation({ kind: "buttons", buttons: [{ id: "price", title: "145 ج.م" }] }, "egyptian").buttons[0]?.title,
+  "١٤٥ ج.م"
 );
 
 // 9-12: modifier/choice label leak and allergy carry-through in the deterministic order summary.
