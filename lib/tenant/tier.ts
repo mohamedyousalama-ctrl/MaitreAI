@@ -35,6 +35,9 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
 // ordering conversation byte-identical to today (Wesaya untouched until Mohamed
 // flips it). Gates ONLY the agent-conversation changes; zone geometry data + the
 // console zone editor are visible regardless.
+// address_flow_v2 (WO-ADDR): written delivery addresses are matched against named
+// tenant zones before any optional pin fallback. STRICT per-tenant switch, DEFAULT
+// OFF, never implied by tier='pro'; flag-off keeps prompt/tools byte-identical.
 // allergy_companion_mode (WO-COMPANION-W1): Allergy-Companion Mode — swaps the legacy
 // always-escalate allergy path for the companion contract (acknowledge + keep talking,
 // two-axis data truth, §6 checkpoint, §1e recovery). STRICT per-tenant switch, DEFAULT
@@ -96,7 +99,7 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
 // registered in lib/messaging/interactive-router.ts can run deterministic server
 // handlers instead of being converted to Arabic text for the customer agent.
 // STRICT per-tenant switch, DEFAULT OFF, never implied by tier='pro'.
-export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "perception_async" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "allergy_companion_mode" | "allergy_calm_hold" | "memory_allergy_gate" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods" | "inbound_coalescing" | "answer_first" | "persist_outbound_media" | "voice_garble_guard" | "dup_order_awareness" | "price_truth_guard" | "reply_dampener" | "safety_bridge" | "handoff_timeout" | "goal_logic" | "goal_logic_rule6_annotation_pivot" | "call_count_observability" | "typed_interactive_actions";
+export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "perception_async" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "address_flow_v2" | "allergy_companion_mode" | "allergy_calm_hold" | "memory_allergy_gate" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods" | "inbound_coalescing" | "answer_first" | "persist_outbound_media" | "voice_garble_guard" | "dup_order_awareness" | "price_truth_guard" | "reply_dampener" | "safety_bridge" | "handoff_timeout" | "goal_logic" | "goal_logic_rule6_annotation_pivot" | "call_count_observability" | "typed_interactive_actions";
 
 /** A feature is ON when the tenant explicitly enabled THAT feature (narrow,
  *  default-off opt-in) OR the tenant is full 'pro' (gets everything). Keeping a

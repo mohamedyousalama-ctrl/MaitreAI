@@ -66,6 +66,7 @@ import { perceiveTurnWithUsage, recoveryDirective, cadenceCue, type PerceptionRe
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import { emptyDraft, type OrderDraft, type PhotoRequest, type Presentation, type ToolSignal } from "@/lib/ai/tools";
+import { buildOldDraftRestatementReply, shouldRestateRestorableDraft } from "@/lib/ai/draft-restatement";
 import { applyPinRouting } from "@/lib/delivery/routing";
 import { buildImageDirective } from "@/lib/messaging/image-turn";
 import { imageAvailabilityGuard, isDeicticImageReference } from "@/lib/ai/image-binding";
@@ -294,6 +295,25 @@ function dupOrderRecapResult(
   };
 }
 
+function oldDraftRestatementResult(draft: OrderDraft): RespondResult {
+  return {
+    reply: buildOldDraftRestatementReply(draft),
+    draft: structuredClone(draft),
+    escalate: false,
+    escalationReason: null,
+    signals: [{ type: "missing_data", detail: { reason: "old_draft_restatement" } }],
+    presentation: null,
+    photoRequests: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
+    toolNames: [],
+    stopReason: "old_draft_restatement",
+    model: "deterministic_old_draft_restatement",
+    adapter: "mock",
+    resendReceipt: false,
+    calls_used: 0,
+  };
+}
+
 /** Companion-mode EMERGENCY outcome (§5) — deterministic, no LLM. An ACTIVE
  *  reaction ALWAYS escalates to a SYSTEM_HOLD marked emergency-class (NEVER
  *  customer-resumable, §1e·d); the reply is the fixed §5 line (staff alerted, never
@@ -500,6 +520,7 @@ export async function runCustomerTurn(
   const companionOn = isFeatureExplicitlyEnabled("allergy_companion_mode", tenantFeatures);
   const calmHoldOn = isFeatureExplicitlyEnabled("allergy_calm_hold", tenantFeatures);
   const memoryAllergyGateOn = isFeatureExplicitlyEnabled("memory_allergy_gate", tenantFeatures);
+  const addressFlowV2On = isFeatureExplicitlyEnabled("address_flow_v2", tenantFeatures);
 
   // WO-T1-PAYMENTS: payment-method truth comes ONLY from the resolver. Flag
   // `canonical_payment_methods` OFF (every current tenant) → exactly the legacy
@@ -526,6 +547,7 @@ export async function runCustomerTurn(
   let safetyHoldActive = false;
   let initialDraft: OrderDraft | null = null;
   let conversationCustomerId: string | null = null;
+  let initialDraftAgeMs: number | null = null;
   if (conversationId) {
     const { data: conv } = await admin
       .from("conversations")
@@ -567,6 +589,7 @@ export async function runCustomerTurn(
         const ageMs = Date.now() - new Date(firstWithDraft.created_at as string).getTime();
         const fresh = ageMs <= DRAFT_FRESHNESS_MS;
         initialDraft = fresh ? d : null;
+        initialDraftAgeMs = fresh ? ageMs : null;
         // Karim Pro P1 terminal hook — ABANDONMENT. A stale open basket (>45 min)
         // means the prior order attempt was abandoned; emit one record for it
         // (Pro-gated; standard tenants do nothing).
@@ -750,6 +773,9 @@ export async function runCustomerTurn(
     // the prompt keeps its legacy "type your address, pins unreadable" instruction and
     // set_fulfillment ignores pickup branches (prompt + tools byte-identical).
     geoRouting: geoRoutingOn,
+    // WO-ADDR — written address first, named-zone match, optional pin fallback.
+    // Default OFF → no prompt/tool change.
+    addressFlowV2: addressFlowV2On,
     // WO-LIVE4-F1b — media_turn_trigger: when ON the system reads inbound images via
     // buildImageDirective, so the prompt tells the model to follow that read instead of
     // claiming it can't see a picture. Default OFF → legacy "can't view images" verbatim.
@@ -961,6 +987,8 @@ export async function runCustomerTurn(
     !calmEmergency.fired &&
     !isExplicitHumanRequest(input.userMessage) &&
     refersToRegisteredOrder(input.userMessage);
+  const oldDraftRestatementDue =
+    addressFlowV2On && shouldRestateRestorableDraft(initialDraft, initialDraftAgeMs);
 
   // WO-MEDIA-INBOUND — a provenance-marked per-turn directive when the inbound was an
   // image. Built from the customer's caption + the MODEL vision read; never empty, so
@@ -1145,6 +1173,11 @@ export async function runCustomerTurn(
     // recap «طلبك #N مسجّل بالفعل ✅» + an open door for a genuinely new order — instead of
     // re-building and re-finalizing a duplicate (#1010). No LLM, no finalize, money untouched.
     result = dupOrderRecapResult(registeredOrder, dialect, initialDraft, ctx.profile.currency);
+  } else if (oldDraftRestatementDue && initialDraft) {
+    // WO-ADDR old-draft restatement — after a reopened-but-restorable basket, restate
+    // the stored draft once before continuing. The age gate prevents repeating it on
+    // the immediate next customer answer.
+    result = oldDraftRestatementResult(initialDraft);
   } else {
     // Normal turn. In companion mode this MAY be a §6 checkpoint ACKNOWLEDGEMENT: a
     // pending checkpoint + an explicit confirmation → log the verbatim ack now so
@@ -1282,6 +1315,27 @@ export async function runCustomerTurn(
       agentReply: result.reply,
     });
     if (blockAudit) await recordAllergyEvent(admin, blockAudit).catch(() => {});
+  }
+
+  // WO-ADDR — written-address no-match insight. Same zone_misses feed as pin misses,
+  // but with area_text instead of coordinates. Best-effort so customer turns never
+  // depend on the analytics table being present.
+  if (conversationId) {
+    for (const signal of result.signals) {
+      if (signal.type !== "missing_data" || signal.detail?.reason !== "address_zone_no_match") continue;
+      const detail = signal.detail as { address?: unknown; catchAllZoneId?: unknown };
+      const areaText = String(detail.address ?? "").trim().slice(0, 160) || "written_address_no_match";
+      try {
+        await admin.from("zone_misses").insert({
+          restaurant_id: restaurantId,
+          conversation_id: conversationId,
+          area_text: areaText,
+          nearest_zone_id: typeof detail.catchAllZoneId === "string" ? detail.catchAllZoneId : null,
+        });
+      } catch {
+        /* table absent pre-migration — skip silently */
+      }
+    }
   }
 
   const { data: run } = await admin

@@ -40,7 +40,7 @@ import {
   emptyDraft,
   executeTool,
   NON_ORDER_TOOLS,
-  orderToolsWithGeo,
+  orderToolsForDelivery,
   type OrderDraft,
   type Presentation,
   type PhotoRequest,
@@ -325,12 +325,14 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const knownPrices = knownMenuPrices(input.brain);
 
   const geoRouting = !!input.brain.geoRouting;
+  const addressFlowV2 = !!input.brain.addressFlowV2;
   const ctx: ToolContext = {
     menuItems: input.brain.menuItems,
     modifiers: input.brain.modifiers,
     deliveryAreas: input.brain.deliveryAreas,
     branches: input.brain.branches,
     geoRouting,
+    addressFlowV2,
     draft: input.initialDraft ? structuredClone(input.initialDraft) : emptyDraft(currency),
     signals: [],
     escalation: null,
@@ -352,7 +354,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   };
 
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
-  const tools = canOrder ? orderToolsWithGeo(geoRouting) : NON_ORDER_TOOLS;
+  const tools = canOrder ? orderToolsForDelivery(geoRouting, addressFlowV2) : NON_ORDER_TOOLS;
 
   // WO-V1.0-GOAL-LOGIC (Slice 1) — FRONT-OF-TURN intent reasoning. Before composing a reply,
   // classify the inbound: AMBIGUOUS → ask ONE grounded question (short-circuit, no model call);
