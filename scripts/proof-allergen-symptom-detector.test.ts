@@ -102,8 +102,8 @@ assertSrc(
   /!allergenHit\.fired\s*&&\s*symptomDetectionOn/
 );
 assertSrc(
-  "combinedAllergenHit set from allergenHit, symptomHit, or the phonetic net (WO-VOICE-1)",
-  /combinedAllergenHit\s*=\s*allergenHit\.fired\s*\?\s*allergenHit\s*:\s*\(\s*symptomHit\.fired\s*\?\s*symptomHit\s*:\s*phoneticHit\s*\)/
+  "combinedAllergenHit set from allergenHit, symptomHit, phonetic net, or memory gate",
+  /combinedAllergenHit\s*=\s*allergenHit\.fired\s*\?\s*allergenHit\s*:\s*\(\s*symptomHit\.fired\s*\?\s*symptomHit\s*:\s*\(\s*phoneticHit\.fired\s*\?\s*phoneticHit\s*:\s*memoryAllergyHit\s*\)\s*\)/
 );
 assertSrc(
   "fail-closed phonetic net runs UNCONDITIONALLY (WO-VOICE-1, item-38)",
@@ -397,4 +397,3 @@ if (errors.length) {
 }
 console.log(`══════════════════════════════════`);
 if (fail > 0) process.exit(1);
-

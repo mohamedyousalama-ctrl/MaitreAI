@@ -226,7 +226,7 @@ Evaluation order per turn: base gate → symptom layer → phonetic net → (com
 ### Gate types (the packaging backbone)
 - **`tier`** column = `standard | pro` (migration 0022). Wesaya is configured `tier='pro'`.
 - **pro-auto flags** (`isFeatureEnabled` — ON for any `tier=pro` OR explicit true): **only `conversation_intelligence`** in the codebase today. Everything else is explicit-only.
-- **explicit-only flags** (`isFeatureExplicitlyEnabled` — must be literally set, NOT implied by `tier=pro`): the other 22 `ProFeature` members. This is deliberate — each Pro capability is a separate, verifiable switch.
+- **explicit-only flags** (`isFeatureExplicitlyEnabled` — must be literally set, NOT implied by `tier=pro`): the other 23 `ProFeature` members. This is deliberate — each Pro capability is a separate, verifiable switch.
 - **SAFETY flags** (cannot be flipped off in console; write-side `isSafetyFlag` guard): `deterministic_allergen_safety` (default-ON via 0037), `allergen_symptom_detection`.
 - **Unconditional (never-flagged) safety behaviors:** base allergen gate, phonetic safety net, SYSTEM_HOLD structural hold.
 - **env deploy flags:** `CONSOLE_V2` (off), `ENABLE_DELIVERY_TRACKING` (**on**), `ENABLE_MIZAN_PANEL` (off), `ENABLE_ADMIN_CHAT_CONSOLE` (off), `ENABLE_MOCK_PAYMENTS`/`ENABLE_MOCK_STT` (dev only).

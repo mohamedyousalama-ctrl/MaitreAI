@@ -62,18 +62,19 @@ export interface CompanionDecision {
 export function decideCompanionAction(
   userMessage: string,
   existingNote: string | null | undefined,
-  opts: { term?: string | null } = {}
+  opts: { term?: string | null; terms?: string[] } = {}
 ): CompanionDecision {
   const emergency = detectAllergenEmergency(userMessage);
   const avoidance = detectAllergenAvoidance(userMessage);
   // The allergen label for this turn: a caller-supplied hint (the gate that fired —
   // symptom/phonetic may name a term avoidance doesn't) wins, else the avoidance term.
   const term = opts.term ?? avoidance.term;
+  const terms = opts.terms?.length ? opts.terms : (term ? [term] : []);
   // Merge the NAMED allergen into the monotonic union. If nothing was named AND the
   // session note is still empty, add the generic «حساسية» label so the kitchen always
   // gets a note. But an emergency phrase that names nothing NEVER dilutes an existing
   // specific note («⚠️ حساسية: مكسرات» stays as-is).
-  let note = mergeAllergyNote(existingNote, term ? [term] : []);
+  let note = mergeAllergyNote(existingNote, terms);
   if (!note) note = mergeAllergyNote(existingNote, [null]);
 
   if (emergency.fired) {
