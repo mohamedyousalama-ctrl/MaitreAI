@@ -161,6 +161,13 @@ export interface BrainContext {
    *  with an explicit no-fabrication clarification annotation instead of deterministic
    *  goal_clarify. Rules 1-5 and existing rule-6 defer paths are unchanged. */
   goalLogicRule6AnnotationPivot?: boolean;
+  /** WO-ACTION-CLAIM-GUARD (flag `action_claim_guard`, default OFF): when true, respond.ts's
+   *  post-turn guard blocks a reply that CLAIMS a draft modification when no draft mutation
+   *  actually happened that turn, re-runs the model ONCE with a strict use-the-tools directive,
+   *  and (if the retry still fabricates) sends a fixed honest clarify. Read ONLY by respond.ts —
+   *  never by the prompt — so the base prompt stays byte-identical (snapshot-gated); off/absent →
+   *  the guard never runs. */
+  actionClaimGuard?: boolean;
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------

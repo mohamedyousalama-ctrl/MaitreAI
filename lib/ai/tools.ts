@@ -76,7 +76,10 @@ export interface ToolSignal {
     | "notify_without_hold"
     // WO-IMAGE-BINDING — the availability guard rewrote a reply that affirmed availability
     // on an image turn with no resolved menu candidate (measurement, like the price-truth log).
-    | "image_binding_rewrite";
+    | "image_binding_rewrite"
+    // WO-ACTION-CLAIM-GUARD — a reply that CLAIMED a draft modification when no mutation actually
+    // happened; caught, retried once, and (if still fabricated) replaced with an honest clarify.
+    | "guard";
   detail: Record<string, unknown>;
 }
 
