@@ -11,6 +11,7 @@ import type { Branch, DeliveryArea, MenuItem, Modifier } from "../types";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
 import type { PaymentConfig } from "@/lib/payments/config";
 import type { LlmToolDef } from "./llm/types";
+import { optionValueOnly } from "@/lib/util/customer-visible-format";
 
 export interface DraftModifier {
   name: string;
@@ -122,6 +123,8 @@ export interface ToolContext {
   paymentConfig: PaymentConfig;
   /** Set to true by resend_receipt tool; triggers receipt re-send in respond-and-send. */
   resendReceipt: boolean;
+  /** Running kitchen-readable allergy note, e.g. «⚠️ حساسية: بيض». */
+  sessionAllergyNote?: string | null;
   /** WO-LIVE5-CONFIRM-GATE — whether THIS turn's triggering customer message is an
    *  explicit order confirmation (isExplicitOrderConfirmation). finalize_draft refuses
    *  when this is explicitly false, so a non-confirmation (e.g. a photo request like
@@ -518,12 +521,12 @@ function recompute(ctx: ToolContext): string | null {
 function lineOptionText(l: DraftLine): string[] {
   return [
     ...(l.variant ? [l.variant.name] : []),
-    ...l.choices.map((c) => `${c.groupName}: ${c.label}`),
-    ...l.modifiers.map((m) => m.name),
+    ...l.choices.map((c) => optionValueOnly(c.label)),
+    ...l.modifiers.map((m) => optionValueOnly(m.name)),
   ];
 }
 
-function summary(d: OrderDraft): string {
+function summary(d: OrderDraft, allergyNote: string | null | undefined = null): string {
   if (!d.lines.length) return "السلة فارغة.";
   const lines = d.lines
     .map((l) => {
@@ -537,7 +540,9 @@ function summary(d: OrderDraft): string {
       ? `\nرسوم التوصيل: ${d.deliveryFee} ${d.currency}`
       : "";
   const tax = d.tax > 0 ? `\nضريبة القيمة المضافة (${d.taxRate}%): ${d.tax} ${d.currency}` : "";
-  return `${lines}${fee}${tax}\nالإجمالي: ${d.total} ${d.currency}`;
+  const allergy = allergyNote?.trim();
+  const allergyLine = allergy && allergy.startsWith("⚠️ حساسية") ? `\n${allergy}` : "";
+  return `${lines}${fee}${tax}\nالإجمالي: ${d.total} ${d.currency}${allergyLine}`;
 }
 
 // --- executor ---------------------------------------------------------------
@@ -704,7 +709,7 @@ export function executeTool(
         if (notice) return { content: notice };
       }
       const verb = mode === "set" ? "ضبطت الكمية على" : "أضفت";
-      return { content: `${verb} ${match ? match.quantity : qty}× ${item.name}.\n${summary(d)}` };
+      return { content: `${verb} ${match ? match.quantity : qty}× ${item.name}.\n${summary(d, ctx.sessionAllergyNote)}` };
     }
     case "clear_order": {
       // Reset the in-progress draft to empty (items + fulfillment) — a true "start
@@ -725,7 +730,7 @@ export function executeTool(
         const notice = recompute(ctx);
         if (notice) return { content: notice };
       }
-      return { content: `تم الحذف.\n${summary(d)}` };
+      return { content: `تم الحذف.\n${summary(d, ctx.sessionAllergyNote)}` };
     }
     case "set_fulfillment": {
       const type = input.type === "delivery" ? "delivery" : "pickup";
@@ -779,7 +784,7 @@ export function executeTool(
         if (notice) return { content: notice };
       }
       const label = type === "delivery" ? `توصيل إلى ${d.deliveryZone}` : "استلام من الفرع";
-      return { content: `${label}.\n${summary(d)}` };
+      return { content: `${label}.\n${summary(d, ctx.sessionAllergyNote)}` };
     }
     case "set_delivery_address": {
       if (d.fulfillment !== "delivery") {
@@ -793,12 +798,12 @@ export function executeTool(
     case "get_order_summary": {
       const notice = recompute(ctx);
       if (notice) return { content: notice };
-      return { content: summary(d) };
+      return { content: summary(d, ctx.sessionAllergyNote) };
     }
     case "finalize_draft": {
       // WO-LIVE5-CONFIRM-GATE (order integrity) — NEVER commit an order unless THIS
       // turn's customer message is an explicit confirmation. Live #1005: «ابعتلي صوره
-      // العرض» (a photo request) was consumed as the confirmation after «تأكد الطلب؟».
+      // العرض» (a photo request) was consumed as the confirmation after an order recap.
       // A non-confirmation → refuse + a directive to re-read the order and ask for an
       // explicit confirm. Gated on `=== false` so a caller that never sets userConfirmed
       // (unit tests) keeps the legacy behavior — the live path always sets it.
@@ -840,7 +845,7 @@ export function executeTool(
       }
       d.finalized = true;
       return {
-        content: `تم تسجيل الطلب بانتظار تأكيد المطعم.\n${summary(d)}`,
+        content: `تم تسجيل الطلب بانتظار تأكيد المطعم.\n${summary(d, ctx.sessionAllergyNote)}`,
       };
     }
     case "escalate_to_human": {

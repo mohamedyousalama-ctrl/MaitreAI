@@ -10,6 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadReceiptData } from "@/lib/render/load";
 import { renderReceiptPng } from "@/lib/render/receipt";
 import { sendWhatsAppImage, within24hWindow } from "./outbound";
+import { formatCustomerVisibleNumbers } from "@/lib/util/customer-visible-format";
 
 export interface SendReceiptResult {
   status: "sent" | "skipped" | "failed" | "no_phone" | "order_not_found";
@@ -129,10 +130,11 @@ export async function sendReceiptToCustomer(
 
   // Window is open → attempt the real send. A failure HERE is a genuine failure.
   const png = renderReceiptPng(data);
+  const caption = formatCustomerVisibleNumbers(`إيصال طلبك ${data.orderNumber} — بالعافية 🙏`, data.digitStyle ?? "western", { preserveQuotedText: false });
   const send = await sendWhatsAppImage({
     to: data.customerPhone,
     png,
-    caption: `إيصال طلبك ${data.orderNumber} — بالعافية 🙏`,
+    caption,
     lastInboundAtMs,
   });
 

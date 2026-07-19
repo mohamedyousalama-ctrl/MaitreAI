@@ -4,7 +4,7 @@
 // PURE (no I/O). Extracted from respond.ts so it is unit-testable in isolation and so
 // the same rule guards BOTH the fast-path auto-finalize AND the finalize_draft tool.
 //
-// Live #1005 (04:00:28): after «تأكد الطلب؟», the customer's «ابعتلي صوره العرض»
+// Live #1005 (04:00:28): after the order-confirm question, the customer's «ابعتلي صوره العرض»
 // («send ME a photo of the offer») matched the confirmation verb «ابعت» («send [the
 // order]») and, at a confirmation point, auto-finalized a PHANTOM order. The real
 // agreement two turns earlier — «ماشي» — was never detected.

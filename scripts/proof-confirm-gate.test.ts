@@ -1,5 +1,5 @@
 // WO-LIVE5-CONFIRM-GATE — RED-FIRST: a non-confirmation must never create an order.
-// Live #1005 (04:00:28): after «تأكد الطلب؟», the customer's «ابعتلي صوره العرض» («send
+// Live #1005 (04:00:28): after the order-confirm question, the customer's «ابعتلي صوره العرض» («send
 // ME a photo») matched the confirmation verb «ابعت» and auto-finalized a PHANTOM order.
 // Part A — isExplicitOrderConfirmation rejects a receive/photo/menu request. Part B — the
 // finalize_draft tool refuses when the turn's message isn't a confirmation (closes the

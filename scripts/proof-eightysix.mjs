@@ -67,7 +67,7 @@ async function seedConv(rid, recapDraft) {
   const c = await fetch(`${SB}/rest/v1/customers`, { method: "POST", headers: REP, body: JSON.stringify({ restaurant_id: rid, phone, name: "86 test" }) }).then(j);
   const conv = await fetch(`${SB}/rest/v1/conversations`, { method: "POST", headers: REP, body: JSON.stringify({ restaurant_id: rid, customer_id: c[0].id, channel: "whatsapp" }) }).then(j);
   if (recapDraft) {
-    const recap = `طلبك دلوقتي:\n- ١× ${recapDraft.lines[0].name} — ${recapDraft.total} ج.م\n**الإجمالي: ${recapDraft.total} ج.م**\nتأكد الطلب؟`;
+    const recap = `طلبك دلوقتي:\n- ١× ${recapDraft.lines[0].name} — ${recapDraft.total} ج.م\n*الإجمالي: ${recapDraft.total} ج.م*\nأجهّزلك الطلب؟`;
     await fetch(`${SB}/rest/v1/messages`, { method: "POST", headers: H, body: JSON.stringify({ restaurant_id: rid, conversation_id: conv[0].id, direction: "outbound", sender: "ai", text: recap, status: "sent", meta: { draft: recapDraft, model: "seed" } }) });
   }
   return { customerId: c[0].id, conversationId: conv[0].id };
