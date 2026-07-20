@@ -713,6 +713,7 @@ export async function runCustomerTurn(
   const goalLogicRule6AnnotationPivotOn = isFeatureExplicitlyEnabled("goal_logic_rule6_annotation_pivot", tenantFeatures);
   const callCountObservabilityOn = isFeatureExplicitlyEnabled("call_count_observability", tenantFeatures);
   const actionClaimGuardOn = isFeatureExplicitlyEnabled("action_claim_guard", tenantFeatures);
+  const finishLineOn = isFeatureExplicitlyEnabled("finish_line", tenantFeatures);
 
   const ctx: BrainContext = {
     profile: {
@@ -799,6 +800,9 @@ export async function runCustomerTurn(
     // WO-ACTION-CLAIM-GUARD — the post-turn fabricated-action guard in respond.ts. Default OFF →
     // the guard never runs (byte-identical); read ONLY by respond.ts, never by the prompt.
     actionClaimGuard: actionClaimGuardOn,
+    // WO-FINISH-LINE — deterministic recap (A) + turn contract (B) + bulk handoff (C) in
+    // respond.ts. Default OFF → none of it runs (byte-identical); read ONLY by respond.ts.
+    finishLine: finishLineOn,
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
