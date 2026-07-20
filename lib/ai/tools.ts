@@ -689,6 +689,16 @@ export function executeTool(
       ].filter((x) => x.trim());
       const remainingChoices = [...requestedChoices];
       const choices: DraftChoice[] = [];
+      // WO-LEAKGUARD (PART C) — answered-modifier dedupe (coalescing race). Re-read the CURRENT
+      // draft: an existing line for THIS item (+ matching variant) already carries the required
+      // choice the customer answered 2s earlier in the same coalesced window. When a redundant
+      // coalesced re-add arrives WITHOUT re-stating that choice, we must NOT re-ask it — we
+      // inherit the already-answered label so the line is reconstructed consistently (and merges
+      // via lineKey) instead of re-posing the same question. Minimal: the fill loop is untouched;
+      // only the re-ask gate consults the target line.
+      const dedupeTargetLine = d.lines.find(
+        (l) => l.itemId === item.id && (!variant || l.variant?.name === variant.name)
+      );
       for (const group of (item.choiceGroups ?? []).filter((g) => g.options.some((o) => o.active))) {
         let selected = 0;
         while (selected < group.maxSelect) {
@@ -703,6 +713,15 @@ export function executeTool(
           selected++;
         }
         if (selected < group.minSelect) {
+          // Already answered on the target line this window → inherit, do NOT re-ask.
+          const answeredOnTarget = (dedupeTargetLine?.choices ?? []).filter((c) => c.groupName === group.name);
+          if (answeredOnTarget.length >= group.minSelect) {
+            for (const c of answeredOnTarget) {
+              if (!choices.some((x) => x.groupName === c.groupName && norm(x.label) === norm(c.label))) choices.push(c);
+            }
+            ctx.signals.push({ type: "missing_data", detail: { reason: "modifier_dedupe_inherited", item: item.name, group: group.name, source: "answered_modifier_dedupe" } });
+            continue;
+          }
           ctx.signals.push({ type: "missing_data", detail: { item: item.name, required: "choice", group: group.name } });
           return {
             content: `«${item.name}» يحتاج اختيار «${group.name}». اسأل العميل يختار من: ${group.options

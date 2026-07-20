@@ -22,6 +22,16 @@ import type { OrderDraft, ToolSignal } from "./tools";
 import { recapDue, applyDeterministicRecap, isDraftPricedConsistent } from "./recap-render";
 import { injectPendingQuestion, type AskbackMode } from "./askback-injection";
 import { enforceTurnContract, type NextStepKind } from "./turn-contract";
+// WO-LEAKGUARD (PART A) — the outbound register guard runs as the LAST unconditional stage.
+import { inspectOutbound, type RegisterBlockKind } from "./outbound-register";
+import {
+  finalizeRequiredFieldMissing,
+  needsStreetAddress,
+  frozenAddressAsk,
+  frozenDraftHoldingLine,
+  frozenGenericLine,
+  frozenSafetyDeflection,
+} from "./delivery-readiness";
 
 export interface ComposeInput {
   /** The cleaned model core after every content guard (money/safety/non-menu/scrub) has run. */
@@ -54,6 +64,10 @@ export interface ComposeResult {
   recapSkippedInconsistent: boolean;
   askbackMode: AskbackMode | "none";
   contractKind: NextStepKind | null;
+  /** WO-LEAKGUARD (PART A) — true when the register guard blocked+replaced the reply. */
+  registerBlocked: boolean;
+  /** The class of register violation, when blocked (observability). */
+  registerBlockKind?: RegisterBlockKind;
 }
 
 /**
@@ -81,10 +95,15 @@ export function composeFinalReply(input: ComposeInput): ComposeResult {
   });
   if (due && !pending) {
     if (isDraftPricedConsistent(input.draft)) {
+      // WO-LEAKGUARD (PART B) — suppress the readback CTA («أجهّزلك الطلب؟») while any
+      // finalize-required delivery field (zone/address) is missing: the CTA must never
+      // invite confirmation of an unfinalizable draft. An empty trailer drops the ask.
+      const suppressCta = finalizeRequiredFieldMissing(input.draft);
       const recapped = applyDeterministicRecap(text, input.draft, {
         dialect: input.dialect,
         allergyNote: input.allergyNote,
         phase: "readback",
+        ...(suppressCta ? { trailer: "" } : {}),
       });
       if (recapped !== text) {
         text = recapped;
@@ -117,8 +136,12 @@ export function composeFinalReply(input: ComposeInput): ComposeResult {
   // 3) TURN CONTRACT (PART D) — append the deterministic next-step ONLY when an active unmet goal
   //    exists (open draft / pending question / bare future-promise). A post-completion social turn
   //    is a legal terminal state; the contract never appends an identical next-step twice.
+  //    WO-LEAKGUARD (PART B) — an info-collection turn (a pending deterministic question owns the
+  //    turn, e.g. the frozen address ask, which is an imperative with no «؟») is SKIPPED: the
+  //    pending question IS the turn's single directive, so the contract must not glue a draft-recap
+  //    + «أكمّل؟» onto it (symmetric with the recap already being suppressed on a pending turn).
   let contractKind: NextStepKind | null = null;
-  if (text.trim()) {
+  if (text.trim() && !pending) {
     const contract = enforceTurnContract({
       text,
       dialect: input.dialect,
@@ -139,5 +162,105 @@ export function composeFinalReply(input: ComposeInput): ComposeResult {
     }
   }
 
-  return { text, signals, recapRendered, recapSkippedInconsistent, askbackMode, contractKind };
+  // 4) OUTBOUND REGISTER GUARD (PART A) — the LAST unconditional stage, veto over
+  //    EVERYTHING above (including a safety line's formatting). If the fully-assembled
+  //    reply carries any tool identifier, model directive, or raw error marker, it is
+  //    REPLACED WHOLESALE (never partially patched) by a frozen honest fallback chosen
+  //    from turn state, and the rejected text is logged to signals (never sent).
+  const guarded = applyOutboundRegister(text, {
+    dialect: input.dialect,
+    draft: input.draft,
+    pending,
+    safetyEvent: input.safetyEvent,
+  });
+  text = guarded.text;
+  if (guarded.signal) signals.push(guarded.signal);
+
+  return {
+    text,
+    signals,
+    recapRendered,
+    recapSkippedInconsistent,
+    askbackMode,
+    contractKind,
+    registerBlocked: guarded.blocked,
+    registerBlockKind: guarded.kind,
+  };
+}
+
+export interface RegisterGuardState {
+  dialect: string;
+  draft: OrderDraft;
+  /** The turn's pending deterministic question, if any (highest-priority fallback). */
+  pending?: string | null;
+  /** True when a safety/handoff event fired this turn (preserve safety content). */
+  safetyEvent?: boolean;
+}
+
+export interface RegisterGuardResult {
+  text: string;
+  blocked: boolean;
+  kind?: RegisterBlockKind;
+  /** The audit signal to push when blocked (undefined when safe). */
+  signal?: ToolSignal;
+}
+
+/**
+ * The reusable outbound register net: inspect `text` and, if it carries any tool
+ * identifier / model directive / raw error marker, REPLACE it wholesale with a frozen
+ * turn-state fallback (never a partial patch) and return the audit signal (the rejected
+ * text logged, never sent). Safe text is returned unchanged. Used by the assembler AND
+ * the flag-off legacy settle so no path can ship internal text (all tenants).
+ */
+export function applyOutboundRegister(text: string, state: RegisterGuardState): RegisterGuardResult {
+  const verdict = inspectOutbound(text);
+  if (verdict.safe) return { text, blocked: false };
+  const fallback = registerFallback({
+    dialect: state.dialect,
+    draft: state.draft,
+    pending: state.pending ?? null,
+    safetyEvent: state.safetyEvent === true,
+  });
+  return {
+    text: fallback,
+    blocked: true,
+    kind: verdict.kind,
+    signal: {
+      type: "guard",
+      detail: {
+        reason: "outbound_register_blocked",
+        source: "outbound_register",
+        kind: verdict.kind,
+        matched: verdict.matched,
+        rejected: text, // logged for audit — NEVER sent to the customer
+        fallback,
+      },
+    },
+  };
+}
+
+/**
+ * The frozen honest fallback for a register-blocked reply, chosen by turn state:
+ *   • a SAFETY/deflection turn → the safety deflection template (preserve safety CONTENT);
+ *   • else a deterministic pending question exists → that question;
+ *   • else an open draft → the holding line + the missing-field (address) ask when known;
+ *   • else a generic honest line.
+ * Every branch returns a vetted customer-safe string (no internal text can survive).
+ */
+function registerFallback(args: {
+  dialect: string;
+  draft: OrderDraft;
+  pending: string | null;
+  safetyEvent: boolean;
+}): string {
+  const { dialect, draft, pending, safetyEvent } = args;
+  // A blocked SAFETY turn keeps safety content — never swap it for a cheerful order line.
+  if (safetyEvent) return frozenSafetyDeflection(dialect);
+  if (pending) return pending;
+  const draftOpen = Array.isArray(draft.lines) && draft.lines.length > 0 && draft.finalized !== true;
+  if (draftOpen) {
+    const holding = frozenDraftHoldingLine(dialect);
+    return needsStreetAddress(draft) ? `${holding}\n${frozenAddressAsk(dialect)}` : holding;
+  }
+  return frozenGenericLine(dialect);
 }

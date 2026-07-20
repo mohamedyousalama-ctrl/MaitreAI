@@ -69,7 +69,7 @@ import { renderDraftRecap, isDraftPricedConsistent } from "./recap-render";
 import { isSocialClosingTurn } from "./turn-contract";
 // WO-SIMPLIFY (PART E) — the SINGLE final-compose pass orders recap → one question → scoped
 // contract once (finishLine only), so injectors never splice text independently anymore.
-import { composeFinalReply } from "./reply-compose";
+import { composeFinalReply, applyOutboundRegister } from "./reply-compose";
 import { exceedsBulkThreshold, impliedItemCount, bulkHandoffReply, bulkHandoffReason } from "./bulk-threshold";
 // WO-STATE-TRUTH (PART A) — the deterministic zone-selection net: when the customer's
 // reply picks one of the offered ambiguity candidates, persist the zone-of-truth onto the
@@ -77,6 +77,19 @@ import { exceedsBulkThreshold, impliedItemCount, bulkHandoffReply, bulkHandoffRe
 // raw text). Mirrors the ask-back settle: a deterministic net, no model call.
 import { selectZoneFromReply, persistZoneToDraft, hasPersistedZone } from "./zone-state";
 import { matchAddressToZones } from "@/lib/delivery/address";
+// WO-LEAKGUARD (PART B) — address completeness is a deterministic flow: a zone-only delivery
+// capture makes the frozen address ask the turn's single pending question, the recap CTA is
+// suppressed while a finalize-required field is missing, and finalize failures map to frozen
+// customer-safe lines (never raw validator text). (PART A) — a last-resort register net on the
+// deterministic finalize early-returns, which do not flow through the single assembler.
+import {
+  needsStreetAddress,
+  frozenAddressAsk,
+  frozenGenericLine,
+  classifyFinalizeFailure,
+  finalizeFailureReply,
+} from "./delivery-readiness";
+import { isCustomerSafeText } from "./outbound-register";
 import {
   emptyDraft,
   executeTool,
@@ -582,11 +595,24 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         calls_used: 0,
       };
     }
-    // Any OTHER finalize precondition (e.g. below-minimum / invalid-zone delivery):
-    // relay the SPECIFIC reason, not the generic deferral. safeConfirmReply stays
-    // only as a last resort for a truly unknown/empty failure.
+    // WO-LEAKGUARD (PART B) — finalize failures NEVER surface raw validator text. Classify the
+    // refusal from the DRAFT STATE (not by parsing Arabic) and map each known failure to a FROZEN
+    // customer-safe line: missing address → the frozen address ask; empty draft → an honest line;
+    // a graceful delivery notice (below-min / invalid zone) passes through unchanged. An UNKNOWN
+    // failure → the safe deferral + a finalize_failed_unknown signal (the raw text logged, never
+    // sent). A final register net guarantees no internal text can slip through this early-return.
+    const failureKind = classifyFinalizeFailure(ctx.draft, { toolContent: out.content });
+    let finalizeReply = finalizeFailureReply(failureKind, ctx.draft, input.brain.dialect, out.content);
+    if (failureKind === "missing_address") {
+      ctx.signals.push({ type: "missing_data", detail: { reason: "delivery_address_required", source: "finalize_guard", question: finalizeReply } });
+    }
+    if (!finalizeReply) {
+      ctx.signals.push({ type: "guard", detail: { reason: "finalize_failed_unknown", source: "finalize_guard", kind: failureKind, rejected: out.content } });
+      finalizeReply = safeConfirmReply(input.brain.dialect);
+    }
+    if (!isCustomerSafeText(finalizeReply)) finalizeReply = frozenGenericLine(input.brain.dialect);
     return {
-      reply: out.content || safeConfirmReply(input.brain.dialect),
+      reply: finalizeReply,
       draft: ctx.draft,
       escalate: false,
       escalationReason: null,
@@ -949,6 +975,16 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     ctx.signals.push({ type: "missing_data", detail: { reason: "pending_question_expired", source: "session_freshness" } });
     pendingQuestion = null;
   }
+  // WO-LEAKGUARD (PART B) — a zone-only DELIVERY capture (a resolved zone but no written
+  // street address, like tonight's «التعاون هرم») makes the FROZEN address-detail ask the turn's
+  // single deterministic pending question — rendered last by the ask-back machinery, and blocking
+  // confirmation until street-level text exists. Lower precedence than a live zone ambiguity
+  // (which already owns pendingQuestion above). Gated on address_flow_v2 and not on an expired
+  // session (a returning cold session archives its draft upstream — no fresh readiness ask).
+  if (!pendingQuestion && !input.sessionExpired && addressFlowV2 && needsStreetAddress(ctx.draft)) {
+    pendingQuestion = frozenAddressAsk(input.brain.dialect);
+    ctx.signals.push({ type: "missing_data", detail: { reason: "delivery_address_required", source: "delivery_readiness", question: pendingQuestion } });
+  }
 
   if (input.brain.finishLine) {
     // WO-SIMPLIFY (PART E) — the SINGLE final-compose pass. It orders the reply ONCE
@@ -984,6 +1020,21 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       });
       text = injected.text;
     }
+  }
+  // WO-LEAKGUARD (PART A) — the flag-OFF legacy settle does NOT run through the single
+  // assembler, so apply the SAME outbound register net here (all tenants, unconditional):
+  // a reply carrying a tool identifier / model directive / raw error marker is replaced by
+  // the frozen turn-state fallback, the rejected text logged. The finishLine branch already
+  // applied this inside composeFinalReply, so only the legacy path needs it (no double-run).
+  if (!input.brain.finishLine && text.trim()) {
+    const guarded = applyOutboundRegister(text, {
+      dialect: input.brain.dialect,
+      draft: ctx.draft,
+      pending: pendingQuestion,
+      safetyEvent,
+    });
+    if (guarded.signal) ctx.signals.push(guarded.signal);
+    text = guarded.text;
   }
 
   return {
