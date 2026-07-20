@@ -52,8 +52,14 @@ import {
   allergySimpleReoffer,
   buildTicketAllergyNote,
   collectConversationAllergenTerms,
+  detectAllergyRetraction,
+  allergyRetractionAck,
+  detectAllergyOrDiseaseMention,
   type AllergySimpleDecision,
 } from "@/lib/ai/allergy-simple";
+// WO-CONTEXT (PART A) — deterministic conversation session freshness (2h window; 24h allergy
+// context). Cold sessions expire the pending question + (allergy_simple) legacy residues/notes.
+import { decideSessionFreshness } from "@/lib/ai/session-freshness";
 import { buildMenuListPresentation } from "@/lib/ai/tools";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { decideVoiceLadder, garbledVoiceReply, confirmVoiceReply, isVoiceAssent, wasVoiceLadderConfirm } from "@/lib/ai/voice-quality";
@@ -605,6 +611,12 @@ export async function runCustomerTurn(
   // WO-SIMPLIFY (PART B) — true when this turn deliberately archived an open draft (reset intent
   // or a >12h stale basket), surfaced as a signal for observability.
   let draftArchivedThisTurn = false;
+  // WO-CONTEXT (PART A) — session freshness sweep results (see session-freshness.ts).
+  let sessionExpiredForTurn = false; // expire the pending question (cold session OR explicit reset)
+  let clearLegacyResiduesThisTurn = false; // drop stale companion/checkpoint residues (allergy_simple)
+  let allergyContextExpiredThisTurn = false; // the 24h allergy context lapsed → note cleared
+  // WO-SIMPLIFY (PART B) / WO-CONTEXT (PART C) — this turn's explicit order-reset intent.
+  let draftResetIntent = false;
   if (conversationId) {
     const { data: conv } = await admin
       .from("conversations")
@@ -639,7 +651,7 @@ export async function runCustomerTurn(
     // WO-SIMPLIFY (PART B) — deterministic draft lifecycle. An explicit reset intent («طلب جديد» /
     // «الغي الطلب كله») or a > 12h stale open basket is ARCHIVED (never resumed); a finalized draft
     // closes the basket so the next item-adding intent starts FRESH (confirmed lines never bleed).
-    const draftResetIntent = isExplicitResetIntent(input.userMessage);
+    draftResetIntent = isExplicitResetIntent(input.userMessage);
     if (firstWithDraft) {
       const d = (firstWithDraft.meta as Record<string, unknown>).draft as OrderDraft;
       const ageMs = Date.now() - new Date(firstWithDraft.created_at as string).getTime();
@@ -665,6 +677,56 @@ export async function runCustomerTurn(
           transcript: input.history,
         });
       }
+    }
+
+    // WO-CONTEXT (PART A) — SESSION FRESHNESS sweep. Idle gap = age of our last outbound (AI)
+    // message; a brand-new conversation (no prior AI message) is always fresh. The allergy-context
+    // age (allergy_simple only) is the age of the most-recent customer turn that fired the
+    // allergy/disease detector and was NOT itself a retraction (a retraction ends the context).
+    const lastAiCreatedAt = (priorDraftRows ?? [])[0]?.created_at as string | undefined;
+    const lastMessageAgeMs = lastAiCreatedAt ? Date.now() - new Date(lastAiCreatedAt).getTime() : null;
+    let lastAllergyMentionAgeMs: number | null = null;
+    if (allergySimpleOn) {
+      try {
+        const { data: custMsgs } = await admin
+          .from("messages")
+          .select("text, created_at")
+          .eq("conversation_id", conversationId)
+          .eq("sender", "customer")
+          .order("created_at", { ascending: false })
+          .limit(25);
+        for (const m of (custMsgs ?? []) as { text: string | null; created_at: string }[]) {
+          const t = (m.text ?? "").trim();
+          if (!t) continue;
+          if (detectAllergyRetraction(t)) break; // a retraction ends the live allergy context
+          if (detectAllergyOrDiseaseMention(t).fired) {
+            lastAllergyMentionAgeMs = Date.now() - new Date(m.created_at).getTime();
+            break;
+          }
+        }
+      } catch {
+        /* messages read failed → no allergy-context age (never breaks a turn) */
+      }
+    }
+    const freshMentionThisTurn =
+      detectAllergyOrDiseaseMention(input.userMessage).fired && !detectAllergyRetraction(input.userMessage);
+    const freshness = decideSessionFreshness({
+      lastMessageAgeMs,
+      lastAllergyMentionAgeMs,
+      allergySimpleOn,
+      freshAllergyMentionThisTurn: freshMentionThisTurn,
+    });
+    // A cold session OR an explicit reset (PART C: reset expires the pending question too) drops
+    // the stale askback so respond() never trails a returning customer's greeting with it.
+    sessionExpiredForTurn = freshness.expirePendingQuestion || draftResetIntent;
+    clearLegacyResiduesThisTurn = freshness.clearLegacyResidues;
+    if (freshness.clearAllergyNote) {
+      try {
+        await admin.from("conversations").update({ allergy_note: null }).eq("id", conversationId);
+      } catch {
+        /* column absent (pre-0080) → best-effort */
+      }
+      allergyContextExpiredThisTurn = true;
     }
   }
 
@@ -706,6 +768,15 @@ export async function runCustomerTurn(
         /* table absent → no checkpoint state */
       }
     }
+  }
+
+  // WO-CONTEXT (PART A) — cold-session residue sweep (allergy_simple ON only): drop stale
+  // per-conversation safety/companion pending states that predate the 2h window so a returning
+  // customer's fresh turn never inherits them. No-op on a warm session or a flag-OFF tenant.
+  if (clearLegacyResiduesThisTurn) {
+    checkpointPending = false;
+    allergyAcknowledged = false;
+    sessionAllergyNote = null;
   }
 
   // WO-MEMGATE — customer-memory allergies become deterministic gate input only
@@ -1029,7 +1100,18 @@ export async function runCustomerTurn(
         detectOpts: { sttConfidence: input.sttConfidence, isVoiceTranscript: input.isVoiceTranscript },
       })
     : null;
-  const allergySimpleDeflect = allergySimpleDecision?.action === "deflect";
+  // WO-CONTEXT (PART B) — retraction gate. A denial that walks back the allergy claim
+  // («امسح كل اللي فات… أنا معنديش حساسيه», «مش حساسي») SUPPRESSES the deflection — the detector
+  // fired only on the word inside the denial. Never touches the detector term lists; the SAFETY
+  // INVARIANT (a positive assertion for anyone in the SAME message wins → deflection still fires,
+  // note = the real allergen) lives inside detectAllergyRetraction. Only meaningful when the
+  // detector actually fired this turn.
+  const allergyRetracted =
+    allergySimpleOn &&
+    allergySimpleDecision != null &&
+    allergySimpleDecision.hit.fired &&
+    detectAllergyRetraction(input.userMessage);
+  const allergySimpleDeflect = allergySimpleDecision?.action === "deflect" && !allergyRetracted;
 
   // WO-LIVE6-DUP-ORDER-AWARENESS (flag `dup_order_awareness`, default OFF) — surface the
   // most-recent order the customer ALREADY registered this conversation so a reference to it
@@ -1143,7 +1225,7 @@ export async function runCustomerTurn(
 
   const runRespond = async (): Promise<RespondResult> => {
     try {
-      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective, mediaDirective, answerFirstDirective, perceptionRead: perception });
+      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective, mediaDirective, answerFirstDirective, perceptionRead: perception, sessionExpired: sessionExpiredForTurn });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await admin.from("agent_runs").insert({
@@ -1293,27 +1375,57 @@ export async function runCustomerTurn(
     };
   }
 
-  // WO-SIMPLIFY (PART A) — simple-allergy post-processing. (1) A REPEAT direct ingredient/safety
-  // question (throttled) appends the human re-offer to the model's normal answer (never re-sends
-  // the full deflection). (2) The session-scoped CANONICAL kitchen-ticket note is written to
-  // conversations.allergy_note whenever an allergy/disease was mentioned THIS turn — canonical
-  // entities only (or «غير محدد»), never from customer memory, never a trigger/symptom word.
+  // WO-CONTEXT (PART A) — surface a lapsed 24h allergy context (note cleared at turn start) so the
+  // record shows the ticket note was expired, not lost. A fresh mention this turn never expires.
+  if (allergyContextExpiredThisTurn) {
+    result = {
+      ...result,
+      signals: [...result.signals, { type: "missing_data", detail: { reason: "allergy_context_expired", source: "session_freshness" } }],
+    };
+  }
+
+  // WO-SIMPLIFY (PART A) / WO-CONTEXT (PART B) — simple-allergy post-processing.
+  //   • RETRACTION (PART B): the customer walked the allergy back. No deflection ran; the normal
+  //     engine already honored any order/reset intent in the same message. Clear the session ticket
+  //     note and append ONE frozen honest ack (no health commentary). Signal allergy_retracted.
+  //   • otherwise: (1) a REPEAT direct ingredient/safety question (throttled) appends the human
+  //     re-offer to the model's normal answer (never re-sends the full deflection); (2) the
+  //     session-scoped CANONICAL kitchen-ticket note is written to conversations.allergy_note
+  //     whenever an allergy/disease was mentioned THIS turn — canonical entities only (or «غير
+  //     محدد»), never from customer memory, never a trigger/symptom word.
   if (allergySimpleOn && allergySimpleDecision) {
-    if (
-      allergySimpleDecision.action === "reoffer" &&
-      result.reply.trim() &&
-      !/أحوّلك ل(?:حد|أحد) من الفريق/.test(result.reply)
-    ) {
-      result = { ...result, reply: `${result.reply.trim()}\n${allergySimpleReoffer(dialect)}` };
-    }
-    if (conversationId && allergySimpleDecision.hit.fired) {
-      const ticketNote = buildTicketAllergyNote(
-        collectConversationAllergenTerms(input.history, input.userMessage)
-      );
-      try {
-        await admin.from("conversations").update({ allergy_note: ticketNote }).eq("id", conversationId);
-      } catch {
-        /* column absent (pre-0080) → the ticket floor is best-effort, never breaks the turn */
+    if (allergyRetracted) {
+      if (conversationId) {
+        try {
+          await admin.from("conversations").update({ allergy_note: null }).eq("id", conversationId);
+        } catch {
+          /* column absent (pre-0080) → best-effort */
+        }
+      }
+      const ack = allergyRetractionAck(dialect);
+      const base = result.reply.trim();
+      result = {
+        ...result,
+        reply: base ? (base.includes(ack) ? base : `${base}\n${ack}`) : ack,
+        signals: [...result.signals, { type: "missing_data", detail: { reason: "allergy_retracted", source: "allergy_simple" } }],
+      };
+    } else {
+      if (
+        allergySimpleDecision.action === "reoffer" &&
+        result.reply.trim() &&
+        !/أحوّلك ل(?:حد|أحد) من الفريق/.test(result.reply)
+      ) {
+        result = { ...result, reply: `${result.reply.trim()}\n${allergySimpleReoffer(dialect)}` };
+      }
+      if (conversationId && allergySimpleDecision.hit.fired) {
+        const ticketNote = buildTicketAllergyNote(
+          collectConversationAllergenTerms(input.history, input.userMessage)
+        );
+        try {
+          await admin.from("conversations").update({ allergy_note: ticketNote }).eq("id", conversationId);
+        } catch {
+          /* column absent (pre-0080) → the ticket floor is best-effort, never breaks the turn */
+        }
       }
     }
   }
