@@ -11,6 +11,8 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { Resvg } from "@resvg/resvg-js";
 import { formatCustomerVisibleNumbers, optionValueOnly, type CustomerDigitStyle } from "@/lib/util/customer-visible-format";
+import { parseAllergyNote, buildAllergyNote } from "@/lib/ai/allergen-companion";
+import { canonicalizeAllergens } from "@/lib/ai/allergen-canonical";
 
 // --- fonts (loaded + cached once) -------------------------------------------
 const FONT_DIR = join(process.cwd(), "public", "fonts");
@@ -268,7 +270,12 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
   // when a kitchen-readable allergy note rides on the order, render the SPECIFIC
   // allergens on a second line so the kitchen sees WHICH allergens, not just a flag.
   if (d.safetyHold) {
-    const note = (d.allergyNote ?? "").trim();
+    // WO-MEMFIX read-time defense: the kitchen banner lists ONLY canonical allergen
+    // ENTITIES. A legacy garbage note (a stored symptom/trigger word like «حكه»/«حساسه»)
+    // is filtered out here, so it can never render as a substance on the ticket. No
+    // identifiable substance → the ⚠️ flag line alone, no fabricated substance list.
+    const canonical = canonicalizeAllergens(parseAllergyNote(d.allergyNote));
+    const note = canonical.length ? buildAllergyNote(canonical) : "";
     const h = note ? s(70) : s(42);
     parts.push(boxRect(y, h, "#fdecec", "#c0392b"));
     parts.push(tMid(y + s(27), "⚠️ حساسية — لا يتم التحضير قبل مراجعة المطعم", 19, "#a01b0b", 800));

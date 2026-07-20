@@ -22,6 +22,7 @@
 import { detectAllergenEmergency } from "./allergen-emergency";
 import { detectAllergenAvoidance } from "./allergen-gate";
 import { mergeAllergyNote, scanBannedAllergyPhrases, type DishTruthState } from "./allergen-companion";
+import { canonicalizeAllergens } from "./allergen-canonical";
 
 // A stable, human-readable marker embedded in the escalation_reason of an
 // EMERGENCY-class SYSTEM_HOLD. §1e·d: emergency holds are NEVER customer-resumable,
@@ -256,10 +257,18 @@ export function buildCheckpointRecap(
   dialect: string
 ): string {
   const eg = dialect === "egyptian";
-  const list = allergens.filter(Boolean).join("، ") || (eg ? "الحساسية المسجّلة" : "الحساسية المسجّلة");
-  const head = eg
-    ? `قبل ما أأكد الطلب ⚠️ — مسجّل حساسية من ${list}.`
-    : `قبل لا أأكد الطلب ⚠️ — مسجّل حساسية من ${list}.`;
+  // WO-MEMFIX read-time defense: the warning lists ONLY canonical allergen ENTITIES. Any
+  // symptom/trigger/mention token — a legacy garbage row, or the generic «حساسية» marker —
+  // is filtered out here so it can NEVER render as a substance. With no identifiable
+  // substance we fall back to a generic careful line, never a fabricated «من …» list.
+  const canonical = canonicalizeAllergens(allergens);
+  const head = canonical.length
+    ? (eg
+        ? `قبل ما أأكد الطلب ⚠️ — مسجّل حساسية من ${canonical.join("، ")}.`
+        : `قبل لا أأكد الطلب ⚠️ — مسجّل حساسية من ${canonical.join("، ")}.`)
+    : (eg
+        ? "قبل ما أأكد الطلب ⚠️ — عندك حساسية مسجّلة، وهنراعيها بحذر."
+        : "قبل لا أأكد الطلب ⚠️ — عندك حساسية مسجّلة، ونراعيها بحذر.");
   const perDish = dishes.length
     ? dishes.map((d) => `• ${d.name}: ${truthStatePhrase(d.state, dialect)}`).join("\n")
     : eg

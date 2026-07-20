@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseAllergyNote } from "@/lib/ai/allergen-companion";
+import { canonicalizeAllergens } from "@/lib/ai/allergen-canonical";
 
 export type AllergyEventKind =
   | "mention"             // §1a plain allergy mention → companion flow
@@ -90,11 +91,15 @@ export function buildBannedPhraseBlockAudit(
 export async function recordAllergyEvent(admin: SupabaseClient, input: AllergyEventInput): Promise<boolean> {
   try {
     // eslint-disable-next-line local-rules/no-unchecked-supabase-write -- best-effort observability insert; failure is intentionally non-fatal and returned as boolean.
+    // WO-MEMFIX write-time defense: the liability record lists ONLY canonical allergen
+    // ENTITIES. Symptom/trigger/mention tokens are dropped, so an allergy mention with no
+    // identifiable substance is stored with allergens = [] (allergen = null — the mention
+    // is recorded, nothing is listed as a substance). Real substances survive, canonical.
     const { error } = await admin.from("conversation_allergy_events").insert({
       restaurant_id: input.restaurantId,
       conversation_id: input.conversationId,
       order_id: input.orderId ?? null,
-      allergens: input.allergens ?? [],
+      allergens: canonicalizeAllergens(input.allergens ?? []),
       customer_message: input.customerMessage,
       event_kind: input.eventKind,
       agent_reply: input.agentReply ?? null,
