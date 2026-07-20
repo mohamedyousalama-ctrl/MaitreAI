@@ -130,6 +130,10 @@ export interface RespondInput {
    *  intent/understood signal. Passed only when goal_logic + perception are on; null otherwise
    *  (the interpreter then leans on its deterministic backstops). */
   perceptionRead?: GoalRead | null;
+  /** WO-CONTEXT (PART A): the conversation session went cold (>2h idle) or this turn is an
+   *  explicit reset. Any pending deterministic (askback) question from the prior session is
+   *  stale and must not reach the returning customer. Absent/false → identical behavior. */
+  sessionExpired?: boolean;
 }
 
 export interface RespondResult {
@@ -937,6 +941,13 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       const rematch = matchAddressToZones(ctx.draft.address, input.brain.deliveryAreas);
       if (rematch.kind === "ambiguous") pendingQuestion = rematch.question;
     }
+  }
+  // WO-CONTEXT (PART A) — a cold session (>2h idle) or an explicit reset EXPIRES any pending
+  // deterministic question so a stale zone ask never trails a returning customer's fresh turn.
+  // Only fires when a candidate actually existed → the signal is precise (no false expiry).
+  if (input.sessionExpired && pendingQuestion) {
+    ctx.signals.push({ type: "missing_data", detail: { reason: "pending_question_expired", source: "session_freshness" } });
+    pendingQuestion = null;
   }
 
   if (input.brain.finishLine) {

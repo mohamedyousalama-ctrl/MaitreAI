@@ -28,8 +28,11 @@ export const DRAFT_ARCHIVE_MS = 12 * 60 * 60 * 1000;
 
 // Explicit RESET intents — the customer wants to start over / cancel the whole order. Order-build
 // verbs alone («عايز أطلب») are NOT resets; a reset needs an explicit new-order/cancel-all phrase.
+// WO-CONTEXT (PART C) extends the vocabulary with the phrasings the live thread used and their
+// kin: «امسح كل اللي فات», «ابدأ من جديد», «من الأول», «الغي كل حاجة», «نبدأ من الصفر»,
+// «كنسل كل حاجة» — normalized-matched, consistent with the existing intent style.
 const RESET_INTENT_RE =
-  /(?:طلب|اوردر|أوردر|اردر)\s*(?:جديد|تاني|ثاني|من ?جديد)|(?:الغ[يى]|إلغاء|الغاء|امسح|إمسح|شيل|كنسل)\s*(?:الطلب|الاوردر|الأوردر|الاردر|الطلبيه|الطلبية|كل ?الطلب|الطلب ?كله)|(?:ابدأ|نبدأ|نبدا|ابدا)\s*(?:من ?(?:جديد|الاول|الأول|البدايه|البداية))|(?:طلب|اوردر)\s*(?:جديد|تاني)|\bnew order\b|\bstart over\b|\bcancel (?:the )?order\b/;
+  /(?:طلب|اوردر|أوردر|اردر)\s*(?:جديد|تاني|ثاني|من ?جديد)|(?:الغ[يى]|إلغاء|الغاء|امسح|إمسح|شيل|كنسل)\s*(?:الطلب|الاوردر|الأوردر|الاردر|الطلبيه|الطلبية|كل ?الطلب|الطلب ?كله|كل ?حاجه|كل ?شي|كل ?شئ)|(?:ابدأ|نبدأ|نبدا|ابدا)\s*(?:من ?(?:جديد|الاول|الأول|البدايه|البداية|الصفر))|امسح\s*كل\s*اللي\s*فات|(?:من ?الاول|من ?الصفر|من ?البدايه)(?![ء-ي])|(?:طلب|اوردر)\s*(?:جديد|تاني)|\bnew order\b|\bstart over\b|\bcancel (?:the )?order\b/;
 
 /** True iff the message is an explicit order-reset / start-over / cancel-all intent. Pure. */
 export function isExplicitResetIntent(message: string | null | undefined): boolean {

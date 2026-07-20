@@ -107,6 +107,51 @@ export function isDirectIngredientOrSafetyQuestion(text: string | null | undefin
   return INGREDIENT_Q_RE.test(normalizeAr(raw));
 }
 
+// --- WO-CONTEXT (PART B): allergy RETRACTION (allergy_simple only) ------------
+//
+// Detector term lists are UNTOUCHED. This is a NEGATION layered BEFORE the deflection
+// decision, on the triggering message: a customer WALKING BACK an allergy claim
+// («امسح كل اللي فات… أنا معنديش حساسيه», «مش حساسي», «انسى موضوع الحساسية») must NOT be
+// deflected — the detector fired only because the word «حساسية» appears inside a denial.
+//
+// SAFETY INVARIANT: a message that ALSO asserts an allergy for another person
+// («أنا معنديش بس ابني عنده حساسية لبن») is NEVER a retraction — the positive assertion
+// wins and the deflection fires with the real note (لبن). The positive-assertion guard is
+// boundary-aware so the negation «معنديش» is never mis-read as the assertion «عندي».
+
+// Retraction phrasings (over normalizeAr output — ة→ه, أإآ→ا). «حساسي» is the folded stem of
+// «حساسية»/«حساسيه». The «حساسي» anchor must sit inside the SAME denial clause.
+const ALLERGY_RETRACTION_RE =
+  /م(?:ا)?\s*عندي?ش?\s*حساسي|ما\s*عندي\s*حساسي|مفي?ش\s*(?:عندي\s*)?حساسي|انس[يى]\s*موضوع\s*الحساسي|مش\s*حساسي|بدون\s*موضوع\s*الحساسي|من ?غير\s*موضوع\s*الحساسي/;
+
+// A same-message positive allergy assertion for ANOTHER PERSON (the safety invariant). It is
+// deliberately THIRD-PERSON only — «عنده/عندها/عندهم حساسية», or a relative/named subject +
+// «عنده/عندها حساسية» («ابني عنده حساسية»). It never matches the first person «عندي حساسية»,
+// because a first-person «عندي حساسية» inside a retraction is ALWAYS negated («مفيش عندي
+// حساسية» / «ما عنديش حساسية»), and a genuine positive «عندي حساسية» is not a retraction at all
+// (RETRACTION_RE never matches it). Boundary-aware so «معنديش» is never mis-read.
+const POSITIVE_ALLERGY_ASSERTION_RE =
+  /(?<![ء-ي])(?:عنده|عندها|عندهم|عندهما)\s+حساسي|(?<![ء-ي])(?:ابن|بنت|جوز|مرات|ولد|امي|ابويا|اخويا|اختي|صاحب|مامتي|بابا|ماما)\S*\s+(?:عنده|عندها|عندهم|حساسي)/;
+
+/**
+ * True iff the message RETRACTS an allergy claim (allergy_simple only) — a denial that
+ * suppresses the deflection. Returns false when the SAME message positively asserts an
+ * allergy (for self or anyone else): the safety invariant — a real allergy always wins.
+ * Never modifies the detector term lists; it only reads the surface negation.
+ */
+export function detectAllergyRetraction(message: string | null | undefined): boolean {
+  const n = normalizeAr(String(message ?? ""));
+  if (!n) return false;
+  if (POSITIVE_ALLERGY_ASSERTION_RE.test(n)) return false; // SAFETY INVARIANT — assertion wins.
+  return ALLERGY_RETRACTION_RE.test(n);
+}
+
+/** The frozen honest ack sent alongside a retraction reply — no health commentary, no
+ *  reassurance («آمن/مفيش مشكلة»). Deliberately dialect-agnostic (frozen). */
+export function allergyRetractionAck(_dialect?: string | null | undefined): string {
+  return "تمام 👍";
+}
+
 // --- history helpers (pure) --------------------------------------------------
 
 function userText(m: LlmMessage): string {
@@ -119,12 +164,16 @@ function assistantText(m: LlmMessage): string {
   return typeof m.content === "string" ? m.content : "";
 }
 
-/** Count PRIOR customer turns in the conversation that fired the allergy/disease detector. */
+/** Count PRIOR customer turns that fired the allergy/disease detector, RESETTING at a
+ *  retraction (PART B): a retraction wipes the session allergy context, so a later fresh
+ *  mention is a FIRST mention again → the deflection re-triggers normally. */
 export function countPriorAllergyMentions(history: LlmMessage[]): number {
   let n = 0;
   for (const m of history) {
     const t = userText(m);
-    if (t && detectAllergyOrDiseaseMention(t).fired) n += 1;
+    if (!t) continue;
+    if (detectAllergyRetraction(t)) { n = 0; continue; } // retraction resets the running count
+    if (detectAllergyOrDiseaseMention(t).fired) n += 1;
   }
   return n;
 }
@@ -141,11 +190,15 @@ export function collectConversationAllergenTerms(history: LlmMessage[], userMess
   for (const m of history) {
     const t = userText(m);
     if (!t) continue;
+    if (detectAllergyRetraction(t)) { terms.length = 0; continue; } // retraction wipes the session terms
     const hit = detectAllergyOrDiseaseMention(t);
     if (hit.fired && hit.term) add(hit.term);
   }
-  const cur = detectAllergyOrDiseaseMention(userMessage);
-  if (cur.fired && cur.term) add(cur.term);
+  // A retraction THIS turn contributes no term (and the wipe above already cleared history).
+  if (!detectAllergyRetraction(userMessage)) {
+    const cur = detectAllergyOrDiseaseMention(userMessage);
+    if (cur.fired && cur.term) add(cur.term);
+  }
   return terms;
 }
 
