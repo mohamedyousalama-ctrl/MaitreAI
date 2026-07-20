@@ -20,6 +20,10 @@ import {
 import { evaluateTesterAllowlist } from "@/lib/messaging/tester-allowlist";
 import { modeAllowsAgentReply, type SystemMode } from "@/lib/ai/modes";
 import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink, sendWhatsAppAudio } from "./outbound";
+// WO-CONTROL Part B — capture the conversation's control_epoch at AI-turn start and thread
+// it into the reply send; the outbound chokepoint drops the reply if a human claimed the
+// conversation mid-turn (epoch changed). readControlEpoch is deploy-safe (missing column → null).
+import { readControlEpoch } from "./send-gate";
 import { decideVoiceSend, voiceHardZeroReason, voiceNotesPerDay } from "./voice-budget";
 import { shouldOfferVoiceReply } from "@/lib/ai/voice-reply-trigger";
 import { synthesizeVoiceReply } from "@/lib/ai/tts";
@@ -97,7 +101,11 @@ export type RespondAndSendStatus =
   // WO-CALM — safety-held allergy turns are answered by fixed templates, never the Brain.
   | "allergy_calm_holding"
   | "allergy_calm_new_allergy"
-  | "allergy_calm_emergency";
+  | "allergy_calm_emergency"
+  // WO-CONTROL Part B — the Brain reply was DROPPED at the send chokepoint because the
+  // conversation's control_epoch changed between turn-start and send (a human claimed it
+  // mid-turn). Nothing was transmitted; a blocked_stale_sender signal was logged.
+  | "blocked_stale_sender";
 
 export interface RespondAndSendResult {
   status: RespondAndSendStatus;
@@ -844,7 +852,7 @@ export async function respondAndSendWhatsApp(
   //    and reason for the idle policy below).
   const { data: conv } = await admin
     .from("conversations")
-    .select("id, owner, channel, customer_id, escalation_reason, updated_at, ownership_state, is_safety_hold, customers(phone)")
+    .select("id, owner, channel, customer_id, escalation_reason, updated_at, ownership_state, is_safety_hold, control_epoch, customers(phone)")
     .eq("id", conversationId)
     .single();
   if (!conv) return { status: "skipped_not_found", error: "conversation_not_found" };
@@ -1536,6 +1544,14 @@ export async function respondAndSendWhatsApp(
     }
   }
 
+  // WO-CONTROL Part B — capture the control_epoch at AI-turn start. The reply is composed
+  // against THIS epoch; if a human claims the conversation while the Brain thinks, the epoch
+  // bumps and the send chokepoint drops the (now stale) reply. Deploy-safe: null pre-migration
+  // → the gate stays inert. Prefer the value already read on the conv row; fall back to a fresh
+  // read only if it was absent.
+  let controlEpochAtStart =
+    (conv as { control_epoch?: number | null }).control_epoch ?? (await readControlEpoch(admin, conversationId));
+
   // 3. Brain turn — persists the AI reply, logs cost to agent_runs, flips to
   //    human on escalation. Any failure hands the thread to a human + notes it.
   let outcome;
@@ -1665,15 +1681,38 @@ export async function respondAndSendWhatsApp(
     return { status: "deduped", reply: outcome.reply };
   }
 
+  // WO-CONTROL Part B — re-baseline the enqueue epoch when the BRAIN itself performed an
+  // ownership transition this turn (an escalation/handoff). Its own transition bumped the
+  // epoch, and its reply (the handoff message) must still send — so the gate must compare
+  // against the POST-transition epoch, not turn-start. Only an EXTERNAL change after this
+  // point (a human claim) then blocks the send. A non-escalating turn keeps the turn-start
+  // epoch, so a mid-turn human claim is caught.
+  if (outcome.escalate === true) {
+    controlEpochAtStart = (await readControlEpoch(admin, conversationId)) ?? controlEpochAtStart;
+  }
+
   // 4. Put the reply on the WhatsApp wire — as an interactive message when the
   //    Brain presented options (degrades to numbered text on failure), else text.
   const outboundReply = formatCustomerVisibleText(outcome.reply, outboundDialect);
   const outboundPresentation = outcome.presentation
     ? formatCustomerVisiblePresentation(outcome.presentation, outboundDialect)
     : null;
+  // The control_epoch guard rides with the send; the outbound chokepoint re-reads the
+  // epoch immediately before the WhatsApp API call and drops a stale reply.
+  const epochGuard = { admin, conversationId, restaurantId, epochAtEnqueue: controlEpochAtStart, source: "ai_reply" };
   const send = outboundPresentation
-    ? await sendWhatsAppInteractive({ to: phone, body: outboundReply, presentation: outboundPresentation, lastInboundAtMs })
-    : await sendWhatsAppText({ to: phone, text: outboundReply, lastInboundAtMs });
+    ? await sendWhatsAppInteractive({ to: phone, body: outboundReply, presentation: outboundPresentation, lastInboundAtMs, guard: epochGuard })
+    : await sendWhatsAppText({ to: phone, text: outboundReply, lastInboundAtMs, guard: epochGuard });
+
+  // WO-CONTROL Part B — the reply was dropped as a stale sender (a human claimed the
+  // conversation mid-turn). Nothing transmitted; the signal is already logged. Mark the
+  // persisted reply failed (it never went out) and return without perception/voice/media.
+  if (send.blocked === "stale_sender") {
+    if (outcome.replyMessageId) {
+      await admin.from("messages").update({ status: "failed" }).eq("id", outcome.replyMessageId);
+    }
+    return { status: "blocked_stale_sender", reply: outboundReply, escalate: outcome.escalate };
+  }
 
   if ((send.status === "sent" || send.status === "skipped") && outcome.perceptionAsync) {
     scheduleAsyncPerceptionAfterReply(admin, { restaurantId, conversationId, history, userMessage });

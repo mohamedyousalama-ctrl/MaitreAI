@@ -1,0 +1,442 @@
+// ============================================================================
+// MaitreAI — conversation control plane (WO-CONTROL) — the human-takeover spine.
+//
+// ONE control axis over a conversation, EXTENDING the existing ownership model
+// (conversations.ownership_state == the control `mode`; owner/assigned_member_id
+// dual-written) — never a second source of truth. This module is the single place
+// that answers three questions and performs every control transition:
+//
+//   • authorityFor(mode)        → exactly one of {AI, HUMAN, NONE}. Never AI+HUMAN.
+//   • canTransition(from, to)    → the legal-transition law (superset-consistent with
+//                                  lib/db/ownership.ts for the five legacy modes).
+//   • applyTransition / claim / release / reassign / escalateToHold — the data layer,
+//     each a single atomic RPC (migration 0099) that bumps control_epoch and appends a
+//     conversation_assignment_events row via DB triggers, with the real actor supplied
+//     by transaction-local GUCs.
+//
+// PURE first: authorityFor, canTransition, canHandBack, and deriveAssignmentEventType
+// are pure and total (exhaustive over the mode enum) so they are unit-testable without
+// a DB and mirror the SQL exactly (the same pure-mirror discipline as ownership.ts's
+// canClaim and safety-hold.ts's isSafetyHeld).
+//
+// control_epoch is the collision killer: it increments on every mode/owner/authority
+// transition (the DB trigger guarantees it), and the send gate (Part B) re-reads it
+// immediately before the WhatsApp API call — a stale enqueue is dropped, never sent.
+// ============================================================================
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+// ---------------------------------------------------------------------------
+// The control mode == conversations.ownership_state (widened by migration 0099).
+// HUMAN_IDLE is the canonical name for the WO's "HUMAN_WAITING" (documented alias).
+// ---------------------------------------------------------------------------
+export type ControlMode =
+  | "AI_ACTIVE" // Karim owns + replies (authority AI)
+  | "HOLD_UNCLAIMED" // escalated, no human has claimed yet (authority NONE) — NEW
+  | "HUMAN_ACTIVE" // a member has taken over (authority HUMAN)
+  | "HUMAN_IDLE" // == HUMAN_WAITING: member owns but idle, customer waiting (authority HUMAN)
+  | "AI_RESUME_PENDING" // handback validation in flight (authority NONE) — NEW
+  | "SYSTEM_HOLD" // safety hold (allergy); deliberate human release only (authority NONE)
+  | "CLOSED"; // finished (authority NONE)
+
+export const CONTROL_MODES: readonly ControlMode[] = [
+  "AI_ACTIVE",
+  "HOLD_UNCLAIMED",
+  "HUMAN_ACTIVE",
+  "HUMAN_IDLE",
+  "AI_RESUME_PENDING",
+  "SYSTEM_HOLD",
+  "CLOSED",
+];
+
+/** Derived reply authority. EXACTLY ONE at any time; never AI and HUMAN together. */
+export type ReplyAuthority = "AI" | "HUMAN" | "NONE";
+
+export type AssignmentEventType =
+  | "CLAIMED"
+  | "RELEASED"
+  | "REASSIGNED"
+  | "MANAGER_TAKEOVER"
+  | "HANDED_TO_AI"
+  | "ESCALATED"
+  | "SYSTEM_HOLD"
+  | "CLOSED";
+
+function assertNever(x: never): never {
+  throw new Error(`[conversation-control] unmapped mode ${JSON.stringify(x)}`);
+}
+
+// ---------------------------------------------------------------------------
+// authorityFor — PURE, TOTAL, EXHAUSTIVE. This is the semantic guard the control
+// plane / console callers consult before sending. It can NEVER return AI and HUMAN
+// for the same mode (each mode maps to exactly one value below). The hard, universal
+// send-safety guarantee is the control_epoch gate (Part B), which is behavior-neutral
+// when the epoch matches; authorityFor is the intent layer on top.
+// ---------------------------------------------------------------------------
+export function authorityFor(mode: ControlMode): ReplyAuthority {
+  switch (mode) {
+    case "AI_ACTIVE":
+      return "AI";
+    case "HUMAN_ACTIVE":
+    case "HUMAN_IDLE":
+      return "HUMAN";
+    case "HOLD_UNCLAIMED":
+    case "AI_RESUME_PENDING":
+    case "SYSTEM_HOLD":
+    case "CLOSED":
+      return "NONE";
+    default:
+      return assertNever(mode);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The legal-transition table. For the FIVE legacy modes the edges are IDENTICAL to
+// lib/db/ownership.ts LEGAL_TRANSITIONS (so the control plane and the Brain's
+// setOwnershipState never disagree on a shared pair); the only additions are edges
+// that INVOLVE a new mode (HOLD_UNCLAIMED / AI_RESUME_PENDING). Self-transitions are
+// idempotent no-ops (allowed); a null `from` (unknown/legacy row) is never blocked.
+// ---------------------------------------------------------------------------
+const TRANSITIONS: Record<ControlMode, readonly ControlMode[]> = {
+  // legacy [HUMAN_ACTIVE, SYSTEM_HOLD, CLOSED] + new [HOLD_UNCLAIMED]
+  AI_ACTIVE: ["HOLD_UNCLAIMED", "HUMAN_ACTIVE", "SYSTEM_HOLD", "CLOSED"],
+  // new state: escalated-and-unclaimed → a human claims it, safety upgrades it, it
+  // returns to AI (deliberate resume), or it closes.
+  HOLD_UNCLAIMED: ["HUMAN_ACTIVE", "SYSTEM_HOLD", "AI_ACTIVE", "CLOSED"],
+  // legacy [HUMAN_IDLE, AI_ACTIVE, CLOSED] + new [AI_RESUME_PENDING]
+  HUMAN_ACTIVE: ["HUMAN_IDLE", "AI_ACTIVE", "AI_RESUME_PENDING", "CLOSED"],
+  // legacy [HUMAN_ACTIVE, AI_ACTIVE, CLOSED] + new [AI_RESUME_PENDING]
+  HUMAN_IDLE: ["HUMAN_ACTIVE", "AI_ACTIVE", "AI_RESUME_PENDING", "CLOSED"],
+  // new state: handback validation → resume (AI_ACTIVE), reclaim/fail (HUMAN_ACTIVE), close.
+  AI_RESUME_PENDING: ["AI_ACTIVE", "HUMAN_ACTIVE", "CLOSED"],
+  // legacy — SYSTEM_HOLD → AI_ACTIVE is legal ONLY as a deliberate human release (#87).
+  SYSTEM_HOLD: ["HUMAN_ACTIVE", "AI_ACTIVE", "CLOSED"],
+  // legacy — a closed conversation reopens to AI on a new inbound.
+  CLOSED: ["AI_ACTIVE"],
+};
+
+/** Pure predicate. null `from` permitted (never block a legacy row); self-transition ok. */
+export function canTransition(from: ControlMode | null | undefined, to: ControlMode): boolean {
+  if (from == null) return true;
+  if (from === to) return true;
+  return TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** Throwing variant for callers/tests that want the transition enforced. */
+export function assertTransition(from: ControlMode | null | undefined, to: ControlMode): void {
+  if (!canTransition(from, to)) {
+    throw new Error(`[conversation-control] illegal transition ${from} → ${to}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// deriveAssignmentEventType — the PURE MIRROR of migration 0099's log_assignment_event
+// trigger CASE. Kept here so the audit-type logic is unit-testable and stays in lock-
+// step with the SQL. When the app supplies an explicit type (a human action) it wins;
+// otherwise the type is derived from the destination mode + whether it landed claimed.
+// ---------------------------------------------------------------------------
+export function deriveAssignmentEventType(
+  toMode: ControlMode,
+  hasAssignee: boolean,
+  provided?: AssignmentEventType | null
+): AssignmentEventType {
+  if (provided) return provided;
+  switch (toMode) {
+    case "HUMAN_ACTIVE":
+      return hasAssignee ? "CLAIMED" : "ESCALATED"; // unclaimed handoff (Option 1)
+    case "HOLD_UNCLAIMED":
+      return "ESCALATED";
+    case "AI_ACTIVE":
+    case "AI_RESUME_PENDING":
+      return "HANDED_TO_AI";
+    case "SYSTEM_HOLD":
+      return "SYSTEM_HOLD";
+    case "CLOSED":
+      return "CLOSED";
+    case "HUMAN_IDLE":
+      return "REASSIGNED";
+    default:
+      return assertNever(toMode);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// canHandBack — PURE handback-blocker predicate (Part C releaseToAI). A human may hand
+// a conversation back to the AI only when: no unanswered customer message is waiting, no
+// open safety case, and the in-progress draft (if any) has been persisted. Pure so the
+// blockers are testable and the reason is explicit.
+// ---------------------------------------------------------------------------
+export interface HandBackState {
+  hasUnreadInbound: boolean; // a customer message arrived after the last outbound
+  safetyOpen: boolean; // is_safety_hold / SYSTEM_HOLD still active
+  draftPersisted: boolean; // any in-progress draft has been committed (or there is none)
+}
+
+export type HandBackBlocker = "unread_inbound" | "safety_open" | "draft_unpersisted";
+
+export function handBackBlockers(state: HandBackState): HandBackBlocker[] {
+  const blockers: HandBackBlocker[] = [];
+  if (state.hasUnreadInbound) blockers.push("unread_inbound");
+  if (state.safetyOpen) blockers.push("safety_open");
+  if (!state.draftPersisted) blockers.push("draft_unpersisted");
+  return blockers;
+}
+
+export function canHandBack(state: HandBackState): boolean {
+  return handBackBlockers(state).length === 0;
+}
+
+// ===========================================================================
+// DATA LAYER — thin wrappers over the migration-0099 atomic RPCs. Each RPC sets the
+// per-transaction audit GUCs and performs its UPDATE in one transaction, so the epoch
+// bump + assignment-event append fire with the real actor. These return the fresh
+// { mode, epoch } so a caller can thread the epoch into a send (Part B).
+// ===========================================================================
+
+export interface TransitionResult {
+  conversationId: string;
+  mode: ControlMode;
+  epoch: number;
+  assignedMemberId?: string | null;
+}
+
+/** Typed loser of an atomic claim — carries who currently owns the conversation. */
+export class ClaimLostError extends Error {
+  readonly conversationId: string;
+  readonly currentOwnerMemberId: string | null;
+  constructor(conversationId: string, currentOwnerMemberId: string | null) {
+    super(`[conversation-control] claim lost for ${conversationId}` + (currentOwnerMemberId ? ` (owned by ${currentOwnerMemberId})` : ""));
+    this.name = "ClaimLostError";
+    this.conversationId = conversationId;
+    this.currentOwnerMemberId = currentOwnerMemberId;
+  }
+}
+
+type Row = { id: string; ownership_state: string; control_epoch: number; assigned_member_id?: string | null };
+
+function firstRow(data: unknown): Row | null {
+  if (Array.isArray(data)) return (data[0] as Row) ?? null;
+  return (data as Row) ?? null;
+}
+
+function toResult(conversationId: string, row: Row): TransitionResult {
+  return {
+    conversationId,
+    mode: row.ownership_state as ControlMode,
+    epoch: Number(row.control_epoch),
+    assignedMemberId: row.assigned_member_id ?? null,
+  };
+}
+
+/**
+ * applyTransition — the general control transition. Validates the move against the pure
+ * transition table when a `from` is supplied, then performs the single atomic RPC (epoch
+ * bump + audit event fire in the same transaction). `owner`/`status` dual-write the legacy
+ * fields; omit to keep them.
+ */
+export async function applyTransition(
+  client: SupabaseClient,
+  conversationId: string,
+  to: ControlMode,
+  opts: {
+    from?: ControlMode | null;
+    actorMemberId?: string | null;
+    eventType?: AssignmentEventType | null;
+    reason?: string | null;
+    owner?: "ai" | "human" | null;
+    status?: string | null;
+  } = {}
+): Promise<TransitionResult> {
+  if (opts.from !== undefined) assertTransition(opts.from, to);
+  const { data, error } = await client.rpc("control_apply_transition", {
+    p_conversation_id: conversationId,
+    p_to_mode: to,
+    p_owner: opts.owner ?? null,
+    p_status: opts.status ?? null,
+    p_actor: opts.actorMemberId ?? null,
+    p_event_type: opts.eventType ?? null,
+    p_reason: opts.reason ?? null,
+  });
+  if (error) throw error;
+  const row = firstRow(data);
+  if (!row) throw new Error(`[conversation-control] applyTransition: conversation ${conversationId} not found`);
+  return toResult(conversationId, row);
+}
+
+/**
+ * escalateToHold — hand a live conversation to a hold + authority NONE. safety=true routes
+ * to SYSTEM_HOLD (the established safety state — preserves isSafetyHeld()/#87/red-chip; NO
+ * parallel safety representation), non-safety to HOLD_UNCLAIMED. Stores the trigger context
+ * (escalation_reason/handover_note) and, for safety, sets is_safety_hold. IDEMPOTENT per
+ * (conversation, epoch): the RPC's WHERE excludes already-held/terminal modes, so a repeat
+ * call is a no-op (0 rows) — no epoch bump, no duplicate ESCALATED event.
+ *
+ * Option 1 (Stage-1 ruling): NOT called from the Brain. Brain escalations keep writing
+ * HUMAN_ACTIVE + assigned_member_id=NULL and auto-audit as ESCALATED via the trigger. This
+ * helper is reached only via new console hold actions.
+ */
+export async function escalateToHold(
+  client: SupabaseClient,
+  conversationId: string,
+  reason: string,
+  opts: { safety?: boolean; actorMemberId?: string | null } = {}
+): Promise<{ escalated: boolean; result: TransitionResult | null }> {
+  const toMode: ControlMode = opts.safety ? "SYSTEM_HOLD" : "HOLD_UNCLAIMED";
+  const { data, error } = await client.rpc("control_escalate_to_hold", {
+    p_conversation_id: conversationId,
+    p_to_mode: toMode,
+    p_reason: reason,
+    p_safety: opts.safety ?? false,
+    p_actor: opts.actorMemberId ?? null,
+  });
+  if (error) throw error;
+  const row = firstRow(data);
+  // 0 rows → already held/terminal → idempotent no-op.
+  if (!row) return { escalated: false, result: null };
+  return { escalated: true, result: toResult(conversationId, row) };
+}
+
+/**
+ * claimConversation — the atomic named claim (Part C; MO2 lineage). A single conditional
+ * RPC: exactly one of two racing operators wins. The loser throws a typed ClaimLostError
+ * carrying the current owner. On win → HUMAN_ACTIVE, authority HUMAN, CLAIMED event, epoch++.
+ */
+export async function claimConversation(
+  client: SupabaseClient,
+  args: { conversationId: string; restaurantId: string; memberId: string }
+): Promise<TransitionResult> {
+  const { conversationId, restaurantId, memberId } = args;
+  const { data, error } = await client.rpc("control_claim", {
+    p_conversation_id: conversationId,
+    p_restaurant_id: restaurantId,
+    p_member_id: memberId,
+  });
+  if (error) throw error;
+  const row = firstRow(data);
+  if (row) return toResult(conversationId, row); // won (or idempotent re-claim by same member)
+
+  // 0 rows — lost the race or not claimable. Read the current owner for the typed error.
+  const { data: cur } = await client
+    .from("conversations")
+    .select("assigned_member_id")
+    .eq("id", conversationId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  const ownerId = (cur as { assigned_member_id?: string | null } | null)?.assigned_member_id ?? null;
+  throw new ClaimLostError(conversationId, ownerId);
+}
+
+/**
+ * releaseToAI — hand a human-owned conversation back to the AI. Validates the pure
+ * canHandBack blockers first (no unread inbound, no open safety case, draft persisted);
+ * a blocked handback throws before any write. The transition goes through
+ * AI_RESUME_PENDING then AI_ACTIVE (two audited steps), clearing named ownership +
+ * escalation context. Returns the final AI_ACTIVE result.
+ */
+export async function releaseToAI(
+  client: SupabaseClient,
+  args: {
+    conversationId: string;
+    restaurantId: string;
+    memberId: string;
+    from?: ControlMode | null;
+    handBack: HandBackState;
+    reason?: string | null;
+  }
+): Promise<TransitionResult> {
+  const blockers = handBackBlockers(args.handBack);
+  if (blockers.length) {
+    throw new HandBackBlockedError(args.conversationId, blockers);
+  }
+  // Step 1 — mark resume pending (validation window; authority NONE).
+  await applyTransition(client, args.conversationId, "AI_RESUME_PENDING", {
+    from: args.from ?? null,
+    actorMemberId: args.memberId,
+    eventType: "HANDED_TO_AI",
+    reason: args.reason ?? null,
+    owner: "human",
+  });
+  // Step 2 — validated → resume with the AI.
+  const { data, error } = await client.rpc("control_release_to_ai", {
+    p_conversation_id: args.conversationId,
+    p_restaurant_id: args.restaurantId,
+    p_actor: args.memberId,
+    p_reason: args.reason ?? null,
+  });
+  if (error) throw error;
+  const row = firstRow(data);
+  if (!row) throw new Error(`[conversation-control] releaseToAI: conversation ${args.conversationId} not found`);
+  return toResult(args.conversationId, row);
+}
+
+/** Typed handback rejection — carries the exact blockers so the caller can explain. */
+export class HandBackBlockedError extends Error {
+  readonly conversationId: string;
+  readonly blockers: HandBackBlocker[];
+  constructor(conversationId: string, blockers: HandBackBlocker[]) {
+    super(`[conversation-control] handback blocked for ${conversationId}: ${blockers.join(", ")}`);
+    this.name = "HandBackBlockedError";
+    this.conversationId = conversationId;
+    this.blockers = blockers;
+  }
+}
+
+/**
+ * managerReassign — move a conversation from one member to another. Requires manager role
+ * (the caller enforces it via the require-tenant gate — the same role-authority pattern the
+ * last-manager guard, migrations 0089/0094, protects). Conditional on the current owner so
+ * a stale reassign can't clobber a takeover that already moved. Writes MANAGER_TAKEOVER when
+ * the manager takes it themselves, else REASSIGNED. epoch++.
+ */
+export async function managerReassign(
+  client: SupabaseClient,
+  args: {
+    conversationId: string;
+    restaurantId: string;
+    fromMemberId: string | null;
+    toMemberId: string;
+    actorMemberId: string; // the acting manager
+    isManager: boolean; // resolved by the caller from the session (require-tenant role)
+    reason?: string | null;
+  }
+): Promise<TransitionResult> {
+  if (!args.isManager) {
+    throw new NotManagerError(args.conversationId);
+  }
+  const eventType: AssignmentEventType = args.toMemberId === args.actorMemberId ? "MANAGER_TAKEOVER" : "REASSIGNED";
+  const { data, error } = await client.rpc("control_reassign", {
+    p_conversation_id: args.conversationId,
+    p_restaurant_id: args.restaurantId,
+    p_from_member: args.fromMemberId,
+    p_to_member: args.toMemberId,
+    p_actor: args.actorMemberId,
+    p_event_type: eventType,
+    p_reason: args.reason ?? null,
+  });
+  if (error) throw error;
+  const row = firstRow(data);
+  if (!row) throw new ReassignPreconditionError(args.conversationId, args.fromMemberId);
+  return toResult(args.conversationId, row);
+}
+
+/** The reassign's optimistic precondition (current owner) did not hold. */
+export class ReassignPreconditionError extends Error {
+  readonly conversationId: string;
+  readonly expectedFromMemberId: string | null;
+  constructor(conversationId: string, expectedFromMemberId: string | null) {
+    super(`[conversation-control] reassign precondition failed for ${conversationId}`);
+    this.name = "ReassignPreconditionError";
+    this.conversationId = conversationId;
+    this.expectedFromMemberId = expectedFromMemberId;
+  }
+}
+
+/** A non-manager attempted a manager-only reassignment. */
+export class NotManagerError extends Error {
+  readonly conversationId: string;
+  constructor(conversationId: string) {
+    super(`[conversation-control] manager role required to reassign ${conversationId}`);
+    this.name = "NotManagerError";
+    this.conversationId = conversationId;
+  }
+}
