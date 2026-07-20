@@ -57,6 +57,16 @@ import { dishDataFromMenuItem } from "./dish-allergen-data";
 // it nor carries real content, APPEND the question (or replace a contentless
 // pleasantry-only reply with greeting+question). String ops only; only ADDS content.
 import { pendingDeterministicQuestion, injectPendingQuestion } from "./askback-injection";
+// WO-FINISH-LINE (PART A) — the deterministic order-recap renderer: after a draft
+// mutation (a recap-trigger tool ran) the recap is RENDERED BY CODE from the priced
+// draft, never model prose, so it is complete every turn and costs zero model calls.
+// (PART B) — the turn contract: every reply must carry a question, a recap, or a
+// handoff; else the deterministic next-step is appended (no promise-and-silence).
+// (PART C) — a >8-item bulk/party request short-circuits to a human handoff instead
+// of driving the tool loop into the iteration cap. All gated on brain.finishLine.
+import { recapDue, applyDeterministicRecap, renderDraftRecap } from "./recap-render";
+import { enforceTurnContract } from "./turn-contract";
+import { exceedsBulkThreshold, impliedItemCount, bulkHandoffReply, bulkHandoffReason } from "./bulk-threshold";
 // WO-STATE-TRUTH (PART A) — the deterministic zone-selection net: when the customer's
 // reply picks one of the offered ambiguity candidates, persist the zone-of-truth onto the
 // draft so ambiguity stays silent and finalize prices the persisted zone (never re-matches
@@ -383,6 +393,35 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
   const tools = canOrder ? orderToolsForDelivery(geoRouting, addressFlowV2) : NON_ORDER_TOOLS;
 
+  // WO-FINISH-LINE (PART C) — BULK THRESHOLD. A single request implying > 8 items
+  // (a party order like «٢٠ بيتزا … حفله») is NOT a tool-building job — it drove the
+  // model into the 6-iteration cap and dead-ended (DB-proven). Short-circuit BEFORE any
+  // tool loop: honest handoff line + set the escalation (respond's handoff output) so
+  // the team is alerted (customer-turn's notify path) and picks it up. No model call.
+  // Flag OFF → never runs → byte-identical.
+  if (input.brain.finishLine && canOrder && exceedsBulkThreshold(input.userMessage)) {
+    const impliedCount = impliedItemCount(input.userMessage);
+    const reason = bulkHandoffReason(impliedCount);
+    ctx.escalation = { reason };
+    ctx.signals.push({ type: "escalation", detail: { reason, source: "bulk_threshold", impliedCount } });
+    return {
+      reply: bulkHandoffReply(input.brain.dialect),
+      draft: ctx.draft,
+      escalate: true,
+      escalationReason: reason,
+      signals: ctx.signals,
+      presentation: null,
+      photoRequests: ctx.photoRequests,
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      toolNames: [],
+      stopReason: "bulk_handoff",
+      model: "deterministic_bulk_threshold",
+      adapter: adapter.name,
+      resendReceipt: false,
+      calls_used: 0,
+    };
+  }
+
   // WO-V1.0-GOAL-LOGIC (Slice 1) — FRONT-OF-TURN intent reasoning. Before composing a reply,
   // classify the inbound: AMBIGUOUS → ask ONE grounded question (short-circuit, no model call);
   // PRICE / ACTIONABLE → fall through to the model+tool loop (the Final Validator below enforces
@@ -470,8 +509,14 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     toolNames.push("finalize_draft");
     const out = executeTool("finalize_draft", {}, ctx);
     if (!out.isError) {
+      // WO-FINISH-LINE (PART A) — render the registered-order recap deterministically
+      // (Arabic-Indic, complete, no truncation) instead of the tool's summary string.
+      // Flag OFF → the tool content is byte-identical.
+      const reply = input.brain.finishLine
+        ? renderDraftRecap(ctx.draft, { dialect: input.brain.dialect, allergyNote: ctx.sessionAllergyNote, phase: "confirmed" })
+        : out.content;
       return {
-        reply: out.content,
+        reply,
         draft: ctx.draft,
         escalate: false,
         escalationReason: null,
@@ -853,6 +898,33 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     }
   }
 
+  // WO-FINISH-LINE (PART A) — DETERMINISTIC RECAP. After a draft mutation (a recap-
+  // trigger tool ran this turn) and the draft has lines, REPLACE the model's recap prose
+  // (which truncated mid-word and cost the 6-call recap loop) with the code-rendered recap
+  // from the priced draft — keeping at most one short model lead-in. NEVER runs on a turn
+  // that fired a safety/handoff event (a safety line must not become a cheerful recap).
+  // Flag OFF → recapDue is false → byte-identical.
+  {
+    const safetyEvent =
+      !!ctx.escalation ||
+      ctx.signals.some(
+        (s) =>
+          s.type === "escalation" ||
+          s.type === "notify_without_hold" ||
+          (s.type === "missing_data" &&
+            ["allergen_safety_claim", "disease_diet_suitability_claim", "companion_banned_phrase_repaired", "allergy_checkpoint"].includes(
+              String(s.detail?.reason ?? "")
+            ))
+      );
+    if (recapDue({ flagOn: input.brain.finishLine === true, canOrder, draft: ctx.draft, toolNames, safetyEvent })) {
+      const recapped = applyDeterministicRecap(text, ctx.draft, { dialect: input.brain.dialect, allergyNote: ctx.sessionAllergyNote, phase: "readback" });
+      if (recapped !== text) {
+        ctx.signals.push({ type: "missing_data", detail: { reason: "deterministic_recap_rendered", source: "finish_line_recap" } });
+        text = recapped;
+      }
+    }
+  }
+
   // WO-ASKBACK — FINAL SETTLE (runs after every guard, so it catches text stripped by
   // ANY of them). Recover the pending deterministic question: prefer the one this turn's
   // tools already produced (address_zone_ambiguous signal); otherwise RE-DETECT a still-open
@@ -881,6 +953,29 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         detail: { reason: "askback_injected", source: "askback_final_settle", mode: injected.mode, question: pendingQuestion },
       });
       text = injected.text;
+    }
+  }
+
+  // WO-FINISH-LINE (PART B) — TURN CONTRACT. The LAST validation stage (after every guard
+  // AND the ask-back settle, so no double-append): a reply must carry a question, a rendered
+  // recap, or a handoff line — else the deterministic next-step (pending question → draft
+  // recap + «أكمل؟» → honest handoff) is appended. Kills the bare future-promise dead-end
+  // («هختارلك أحسن تنوع!»). Flag OFF → never runs → byte-identical.
+  if (input.brain.finishLine && text.trim()) {
+    const contract = enforceTurnContract({
+      text,
+      dialect: input.brain.dialect,
+      draft: ctx.draft,
+      pendingQuestion,
+      escalated: !!ctx.escalation,
+      allergyNote: ctx.sessionAllergyNote,
+    });
+    if (contract.appended) {
+      ctx.signals.push({
+        type: "missing_data",
+        detail: { reason: "turn_contract_next_step", source: "finish_line_contract", kind: contract.kind, futurePromise: contract.futurePromise },
+      });
+      text = contract.text;
     }
   }
 

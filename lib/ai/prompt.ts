@@ -168,6 +168,13 @@ export interface BrainContext {
    *  never by the prompt — so the base prompt stays byte-identical (snapshot-gated); off/absent →
    *  the guard never runs. */
   actionClaimGuard?: boolean;
+  /** WO-FINISH-LINE (flag `finish_line`, default OFF): when true, respond.ts renders the
+   *  order recap deterministically from the priced draft (PART A), enforces the post-turn
+   *  contract that every reply carries a question / recap / handoff (PART B), and short-
+   *  circuits a >8-item bulk request to a human handoff (PART C). Read ONLY by respond.ts —
+   *  never by the prompt — so the base prompt stays byte-identical (snapshot-gated);
+   *  off/absent → none of it runs. */
+  finishLine?: boolean;
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------
