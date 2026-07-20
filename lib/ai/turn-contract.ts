@@ -24,7 +24,7 @@
 import type { OrderDraft } from "./tools";
 import { normalizeAr } from "./allergen-gate";
 import { replyContainsQuestion } from "./askback-injection";
-import { containsRenderedRecap, renderDraftRecap } from "./recap-render";
+import { containsRenderedRecap, renderDraftRecap, isDraftPricedConsistent } from "./recap-render";
 
 /** (a) a question mark (Arabic «؟» or Latin «?»). The interrogative signal. */
 export function hasQuestion(text: string): boolean {
@@ -66,6 +66,13 @@ export interface TurnContractInput {
   escalated?: boolean;
   /** The kitchen-readable session allergy note, for the draft-recap next-step. */
   allergyNote?: string | null;
+  /** WO-SIMPLIFY (PART D) — the previous OUTBOUND message text. The contract never appends a
+   *  next-step that the previous message already ended with (kills the 3× identical handoff). */
+  previousOutbound?: string | null;
+  /** WO-SIMPLIFY (PART D) — true when THIS turn's customer message is a pure social/closing
+   *  turn (gratitude / farewell, no order intent). Only a social turn with NO active unmet goal
+   *  and NO future-promise is exempt from the contract (a legal terminal state). */
+  socialClosing?: boolean;
 }
 
 export interface TurnContractResult {
@@ -75,6 +82,41 @@ export interface TurnContractResult {
   kind: NextStepKind | null;
   /** Whether a future-promise pattern was present (observability). */
   futurePromise: boolean;
+  /** WO-SIMPLIFY (PART D) — true when the contract did not apply because there was no active
+   *  unmet goal (a post-completion social turn is a legal terminal state — no next-step). */
+  socialTerminal?: boolean;
+}
+
+/** WO-SIMPLIFY (PART D) — a pure SOCIAL/CLOSING turn: gratitude or farewell with NO order
+ *  intent. Order-intent tokens (want/add/remove/total/menu/order/delivery…) disqualify it, so
+ *  «شكراً كمان عايز بيتزا» is NOT social-closing. Used to exempt only genuine post-completion
+ *  pleasantries from the turn contract (never an active build turn). Pure. */
+const SOCIAL_ORDER_INTENT_RE = /(عايز|عاوز|ابغى|ابغي|ابي|اريد|اضيف|ضيف|زود|احذف|شيل|الغي|كام|بكام|الحساب|الاجمالي|الإجمالي|طلب|منيو|قائمه|قائمة|توصيل|استلام|عنوان|ادفع|الدفع)/;
+const SOCIAL_CLOSING_RE = /(شكر|متشكر|مشكور|تسلم|ممنون|تمام خلاص|خلاص كده|خلاص كفايه|مع السلامه|الله يخليك|الله يعافيك|(?<![ء-ي])باي(?![ء-ي])|bye|thank|thx|thanks)/i;
+export function isSocialClosingTurn(message: string | null | undefined): boolean {
+  const n = normalizeAr(String(message ?? ""));
+  if (!n) return false;
+  if (SOCIAL_ORDER_INTENT_RE.test(n)) return false;
+  return SOCIAL_CLOSING_RE.test(n);
+}
+
+/** WO-SIMPLIFY (PART D) — an ACTIVE UNMET GOAL exists iff there is an open unconfirmed draft
+ *  (lines present, not finalized) OR a pending deterministic question. Only then does the turn
+ *  contract apply; a finalized/empty draft with nothing pending is a compliant terminal state
+ *  (closing pleasantries), so the contract must NOT append a handoff to a social «شكراً» turn. */
+export function hasActiveUnmetGoal(draft: OrderDraft, pendingQuestion?: string | null): boolean {
+  const openDraft = Array.isArray(draft.lines) && draft.lines.length > 0 && draft.finalized !== true;
+  return openDraft || !!(pendingQuestion && pendingQuestion.trim());
+}
+
+/** True iff `previous` already ends with `nextStep` (normalized) — so an identical next-step is
+ *  never appended twice across turns (the DB-proven 3×-handoff repeat). Compares the trailing
+ *  segment after trimming/whitespace-collapse. */
+function previousAlreadyEndsWith(previous: string | null | undefined, nextStep: string): boolean {
+  const prev = normalizeAr(String(previous ?? "")).replace(/\s+/g, " ").trim();
+  const step = normalizeAr(nextStep).replace(/\s+/g, " ").trim();
+  if (!prev || !step) return false;
+  return prev.endsWith(step) || prev.includes(step);
 }
 
 /**
@@ -88,6 +130,20 @@ export interface TurnContractResult {
 export function enforceTurnContract(input: TurnContractInput): TurnContractResult {
   const text = String(input.text ?? "");
   const futurePromise = hasFuturePromise(text);
+
+  // WO-SIMPLIFY (PART D) — SCOPING. The contract is EXEMPT only on a genuine post-completion
+  // social turn: a pure gratitude/farewell message with NO active unmet goal (no open unconfirmed
+  // draft, no pending question) and NO bare future-promise this turn. That is a legal terminal
+  // state (closing pleasantries), so the contract never appends a handoff to it (the DB-proven
+  // «شكراً» → 3× handoff-appendix bug). Any active build/order turn still runs the contract.
+  const exemptSocialTerminal =
+    input.socialClosing === true &&
+    !hasActiveUnmetGoal(input.draft, input.pendingQuestion) &&
+    !futurePromise;
+  if (exemptSocialTerminal) {
+    return { text, appended: false, kind: null, futurePromise, socialTerminal: true };
+  }
+
   const satisfied =
     hasQuestion(text) ||
     containsRenderedRecap(text) ||
@@ -96,12 +152,19 @@ export function enforceTurnContract(input: TurnContractInput): TurnContractResul
 
   if (satisfied) return { text, appended: false, kind: null, futurePromise };
 
-  // Not satisfied → append the deterministic next-step.
+  // Not satisfied → append the deterministic next-step (unless the previous outbound message
+  // already ended with the very same step — never repeat an identical next-step across turns).
   const q = input.pendingQuestion?.trim();
   if (q && !replyContainsQuestion(text, q)) {
+    if (previousAlreadyEndsWith(input.previousOutbound, q)) {
+      return { text, appended: false, kind: null, futurePromise };
+    }
     return { text: `${text.trim()}\n${q}`, appended: true, kind: "pending_question", futurePromise };
   }
-  if (input.draft.lines.length > 0) {
+  // The draft-recap next-step is rendered ONLY from a consistent priced draft (PART E hard guard):
+  // an inconsistent mid-transition draft falls through to the honest handoff, so the contract can
+  // never ship an empty/wrong «الإجمالي:» either.
+  if (input.draft.lines.length > 0 && isDraftPricedConsistent(input.draft)) {
     const recap = renderDraftRecap(input.draft, {
       dialect: input.dialect,
       allergyNote: input.allergyNote,
@@ -110,8 +173,12 @@ export function enforceTurnContract(input: TurnContractInput): TurnContractResul
     });
     return { text: `${text.trim()}\n${recap}`, appended: true, kind: "draft_recap", futurePromise };
   }
+  const handoff = honestHandoffLine(input.dialect);
+  if (previousAlreadyEndsWith(input.previousOutbound, handoff) || hasHandoffLine(text)) {
+    return { text, appended: false, kind: null, futurePromise };
+  }
   return {
-    text: `${text.trim()}\n${honestHandoffLine(input.dialect)}`,
+    text: `${text.trim()}\n${handoff}`,
     appended: true,
     kind: "handoff",
     futurePromise,

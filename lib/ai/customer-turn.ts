@@ -44,6 +44,17 @@ import {
   type CompanionDecision,
 } from "@/lib/ai/allergen-companion-flow";
 import { calmHoldReply } from "@/lib/ai/allergy-calm-hold";
+// WO-SIMPLIFY (PART A) — the simple allergy posture: deflection decision + copy + the canonical
+// session-scoped kitchen-ticket line. Reuses the deterministic detectors verbatim.
+import {
+  decideAllergySimple,
+  allergySimpleDeflection,
+  allergySimpleReoffer,
+  buildTicketAllergyNote,
+  collectConversationAllergenTerms,
+  type AllergySimpleDecision,
+} from "@/lib/ai/allergy-simple";
+import { buildMenuListPresentation } from "@/lib/ai/tools";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { decideVoiceLadder, garbledVoiceReply, confirmVoiceReply, isVoiceAssent, wasVoiceLadderConfirm } from "@/lib/ai/voice-quality";
 import { resolveVoiceCandidates, expectedAnswerClass, type VoiceCandidate } from "@/lib/ai/voice-aliases";
@@ -68,6 +79,8 @@ import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
 import { emptyDraft, type OrderDraft, type PhotoRequest, type Presentation, type ToolSignal } from "@/lib/ai/tools";
 import { buildOldDraftRestatementReply, shouldRestateRestorableDraft } from "@/lib/ai/draft-restatement";
+// WO-SIMPLIFY (PART B) — deterministic draft lifecycle: reset intents + the 12h stale archive.
+import { isExplicitResetIntent, decideDraftLifecycle } from "@/lib/ai/draft-lifecycle";
 import { applyPinRouting } from "@/lib/delivery/routing";
 import { buildImageDirective } from "@/lib/messaging/image-turn";
 import { imageAvailabilityGuard, isDeicticImageReference } from "@/lib/ai/image-binding";
@@ -247,6 +260,39 @@ function forcedAllergenSafetyResult(
     toolNames: [],
     stopReason: "allergen_gate_notify",
     model: "deterministic_allergen_gate",
+    adapter: "mock",
+    resendReceipt: false,
+    calls_used: 0,
+  };
+}
+
+/** WO-SIMPLIFY (PART A) — the deterministic SIMPLE-allergy deflection outcome. NO LLM: on the
+ *  FIRST allergy/disease mention, point to the menu (reuse the send-menu list) + offer a human,
+ *  with NO hold and NO escalation (the customer can still explicitly ask for a human). The
+ *  in-progress draft is preserved. Non-escalating audit signal only. */
+function allergySimpleDeflectionResult(
+  decision: AllergySimpleDecision,
+  dialect: string,
+  initialDraft: OrderDraft | null,
+  currency: string,
+  menuItems: BrainContext["menuItems"]
+): RespondResult {
+  const reply = allergySimpleDeflection(dialect, decision.variantIndex);
+  const presentation = buildMenuListPresentation(menuItems, currency);
+  return {
+    reply,
+    draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
+    escalate: false,
+    escalationReason: null,
+    signals: [
+      { type: "missing_data", detail: { reason: "allergy_simple_deflection", source: "allergy_simple", kind: decision.hit.kind, term: decision.hit.term, menuSent: !!presentation } },
+    ],
+    presentation,
+    photoRequests: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
+    toolNames: [],
+    stopReason: "allergy_simple_deflection",
+    model: "deterministic_allergy_simple",
     adapter: "mock",
     resendReceipt: false,
     calls_used: 0,
@@ -522,6 +568,13 @@ export async function runCustomerTurn(
   const calmHoldOn = isFeatureExplicitlyEnabled("allergy_calm_hold", tenantFeatures);
   const memoryAllergyGateOn = isFeatureExplicitlyEnabled("memory_allergy_gate", tenantFeatures);
   const addressFlowV2On = isFeatureExplicitlyEnabled("address_flow_v2", tenantFeatures);
+  // WO-SIMPLIFY (PART A) — the SIMPLE allergy posture. STRICT per-tenant, DEFAULT OFF. Read
+  // early because it gates the allergy-memory READ below. When ON the allergy RESPONSE becomes a
+  // menu-deflection + human offer, and the calm-hold ceremony / auto-hold / checkpoint-recap
+  // allergy line / per-turn safety-bridge injection / allergy-memory reads+writes are bypassed
+  // (branched, never deleted). The deterministic detector and the two unconditional floors
+  // survive. OFF → the legacy allergy engine is byte-identical.
+  const allergySimpleOn = isFeatureExplicitlyEnabled("allergy_simple", tenantFeatures);
 
   // WO-T1-PAYMENTS: payment-method truth comes ONLY from the resolver. Flag
   // `canonical_payment_methods` OFF (every current tenant) → exactly the legacy
@@ -549,6 +602,9 @@ export async function runCustomerTurn(
   let initialDraft: OrderDraft | null = null;
   let conversationCustomerId: string | null = null;
   let initialDraftAgeMs: number | null = null;
+  // WO-SIMPLIFY (PART B) — true when this turn deliberately archived an open draft (reset intent
+  // or a >12h stale basket), surfaced as a signal for observability.
+  let draftArchivedThisTurn = false;
   if (conversationId) {
     const { data: conv } = await admin
       .from("conversations")
@@ -580,30 +636,34 @@ export async function runCustomerTurn(
       const d = (message.meta as Record<string, unknown> | null)?.draft;
       return d && typeof d === "object" && Array.isArray((d as Partial<OrderDraft>).lines);
     });
-    const DRAFT_FRESHNESS_MS = 45 * 60 * 1000;
+    // WO-SIMPLIFY (PART B) — deterministic draft lifecycle. An explicit reset intent («طلب جديد» /
+    // «الغي الطلب كله») or a > 12h stale open basket is ARCHIVED (never resumed); a finalized draft
+    // closes the basket so the next item-adding intent starts FRESH (confirmed lines never bleed).
+    const draftResetIntent = isExplicitResetIntent(input.userMessage);
     if (firstWithDraft) {
       const d = (firstWithDraft.meta as Record<string, unknown>).draft as OrderDraft;
-      if (d.finalized) {
-        // Most recent draft is from a completed order — basket is closed.
-        initialDraft = null;
-      } else if (d.lines.length > 0) {
-        const ageMs = Date.now() - new Date(firstWithDraft.created_at as string).getTime();
-        const fresh = ageMs <= DRAFT_FRESHNESS_MS;
-        initialDraft = fresh ? d : null;
-        initialDraftAgeMs = fresh ? ageMs : null;
-        // Karim Pro P1 terminal hook — ABANDONMENT. A stale open basket (>45 min)
-        // means the prior order attempt was abandoned; emit one record for it
-        // (Pro-gated; standard tenants do nothing).
-        if (!fresh) {
-          await emitConversationReport(admin, {
-            restaurantId,
-            tier: tenantTier,
-            features: tenantFeatures,
-            conversationId,
-            terminalTrigger: "abandoned",
-            transcript: input.history,
-          });
-        }
+      const ageMs = Date.now() - new Date(firstWithDraft.created_at as string).getTime();
+      const lifecycle = decideDraftLifecycle({
+        finalized: d.finalized === true,
+        lineCount: Array.isArray(d.lines) ? d.lines.length : 0,
+        ageMs,
+        resetIntent: draftResetIntent,
+      });
+      initialDraft = lifecycle.resume ? d : null;
+      initialDraftAgeMs = lifecycle.resume ? ageMs : null;
+      draftArchivedThisTurn = lifecycle.archived;
+      // Karim Pro P1 terminal hook — ABANDONMENT / stale ARCHIVE. A stale open basket means the
+      // prior order attempt was abandoned; emit one record for it (Pro-gated; standard tenants do
+      // nothing). Reset is a deliberate customer action, not an abandonment → no report.
+      if (lifecycle.action === "abandoned" || lifecycle.action === "archived_stale") {
+        await emitConversationReport(admin, {
+          restaurantId,
+          tier: tenantTier,
+          features: tenantFeatures,
+          conversationId,
+          terminalTrigger: "abandoned",
+          transcript: input.history,
+        });
       }
     }
   }
@@ -653,7 +713,9 @@ export async function runCustomerTurn(
   // byte path. The stored notes are operator-memory labels; the pure helper maps
   // them into the same kitchen-readable allergen labels the session note uses.
   let memoryAllergyLabels: string[] = [];
-  if (memoryAllergyGateOn && conversationCustomerId) {
+  // WO-SIMPLIFY (PART A) — bypass the customer-memory allergy READ when the simple posture
+  // is on (memory reads are bypassed; the gate never arms from stored cross-session memory).
+  if (memoryAllergyGateOn && !allergySimpleOn && conversationCustomerId) {
     try {
       const { data: mem } = await admin
         .from("customer_memory")
@@ -803,6 +865,9 @@ export async function runCustomerTurn(
     // WO-FINISH-LINE — deterministic recap (A) + turn contract (B) + bulk handoff (C) in
     // respond.ts. Default OFF → none of it runs (byte-identical); read ONLY by respond.ts.
     finishLine: finishLineOn,
+    // WO-SIMPLIFY (PART A) — the simple allergy posture. Default OFF → the legacy allergy
+    // engine runs byte-identical; read ONLY by respond.ts / customer-turn.ts, never the prompt.
+    allergySimple: allergySimpleOn,
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;
@@ -950,8 +1015,21 @@ export async function runCustomerTurn(
   // avoidance gate did NOT fire (an emergency phrase like «حلقي يتورم» names no
   // allergen) — so evaluate it independently and let it enter the companion path.
   const companionEmergency = companionOn ? safetyEmergencyHit : { fired: false, label: null };
-  const enterCompanion = companionOn && (combinedAllergenHit.fired || companionEmergency.fired);
-  const calmHoldCandidate = calmHoldOn && (combinedAllergenHit.fired || calmEmergency.fired);
+  // WO-SIMPLIFY (PART A) — when the simple posture is ON it BYPASSES the companion path, the
+  // calm-hold ceremony, and the legacy forced escalation (branched, never deleted). The
+  // deterministic detector still ran above; only the RESPONSE differs.
+  const enterCompanion = companionOn && !allergySimpleOn && (combinedAllergenHit.fired || companionEmergency.fired);
+  const calmHoldCandidate = calmHoldOn && !allergySimpleOn && (combinedAllergenHit.fired || calmEmergency.fired);
+  // WO-SIMPLIFY (PART A) — the simple-allergy decision for THIS turn (deflect / reoffer / normal /
+  // none). Computed only when the flag is ON; OFF → never evaluated → legacy engine byte-identical.
+  const allergySimpleDecision: AllergySimpleDecision | null = allergySimpleOn
+    ? decideAllergySimple({
+        history: input.history,
+        userMessage: input.userMessage,
+        detectOpts: { sttConfidence: input.sttConfidence, isVoiceTranscript: input.isVoiceTranscript },
+      })
+    : null;
+  const allergySimpleDeflect = allergySimpleDecision?.action === "deflect";
 
   // WO-LIVE6-DUP-ORDER-AWARENESS (flag `dup_order_awareness`, default OFF) — surface the
   // most-recent order the customer ALREADY registered this conversation so a reference to it
@@ -1145,6 +1223,12 @@ export async function runCustomerTurn(
       expectedClass: expectedAnswerClass(lastAssistant),
     });
     result = voiceConfirmResult(dialect, input.userMessage, initialDraft, ctx.profile.currency, candidates);
+  } else if (allergySimpleDeflect && allergySimpleDecision) {
+    // WO-SIMPLIFY (PART A) — simple posture, FIRST allergy/disease mention: deflect to the menu +
+    // offer a human. No hold, no escalation, no allergy-memory write. The kitchen-ticket canonical
+    // note is recorded session-scoped just below (allergySimpleOn write). The customer can still
+    // ASK for a human via the existing human-request path.
+    result = allergySimpleDeflectionResult(allergySimpleDecision, dialect, initialDraft, ctx.profile.currency, ctx.menuItems);
   } else if (calmHoldCandidate) {
     companionDecision = {
       ...decideCompanionAction(input.userMessage, sessionAllergyNote, allergenDecisionHint),
@@ -1156,7 +1240,7 @@ export async function runCustomerTurn(
     const source: CalmHoldSource = companionDecision.path === "emergency" ? "emergency" : holdSource;
     await enterCalmAllergyHold(admin, { restaurantId, conversationId, decision: companionDecision, source });
     result = calmHoldResult(companionDecision, dialect, initialDraft, ctx.profile.currency, source);
-  } else if (combinedAllergenHit.fired && !companionOn) {
+  } else if (combinedAllergenHit.fired && !companionOn && !allergySimpleOn) {
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
     result = forcedAllergenSafetyResult(
       combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency,
@@ -1197,6 +1281,41 @@ export async function runCustomerTurn(
     // respond() permits the finalize this turn (§6.5).
     await maybeRecordCheckpointAck();
     result = await runRespond();
+  }
+
+  // WO-SIMPLIFY (PART B) — surface a deliberate draft archival (reset / >12h stale) as a signal so
+  // the turn record shows the basket was archived, not silently dropped. The next saved (empty)
+  // draft supersedes it, so it can never resurface.
+  if (draftArchivedThisTurn) {
+    result = {
+      ...result,
+      signals: [...result.signals, { type: "missing_data", detail: { reason: "draft_archived", source: "draft_lifecycle" } }],
+    };
+  }
+
+  // WO-SIMPLIFY (PART A) — simple-allergy post-processing. (1) A REPEAT direct ingredient/safety
+  // question (throttled) appends the human re-offer to the model's normal answer (never re-sends
+  // the full deflection). (2) The session-scoped CANONICAL kitchen-ticket note is written to
+  // conversations.allergy_note whenever an allergy/disease was mentioned THIS turn — canonical
+  // entities only (or «غير محدد»), never from customer memory, never a trigger/symptom word.
+  if (allergySimpleOn && allergySimpleDecision) {
+    if (
+      allergySimpleDecision.action === "reoffer" &&
+      result.reply.trim() &&
+      !/أحوّلك ل(?:حد|أحد) من الفريق/.test(result.reply)
+    ) {
+      result = { ...result, reply: `${result.reply.trim()}\n${allergySimpleReoffer(dialect)}` };
+    }
+    if (conversationId && allergySimpleDecision.hit.fired) {
+      const ticketNote = buildTicketAllergyNote(
+        collectConversationAllergenTerms(input.history, input.userMessage)
+      );
+      try {
+        await admin.from("conversations").update({ allergy_note: ticketNote }).eq("id", conversationId);
+      } catch {
+        /* column absent (pre-0080) → the ticket floor is best-effort, never breaks the turn */
+      }
+    }
   }
 
   // WO-IMAGE-BINDING — the FR-011 availability guard. INSIDE the media_turn_trigger gate,

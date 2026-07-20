@@ -175,6 +175,15 @@ export interface BrainContext {
    *  never by the prompt — so the base prompt stays byte-identical (snapshot-gated);
    *  off/absent → none of it runs. */
   finishLine?: boolean;
+  /** WO-SIMPLIFY (flag `allergy_simple`, default OFF): when true, the allergy RESPONSE
+   *  becomes the simple deflection posture — Karim points to the menu + offers a human on
+   *  the first mention, no hold/escalation — and the per-turn safety-bridge injection,
+   *  checkpoint/recap allergy line, calm-hold ceremony, auto-hold, and allergy-memory
+   *  reads/writes are bypassed. The deterministic detector and the two unconditional floors
+   *  (no-reassure vocabulary; session-scoped canonical kitchen-ticket line) are unchanged.
+   *  Read ONLY by respond.ts / customer-turn.ts — never by the prompt — so the base prompt
+   *  stays byte-identical (snapshot-gated); off/absent → the legacy allergy engine runs. */
+  allergySimple?: boolean;
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------

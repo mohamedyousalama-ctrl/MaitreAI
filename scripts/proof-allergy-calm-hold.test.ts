@@ -48,13 +48,13 @@ const ok = (name: string, cond: boolean) => { if (cond) pass++; else { fail++; c
 {
   const ct = read("lib/ai/customer-turn.ts");
   const calmResult = ct.slice(ct.indexOf("function calmHoldResult"), ct.indexOf("async function enterCalmAllergyHold"));
-  const calmBranch = ct.slice(ct.indexOf("} else if (calmHoldCandidate)"), ct.indexOf("} else if (combinedAllergenHit.fired && !companionOn)"));
+  const calmBranch = ct.slice(ct.indexOf("} else if (calmHoldCandidate)"), ct.indexOf("} else if (combinedAllergenHit.fired && !companionOn && !allergySimpleOn)"));
   const holdFn = ct.slice(ct.indexOf("async function enterCalmAllergyHold"), ct.indexOf("/** WO-VOICE-QUALITY"));
   ok("B: allergy_calm_hold is explicitly gated",
     /const calmHoldOn = isFeatureExplicitlyEnabled\("allergy_calm_hold", tenantFeatures\);/.test(ct));
   ok("B: calm branch precedes the legacy forced notify_without_hold branch",
     ct.indexOf("} else if (calmHoldCandidate)") >= 0 &&
-    ct.indexOf("} else if (calmHoldCandidate)") < ct.indexOf("} else if (combinedAllergenHit.fired && !companionOn)"));
+    ct.indexOf("} else if (calmHoldCandidate)") < ct.indexOf("} else if (combinedAllergenHit.fired && !companionOn && !allergySimpleOn)"));
   ok("B: calm result never emits notify_without_hold",
     calmResult.length > 0 && !/notify_without_hold/.test(calmResult));
   ok("B: calm branch never calls runRespond, so fewer customer messages and zero LLM calls",

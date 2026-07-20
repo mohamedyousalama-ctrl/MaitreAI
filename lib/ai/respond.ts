@@ -64,8 +64,12 @@ import { pendingDeterministicQuestion, injectPendingQuestion } from "./askback-i
 // handoff; else the deterministic next-step is appended (no promise-and-silence).
 // (PART C) — a >8-item bulk/party request short-circuits to a human handoff instead
 // of driving the tool loop into the iteration cap. All gated on brain.finishLine.
-import { recapDue, applyDeterministicRecap, renderDraftRecap } from "./recap-render";
-import { enforceTurnContract } from "./turn-contract";
+import { renderDraftRecap, isDraftPricedConsistent } from "./recap-render";
+// WO-SIMPLIFY (PART D) — the pure social-closing detector feeds the turn-contract scoping.
+import { isSocialClosingTurn } from "./turn-contract";
+// WO-SIMPLIFY (PART E) — the SINGLE final-compose pass orders recap → one question → scoped
+// contract once (finishLine only), so injectors never splice text independently anymore.
+import { composeFinalReply } from "./reply-compose";
 import { exceedsBulkThreshold, impliedItemCount, bulkHandoffReply, bulkHandoffReason } from "./bulk-threshold";
 // WO-STATE-TRUTH (PART A) — the deterministic zone-selection net: when the customer's
 // reply picks one of the offered ambiguity candidates, persist the zone-of-truth onto the
@@ -278,6 +282,9 @@ function safeAllergenNoEscalateReply(dialect: string): string {
 // logs the ack → allergyAcknowledged, §6.5).
 function needsAllergyCheckpoint(brain: BrainContext): boolean {
   return (
+    // WO-SIMPLIFY (PART A) — the simple posture BYPASSES the §6 checkpoint ceremony (branch on the
+    // flag; the companion checkpoint code is untouched). OFF → identical companion behavior.
+    brain.allergySimple !== true &&
     brain.allergyCompanion === true &&
     typeof brain.sessionAllergyNote === "string" &&
     brain.sessionAllergyNote.trim().length > 0 &&
@@ -511,9 +518,16 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     if (!out.isError) {
       // WO-FINISH-LINE (PART A) — render the registered-order recap deterministically
       // (Arabic-Indic, complete, no truncation) instead of the tool's summary string.
-      // Flag OFF → the tool content is byte-identical.
-      const reply = input.brain.finishLine
-        ? renderDraftRecap(ctx.draft, { dialect: input.brain.dialect, allergyNote: ctx.sessionAllergyNote, phase: "confirmed" })
+      // Flag OFF → the tool content is byte-identical. WO-SIMPLIFY (PART E) hard guard — render
+      // the confirmed recap ONLY from a consistent priced draft (else fall back to the tool
+      // summary + emit draft_inconsistent_recap_skipped; a wrong/empty total never ships).
+      // WO-SIMPLIFY (PART A) — the simple-allergy posture drops the recap allergy line.
+      const recapConsistent = isDraftPricedConsistent(ctx.draft);
+      if (input.brain.finishLine && !recapConsistent) {
+        ctx.signals.push({ type: "missing_data", detail: { reason: "draft_inconsistent_recap_skipped", source: "recap_consistency_guard", phase: "confirmed" } });
+      }
+      const reply = input.brain.finishLine && recapConsistent
+        ? renderDraftRecap(ctx.draft, { dialect: input.brain.dialect, allergyNote: input.brain.allergySimple ? null : ctx.sessionAllergyNote, phase: "confirmed" })
         : out.content;
       return {
         reply,
@@ -898,45 +912,24 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     }
   }
 
-  // WO-FINISH-LINE (PART A) — DETERMINISTIC RECAP. After a draft mutation (a recap-
-  // trigger tool ran this turn) and the draft has lines, REPLACE the model's recap prose
-  // (which truncated mid-word and cost the 6-call recap loop) with the code-rendered recap
-  // from the priced draft — keeping at most one short model lead-in. NEVER runs on a turn
-  // that fired a safety/handoff event (a safety line must not become a cheerful recap).
-  // Flag OFF → recapDue is false → byte-identical.
-  {
-    const safetyEvent =
-      !!ctx.escalation ||
-      ctx.signals.some(
-        (s) =>
-          s.type === "escalation" ||
-          s.type === "notify_without_hold" ||
-          (s.type === "missing_data" &&
-            ["allergen_safety_claim", "disease_diet_suitability_claim", "companion_banned_phrase_repaired", "allergy_checkpoint"].includes(
-              String(s.detail?.reason ?? "")
-            ))
-      );
-    if (recapDue({ flagOn: input.brain.finishLine === true, canOrder, draft: ctx.draft, toolNames, safetyEvent })) {
-      const recapped = applyDeterministicRecap(text, ctx.draft, { dialect: input.brain.dialect, allergyNote: ctx.sessionAllergyNote, phase: "readback" });
-      if (recapped !== text) {
-        ctx.signals.push({ type: "missing_data", detail: { reason: "deterministic_recap_rendered", source: "finish_line_recap" } });
-        text = recapped;
-      }
-    }
-  }
+  // Did a safety/handoff event fire this turn? A safety line must never be overwritten by a
+  // cheerful recap, and the recap-eligibility check consults it.
+  const safetyEvent =
+    !!ctx.escalation ||
+    ctx.signals.some(
+      (s) =>
+        s.type === "escalation" ||
+        s.type === "notify_without_hold" ||
+        (s.type === "missing_data" &&
+          ["allergen_safety_claim", "disease_diet_suitability_claim", "companion_banned_phrase_repaired", "allergy_checkpoint"].includes(
+            String(s.detail?.reason ?? "")
+          ))
+    );
 
-  // WO-ASKBACK — FINAL SETTLE (runs after every guard, so it catches text stripped by
-  // ANY of them). Recover the pending deterministic question: prefer the one this turn's
-  // tools already produced (address_zone_ambiguous signal); otherwise RE-DETECT a still-open
-  // address-zone ambiguity from the current draft (address written, no zone resolved yet,
-  // address_flow_v2 on) so the question survives a turn where the customer stalled without
-  // re-triggering the tool. If a pending question exists and the settled reply doesn't carry
-  // it (or is a contentless pleasantry), inject it. Deterministic string ops; no model call.
-  //
-  // WO-STATE-TRUTH (PART B, suppression) — once a zone is resolved (persisted selection OR a
-  // legacy deliveryZone) the ambiguity subject is SETTLED: never inject, even if this turn's
-  // signals still carry a now-stale address_zone_ambiguous question. This kills the "stale
-  // question re-asked after resolution" loop.
+  // WO-ASKBACK — recover the turn's pending deterministic question (address-zone ambiguity):
+  // prefer this turn's tool signal; else RE-DETECT a still-open ambiguity from the current draft
+  // (address written, no zone resolved, address_flow_v2 on). WO-STATE-TRUTH (PART B suppression) —
+  // once a zone is resolved the subject is SETTLED, so never treat a stale signal as pending.
   let pendingQuestion: string | null = null;
   if (!hasPersistedZone(ctx.draft) && !ctx.draft.deliveryZone) {
     pendingQuestion = pendingDeterministicQuestion(ctx.signals);
@@ -945,7 +938,33 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       if (rematch.kind === "ambiguous") pendingQuestion = rematch.question;
     }
   }
-  if (pendingQuestion) {
+
+  if (input.brain.finishLine) {
+    // WO-SIMPLIFY (PART E) — the SINGLE final-compose pass. It orders the reply ONCE
+    // (recap → single trailing question → scoped contract), renders the recap ONLY from a
+    // consistent priced draft (PART E hard guard → no empty/wrong total), suppresses the recap
+    // on an info-collection turn (PART C), and never appends a handoff to a social-terminal turn
+    // (PART D). The simple-allergy posture (PART A) passes allergyNote=null so the recap never
+    // carries an allergy line. Flag OFF → this whole block is skipped → the legacy settle below.
+    const composed = composeFinalReply({
+      core: text,
+      draft: ctx.draft,
+      dialect: input.brain.dialect,
+      allergyNote: input.brain.allergySimple ? null : ctx.sessionAllergyNote,
+      canOrder,
+      toolNames,
+      safetyEvent,
+      flagOn: true,
+      pendingQuestion,
+      escalated: !!ctx.escalation,
+      previousOutbound: lastAssistantText(input.history),
+      socialClosing: isSocialClosingTurn(input.userMessage),
+    });
+    for (const s of composed.signals) ctx.signals.push(s);
+    text = composed.text;
+  } else if (pendingQuestion) {
+    // WO-ASKBACK — legacy FINAL SETTLE (flag OFF, byte-identical): inject the pending question
+    // when the settled reply neither carries it nor is a contentless pleasantry.
     const injected = injectPendingQuestion(text, pendingQuestion);
     if (injected.mode !== "unchanged") {
       ctx.signals.push({
@@ -953,29 +972,6 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
         detail: { reason: "askback_injected", source: "askback_final_settle", mode: injected.mode, question: pendingQuestion },
       });
       text = injected.text;
-    }
-  }
-
-  // WO-FINISH-LINE (PART B) — TURN CONTRACT. The LAST validation stage (after every guard
-  // AND the ask-back settle, so no double-append): a reply must carry a question, a rendered
-  // recap, or a handoff line — else the deterministic next-step (pending question → draft
-  // recap + «أكمل؟» → honest handoff) is appended. Kills the bare future-promise dead-end
-  // («هختارلك أحسن تنوع!»). Flag OFF → never runs → byte-identical.
-  if (input.brain.finishLine && text.trim()) {
-    const contract = enforceTurnContract({
-      text,
-      dialect: input.brain.dialect,
-      draft: ctx.draft,
-      pendingQuestion,
-      escalated: !!ctx.escalation,
-      allergyNote: ctx.sessionAllergyNote,
-    });
-    if (contract.appended) {
-      ctx.signals.push({
-        type: "missing_data",
-        detail: { reason: "turn_contract_next_step", source: "finish_line_contract", kind: contract.kind, futurePromise: contract.futurePromise },
-      });
-      text = contract.text;
     }
   }
 

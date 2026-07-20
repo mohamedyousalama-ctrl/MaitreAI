@@ -269,7 +269,11 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
   // 2b. Allergy/safety hold — ⚠️ at TOP when flagged (red/boxed). WO-COMPANION-W1-CORE:
   // when a kitchen-readable allergy note rides on the order, render the SPECIFIC
   // allergens on a second line so the kitchen sees WHICH allergens, not just a flag.
-  if (d.safetyHold) {
+  // WO-SIMPLIFY (PART A, kitchen-ticket floor) — the allergy banner fires on a safety HOLD OR
+  // whenever a session allergy note rides on the order. The simple-allergy posture never holds,
+  // so the note-present case is what carries the mandatory canonical line onto the ticket.
+  const hasAllergyNote = !!(d.allergyNote && d.allergyNote.trim());
+  if (d.safetyHold || hasAllergyNote) {
     // WO-MEMFIX read-time defense: the kitchen banner lists ONLY canonical allergen
     // ENTITIES. A legacy garbage note (a stored symptom/trigger word like «حكه»/«حساسه»)
     // is filtered out here, so it can never render as a substance on the ticket. No
@@ -351,7 +355,7 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
 
   // 6. Allergy line ALWAYS present — explicit "no report" when not flagged
   // (a blank line could be misread as "no allergy" when it's unknown).
-  if (!d.safetyHold) { parts.push(tRight(y, "لا يوجد بلاغ حساسية", 18, "#0a7a33")); y += s(26); }
+  if (!d.safetyHold && !hasAllergyNote) { parts.push(tRight(y, "لا يوجد بلاغ حساسية", 18, "#0a7a33")); y += s(26); }
 
   const H = y + PAD;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">

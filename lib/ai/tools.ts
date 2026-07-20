@@ -190,6 +190,24 @@ function truncate(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }
 
+/**
+ * WO-SIMPLIFY (PART A) — the reusable SEND-MENU mechanism as a pure builder. Produces the SAME
+ * interactive list `present_menu` sends for the live «دي قائمتنا 👆» reply (available items →
+ * tappable `item:<id>` rows, WhatsApp-limit-truncated), so a deterministic short-circuit (the
+ * simple-allergy deflection) can point the customer at the real menu without a model call. Returns
+ * null when no item is available. present_menu itself is UNCHANGED (this only extracts the shape).
+ */
+export function buildMenuListPresentation(menuItems: MenuItem[], currency: string): Presentation | null {
+  const avail = menuItems.filter((i) => i.available);
+  if (!avail.length) return null;
+  const rows: PresentationRow[] = avail.slice(0, MAX_ROWS).map((i) => ({
+    id: `item:${i.id}`,
+    title: truncate(i.name, ROW_TITLE_MAX),
+    description: truncate(`${i.price} ${currency}${i.description ? ` · ${i.description}` : ""}`, ROW_DESC_MAX),
+  }));
+  return { kind: "list", button: truncate("اختر صنف", LIST_BUTTON_MAX), sections: [{ rows }] };
+}
+
 export interface ToolResult {
   content: string;
   isError?: boolean;

@@ -124,14 +124,79 @@ export interface AskbackResult {
   mode: AskbackMode;
 }
 
+// WO-SIMPLIFY (PART C) — askback HEAD-match containment. The first ~12 chars of a question's
+// CORE (its leading clause, before any «—»/«؟» separator) — e.g. «قريب من إيه». When the model
+// already wrote a PARTIAL version of the same ask (it contains this head but not the full
+// question), we REPLACE that partial sentence with the full deterministic question instead of
+// APPENDING it — killing the duplicate «قريب من إيه» the DB showed.
+const QUESTION_HEAD_LEN = 12;
+const HEAD_MIN_LEN = 6;
+
+/** The normalized head of the question's leading clause (up to the first «—/–/-/؟/?»). */
+export function questionHead(question: string): string {
+  const core = normalize(question).split(/[—–\-؟?]/)[0]?.trim() ?? "";
+  return core.slice(0, QUESTION_HEAD_LEN).trim();
+}
+
+/** A tolerant regex for the (already folded) head, matched against ORIGINAL text — each folded
+ *  alef/ya/ta-marbuta expands back to its variant class so «قريب من إيه» matches «قريب من ايه». */
+function headMatcher(head: string): RegExp | null {
+  const tokens = head.split(" ").filter(Boolean);
+  if (!tokens.length) return null;
+  const pattern = tokens
+    .map((t) =>
+      t
+        .split("")
+        .map((ch) => {
+          if (ch === "ا") return "[اأإآ]";
+          if (ch === "ي") return "[يىئ]";
+          if (ch === "ه") return "[هة]";
+          if (ch === "و") return "[وؤ]";
+          return ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        })
+        .join("[ًٌٍَُِّْـ]*")
+    )
+    .join("\\s*");
+  try {
+    return new RegExp(pattern, "i");
+  } catch {
+    return null;
+  }
+}
+
+/** If a line already carries the question's head (a partial ask), rewrite that line so the FULL
+ *  question replaces everything from the head onward — preserving any real prefix on the line
+ *  («تمام، قريب من إيه؟» → «تمام، <full question>»). Returns the repaired reply, or null when
+ *  the head is absent (the caller then appends). Sentence-granularity, deterministic, no model. */
+function repairPartialQuestionHead(reply: string, question: string): string | null {
+  const head = questionHead(question);
+  if (head.length < HEAD_MIN_LEN) return null;
+  const matcher = headMatcher(head);
+  if (!matcher) return null;
+  const lines = String(reply ?? "").split("\n");
+  let changed = false;
+  const out = lines.map((line) => {
+    if (changed) return line; // repair only the FIRST partial-ask line
+    const m = matcher.exec(line);
+    if (!m) return line;
+    changed = true;
+    const prefix = line.slice(0, m.index).replace(/[\s،؛-]*$/u, "").trim();
+    return prefix ? `${prefix}، ${question}` : question;
+  });
+  return changed ? out.join("\n").trim() : null;
+}
+
 /** The core deterministic settle: ensure `question` reaches the customer.
  *  - already present            → unchanged
  *  - contentless (pleasantry)   → replace with greeting+question
+ *  - partial ask (head present) → REPLACE that sentence with the full question (no duplicate)
  *  - has other content          → append question on its own line */
 export function injectPendingQuestion(reply: string, question: string): AskbackResult {
   const q = question.trim();
   if (!q) return { text: reply, mode: "unchanged" };
   if (replyContainsQuestion(reply, q)) return { text: reply, mode: "unchanged" };
   if (isContentless(reply)) return { text: `${INJECT_GREETING} ${q}`.trim(), mode: "replaced" };
+  const headRepaired = repairPartialQuestionHead(reply, q);
+  if (headRepaired) return { text: headRepaired, mode: "replaced" };
   return { text: `${reply.trim()}\n${q}`, mode: "appended" };
 }

@@ -955,7 +955,11 @@ export async function respondAndSendWhatsApp(
     // so the operator's absence stays truthful and the next re-alert is not suppressed). Deduped
     // to ≤1 per window via a `safety_bridge_ack` system-note marker. Flag OFF → never evaluated →
     // byte-identical.
+    // WO-SIMPLIFY (PART A) — the simple-allergy posture BYPASSES the safety-bridge injection
+    // (branched, never deleted): its deflection + human offer already handle allergy safety, so
+    // the bridge ACK must not also inject «صحتك تهمّنا» on top. Flag OFF → unchanged behavior.
     if (!resumedByRecovery && isFeatureExplicitlyEnabled("safety_bridge", features) &&
+        !isFeatureExplicitlyEnabled("allergy_simple", features) &&
         isIdleBeyond(conv.updated_at as string | null, SAFETY_BRIDGE_WINDOW_MINUTES)) {
       const { data: lastInbound } = await admin
         .from("messages")
