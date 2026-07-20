@@ -104,9 +104,38 @@ export function renderDraftRecap(draft: OrderDraft, opts: RecapOptions): string 
   const allergy = allergyLine(opts.allergyNote);
   if (allergy) parts.push(allergy);
 
-  if (phase === "readback") parts.push(opts.trailer ?? recapConfirmAsk(opts.dialect));
+  // WO-SIMPLIFY (PART C) — the readback trailer/CTA is suppressed when the caller passes an
+  // EMPTY trailer (a pending deterministic question will carry the turn's single question),
+  // instead of pushing a blank line. Absent trailer → the DB-proven confirm ask.
+  if (phase === "readback") {
+    const trailer = opts.trailer ?? recapConfirmAsk(opts.dialect);
+    if (trailer) parts.push(trailer);
+  }
 
   return parts.join("\n");
+}
+
+/** A finite, real number (not NaN/Infinity/undefined/null). Used by the recap hard guard so a
+ *  missing/`undefined` figure can never reach `toArabicDigits` and render «الإجمالي: undefined». */
+function isFiniteNum(x: unknown): x is number {
+  return typeof x === "number" && Number.isFinite(x);
+}
+
+/**
+ * WO-SIMPLIFY (PART E) — the recap HARD GUARD. A recap may be rendered ONLY from a fully
+ * consistent priced draft: every line carries a finite `lineTotal` and `quantity`, and the
+ * draft carries a finite `total` (and finite `tax`/`deliveryFee` where they will be shown).
+ * An empty draft is consistent (it renders the honest «السلة فارغة.», never a total). Any other
+ * inconsistency → the caller SKIPS the recap entirely and emits `draft_inconsistent_recap_skipped`,
+ * so a wrong or empty «الإجمالي:» is IMPOSSIBLE to display (the DB-proven mid-transition corruption).
+ */
+export function isDraftPricedConsistent(draft: OrderDraft | null | undefined): boolean {
+  if (!draft || !Array.isArray(draft.lines)) return false;
+  if (!draft.lines.length) return true; // empty basket → «السلة فارغة.», no total to corrupt
+  if (!isFiniteNum(draft.total)) return false;
+  if (draft.tax > 0 && !isFiniteNum(draft.tax)) return false;
+  if (draft.fulfillment === "delivery" && draft.deliveryFee && !isFiniteNum(draft.deliveryFee)) return false;
+  return draft.lines.every((l) => isFiniteNum(l.lineTotal) && isFiniteNum(l.quantity));
 }
 
 /** A rendered recap block always carries the total line — the stable signature the

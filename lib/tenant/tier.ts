@@ -116,7 +116,18 @@ export function isProTenant(tier: Tier | string | null | undefined): boolean {
 // the bare future-promise dead-end); (C) a >8-item bulk/party request short-circuits to a human
 // handoff instead of driving the tool loop into the 6-iteration cap. Read ONLY by respond.ts —
 // never by the prompt — STRICT per-tenant switch, DEFAULT OFF, flag-off is byte-identical.
-export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "perception_async" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "address_flow_v2" | "allergy_companion_mode" | "allergy_calm_hold" | "memory_allergy_gate" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods" | "inbound_coalescing" | "answer_first" | "persist_outbound_media" | "voice_garble_guard" | "dup_order_awareness" | "price_truth_guard" | "reply_dampener" | "safety_bridge" | "handoff_timeout" | "goal_logic" | "goal_logic_rule6_annotation_pivot" | "call_count_observability" | "typed_interactive_actions" | "typed_quantity_fill" | "action_claim_guard" | "finish_line";
+// allergy_simple (WO-SIMPLIFY, PART A): the SIMPLE allergy posture. The deterministic
+// allergy/disease DETECTOR is UNCHANGED (its terms are forbidden to edit); what changes is the
+// RESPONSE — on the FIRST allergy/disease mention in a conversation Karim sends ONE frozen
+// deflection («تفاصيل المكونات كاملة في المنيو» + the menu + a human offer), no hold, no
+// escalation. Repeat mentions answer normally and re-offer a human only on a direct
+// ingredient/safety question (throttled). When ON it BYPASSES (branch, never delete): allergy
+// memory reads/writes, the per-turn safety-bridge injection, the checkpoint/recap allergy line,
+// the calm-hold ceremony, and the allergy auto-hold. Two UNCONDITIONAL floors survive regardless
+// of the flag: the no-reassure vocabulary floor (respond.ts assertsAllergenSafety guard) and the
+// session-scoped canonical kitchen-ticket allergy line. STRICT per-tenant switch, DEFAULT OFF,
+// never implied by tier='pro' — flag-off keeps the escalate/companion/calm engines byte-identical.
+export type ProFeature = "conversation_intelligence" | "customer_memory" | "conversation_outcomes" | "perception" | "perception_async" | "cadence" | "stateful_orders" | "deterministic_allergen_safety" | "allergen_symptom_detection" | "psp_payments" | "staff_command_channel" | "standing_instructions" | "kitchen_ticket" | "console_v2" | "media_guard" | "khalid_persona" | "ksa_encyclopedia" | "callback_requests" | "qz_print" | "voice_notes" | "photo_thread" | "manager_command_recognition" | "delivery_geo_routing" | "address_flow_v2" | "allergy_companion_mode" | "allergy_calm_hold" | "memory_allergy_gate" | "delivery_runs" | "media_turn_trigger" | "canonical_payment_methods" | "inbound_coalescing" | "answer_first" | "persist_outbound_media" | "voice_garble_guard" | "dup_order_awareness" | "price_truth_guard" | "reply_dampener" | "safety_bridge" | "handoff_timeout" | "goal_logic" | "goal_logic_rule6_annotation_pivot" | "call_count_observability" | "typed_interactive_actions" | "typed_quantity_fill" | "action_claim_guard" | "finish_line" | "allergy_simple";
 
 /** A feature is ON when the tenant explicitly enabled THAT feature (narrow,
  *  default-off opt-in) OR the tenant is full 'pro' (gets everything). Keeping a

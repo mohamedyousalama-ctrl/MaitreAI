@@ -250,14 +250,22 @@ ok("W5 (PART C): the bulk short-circuit runs BEFORE the model loop, gated on the
   const loopIdx = rs.indexOf("for (let i = 0; i < MAX_ITERATIONS; i++)");
   ok("W5b (PART C): … the short-circuit is above the tool loop", bulkIdx > 0 && bulkIdx < loopIdx);
 }
-ok("W6 (PART A): respond.ts gates the recap render on recapDue + applyDeterministicRecap", /recapDue\(\{ flagOn: input\.brain\.finishLine === true/.test(rs) && /applyDeterministicRecap\(text, ctx\.draft/.test(rs));
-ok("W7 (PART A): the fast-path finalize renders the confirmed recap under the flag", /input\.brain\.finishLine\s*\n?\s*\?\s*renderDraftRecap\(ctx\.draft, \{ dialect: input\.brain\.dialect, allergyNote: ctx\.sessionAllergyNote, phase: "confirmed" \}\)/.test(rs));
+// WO-SIMPLIFY (PART E) — the recap render + ask-back settle + turn contract were unified into ONE
+// deterministic final-compose pass (lib/ai/reply-compose.ts), called once from respond.ts under
+// the flag. These wiring expectations were updated to match that single-assembler structure.
+const rc = readFileSync(resolve(process.cwd(), "lib/ai/reply-compose.ts"), "utf8");
+ok("W6 (PART A/E): the single assembler gates the recap render on recapDue + applyDeterministicRecap", /recapDue\(\{/.test(rc) && /applyDeterministicRecap\(text, input\.draft/.test(rc));
+ok("W6b (PART E): respond.ts calls the single final-compose pass under the flag", /if \(input\.brain\.finishLine\) \{/.test(rs) && /composeFinalReply\(\{/.test(rs));
+ok("W7 (PART A): the fast-path finalize renders the confirmed recap under the flag (consistency-guarded)", /input\.brain\.finishLine && recapConsistent\s*\n?\s*\?\s*renderDraftRecap\(ctx\.draft, \{ dialect: input\.brain\.dialect, allergyNote: input\.brain\.allergySimple \? null : ctx\.sessionAllergyNote, phase: "confirmed" \}\)/.test(rs));
 {
-  const contractIdx = rs.indexOf("enforceTurnContract({");
-  const askbackIdx = rs.indexOf("injectPendingQuestion(text, pendingQuestion)");
+  // In the single assembler the order is recap → ask-back → turn contract (no double-append).
+  const recapIdx = rc.indexOf("applyDeterministicRecap(text, input.draft");
+  const askbackIdx = rc.indexOf("injectPendingQuestion(text, pending)");
+  const contractIdx = rc.indexOf("enforceTurnContract({");
+  ok("W8 (PART B/E): the turn contract runs AFTER the ask-back settle (no double-append)", contractIdx > askbackIdx && askbackIdx > recapIdx && recapIdx > 0);
+  const composeIdx = rs.indexOf("composeFinalReply({");
   const returnIdx = rs.indexOf("return {\n    reply: text,");
-  ok("W8 (PART B): the turn contract runs AFTER the ask-back settle (no double-append)", contractIdx > askbackIdx && askbackIdx > 0);
-  ok("W8b (PART B): … and BEFORE the reply is returned", contractIdx > 0 && contractIdx < returnIdx);
+  ok("W8b (PART B/E): … and the compose pass runs BEFORE the reply is returned", composeIdx > 0 && composeIdx < returnIdx);
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} proof-finish-line: ${pass}/${pass + fail} passed`);
