@@ -25,6 +25,11 @@ import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { loadReceiptData } from "@/lib/render/load";
 import { PrintTicketButton } from "@/components/print/PrintTicketButton";
 
+const { parseAllergyNote, buildAllergyNote } =
+  require("../../lib/ai/allergen-companion.ts") as typeof import("../../lib/ai/allergen-companion");
+const { canonicalizeAllergens } =
+  require("../../lib/ai/allergen-canonical.ts") as typeof import("../../lib/ai/allergen-canonical");
+
 const AR = "٠١٢٣٤٥٦٧٨٩";
 const toAr = (s: string | number) => String(s).replace(/[0-9]/g, (d) => AR[+d]);
 
@@ -75,6 +80,8 @@ export async function KitchenTicketView({ id, dark = false }: { id: string; dark
   if (!d) notFound();
 
   const fulfillmentAr = d.fulfillment === "delivery" ? "توصيل" : "استلام من الفرع";
+  const hasAllergyNote = !!(d.allergyNote && d.allergyNote.trim());
+  const canonicalAllergyNote = buildAllergyNote(canonicalizeAllergens(parseAllergyNote(d.allergyNote)));
 
   return (
     <div
@@ -177,7 +184,7 @@ export async function KitchenTicketView({ id, dark = false }: { id: string; dark
         {/* Safety/allergy banner — prominent at the top when the linked
             conversation is held for review; else an explicit "no report" line so
             a blank is never misread as "safe". */}
-        {d.safetyHold ? (
+        {d.safetyHold || hasAllergyNote ? (
           <div
             style={{
               margin: "10px 0",
@@ -192,6 +199,9 @@ export async function KitchenTicketView({ id, dark = false }: { id: string; dark
             }}
           >
             ⚠️ حساسية — لا يتم التحضير قبل مراجعة المطعم
+            {canonicalAllergyNote ? (
+              <div style={{ marginTop: 4, fontSize: 15, fontWeight: 900 }}>{canonicalAllergyNote}</div>
+            ) : null}
           </div>
         ) : (
           <div style={{ fontSize: 12.5, color: "#0a7a33", fontWeight: 700, marginTop: 6 }}>لا يوجد بلاغ حساسية</div>
