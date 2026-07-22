@@ -1,5 +1,5 @@
 -- ============================================================================
--- WO-BRAIN-G0 (PREPARE-ONLY): KTDK foundation tables.
+-- MaitreAI — 0100: WO-BRAIN-G0 (PREPARE-ONLY): KTDK foundation tables.
 --
 -- Empty, unused-by-app schema for the future Kivo Transactional Dialogue Kernel.
 -- Do NOT apply until PM/founder approval. This migration creates no live engine
