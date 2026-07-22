@@ -16,26 +16,32 @@ import { openaiSttAdapter } from "./openai";
 import { groqSttAdapter } from "./groq";
 import { deepgramSttAdapter } from "./deepgram";
 import type { SttAdapterName } from "./types";
+import {
+  assertMockSttAllowed,
+  MockSttProductionError,
+  mockSttAllowed,
+  mockSttBlockedInProduction,
+  isMockSttProductionError,
+} from "./guard";
 
-export function getSttAdapter(): SttAdapter {
+export function resolveSttAdapterName(): SttAdapterName {
   const sel = (process.env.STT_ADAPTER || "").toLowerCase();
-  if (sel === "openai") return openaiSttAdapter;
-  if (sel === "groq") return groqSttAdapter;
-  if (sel === "deepgram") return deepgramSttAdapter;
-  if (sel === "mock") return mockSttAdapter;
-  if (process.env.GROQ_API_KEY) return groqSttAdapter;
-  if (process.env.OPENAI_API_KEY) return openaiSttAdapter;
-  return mockSttAdapter;
+  if (sel === "openai") return "openai";
+  if (sel === "groq") return "groq";
+  if (sel === "deepgram") return "deepgram";
+  if (sel === "mock") return "mock";
+  if (process.env.GROQ_API_KEY) return "groq";
+  if (process.env.OPENAI_API_KEY) return "openai";
+  return "mock";
 }
 
-// S7 — the MOCK adapter returns a FABRICATED transcript (a fake order). It must
-// never reach the agent as the customer's real words in production. Mock transcripts
-// are allowed ONLY in dev/test, or when explicitly opted in for a demo
-// (ENABLE_MOCK_STT=true) — safe-by-default in prod, mirroring the S1
-// ENABLE_MOCK_PAYMENTS pattern. Real adapters (openai/groq) are unaffected; callers
-// gate on this only when the resolved adapter is "mock".
-export function mockSttAllowed(): boolean {
-  return process.env.NODE_ENV !== "production" || process.env.ENABLE_MOCK_STT === "true";
+export function getSttAdapter(): SttAdapter {
+  const name = resolveSttAdapterName();
+  if (name === "openai") return openaiSttAdapter;
+  if (name === "groq") return groqSttAdapter;
+  if (name === "deepgram") return deepgramSttAdapter;
+  assertMockSttAllowed("getSttAdapter");
+  return mockSttAdapter;
 }
 
 export type SttHealthStatus = "working" | "not-configured" | "test-mode-on" | "unverified";
@@ -64,14 +70,16 @@ function hasProviderKey(name: SttAdapterName): boolean {
 export function readSttHealth(): SttHealthReadout {
   const rawSelection = (process.env.STT_ADAPTER ?? "").trim().toLowerCase();
   const explicitAdapter = rawSelection === "openai" || rawSelection === "groq" || rawSelection === "deepgram" || rawSelection === "mock";
-  const adapterName = getSttAdapter().name;
+  const adapterName = resolveSttAdapterName();
   const production = process.env.NODE_ENV === "production";
   const mockTranscriptEnabled = adapterName === "mock" && mockSttAllowed();
   const timeoutMs = Number(process.env.AGENT_TIMEOUT_MS);
   const aiTimeoutEnabled = Number.isFinite(timeoutMs) && timeoutMs > 0;
 
   let status: SttHealthStatus;
-  if (production && !rawSelection) {
+  if (mockSttBlockedInProduction(adapterName)) {
+    status = "not-configured";
+  } else if (production && !rawSelection) {
     status = "unverified";
   } else if (mockTranscriptEnabled) {
     status = "test-mode-on";
@@ -97,3 +105,4 @@ export function readSttHealth(): SttHealthReadout {
 }
 
 export type { SttAdapter, SttResult } from "./types";
+export { mockSttAllowed, isMockSttProductionError, MockSttProductionError };
