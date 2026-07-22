@@ -388,6 +388,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   const geoRouting = !!input.brain.geoRouting;
   const addressFlowV2 = !!input.brain.addressFlowV2;
   const ctx: ToolContext = {
+    menuCategories: input.brain.menuCategories,
     menuItems: input.brain.menuItems,
     modifiers: input.brain.modifiers,
     deliveryAreas: input.brain.deliveryAreas,

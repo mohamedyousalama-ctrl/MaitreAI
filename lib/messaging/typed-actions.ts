@@ -1,10 +1,9 @@
 // ============================================================================
-// MaitreAI — typed WhatsApp interactive actions (WO-S0-TYPED).
-// Explicit-only feature path for button/list reply ids already registered in
-// lib/messaging/interactive-router.ts. These handlers never ask the customer
-// agent to interpret a tap. They either update safe draft state with existing
-// server tools, emit a fixed Karim-voice reply, or delegate confirm_order to the
-// existing deterministic confirm/allergy gate.
+// MaitreAI — typed WhatsApp interactive actions.
+// A WhatsApp tap is a command id, not free text. These handlers never ask the
+// customer agent to interpret a known tap. They either update safe draft state
+// with existing server tools, emit a fixed Karim-voice reply, or delegate
+// confirm_order to the existing deterministic confirm/allergy gate.
 // ============================================================================
 
 import "server-only";
@@ -26,7 +25,13 @@ import {
   type ToolContext,
   type ToolSignal,
 } from "@/lib/ai/tools";
+import {
+  RECOVERY_CHOICE_CONTINUE,
+  RECOVERY_CHOICE_REALERT,
+} from "@/lib/ai/allergen-companion-flow";
 import { FIXED_INTERACTIVE_CONTROLS } from "./interactive-router";
+
+type ActiveMenuItem = Awaited<ReturnType<typeof loadBrain>>["menuItems"][number];
 
 export type TypedInteractiveActionKind =
   | "set_pickup"
@@ -37,7 +42,22 @@ export type TypedInteractiveActionKind =
   | "pay_cod"
   | "pay_vodafone_cash"
   | "pay_counter"
-  | "qty";
+  | "qty"
+  | "select_item"
+  | "select_category"
+  | "allergy_recovery_continue"
+  | "allergy_recovery_realert";
+
+export type InteractiveCommand =
+  | { kind: "set_fulfillment"; action: "set_pickup" | "set_delivery"; id: "set_pickup" | "set_delivery"; fulfillment: "pickup" | "delivery" }
+  | { kind: "confirm_order"; action: "confirm_order"; id: "confirm_order" }
+  | { kind: "add_more"; action: "add_more"; id: "add_more" }
+  | { kind: "cancel_order"; action: "cancel_order"; id: "cancel_order" }
+  | { kind: "set_payment_method"; action: "pay_cod" | "pay_vodafone_cash" | "pay_counter"; id: "pay_cod" | "pay_vodafone_cash" | "pay_counter"; method: "cod" | "vodafone_cash" }
+  | { kind: "choose_quantity"; action: "qty"; id: string; quantity: number }
+  | { kind: "select_item"; action: "select_item"; id: string; itemId: string }
+  | { kind: "select_category"; action: "select_category"; id: string; categoryIdOrName: string }
+  | { kind: "allergy_recovery"; action: "allergy_recovery_continue" | "allergy_recovery_realert"; id: typeof RECOVERY_CHOICE_CONTINUE | typeof RECOVERY_CHOICE_REALERT; choice: "continue" | "realert" };
 
 export type TypedInteractiveActionResult =
   | {
@@ -55,6 +75,13 @@ export type TypedInteractiveActionResult =
       id: "confirm_order";
       userMessage: string;
     };
+
+export type UnknownInteractiveCommandResult = {
+  kind: "unknown";
+  id: string;
+  reply: string;
+  replyMessageId: string | null;
+};
 
 export type TypedQuantityFillResult =
   | Extract<TypedInteractiveActionResult, { kind: "handled" }>
@@ -110,17 +137,45 @@ export const TYPED_ACTION_STRINGS = Object.freeze({
     egyptian: "تمام، قولّي الصنف والكمية مع بعض عشان أضبطها صح.",
     saudi: "تمام، قل لي الصنف والكمية مع بعض عشان أضبطها صح.",
   },
+  select_item_unavailable: {
+    egyptian: "معلش، الاختيار ده مش متاح دلوقتي. اختار صنف تاني من المنيو أو اكتبلي طلبك.",
+    saudi: "المعذرة، الاختيار هذا غير متاح حالياً. اختر صنف ثاني من القائمة أو اكتب لي طلبك.",
+  },
+  select_item_needs_variant: {
+    egyptian: (item: string, options: string) => `اختار حجم «${item}»: ${options}.`,
+    saudi: (item: string, options: string) => `اختر حجم «${item}»: ${options}.`,
+  },
+  select_item_needs_choice: {
+    egyptian: (item: string, group: string, options: string) => `اختار «${group}» لـ«${item}»: ${options}.`,
+    saudi: (item: string, group: string, options: string) => `اختر «${group}» لـ«${item}»: ${options}.`,
+  },
+  select_category: {
+    egyptian: (category: string) => `دي أصناف «${category}» 👇`,
+    saudi: (category: string) => `هذه أصناف «${category}» 👇`,
+  },
+  select_category_unavailable: {
+    egyptian: "معلش، التصنيف ده مش متاح دلوقتي. اختار من التصنيفات الحالية أو اكتبلي طلبك.",
+    saudi: "المعذرة، التصنيف هذا غير متاح حالياً. اختر من التصنيفات الحالية أو اكتب لي طلبك.",
+  },
+  recovery_wrong_context: {
+    egyptian: "معلش، الاختيار ده مش مرتبط بخطوة مفتوحة دلوقتي. اكتبلي طلبك أو اختار من آخر أزرار بعتها.",
+    saudi: "المعذرة، الاختيار هذا غير مرتبط بخطوة مفتوحة حالياً. اكتب لي طلبك أو اختر من آخر أزرار أرسلتها.",
+  },
+  unknown_interactive: {
+    egyptian: "معلش، الاختيار ده مش واضح عندي دلوقتي. اختار من آخر أزرار بعتها أو اكتبلي طلبك.",
+    saudi: "المعذرة، الاختيار هذا غير واضح عندي حالياً. اختر من آخر أزرار أرسلتها أو اكتب لي طلبك.",
+  },
 });
 
-const FIXED_ACTIONS: Record<string, Exclude<TypedInteractiveActionKind, "qty">> = {
-  set_pickup: "set_pickup",
-  set_delivery: "set_delivery",
-  confirm_order: "confirm_order",
-  add_more: "add_more",
-  cancel_order: "cancel_order",
-  pay_cod: "pay_cod",
-  pay_vodafone_cash: "pay_vodafone_cash",
-  pay_counter: "pay_counter",
+const FIXED_COMMANDS: Record<string, InteractiveCommand> = {
+  set_pickup: { kind: "set_fulfillment", action: "set_pickup", id: "set_pickup", fulfillment: "pickup" },
+  set_delivery: { kind: "set_fulfillment", action: "set_delivery", id: "set_delivery", fulfillment: "delivery" },
+  confirm_order: { kind: "confirm_order", action: "confirm_order", id: "confirm_order" },
+  add_more: { kind: "add_more", action: "add_more", id: "add_more" },
+  cancel_order: { kind: "cancel_order", action: "cancel_order", id: "cancel_order" },
+  pay_cod: { kind: "set_payment_method", action: "pay_cod", id: "pay_cod", method: "cod" },
+  pay_vodafone_cash: { kind: "set_payment_method", action: "pay_vodafone_cash", id: "pay_vodafone_cash", method: "vodafone_cash" },
+  pay_counter: { kind: "set_payment_method", action: "pay_counter", id: "pay_counter", method: "cod" },
 };
 
 const DRAFT_FRESHNESS_MS = 45 * 60 * 1000;
@@ -136,11 +191,34 @@ function qtyFromId(id: string): number | null {
   return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
 }
 
-export function typedInteractiveActionKind(id: string | null | undefined): TypedInteractiveActionKind | null {
+export function interactiveCommandFromId(id: string | null | undefined): InteractiveCommand | null {
   const clean = cleanInteractiveId(id);
-  const fixed = FIXED_ACTIONS[clean];
+  if (!clean) return null;
+  const fixed = FIXED_COMMANDS[clean];
   if (fixed) return fixed;
-  return qtyFromId(clean) != null ? "qty" : null;
+  const qty = qtyFromId(clean);
+  if (qty != null) return { kind: "choose_quantity", action: "qty", id: clean, quantity: qty };
+  if (clean.startsWith("item:")) {
+    const itemId = clean.slice("item:".length).trim();
+    if (itemId) return { kind: "select_item", action: "select_item", id: clean, itemId };
+    return null;
+  }
+  if (clean.startsWith("cat:")) {
+    const categoryIdOrName = clean.slice("cat:".length).trim();
+    if (categoryIdOrName) return { kind: "select_category", action: "select_category", id: clean, categoryIdOrName };
+    return null;
+  }
+  if (clean === RECOVERY_CHOICE_CONTINUE) {
+    return { kind: "allergy_recovery", action: "allergy_recovery_continue", id: RECOVERY_CHOICE_CONTINUE, choice: "continue" };
+  }
+  if (clean === RECOVERY_CHOICE_REALERT) {
+    return { kind: "allergy_recovery", action: "allergy_recovery_realert", id: RECOVERY_CHOICE_REALERT, choice: "realert" };
+  }
+  return null;
+}
+
+export function typedInteractiveActionKind(id: string | null | undefined): TypedInteractiveActionKind | null {
+  return interactiveCommandFromId(id)?.action ?? null;
 }
 
 export function isTypedInteractiveActionId(id: string | null | undefined): boolean {
@@ -150,11 +228,13 @@ export function isTypedInteractiveActionId(id: string | null | undefined): boole
 function stringFor(
   action: keyof typeof TYPED_ACTION_STRINGS,
   dialect: Dialect,
-  qty?: number
+  ...args: (string | number)[]
 ): string {
   const key = dialect === "saudi" ? "saudi" : "egyptian";
   const value = TYPED_ACTION_STRINGS[action][key];
-  return typeof value === "function" ? value(qty ?? 0) : value;
+  return typeof value === "function"
+    ? (value as (...inner: (string | number)[]) => string)(...args)
+    : value;
 }
 
 function orderActionsPresentation(): Presentation {
@@ -241,6 +321,7 @@ function buildToolContext(args: {
   paymentConfig: ToolContext["paymentConfig"];
 }): ToolContext {
   return {
+    menuCategories: args.brain.menuCategories,
     menuItems: args.brain.menuItems,
     modifiers: args.brain.modifiers,
     deliveryAreas: args.brain.deliveryAreas,
@@ -260,10 +341,37 @@ function buildToolContext(args: {
   };
 }
 
-function applyTypedAction(ctx: ToolContext, action: TypedInteractiveActionKind, id: string): { replyKey: keyof typeof TYPED_ACTION_STRINGS; qty?: number; toolNames: string[] } {
+function activeRequiredChoice(item: ActiveMenuItem): { group: string; options: string[] } | null {
+  const group = (item.choiceGroups ?? []).find((g) => g.minSelect > 0 && g.options.some((o) => o.active));
+  if (!group) return null;
+  return { group: group.name, options: group.options.filter((o) => o.active).map((o) => o.label) };
+}
+
+function resolveCategoryName(ctx: ToolContext, categoryIdOrName: string): string | null {
+  const clean = categoryIdOrName.trim();
+  if (!clean) return null;
+  const byId = ctx.menuCategories?.find((c) => c.id === clean);
+  if (byId?.name) return byId.name;
+  const byName = ctx.menuCategories?.find((c) => c.name === clean);
+  if (byName?.name) return byName.name;
+  const fromItems = ctx.menuItems.find((item) => item.category === clean);
+  return fromItems?.category ?? null;
+}
+
+function applyTypedAction(
+  ctx: ToolContext,
+  command: InteractiveCommand
+): {
+  replyKey: keyof typeof TYPED_ACTION_STRINGS;
+  replyArgs?: (string | number)[];
+  reply?: string;
+  toolNames: string[];
+  action: TypedInteractiveActionKind;
+} {
+  const { action, id } = command;
   if (action === "set_pickup") {
     executeTool("set_fulfillment", { type: "pickup" }, ctx);
-    return { replyKey: "set_pickup", toolNames: ["set_fulfillment"] };
+    return { replyKey: "set_pickup", toolNames: ["set_fulfillment"], action };
   }
   if (action === "set_delivery") {
     const wasDelivery = ctx.draft.fulfillment === "delivery";
@@ -273,30 +381,65 @@ function applyTypedAction(ctx: ToolContext, action: TypedInteractiveActionKind, 
       ctx.draft.deliveryFee = 0;
       if (ctx.geoRouting) ctx.draft.branchId = null;
     }
-    return { replyKey: "set_delivery", toolNames: [] };
+    return { replyKey: "set_delivery", toolNames: [], action };
   }
   if (action === "cancel_order") {
     executeTool("clear_order", {}, ctx);
-    return { replyKey: "cancel_order", toolNames: ["clear_order"] };
+    return { replyKey: "cancel_order", toolNames: ["clear_order"], action };
   }
   if (action === "pay_cod" || action === "pay_counter") {
     executeTool("set_payment_method", { method: "cod" }, ctx);
-    return { replyKey: action, toolNames: ["set_payment_method"] };
+    return { replyKey: action, toolNames: ["set_payment_method"], action };
   }
   if (action === "pay_vodafone_cash") {
     const out = executeTool("set_payment_method", { method: "vodafone_cash" }, ctx);
-    if (out.isError) return { replyKey: "pay_vodafone_cash_unavailable", toolNames: ["set_payment_method"] };
-    return { replyKey: "pay_vodafone_cash", toolNames: ["set_payment_method"] };
+    if (out.isError) return { replyKey: "pay_vodafone_cash_unavailable", toolNames: ["set_payment_method"], action };
+    return { replyKey: "pay_vodafone_cash", toolNames: ["set_payment_method"], action };
   }
   if (action === "qty") {
-    const qty = qtyFromId(id);
-    if (qty == null) return { replyKey: "qty_needs_item", toolNames: [] };
+    const qty = command.kind === "choose_quantity" ? command.quantity : qtyFromId(id);
+    if (qty == null) return { replyKey: "qty_needs_item", toolNames: [], action };
     const lastLine = ctx.draft.lines.at(-1);
-    if (!lastLine || ctx.draft.lines.length !== 1) return { replyKey: "qty_needs_item", toolNames: [] };
+    if (!lastLine || ctx.draft.lines.length !== 1) return { replyKey: "qty_needs_item", toolNames: [], action };
     executeTool("add_to_order", { item_name: lastLine.name, quantity: qty, mode: "set" }, ctx);
-    return { replyKey: "qty", qty, toolNames: ["add_to_order"] };
+    return { replyKey: "qty", replyArgs: [qty], toolNames: ["add_to_order"], action };
   }
-  return { replyKey: "add_more", toolNames: [] };
+  if (command.kind === "select_item") {
+    const item = ctx.menuItems.find((m) => m.id === command.itemId && m.available);
+    if (!item) return { replyKey: "select_item_unavailable", toolNames: [], action };
+    const activeVariants = (item.variants ?? []).filter((v) => v.active);
+    if (activeVariants.length) {
+      return {
+        replyKey: "select_item_needs_variant",
+        replyArgs: [item.name, activeVariants.map((v) => v.name).join("، ")],
+        toolNames: [],
+        action,
+      };
+    }
+    const requiredChoice = activeRequiredChoice(item);
+    if (requiredChoice) {
+      return {
+        replyKey: "select_item_needs_choice",
+        replyArgs: [item.name, requiredChoice.group, requiredChoice.options.join("، ")],
+        toolNames: [],
+        action,
+      };
+    }
+    const out = executeTool("add_to_order", { item_id: item.id, item_name: item.name, quantity: 1 }, ctx);
+    if (out.isError) return { replyKey: "select_item_unavailable", toolNames: ["add_to_order"], action };
+    return { replyKey: "add_more", reply: out.content, toolNames: ["add_to_order"], action };
+  }
+  if (command.kind === "select_category") {
+    const category = resolveCategoryName(ctx, command.categoryIdOrName);
+    if (!category) return { replyKey: "select_category_unavailable", toolNames: [], action };
+    const out = executeTool("present_menu", { category }, ctx);
+    if (out.isError) return { replyKey: "select_category_unavailable", toolNames: ["present_menu"], action };
+    return { replyKey: "select_category", replyArgs: [category], toolNames: ["present_menu"], action };
+  }
+  if (command.kind === "allergy_recovery") {
+    return { replyKey: "recovery_wrong_context", toolNames: [], action };
+  }
+  return { replyKey: "add_more", toolNames: [], action };
 }
 
 export async function handleTypedInteractiveAction(
@@ -310,10 +453,10 @@ export async function handleTypedInteractiveAction(
   }
 ): Promise<TypedInteractiveActionResult> {
   const id = cleanInteractiveId(args.interactiveId);
-  const action = typedInteractiveActionKind(id);
-  if (!action) throw new Error(`unregistered typed interactive id: ${id}`);
+  const command = interactiveCommandFromId(id);
+  if (!command) throw new Error(`unregistered typed interactive id: ${id}`);
 
-  if (action === "confirm_order") {
+  if (command.kind === "confirm_order") {
     return { kind: "confirm_gate", id: "confirm_order", userMessage: FIXED_INTERACTIVE_CONTROLS.confirm_order };
   }
 
@@ -340,14 +483,15 @@ export async function handleTypedInteractiveAction(
     taxRate: Number(restaurant.tax_rate ?? 0),
     paymentConfig: payments.config,
   });
-  const applied = applyTypedAction(ctx, action, id);
-  const reply = stringFor(applied.replyKey, dialect, applied.qty);
+  const applied = applyTypedAction(ctx, command);
+  const action = applied.action;
+  const reply = applied.reply ?? stringFor(applied.replyKey, dialect, ...(applied.replyArgs ?? []));
   const presentation =
     shouldOfferOrderActions(ctx.draft) && action !== "add_more"
       ? orderActionsPresentation()
-      : ctx.draft.lines.length > 0 && !ctx.draft.fulfillment && action === "qty"
+      : ctx.draft.lines.length > 0 && !ctx.draft.fulfillment && (action === "qty" || action === "select_item")
         ? fulfillmentPresentation()
-        : null;
+        : ctx.presentation;
 
   const { data: msg } = await admin
     .from("messages")
@@ -360,7 +504,7 @@ export async function handleTypedInteractiveAction(
       status: "sent",
       meta: {
         model: "deterministic_typed_action",
-        typedAction: { id, action, safetyProbe: args.safetyProbe },
+        typedAction: { id, action, command, safetyProbe: args.safetyProbe },
         draft: ctx.draft,
         presentation,
         photoRequests: [],
@@ -390,6 +534,61 @@ export async function handleTypedInteractiveAction(
     signals: ctx.signals,
     toolNames: applied.toolNames,
   };
+}
+
+export async function handleUnknownInteractiveCommand(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string;
+    conversationId: string;
+    interactiveId: string;
+    fallbackText: string;
+  }
+): Promise<UnknownInteractiveCommandResult> {
+  const id = cleanInteractiveId(args.interactiveId);
+  const { data: r } = await admin
+    .from("restaurants")
+    .select("dialect")
+    .eq("id", args.restaurantId)
+    .single();
+  const dialect = String((r as { dialect?: string | null } | null)?.dialect ?? "egyptian");
+  const reply = stringFor("unknown_interactive", dialect);
+
+  const { data: msg } = await admin
+    .from("messages")
+    .insert({
+      restaurant_id: args.restaurantId,
+      conversation_id: args.conversationId,
+      direction: "outbound",
+      sender: "ai",
+      text: reply,
+      status: "sent",
+      meta: {
+        kind: "unknown_interactive_id",
+        model: "deterministic_unknown_interactive",
+        interactiveId: id,
+      },
+    })
+    .select("id")
+    .single();
+
+  await admin.from("messages").insert({
+    restaurant_id: args.restaurantId,
+    conversation_id: args.conversationId,
+    direction: "outbound",
+    sender: "system",
+    text: "Unknown WhatsApp interactive id received; customer was asked to retry using the current choices.",
+    status: "sent",
+    meta: { kind: "unknown_interactive_id", interactiveId: id, fallbackText: args.fallbackText },
+  });
+  await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", args.conversationId);
+  console.warn("[interactive-command] unknown id rejected", {
+    restaurantId: args.restaurantId,
+    conversationId: args.conversationId,
+    interactiveId: id,
+  });
+
+  return { kind: "unknown", id, reply, replyMessageId: (msg?.id as string) ?? null };
 }
 
 export async function handleTypedQuantityFill(
@@ -432,9 +631,9 @@ export async function handleTypedQuantityFill(
     paymentConfig: payments.config,
   });
   const id = `qty:${qty}`;
-  const applied = applyTypedAction(ctx, "qty", id);
+  const applied = applyTypedAction(ctx, { kind: "choose_quantity", action: "qty", id, quantity: qty });
   if (applied.replyKey !== "qty") return { kind: "pass_through", reason: "ambiguous_draft" };
-  const reply = stringFor(applied.replyKey, dialect, applied.qty);
+  const reply = stringFor(applied.replyKey, dialect, ...(applied.replyArgs ?? []));
   const presentation = ctx.draft.lines.length > 0 && !ctx.draft.fulfillment ? fulfillmentPresentation() : orderActionsPresentation();
 
   const { data: msg } = await admin

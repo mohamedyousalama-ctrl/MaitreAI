@@ -403,6 +403,12 @@ export const CONVERSATION_STAGE_LABELS: Record<ConversationStage, string> = {
 // ---------------------------------------------------------------------------
 // Menu
 // ---------------------------------------------------------------------------
+export interface MenuCategory {
+  id: string;
+  name: string;
+  sort: number;
+}
+
 export interface MenuItem {
   id: string;
   name: string;

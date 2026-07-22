@@ -856,6 +856,7 @@ export async function runCustomerTurn(
       businessType: String(row.business_type ?? ""),
     },
     dialect,
+    menuCategories: brain.menuCategories,
     menuItems: brain.menuItems,
     modifiers: brain.modifiers,
     branches: brain.branches,

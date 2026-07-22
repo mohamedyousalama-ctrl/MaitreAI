@@ -50,6 +50,7 @@ import { crossContactLabelAr, hasAllergenEscalationMarker } from "@/lib/ai/aller
 export interface BrainContext {
   profile: Pick<RestaurantProfile, "name" | "currency" | "timezone" | "businessType">;
   dialect: string;
+  menuCategories?: { id: string; name: string; sort?: number }[];
   menuItems: MenuItem[];
   modifiers: Modifier[];
   branches: Branch[];
