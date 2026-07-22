@@ -24,6 +24,10 @@ import { retrySend } from "./retry-policy";
 import type { SendResult } from "./types";
 import type { Presentation } from "@/lib/ai/tools";
 import type { TemplateDef } from "./templates";
+// WO-CONTROL Part B — the control_epoch send gate. Optional per-send `guard`: when present,
+// the current control_epoch is re-read IMMEDIATELY before the WhatsApp API call and a stale
+// send (the conversation changed hands mid-flight) is dropped. Absent → byte-identical.
+import { checkControlEpoch, logBlockedStaleSender, type EpochGuard } from "./send-gate";
 
 /** WhatsApp's free-form customer-service window: 24h since the last inbound. */
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -38,6 +42,25 @@ export type WindowState = "in_window" | "out_of_window" | "test_mode";
 export interface WindowedSendResult extends SendResult {
   windowState: WindowState;
   attempts: number;
+  /** WO-CONTROL Part B — set when the send was DROPPED as a stale sender (control_epoch
+   *  changed between enqueue and send). Nothing was transmitted; the caller should not
+   *  treat this as a delivered reply. Only ever present when a `guard` was supplied. */
+  blocked?: "stale_sender";
+}
+
+/** Build the not-transmitted result for a stale-sender drop (status 'skipped' = persisted
+ *  locally, nothing on the wire — the same shape as test-mode, plus the blocked marker). */
+function staleSenderResult(to: string): WindowedSendResult {
+  return {
+    channel: "whatsapp",
+    to,
+    ok: false,
+    status: "skipped",
+    error: "blocked_stale_sender",
+    windowState: "in_window",
+    attempts: 0,
+    blocked: "stale_sender",
+  };
 }
 
 export interface SendWhatsAppArgs {
@@ -46,6 +69,9 @@ export interface SendWhatsAppArgs {
   /** Epoch ms of the most recent inbound message; omit to skip the window gate. */
   lastInboundAtMs?: number | null;
   retries?: number;
+  /** WO-CONTROL Part B — control_epoch send gate. Present only on the AI reply path
+   *  (epoch captured at turn start); absent everywhere else → byte-identical. */
+  guard?: EpochGuard;
 }
 
 /**
@@ -81,6 +107,18 @@ export async function sendWhatsAppText(args: SendWhatsAppArgs): Promise<Windowed
     };
   }
 
+  // WO-CONTROL Part B — the send gate, immediately before the WhatsApp API call. On a
+  // confirmed control_epoch mismatch the reply is stale (the conversation changed hands
+  // mid-flight): log the signal and drop it — nothing goes on the wire. Inert when no
+  // guard is supplied or the epoch matches (the normal case).
+  if (args.guard) {
+    const gate = await checkControlEpoch(args.guard);
+    if (gate.blocked) {
+      await logBlockedStaleSender(args.guard, gate.currentEpoch);
+      return staleSenderResult(args.to);
+    }
+  }
+
   const { result, attempts } = await retrySend(
     () => whatsappAdapter.sendMessage({ channel: "whatsapp", to: args.to, text: args.text }),
     args.retries ?? 2
@@ -95,6 +133,8 @@ export interface SendInteractiveArgs {
   presentation: Presentation;
   lastInboundAtMs?: number | null;
   retries?: number;
+  /** WO-CONTROL Part B — control_epoch send gate (AI reply path only). */
+  guard?: EpochGuard;
 }
 
 /** Render a presentation as plain numbered text (the interactive→text fallback). */
@@ -145,6 +185,16 @@ export async function sendWhatsAppInteractive(
       windowState: "out_of_window",
       attempts: 0,
     };
+  }
+
+  // WO-CONTROL Part B — send gate, immediately before the WhatsApp API call (mirrors
+  // sendWhatsAppText). A stale interactive reply is dropped identically.
+  if (args.guard) {
+    const gate = await checkControlEpoch(args.guard);
+    if (gate.blocked) {
+      await logBlockedStaleSender(args.guard, gate.currentEpoch);
+      return staleSenderResult(args.to);
+    }
   }
 
   const p = args.presentation;
