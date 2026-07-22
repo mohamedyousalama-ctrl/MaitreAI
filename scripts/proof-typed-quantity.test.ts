@@ -76,8 +76,9 @@ ok("handled typed quantity returns before runCustomerTurn",
   bridge.indexOf("if (typed.kind === \"handled\")", bridge.indexOf("handleTypedQuantityFill(admin")) > 0 &&
   bridge.indexOf("return { status: \"responded\", reply: typed.reply", bridge.indexOf("handleTypedQuantityFill(admin")) <
     bridge.indexOf("outcome = await runCustomerTurn("));
-ok("flag-off path remains legacy routeInteractive -> runCustomerTurn",
-  /typedConfirmMessage \?\? \(coalesced\.count > 1 \? rawText : routeInteractive\(lastInteractiveId, rawText\)\.text\)/.test(bridge));
+ok("qty:N taps are handled before the typed_quantity_fill text feature",
+  /if \(cleanInteractiveId\)/.test(bridge) &&
+  /!cleanInteractiveId[\s\S]{0,120}isFeatureExplicitlyEnabled\("typed_quantity_fill", convFlags\)/.test(bridge));
 ok("handler accepts tap id and typed text",
   /quantityFromInteractiveId\(args\.interactiveId\) \?\? parseBareQuantityAnswer\(args\.userMessage\)/.test(typed));
 ok("non-numeric pass-through is explicit",
@@ -95,6 +96,6 @@ ok("quantity helper documents the 1..20 bare-answer scope",
 
 console.log("\nWO-QTY proof summary");
 console.log("  deterministic: tap qty:3, typed 3, typed ٢, typed تلاتة");
-console.log("  pass-through: non-numeric, compound text, no pending question, flag-off source path");
+console.log("  pass-through: non-numeric, compound text, no pending question; qty:N taps handled before text fill");
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} typed-quantity: ${pass}/${pass + fail} passed`);
 if (fail > 0) process.exit(1);

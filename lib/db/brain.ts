@@ -12,6 +12,7 @@ import type {
   Branch,
   DeliveryArea,
   FaqItem,
+  MenuCategory,
   MenuItemChoiceGroup,
   MenuItemChoiceOption,
   MenuItemVariant,
@@ -40,6 +41,7 @@ import type {
 export interface BrainData {
   profile: RestaurantProfile;
   branches: Branch[];
+  menuCategories: MenuCategory[];
   menuItems: MenuItem[];
   modifiers: Modifier[];
   deliveryAreas: DeliveryArea[];
@@ -273,6 +275,11 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
     taxMode: String((restaurant.data as RestaurantRow).tax_mode ?? "inclusive"),
     taxRate: Number((restaurant.data as RestaurantRow).tax_rate ?? 0),
     branches: ((branches.data ?? []) as BranchRow[]).map(toBranch),
+    menuCategories: ((categories.data ?? []) as MenuCategoryRow[]).map((c) => ({
+      id: c.id,
+      name: c.name,
+      sort: c.sort,
+    })),
     menuItems: ((items.data ?? []) as MenuItemRow[]).map((it) =>
       toMenuItem(
         it,

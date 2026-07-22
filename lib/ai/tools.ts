@@ -112,6 +112,7 @@ export interface PhotoRequest {
 }
 
 export interface ToolContext {
+  menuCategories?: { id: string; name: string; sort?: number }[];
   menuItems: MenuItem[];
   modifiers: Modifier[];
   deliveryAreas: DeliveryArea[];
@@ -483,6 +484,12 @@ function findItem(menu: MenuItem[], name: string): MenuItem | undefined {
   );
 }
 
+function findItemById(menu: MenuItem[], id: string): MenuItem | undefined {
+  const clean = id.trim();
+  if (!clean) return undefined;
+  return menu.find((i) => i.id === clean);
+}
+
 function hasPhoto(item: MenuItem): boolean {
   return typeof item.imageUrl === "string" && item.imageUrl.trim().length > 0;
 }
@@ -651,12 +658,13 @@ export function executeTool(
       return { content: `تمام، هبعتلك ${withPhotos.length === 1 ? "الصورة" : `${withPhotos.length} صور`}${suffix}` };
     }
     case "add_to_order": {
+      const itemId = typeof input.item_id === "string" ? input.item_id.trim() : "";
       const itemName = String(input.item_name ?? "");
       const qty = Math.max(1, Math.floor(Number(input.quantity ?? 1)) || 1);
       const mode = input.mode === "set" ? "set" : "add";
-      const item = findItem(ctx.menuItems, itemName);
+      const item = (itemId ? findItemById(ctx.menuItems, itemId) : undefined) ?? findItem(ctx.menuItems, itemName);
       if (!item || !item.available) {
-        ctx.signals.push({ type: "off_menu", detail: { requested: itemName } });
+        ctx.signals.push({ type: "off_menu", detail: { requested: itemName, itemId: itemId || null } });
         return {
           content: `«${itemName}» غير متوفر في المنيو. لا تخترع عنصراً — اسأل العميل أو صعّد.`,
           isError: true,
@@ -1080,10 +1088,13 @@ export function executeTool(
 
       // No category + several categories → let the customer pick a category first.
       if (!cat && cats.length > 1) {
-        const rows: PresentationRow[] = cats.slice(0, MAX_ROWS).map((c) => ({
-          id: `cat:${c}`,
-          title: truncate(c, ROW_TITLE_MAX),
-          description: `${avail.filter((i) => i.category === c).length} صنف`,
+        const categoryRows = ctx.menuCategories?.length
+          ? ctx.menuCategories.filter((c) => cats.includes(c.name)).sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
+          : cats.map((name, idx) => ({ id: name, name, sort: idx }));
+        const rows: PresentationRow[] = categoryRows.slice(0, MAX_ROWS).map((c) => ({
+          id: `cat:${c.id}`,
+          title: truncate(c.name, ROW_TITLE_MAX),
+          description: `${avail.filter((i) => i.category === c.name).length} صنف`,
         }));
         ctx.presentation = { kind: "list", button: truncate("تصفّح المنيو", LIST_BUTTON_MAX), sections: [{ rows }] };
         return { content: `تم عرض ${rows.length} تصنيف للعميل كقائمة تفاعلية.` };
