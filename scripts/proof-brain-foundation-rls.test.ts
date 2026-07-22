@@ -2,7 +2,8 @@
 // WO-BRAIN-G0 adversarial RLS behavior proof.
 //
 // This is intentionally NOT a source-regex proof. It must be run only after the
-// PM applies supabase/migrations/0100_brain_foundation.sql to a staging database.
+// PM applies supabase/migrations/0100_brain_foundation.sql and
+// supabase/migrations/0101_brain_foundation_fk_tightening.sql to a staging database.
 //
 // Required:
 //   RUN_BRAIN_RLS_BEHAVIOR=1
@@ -38,7 +39,7 @@ const brainTables = [
 ] as const;
 
 if (process.env.RUN_BRAIN_RLS_BEHAVIOR !== "1") {
-  console.log("BRAIN FOUNDATION RLS PROOF: skipped (set RUN_BRAIN_RLS_BEHAVIOR=1 after PM applies 0100 to staging)");
+  console.log("BRAIN FOUNDATION RLS PROOF: skipped (set RUN_BRAIN_RLS_BEHAVIOR=1 after PM applies 0100 and 0101 to staging)");
   process.exit(0);
 }
 
@@ -89,6 +90,17 @@ const isAccessDenied = (error: { code?: string; message?: string } | null) => {
     /row-level security/i.test(msg) ||
     /permission denied/i.test(msg) ||
     /violates row-level security policy/i.test(msg)
+  );
+};
+
+const isConstraintRejected = (error: { code?: string; message?: string } | null) => {
+  if (!error) return false;
+  const msg = error.message ?? "";
+  return (
+    error.code === "23503" ||
+    error.code === "23514" ||
+    /foreign key/i.test(msg) ||
+    /check constraint/i.test(msg)
   );
 };
 
@@ -163,7 +175,6 @@ const rowsFor = (f: Fixture) => ({
     customer_id: f.customerId,
     lifecycle_state: "collecting",
     active_mutable: true,
-    committed_order_id: f.orderId,
   },
   episode_turn_events: {
     id: f.turnId,
@@ -216,7 +227,6 @@ const rowsFor = (f: Fixture) => ({
     tax_minor_units: 0,
     total_minor_units: 1200,
     expires_at: laterIso(),
-    committed_order_id: f.orderId,
   },
   outbox_messages: {
     id: f.outboxId,
@@ -265,20 +275,21 @@ const insertFixture = async (f: Fixture) => {
 };
 
 const fixtureA = fixture(tenantA, "a");
+const fixtureAOther = fixture(tenantA, "a-other");
 const fixtureB = fixture(tenantB, "b");
 
 const cleanup = async () => {
   const idsByTable: Record<(typeof brainTables)[number], string[]> = {
-    channel_inbox: [fixtureA.inboxId, fixtureB.inboxId],
-    conversation_threads: [fixtureA.threadId, fixtureB.threadId],
-    order_episodes: [fixtureA.episodeId, fixtureB.episodeId],
-    episode_turn_events: [fixtureA.turnId, fixtureB.turnId],
-    pending_prompts: [fixtureA.promptId, fixtureB.promptId],
-    safety_disclosures: [fixtureA.safetyId, fixtureB.safetyId],
-    order_quotes: [fixtureA.quoteId, fixtureB.quoteId],
-    outbox_messages: [fixtureA.outboxId, fixtureB.outboxId],
-    customer_memories: [fixtureA.memoryId, fixtureB.memoryId],
-    brain_runs: [fixtureA.runId, fixtureB.runId],
+    channel_inbox: [fixtureA.inboxId, fixtureAOther.inboxId, fixtureB.inboxId],
+    conversation_threads: [fixtureA.threadId, fixtureAOther.threadId, fixtureB.threadId],
+    order_episodes: [fixtureA.episodeId, fixtureAOther.episodeId, fixtureB.episodeId],
+    episode_turn_events: [fixtureA.turnId, fixtureAOther.turnId, fixtureB.turnId],
+    pending_prompts: [fixtureA.promptId, fixtureAOther.promptId, fixtureB.promptId],
+    safety_disclosures: [fixtureA.safetyId, fixtureAOther.safetyId, fixtureB.safetyId],
+    order_quotes: [fixtureA.quoteId, fixtureAOther.quoteId, fixtureB.quoteId],
+    outbox_messages: [fixtureA.outboxId, fixtureAOther.outboxId, fixtureB.outboxId],
+    customer_memories: [fixtureA.memoryId, fixtureAOther.memoryId, fixtureB.memoryId],
+    brain_runs: [fixtureA.runId, fixtureAOther.runId, fixtureB.runId],
   };
   for (const table of [...brainTables].reverse()) {
     await admin.from(table).delete().in("id", idsByTable[table]);
@@ -328,8 +339,60 @@ const attemptDeniedDelete = async (client: DbClient, table: (typeof brainTables)
   check(`${label}: forged cross-tenant delete denied on ${table}`, (isAccessDenied(error) || (data?.length ?? 0) === 0) && exists, error ?? data);
 };
 
+const expectCrossThreadTurnInsertDenied = async () => {
+  const forgedTurnId = randomUUID();
+  try {
+    const { data, error } = await admin
+      .from("episode_turn_events")
+      .insert({
+        id: forgedTurnId,
+        tenant_id: tenantA,
+        thread_id: fixtureA.threadId,
+        episode_id: fixtureAOther.episodeId,
+        source_inbox_id: fixtureA.inboxId,
+        turn_index: 999,
+        actor: "CUSTOMER",
+        event_type: "cross_thread_forgery",
+        untrusted_input: { text: "should be rejected" },
+      })
+      .select("id")
+      .maybeSingle();
+    const exists = await adminRowExists("episode_turn_events", forgedTurnId);
+    check("constraint: episode_turn_events cannot attach a same-tenant foreign-thread episode", isConstraintRejected(error) && !data && !exists, error ?? data);
+  } finally {
+    await admin.from("episode_turn_events").delete().eq("id", forgedTurnId);
+  }
+};
+
+const expectForeignCurrentQuoteDenied = async () => {
+  try {
+    const { data, error } = await admin
+      .from("order_episodes")
+      .update({ current_quote_id: fixtureAOther.quoteId })
+      .eq("tenant_id", tenantA)
+      .eq("id", fixtureA.episodeId)
+      .select("id,current_quote_id")
+      .maybeSingle();
+    const { data: after, error: afterError } = await admin
+      .from("order_episodes")
+      .select("current_quote_id")
+      .eq("tenant_id", tenantA)
+      .eq("id", fixtureA.episodeId)
+      .maybeSingle();
+    if (afterError) throw new Error(`admin current_quote_id check failed: ${afterError.message}`);
+    check(
+      "constraint: order_episodes.current_quote_id cannot point at another episode's quote",
+      isConstraintRejected(error) && !data && after?.current_quote_id !== fixtureAOther.quoteId,
+      error ?? data,
+    );
+  } finally {
+    await admin.from("order_episodes").update({ current_quote_id: null }).eq("tenant_id", tenantA).eq("id", fixtureA.episodeId);
+  }
+};
+
 try {
   await insertFixture(fixtureA);
+  await insertFixture(fixtureAOther);
   await insertFixture(fixtureB);
 
   const rowsA = rowsFor(fixtureA);
@@ -374,6 +437,9 @@ try {
   for (const table of [...brainTables].reverse()) {
     await attemptDeniedDelete(memberA, table, idsB[table], tenantB, "member A");
   }
+
+  await expectCrossThreadTurnInsertDenied();
+  await expectForeignCurrentQuoteDenied();
 } finally {
   await cleanup();
 }
