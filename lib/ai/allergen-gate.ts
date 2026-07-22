@@ -14,8 +14,8 @@
 // Both are flag-gated by the caller (`deterministic_allergen_safety`); OFF → no-op.
 // ============================================================================
 
-/** Normalize Arabic so matching is robust to tashkeel, alef/ya/ta-marbuta variants
- *  and spacing. Lowercases Latin too (for safe/nut-free). */
+/** Normalize Arabic so matching is robust to tashkeel, alef/ya/ta-marbuta variants,
+ *  emphatic 3+ Arabic-letter runs, and spacing. Lowercases Latin too (for safe/nut-free). */
 export function normalizeAr(s: string): string {
   return String(s ?? "")
     .replace(/[ً-ْـ]/g, "") // tashkeel + tatweel
@@ -24,6 +24,7 @@ export function normalizeAr(s: string): string {
     .replace(/ى/g, "ي") // ى → ي
     .replace(/ؤ/g, "و") // ؤ → و
     .replace(/ئ/g, "ي") // ئ → ي
+    .replace(/([ء-ي])\1{2,}/g, "$1") // حساااسية → حساسيه; preserve real double letters
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();

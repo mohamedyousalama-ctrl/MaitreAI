@@ -786,21 +786,23 @@ export async function runCustomerTurn(
   let memoryAllergyLabels: string[] = [];
   // WO-SIMPLIFY (PART A) — bypass the customer-memory allergy READ when the simple posture
   // is on (memory reads are bypassed; the gate never arms from stored cross-session memory).
-  if (memoryAllergyGateOn && !allergySimpleOn && conversationCustomerId) {
-    try {
-      const { data: mem } = await admin
-        .from("customer_memory")
-        .select("inferred")
-        .eq("restaurant_id", restaurantId)
-        .eq("customer_id", conversationCustomerId)
-        .maybeSingle();
-      // WO-MEMFIX read-time defense: the memory-allergy gate receives real allergen
-      // ENTITIES only. A legacy garbage note in customer_memory (a stored symptom/trigger
-      // word) is filtered out here VERBATIM-safe, so it can never arm the gate or flow
-      // into the session note as a bogus substance.
-      memoryAllergyLabels = filterAllergenEntities(extractMemoryAllergyLabels((mem as { inferred?: unknown } | null)?.inferred));
-    } catch {
-      memoryAllergyLabels = [];
+  if (memoryAllergyGateOn && conversationCustomerId) {
+    if (!allergySimpleOn) {
+      try {
+        const { data: mem } = await admin
+          .from("customer_memory")
+          .select("inferred")
+          .eq("restaurant_id", restaurantId)
+          .eq("customer_id", conversationCustomerId)
+          .maybeSingle();
+        // WO-MEMFIX read-time defense: the memory-allergy gate receives real allergen
+        // ENTITIES only. A legacy garbage note in customer_memory (a stored symptom/trigger
+        // word) is filtered out here VERBATIM-safe, so it can never arm the gate or flow
+        // into the session note as a bogus substance.
+        memoryAllergyLabels = filterAllergenEntities(extractMemoryAllergyLabels((mem as { inferred?: unknown } | null)?.inferred));
+      } catch {
+        memoryAllergyLabels = [];
+      }
     }
   }
 
