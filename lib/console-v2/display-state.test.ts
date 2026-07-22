@@ -26,15 +26,17 @@ const ORDER_STATUSES: OrderStatusKey[] = [
 ];
 const POS_STATUSES: PosStatus[] = ["not_entered", "entered", "sent_to_kitchen"];
 const PAY_STATUSES: PaymentStatusKey[] = ["unpaid", "payment_link_sent", "paid", "failed", "refunded"];
-const CONV_STATES = ["AI_ACTIVE", "HUMAN_ACTIVE", "HUMAN_IDLE", "SYSTEM_HOLD", "CLOSED"] as const;
+const CONV_STATES = ["AI_ACTIVE", "HOLD_UNCLAIMED", "HUMAN_ACTIVE", "HUMAN_IDLE", "AI_RESUME_PENDING", "SYSTEM_HOLD", "CLOSED"] as const;
 
 // ---------------------------------------------------------------------------
 // FR-004 — the 🧑 gate tile counts EVERY human-owned state, not just HUMAN_IDLE.
 // ---------------------------------------------------------------------------
 test("conversationBucket — both human-owned states count to the gate (FR-004)", () => {
   // The fix: a fresh escalation (HUMAN_ACTIVE) increments the gate immediately.
+  assert.equal(conversationBucket("HOLD_UNCLAIMED", false), "gate");
   assert.equal(conversationBucket("HUMAN_ACTIVE", false), "gate");
   assert.equal(conversationBucket("HUMAN_IDLE", false), "gate");
+  assert.equal(conversationBucket("AI_RESUME_PENDING", false), "gate");
 });
 test("conversationBucket — AI / closed / safety route elsewhere", () => {
   assert.equal(conversationBucket("AI_ACTIVE", false), "karim");
@@ -89,8 +91,10 @@ test("payments — every payment_status derives a display state", () => {
 // ---------------------------------------------------------------------------
 test("conversations — ownership spine mappings", () => {
   assert.equal(deriveConversationDisplay({ ownershipState: "AI_ACTIVE" }).state, "ai_active");
+  assert.equal(deriveConversationDisplay({ ownershipState: "HOLD_UNCLAIMED" }).state, "hold_unclaimed");
   assert.equal(deriveConversationDisplay({ ownershipState: "HUMAN_ACTIVE" }).state, "human_active");
   assert.equal(deriveConversationDisplay({ ownershipState: "HUMAN_IDLE" }).state, "human_idle");
+  assert.equal(deriveConversationDisplay({ ownershipState: "AI_RESUME_PENDING" }).state, "ai_resume_pending");
   assert.equal(deriveConversationDisplay({ ownershipState: "CLOSED" }).state, "closed");
 });
 
