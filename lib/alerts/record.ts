@@ -52,6 +52,10 @@ export type CriticalAlertType =
   // back to OpenAI onyx. The customer still got the text + a voice note (never a silent
   // drop); the alert surfaces the EL outage/quota so it can be checked.
   | "voice_tts_fallback"
+  // WO-FIX-STT-GUARD — inbound voice STT was unavailable in production. The customer
+  // gets the canonical voice-retry fallback; no fabricated mock transcript reaches
+  // the order path.
+  | "voice_stt_unavailable"
   // WO-MONITORING-ALERTING — synthetic alerts raised by the monitor sweep
   // (lib/monitoring/sweep.ts), NOT by an inline request failure. Each is cooldown-
   // gated in monitor_alert_state so it fires once loudly, not in a storm.

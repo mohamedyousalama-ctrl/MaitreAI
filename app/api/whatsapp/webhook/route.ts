@@ -24,12 +24,14 @@ import { persistInboundMessage } from "@/lib/db/messages";
 import { resolveWebhookAlertRestaurantId, resolveWebhookRestaurantId, resolveWebhookTenant } from "@/lib/db/restaurants";
 import { decideWebhookRouting } from "@/lib/messaging/webhook-routing";
 import { respondAndSendWhatsApp } from "@/lib/messaging/respond-and-send";
+import { sendWhatsAppText } from "@/lib/messaging/outbound";
 import { withConversationLock } from "@/lib/db/conversation-lock";
 import { loadStaffNumbers, handleStaffCommand } from "@/lib/staff/command-channel";
 import { normalizePhone } from "@/lib/messaging/phone";
-import { transcribeWhatsAppVoice } from "@/lib/messaging/voice";
+import { transcribeWhatsAppVoice, VOICE_STT_UNAVAILABLE_TRANSCRIPT } from "@/lib/messaging/voice";
 import { expectedAnswerClass, CLASS_PRIORITY_TERMS } from "@/lib/ai/voice-aliases";
-import { getSttAdapter, mockSttAllowed } from "@/lib/ai/stt";
+import { garbledVoiceReply } from "@/lib/ai/voice-quality";
+import { isMockSttProductionError, mockSttAllowed, resolveSttAdapterName } from "@/lib/ai/stt";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 import { recordWebhookAnomaly } from "@/lib/monitoring/webhook-events";
 
@@ -42,6 +44,83 @@ export const dynamic = "force-dynamic";
 function maskPhone(p: string | undefined | null): string {
   const s = (p ?? "").replace(/\D/g, "");
   return s.length >= 4 ? `…${s.slice(-4)}` : "unknown";
+}
+
+function voiceFallbackDialect(country: string | null): "egyptian" | "saudi" {
+  return country === "EG" ? "egyptian" : "saudi";
+}
+
+function sttErrorDetail(error: unknown): { name: string; message: string } {
+  if (error instanceof Error) return { name: error.name, message: error.message.slice(0, 240) };
+  return { name: typeof error, message: String(error).slice(0, 240) };
+}
+
+async function recordVoiceSttUnavailableIncident(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string;
+    conversationId?: string | null;
+    adapterName: string;
+    from: string;
+    messageId?: string | null;
+    error: unknown;
+  }
+): Promise<void> {
+  const detail = sttErrorDetail(args.error);
+  const context = {
+    adapterName: args.adapterName,
+    from: maskPhone(args.from),
+    messageId: args.messageId ?? null,
+    errorName: detail.name,
+    errorMessage: detail.message,
+    mockBlocked: isMockSttProductionError(args.error),
+  };
+  console.error("[whatsapp:webhook] CRITICAL voice_stt_unavailable", context);
+  await recordCriticalAlert(admin, {
+    restaurantId: args.restaurantId,
+    conversationId: args.conversationId ?? null,
+    type: "voice_stt_unavailable",
+    detail: "Production voice STT unavailable; sent deterministic voice-retry fallback.",
+    context,
+  });
+}
+
+async function sendVoiceSttUnavailableFallback(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string;
+    conversationId: string;
+    to: string;
+    lastInboundAtMs: number;
+    country: string | null;
+  }
+): Promise<void> {
+  const reply = garbledVoiceReply(voiceFallbackDialect(args.country));
+  const send = await sendWhatsAppText({ to: args.to, text: reply, lastInboundAtMs: args.lastInboundAtMs });
+  await admin.from("messages").insert({
+    restaurant_id: args.restaurantId,
+    conversation_id: args.conversationId,
+    direction: "outbound",
+    sender: "ai",
+    text: reply,
+    channel_message_id: send.externalMessageId ?? null,
+    status: send.status === "sent" ? "sent" : send.status === "skipped" ? "sent" : "failed",
+    meta: {
+      kind: "voice_stt_unavailable_fallback",
+      send_status: send.status,
+      window_state: send.windowState,
+      attempts: send.attempts,
+    },
+  });
+  if (send.status === "failed") {
+    await recordCriticalAlert(admin, {
+      restaurantId: args.restaurantId,
+      conversationId: args.conversationId,
+      type: "whatsapp_send_failed",
+      detail: send.error ?? "voice STT fallback send failed",
+      context: { kind: "voice_stt_unavailable_fallback", windowState: send.windowState, attempts: send.attempts },
+    });
+  }
 }
 
 type TenantResolutionSurface = "inbound" | "status";
@@ -320,7 +399,8 @@ export async function POST(req: NextRequest) {
       // WO-VOICE-ALIASES — state-aware STT prompt bias: the expected answer-class words when
       // the LAST AI turn asked for a quantity/size/sauce. Best-effort (no bias on failure).
       let sttPriorityTerms: string[] = [];
-      if (messages.some((m) => m.audioId && !m.text) && (getSttAdapter().name !== "mock" || mockSttAllowed())) {
+      const resolvedSttAdapterName = resolveSttAdapterName();
+      if (messages.some((m) => m.audioId && !m.text) && (resolvedSttAdapterName !== "mock" || mockSttAllowed())) {
         try {
           const { data: mi } = await admin.from("menu_items").select("name").eq("restaurant_id", restaurantId).limit(200);
           sttMenuNames = ((mi ?? []) as Array<{ name?: string | null }>).map((r) => r.name ?? "").filter(Boolean);
@@ -353,15 +433,10 @@ export async function POST(req: NextRequest) {
           // S9-6: a voice note is transcribed BEFORE persisting, so the transcript
           // IS the stored message text — the operator sees exactly what the AI heard.
           let stt: { adapter: string; model: string; costUsd: number } | null = null;
+          let sttUnavailable = false;
+          let sttUnavailableError: unknown = null;
           if (m.audioId && !m.text) {
-            // S7 — never let the MOCK adapter's FABRICATED transcript become the
-            // customer's words in prod. If the resolved adapter is mock and mock
-            // isn't allowed here, skip transcription and ask the customer to type —
-            // an honest fallback, never a fake order (and never silent). A real
-            // adapter (openai/groq), or dev/test, transcribes exactly as before.
-            if (getSttAdapter().name === "mock" && !mockSttAllowed()) {
-              m.text = "[رسالة صوتية — التفريغ الصوتي غير متاح حاليًا. اطلب من العميل بلطف يكتب طلبه نصيًا.]";
-            } else {
+            try {
               const t = await transcribeWhatsAppVoice(m.audioId, m.audioMime, sttMenuNames, sttPriorityTerms);
               m.text = t.text || "[رسالة صوتية — تعذّر التفريغ]";
               // WO-VOICE-1: keep the STT provenance so the audio ref + confidence land
@@ -370,13 +445,36 @@ export async function POST(req: NextRequest) {
               m.sttModel = t.model;
               if (typeof t.confidence === "number") m.sttConfidence = t.confidence;
               stt = { adapter: t.adapter, model: t.model, costUsd: t.costUsd };
+            } catch (e) {
+              if (process.env.NODE_ENV !== "production") throw e;
+              sttUnavailable = true;
+              sttUnavailableError = e;
+              m.text = VOICE_STT_UNAVAILABLE_TRANSCRIPT;
             }
           }
           const r = await persistInboundMessage(admin, restaurantId, m);
           if (r.inserted) {
             persisted++;
             if (r.conversationId) {
-              toAnswer.add(r.conversationId);
+              if (sttUnavailable) {
+                await recordVoiceSttUnavailableIncident(admin, {
+                  restaurantId,
+                  conversationId: r.conversationId,
+                  adapterName: resolvedSttAdapterName,
+                  from: m.from,
+                  messageId: m.externalMessageId ?? null,
+                  error: sttUnavailableError,
+                });
+                await sendVoiceSttUnavailableFallback(admin, {
+                  restaurantId,
+                  conversationId: r.conversationId,
+                  to: m.from,
+                  lastInboundAtMs: m.timestamp,
+                  country: tenantCountry,
+                });
+              } else {
+                toAnswer.add(r.conversationId);
+              }
               // Log transcription cost to agent_runs (like LLM tokens).
               if (stt) {
                 await admin.from("agent_runs").insert({

@@ -6,10 +6,12 @@
 // ============================================================================
 
 import type { SttAdapter } from "./types";
+import { assertMockSttAllowed } from "./guard";
 
 export const mockSttAdapter: SttAdapter = {
   name: "mock",
   async transcribe() {
+    assertMockSttAllowed("mockSttAdapter.transcribe");
     return {
       text: "«تفريغ تجريبي» السلام عليكم، أبغى أطلب برجر كلاسيك",
       model: "mock-stt",

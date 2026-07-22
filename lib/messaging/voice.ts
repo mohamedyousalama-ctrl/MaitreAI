@@ -8,8 +8,11 @@
 
 import "server-only";
 import { downloadWhatsAppMedia } from "./adapters/whatsapp";
+import { assertMockSttAllowed } from "@/lib/ai/stt/guard";
 import { getSttAdapter, type SttResult } from "@/lib/ai/stt";
 import { buildSttPromptVocab } from "@/lib/ai/voice-quality";
+
+export const VOICE_STT_UNAVAILABLE_TRANSCRIPT = "[رسالة صوتية — التفريغ الصوتي غير متاح حاليًا]";
 
 export async function transcribeWhatsAppVoice(
   mediaId: string,
@@ -22,6 +25,7 @@ export async function transcribeWhatsAppVoice(
   priorityTerms?: Array<string | null | undefined>
 ): Promise<SttResult> {
   const adapter = getSttAdapter();
+  if (adapter.name === "mock") assertMockSttAllowed("transcribeWhatsAppVoice");
   const media = await downloadWhatsAppMedia(mediaId);
   const bytes = media?.bytes ?? Buffer.from([]);
   const mime = media?.mime ?? mimeHint ?? "audio/ogg";
