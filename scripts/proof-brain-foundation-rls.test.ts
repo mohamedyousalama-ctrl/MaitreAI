@@ -2,7 +2,7 @@
 // WO-BRAIN-G0 adversarial RLS behavior proof.
 //
 // This is intentionally NOT a source-regex proof. It must be run only after the
-// PM applies supabase/migrations/0099_brain_foundation.sql to a staging database.
+// PM applies supabase/migrations/0100_brain_foundation.sql to a staging database.
 //
 // Required:
 //   RUN_BRAIN_RLS_BEHAVIOR=1
@@ -38,7 +38,7 @@ const brainTables = [
 ] as const;
 
 if (process.env.RUN_BRAIN_RLS_BEHAVIOR !== "1") {
-  console.log("BRAIN FOUNDATION RLS PROOF: skipped (set RUN_BRAIN_RLS_BEHAVIOR=1 after PM applies 0099 to staging)");
+  console.log("BRAIN FOUNDATION RLS PROOF: skipped (set RUN_BRAIN_RLS_BEHAVIOR=1 after PM applies 0100 to staging)");
   process.exit(0);
 }
 
