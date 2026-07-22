@@ -1,561 +1,1448 @@
 "use client";
 
-// ============================================================================
-// console_v2 item 6 — Conversations (v35 dark-glass rebuild). The ownership spine
-// rendered as the design's BROADCAST WALL: Karim's Stage (blue) + the Human Hall
-// (amber), with a "Right now" summary rail. Composed from the kit (shell #362).
-// The rebuild is VISUAL — every ownership law and safety wire survives:
-//
-//  • ownership vocabulary ONLY through deriveConversationDisplay() — blue = Karim's
-//    stage, amber = human-held, slate = idle, RED = safety hold (the one red).
-//  • takeover-at-SEND (MO2): the composer's SEND is the single product-wide claim.
-//    Sending an AI-owned/idle/held conversation fires the atomic server claim
-//    FIRST; a lost race renders «تولّاها زميل بالفعل» and the message is NOT sent.
-//  • R6 attribution: every outbound bubble carries <HandledByChip> — a TEAM bubble
-//    is visibly the operator, never mistaken for Karim.
-//  • close goes through the server-authoritative close route (the ONE outcome
-//    trigger). A safety lock shows the lock + verbatim operator-hint microcopy,
-//    NEVER the allergen itself, on any glance surface.
-//  • assign-to-a-teammate has no backing route yet → rendered SOON, never faked.
-// ============================================================================
-
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Send, Lock, CornerUpLeft, CheckCircle2, Radio, Users, ShieldAlert, CheckCheck, X, Receipt } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition, type CSSProperties } from "react";
+import { AlertTriangle, CheckCircle2, Clock3, Eye, Lock, RefreshCw, UserCheck, X } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
-import { useHasHydrated, useRestaurantStore } from "@/lib/store";
+import { useConsoleDataStore } from "@/lib/console-data-state";
 import { useOrderStore } from "@/lib/order-store";
-import { deriveConversationDisplay, derivePaymentDisplay, conversationBucket, type ConversationOwnershipState, type ConversationDisplayState } from "@/lib/console-v2/display-state";
-import type { DisplayState } from "@/lib/console-v2/display-state";
-import { sendFailureMessageKey } from "@/lib/console-v2/send-failure";
-import {
-  HeaderRow, PageGrid, Panel, SectionHeader, StatTile, TruthChip, HandledByChip, AuroraDrawer, MiniModal, Toasts, pushToast,
-} from "@/components/console-v2/kit";
-import { useT } from "@/lib/i18n/lang";
-import { Bdi, Num } from "@/components/kivo";
-import { CONVERSATION_STAGE_LABELS, type Conversation, type ChatMessage } from "@/lib/types";
-import { classifyMessageMedia, formatConfidence } from "@/lib/console-v2/message-media";
+import { useHasHydrated } from "@/lib/store";
+import { membersNameMap, useMembersStore } from "@/lib/members-store";
+import { Bdi, Phone } from "@/components/kivo";
+import type { Conversation, LocalOrder, MessageSender } from "@/lib/types";
 
-const ownOf = (c: Conversation): ConversationOwnershipState => c.ownershipState ?? "AI_ACTIVE";
-const isHold = (c: Conversation) => c.isSafetyHold === true || ownOf(c) === "SYSTEM_HOLD";
+type QueueSegment = "held" | "mine" | "all" | "safety";
+type QueueOwnershipState = NonNullable<Conversation["ownershipState"]>;
+type QueueConversation = Conversation & { controlEpoch?: number };
+type ActorState =
+  | { status: "loading"; memberId: null }
+  | { status: "ready"; memberId: string }
+  | { status: "degraded"; memberId: null; reason: string };
 
-// Derived tone → dark-palette chip colors (the law engine picks the tone; this
-// only paints it on dark). `safety` is the one red — red = safety only.
-const TONE_DARK: Record<string, { fg: string; bg: string; bd: string }> = {
-  blue: { fg: "#93d2ff", bg: "rgba(75,139,255,.14)", bd: "rgba(75,139,255,.36)" },
-  amber: { fg: "#ffcf8d", bg: "rgba(232,180,90,.14)", bd: "rgba(232,180,90,.4)" },
-  slate: { fg: "var(--dim)", bg: "var(--inset)", bd: "var(--stroke)" },
-  safety: { fg: "#ffc9c9", bg: "rgba(255,107,94,.14)", bd: "rgba(255,107,94,.4)" },
+const STATE_LABELS: Record<QueueOwnershipState, string> = {
+  AI_ACTIVE: "مع كريم",
+  HOLD_UNCLAIMED: "بانتظار الاستلام",
+  HUMAN_ACTIVE: "مستلمة",
+  HUMAN_IDLE: "متوقفة مع موظف",
+  AI_RESUME_PENDING: "قيد التسليم لكريم",
+  SYSTEM_HOLD: "إيقاف سلامة",
+  CLOSED: "مغلقة",
 };
 
-function OwnChip({ display }: { display: DisplayState<ConversationDisplayState> }) {
-  const t = useT();
-  const c = TONE_DARK[display.tone] ?? TONE_DARK.slate;
-  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, fontWeight: 800, color: c.fg, background: c.bg, border: `1px solid ${c.bd}`, borderRadius: 99, padding: "3px 9px" }}>{t(display.labelKey)}</span>;
+const SEGMENTS: Array<{ key: QueueSegment; label: string }> = [
+  { key: "held", label: "غير مستلمة" },
+  { key: "mine", label: "محادثاتي" },
+  { key: "all", label: "الكل" },
+  { key: "safety", label: "السلامة" },
+];
+
+const ARABIC_NUMBER = new Intl.NumberFormat("ar-EG-u-nu-arab");
+
+function toArabicDigits(value: number | string): string {
+  return String(value).replace(/\d/g, (d) => ARABIC_NUMBER.format(Number(d)));
+}
+
+function ownOf(conv: Conversation): QueueOwnershipState {
+  if (conv.ownershipState) return conv.ownershipState;
+  if (conv.isSafetyHold) return "SYSTEM_HOLD";
+  return conv.owner === "human" ? "HUMAN_ACTIVE" : "AI_ACTIVE";
+}
+
+function epochOf(conv: QueueConversation): number {
+  return Number(conv.controlEpoch ?? 0);
+}
+
+function isSafetyHold(conv: Conversation): boolean {
+  return conv.isSafetyHold === true || ownOf(conv) === "SYSTEM_HOLD";
+}
+
+function isClosed(conv: Conversation): boolean {
+  return ownOf(conv) === "CLOSED";
+}
+
+function isUnclaimedHold(conv: Conversation): boolean {
+  const own = ownOf(conv);
+  if (isClosed(conv)) return false;
+  if (isSafetyHold(conv)) return !conv.assignedMemberId;
+  if (own === "HOLD_UNCLAIMED") return true;
+  return own === "HUMAN_ACTIVE" && !conv.assignedMemberId && (!!conv.escalationReason || conv.status === "يحتاج تدخل موظف");
+}
+
+function needsAttention(conv: Conversation): boolean {
+  const own = ownOf(conv);
+  if (isClosed(conv)) return false;
+  if (isSafetyHold(conv) || isUnclaimedHold(conv)) return true;
+  return own === "HUMAN_ACTIVE" || own === "HUMAN_IDLE" || own === "AI_RESUME_PENDING";
+}
+
+function latestBySender(conv: Conversation, senders: MessageSender[]): number | null {
+  for (let i = conv.messages.length - 1; i >= 0; i--) {
+    const msg = conv.messages[i];
+    if (senders.includes(msg.sender) && msg.createdAtMs) return msg.createdAtMs;
+  }
+  return null;
+}
+
+function waitingSince(conv: Conversation): number | null {
+  return latestBySender(conv, ["customer"]) ?? latestBySender(conv, ["customer", "ai", "human", "agent", "system"]);
+}
+
+function waitingLabel(ms: number | null, now: number): string {
+  if (!ms) return "غير محدد";
+  const minutes = Math.max(0, Math.floor((now - ms) / 60000));
+  if (minutes < 1) return "الآن";
+  if (minutes < 60) return ARABIC_NUMBER.format(minutes) + " د";
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  if (hours < 24) return rem ? ARABIC_NUMBER.format(hours) + " س " + ARABIC_NUMBER.format(rem) + " د" : ARABIC_NUMBER.format(hours) + " س";
+  const days = Math.floor(hours / 24);
+  return ARABIC_NUMBER.format(days) + " يوم";
+}
+
+function previewOf(conv: Conversation): string {
+  for (let i = conv.messages.length - 1; i >= 0; i--) {
+    const msg = conv.messages[i];
+    if (msg.sender === "customer" && msg.text.trim()) return msg.text.trim();
+  }
+  return conv.lastMessage?.trim() || "لا توجد معاينة";
+}
+
+function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return "غير مسجل";
+  const tail = digits.slice(-4);
+  const prefix = digits.length > 8 ? `+${digits.slice(0, Math.min(3, digits.length - 4))}` : "";
+  return toArabicDigits(prefix) + "••••" + toArabicDigits(tail);
+}
+
+function sortQueue(a: Conversation, b: Conversation): number {
+  const rank = (conv: Conversation) => {
+    const own = ownOf(conv);
+    if (isSafetyHold(conv)) return 0;
+    if (isUnclaimedHold(conv)) return 1;
+    if (own === "HUMAN_IDLE") return 2;
+    if (own === "HUMAN_ACTIVE") return 3;
+    if (own === "AI_RESUME_PENDING") return 4;
+    return 5;
+  };
+  const byRank = rank(a) - rank(b);
+  if (byRank) return byRank;
+  return (waitingSince(a) ?? 0) - (waitingSince(b) ?? 0);
+}
+
+function isClaimable(conv: Conversation, currentMemberId: string | null): boolean {
+  if (!currentMemberId || isClosed(conv)) return false;
+  if (conv.assignedMemberId && conv.assignedMemberId !== currentMemberId) return false;
+  const own = ownOf(conv);
+  if (own === "HUMAN_ACTIVE") return conv.assignedMemberId === currentMemberId;
+  return own === "AI_ACTIVE" || own === "HOLD_UNCLAIMED" || own === "HUMAN_IDLE" || own === "SYSTEM_HOLD";
+}
+
+function statusLabel(conv: Conversation, currentMemberId: string | null, names: Record<string, string>): string {
+  if (conv.assignedMemberId) {
+    if (conv.assignedMemberId === currentMemberId) return "مستلمة بواسطتك";
+    return "مستلمة بواسطة " + (names[conv.assignedMemberId] ?? "موظف");
+  }
+  return STATE_LABELS[ownOf(conv)];
+}
+
+function actionReason(conv: Conversation, actor: ActorState, online: boolean, names: Record<string, string>): string | null {
+  if (!online) return "الاتصال متعثر — القراءة متاحة والاستلام متوقف مؤقتاً.";
+  if (actor.status === "loading") return "جاري التحقق من عضوية الموظف.";
+  if (actor.status === "degraded") return actor.reason;
+  if (conv.assignedMemberId && conv.assignedMemberId !== actor.memberId) {
+    return "مستلمة بواسطة " + (names[conv.assignedMemberId] ?? "موظف");
+  }
+  if (isClosed(conv)) return "المحادثة مغلقة.";
+  if (!isClaimable(conv, actor.memberId)) return "الحالة الحالية لا تقبل الاستلام.";
+  return null;
+}
+
+function segmentMatches(segment: QueueSegment, conv: Conversation, currentMemberId: string | null): boolean {
+  if (segment === "all") return true;
+  if (segment === "safety") return isSafetyHold(conv);
+  if (segment === "mine") return !!currentMemberId && conv.assignedMemberId === currentMemberId;
+  return isUnclaimedHold(conv);
+}
+
+function badgeFor(conv: Conversation, now: number): { label: string; safety?: boolean; amber?: boolean } {
+  if (isSafetyHold(conv)) return { label: conv.escalationReason?.trim() || STATE_LABELS.SYSTEM_HOLD, safety: true };
+  const waitedMs = waitingSince(conv);
+  const waitedMinutes = waitedMs ? Math.floor((now - waitedMs) / 60000) : 0;
+  if (waitedMinutes >= 15) return { label: "منتظر طويلاً", amber: true };
+  const own = ownOf(conv);
+  if (own === "HOLD_UNCLAIMED") return { label: STATE_LABELS.HOLD_UNCLAIMED };
+  if (own === "HUMAN_IDLE") return { label: STATE_LABELS.HUMAN_IDLE, amber: true };
+  if (own === "AI_RESUME_PENDING") return { label: STATE_LABELS.AI_RESUME_PENDING };
+  return { label: conv.status };
+}
+
+function linkedOrderFor(conv: Conversation, orders: LocalOrder[]): LocalOrder | null {
+  if (!conv.linkedOrderId) return null;
+  return orders.find((order) => order.id === conv.linkedOrderId || order.orderNumber === conv.linkedOrderId) ?? null;
+}
+
+function orderSummary(conv: Conversation, order: LocalOrder | null): string {
+  if (!order) {
+    const draftCount = conv.draftOrder?.items.length ?? 0;
+    return draftCount > 0 ? ARABIC_NUMBER.format(draftCount) + " أصناف · مسودة طلب" : "لا يوجد طلب بعد";
+  }
+  const itemCount = ARABIC_NUMBER.format(order.items.length);
+  const unitCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  const unitLabel = unitCount > order.items.length ? " · " + ARABIC_NUMBER.format(unitCount) + " وحدة" : "";
+  const total = ARABIC_NUMBER.format(order.total);
+  return itemCount + " صنف" + unitLabel + " · " + total + " " + order.currency;
+}
+
+function draftChipLabel(conv: Conversation, order: LocalOrder | null): string | null {
+  if (conv.draftOrder?.items.length) return "مسودة طلب";
+  if (order) return "طلب #" + order.orderNumber;
+  return null;
+}
+
+function serviceWindowLabel(conv: Conversation, now: number): string {
+  const latestCustomer = latestBySender(conv, ["customer"]);
+  if (!latestCustomer) return "متبقي للرد الحر: غير محدد";
+  const remainingMs = latestCustomer + 24 * 60 * 60 * 1000 - now;
+  if (remainingMs <= 0) return "انتهت صلاحية الرد الحر";
+  const hours = Math.floor(remainingMs / 3600000);
+  if (hours < 1) return "متبقي للرد الحر: أقل من ساعة";
+  return "متبقي للرد الحر: " + ARABIC_NUMBER.format(hours) + " س";
+}
+
+function unreadLabel(count: number): string {
+  if (count <= 0) return "لا توجد رسائل غير مقروءة";
+  if (count === 1) return "رسالة واحدة";
+  if (count === 2) return "رسالتان جديدتان";
+  return ARABIC_NUMBER.format(count) + " رسائل جديدة";
+}
+
+function messageAuthor(sender: MessageSender): string {
+  if (sender === "customer") return "";
+  if (sender === "ai") return " · كريم";
+  if (sender === "human" || sender === "agent") return " · موظف";
+  return " · النظام";
 }
 
 export default function ConversationsPage() {
-  const t = useT();
   const hydrated = useHasHydrated();
   const conversations = useConversationStore((s) => s.conversations);
-  const selectedId = useConversationStore((s) => s.selectedId);
-  const select = useConversationStore((s) => s.selectConversation);
+  const reload = useConversationStore((s) => s.reload);
+  const dataState = useConsoleDataStore((s) => s.state);
+  const members = useMembersStore((s) => s.members);
+  const orders = useOrderStore((s) => s.orders);
+  const names = useMemo(() => membersNameMap(members), [members]);
 
-  const { stage, hall, counts } = useMemo(() => {
-    const stage: Conversation[] = [], hall: Conversation[] = [];
-    const counts = { karim: 0, gate: 0, lock: 0, harvest: 0 };
-    for (const c of conversations) {
-      // FR-004 — the 🧑 gate counts EVERY human-owned state via the shared bucket
-      // (HUMAN_ACTIVE + HUMAN_IDLE), so a fresh escalation increments immediately.
-      const bucket = conversationBucket(ownOf(c), isHold(c));
-      counts[bucket]++;
-      if (bucket === "harvest") continue;    // closed — counted, off the live floor
-      if (bucket === "karim") stage.push(c); // 🤖 Karim's stage
-      else hall.push(c);                     // 🧑 gate + ⚠ lock → the human hall
+  const [segment, setSegment] = useState<QueueSegment>("held");
+  const [actor, setActor] = useState<ActorState>({ status: "loading", memberId: null });
+  const [online, setOnline] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [claimSheet, setClaimSheet] = useState<QueueConversation | null>(null);
+  const [viewOnly, setViewOnly] = useState<{ conv: QueueConversation; ownerName?: string | null } | null>(null);
+  const [notice, setNotice] = useState<{ tone: "ok" | "amber"; text: string } | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setOnline(typeof navigator === "undefined" ? true : navigator.onLine);
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (dataState === "DEMO") {
+      setActor({ status: "degraded", memberId: null, reason: "وضع العرض لا يملك عضوية حقيقية للاستلام." });
+      return;
     }
-    // Safety holds first in the hall (never missed).
-    hall.sort((a, b) => Number(isHold(b)) - Number(isHold(a)));
-    return { stage, hall, counts };
-  }, [conversations]);
-
-  const selected = conversations.find((c) => c.id === selectedId) ?? null;
-  const [modal, setModal] = useState<null | "assign" | "guest">(null);
-
-  return (
-    <>
-      <HeaderRow
-        title={t("conv.title")}
-        jobLine={t("conv.floorSub")}
-        right={<span style={healthChip}>{t("conv.rightNow")} <TruthChip state="gather" /></span>}
-      />
-
-      <PageGrid
-        context={
-          <>
-            <Panel>
-              <SectionHeader icon={<Radio size={15} />} tier="blue" title={t("conv.rightNow")} sub={t("conv.floorSub")} />
-              <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-                <StatTile tier="blue" label={`🤖 ${t("conv.now.karim")}`} value={counts.karim} countUp={counts.karim} fact={t("conv.karimStage")} />
-                <StatTile tier="coral" label={`🧑 ${t("conv.now.gate")}`} value={counts.gate} countUp={counts.gate} fact={t("conv.humanHands")} />
-                {/* Safety lock summary — the one sanctioned red surface. */}
-                <div style={safetyTile}>
-                  <div style={{ fontSize: 8.5, fontWeight: 900, letterSpacing: ".09em", textTransform: "uppercase", color: "rgba(255,255,255,.85)" }}>⚠ {t("conv.now.lock")}</div>
-                  <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.05, marginTop: 3, color: "#fff", fontFamily: "var(--kvx-font-ui)" }}>{counts.lock}</div>
-                  <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(255,255,255,.85)", marginTop: 4, borderTop: "1px solid rgba(255,255,255,.22)", paddingTop: 5 }}>{t("conv.safetyLock")}</div>
-                </div>
-                <StatTile tier="green" label={`✓ ${t("conv.now.harvest")}`} value={counts.harvest} countUp={counts.harvest} fact={t("conv.tabClosed")} />
-              </div>
-              <div style={doctrine}>
-                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", color: "var(--faint)", textTransform: "uppercase", marginBottom: 6 }}>{t("conv.ownershipRules")}</div>
-                <p style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.7, margin: 0 }}>{t("conv.ownershipBody")}</p>
-              </div>
-            </Panel>
-          </>
+    let cancelled = false;
+    setActor({ status: "loading", memberId: null });
+    fetch("/c/conversations/actor", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("actor_failed");
+        return (await res.json()) as { currentMemberId?: string };
+      })
+      .then((json) => {
+        if (!cancelled && json.currentMemberId) setActor({ status: "ready", memberId: json.currentMemberId });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setActor({ status: "degraded", memberId: null, reason: "تعذّر تأكيد عضوية الموظف — القراءة متاحة والاستلام متوقف مؤقتاً." });
         }
-        hero={
-          <Panel style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <SectionHeader icon={<Radio size={15} />} tier="blue" title={t("conv.tabFloor")} sub={t("conv.floorSub")} right={<TruthChip state="live" />} />
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataState]);
 
-            {/* KARIM'S STAGE — blue zone, live monitor tiles. */}
-            <div style={stageZone}>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 10 }}>
-                <span style={onAir}><span style={onAirDot} /> {t("conv.onAir")}</span>
-                <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".08em", color: "#93d2ff" }}>{t("conv.karimStage")}</span>
-              </div>
-              {!hydrated ? null : stage.length === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--dim)", padding: "18px 4px", textAlign: "center" }}>{t("conv.stageEmpty")}</div>
-              ) : (
-                <div style={wall}>
-                  {stage.map((c) => <MonitorTile key={c.id} conv={c} onOpen={() => select(c.id)} />)}
-                </div>
-              )}
-            </div>
+  const currentMemberId = actor.status === "ready" ? actor.memberId : null;
+  const queue = useMemo(() => conversations.filter(needsAttention).sort(sortQueue), [conversations]);
+  const rows = useMemo(() => queue.filter((conv) => segmentMatches(segment, conv, currentMemberId)), [currentMemberId, queue, segment]);
+  const counts = useMemo(() => ({
+    held: queue.filter(isUnclaimedHold).length,
+    mine: currentMemberId ? queue.filter((conv) => conv.assignedMemberId === currentMemberId).length : 0,
+    all: queue.length,
+    safety: queue.filter(isSafetyHold).length,
+  }), [currentMemberId, queue]);
 
-            {/* IN HUMAN HANDS — amber hall, minimal pills. */}
-            <div style={hallZone}>
-              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", color: "#ffcf8d", textTransform: "uppercase", marginBottom: 9 }}>{t("conv.humanHands")}</div>
-              {!hydrated ? null : hall.length === 0 ? (
-                <div style={{ fontSize: 11.5, color: "var(--faint)", padding: "12px 4px", textAlign: "center" }}>{t("conv.hallEmpty")}</div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                  {hall.map((c) => <HallPill key={c.id} conv={c} onOpen={() => select(c.id)} />)}
-                </div>
-              )}
-              <div style={{ fontSize: 9.5, color: "var(--faint)", marginTop: 8 }}>{t("conv.privacy")}</div>
-            </div>
-          </Panel>
-        }
-      />
+  async function refreshQueue() {
+    setNotice(null);
+    await reload();
+  }
 
-      <AuroraDrawer open={!!selected} onClose={() => select("")} safety={!!selected && isHold(selected)}>
-        {selected && <ConversationDrawer key={selected.id} conv={selected} onClose={() => select("")} onAssign={() => setModal("assign")} onGuest={() => setModal("guest")} />}
-      </AuroraDrawer>
-
-      {/* ovAssign — assign-to-teammate. No backing route yet → SOON, never faked. */}
-      <MiniModal open={modal === "assign"} onClose={() => setModal(null)}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-          <span style={{ fontSize: 16 }}>↪</span>
-          <span style={{ fontSize: 14, fontWeight: 800, color: "var(--txt)", flex: 1 }}>{t("conv.assignTitle")}</span>
-          <TruthChip state="soon" />
-          <button onClick={() => setModal(null)} aria-label={t("a11y.close")} style={drawerX}><X size={15} /></button>
-        </div>
-        <p style={{ fontSize: 10.5, color: "var(--faint)", margin: "0 0 12px", lineHeight: 1.6 }}>{t("conv.assignSub")}</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <TeammateRow initial="ب" name="بهاء" role={t("conv.assignRoles.manager")} />
-          <TeammateRow initial="أ" name="أحمد" role={t("conv.assignRoles.operator")} />
-        </div>
-      </MiniModal>
-
-      {/* ovGuest — guest-card-lite. Facts GATHERING until the full card is wired;
-          allergy hint is the verbatim operator-hint microcopy (never a guarantee). */}
-      <MiniModal open={modal === "guest"} onClose={() => setModal(null)}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <span style={{ ...avatar, width: 32, height: 32 }}>{selected ? <Bdi>{selected.customer.slice(0, 1)}</Bdi> : "👤"}</span>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--txt)" }}>{selected ? <Bdi>{selected.customer}</Bdi> : ""}</div>
-            <div style={{ fontSize: 9, color: "var(--faint)" }}>{t("conv.guestLite")}</div>
-          </div>
-          <button onClick={() => setModal(null)} aria-label={t("a11y.close")} style={drawerX}><X size={15} /></button>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em", color: "var(--faint)", textTransform: "uppercase" }}>{t("conv.facts")}</span>
-          <TruthChip state="gather" />
-          <span style={{ fontSize: 10.5, color: "var(--faint)" }}>{t("conv.guestGathering")}</span>
-        </div>
-        {selected && isHold(selected) && (
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 9, background: "rgba(255,107,94,.08)", border: "1px solid rgba(255,107,94,.35)", borderRadius: 12, padding: "11px 13px" }}>
-            <Lock size={14} strokeWidth={2.4} color="#ffc9c9" style={{ flex: "none", marginTop: 1 }} />
-            <span style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.6 }}>{t("conv.allergyHint")}</span>
-          </div>
-        )}
-        <div style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 12, textAlign: "center" }}>{t("conv.guestFull")}</div>
-      </MiniModal>
-
-      <Toasts />
-    </>
-  );
-}
-
-// Order-context chip (drawer header) — order# · engine total · payment-state.
-// REAL order data only; payment tone via the law engine (failed=amber, not red);
-// no safety/allergen detail ever reaches this chip.
-const PAYMENT_KEYS = new Set(["unpaid", "payment_link_sent", "paid", "failed", "refunded"]);
-function OrderContextChip({ order, currency }: { order: { ref: string; total: number; paymentStatus: string }; currency: string }) {
-  const t = useT();
-  // Defensive: only route KNOWN payment keys through the law engine (its switch
-  // ends in assertNever). An unexpected value → omit the payment sub-chip rather
-  // than crash the drawer. Order#/total (engine money) still show honestly.
-  const pay = PAYMENT_KEYS.has(order.paymentStatus)
-    ? derivePaymentDisplay(order.paymentStatus as Parameters<typeof derivePaymentDisplay>[0])
-    : null;
-  const payTone = pay ? (TONE_DARK[pay.tone] ?? TONE_DARK.slate) : null;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--stroke)" }}>
-      <Receipt size={13} color="var(--dim)" style={{ flex: "none" }} />
-      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--txt)" }}>#<Num>{order.ref}</Num></span>
-      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--gold)" }}><Num>{order.total.toLocaleString("en-US")}</Num> <span style={{ fontSize: 9.5, color: "var(--dim)" }}>{currency}</span></span>
-      {pay && payTone && <span style={{ marginInlineStart: "auto", fontSize: 9.5, fontWeight: 800, color: payTone.fg, background: payTone.bg, border: `1px solid ${payTone.bd}`, borderRadius: 99, padding: "3px 9px" }}>{t(pay.labelKey)}</span>}
-    </div>
-  );
-}
-
-function TeammateRow({ initial, name, role }: { initial: string; name: string; role: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 12, padding: "9px 12px" }}>
-      <span style={{ ...avatar, background: "linear-gradient(135deg,#8fd0ff,#6db8f7)", color: "#03203a" }}><Bdi>{initial}</Bdi></span>
-      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--txt)", flex: 1 }}><Bdi>{name}</Bdi></span>
-      <span style={{ fontSize: 9.5, color: "var(--faint)" }}>{role}</span>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Monitor tile (Karim's stage) — customer + last line preview + stage + ownership.
-// ---------------------------------------------------------------------------
-function MonitorTile({ conv, onOpen }: { conv: Conversation; onOpen: () => void }) {
-  const display = deriveConversationDisplay({ ownershipState: ownOf(conv), isSafetyHold: conv.isSafetyHold });
-  return (
-    <button onClick={onOpen} style={monTile}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span style={avatar}><Bdi>{conv.customer.slice(0, 1)}</Bdi></span>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--txt)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "start" }}><Bdi>{conv.customer}</Bdi></span>
-        {conv.unread > 0 && <span style={unreadDot}>{conv.unread}</span>}
-      </div>
-      <div style={{ fontSize: 10.5, color: "var(--dim)", lineHeight: 1.5, textAlign: "start", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", minHeight: 30, direction: "rtl" }}><Bdi>{conv.lastMessage}</Bdi></div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-        <OwnChip display={display} />
-        {conv.stage && <span style={stageChip}>{CONVERSATION_STAGE_LABELS[conv.stage]}</span>}
-      </div>
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Hall pill — for a safety hold, NEVER leak the allergen: show the lock line.
-// ---------------------------------------------------------------------------
-function HallPill({ conv, onOpen }: { conv: Conversation; onOpen: () => void }) {
-  const t = useT();
-  const hold = isHold(conv);
-  const display = deriveConversationDisplay({ ownershipState: ownOf(conv), isSafetyHold: conv.isSafetyHold });
-  return (
-    <button onClick={onOpen} style={{ ...hallPill, borderColor: hold ? "rgba(255,107,94,.5)" : "var(--stroke)", background: hold ? "rgba(255,107,94,.06)" : "var(--inset)" }}>
-      <span style={{ ...avatar, background: hold ? "linear-gradient(135deg,#ff8d7e,#f75b52)" : undefined, color: hold ? "#fff" : undefined }}>{hold ? <Lock size={12} /> : <Bdi>{conv.customer.slice(0, 1)}</Bdi>}</span>
-      <div style={{ minWidth: 0, flex: 1, textAlign: "start" }}>
-        <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--txt)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Bdi>{conv.customer}</Bdi></div>
-        <div style={{ fontSize: 9.5, color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hold ? t("conv.safetyLock") : <Bdi>{conv.lastMessage}</Bdi>}</div>
-      </div>
-      <OwnChip display={display} />
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Conversation drawer — transcript (authorship-labeled) + composer (takeover-at-
-// SEND) + actions. Safety holds show the lock banner + verbatim allergy hint.
-// ---------------------------------------------------------------------------
-function ConversationDrawer({ conv, onClose, onAssign, onGuest }: { conv: Conversation; onClose: () => void; onAssign: () => void; onGuest: () => void }) {
-  const t = useT();
-  const takeover = useConversationStore((s) => s.takeoverToHuman);
-  const addHuman = useConversationStore((s) => s.addHumanMessage);
-  const close = useConversationStore((s) => s.closeConversation);
-  const returnToAi = useConversationStore((s) => s.returnToAi);
-
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [conflict, setConflict] = useState<string | null>(null);
-
-  // FR-003 — stick-to-bottom transcript (ported from the v1 ChatWindow reference):
-  // jump to the latest on open / conversation switch, follow new messages ONLY while
-  // the operator is parked near the bottom, and never yank them down while they're
-  // scrolled up reading history.
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
-  const onThreadScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  };
-  // Switching conversations → jump to the latest instantly.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-    stickToBottom.current = true;
-  }, [conv.id]);
-  // New message → auto-scroll ONLY if the operator was already at the bottom.
-  useEffect(() => {
-    if (!stickToBottom.current) return;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [conv.messages.length]);
-  // Conversations whose server ownership claim we've WON this session. The first
-  // send always claims (the atomic server proof); once won, later sends skip it.
-  const [claimed, setClaimed] = useState<Set<string>>(new Set());
-
-  // Order-context — REAL order only (resolved from the order store by the
-  // conversation's linkedOrderId). Honest-empty when there's no linked order.
-  // `total` is engine-computed money (displayed, never derived); payment tone
-  // routes through derivePaymentDisplay so `failed` is amber, never red. This
-  // chip carries ONLY order#/total/payment — no safety/allergen path touches it.
-  const currency = useRestaurantStore((s) => s.profile.currency);
-  // Match on the order's id OR its human orderNumber — linkedOrderId may carry
-  // either depending on how the link was written; both are real identifiers.
-  const order = useOrderStore((s) => (conv.linkedOrderId ? s.orders.find((o) => o.id === conv.linkedOrderId || o.orderNumber === conv.linkedOrderId) : undefined));
-
-  const own = ownOf(conv);
-  const hold = isHold(conv);
-  const closed = own === "CLOSED";
-  const humanOwned = own === "HUMAN_ACTIVE";
-  const canClose = own === "HUMAN_ACTIVE" || own === "HUMAN_IDLE";
-  const display = deriveConversationDisplay({ ownershipState: own, isSafetyHold: conv.isSafetyHold });
-
-  async function send() {
-    const text = draft.trim();
-    if (!text || busy) return;
-    setBusy(true); setConflict(null);
+  async function claim(conv: QueueConversation) {
+    const reason = actionReason(conv, actor, online, names);
+    if (reason || claimingId) return;
+    setClaimingId(conv.id);
+    setNotice(null);
     try {
-      // takeover-at-SEND — the FIRST send claims through the atomic server proof
-      // (works for AI/idle/held, 409s if a teammate owns it). We do NOT trust
-      // local ownership state to skip.
-      if (!claimed.has(conv.id)) {
-        const res = await takeover(conv.id);
-        if (!res.ok) {
-          if (res.conflictName) setConflict(res.conflictName); // composer stays blocked, draft kept
-          else pushToast(t("conv.sendError"), "amber");
-          return;
+      const renderedEpoch = epochOf(conv);
+      const res = await fetch("/c/conversations/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conv.id, renderedEpoch }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; ownerName?: string | null; controlEpoch?: number };
+      if (res.ok) {
+        setClaimSheet(null);
+        setNotice({ tone: "ok", text: "تم استلام المحادثة. يتم تحديث القائمة الآن." });
+        await reload();
+        if (typeof json.controlEpoch === "number" && json.controlEpoch !== renderedEpoch + 1 && json.controlEpoch !== renderedEpoch) {
+          setNotice({ tone: "amber", text: "تغيّرت حالة المحادثة أثناء الاستلام — تم تحديث القائمة." });
         }
-        setClaimed((s) => new Set(s).add(conv.id));
+        return;
       }
-      const wire = await addHuman(conv.id, text);
-      setDraft("");
-      // FR-005 — an honest failure: outside WhatsApp's 24h window free-form sending
-      // isn't available (needs a template), which is NOT a "try again" situation. The
-      // send route already distinguishes it; surface the specific line, not a generic.
-      if (wire && !wire.ok) pushToast(t(sendFailureMessageKey(wire.code)), "amber");
+      await reload();
+      setClaimSheet(null);
+      if (json.error === "stale_epoch") {
+        setNotice({ tone: "amber", text: "تغيّرت حالة المحادثة قبل الاستلام — تم تحديث الصف." });
+      } else if (json.error === "already_claimed") {
+        setNotice({ tone: "amber", text: json.ownerName ? "استلمها " + json.ownerName + " بالفعل — تم تحديث الصف." : "استلمها موظف آخر بالفعل — تم تحديث الصف." });
+        setViewOnly({ conv, ownerName: json.ownerName ?? null });
+      } else {
+        setNotice({ tone: "amber", text: "تعذّر الاستلام الآن — تم تحديث القائمة دون تغيير الحالة." });
+      }
+    } catch {
+      setNotice({ tone: "amber", text: "الاتصال متعثر — القراءة متاحة والاستلام متوقف مؤقتاً." });
     } finally {
-      setBusy(false);
+      setClaimingId(null);
     }
   }
 
-  async function doClose() {
-    if (busy) return;
-    setBusy(true);
-    const ok = await close(conv.id);
-    if (!ok) pushToast(t("conv.closeError"), "amber");
-    setBusy(false);
-  }
+  const claimOrder = claimSheet ? linkedOrderFor(claimSheet, orders) : null;
+  const viewTaken = !!(viewOnly?.ownerName || viewOnly?.conv.assignedMemberId);
+  const viewOwner = viewOnly?.ownerName
+    ?? (viewOnly?.conv.assignedMemberId ? names[viewOnly.conv.assignedMemberId] : null)
+    ?? "موظف";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: "1px solid var(--stroke)" }}>
-        <span style={{ ...avatar, width: 34, height: 34, background: hold ? "linear-gradient(135deg,#ff8d7e,#f75b52)" : undefined, color: hold ? "#fff" : undefined }}>{hold ? <Lock size={14} /> : <Bdi>{conv.customer.slice(0, 1)}</Bdi>}</span>
-        <button onClick={onGuest} style={{ minWidth: 0, flex: 1, border: 0, background: "none", padding: 0, cursor: "pointer", textAlign: "start", fontFamily: "inherit" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--txt)" }}><Bdi>{conv.customer}</Bdi></div>
-          <div style={{ marginTop: 3 }}><OwnChip display={display} /></div>
-        </button>
-        <button onClick={onClose} aria-label={t("a11y.close")} style={drawerX}><X size={15} /></button>
-      </div>
+    <section dir="rtl" style={page}>
+      <style jsx>{`
+        .queue-focus:focus-visible {
+          outline: 3px solid #0e9f6e;
+          outline-offset: 3px;
+        }
+        .queue-row {
+          transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+        }
+        .queue-row:hover {
+          border-color: #aebdb6;
+          box-shadow: 0 10px 24px rgba(15, 42, 32, 0.08);
+        }
+        @media (min-width: 780px) {
+          .queue-row-inner {
+            grid-template-columns: minmax(260px, 1.25fr) minmax(250px, 1fr) auto;
+            align-items: center;
+          }
+        }
+      `}</style>
 
-      {/* Order-context chip — real linked order only; honest-empty otherwise. */}
-      {order && <OrderContextChip order={{ ref: order.orderNumber, total: order.total, paymentStatus: order.paymentStatus }} currency={currency} />}
-
-      {/* Actions */}
-      {!closed && (
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", padding: "10px 0", borderBottom: "1px solid var(--stroke)" }}>
-          <button onClick={onAssign} style={soonChip}><TruthChip state="soon" /> {t("conv.assign")}</button>
-          {humanOwned && <button onClick={() => returnToAi(conv.id)} disabled={busy} style={ghostBtn}><CornerUpLeft size={13} /> {t("conv.returnKarim")}</button>}
-          {canClose && <button onClick={doClose} disabled={busy} style={ghostBtn}><CheckCircle2 size={13} /> {t("conv.close")}</button>}
-        </div>
-      )}
-
-      {/* Safety lock banner — verbatim operator-hint, no allergen name. */}
-      {hold && (
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "11px 0", borderBottom: "1px solid rgba(255,107,94,.25)" }}>
-          <Lock size={15} strokeWidth={2.4} color="#ffc9c9" />
-          <div style={{ fontSize: 11.5, fontWeight: 700, lineHeight: 1.6 }}>
-            <div style={{ color: "#ffc9c9" }}>{t("conv.safetyLock")}</div>
-            <div style={{ fontWeight: 600, color: "var(--dim)", marginTop: 2 }}>{t("conv.allergyHint")}</div>
-          </div>
-        </div>
-      )}
-
-      {/* Transcript — each outbound bubble authorship-labeled (R6); photo / voice /
-          interactive bubbles render from message meta (WO-CONSOLE-MEDIA-RENDER). */}
-      <div ref={scrollRef} onScroll={onThreadScroll} className="kv-scroll" style={{ flex: 1, overflowY: "auto", padding: "12px 0", display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
-        {conv.messages.map((m) => <MessageBubble key={m.id} m={m} />)}
-      </div>
-
-      {/* Composer — takeover-at-SEND. Closed conversations are read-only. */}
-      {!closed && (
-        <div style={{ borderTop: "1px solid var(--stroke)", paddingTop: 12 }}>
-          {conflict && <div style={{ fontSize: 11.5, fontWeight: 700, color: "#ffcf8d", marginBottom: 8 }}>{t("conv.conflict")}: <Bdi>{conflict}</Bdi></div>}
-          <div style={{ display: "flex", gap: 9, alignItems: "flex-end" }}>
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
-              placeholder={humanOwned ? t("conv.composerHuman") : t("conv.composerArmed")}
-              rows={1}
-              disabled={!!conflict}
-              dir="rtl"
-              style={{ flex: 1, resize: "none", minHeight: 42, maxHeight: 120, borderRadius: 13, border: "1px solid var(--stroke)", background: "var(--inset2)", padding: "11px 13px", fontSize: 12.5, fontFamily: "var(--kvx-font-ar)", color: "var(--txt)", lineHeight: 1.5, outline: "none", opacity: conflict ? 0.6 : 1 }}
-            />
-            <button onClick={send} disabled={busy || !draft.trim() || !!conflict} aria-label={t("conv.send")} style={{ ...sendBtn, opacity: busy || !draft.trim() || conflict ? 0.5 : 1 }}>
-              {busy ? <CheckCheck size={16} /> : <Send size={16} strokeWidth={2.3} />}
+      <header style={header}>
+        <div style={headerTop}>
+          <h1 style={title}>المحادثات المعلقة</h1>
+          <div style={headerActions}>
+            <span style={freshness}>
+              <span style={liveDot} />
+              {online ? "آخر تحديث: الآن" : "قراءة فقط مؤقتاً"}
+            </span>
+            <button
+              type="button"
+              className="queue-focus"
+              onClick={() => startTransition(() => void refreshQueue())}
+              disabled={isPending}
+              aria-label="تحديث قائمة التدخل"
+              style={{ ...iconButton, opacity: isPending ? 0.58 : 1, cursor: isPending ? "wait" : "pointer" }}
+            >
+              <RefreshCw size={18} aria-hidden />
             </button>
           </div>
         </div>
-      )}
-    </div>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// Message bubble — text by default; a voice / photo / interactive message renders
-// its own kind from ChatMessage.metadata (WO-CONSOLE-MEDIA-RENDER). Display-only:
-// classifyMessageMedia falls back to plain text on any unexpected meta, so a bubble
-// can never crash the transcript. فصحى, RTL, emerald voice / gold provenance.
-// ---------------------------------------------------------------------------
-// Photo thumbnail — renders the real image when a public URL is present (outbound
-// dish photos, WO-PHOTO-PERSIST). Inbound customer images carry only a WhatsApp
-// media-id (no URL) → the 📷 placeholder. A broken/blocked URL falls back to the
-// same placeholder, so a dead image link never leaves an empty bubble.
-function PhotoThumb({ url, label }: { url?: string; label: string }) {
-  const [broken, setBroken] = useState(false);
-  if (url && !broken) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- external, arbitrary tenant asset URL; next/image adds no value on a thumbnail and would require per-tenant domain config
-      <img
-        src={url}
-        alt={label}
-        onError={() => setBroken(true)}
-        style={{ display: "block", maxWidth: "100%", maxHeight: 220, borderRadius: 11, border: "1px solid var(--stroke)", objectFit: "cover" }}
-      />
-    );
-  }
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 11, background: "rgba(255,255,255,.05)", border: "1px dashed var(--stroke2)" }}>
-      <span style={{ fontSize: 20 }} aria-hidden>📷</span>
-      <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--dim)" }}>{label}</span>
-    </div>
-  );
-}
+        <div className="queue-segments" role="tablist" aria-label="تصفية قائمة التدخل" style={segments}>
+          {SEGMENTS.map(({ key, label }) => {
+            const active = key === segment;
+            const count = counts[key];
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className="queue-focus"
+                onClick={() => setSegment(key)}
+                style={{ ...segmentButton, ...(active ? segmentButtonActive : null) }}
+              >
+                <span>{label}</span>
+                {key === "safety" && <span style={safetyDot} />}
+                {active && count > 0 && <bdi dir="ltr" className="queue-segment-count" style={segmentCount}>{ARABIC_NUMBER.format(count)}</bdi>}
+              </button>
+            );
+          })}
+        </div>
+      </header>
 
-function MessageBubble({ m }: { m: ChatMessage }) {
-  const t = useT();
-  const inbound = m.sender === "customer";
-  const media = classifyMessageMedia(m.metadata);
-  const bubble: React.CSSProperties = {
-    maxWidth: "82%", padding: "9px 13px", borderRadius: 14, fontSize: 12.5, lineHeight: 1.7,
-    fontFamily: "var(--kvx-font-ar)", direction: "rtl",
-    background: inbound ? "rgba(255,255,255,.07)" : "linear-gradient(135deg,rgba(63,110,220,.85),rgba(45,80,180,.85))",
-    color: inbound ? "var(--txt)" : "#eaf1ff",
-  };
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: inbound ? "flex-start" : "flex-end", gap: 3 }}>
-      {!inbound && m.sender !== "system" && <HandledByChip by={m.sender === "ai" ? "karim" : "human"} />}
-      <div style={bubble}>
-        {media.kind === "voice" ? (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: m.text ? 6 : 0 }}>
-              <span style={{ fontSize: 14 }} aria-hidden>🎤</span>
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: inbound ? "#8ce8cc" : "#cfe0ff" }}>{t("conv.media.voice")}</span>
-              {media.confidencePct != null && (
-                <span style={{ marginInlineStart: "auto", fontSize: 9, fontWeight: 800, color: "#e0b53a", background: "rgba(224,181,58,.12)", border: "1px solid rgba(224,181,58,.35)", borderRadius: 99, padding: "2px 7px", whiteSpace: "nowrap" }}>
-                  {t("conv.media.confidence")} {formatConfidence(media.confidencePct)}
-                </span>
-              )}
-            </div>
-            {m.text && <Bdi>{m.text}</Bdi>}
-          </>
-        ) : media.kind === "photo" ? (
-          <>
-            {/* Outbound dish photos have a public URL; inbound customer images are
-                fetched through the session-authed media proxy (WO-MEDIA-PROXY). */}
-            <PhotoThumb url={media.imageUrl ?? (inbound ? `/api/console/media/${encodeURIComponent(m.id)}` : undefined)} label={inbound ? t("conv.media.photo") : t("conv.media.photoOutbound")} />
-            {!inbound && media.name && !media.caption && <div style={{ fontWeight: 800, marginTop: 7 }}><Bdi>{media.name}</Bdi></div>}
-            {media.caption && <div style={{ marginTop: 7, marginBottom: media.description ? 5 : 0 }}><Bdi>{media.caption}</Bdi></div>}
-            {media.description && (
-              <div style={{ fontSize: 11, color: "var(--dim)", display: "flex", gap: 5, lineHeight: 1.6, marginTop: 5 }}>
-                <span style={{ color: "#e0b53a", fontWeight: 800, whiteSpace: "nowrap" }} aria-hidden>👁</span>
-                <span><span style={{ color: "#e0b53a", fontWeight: 800 }}>{media.descriptionDerived ? t("conv.media.visionRead") : ""}{media.descriptionDerived ? ": " : ""}</span><Bdi>{media.description}</Bdi></span>
-              </div>
-            )}
-          </>
-        ) : media.kind === "interactive" && media.interactive ? (
-          <>
-            {m.text && <div style={{ marginBottom: 8 }}><Bdi>{m.text}</Bdi></div>}
-            <div style={{ border: "1px solid rgba(46,204,154,.4)", borderRadius: 11, padding: "8px 10px", background: "rgba(46,204,154,.08)" }}>
-              <div style={{ fontSize: 8.5, fontWeight: 900, letterSpacing: ".07em", color: "#8ce8cc", marginBottom: 6, textTransform: "uppercase" }}>{t("conv.media.interactive")}</div>
-              {media.interactive.header && <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 6 }}><Bdi>{media.interactive.header}</Bdi></div>}
-              {media.interactive.kind === "buttons" ? (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {media.interactive.buttons?.map((b, i) => (
-                    <span key={b.id || i} style={{ fontSize: 10.5, fontWeight: 700, padding: "5px 11px", borderRadius: 9, background: "rgba(255,255,255,.08)", border: "1px solid var(--stroke2)" }}><Bdi>{b.title}</Bdi></span>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {media.interactive.button && <span style={{ fontSize: 10, color: "#e0b53a", fontWeight: 800 }}>▾ <Bdi>{media.interactive.button}</Bdi></span>}
-                  {media.interactive.sections?.map((s, si) => (
-                    <div key={si}>
-                      {s.title && <div style={{ fontSize: 9.5, fontWeight: 800, color: "var(--faint)", marginBottom: 4 }}><Bdi>{s.title}</Bdi></div>}
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {s.rows.map((r, ri) => (
-                          <div key={r.id || ri} style={{ padding: "6px 9px", borderRadius: 8, background: "rgba(255,255,255,.05)", border: "1px solid var(--stroke)" }}>
-                            <div style={{ fontSize: 11, fontWeight: 700 }}><Bdi>{r.title}</Bdi></div>
-                            {r.description && <div style={{ fontSize: 9.5, color: "var(--faint)", marginTop: 2 }}><Bdi>{r.description}</Bdi></div>}
+      <div style={content}>
+        <div style={listMeta}>
+          <span>مرتبة حسب الأولوية والوقت المتبقي</span>
+          <span>{online ? "«عرض» لا يعلّم الرسالة كمقروءة" : "القراءة متاحة والاستلام متوقف مؤقتاً"}</span>
+        </div>
+
+        {notice && (
+          <div role="status" style={{ ...noticeBox, ...(notice.tone === "ok" ? noticeOk : noticeAmber) }}>
+            {notice.text}
+          </div>
+        )}
+
+        {!hydrated ? (
+          <div style={listShell}>
+            {[0, 1, 2].map((i) => <div key={i} style={skeletonRow} />)}
+          </div>
+        ) : rows.length === 0 ? (
+          <div style={emptyState}>
+            <span style={emptyIcon}><CheckCircle2 size={34} aria-hidden /></span>
+            <div style={emptyTitle}>لا توجد محادثات معلقة</div>
+            <p style={emptyBody}>لا توجد محادثات تحتاج تدخلك الآن. ستظهر هنا أي حالة جديدة — راجع الشاشة دوريًا.</p>
+            <p style={emptyHint}>سيظهر عداد واضح عند وصول حالة جديدة أثناء فتح النظام.</p>
+          </div>
+        ) : (
+          <div style={listShell}>
+            {rows.map((conv) => {
+              const hold = isSafetyHold(conv);
+              const reason = actionReason(conv, actor, online, names);
+              const canClaim = !reason;
+              const claimedByOther = !!conv.assignedMemberId && conv.assignedMemberId !== currentMemberId;
+              const claimedByMe = !!currentMemberId && conv.assignedMemberId === currentMemberId;
+              const badge = badgeFor(conv, now);
+              const order = linkedOrderFor(conv, orders);
+              const draftLabel = draftChipLabel(conv, order);
+              return (
+                <article
+                  key={conv.id}
+                  className="queue-row"
+                  style={{ ...row, ...(hold ? rowSafety : null) }}
+                  aria-label={conv.customer + "، " + statusLabel(conv, currentMemberId, names)}
+                >
+                  <div className="queue-row-inner" style={rowInner}>
+                    <div style={rowMain}>
+                      <div style={rowTop}>
+                        <span style={{ ...reasonBadge, ...(badge.safety ? reasonBadgeSafety : badge.amber ? reasonBadgeAmber : null) }}>
+                          {badge.safety && <AlertTriangle size={13} aria-hidden />}
+                          {badge.amber && <span style={amberDot} />}
+                          <Bdi>{badge.label}</Bdi>
+                        </span>
+                        <span style={{ ...waitLine, ...(hold ? waitLineSafety : null) }}>
+                          <Clock3 size={13} aria-hidden />
+                          {"منتظرة منذ " + waitingLabel(waitingSince(conv), now)}
+                        </span>
+                      </div>
+
+                      <div style={identityBlock}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={customerName}>
+                            <Bdi>{conv.customer}</Bdi>
+                            <span style={phoneText}><Phone>{maskPhone(conv.phone)}</Phone></span>
                           </div>
-                        ))}
+                          <p style={preview}>
+                            <Bdi>{previewOf(conv)}</Bdi>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={metaChips}>
+                        {conv.unread > 0 && <span style={amberMiniChip}>{unreadLabel(conv.unread)}</span>}
+                        {draftLabel && <span style={stateMiniChip}>{draftLabel}</span>}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <Bdi>{m.text}</Bdi>
+
+                    <div style={orderBlock}>
+                      <div style={summaryLine}>
+                        <span style={orderSummaryText}>{orderSummary(conv, order)}</span>
+                        <span style={summaryDivider}>·</span>
+                        <span style={serviceWindowText}>{serviceWindowLabel(conv, now)}</span>
+                      </div>
+                    </div>
+
+                    <div style={actionBlock}>
+                      {claimedByOther ? (
+                        <span style={viewOnlyReason}>
+                          <Eye size={14} aria-hidden />
+                          عرض فقط
+                        </span>
+                      ) : claimedByMe ? (
+                        <span style={mineReason}>
+                          <UserCheck size={14} aria-hidden />
+                          بحوزتك
+                        </span>
+                      ) : null}
+                      <div style={rowActions}>
+                        <button
+                          type="button"
+                          className="queue-focus"
+                          onClick={() => setClaimSheet(conv)}
+                          disabled={!canClaim || claimingId === conv.id}
+                          aria-label={"استلام محادثة " + conv.customer}
+                          title={reason ?? "استلام المحادثة"}
+                          style={{ ...claimButton, ...(!canClaim ? claimButtonDisabled : null), ...(claimingId === conv.id ? claimButtonBusy : null) }}
+                        >
+                          <UserCheck size={16} aria-hidden />
+                          {claimingId === conv.id ? "جارٍ" : "استلام"}
+                        </button>
+                        <button
+                          type="button"
+                          className="queue-focus"
+                          onClick={() => setViewOnly({ conv })}
+                          aria-label={"عرض محادثة " + conv.customer + " بدون تعليمها كمقروءة"}
+                          style={viewButton}
+                        >
+                          <Eye size={15} aria-hidden />
+                          عرض
+                        </button>
+                      </div>
+                      {reason && <div style={disabledReason}>{reason}</div>}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         )}
       </div>
-      <span style={{ fontSize: 9.5, color: "var(--faint)" }}>{m.time}</span>
+
+      {claimSheet && (
+        <div style={modalBackdrop} role="dialog" aria-modal="true" aria-label="استلام المحادثة">
+          <div style={claimPanel}>
+            <span style={sheetHandle} />
+            <div style={claimHeader}>
+              <span style={claimTitle}>استلام المحادثة</span>
+              <span style={{ ...reasonBadge, ...(isSafetyHold(claimSheet) ? reasonBadgeSafety : null) }}>
+                {isSafetyHold(claimSheet) && <AlertTriangle size={13} aria-hidden />}
+                <Bdi>{badgeFor(claimSheet, now).label}</Bdi>
+              </span>
+            </div>
+            <div style={claimFacts}>
+              <FactRow label="العميل" value={claimSheet.customer + " · " + maskPhone(claimSheet.phone)} />
+              <FactRow label="صلاحية الرد الآن" value={claimSheet.assignedMemberId ? "مستلمة بواسطة موظف" : "لا أحد · كريم متوقف"} />
+              <FactRow label="مسودة الطلب" value={orderSummary(claimSheet, claimOrder)} />
+              <FactRow label="رسائل غير مقروءة" value={unreadLabel(claimSheet.unread)} amber={claimSheet.unread > 0} />
+              <FactRow label="مدة الانتظار" value={waitingLabel(waitingSince(claimSheet), now)} danger={isSafetyHold(claimSheet)} />
+              <FactRow label="متبقي للرد الحر" value={serviceWindowLabel(claimSheet, now).replace("متبقي للرد الحر: ", "")} />
+            </div>
+            <div style={savedNote}>
+              <CheckCircle2 size={16} aria-hidden />
+              <span>الطلب محفوظ — لن يحتاج العميل إعادة كتابته عند الاستلام.</span>
+            </div>
+            <div style={raceNote}>
+              <CheckCircle2 size={15} aria-hidden />
+              <span>لو استلمها زميل قبلك: «استلمت سارة المحادثة قبلك — تُفتح في وضع العرض فقط».</span>
+            </div>
+            <div style={sheetActions}>
+              <button
+                type="button"
+                className="queue-focus"
+                onClick={() => void claim(claimSheet)}
+                disabled={claimingId === claimSheet.id}
+                style={{ ...sheetClaimButton, ...(claimingId === claimSheet.id ? claimButtonBusy : null) }}
+              >
+                {claimingId === claimSheet.id ? "جارٍ الاستلام" : "استلام ومتابعة المحادثة"}
+              </button>
+              <button type="button" className="queue-focus" onClick={() => setClaimSheet(null)} style={sheetCancelButton}>إلغاء</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewOnly && (
+        <div style={modalBackdrop} role="dialog" aria-modal="true" aria-label="وضع العرض فقط">
+          <div style={viewPanel}>
+            <div style={viewHeader}>
+              <button type="button" className="queue-focus" onClick={() => setViewOnly(null)} aria-label="إغلاق العرض فقط" style={closeButton}>
+                <X size={18} aria-hidden />
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={viewCustomer}><Bdi>{viewOnly.conv.customer}</Bdi></div>
+                <div style={typingLine}><span style={liveDot} />{viewTaken ? viewOwner + " يكتب الآن…" : "عرض فقط — لا تعليم كمقروء"}</div>
+              </div>
+              <span style={viewOnlyBadge}><Eye size={14} aria-hidden />عرض فقط</span>
+            </div>
+            <div style={viewNotice}>
+              <Clock3 size={17} aria-hidden />
+              <span>{viewTaken ? "استلم " + viewOwner + " المحادثة — وضع العرض فقط" : "عرض فقط — لا يتم تعليم الرسالة كمقروءة"}</span>
+            </div>
+            <div style={threadBody}>
+              {viewOnly.conv.messages.slice(-4).map((msg) => {
+                const outbound = msg.sender !== "customer";
+                return (
+                  <div key={msg.id} style={{ ...bubble, ...(outbound ? outboundBubble : inboundBubble) }}>
+                    <Bdi>{msg.text || "رسالة بدون نص"}</Bdi>
+                    <div style={bubbleTime}>{msg.time}{messageAuthor(msg.sender)}</div>
+                  </div>
+                );
+              })}
+              {viewOnly.conv.messages.length === 0 && <div style={emptyThread}>لا توجد رسائل ظاهرة في وضع العرض.</div>}
+            </div>
+            <div style={viewFooter}>
+              <div style={lockedComposer}>
+                <Lock size={16} aria-hidden />
+                <span>{viewTaken ? "الكتابة معطّلة — المحادثة مستلمة بواسطة " + viewOwner : "الكتابة معطّلة في وضع العرض فقط"}</span>
+              </div>
+              <div style={managerBox}>
+                <span style={managerTitle}>للمدير فقط — إعادة إسناد المحادثة</span>
+                <span style={managerCopy}>اختر سببًا موثّقًا — يُسجّل في سجل المحادثة.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FactRow({ label, value, amber, danger }: { label: string; value: string; amber?: boolean; danger?: boolean }) {
+  return (
+    <div style={factRow}>
+      <span style={factLabel}>{label}</span>
+      <span style={{ ...factValue, ...(amber ? factAmber : null), ...(danger ? factDanger : null) }}><Bdi>{value}</Bdi></span>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-const healthChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 11, fontWeight: 700, color: "var(--dim)", background: "var(--panel)", border: "1px solid var(--stroke)", borderRadius: 99, padding: "5px 11px", fontFamily: "var(--kvx-font-ar)" };
-const safetyTile: React.CSSProperties = { position: "relative", borderRadius: 15, padding: "13px 14px 12px 16px", overflow: "hidden", background: "linear-gradient(135deg,#ff8d7e,#f75b52)", boxShadow: "0 10px 26px rgba(0,0,0,.28)" };
-const doctrine: React.CSSProperties = { marginTop: 12, background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 14, padding: "11px 13px" };
-const stageZone: React.CSSProperties = { background: "linear-gradient(180deg,rgba(62,112,225,.13),rgba(62,112,225,.035))", border: "1px solid rgba(90,145,255,.28)", borderRadius: 18, padding: 13, marginBottom: 14 };
-const hallZone: React.CSSProperties = { background: "linear-gradient(180deg,rgba(255,170,70,.11),rgba(255,170,70,.03))", border: "1px solid rgba(255,183,87,.3)", borderRadius: 18, padding: "12px 14px" };
-const onAir: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 11, fontWeight: 800, letterSpacing: ".06em", color: "#ffb3a8" };
-const onAirDot: React.CSSProperties = { width: 8, height: 8, borderRadius: "50%", background: "#ff4d4d", boxShadow: "0 0 8px #ff4d4d" };
-const wall: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 11 };
-const monTile: React.CSSProperties = { border: "1px solid rgba(75,139,255,.35)", background: "rgba(10,15,24,.55)", borderRadius: 16, padding: "12px 13px", cursor: "pointer", display: "flex", flexDirection: "column", textAlign: "start", fontFamily: "inherit" };
-const hallPill: React.CSSProperties = { display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--stroke)", borderRadius: 13, padding: "9px 12px", cursor: "pointer", fontFamily: "inherit" };
-const avatar: React.CSSProperties = { width: 26, height: 26, borderRadius: 9, background: "linear-gradient(135deg,#b9c8de,#8fa3bf)", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 11, color: "#0e1420", fontFamily: "var(--kvx-font-ar)", flex: "none" };
-const unreadDot: React.CSSProperties = { minWidth: 18, height: 18, padding: "0 5px", borderRadius: 99, background: "var(--blue)", color: "#fff", fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" };
-const stageChip: React.CSSProperties = { fontSize: 9, fontWeight: 700, color: "var(--faint)", background: "var(--inset)", borderRadius: 6, padding: "3px 7px" };
-const drawerX: React.CSSProperties = { width: 30, height: 30, borderRadius: 10, background: "var(--inset)", border: "1px solid var(--stroke)", color: "var(--dim)", cursor: "pointer", display: "grid", placeItems: "center", flex: "none" };
-const soonChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "var(--dim)", background: "var(--inset)", border: "1px solid var(--stroke)", borderRadius: 10, padding: "6px 11px", cursor: "pointer", fontFamily: "var(--kvx-font-ar)" };
-const ghostBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", borderRadius: 10, border: "1px solid var(--stroke)", background: "var(--inset)", color: "var(--dim)", fontFamily: "var(--kvx-font-ar)", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
-const sendBtn: React.CSSProperties = { height: 42, width: 46, borderRadius: 13, border: 0, background: "linear-gradient(135deg,#4b8bff,#2f6ce0)", color: "#fff", cursor: "pointer", display: "grid", placeItems: "center", flex: "none" };
+const page: CSSProperties = {
+  minHeight: "100%",
+  padding: 0,
+  background: "#EEF4F1",
+  color: "#0F2A20",
+  fontFamily: "var(--kvx-font-ar), 'IBM Plex Sans Arabic', system-ui, sans-serif",
+  borderRadius: 8,
+  border: "1px solid #CBD7D1",
+  overflow: "hidden",
+  boxSizing: "border-box",
+};
+
+const header: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+  padding: "18px 16px 0",
+  background: "#FFFFFF",
+  borderBottom: "1px solid #CBD7D1",
+};
+
+const headerTop: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  flexWrap: "wrap",
+};
+
+const title: CSSProperties = {
+  margin: 0,
+  fontSize: 21,
+  lineHeight: 1.3,
+  fontWeight: 850,
+  color: "#0F2A20",
+  letterSpacing: 0,
+};
+
+const headerActions: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  marginInlineStart: "auto",
+};
+
+const iconButton: CSSProperties = {
+  width: 44,
+  height: 44,
+  borderRadius: 8,
+  border: "1px solid #CBD7D1",
+  background: "#FFFFFF",
+  color: "#0A8A5F",
+  display: "grid",
+  placeItems: "center",
+};
+
+const segments: CSSProperties = {
+  display: "flex",
+  gap: 2,
+  padding: 0,
+  width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
+  background: "#FFFFFF",
+  borderTop: "1px solid #E7EFEB",
+  overflowX: "auto",
+};
+
+const segmentButton: CSSProperties = {
+  minHeight: 42,
+  flex: "1 1 0",
+  border: 0,
+  borderBottom: "2.5px solid transparent",
+  borderRadius: 0,
+  padding: "0 8px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 6,
+  background: "transparent",
+  color: "#5B6B64",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 850,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+};
+
+const segmentButtonActive: CSSProperties = {
+  borderBottomColor: "#0E9F6E",
+  color: "#0A8A5F",
+};
+
+const segmentCount: CSSProperties = {
+  minWidth: 20,
+  height: 20,
+  display: "inline-grid",
+  placeItems: "center",
+  borderRadius: 8,
+  background: "#E7EFEB",
+  color: "#0F2A20",
+  fontSize: 11,
+  fontWeight: 900,
+  fontFamily: "var(--kvx-font-ui), 'IBM Plex Mono', monospace",
+  unicodeBidi: "isolate",
+};
+
+const freshness: CSSProperties = {
+  minHeight: 34,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 7,
+  color: "#5B6B64",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const liveDot: CSSProperties = {
+  width: 7,
+  height: 7,
+  borderRadius: 999,
+  background: "#0E9F6E",
+  flex: "none",
+};
+
+const safetyDot: CSSProperties = {
+  width: 7,
+  height: 7,
+  borderRadius: 999,
+  background: "#C0492F",
+  flex: "none",
+};
+
+const content: CSSProperties = {
+  padding: 14,
+  background: "#EEF4F1",
+};
+
+const listMeta: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  flexWrap: "wrap",
+  marginBottom: 10,
+  color: "#5B6B64",
+  fontSize: 12,
+  fontWeight: 750,
+};
+
+const noticeBox: CSSProperties = {
+  borderRadius: 8,
+  padding: "10px 12px",
+  marginBottom: 10,
+  fontSize: 12,
+  fontWeight: 800,
+  lineHeight: 1.6,
+};
+
+const noticeOk: CSSProperties = {
+  color: "#0A8A5F",
+  background: "#EEF4F1",
+  border: "1px solid #0E9F6E",
+};
+
+const noticeAmber: CSSProperties = {
+  color: "#7A4A00",
+  background: "#FFF8E7",
+  border: "1px solid #D7A536",
+};
+
+const listShell: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+};
+
+const row: CSSProperties = {
+  background: "#FFFFFF",
+  border: "1px solid #CBD7D1",
+  borderRadius: 8,
+  overflow: "hidden",
+};
+
+const rowSafety: CSSProperties = {
+  borderColor: "#E79A9E",
+  boxShadow: "inset -4px 0 0 #C0492F",
+};
+
+const rowInner: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr",
+  gap: 12,
+  padding: 12,
+};
+
+const rowMain: CSSProperties = {
+  display: "grid",
+  gap: 8,
+  minWidth: 0,
+};
+
+const rowTop: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const reasonBadge: CSSProperties = {
+  minHeight: 26,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  padding: "0 9px",
+  borderRadius: 8,
+  border: "1px solid #CBD7D1",
+  background: "#E7EFEB",
+  color: "#0F2A20",
+  fontSize: 12,
+  fontWeight: 900,
+  maxWidth: "100%",
+};
+
+const reasonBadgeSafety: CSSProperties = {
+  borderColor: "#E79A9E",
+  background: "#FFF7F4",
+  color: "#C0492F",
+};
+
+const reasonBadgeAmber: CSSProperties = {
+  borderColor: "#D7A536",
+  background: "#FFF8E7",
+  color: "#9A6B15",
+};
+
+const amberDot: CSSProperties = {
+  width: 7,
+  height: 7,
+  borderRadius: 999,
+  background: "#D7A536",
+  flex: "none",
+};
+
+const identityBlock: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  minWidth: 0,
+};
+
+const customerName: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  flexWrap: "wrap",
+  gap: "2px 8px",
+  color: "#0F2A20",
+  fontSize: 14,
+  fontWeight: 900,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const phoneText: CSSProperties = {
+  color: "#8A988F",
+  fontSize: 12,
+  fontWeight: 800,
+  fontFamily: "'IBM Plex Mono', var(--kvx-font-ui), monospace",
+  direction: "ltr",
+  textAlign: "right",
+};
+
+const metaChips: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  flexWrap: "wrap",
+};
+
+const amberMiniChip: CSSProperties = {
+  minHeight: 24,
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "0 8px",
+  borderRadius: 8,
+  background: "#FFF8E7",
+  color: "#9A6B15",
+  fontSize: 11,
+  fontWeight: 900,
+};
+
+const stateMiniChip: CSSProperties = {
+  minHeight: 24,
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "0 8px",
+  borderRadius: 8,
+  background: "#EEF4F1",
+  color: "#5B6B64",
+  fontSize: 11,
+  fontWeight: 900,
+};
+
+const waitLine: CSSProperties = {
+  minHeight: 30,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  color: "#5B6B64",
+  fontSize: 12,
+  fontWeight: 850,
+};
+
+const waitLineSafety: CSSProperties = {
+  color: "#C0492F",
+};
+
+const preview: CSSProperties = {
+  margin: 0,
+  color: "#5B6B64",
+  fontSize: 13,
+  lineHeight: 1.6,
+  overflow: "hidden",
+  display: "-webkit-box",
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: "vertical",
+};
+
+const orderBlock: CSSProperties = {
+  display: "grid",
+  gap: 5,
+  minWidth: 0,
+  padding: "10px 11px",
+  borderRadius: 8,
+  border: "1px solid #E7EFEB",
+  background: "#F8FBFA",
+};
+
+const summaryLine: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+  color: "#5B6B64",
+  fontSize: 12.5,
+  lineHeight: 1.5,
+};
+
+const orderSummaryText: CSSProperties = {
+  color: "#0F2A20",
+  fontSize: 13,
+  fontWeight: 900,
+  lineHeight: 1.35,
+};
+
+const summaryDivider: CSSProperties = {
+  color: "#CBD7D1",
+};
+
+const serviceWindowText: CSSProperties = {
+  color: "#8A988F",
+  fontSize: 12,
+  fontWeight: 750,
+  lineHeight: 1.4,
+};
+
+const actionBlock: CSSProperties = {
+  display: "grid",
+  gap: 6,
+  justifyItems: "stretch",
+  minWidth: 150,
+};
+
+const rowActions: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  alignItems: "stretch",
+};
+
+const claimButton: CSSProperties = {
+  minHeight: 44,
+  border: 0,
+  borderRadius: 8,
+  padding: "0 14px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 7,
+  background: "#0E9F6E",
+  color: "#FFFFFF",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 900,
+  cursor: "pointer",
+  flex: 1,
+};
+
+const claimButtonDisabled: CSSProperties = {
+  background: "#E7EFEB",
+  color: "#8A988F",
+  cursor: "not-allowed",
+};
+
+const claimButtonBusy: CSSProperties = {
+  background: "#0A8A5F",
+  cursor: "wait",
+};
+
+const viewButton: CSSProperties = {
+  minHeight: 44,
+  width: 88,
+  border: "1px solid #CBD7D1",
+  borderRadius: 8,
+  padding: "0 12px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 6,
+  background: "#FFFFFF",
+  color: "#0F2A20",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 850,
+  cursor: "pointer",
+};
+
+const disabledReason: CSSProperties = {
+  color: "#8A988F",
+  fontSize: 11,
+  lineHeight: 1.45,
+  textAlign: "center",
+};
+
+const viewOnlyReason: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 5,
+  color: "#7A4A00",
+  fontSize: 11,
+  fontWeight: 900,
+};
+
+const mineReason: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 5,
+  color: "#0A8A5F",
+  fontSize: 11,
+  fontWeight: 900,
+};
+
+const skeletonRow: CSSProperties = {
+  height: 118,
+  borderRadius: 8,
+  border: "1px solid #CBD7D1",
+  background: "linear-gradient(90deg,#EEF4F1,#FFFFFF,#EEF4F1)",
+};
+
+const emptyState: CSSProperties = {
+  minHeight: 240,
+  border: "1px dashed #CBD7D1",
+  borderRadius: 14,
+  background: "#EEF4F1",
+  display: "grid",
+  placeItems: "center",
+  alignContent: "center",
+  gap: 12,
+  color: "#5B6B64",
+  textAlign: "center",
+  padding: "28px 24px",
+};
+
+const emptyIcon: CSSProperties = {
+  width: 72,
+  height: 72,
+  borderRadius: "50%",
+  display: "grid",
+  placeItems: "center",
+  background: "rgba(14,159,110,0.10)",
+  color: "#0A8A5F",
+};
+
+const emptyTitle: CSSProperties = {
+  color: "#0F2A20",
+  fontSize: 17,
+  fontWeight: 900,
+};
+
+const emptyBody: CSSProperties = {
+  margin: 0,
+  maxWidth: 360,
+  color: "#5B6B64",
+  fontSize: 13.5,
+  lineHeight: 1.7,
+  fontWeight: 700,
+};
+
+const emptyHint: CSSProperties = {
+  margin: 0,
+  maxWidth: 360,
+  color: "#8A988F",
+  fontSize: 12,
+  lineHeight: 1.7,
+  fontWeight: 700,
+};
+
+const modalBackdrop: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 80,
+  background: "rgba(15,42,32,0.45)",
+  display: "flex",
+  alignItems: "flex-end",
+  justifyContent: "center",
+  padding: "24px 12px 0",
+};
+
+const claimPanel: CSSProperties = {
+  width: "min(430px, 100%)",
+  maxHeight: "92vh",
+  overflowY: "auto",
+  background: "#FFFFFF",
+  borderRadius: "22px 22px 0 0",
+  padding: "14px 18px 26px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 14,
+  boxShadow: "0 -24px 70px rgba(15,42,32,.2)",
+};
+
+const sheetHandle: CSSProperties = {
+  width: 42,
+  height: 5,
+  borderRadius: 8,
+  background: "#DDE6E1",
+  alignSelf: "center",
+};
+
+const claimHeader: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+  flexWrap: "wrap",
+};
+
+const claimTitle: CSSProperties = {
+  fontSize: 17,
+  fontWeight: 900,
+  color: "#0F2A20",
+};
+
+const claimFacts: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  border: "1px solid #E7EFEB",
+  borderRadius: 12,
+  overflow: "hidden",
+};
+
+const factRow: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "11px 14px",
+  borderBottom: "1px solid #EEF4F1",
+  fontSize: 13.5,
+};
+
+const factLabel: CSSProperties = {
+  color: "#5B6B64",
+  flex: "none",
+};
+
+const factValue: CSSProperties = {
+  color: "#0F2A20",
+  fontWeight: 800,
+  textAlign: "left",
+};
+
+const factAmber: CSSProperties = {
+  color: "#9A6B15",
+};
+
+const factDanger: CSSProperties = {
+  color: "#C0492F",
+};
+
+const savedNote: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  background: "#F3F7F5",
+  border: "1px solid #E7EFEB",
+  borderRadius: 10,
+  padding: "10px 13px",
+  color: "#5B6B64",
+  fontSize: 12.5,
+  lineHeight: 1.6,
+};
+
+const raceNote: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  background: "#EEF1F0",
+  border: "1px solid #DDE6E1",
+  borderRadius: 10,
+  padding: "10px 13px",
+  color: "#5B6B64",
+  fontSize: 11.5,
+  lineHeight: 1.6,
+};
+
+const sheetActions: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 9,
+};
+
+const sheetClaimButton: CSSProperties = {
+  minHeight: 50,
+  border: 0,
+  borderRadius: 12,
+  background: "#0E9F6E",
+  color: "#FFFFFF",
+  fontFamily: "inherit",
+  fontSize: 15.5,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const sheetCancelButton: CSSProperties = {
+  minHeight: 48,
+  borderRadius: 12,
+  border: "1px solid #CBD7D1",
+  background: "#FFFFFF",
+  color: "#5B6B64",
+  fontFamily: "inherit",
+  fontSize: 15,
+  fontWeight: 850,
+  cursor: "pointer",
+};
+
+const viewPanel: CSSProperties = {
+  width: "min(430px, 100%)",
+  maxHeight: "94vh",
+  overflow: "hidden",
+  background: "#EEF4F1",
+  border: "1px solid #CBD7D1",
+  borderRadius: "22px 22px 0 0",
+  display: "flex",
+  flexDirection: "column",
+  boxShadow: "0 -24px 70px rgba(15,42,32,.2)",
+};
+
+const viewHeader: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "16px",
+  background: "#FFFFFF",
+  borderBottom: "1px solid #E7EFEB",
+};
+
+const closeButton: CSSProperties = {
+  width: 38,
+  height: 38,
+  display: "grid",
+  placeItems: "center",
+  borderRadius: 8,
+  border: "1px solid #CBD7D1",
+  background: "#FFFFFF",
+  color: "#5B6B64",
+  cursor: "pointer",
+  flex: "none",
+};
+
+const viewCustomer: CSSProperties = {
+  color: "#0F2A20",
+  fontSize: 15.5,
+  fontWeight: 900,
+};
+
+const typingLine: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  color: "#0A8A5F",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const viewOnlyBadge: CSSProperties = {
+  minHeight: 30,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  borderRadius: 8,
+  padding: "0 10px",
+  background: "#EEF1F0",
+  color: "#5B6B64",
+  fontSize: 12,
+  fontWeight: 900,
+  flex: "none",
+};
+
+const viewNotice: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  padding: "11px 16px",
+  background: "#EEF1F0",
+  borderBottom: "1px solid #DDE6E1",
+  color: "#5B6B64",
+  fontSize: 13,
+  fontWeight: 800,
+  lineHeight: 1.6,
+};
+
+const threadBody: CSSProperties = {
+  flex: 1,
+  minHeight: 240,
+  overflowY: "auto",
+  padding: 16,
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+  opacity: 0.94,
+};
+
+const bubble: CSSProperties = {
+  maxWidth: "76%",
+  borderRadius: 12,
+  padding: "9px 12px",
+  fontSize: 14,
+  lineHeight: 1.6,
+};
+
+const inboundBubble: CSSProperties = {
+  alignSelf: "flex-start",
+  background: "#FFFFFF",
+  border: "1px solid #E7EFEB",
+  borderBottomLeftRadius: 4,
+};
+
+const outboundBubble: CSSProperties = {
+  alignSelf: "flex-end",
+  background: "#DFF3EB",
+  border: "1px solid #C4E7D8",
+  borderBottomRightRadius: 4,
+};
+
+const bubbleTime: CSSProperties = {
+  marginTop: 3,
+  color: "#8A988F",
+  fontSize: 10.5,
+  textAlign: "left",
+};
+
+const emptyThread: CSSProperties = {
+  alignSelf: "center",
+  color: "#8A988F",
+  fontSize: 12,
+  fontWeight: 800,
+  padding: "24px 0",
+};
+
+const viewFooter: CSSProperties = {
+  background: "#FFFFFF",
+  borderTop: "1px solid #E7EFEB",
+  padding: "12px 16px 20px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+};
+
+const lockedComposer: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  background: "#F3F7F5",
+  border: "1px dashed #CBD7D1",
+  borderRadius: 12,
+  padding: "12px 14px",
+  color: "#8A988F",
+  fontSize: 13,
+  fontWeight: 800,
+};
+
+const managerBox: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  border: "1px solid #E7EFEB",
+  borderRadius: 12,
+  padding: "12px 14px",
+};
+
+const managerTitle: CSSProperties = {
+  color: "#5B6B64",
+  fontSize: 12,
+  fontWeight: 900,
+};
+
+const managerCopy: CSSProperties = {
+  color: "#5B6B64",
+  fontSize: 11.5,
+  lineHeight: 1.6,
+};

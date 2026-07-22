@@ -343,8 +343,9 @@ export interface Conversation {
   // the spine via setOwnershipState / the allergen gate). Exposed here so the
   // Conversations UI can read the real safety flag instead of inferring it from
   // escalationReason text.
-  ownershipState?: "AI_ACTIVE" | "HUMAN_ACTIVE" | "HUMAN_IDLE" | "SYSTEM_HOLD" | "CLOSED";
+  ownershipState?: "AI_ACTIVE" | "HOLD_UNCLAIMED" | "HUMAN_ACTIVE" | "HUMAN_IDLE" | "AI_RESUME_PENDING" | "SYSTEM_HOLD" | "CLOSED";
   isSafetyHold?: boolean;
+  controlEpoch?: number;
   // MO1 — named ownership: which member (members.id) currently owns a human-handled
   // conversation. Set on takeover, cleared on return-to-AI / close. Written ONLY via
   // the server route (member resolved from the authenticated session, never the client).

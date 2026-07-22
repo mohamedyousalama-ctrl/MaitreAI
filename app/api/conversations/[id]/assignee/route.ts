@@ -27,13 +27,11 @@ import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAuditEvent } from "@/lib/db/audit";
 import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
+import { ClaimLostError, claimConversation } from "@/lib/console/conversation-control";
 
 export const runtime = "nodejs";
 
 const FALLBACK = "موظف";
-
-// Legal predecessors of HUMAN_ACTIVE (lib/db/ownership.ts LEGAL_TRANSITIONS).
-const CLAIMABLE_FROM = ["AI_ACTIVE", "HUMAN_IDLE", "SYSTEM_HOLD"] as const;
 
 /** Resolve a member's display name from the auth user (members has no name column). */
 async function resolveMemberName(admin: SupabaseClient, memberId: string): Promise<string> {
@@ -110,50 +108,42 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!member) return NextResponse.json({ error: "not_a_member" }, { status: 403 });
   const me = (member as { id: string }).id;
 
-  // ATOMIC CLAIM — a single conditional UPDATE. The precondition lives in the WHERE
-  // (no separate SELECT-then-UPDATE), so the DB serializes concurrent claims:
-  //   id = :id AND restaurant_id = :rid
-  //   AND ownership_state IN ('AI_ACTIVE','HUMAN_IDLE','SYSTEM_HOLD')  -- legal & claimable
-  //   AND (assigned_member_id IS NULL OR assigned_member_id = :me)     -- not already someone else's
-  // 1 row → we won; 0 rows → lost the race / not claimable.
-  const { data: claimed, error: claimErr } = await admin
-    .from("conversations")
-    .update({ assigned_member_id: me, ownership_state: "HUMAN_ACTIVE", owner: "human", status: "تم التحويل لموظف" })
-    .eq("id", params.id)
-    .eq("restaurant_id", tenant.restaurantId)
-    .in("ownership_state", CLAIMABLE_FROM as unknown as string[])
-    .or(`assigned_member_id.is.null,assigned_member_id.eq.${me}`)
-    .select("id");
-  if (claimErr) return NextResponse.json({ error: "update_failed" }, { status: 502 });
-
-  if (claimed && claimed.length === 1) {
-    // MO4 — audit the takeover (actor = the server-resolved acting member).
-    await recordAuditEvent(admin, {
-      restaurantId: tenant.restaurantId,
-      userId: tenant.userId,
-      role: tenant.role,
-      memberId: me,
-      action: "conversation_claimed",
-      entityType: "conversation",
-      entityId: params.id,
-    });
-    return NextResponse.json({ ok: true, assignedMemberId: me });
-  }
-
-  // 0 rows — find out why: already owned (by me = idempotent, or by someone else =
-  // lost race), or not in a claimable state (e.g. CLOSED).
+  // Idempotent already-mine check first: control_claim intentionally excludes
+  // HUMAN_ACTIVE so normal send-on-owned does not create duplicate claim events.
   const { data: cur } = await admin
     .from("conversations")
-    .select("assigned_member_id, ownership_state")
+    .select("assigned_member_id, ownership_state, control_epoch")
     .eq("id", params.id)
     .eq("restaurant_id", tenant.restaurantId)
     .maybeSingle();
   if (!cur) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  const ownerId = (cur as { assigned_member_id: string | null }).assigned_member_id;
+  const current = cur as { assigned_member_id: string | null; ownership_state: string | null; control_epoch?: number | string | null };
+  const ownerId = current.assigned_member_id;
 
   // Idempotent: I already own it → treat as success (e.g. double-click).
-  if (ownerId && ownerId === me) {
-    return NextResponse.json({ ok: true, assignedMemberId: me });
+  if (ownerId === me && current.ownership_state === "HUMAN_ACTIVE") {
+    return NextResponse.json({ ok: true, assignedMemberId: me, ownershipState: "HUMAN_ACTIVE", controlEpoch: Number(current.control_epoch ?? 0) });
+  }
+
+  // ATOMIC CLAIM — migration 0099's control_claim RPC performs the conditional
+  // ownership transition, bumps control_epoch, and lets the DB trigger append the
+  // assignment event. No ownership column is written directly in this claim path.
+  try {
+    const result = await claimConversation(admin, {
+      conversationId: params.id,
+      restaurantId: tenant.restaurantId,
+      memberId: me,
+    });
+    return NextResponse.json({ ok: true, assignedMemberId: result.assignedMemberId ?? me, ownershipState: result.mode, controlEpoch: result.epoch });
+  } catch (error) {
+    if (!(error instanceof ClaimLostError)) {
+      return NextResponse.json({ error: "update_failed" }, { status: 502 });
+    }
+    const lostOwnerId = error.currentOwnerMemberId;
+    if (lostOwnerId) {
+      const ownerName = await resolveMemberName(admin, lostOwnerId);
+      return NextResponse.json({ error: "already_claimed", ownerId: lostOwnerId, ownerName }, { status: 409 });
+    }
   }
 
   // Lost the race to another member → tell the loser who owns it (no overwrite).

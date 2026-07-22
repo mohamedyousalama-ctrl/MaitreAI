@@ -168,15 +168,19 @@ export function derivePaymentDisplay(status: PaymentStatusKey): DisplayState<Pay
 // ---------------------------------------------------------------------------
 export type ConversationOwnershipState =
   | "AI_ACTIVE"
+  | "HOLD_UNCLAIMED"
   | "HUMAN_ACTIVE"
   | "HUMAN_IDLE"
+  | "AI_RESUME_PENDING"
   | "SYSTEM_HOLD"
   | "CLOSED";
 
 export type ConversationDisplayState =
   | "ai_active"    // Karim owns it, replying
+  | "hold_unclaimed" // escalated, awaiting a human claim
   | "human_active" // a teammate has taken over
   | "human_idle"   // taken over but idle (handoff timeout window)
+  | "ai_resume_pending" // handback validation in flight
   | "safety_hold"  // allergen / system safety hold — RED, needs deliberate release
   | "closed";      // conversation closed
 
@@ -193,11 +197,15 @@ export function deriveConversationDisplay(input: {
     // Karim's stage is blue (§6 conversation monitor).
     case "AI_ACTIVE":
       return { state: "ai_active", tone: "blue", labelKey: "state.conv.ai_active" };
+    case "HOLD_UNCLAIMED":
+      return { state: "hold_unclaimed", tone: "amber", labelKey: "state.conv.hold_unclaimed" };
     // Human-held is amber (§6 hall pill "amber (human-held)").
     case "HUMAN_ACTIVE":
       return { state: "human_active", tone: "amber", labelKey: "state.conv.human_active" };
     case "HUMAN_IDLE":
       return { state: "human_idle", tone: "slate", labelKey: "state.conv.human_idle" };
+    case "AI_RESUME_PENDING":
+      return { state: "ai_resume_pending", tone: "slate", labelKey: "state.conv.ai_resume_pending" };
     case "CLOSED":
       return { state: "closed", tone: "slate", labelKey: "state.conv.closed" };
     // SYSTEM_HOLD is returned by the safety branch above, so the type is narrowed
@@ -228,7 +236,7 @@ export function conversationBucket(
   if (ownershipState === "CLOSED") return "harvest";
   if (isSafetyHold || ownershipState === "SYSTEM_HOLD") return "lock";
   if (ownershipState === "AI_ACTIVE") return "karim";
-  // HUMAN_ACTIVE | HUMAN_IDLE — both are human-owned → the 🧑 gate counts them all.
+  // HOLD_UNCLAIMED | HUMAN_ACTIVE | HUMAN_IDLE | AI_RESUME_PENDING all need the human hall.
   return "gate";
 }
 

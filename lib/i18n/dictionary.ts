@@ -293,8 +293,10 @@ export const DICTIONARY = {
     "state.pay.refunded": "مُسترجَع",
     // display-state: conversations (deriveConversationDisplay)
     "state.conv.ai_active": "المساعد نشط",
+    "state.conv.hold_unclaimed": "بانتظار استلام موظف",
     "state.conv.human_active": "موظف يتولّى",
     "state.conv.human_idle": "موظف (غير نشط)",
+    "state.conv.ai_resume_pending": "قيد التسليم إلى المساعد",
     "state.conv.safety_hold": "إيقاف للسلامة",
     "state.conv.closed": "مغلقة",
     // attribution chips (deriveAttribution)
@@ -1254,8 +1256,10 @@ export const DICTIONARY = {
     "state.pay.failed": "Payment failed",
     "state.pay.refunded": "Refunded",
     "state.conv.ai_active": "Assistant active",
+    "state.conv.hold_unclaimed": "Awaiting staff claim",
     "state.conv.human_active": "Staff handling",
     "state.conv.human_idle": "Staff (idle)",
+    "state.conv.ai_resume_pending": "Returning to assistant",
     "state.conv.safety_hold": "Safety hold",
     "state.conv.closed": "Closed",
     "attr.ai": "Assistant",
