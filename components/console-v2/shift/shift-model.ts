@@ -29,20 +29,20 @@
 // ============================================================================
 
 import type { OrderStatusKey, PosStatus } from "@/lib/types";
+// R0 (WO-R0) — the acceptance-eligibility decision now has ONE home. The shift
+// model consumes the shared contract instead of encoding its own private copy;
+// behaviour is byte-for-byte unchanged (proved by the characterization tests).
+// Relative import (not "@/…") so the bare-Node characterization runner resolves it.
+import { ACCEPTANCE_ELIGIBLE_STATUSES, isAcceptanceEligible } from "../../../lib/orders/acceptance-contract";
 
 // ---------------------------------------------------------------------------
 // The product boundary — the two order states, derived from real order fields.
-// ACCEPTABLE mirrors the server's POS_ELIGIBLE_STATUS (app/api/orders/[id]/pos):
-// only a genuinely-confirmed (money-in), non-test order can be accepted. An
-// allowlist, not a denylist, so a new status never silently becomes acceptable.
+// Acceptance eligibility lives in lib/orders/acceptance-contract (R0): only a
+// genuinely-confirmed (money-in), non-test order can be accepted. Re-exported under
+// the historical name so existing callers are unaffected. The contract mirrors the
+// server's POS_ELIGIBLE_STATUS (app/api/orders/[id]/pos) exactly.
 // ---------------------------------------------------------------------------
-export const ACCEPTABLE_ORDER_STATUSES: readonly OrderStatusKey[] = [
-  "paid",
-  "preparing",
-  "ready",
-  "out_for_delivery",
-  "delivered",
-];
+export const ACCEPTABLE_ORDER_STATUSES: readonly OrderStatusKey[] = ACCEPTANCE_ELIGIBLE_STATUSES;
 
 /** The two — and only two — order states this screen speaks. */
 export type ShiftOrderState = "needs_acceptance" | "accepted";
@@ -65,9 +65,11 @@ export function isAccepted(o: Pick<ShiftOrder, "posStatus">): boolean {
   return o.posStatus === "entered" || o.posStatus === "sent_to_kitchen";
 }
 
-/** True when an order is confirmed-and-not-test → eligible to be accepted. */
+/** True when an order is confirmed-and-not-test → eligible to be accepted.
+ *  Delegates to the shared R0 contract (behaviour identical to the prior inline
+ *  `!o.isTest && ACCEPTABLE_ORDER_STATUSES.includes(o.orderStatus)`). */
 export function isAcceptable(o: Pick<ShiftOrder, "orderStatus" | "isTest">): boolean {
-  return !o.isTest && ACCEPTABLE_ORDER_STATUSES.includes(o.orderStatus);
+  return isAcceptanceEligible(o);
 }
 
 /**
