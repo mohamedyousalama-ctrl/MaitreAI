@@ -25,6 +25,14 @@ import { getPaymentProvider } from "@/lib/payments/provider";
 import { toHalalas } from "@/lib/payments/providers/moyasar";
 import { decryptSecret } from "@/lib/crypto/secrets";
 import { ACTIVE_STATUSES, DEFAULT_EXPIRY_MS, decideSessionAction } from "@/lib/payments";
+import { recordCriticalAlert, type CriticalAlertInput } from "@/lib/alerts/record";
+import {
+  checkMoyasarTenantEligibility,
+  isMoyasarTenantCurrency,
+  MOYASAR_CURRENCY_ISO,
+} from "@/lib/payments/moyasar-eligibility";
+
+const PSP_CURRENCY_MISMATCH_ALERT = "psp_currency_mismatch" as CriticalAlertInput["type"];
 
 export interface CreateMoyasarSessionParams {
   restaurantId: string;
@@ -39,6 +47,25 @@ export type CreateMoyasarSessionResult =
   | { ok: true; sessionId: string; payUrl: string; providerRef: string; reused?: boolean }
   | { ok: false; error: string; detail?: string };
 
+async function recordPspGuardAlert(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string;
+    orderId: string;
+    type: CriticalAlertInput["type"];
+    detail: string;
+    context: Record<string, unknown>;
+  }
+): Promise<void> {
+  console.error(`[psp/create] ${args.type}: ${args.detail}`);
+  await recordCriticalAlert(admin, {
+    restaurantId: args.restaurantId,
+    type: args.type,
+    detail: args.detail,
+    context: { orderId: args.orderId, provider: "moyasar", ...args.context },
+  });
+}
+
 export async function createMoyasarSession(
   admin: SupabaseClient,
   params: CreateMoyasarSessionParams
@@ -50,6 +77,34 @@ export async function createMoyasarSession(
 
   const { restaurantId, orderId, callbackUrl } = params;
   const nowMs = Date.now();
+
+  // ── COUNTRY/CURRENCY ELIGIBILITY — before reuse/create. Moyasar is the KSA/SAR
+  //    provider path. If config accidentally enables it for Egypt, or for a tenant
+  //    whose currency is not SAR, fail closed before an active old link can be
+  //    reused or a new provider invoice can be created.
+  const { data: eligibility, error: eligibilityErr } = await admin
+    .from("restaurants")
+    .select("country, currency")
+    .eq("id", restaurantId)
+    .maybeSingle();
+  if (eligibilityErr || !eligibility) return { ok: false, error: "psp_eligibility_read_failed" };
+
+  const eligibilityDecision = checkMoyasarTenantEligibility({
+    restaurantId,
+    country: eligibility.country,
+    tenantCurrency: eligibility.currency,
+  });
+  if (!eligibilityDecision.ok) {
+    await recordPspGuardAlert(admin, {
+      restaurantId,
+      orderId,
+      type: eligibilityDecision.alertType as CriticalAlertInput["type"],
+      detail: eligibilityDecision.detail,
+      context: eligibilityDecision.context,
+    });
+    return { ok: false, error: eligibilityDecision.error };
+  }
+  const tenantCurrency = eligibilityDecision.tenantCurrency;
 
   // ── IDEMPOTENCY pre-check (WO-3b): reuse an active session, refuse if the
   //    order is already paid, else fall through to create. Scoped by
@@ -121,6 +176,16 @@ export async function createMoyasarSession(
   if ((order.payment_status as string) === "paid") return { ok: false, error: "order_already_paid" };
   const total = Number(order.total);
   const displayCurrency = (order.currency as string) || "ر.س";
+  if (!isMoyasarTenantCurrency(displayCurrency)) {
+    await recordPspGuardAlert(admin, {
+      restaurantId,
+      orderId,
+      type: PSP_CURRENCY_MISMATCH_ALERT,
+      detail: `Refused Moyasar session for order ${orderId}: order currency ${displayCurrency || "missing"} is not ${MOYASAR_CURRENCY_ISO}.`,
+      context: { orderCurrency: displayCurrency || null, tenantCurrency, expectedCurrency: MOYASAR_CURRENCY_ISO },
+    });
+    return { ok: false, error: "order_currency_mismatch" };
+  }
   let amountMinor: number;
   try {
     amountMinor = toHalalas(total);

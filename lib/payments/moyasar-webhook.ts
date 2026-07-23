@@ -39,7 +39,7 @@ export interface MoyasarWebhookResult {
     | "invalid_json" | "no_provider_ref" | "unknown_session" | "invalid_signature"
     | "flag_off" | "duplicate_event" | "retry_later" | "noop_terminal"
     | "amount_mismatch_held" | "order_stamp_failed"
-    | "paid" | "paid_noop" | "failed" | "expired" | "ignored";
+    | "paid" | "paid_cancelled_order" | "paid_noop" | "failed" | "expired" | "ignored";
 }
 
 interface SessionRow {
@@ -56,6 +56,8 @@ interface SessionRow {
 // Tiny, explicit glyph→ISO fallback for legacy rows created before psp_currency
 // existed (null). Deliberately minimal — the source of truth is psp_currency.
 const GLYPH_TO_ISO: Record<string, string> = { "ر.س": "SAR", "ج.م": "EGP" };
+const PAYMENT_FOR_CANCELLED_ORDER_ALERT = "payment_paid_cancelled_order" as CriticalAlertInput["type"];
+const UNPAYABLE_ORDER_STATUSES = new Set(["cancelled", "rejected"]);
 
 export interface MoyasarWebhookDeps {
   verify?: (rawBody: string, headers: Record<string, string | undefined>, secret: string) => WebhookVerification;
@@ -67,6 +69,10 @@ export interface MoyasarWebhookDeps {
 
 function maskRef(ref: string): string {
   return ref.length >= 4 ? `…${ref.slice(-4)}` : "unknown";
+}
+
+function isUnpayableOrderStatus(status: unknown): boolean {
+  return typeof status === "string" && UNPAYABLE_ORDER_STATUSES.has(status);
 }
 
 /**
@@ -216,6 +222,37 @@ export async function handleMoyasarWebhook(
 
   const status = verification.status;
 
+  async function recordPaidForCancelledOrder(orderStatus: string | null, paymentStatusBefore: string | null): Promise<MoyasarWebhookResult> {
+    const { changed } = await markPaymentSessionPaid(admin, session!.id);
+    if (!changed && session!.status !== "paid") {
+      await recordAlert(admin, {
+        restaurantId,
+        type: "payment_stamp_failed",
+        detail: `Moyasar paid but session ${session!.id} could not be marked paid for unpayable order ${session!.order_id} (${orderStatus || "unknown"}) — event NOT consumed.`,
+        context: { sessionId: session!.id, orderId: session!.order_id, providerRef, orderStatus, paymentStatusBefore },
+      });
+      return { httpStatus: 200, outcome: "order_stamp_failed" };
+    }
+
+    await markProcessed("paid_cancelled_order");
+    if (changed) {
+      await recordAlert(admin, {
+        restaurantId,
+        type: PAYMENT_FOR_CANCELLED_ORDER_ALERT,
+        detail: `Moyasar settled payment for ${orderStatus || "unpayable"} order ${session!.order_id}. Session recorded paid, order was NOT advanced as a normal paid order. Refund or fulfilment decision required.`,
+        context: {
+          sessionId: session!.id,
+          orderId: session!.order_id,
+          providerRef,
+          orderStatus,
+          paymentStatusBefore,
+          normalPaidOrderStampSuppressed: true,
+        },
+      });
+    }
+    return { httpStatus: 200, outcome: "paid_cancelled_order" };
+  }
+
   // 7. TERMINAL-STATE no-op (layer 2) — an out-of-order failed/expired AFTER paid
   //    must not regress a settled session. (No effect → no event recorded.)
   if ((status === "failed" || status === "expired" || status === "cancelled") && session.status === "paid") {
@@ -256,16 +293,55 @@ export async function handleMoyasarWebhook(
       return { httpStatus: 200, outcome: "amount_mismatch_held" };
     }
 
-    // Stamp the order paid FIRST and confirm a row was actually stamped. If none
-    // (e.g. the order is gone) → alert + HOLD: do NOT mark the session paid, do
-    // NOT notify, and do NOT consume the event, so a retry can still complete it.
+    // Read the order state before the paid stamp. A payment on a cancelled/rejected
+    // order is real money, but it must not be blended into the normal paid-order path
+    // or notify the customer as confirmed. The session records the money truth and a
+    // critical alert drives refund/fulfilment reconciliation.
+    const { data: orderBefore, error: orderBeforeErr } = await admin
+      .from("orders")
+      .select("id, order_status, payment_status")
+      .eq("id", session.order_id)
+      .eq("restaurant_id", restaurantId)
+      .maybeSingle();
+    if (orderBeforeErr || !orderBefore) {
+      await recordAlert(admin, {
+        restaurantId,
+        type: "payment_stamp_failed",
+        detail: `Moyasar paid but order ${session.order_id} could not be read before stamping — session NOT marked paid, held (session ${session.id})`,
+        context: { sessionId: session.id, orderId: session.order_id, providerRef },
+      });
+      return { httpStatus: 200, outcome: "order_stamp_failed" };
+    }
+    const orderStatusBefore = (orderBefore as { order_status?: string | null }).order_status ?? null;
+    const paymentStatusBefore = (orderBefore as { payment_status?: string | null }).payment_status ?? null;
+    if (isUnpayableOrderStatus(orderStatusBefore)) {
+      return recordPaidForCancelledOrder(orderStatusBefore, paymentStatusBefore);
+    }
+
+    // Stamp the order paid and confirm a row was actually stamped. If none (e.g.
+    // the order is gone or was cancelled between the pre-read and update) → alert +
+    // HOLD/reconcile. The update also repeats the unpayable-status guard to close
+    // the race between the read above and the paid stamp.
     const { data: stamped } = await admin
       .from("orders")
       .update({ payment_status: "paid" })
       .eq("id", session.order_id)
       .eq("restaurant_id", restaurantId)
+      .neq("order_status", "cancelled")
+      .neq("order_status", "rejected")
       .select("id");
     if (!Array.isArray(stamped) || stamped.length === 0) {
+      const { data: racedOrder } = await admin
+        .from("orders")
+        .select("order_status, payment_status")
+        .eq("id", session.order_id)
+        .eq("restaurant_id", restaurantId)
+        .maybeSingle();
+      const racedOrderStatus = (racedOrder as { order_status?: string | null } | null)?.order_status ?? null;
+      const racedPaymentStatus = (racedOrder as { payment_status?: string | null } | null)?.payment_status ?? paymentStatusBefore;
+      if (isUnpayableOrderStatus(racedOrderStatus)) {
+        return recordPaidForCancelledOrder(racedOrderStatus, racedPaymentStatus);
+      }
       await recordAlert(admin, {
         restaurantId,
         type: "payment_stamp_failed",

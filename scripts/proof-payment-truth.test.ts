@@ -5,6 +5,7 @@ import path from "node:path";
 import ts from "typescript";
 
 import { captureCodOnDelivered } from "../lib/db/cod.ts";
+import { checkMoyasarTenantEligibility } from "../lib/payments/moyasar-eligibility.ts";
 import { handleMoyasarWebhook } from "../lib/payments/moyasar-webhook.ts";
 import { toHalalas } from "../lib/payments/providers/moyasar.ts";
 
@@ -15,7 +16,7 @@ type Effect = {
   action: "insert" | "update";
   rows: number;
   payload: Row | Row[];
-  filters: Array<{ kind: "eq" | "neq" | "in"; column: string; value: any }>;
+  filters: Array<{ kind: "eq" | "neq" | "in" | "is"; column: string; value: any }>;
 };
 
 class FakeSupabase {
@@ -83,6 +84,11 @@ class FakeQuery {
 
   in(column: string, value: any[]) {
     this.filters.push({ kind: "in", column, value });
+    return this;
+  }
+
+  is(column: string, value: any) {
+    this.filters.push({ kind: "is", column, value });
     return this;
   }
 
@@ -192,7 +198,10 @@ class FakeQuery {
       if (filter.kind === "neq") {
         return row[filter.column] !== filter.value;
       }
-      return filter.value.includes(row[filter.column]);
+      if (filter.kind === "in") {
+        return filter.value.includes(row[filter.column]);
+      }
+      return filter.value === null ? row[filter.column] == null : row[filter.column] === filter.value;
     });
   }
 
@@ -232,11 +241,17 @@ function makePaymentDb(options: {
     restaurants: [
       {
         id: restaurantId,
+        name: "Restaurant A",
+        country: "SA",
+        currency: "ر.س",
         feature_flags: { psp_payments: true },
         psp_webhook_secret_enc: `${restaurantId}-secret`,
       },
       {
         id: "restaurant-b",
+        name: "Restaurant B",
+        country: "SA",
+        currency: "ر.س",
         feature_flags: { psp_payments: true },
         psp_webhook_secret_enc: "restaurant-b-secret",
       },
@@ -269,6 +284,7 @@ function makePaymentDb(options: {
       },
     ],
     processed_payment_events: [],
+    system_alerts: [],
   });
 }
 
@@ -473,8 +489,52 @@ async function main() {
   await check("payment for a cancelled order does not silently mark it paid", async () => {
     const db = makePaymentDb({ orderStatus: "cancelled" });
     const outcome = await handleWebhook(db, paidWebhookBody({}));
-    assert.notEqual(outcome.outcome, "paid");
+    assert.equal(outcome.outcome, "paid_cancelled_order");
     assert.equal(db.tables.orders[0].payment_status, "unpaid");
+    assert.equal(db.tables.payment_sessions[0].status, "paid");
+    assert.equal(db.tables.processed_payment_events[0].event_status, "paid_cancelled_order");
+    assert.equal(
+      db.alerts.some((alert) => alert.type === "payment_paid_cancelled_order"),
+      true,
+    );
+  });
+
+  await check("cancelled-order payment does not send the normal paid confirmation", async () => {
+    const db = makePaymentDb({ orderStatus: "cancelled" });
+    let notifyCount = 0;
+    const outcome = await handleMoyasarWebhook(db as any, paidWebhookBody({}), {}, {
+      decrypt: (value) => value,
+      notify: async () => {
+        notifyCount += 1;
+      },
+      recordAlert: async (admin, input) => {
+        (admin as unknown as FakeSupabase).alerts.push({ type: input.type, details: input });
+      },
+    });
+    assert.equal(outcome.outcome, "paid_cancelled_order");
+    assert.equal(notifyCount, 0);
+  });
+
+  await check("Egypt tenant cannot create a Moyasar session even if configured", async () => {
+    const outcome = checkMoyasarTenantEligibility({
+      restaurantId: "restaurant-a",
+      country: "EG",
+      tenantCurrency: "ج.م",
+    });
+    assert.equal(outcome.ok, false);
+    if (!outcome.ok) assert.equal(outcome.error, "psp_country_not_supported");
+    if (!outcome.ok) assert.equal(outcome.alertType, "psp_country_not_supported");
+  });
+
+  await check("Moyasar session creation fails closed on tenant currency mismatch", async () => {
+    const outcome = checkMoyasarTenantEligibility({
+      restaurantId: "restaurant-a",
+      country: "SA",
+      tenantCurrency: "ج.م",
+    });
+    assert.equal(outcome.ok, false);
+    if (!outcome.ok) assert.equal(outcome.error, "psp_currency_mismatch");
+    if (!outcome.ok) assert.equal(outcome.alertType, "psp_currency_mismatch");
   });
 
   await check("expired-link payment follows the current defined rule", async () => {
