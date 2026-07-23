@@ -336,10 +336,12 @@ printOutcome("C-02 production", {
   durableAllergyAudit: c02ProductionAllergyAudit,
   alertRaised: c02ProductionAlert,
 });
+// CURRENT-BROKEN-BEHAVIOR: reproduces a defect; this is not intended behavior.
 observed(
   "C-02 reproduced: production vector silently returns skipped_takeover",
   c02ProductionResult.status === "skipped_takeover"
 );
+// CURRENT-BROKEN-BEHAVIOR: reproduces a defect; this is not intended behavior.
 observed(
   "C-02 reproduced: no durable safety marker/allergy audit and no safety alert",
   !c02ProductionMarker && !c02ProductionAllergyAudit && !c02ProductionAlert
@@ -500,6 +502,7 @@ observed(
   "C-03 control: the dropped caption is safety-class if scanned",
   detectAllergenAvoidance(C03_TEXT).fired
 );
+// CURRENT-BROKEN-BEHAVIOR: reproduces a defect; this is not intended behavior.
 observed(
   "C-03 reproduced: media flag OFF yields no extracted main-lane text, persistence, or safety turn",
   c03MainInbound.length === 0 &&
