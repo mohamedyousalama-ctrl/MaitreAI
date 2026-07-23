@@ -22,47 +22,49 @@
 // ============================================================================
 
 import type { OrderStatusKey } from "@/lib/types";
+// R0 rev3 / Item 1 (Option A): the status vocabulary is DERIVED from the existing
+// canonical runtime source — lib/orders/transitions.ts ORDER_STATUSES — not restated
+// here. The contract owns NO independent status list, so it has nothing to drift from
+// (a parity test detects drift after the fact; deriving eliminates the duplicate).
+// Relative import so the bare-Node characterization runner resolves it.
+import { ORDER_STATUSES } from "./transitions";
 
 // ---------------------------------------------------------------------------
-// The status vocabulary — EXACTLY the values the code uses today (mirrors
-// lib/orders/transitions.ts ORDER_STATUSES; not renamed, not normalised). Beside
-// each: what causes an order to ENTER it, and what the codebase INFERS from it —
-// recorded as observed. Where consumers disagree on a status's meaning it is
-// reported here, NOT reconciled (that is the whole point of R0).
+// The status vocabulary — the canonical ORDER_STATUSES, re-exported so consumers
+// have one name. Not a second copy: `ORDER_STATUS_VOCABULARY === ORDER_STATUSES`.
 // ---------------------------------------------------------------------------
-export const ORDER_STATUS_VOCABULARY = [
-  // draft — an order skeleton before the customer has confirmed. Rarely persisted
-  // (real orders are born at pending_confirmation); transitions.ts still lists it.
-  "draft",
-  // pending_confirmation — the audit's crux. WRITTEN when a customer confirms a
-  // WhatsApp order (orders-create.ts:242) or a web/storefront order
-  // (storefront/orders:278; also the allergen-review branch :200). It is the
-  // "customer confirmed, restaurant not yet accepted" state — yet acceptance treats
-  // it as NOT acceptable. Consumers infer DIFFERENT meanings (see the R0 inventory):
-  //   • shift model + POS route → NOT acceptance-eligible (excluded).
-  //   • display-state           → "incoming" (blue; "just arrived, needs a look").
-  //   • orders.ts trackingReply → grouped with pending_payment/draft → tells the
-  //                               CUSTOMER "بانتظار الدفع" (awaiting payment).
-  //   • customer-turn.ts        → tells the CUSTOMER "بانتظار تأكيد المطعم".
-  //   • insights/order-kpis     → «قيد التأكيد», reported apart from revenue.
-  //   • cod ledger / legacy list→ label "جديد" (new).
-  "pending_confirmation",
-  // pending_payment — awaiting the customer's payment (a link was/was to be sent).
-  "pending_payment",
-  // paid — money captured/confirmed. The FIRST acceptance-eligible status today.
-  "paid",
-  // preparing — kitchen started (legacy fulfilment lifecycle; out of the new
-  // intake+acceptance boundary, but still acceptance-eligible today).
-  "preparing",
-  // ready — ready for pickup/handoff (legacy).
-  "ready",
-  // out_for_delivery — dispatched (legacy; deliveries out of V1 scope).
-  "out_for_delivery",
-  // delivered — completed (legacy).
-  "delivered",
-  // cancelled — terminal; never acceptance-eligible.
-  "cancelled",
-] as const satisfies readonly OrderStatusKey[];
+export const ORDER_STATUS_VOCABULARY = ORDER_STATUSES;
+
+// ---------------------------------------------------------------------------
+// Per-status MEANING — documentation only, as a map KEYED BY the status values (not
+// a second runtime list to iterate). Being `Record<OrderStatusKey, string>` binds it
+// to the type union: add a status to the union and TypeScript forces an entry here,
+// so the docs cannot silently fall out of sync. Beside each: what causes an order to
+// ENTER it, and what the codebase INFERS from it — where consumers disagree it is
+// reported, NOT reconciled (that is the whole point of R0).
+// ---------------------------------------------------------------------------
+export const ORDER_STATUS_MEANING: Record<OrderStatusKey, string> = {
+  draft:
+    "An order skeleton before the customer has confirmed. Rarely persisted (real " +
+    "orders are born at pending_confirmation); transitions.ts still lists it.",
+  pending_confirmation:
+    "The audit's crux. WRITTEN when a customer confirms a WhatsApp order " +
+    "(orders-create.ts:242) or a web/storefront order (storefront:278; allergen-review " +
+    "branch :200). The 'customer confirmed, restaurant not yet accepted' state — yet " +
+    "acceptance treats it as NOT acceptable. Consumers infer DIFFERENT meanings: shift " +
+    "model + POS route → not eligible; display-state → 'incoming'; orders.ts " +
+    "trackingReply → customer «بانتظار الدفع»; customer-turn → «بانتظار تأكيد المطعم»; " +
+    "insights → «قيد التأكيد» (apart from revenue); cod-ledger / legacy list → «جديد».",
+  pending_payment: "Awaiting the customer's payment (a link was / was to be sent).",
+  paid: "Money captured/confirmed. The FIRST acceptance-eligible status today.",
+  preparing:
+    "Kitchen started (legacy fulfilment lifecycle; out of the new intake+acceptance " +
+    "boundary, but still acceptance-eligible today).",
+  ready: "Ready for pickup/handoff (legacy).",
+  out_for_delivery: "Dispatched (legacy; deliveries out of V1 scope).",
+  delivered: "Completed (legacy).",
+  cancelled: "Terminal; never acceptance-eligible.",
+};
 
 // ---------------------------------------------------------------------------
 // Acceptance eligibility — the decision AS MADE TODAY. Reproduces current

@@ -67,3 +67,60 @@ test("cannot-diverge — the shift model consumes the shared contract, with NO p
   // The only status list in the shift model is the re-export FROM the contract.
   assert.doesNotMatch(SHIFT_SRC, /ACCEPTABLE_ORDER_STATUSES[^=]*=\s*\[/, "shift model must NOT redeclare the list inline");
 });
+
+// ---------------------------------------------------------------------------
+// Item 3 — malformed / DB-possible values the TYPE system does not prevent. The
+// route casts `order_status as OrderStatusKey` at the DB trust boundary; these cases
+// PROVE the cast is safe by showing the new gate behaves IDENTICALLY to the old
+// `is_test === true || !POS_ELIGIBLE_STATUS.has(order_status ?? "")`, and fails closed.
+// ---------------------------------------------------------------------------
+
+// The pre-R0 route implementation, reproduced verbatim for comparison.
+const OLD_POS_ELIGIBLE_STATUS = new Set<string>(["paid", "preparing", "ready", "out_for_delivery", "delivered"]);
+// The route normalises the raw row exactly like this before deciding:
+//   const orderStatus = order_status ?? "";  const isTest = is_test === true;
+const oldGateRejects = (rawStatus: unknown, rawIsTest: unknown) => {
+  const orderStatus = (rawStatus ?? "") as string;
+  const isTest = rawIsTest === true;
+  return isTest || !OLD_POS_ELIGIBLE_STATUS.has(orderStatus); // true = rejected (409)
+};
+const newGateRejects = (rawStatus: unknown, rawIsTest: unknown) => {
+  const orderStatus = (rawStatus ?? "") as OrderStatusKey; // the route's cast at the boundary
+  const isTest = rawIsTest === true;
+  return !isAcceptanceEligible({ orderStatus, isTest });
+};
+
+test("malformed — new gate == old POS_ELIGIBLE_STATUS gate for values the DB can return", () => {
+  const RAW_CASES: Array<{ status: unknown; isTest: unknown; label: string }> = [
+    { status: "totally_unknown", isTest: false, label: "unknown status string" },
+    { status: "", isTest: false, label: "empty string status" },
+    { status: null, isTest: false, label: "null status" },
+    { status: undefined, isTest: false, label: "undefined status" },
+    { status: "PAID", isTest: false, label: "wrong-case status (not a member)" },
+    { status: "confirmed", isTest: false, label: "plausible-but-nonexistent status" },
+    { status: "paid", isTest: null, label: "nullable is_test = null on a valid status" },
+    { status: "paid", isTest: undefined, label: "is_test undefined on a valid status" },
+    { status: "paid", isTest: "true", label: "is_test as a truthy STRING (not === true)" },
+    { status: "paid", isTest: true, label: "genuine test order" },
+  ];
+  for (const c of RAW_CASES) {
+    assert.equal(newGateRejects(c.status, c.isTest), oldGateRejects(c.status, c.isTest), c.label);
+  }
+});
+
+test("malformed — every non-member status FAILS CLOSED (rejected), like the old set", () => {
+  for (const bad of ["totally_unknown", "", "PAID", "confirmed", "pending", "accepted"]) {
+    // new gate rejects
+    assert.equal(newGateRejects(bad, false), true, `new rejects ${JSON.stringify(bad)}`);
+    // and the predicate itself is false for the garbage value (fail closed)
+    assert.equal(isAcceptanceEligible({ orderStatus: bad as OrderStatusKey, isTest: false }), false, bad);
+  }
+});
+
+test("malformed — is_test only excludes on strict boolean true (matches `is_test === true`)", () => {
+  // A valid eligible status stays eligible for every NON-`true` is_test value.
+  for (const t of [false, null, undefined, 0, "true", "false"]) {
+    assert.equal(newGateRejects("paid", t), false, `paid + is_test=${JSON.stringify(t)} must stay eligible`);
+  }
+  assert.equal(newGateRejects("paid", true), true, "paid + is_test===true is rejected");
+});

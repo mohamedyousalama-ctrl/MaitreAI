@@ -3,14 +3,16 @@
 // behaviour at f7882c1, INCLUDING the behaviour the audit found wrong. A failing
 // test here is a signal that behaviour changed — fix the change, not the test.
 //
-// Run (bare Node; relative imports, only type-only "@/…" which strip-types erases):
-//   node --experimental-strip-types --test lib/orders/acceptance-contract.test.ts
+// Run (needs ts-ext-loader: the contract now derives its vocabulary from
+// ./transitions via an extensionless relative import):
+//   node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types --test lib/orders/acceptance-contract.test.ts
 // ============================================================================
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ORDER_STATUS_VOCABULARY,
+  ORDER_STATUS_MEANING,
   ACCEPTANCE_ELIGIBLE_STATUSES,
   isAcceptanceEligible,
 } from "./acceptance-contract.ts";
@@ -62,8 +64,20 @@ test("acceptance — the eligible set is exactly {paid, preparing, ready, out_fo
   assert.deepEqual([...ACCEPTANCE_ELIGIBLE_STATUSES], ["paid", "preparing", "ready", "out_for_delivery", "delivered"]);
 });
 
-test("contract — the documented vocabulary equals the canonical ORDER_STATUSES exactly", () => {
+test("contract (Item 1) — the vocabulary IS the canonical ORDER_STATUSES, not a copy", () => {
+  // Option A: ORDER_STATUS_VOCABULARY is derived from (re-exports) ORDER_STATUSES, so
+  // there is one runtime list. If Option A's derivation is ever undone and an
+  // independent list re-introduced, this membership check fails.
   assert.deepEqual([...ORDER_STATUS_VOCABULARY], [...ORDER_STATUSES]);
+  assert.equal(ORDER_STATUS_VOCABULARY, ORDER_STATUSES, "must be the same array reference (derived, not restated)");
+});
+
+test("contract (Item 1) — every status has a meaning entry (docs bound to the vocabulary)", () => {
+  for (const s of ORDER_STATUSES) {
+    assert.equal(typeof ORDER_STATUS_MEANING[s], "string", `meaning for ${s}`);
+    assert.ok(ORDER_STATUS_MEANING[s].length > 0, `non-empty meaning for ${s}`);
+  }
+  assert.equal(Object.keys(ORDER_STATUS_MEANING).length, ORDER_STATUSES.length, "no extra/missing meanings");
 });
 
 test("characterization — the derived display state per status is UNCHANGED", () => {
