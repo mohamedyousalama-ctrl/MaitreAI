@@ -1,13 +1,17 @@
 import type {
+  BrainSafetyEvidence,
+  BrainSafetyEvidenceClass,
   BrainIngressSafetyScan,
+  BrainIngressStore,
   BrainRawMessageForScan,
   BrainSafetyMatchedSpan,
+  BrainSafetyScanResult,
   BrainSafetySpanKind,
   BrainSafetyTriageClass,
 } from "./types";
 import { sha256Hex } from "./signature";
 
-export const INGRESS_SAFETY_SCANNER_VERSION = "brain-ingress-safety-v1";
+export const INGRESS_SAFETY_SCANNER_VERSION = "brain-ingress-safety-v2";
 
 interface TermSpec {
   readonly kind: BrainSafetySpanKind;
@@ -36,8 +40,14 @@ const TERM_SPECS: readonly TermSpec[] = [
 const QUESTION_TERMS = ["فيه", "فيها", "مكونات", "هل", "does", "contain", "contains", "ingredient", "ingredients", "?"];
 const DISCLOSURE_TERMS = ["عندي", "عندى", "لدي", "لدى", "عنده", "عندها", "انا", "i am", "i'm", "my"];
 
-function normalizeForScan(text: string): string {
-  return text
+interface NormalizedCharacter {
+  readonly value: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+function normalizeCharacter(character: string): string {
+  return character
     .normalize("NFKD")
     .replace(/[\u064B-\u065F\u0670]/g, "")
     .replace(/\u0640/g, "")
@@ -45,35 +55,67 @@ function normalizeForScan(text: string): string {
     .replace(/ى/g, "ي")
     .replace(/ة/g, "ه")
     .replace(/[ؤئ]/g, "ء")
-    .replace(/(.)\1{2,}/g, "$1$1")
     .toLowerCase();
 }
 
-function findTerm(original: string, normalized: string, spec: TermSpec, term: string): BrainSafetyMatchedSpan | null {
+function normalizeWithOffsets(text: string): { text: string; characters: readonly NormalizedCharacter[] } {
+  const expanded: NormalizedCharacter[] = [];
+  let sourceOffset = 0;
+
+  for (const character of text) {
+    const end = sourceOffset + character.length;
+    for (const normalizedCharacter of normalizeCharacter(character)) {
+      expanded.push({ value: normalizedCharacter, start: sourceOffset, end });
+    }
+    sourceOffset = end;
+  }
+
+  const collapsed: NormalizedCharacter[] = [];
+  for (let index = 0; index < expanded.length; ) {
+    let runEnd = index + 1;
+    while (runEnd < expanded.length && expanded[runEnd].value === expanded[index].value) runEnd++;
+    const retained = Math.min(runEnd - index, 2);
+    for (let offset = 0; offset < retained; offset++) {
+      const source = expanded[index + offset];
+      collapsed.push({
+        value: source.value,
+        start: source.start,
+        end: offset === retained - 1 ? expanded[runEnd - 1].end : source.end,
+      });
+    }
+    index = runEnd;
+  }
+
+  return {
+    text: collapsed.map((character) => character.value).join(""),
+    characters: collapsed,
+  };
+}
+
+function normalizeForScan(text: string): string {
+  return normalizeWithOffsets(text).text;
+}
+
+function findTerm(
+  original: string,
+  normalized: ReturnType<typeof normalizeWithOffsets>,
+  spec: TermSpec,
+  term: string
+): BrainSafetyMatchedSpan | null {
   const normalizedTerm = normalizeForScan(term);
-  const originalLower = original.toLowerCase();
-  const directIndex = originalLower.indexOf(term.toLowerCase());
-  if (directIndex >= 0) {
-    return {
-      kind: spec.kind,
-      label: spec.label,
-      text: original.slice(directIndex, directIndex + term.length),
-      start: directIndex,
-      end: directIndex + term.length,
-    };
-  }
+  const normalizedStart = normalized.text.indexOf(normalizedTerm);
+  if (normalizedStart < 0 || normalizedTerm.length === 0) return null;
 
-  if (normalized.includes(normalizedTerm)) {
-    return {
-      kind: spec.kind,
-      label: spec.label,
-      text: term,
-      start: 0,
-      end: original.length,
-    };
-  }
-
-  return null;
+  const first = normalized.characters[normalizedStart];
+  const last = normalized.characters[normalizedStart + normalizedTerm.length - 1];
+  if (!first || !last) return null;
+  return {
+    kind: spec.kind,
+    label: spec.label,
+    text: original.slice(first.start, last.end),
+    start: first.start,
+    end: last.end,
+  };
 }
 
 function uniqueSpans(spans: readonly BrainSafetyMatchedSpan[]): BrainSafetyMatchedSpan[] {
@@ -132,7 +174,7 @@ function fastPathMarkers(message: BrainRawMessageForScan): string[] {
 
 export function scanRawMessageForSafety(message: BrainRawMessageForScan, tenantId: string): BrainIngressSafetyScan {
   const text = message.text ?? "";
-  const normalized = normalizeForScan(text);
+  const normalized = normalizeWithOffsets(text);
   const spans = uniqueSpans(
     TERM_SPECS.flatMap((spec) => spec.terms.map((term) => findTerm(text, normalized, spec, term)).filter((span): span is BrainSafetyMatchedSpan => Boolean(span)))
   );
@@ -153,4 +195,97 @@ export function scanRawMessageForSafety(message: BrainRawMessageForScan, tenantI
     scannerVersion: INGRESS_SAFETY_SCANNER_VERSION,
     scannedAt: new Date().toISOString(),
   };
+}
+
+const SAFETY_EVIDENCE_KINDS = new Set<BrainSafetySpanKind>([
+  "allergy",
+  "allergen",
+  "ingredient",
+  "medical",
+  "symptom",
+  "cross_contact",
+  "third_party",
+]);
+
+function evidenceForScan(
+  scan: BrainIngressSafetyScan,
+  args: {
+    readonly evidenceClass: BrainSafetyEvidenceClass;
+    readonly audioMessageReference?: string | null;
+    readonly transcriptionProvider?: string | null;
+    readonly transcriptionModel?: string | null;
+  }
+): BrainSafetyEvidence[] {
+  if (!scan.safetyCandidate) return [];
+  const customerAuthored = args.evidenceClass === "customer_text";
+  return scan.matchedSpans
+    .filter((span) => SAFETY_EVIDENCE_KINDS.has(span.kind))
+    .map((span) => ({
+      evidenceClass: args.evidenceClass,
+      disclosureClass: span.kind,
+      matchedExcerpt: span.text,
+      startOffset: span.start,
+      endOffset: span.end,
+      excerptHash: sha256Hex(span.text),
+      customerAuthored,
+      audioMessageReference: customerAuthored ? null : args.audioMessageReference ?? null,
+      transcriptionProvider: customerAuthored ? null : args.transcriptionProvider ?? null,
+      transcriptionModel: customerAuthored ? null : args.transcriptionModel ?? null,
+    }));
+}
+
+export async function scanAndRecordRawSafetyInbound(args: {
+  readonly store: BrainIngressStore;
+  readonly tenantId: string;
+  readonly channelEventId: string;
+  readonly rawMessage: BrainRawMessageForScan;
+  readonly evidenceClass?: BrainSafetyEvidenceClass;
+  readonly audioMessageReference?: string | null;
+  readonly transcriptionProvider?: string | null;
+  readonly transcriptionModel?: string | null;
+}): Promise<BrainSafetyScanResult> {
+  let scan: BrainIngressSafetyScan;
+  try {
+    scan = {
+      ...scanRawMessageForSafety(args.rawMessage, args.tenantId),
+      channelEventId: args.channelEventId,
+    };
+  } catch (error) {
+    await args.store.failSafetyScan({
+      tenantId: args.tenantId,
+      channelEventId: args.channelEventId,
+      provider: "whatsapp",
+      sourceMessageId: args.rawMessage.sourceMessageId,
+      rawTextHash: args.rawMessage.text ? sha256Hex(args.rawMessage.text) : null,
+      scannerVersion: INGRESS_SAFETY_SCANNER_VERSION,
+      errorCategory: "scanner_failed",
+      scannedAt: new Date().toISOString(),
+    }).catch(() => undefined);
+    throw error;
+  }
+
+  const evidenceClass = args.evidenceClass ?? "customer_text";
+  const evidence = evidenceForScan(scan, {
+    evidenceClass,
+    audioMessageReference: args.audioMessageReference,
+    transcriptionProvider: args.transcriptionProvider,
+    transcriptionModel: args.transcriptionModel,
+  });
+  const outcome = evidence.length > 0 ? "completed_signal" : "completed_no_signal";
+
+  try {
+    return await args.store.completeSafetyScan(scan, evidence, outcome);
+  } catch (error) {
+    await args.store.failSafetyScan({
+      tenantId: args.tenantId,
+      channelEventId: args.channelEventId,
+      provider: scan.provider,
+      sourceMessageId: scan.sourceMessageId,
+      rawTextHash: scan.rawTextHash,
+      scannerVersion: scan.scannerVersion,
+      errorCategory: "evidence_persist_failed",
+      scannedAt: scan.scannedAt,
+    }).catch(() => undefined);
+    throw error;
+  }
 }

@@ -25,6 +25,14 @@ export type BrainSafetySpanKind =
   | "stop"
   | "human";
 
+export type BrainSafetyEvidenceClass = "customer_text" | "speech_transcript";
+export type BrainSafetyScanOutcome = "pending" | "completed_signal" | "completed_no_signal" | "failed";
+export type BrainSafetyScanErrorCategory =
+  | "scanner_failed"
+  | "evidence_validation_failed"
+  | "evidence_persist_failed"
+  | "database_unavailable";
+
 export interface BrainIngressTenant {
   readonly tenantId: UUID;
   readonly phoneNumberId: string;
@@ -68,6 +76,7 @@ export interface BrainChannelEvent {
   readonly eventKind: BrainIngressEventKind;
   readonly eventDedupeKey: string;
   readonly eventIndex: number;
+  readonly sourceChannelEventId?: UUID | null;
   readonly providerMessageId?: string | null;
   readonly providerTimestamp?: ISODateTime | null;
   readonly customerChannelId?: string | null;
@@ -89,6 +98,19 @@ export interface BrainSafetyMatchedSpan {
   readonly end: number;
 }
 
+export interface BrainSafetyEvidence {
+  readonly evidenceClass: BrainSafetyEvidenceClass;
+  readonly disclosureClass: BrainSafetySpanKind;
+  readonly matchedExcerpt: string;
+  readonly startOffset: number;
+  readonly endOffset: number;
+  readonly excerptHash: string;
+  readonly customerAuthored: boolean;
+  readonly audioMessageReference?: string | null;
+  readonly transcriptionProvider?: string | null;
+  readonly transcriptionModel?: string | null;
+}
+
 export interface BrainIngressSafetyScan {
   readonly tenantId: UUID;
   readonly channelEventId?: UUID;
@@ -105,6 +127,13 @@ export interface BrainIngressSafetyScan {
   readonly scannedAt: ISODateTime;
 }
 
+export interface BrainSafetyScanResult {
+  readonly scanId: UUID;
+  readonly outcome: Extract<BrainSafetyScanOutcome, "completed_signal" | "completed_no_signal">;
+  readonly evidenceCount: number;
+  readonly alreadyCompleted: boolean;
+}
+
 export type WhatsAppStatusValue = "sent" | "delivered" | "read" | "failed";
 
 export interface BrainIngressPersistedEvent {
@@ -116,9 +145,29 @@ export interface BrainIngressPersistedEvent {
 }
 
 export interface BrainIngressStore {
-  insertEnvelope(envelope: BrainWebhookEnvelope): Promise<{ id: UUID }>;
+  insertEnvelope(envelope: BrainWebhookEnvelope): Promise<{ id: UUID; inserted: boolean }>;
   insertChannelEvent(event: BrainChannelEvent): Promise<BrainIngressPersistedEvent>;
-  insertSafetyScan(scan: BrainIngressSafetyScan): Promise<{ id: UUID }>;
+  completeSafetyScan(
+    scan: BrainIngressSafetyScan,
+    evidence: readonly BrainSafetyEvidence[],
+    outcome: Extract<BrainSafetyScanOutcome, "completed_signal" | "completed_no_signal">
+  ): Promise<BrainSafetyScanResult>;
+  failSafetyScan(args: {
+    readonly tenantId: UUID;
+    readonly channelEventId: UUID;
+    readonly provider: BrainIngressProvider;
+    readonly sourceMessageId: string;
+    readonly rawTextHash?: string | null;
+    readonly scannerVersion: string;
+    readonly errorCategory: BrainSafetyScanErrorCategory;
+    readonly scannedAt: ISODateTime;
+  }): Promise<{ id: UUID; outcome: BrainSafetyScanOutcome }>;
+}
+
+export interface BrainIngressPersistedMessage {
+  readonly sourceMessageId: string;
+  readonly channelEventId: UUID;
+  readonly scanOutcome: Extract<BrainSafetyScanOutcome, "completed_signal" | "completed_no_signal">;
 }
 
 export interface BrainIngressResult {
@@ -131,4 +180,5 @@ export interface BrainIngressResult {
   readonly insertedEvents: number;
   readonly duplicateEvents: number;
   readonly safetyScans: number;
+  readonly persistedMessages?: readonly BrainIngressPersistedMessage[];
 }

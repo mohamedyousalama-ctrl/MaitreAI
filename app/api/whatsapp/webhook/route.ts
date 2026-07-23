@@ -34,6 +34,15 @@ import { garbledVoiceReply } from "@/lib/ai/voice-quality";
 import { isMockSttProductionError, mockSttAllowed, resolveSttAdapterName } from "@/lib/ai/stt";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 import { recordWebhookAnomaly } from "@/lib/monitoring/webhook-events";
+import {
+  canonicalFingerprint,
+  countWhatsAppInboundMessages,
+  createSupabaseBrainIngressStore,
+  normalizeWhatsAppBrainEvents,
+  persistVerifiedWhatsAppBrainIngress,
+  recordSpeechTranscriptSafetyInbound,
+  type BrainIngressStore,
+} from "@/lib/brain/ingress";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +62,98 @@ function voiceFallbackDialect(country: string | null): "egyptian" | "saudi" {
 function sttErrorDetail(error: unknown): { name: string; message: string } {
   if (error instanceof Error) return { name: error.name, message: error.message.slice(0, 240) };
   return { name: typeof error, message: String(error).slice(0, 240) };
+}
+
+type SafetyIngressConflictCode = "KIV01" | "KIV02" | "KIV03";
+
+function safetyIngressConflictCode(error: unknown): SafetyIngressConflictCode | null {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  if (code === "KIV01" || code === "KIV02" || code === "KIV03") return code;
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("KIVO_SAFETY_SCAN_RESULT_CONFLICT")) return "KIV01";
+  if (message.includes("KIVO_CHANNEL_EVENT_DEDUPE_CONFLICT")) return "KIV02";
+  if (message.includes("KIVO_SAFETY_SCAN_EVENT_IDENTITY_MISMATCH")) return "KIV03";
+  return null;
+}
+
+function hashUuid(hex: string): string {
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join("-");
+}
+
+function safetyIngressConflictIdentity(args: {
+  tenantId: string;
+  payload: unknown;
+  conflictCode: SafetyIngressConflictCode;
+}): { alertId: string; providerRetryFingerprint: string } {
+  const providerEventKeys = normalizeWhatsAppBrainEvents({
+    payload: args.payload,
+    tenantId: args.tenantId,
+    envelopeId: "00000000-0000-0000-0000-000000000000",
+    receivedAt: "1970-01-01T00:00:00.000Z",
+  })
+    .map((event) => event.eventDedupeKey)
+    .sort();
+  const providerRetryFingerprint = canonicalFingerprint(
+    providerEventKeys.length > 0 ? providerEventKeys : [args.payload]
+  );
+  const alertHash = canonicalFingerprint([
+    "brain_safety_ingress_conflict",
+    args.tenantId,
+    args.conflictCode,
+    providerRetryFingerprint,
+  ]);
+  return { alertId: hashUuid(alertHash), providerRetryFingerprint };
+}
+
+async function recordSafetyIngressConflictAlert(
+  admin: SupabaseClient,
+  args: {
+    restaurantId: string;
+    payload: unknown;
+    conflictCode: SafetyIngressConflictCode;
+    error: unknown;
+  }
+): Promise<void> {
+  const identity = safetyIngressConflictIdentity({
+    tenantId: args.restaurantId,
+    payload: args.payload,
+    conflictCode: args.conflictCode,
+  });
+  const { data, error } = await admin
+    .from("system_alerts")
+    .upsert(
+      {
+        id: identity.alertId,
+        restaurant_id: args.restaurantId,
+        type: "inbound_persist_failed",
+        detail: args.error instanceof Error ? args.error.message : String(args.error),
+        conversation_id: null,
+        context: {
+          kind: "brain_safety_ingress",
+          conflictCode: args.conflictCode,
+          providerRetryFingerprint: identity.providerRetryFingerprint,
+        },
+        dismissed_at: null,
+      },
+      { onConflict: "id" }
+    )
+    .select("id")
+    .single();
+  if (error || data?.id !== identity.alertId) {
+    throw new Error(
+      `BRAIN safety ingress conflict alert write failed: ${error?.message ?? "row identity mismatch"}`
+    );
+  }
 }
 
 async function recordVoiceSttUnavailableIncident(
@@ -252,6 +353,7 @@ export async function POST(req: NextRequest) {
     process.env.NODE_ENV !== "production" &&
     (process.env.WHATSAPP_SKIP_SIGNATURE ?? "").trim().toLowerCase() === "true";
   const sigSecrets = [env.appSecret, tenant?.env.appSecret].filter((s): s is string => !!s && s.length > 0);
+  let signatureVerified = false;
   if (!skipSig) {
     if (sigSecrets.length > 0) {
       const okSig =
@@ -266,6 +368,7 @@ export async function POST(req: NextRequest) {
         void recordWebhookAnomaly(admin, "invalid_signature", { phoneNumberId, restaurantId: tenant?.restaurantId ?? null });
         return NextResponse.json({ ok: false, message: "invalid signature" }, { status: 401 });
       }
+      signatureVerified = true;
     } else if (process.env.NODE_ENV === "production") {
       // No signing secret configured for this context → fail closed in production.
       // Without this guard any unsigned POST would be processed as legitimate.
@@ -279,6 +382,7 @@ export async function POST(req: NextRequest) {
   }
 
   const messages = normalizeWhatsAppInbound(payload);
+  const rawInboundMessageCount = countWhatsAppInboundMessages(payload);
 
   // WO-LIVE-3 §6 — a webhook can carry ONLY location pins or ONLY images (Meta delivers
   // each message as its own webhook), which normalizeWhatsAppInbound discards → text-less.
@@ -290,6 +394,7 @@ export async function POST(req: NextRequest) {
   // byte-identical (the location/image normalizers only run for a text-less webhook).
   const hasInboundToHandle =
     messages.length > 0 ||
+    rawInboundMessageCount > 0 ||
     normalizeWhatsAppLocations(payload).length > 0 ||
     normalizeWhatsAppImages(payload).length > 0;
 
@@ -299,8 +404,72 @@ export async function POST(req: NextRequest) {
   let deduped = 0;
   let responded = 0;
   let persistFailed = 0;
+  let safetyIngressFailed = 0;
   let statusUpdated = 0;
   let resolvedBy: "phone_number_id" | "env_fallback" = "env_fallback";
+  const brainStore: BrainIngressStore | null = admin ? createSupabaseBrainIngressStore(admin) : null;
+  let brainIngressRecorded = false;
+  let brainEnvelopeId: string | null = null;
+  const brainRawEventIds = new Map<string, string>();
+
+  const persistSafetyIngress = async (restaurantId: string): Promise<boolean> => {
+    if (brainIngressRecorded) return true;
+    // Dev/test signature bypasses must not create a falsely "verified" envelope.
+    // Production cannot reach this branch because signature verification fails closed.
+    if (!signatureVerified) return process.env.NODE_ENV !== "production";
+    if (!admin || !brainStore) return false;
+    try {
+      const result = await persistVerifiedWhatsAppBrainIngress({
+        rawBody: rawBuf,
+        payload,
+        tenantId: restaurantId,
+        store: brainStore,
+      });
+      brainIngressRecorded = true;
+      brainEnvelopeId = result.envelopeId ?? null;
+      for (const message of result.persistedMessages ?? []) {
+        brainRawEventIds.set(message.sourceMessageId, message.channelEventId);
+      }
+      return true;
+    } catch (error) {
+      safetyIngressFailed++;
+      console.error("[whatsapp:webhook] BRAIN safety ingress persist failed", error);
+      const conflictCode = safetyIngressConflictCode(error);
+      if (conflictCode) {
+        try {
+          await recordSafetyIngressConflictAlert(admin, {
+            restaurantId,
+            payload,
+            conflictCode,
+            error,
+          });
+        } catch (alertError) {
+          console.error("[whatsapp:webhook] BRAIN safety ingress conflict alert failed", alertError);
+        }
+      } else {
+        await recordCriticalAlert(admin, {
+          restaurantId,
+          type: "inbound_persist_failed",
+          detail: error instanceof Error ? error.message : String(error),
+          context: {
+            kind: "brain_safety_ingress",
+            phoneNumberId,
+            rawInboundMessageCount,
+          },
+        }).catch(() => undefined);
+      }
+      return false;
+    }
+  };
+
+  if (
+    !admin &&
+    process.env.NODE_ENV === "production" &&
+    (rawInboundMessageCount > 0 || normalizeWhatsAppStatuses(payload).length > 0)
+  ) {
+    return NextResponse.json({ ok: false, error: "safety_ingress_database_unavailable" }, { status: 503 });
+  }
+
   if (admin && hasInboundToHandle) {
     // Strict per-tenant routing (decideWebhookRouting — pure, unit-tested):
     // 1. tenant resolved by phone_number_id → use its creds (multi-tenant path)
@@ -342,6 +511,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (restaurantId) {
+      // E0 safety ingress is the release gate. It is independent of tenant flags,
+      // staff/customer partitioning, ownership, coalescing, vision, and the AI turn.
+      if (!(await persistSafetyIngress(restaurantId))) {
+        return NextResponse.json({ ok: false, error: "safety_ingress_persist_failed" }, { status: 503 });
+      }
+
       // Bind the resolved creds for the whole persist→Brain→send chain. With a
       // null override this is a transparent pass-through (env behavior).
       await runWithWhatsAppCreds(perTenantEnv, async () => {
@@ -438,6 +613,30 @@ export async function POST(req: NextRequest) {
           if (m.audioId && !m.text) {
             try {
               const t = await transcribeWhatsAppVoice(m.audioId, m.audioMime, sttMenuNames, sttPriorityTerms);
+              if (t.text.trim() && brainIngressRecorded) {
+                try {
+                  const sourceMessageId = m.externalMessageId ?? "";
+                  const sourceChannelEventId = brainRawEventIds.get(sourceMessageId);
+                  if (!brainStore || !brainEnvelopeId || !sourceMessageId || !sourceChannelEventId) {
+                    throw new Error("BRAIN speech transcript source event is unavailable");
+                  }
+                  await recordSpeechTranscriptSafetyInbound({
+                    store: brainStore,
+                    tenantId: restaurantId,
+                    envelopeId: brainEnvelopeId,
+                    sourceChannelEventId,
+                    sourceMessageId,
+                    transcript: t.text,
+                    audioMessageReference: m.audioId,
+                    transcriptionProvider: t.adapter,
+                    transcriptionModel: t.model,
+                    receivedAt: new Date(m.timestamp),
+                  });
+                } catch (error) {
+                  safetyIngressFailed++;
+                  throw error;
+                }
+              }
               m.text = t.text || "[رسالة صوتية — تعذّر التفريغ]";
               // WO-VOICE-1: keep the STT provenance so the audio ref + confidence land
               // in messages.meta and the fail-closed net's secondary tripwire can read
@@ -509,6 +708,8 @@ export async function POST(req: NextRequest) {
           });
         }
       }
+
+      if (safetyIngressFailed > 0) return;
 
       // WO-DELIVERY-D1 — INBOUND LOCATION PINS (delivery_geo_routing). FIRST statement
       // is the flag gate: OFF → this whole branch is skipped, no location is parsed or
@@ -655,6 +856,9 @@ export async function POST(req: NextRequest) {
         }
       }
       }); // end runWithWhatsAppCreds
+      if (safetyIngressFailed > 0) {
+        return NextResponse.json({ ok: false, error: "safety_ingress_persist_failed" }, { status: 503 });
+      }
     } else {
       console.warn("[whatsapp:webhook] no restaurant to attach inbound messages to");
     }
@@ -693,6 +897,9 @@ export async function POST(req: NextRequest) {
           }
         }
         if (statusRid) {
+          if (!(await persistSafetyIngress(statusRid))) {
+            return NextResponse.json({ ok: false, error: "safety_ingress_persist_failed" }, { status: 503 });
+          }
           for (const s of statuses) {
             try {
               if (s.status === "failed") {

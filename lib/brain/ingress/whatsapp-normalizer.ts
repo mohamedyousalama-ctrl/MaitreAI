@@ -71,6 +71,15 @@ export function extractWhatsAppPhoneNumberId(payload: unknown): string | null {
   return null;
 }
 
+export function countWhatsAppInboundMessages(payload: unknown): number {
+  const data = (payload ?? {}) as WaWebhookPayload;
+  let count = 0;
+  for (const entry of data.entry ?? []) {
+    for (const change of entry.changes ?? []) count += change.value?.messages?.length ?? 0;
+  }
+  return count;
+}
+
 function timestampIso(seconds: string | undefined, receivedAt: string): string {
   const numeric = seconds ? Number(seconds) : NaN;
   if (!Number.isFinite(numeric)) return receivedAt;
@@ -104,11 +113,9 @@ function messageType(message: WaMessage): string {
   return message.type || mediaType(message) || (interactiveId(message) ? "interactive" : "unknown");
 }
 
-function rawMessageForScan(message: WaMessage): BrainRawMessageForScan | null {
-  const id = message.id;
-  if (!id) return null;
+function rawMessageForScan(message: WaMessage, sourceMessageId: string): BrainRawMessageForScan {
   return {
-    sourceMessageId: id,
+    sourceMessageId,
     messageType: messageType(message),
     text: textForMessage(message),
     interactiveId: interactiveId(message),
@@ -157,7 +164,7 @@ export function normalizeWhatsAppBrainEvents(args: {
         const eventDedupeKey = providerMessageId
           ? ["whatsapp", args.tenantId, "customer_inbound", providerMessageId].join(":")
           : `whatsapp:${args.tenantId}:customer_inbound:${canonicalFingerprint([entry.id, change.field, message])}`;
-        const scan = rawMessageForScan(message);
+        const scan = rawMessageForScan(message, providerMessageId ?? eventDedupeKey);
         events.push({
           tenantId: args.tenantId,
           envelopeId: args.envelopeId,
@@ -184,7 +191,7 @@ export function normalizeWhatsAppBrainEvents(args: {
             messageType: type,
           },
           receivedAt: args.receivedAt,
-          rawMessageForScan: scan ?? undefined,
+          rawMessageForScan: scan,
         });
       }
 

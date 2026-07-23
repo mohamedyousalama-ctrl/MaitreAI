@@ -20,6 +20,10 @@ const WESAYA_PNID = "1235877629606597";
 const SWEET_PNID = "9876543210000";
 const GLOBAL_SECRET = "global_app_secret";
 const SWEET_SECRET = "sweet_app_secret";
+const BRAIN_ENVELOPE_ID = "6f3c68ce-d4c8-4c3d-9daf-a6f0fefdc7f1";
+const BRAIN_EVENT_ID = "4ab7a97b-ff8d-4f2f-a3ec-4b51bdcb56e4";
+const BRAIN_SCAN_ID = "95c38a5f-8f04-47fc-bc9e-fddfe4822d5f";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 process.env.CREDENTIALS_ENCRYPTION_KEY = "0".repeat(64);
 delete process.env.ALERT_WHATSAPP_TO;
@@ -33,6 +37,14 @@ const ok = (name: string, cond: boolean) => {
     console.log("  FAIL", name);
   }
 };
+let contractPass = 0, contractFail = 0;
+const contractOk = (name: string, cond: boolean) => {
+  if (cond) contractPass++;
+  else {
+    contractFail++;
+    console.log("  FAIL", name);
+  }
+};
 
 type Call = {
   table: string;
@@ -42,12 +54,25 @@ type Call = {
   filters?: { col: string; val: unknown }[];
 };
 
+type RpcCall = {
+  name: string;
+  args: Record<string, unknown>;
+  data: unknown;
+  error: { code: string; message: string } | null;
+};
+
 function hasFilter(call: Call, col: string, val: unknown): boolean {
   return (call.filters ?? []).some((f) => f.col === col && f.val === val);
 }
 
-function makeFakeAdmin(opts: { sweetTenant?: boolean } = {}) {
+function makeFakeAdmin(
+  opts: {
+    sweetTenant?: boolean;
+    brainRpcFailure?: "missing_result" | "database_error";
+  } = {}
+) {
   const calls: Call[] = [];
+  const rpcCalls: RpcCall[] = [];
   const recencyQueries: Call[] = [];
   const sweetRow = {
     id: SWEET_ID,
@@ -119,9 +144,37 @@ function makeFakeAdmin(opts: { sweetTenant?: boolean } = {}) {
     return b;
   };
 
+  const rpc = async (name: string, args: Record<string, unknown>) => {
+    let data: unknown = null;
+    let error: RpcCall["error"] = null;
+    if (name === "brain_record_webhook_envelope") {
+      if (opts.brainRpcFailure === "missing_result") {
+        data = null;
+      } else if (opts.brainRpcFailure === "database_error") {
+        error = { code: "08006", message: "proof ingress RPC database error" };
+      } else {
+        data = [{ id: BRAIN_ENVELOPE_ID, inserted: true }];
+      }
+    } else if (name === "brain_record_channel_event") {
+      data = [{ id: BRAIN_EVENT_ID, inserted: true }];
+    } else if (name === "brain_complete_ingress_safety_scan") {
+      data = [{
+        id: BRAIN_SCAN_ID,
+        scan_outcome: args.p_scan_outcome,
+        evidence_count: Array.isArray(args.p_evidence) ? args.p_evidence.length : 0,
+        already_completed: false,
+      }];
+    } else if (name === "brain_fail_ingress_safety_scan") {
+      data = [{ id: BRAIN_SCAN_ID, scan_outcome: "failed" }];
+    }
+    rpcCalls.push({ name, args, data, error });
+    return { data, error };
+  };
+
   return {
-    client: { from, rpc: async () => ({ data: null, error: null }) } as never,
+    client: { from, rpc } as never,
     calls,
+    rpcCalls,
     recencyQueries,
   };
 }
@@ -189,7 +242,14 @@ function statusPayload(phoneNumberId: string) {
   };
 }
 
-async function post(payload: unknown, secret = GLOBAL_SECRET, opts: { sweetTenant?: boolean } = {}) {
+async function post(
+  payload: unknown,
+  secret = GLOBAL_SECRET,
+  opts: {
+    sweetTenant?: boolean;
+    brainRpcFailure?: "missing_result" | "database_error";
+  } = {}
+) {
   const body = JSON.stringify(payload);
   const sig = "sha256=" + createHmac("sha256", secret).update(Buffer.from(body)).digest("hex");
   const fake = makeFakeAdmin(opts);
@@ -317,5 +377,84 @@ function messageWritesFor(calls: Call[], restaurantId: string) {
   ok("Sweet PNID makes no recency query", fake.recencyQueries.length === 0);
 }
 
+// E0 ingress-RPC contract: keep this separate from the original 20 routing assertions.
+{
+  setProdBaseEnv();
+  unsetTenantEnv();
+  process.env.WHATSAPP_RESTAURANT_ID = WESAYA_ID;
+  const { res, fake } = await post(textPayload(WESAYA_PNID));
+  const required = [
+    "brain_record_webhook_envelope",
+    "brain_record_channel_event",
+    "brain_complete_ingress_safety_scan",
+  ];
+  const successfulIds = fake.rpcCalls
+    .filter((call) => required.includes(call.name))
+    .map((call) => {
+      const row = Array.isArray(call.data) ? call.data[0] : null;
+      return String((row as { id?: unknown } | null)?.id ?? "");
+    });
+  contractOk(
+    "successful E0 RPCs return distinct realistic envelope/event/scan UUIDs",
+    res.status === 200 &&
+      required.every((name) => fake.rpcCalls.some((call) => call.name === name && call.error === null)) &&
+      successfulIds.length === required.length &&
+      new Set(successfulIds).size === required.length &&
+      successfulIds.every((id) => UUID_PATTERN.test(id))
+  );
+}
+
+{
+  setProdBaseEnv();
+  unsetTenantEnv();
+  process.env.WHATSAPP_RESTAURANT_ID = WESAYA_ID;
+  const originalError = console.error;
+  console.error = () => undefined;
+  try {
+    const missing = await post(textPayload(WESAYA_PNID), GLOBAL_SECRET, {
+      brainRpcFailure: "missing_result",
+    });
+    const failed = await post(textPayload(WESAYA_PNID), GLOBAL_SECRET, {
+      brainRpcFailure: "database_error",
+    });
+    const missingBody = await missing.res.json();
+    const failedBody = await failed.res.json();
+    contractOk(
+      "missing-result and failed E0 RPCs both return retryable 503",
+      missing.res.status === 503 &&
+        missingBody.error === "safety_ingress_persist_failed" &&
+        failed.res.status === 503 &&
+        failedBody.error === "safety_ingress_persist_failed"
+    );
+
+    const failureFakes = [missing.fake, failed.fake];
+    const hasDownstreamEffect = failureFakes.some((fake) => {
+      const downstreamTables = new Set([
+        "messages",
+        "conversations",
+        "agent_runs",
+        "brain_execution_effects",
+        "outbox_messages",
+      ]);
+      return (
+        fake.calls.some((call) => downstreamTables.has(call.table)) ||
+        fake.calls.some((call) => (call.select ?? "").includes("feature_flags")) ||
+        JSON.stringify(fake.calls).includes("last_answered_inbound_at") ||
+        fake.rpcCalls.some((call) => call.name !== "brain_record_webhook_envelope")
+      );
+    });
+    contractOk(
+      "failed E0 RPC causes no message/conversation/AI/watermark/bridge release",
+      !hasDownstreamEffect
+    );
+  } finally {
+    console.error = originalError;
+  }
+}
+
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} wa-fallback-failclosed: ${pass}/${pass + fail} passed`);
-if (fail > 0) process.exit(1);
+console.log(
+  `${contractFail === 0 ? "PASS" : "FAIL"} wa-fallback E0 RPC contract: ` +
+    `${contractPass}/${contractPass + contractFail} passed`
+);
+if (fail > 0 || contractFail > 0) process.exit(1);
