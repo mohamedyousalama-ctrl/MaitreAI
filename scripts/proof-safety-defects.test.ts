@@ -20,12 +20,16 @@ import {
 } from "../lib/messaging/adapters/whatsapp.ts";
 import { respondAndSendWhatsApp } from "../lib/messaging/respond-and-send.ts";
 import {
+  hashWesayaProductionFeatureFlags,
   WESAYA_PRODUCTION_FEATURE_FLAGS,
+  WESAYA_PRODUCTION_FEATURE_FLAGS_CAPTURED_AT,
+  WESAYA_PRODUCTION_FEATURE_FLAGS_HASH_ALGORITHM,
+  WESAYA_PRODUCTION_FEATURE_FLAGS_SHA256,
   wesayaProductionFlags,
   type WesayaProductionFeatureFlags,
 } from "./fixtures/wesaya-production-flags.ts";
 
-const PINNED_REVISION = "f7882c173466bbc47092fff0a9a8c896ae1f95b5";
+const PINNED_REVISION = "c38c6b6830ec7a5307bbcbdd1704998e5d4528f5";
 const WESAYA_ID = "5acbc72f-def3-46cd-ad6c-bf0ff4a23642";
 
 let observedFailures = 0;
@@ -85,6 +89,36 @@ observed(
   Object.keys(WESAYA_PRODUCTION_FEATURE_FLAGS).length === 34 &&
     JSON.stringify(onlyFalse) === JSON.stringify(["delivery_runs"]),
   { count: Object.keys(WESAYA_PRODUCTION_FEATURE_FLAGS).length, onlyFalse }
+);
+observed(
+  "shared Wesaya fixture has an ISO capture timestamp",
+  new Date(WESAYA_PRODUCTION_FEATURE_FLAGS_CAPTURED_AT).toISOString() ===
+    WESAYA_PRODUCTION_FEATURE_FLAGS_CAPTURED_AT
+);
+observed(
+  "shared Wesaya fixture SHA-256 matches the frozen production flag vector",
+  WESAYA_PRODUCTION_FEATURE_FLAGS_HASH_ALGORITHM === "SHA-256" &&
+    hashWesayaProductionFeatureFlags() ===
+      WESAYA_PRODUCTION_FEATURE_FLAGS_SHA256,
+  {
+    algorithm: WESAYA_PRODUCTION_FEATURE_FLAGS_HASH_ALGORITHM,
+    expected: WESAYA_PRODUCTION_FEATURE_FLAGS_SHA256,
+    actual: hashWesayaProductionFeatureFlags(),
+  }
+);
+const fixtureSecretLikeKeys = Object.keys(
+  WESAYA_PRODUCTION_FEATURE_FLAGS
+).filter((key) =>
+  /(?:secret|password|credential|private[_-]?key|api[_-]?key|access[_-]?token)/i.test(
+    key
+  )
+);
+observed(
+  "shared Wesaya fixture contains only boolean feature flags and no secret-like keys",
+  Object.values(WESAYA_PRODUCTION_FEATURE_FLAGS).every(
+    (value) => typeof value === "boolean"
+  ) && fixtureSecretLikeKeys.length === 0,
+  { fixtureSecretLikeKeys }
 );
 
 type Filter = { col: string; val: unknown };
@@ -186,7 +220,7 @@ function insertedSafetyAlert(calls: DbCall[]): boolean {
 // ── C-02: allergy_simple disables the HUMAN_ACTIVE safety bridge ─────────────
 console.log("\nC-02 — HUMAN_ACTIVE + production vector + Arabic allergy disclosure");
 console.log(
-  "  PATH f7882c1: lib/messaging/respond-and-send.ts:958-972 gates the bridge; " +
+  "  PATH c38c6b6: lib/messaging/respond-and-send.ts:958-972 gates the bridge; " +
     ":1037-1039 returns skipped_takeover before runCustomerTurn; " +
     "lib/ai/customer-turn.ts:973-996 is therefore unreachable."
 );
@@ -348,7 +382,7 @@ acceptance(
 // ── C-03: image caption is dropped when media_turn_trigger is OFF ─────────────
 console.log("\nC-03 — captioned image + complete vector with media_turn_trigger=false");
 console.log(
-  "  PATH f7882c1: lib/messaging/adapters/whatsapp.ts:201-206 drops image-only input " +
+  "  PATH c38c6b6: lib/messaging/adapters/whatsapp.ts:201-206 drops image-only input " +
     "from the main normalizer; app/api/whatsapp/webhook/route.ts:557-600 keeps caption " +
     "extraction/persistence behind media_turn_trigger."
 );
@@ -486,7 +520,7 @@ acceptance(
 // ── C-04: verify the alleged coalescing loss against the real vector ──────────
 console.log("\nC-04 — two-message burst + production inbound_coalescing=true");
 console.log(
-  "  PATH f7882c1: lib/messaging/inbound-coalescing.ts:91-125 joins every unanswered " +
+  "  PATH c38c6b6: lib/messaging/inbound-coalescing.ts:91-125 joins every unanswered " +
     "customer text; lib/messaging/respond-and-send.ts:1212-1244 uses mergedText, " +
     ":1491 and :1622 pass it as userMessage; lib/ai/customer-turn.ts:973-996 scans it."
 );
@@ -540,7 +574,7 @@ observed(
   c04SafetyScanned
 );
 acceptance(
-  "C-04 fixed criterion is already satisfied at f7882c1",
+  "C-04 fixed criterion is already satisfied at c38c6b6",
   c04DisclosureSurvives && c04SafetyScanned
 );
 

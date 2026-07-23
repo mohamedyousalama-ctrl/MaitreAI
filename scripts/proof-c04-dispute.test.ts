@@ -8,6 +8,7 @@
 // exhibits, including loss conditions. A lost disclosure is a passing reproduction
 // assertion here, not a weakened safety acceptance criterion.
 
+import { readFileSync } from "node:fs";
 import { detectAllergenAvoidance } from "../lib/ai/allergen-gate.ts";
 import {
   decideAllergySimple,
@@ -21,7 +22,9 @@ import {
 } from "../lib/messaging/inbound-coalescing.ts";
 import { respondAndSendWhatsApp } from "../lib/messaging/respond-and-send.ts";
 import {
+  hashWesayaProductionFeatureFlags,
   WESAYA_PRODUCTION_FEATURE_FLAGS,
+  WESAYA_PRODUCTION_FEATURE_FLAGS_SHA256,
   wesayaProductionFlags,
   type WesayaProductionFeatureFlags,
 } from "./fixtures/wesaya-production-flags.ts";
@@ -94,6 +97,16 @@ function scan(turn: CoalescedInbound | null): boolean {
   return !!turn && detectAllergenAvoidance(turn.mergedText).fired;
 }
 
+check(
+  "shared fixture SHA-256 matches the frozen production flag vector",
+  hashWesayaProductionFeatureFlags() ===
+    WESAYA_PRODUCTION_FEATURE_FLAGS_SHA256,
+  {
+    expected: WESAYA_PRODUCTION_FEATURE_FLAGS_SHA256,
+    actual: hashWesayaProductionFeatureFlags(),
+  }
+);
+
 // ── 1. Coalescing disabled ───────────────────────────────────────────────────
 console.log("\nCASE 1 [override: inbound_coalescing=false] — same two-message overlap");
 console.log(
@@ -114,14 +127,37 @@ const case1Standalone = coalesceInbound([case1Rows[0]], {
   enabled: case1Flags.inbound_coalescing,
   watermarkMs: null,
 });
+const respondAndSendSource = readFileSync(
+  new URL("../lib/messaging/respond-and-send.ts", import.meta.url),
+  "utf8"
+);
+const watermarkFallbackSource = respondAndSendSource.slice(
+  respondAndSendSource.indexOf("let watermarkMs: number | null = null;"),
+  respondAndSendSource.indexOf(
+    "const coalesced = coalesceInbound(rows",
+    respondAndSendSource.indexOf("let watermarkMs: number | null = null;")
+  )
+);
+// CURRENT-BROKEN-BEHAVIOR: reproduces a defect; this is not intended behavior.
 check(
   "case 1 overlap: legacy single-message assembly keeps only message 2",
   case1Overlap?.count === 1 && case1Overlap.mergedText === ORDER_TEXT,
   case1Overlap
 );
+// CURRENT-BROKEN-BEHAVIOR: reproduces a defect; this is not intended behavior.
 check(
   "case 1 overlap: earlier disclosure does not reach the detector",
   !scan(case1Overlap)
+);
+// CURRENT-BROKEN-BEHAVIOR: reproduces a defect; this is not intended behavior.
+check(
+  "case 1 watermark-read degradation leaves coalescing inactive and takes the same lossy path",
+  watermarkFallbackSource.includes("let coalescingActive = false;") &&
+    watermarkFallbackSource.includes("if (!wmErr)") &&
+    watermarkFallbackSource.includes("coalescingActive = true;") &&
+    case1Overlap?.mergedText === ORDER_TEXT &&
+    !scan(case1Overlap),
+  { watermarkFallbackSource, case1Overlap }
 );
 check(
   "case 1 sequential control: a standalone bare disclosure is actionable and fires",
@@ -480,11 +516,13 @@ const case7IfResumed = coalesceInbound(case7RowsChronological, {
   enabled: case7Flags.inbound_coalescing,
   watermarkMs: null,
 });
+// CURRENT-BROKEN-BEHAVIOR: reproduces a defect; this is not intended behavior.
 check(
   "case 7 HUMAN_ACTIVE returns skipped_takeover",
   case7Result.status === "skipped_takeover",
   case7Result
 );
+// CURRENT-BROKEN-BEHAVIOR: reproduces a defect; this is not intended behavior.
 check(
   "case 7 ownership return occurs before the coalescing history read",
   !case7AssemblyRead,
