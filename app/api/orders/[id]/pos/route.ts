@@ -18,6 +18,11 @@ import { NextResponse } from "next/server";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAuditEvent } from "@/lib/db/audit";
+// R0 (WO-R0) — acceptance eligibility has ONE home. The route consumes the shared
+// predicate instead of its own private set, so the shift model and this route can
+// never diverge on which orders are acceptable (proved by the cannot-diverge test).
+import { isAcceptanceEligible } from "@/lib/orders/acceptance-contract";
+import type { OrderStatusKey } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -32,13 +37,10 @@ const ALLOWED_FROM: Record<Exclude<PosStatus, "not_entered">, PosStatus[]> = {
 
 // POS hand-off applies ONLY to a genuinely-confirmed order that needs to reach the
 // kitchen. An unconfirmed/cancelled/test order must never be markable as "entered
-// in Deyafa" (it isn't a real order the kitchen should get). Eligible = confirmed
-// and beyond; ineligible = draft / pending_confirmation / pending_payment /
-// cancelled / is_test. Allowlist (not denylist) so a new status never silently
-// becomes eligible. The UI mirrors this set, but the SERVER is authoritative.
-const POS_ELIGIBLE_STATUS = new Set<string>([
-  "paid", "preparing", "ready", "out_for_delivery", "delivered",
-]);
+// in Deyafa". The eligibility rule (an allowlist of confirmed statuses + the is-test
+// exclusion) is NO LONGER declared privately here — it comes from the shared R0
+// contract (isAcceptanceEligible), so this SERVER gate and the shift model's «قبول»
+// gate cannot drift apart. The SERVER remains authoritative for the transition below.
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const admin = createAdminClient();
@@ -71,7 +73,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // appear "entered in Deyafa" when it was never a real kitchen-bound order.
   const orderStatus = (cur as { order_status?: string }).order_status ?? "";
   const isTest = (cur as { is_test?: boolean | null }).is_test === true;
-  if (isTest || !POS_ELIGIBLE_STATUS.has(orderStatus)) {
+  // Behaviour-identical to the prior `isTest || !POS_ELIGIBLE_STATUS.has(orderStatus)`:
+  // isAcceptanceEligible returns false for a test order OR a non-eligible status, so
+  // its negation rejects EXACTLY the same orders, with the same 409 + response shape.
+  if (!isAcceptanceEligible({ orderStatus: orderStatus as OrderStatusKey, isTest })) {
     return NextResponse.json({ error: "order_not_eligible", orderStatus, isTest }, { status: 409 });
   }
 

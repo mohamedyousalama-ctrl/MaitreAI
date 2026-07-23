@@ -45,12 +45,33 @@ import {
   type ComposerInput,
 } from "./shift-model.ts";
 
+import { isAcceptanceEligible } from "../../../lib/orders/acceptance-contract.ts";
+import type { OrderStatusKey } from "../../../lib/types.ts";
+
 const order = (o: Partial<ShiftOrder>): ShiftOrder => ({
   id: "o1",
   orderStatus: "paid",
   posStatus: "not_entered",
   createdAt: 0,
   ...o,
+});
+
+// R0 characterization — after wiring the shift model to the shared acceptance
+// contract, `isAcceptable` must return IDENTICAL results to both its own prior
+// inline logic and the contract predicate, for every status × is-test. A failure
+// here means the refactor changed behaviour.
+const ALL_STATUSES: OrderStatusKey[] = [
+  "draft", "pending_confirmation", "pending_payment", "paid",
+  "preparing", "ready", "out_for_delivery", "delivered", "cancelled",
+];
+test("R0 — shift isAcceptable matches the centralised contract for EVERY status × is-test", () => {
+  for (const s of ALL_STATUSES) {
+    for (const isTest of [false, true, undefined] as const) {
+      const expectedInline = !isTest && ["paid", "preparing", "ready", "out_for_delivery", "delivered"].includes(s);
+      assert.equal(isAcceptable(order({ orderStatus: s, isTest })), expectedInline, `inline ${s}/${isTest}`);
+      assert.equal(isAcceptable(order({ orderStatus: s, isTest })), isAcceptanceEligible({ orderStatus: s, isTest }), `contract ${s}/${isTest}`);
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------
