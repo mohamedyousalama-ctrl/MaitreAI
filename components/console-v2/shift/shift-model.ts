@@ -333,3 +333,63 @@ export function shiftCounts(orders: readonly ShiftOrder[], startOfDayMs: number)
   }
   return { needsAcceptance, acceptedToday };
 }
+
+// ===========================================================================
+// WO-SHIFT-2 — the takeover rescue flow. Pure additions (same tested-core
+// discipline): the WhatsApp window, the composer gate, and the safety-handback
+// wording guard. All pure; the server routes stay the authority for sends and
+// ownership.
+// ===========================================================================
+
+// WhatsApp free-form customer-service window: 24h since the last inbound message.
+// Mirrors lib/messaging/outbound.ts WINDOW_MS; the /api/whatsapp/send route is the
+// authority (it re-checks and returns "outside_24h_window"), this is the proactive
+// estimate so an operator is never told to type only to be rejected afterward.
+export const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function whatsappWindow(lastInboundMs: number | null, nowMs: number): { open: boolean; remainingMs: number } {
+  if (lastInboundMs == null || !Number.isFinite(lastInboundMs)) return { open: false, remainingMs: 0 };
+  const remaining = WHATSAPP_WINDOW_MS - (nowMs - lastInboundMs);
+  return { open: remaining > 0, remainingMs: Math.max(0, remaining) };
+}
+
+// The composer is enabled ONLY when the SERVER has confirmed I own the conversation
+// (no optimistic ownership), I'm online, data is presentable, and the WhatsApp window
+// is open for free text. Outside the window → blocked (approved templates only). Each
+// disabled reason is explicit so the UI always says WHY.
+export type ComposerBlockReason = "view_only" | "offline" | "not_ready" | "not_owned" | "outside_window";
+export interface ComposerInput {
+  claimedByOther: boolean;
+  ownedByMe: boolean;
+  online: boolean;
+  dataState: string;
+  windowOpen: boolean;
+}
+export function composerState(i: ComposerInput): { enabled: boolean; reason?: ComposerBlockReason } {
+  if (i.claimedByOther) return { enabled: false, reason: "view_only" };
+  if (!i.online) return { enabled: false, reason: "offline" };
+  if (!dataPresentable(i.dataState)) return { enabled: false, reason: "not_ready" };
+  if (!i.ownedByMe) return { enabled: false, reason: "not_owned" };
+  if (!i.windowOpen) return { enabled: false, reason: "outside_window" };
+  return { enabled: true };
+}
+
+// A safety case must NEVER be handed back with resolved/safe/confirmed wording — a
+// generic "resolved" must not erase an active safety context. The structured safety
+// handback moves through three acknowledgment states only:
+//   unclaimed (غير مستلم) → in_review (قيد المراجعة — مع {اسم}) → recorded (تم تسجيل رد المطعم)
+export const SAFETY_ACK_STATES = ["unclaimed", "in_review", "recorded"] as const;
+export type SafetyAckState = (typeof SAFETY_ACK_STATES)[number];
+
+/** The safety case may only be released once the restaurant's response is RECORDED. */
+export function safetyHandbackAllowed(ack: SafetyAckState): boolean {
+  return ack === "recorded";
+}
+
+const FORBIDDEN_SAFETY_RESOLUTION = ["آمن", "مضمون", "مناسب للحساسية", "لا يوجد خطر", "تم الحل", "تم التأكد", "تم التاكد"];
+
+/** Guard: a safety-case handback label/summary must not assert resolved/safe/confirmed. */
+export function isForbiddenSafetyResolution(text: string): boolean {
+  const s = (text ?? "").trim();
+  return FORBIDDEN_SAFETY_RESOLUTION.some((w) => s.includes(w));
+}

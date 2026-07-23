@@ -33,9 +33,16 @@ import {
   connectionState,
   actionsEnabled,
   shiftCounts,
+  whatsappWindow,
+  WHATSAPP_WINDOW_MS,
+  composerState,
+  isForbiddenSafetyResolution,
+  safetyHandbackAllowed,
+  SAFETY_ACK_STATES,
   type ActNowItem,
   type ShiftOrder,
   type ActionContext,
+  type ComposerInput,
 } from "./shift-model.ts";
 
 const order = (o: Partial<ShiftOrder>): ShiftOrder => ({
@@ -282,4 +289,91 @@ test("counts — needs-acceptance and accepted-today, nothing Kivo cannot prove"
   assert.deepEqual(shiftCounts(orders, START), { needsAcceptance: 2, acceptedToday: 1 });
   assert.equal(isAcceptedToday(order({ posStatus: "entered", posEnteredAt: START + 5 }), START), true);
   assert.equal(isAcceptedToday(order({ posStatus: "entered", posEnteredAt: START - 5 }), START), false);
+});
+
+// ===========================================================================
+// WO-SHIFT-2 — the takeover rescue flow.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// WhatsApp 24h window.
+// ---------------------------------------------------------------------------
+test("window — inside 24h reports open with remaining time", () => {
+  const now = 100_000_000;
+  const w = whatsappWindow(now - 60_000, now); // last inbound 1 min ago
+  assert.equal(w.open, true);
+  assert.equal(w.remainingMs, WHATSAPP_WINDOW_MS - 60_000);
+});
+
+test("window — outside 24h reports closed with zero remaining", () => {
+  const now = 100_000_000;
+  const w = whatsappWindow(now - WHATSAPP_WINDOW_MS - 1, now);
+  assert.equal(w.open, false);
+  assert.equal(w.remainingMs, 0);
+});
+
+test("window — no inbound timestamp → closed (never a fabricated window)", () => {
+  assert.deepEqual(whatsappWindow(null, 100), { open: false, remainingMs: 0 });
+});
+
+// ---------------------------------------------------------------------------
+// Composer gate — disabled until the server confirms ownership; blocked outside
+// the window; every disabled state has a reason.
+// ---------------------------------------------------------------------------
+const composer = (o: Partial<ComposerInput>): ComposerInput => ({
+  claimedByOther: false,
+  ownedByMe: true,
+  online: true,
+  dataState: "DB_READY",
+  windowOpen: true,
+  ...o,
+});
+
+test("composer — DISABLED until the server confirms ownership (no optimistic ownership)", () => {
+  const notYet = composerState(composer({ ownedByMe: false }));
+  assert.equal(notYet.enabled, false);
+  assert.equal(notYet.reason, "not_owned");
+  // Only when the server confirms I own it does the composer open.
+  assert.equal(composerState(composer({ ownedByMe: true })).enabled, true);
+});
+
+test("composer — outside the 24h window free text is BLOCKED (templates only)", () => {
+  const out = composerState(composer({ windowOpen: false }));
+  assert.equal(out.enabled, false);
+  assert.equal(out.reason, "outside_window");
+});
+
+test("composer — claimed by another → view_only; offline/not-ready each expose a reason", () => {
+  assert.equal(composerState(composer({ claimedByOther: true })).reason, "view_only");
+  assert.equal(composerState(composer({ online: false })).reason, "offline");
+  assert.equal(composerState(composer({ dataState: "DB_LOADING" })).reason, "not_ready");
+});
+
+test("composer — view_only wins even when I also 'own' it locally (server is truth)", () => {
+  // A stale local ownedByMe must never beat a claimed-by-other server truth.
+  assert.equal(composerState(composer({ claimedByOther: true, ownedByMe: true })).reason, "view_only");
+});
+
+// ---------------------------------------------------------------------------
+// Safety handback — can never use resolved/safe/confirmed wording, and can only
+// release once the restaurant's response is RECORDED.
+// ---------------------------------------------------------------------------
+test("safety handback — the forbidden set + resolved/confirmed wording is rejected", () => {
+  for (const w of ["آمن", "مضمون", "مناسب للحساسية", "لا يوجد خطر", "تم الحل", "تم التأكد"]) {
+    assert.equal(isForbiddenSafetyResolution(w), true, `${w} must be forbidden`);
+  }
+  assert.equal(isForbiddenSafetyResolution("العميل ذكر حساسية من اللبن — تم تسجيل رد المطعم"), false);
+});
+
+test("safety handback — the three acknowledgment labels themselves are NOT forbidden wording", () => {
+  for (const label of ["غير مستلم", "قيد المراجعة — مع أحمد", "تم تسجيل رد المطعم"]) {
+    assert.equal(isForbiddenSafetyResolution(label), false, `${label} must be allowed`);
+  }
+});
+
+test("safety handback — release is allowed ONLY from the 'recorded' state", () => {
+  assert.deepEqual([...SAFETY_ACK_STATES], ["unclaimed", "in_review", "recorded"]);
+  assert.equal(safetyHandbackAllowed("unclaimed"), false);
+  assert.equal(safetyHandbackAllowed("in_review"), false);
+  assert.equal(safetyHandbackAllowed("recorded"), true);
 });
