@@ -50,10 +50,8 @@ import {
   connectionState,
   actionsEnabled,
   acceptAvailability,
-  claimAvailability,
   stopKarimAvailability,
   resolveAcceptResponse,
-  resolveClaimResponse,
   type ShiftOrder,
   type ActionContext,
 } from "@/components/console-v2/shift/shift-model";
@@ -67,6 +65,7 @@ import { OrderDetailsModal, OrderDetailBody } from "@/components/console-v2/shif
 import { WaThreadDrawer } from "@/components/console-v2/shift/WaThreadDrawer";
 import { StopSheet } from "@/components/console-v2/shift/StopSheet";
 import { RejectSheet, type RejectReason } from "@/components/console-v2/shift/RejectSheet";
+import { RescueFlow } from "@/components/console-v2/shift/RescueFlow";
 
 const REJECT_REASON_TEXT: Record<RejectReason, string> = {
   unavailable: "الصنف غير متاح",
@@ -147,9 +146,10 @@ export default function ShiftControlPage() {
   const [waOrder, setWaOrder] = useState<LocalOrder | null>(null);
   const [stopOpen, setStopOpen] = useState(false);
   const [rejectOrder, setRejectOrder] = useState<LocalOrder | null>(null);
+  const [rescue, setRescue] = useState<{ conversationId: string; reasonKey: DictKey; isSafety: boolean } | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
 
-  const [busy, setBusy] = useState<{ acceptId?: string; claimId?: string; stop?: boolean; reject?: boolean }>({});
+  const [busy, setBusy] = useState<{ acceptId?: string; stop?: boolean; reject?: boolean }>({});
   const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
 
   // Mount + live ticks.
@@ -294,38 +294,6 @@ export default function ShiftControlPage() {
     }
   }
 
-  async function claim(entry: ActNowEntry) {
-    const avail = claimAvailability(actionCtx);
-    if (!avail.enabled || !entry.conversationId || busy.claimId) return;
-    setBusy((b) => ({ ...b, claimId: entry.id }));
-    try {
-      const res = await fetch("/c/conversations/claim", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ conversationId: entry.conversationId, renderedEpoch: Number(entry.controlEpoch ?? 0) }),
-      });
-      const body = await res.json().catch(() => ({}));
-      const out = resolveClaimResponse(res.status, body);
-      if (out.kind === "won") {
-        flashNotice({ tone: "ok", text: t("shift.v2.own.mine") });
-        void useConversationStore.getState().reload();
-      } else if (out.kind === "view_only") {
-        const who = out.ownerName ?? t("shift.v2.someone");
-        flashNotice({ tone: "amber", text: `${t("shift.v2.fail.takenClaimPrefix")} ${who} · ${t("shift.v2.viewOnly")}` });
-        void useConversationStore.getState().reload();
-      } else if (out.kind === "stale") {
-        flashNotice({ tone: "amber", text: t("shift.v2.fail.stale") });
-        void useConversationStore.getState().reload();
-      } else {
-        flashNotice({ tone: "amber", text: t("shift.v2.fail.claim") });
-      }
-    } catch {
-      flashNotice({ tone: "amber", text: t("shift.v2.fail.claim") });
-    } finally {
-      setBusy((b) => ({ ...b, claimId: undefined }));
-    }
-  }
-
   async function stopKarim() {
     if (busy.stop) return;
     setBusy((b) => ({ ...b, stop: true }));
@@ -368,7 +336,6 @@ export default function ShiftControlPage() {
 
   // ---- render ----
   const acceptAvail = acceptAvailability(actionCtx);
-  const claimAvail = claimAvailability(actionCtx);
   const stopAvail = stopKarimAvailability(actionCtx);
 
   return (
@@ -445,11 +412,8 @@ export default function ShiftControlPage() {
               actNow.map((e) => (
                 <ActNowCard
                   key={e.id} entry={e}
-                  claimEnabled={claimAvail.enabled} claimReason={claimAvail.reasonKey ? t(claimAvail.reasonKey as DictKey) : null}
-                  claiming={busy.claimId === e.id}
-                  onClaim={() => claim(e)}
+                  onOpenRescue={() => { if (e.conversationId) setRescue({ conversationId: e.conversationId, reasonKey: e.reasonKey, isSafety: e.tone === "safety" }); }}
                   onDetails={() => { const o = orders.find((x) => x.id === e.orderId); if (o) setSelected(o); }}
-                  onOpenConv={() => { window.location.assign("/c/conversations"); }}
                 />
               ))
             )}
@@ -543,6 +507,20 @@ export default function ShiftControlPage() {
         onClose={() => setRejectOrder(null)}
         onConfirm={reject}
       />
+
+      {/* The takeover rescue flow (WO-SHIFT-2) — opened from a Section-A card. */}
+      {rescue && (
+        <RescueFlow
+          conversationId={rescue.conversationId}
+          reasonKey={rescue.reasonKey}
+          isSafety={rescue.isSafety}
+          online={online}
+          dataState={dataState}
+          actorMemberId={actor.memberId}
+          actorReady={actor.ready}
+          onClose={() => setRescue(null)}
+        />
+      )}
     </div>
   );
 }
@@ -629,10 +607,9 @@ function CalmEmpty({ title, body }: { title: string; body: string }) {
 }
 
 function ActNowCard({
-  entry, claimEnabled, claimReason, claiming, onClaim, onDetails, onOpenConv,
+  entry, onOpenRescue, onDetails,
 }: {
-  entry: ActNowEntry; claimEnabled: boolean; claimReason: string | null; claiming: boolean;
-  onClaim: () => void; onDetails: () => void; onOpenConv: () => void;
+  entry: ActNowEntry; onOpenRescue: () => void; onDetails: () => void;
 }) {
   const t = useT();
   const safety = entry.tone === "safety";
@@ -659,21 +636,16 @@ function ActNowCard({
         </div>
       )}
 
+      {/* The primary action opens the takeover RESCUE flow (WO-SHIFT-2), where the
+          claim is server-confirmed and the compiled context leads. A payment/address
+          blocker (no conversation to rescue) opens the order detail instead. */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2 }}>
         {entry.primary === "claim" ? (
-          <>
-            <button onClick={onClaim} disabled={!claimEnabled || claiming} style={{ ...(safety ? safetyBtn : claimBtn), opacity: !claimEnabled || claiming ? 0.55 : 1, cursor: !claimEnabled || claiming ? "default" : "pointer" }}>
-              {t("shift.v2.act.claim")}
-            </button>
-            <button onClick={onOpenConv} style={ghostBtn}>{t("shift.v2.act.openConv")}</button>
-          </>
+          <button onClick={onOpenRescue} style={safety ? safetyBtn : claimBtn}>{t("shift.v2.act.claim")}</button>
         ) : (
           <button onClick={onDetails} style={ghostBtn}>{t("shift.v2.act.details")}</button>
         )}
       </div>
-      {!claimEnabled && entry.primary === "claim" && claimReason && (
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--faint)" }}>{claimReason}</div>
-      )}
     </Card>
   );
 }
