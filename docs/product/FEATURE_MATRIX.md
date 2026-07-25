@@ -1,5 +1,8 @@
 # Kivo — Feature Matrix (Capability Inventory)
 
+> **SCOPE.** This file remains an inventory snapshot. Current Kivo Agent truth is governed by
+> [`docs/KIVO_AGENT_ROADMAP.md`](../KIVO_AGENT_ROADMAP.md).
+
 > **Owner:** Product / PM · **Status:** Draft for PM review · **Last reviewed:** 2026-07-10
 > **Source of truth:** derived from the repository (code, migrations, specs) — not memory. Every row is code-anchored; where the code was ambiguous or docs conflict it is marked **UNVERIFIED**.
 > **Scope:** one paragraph + module-by-module inventory (B), version/tier truth (C), a market-packaging **PROPOSAL** (D, the only opinion section), and a settings appendix (E).

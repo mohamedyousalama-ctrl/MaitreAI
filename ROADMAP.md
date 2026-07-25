@@ -1,5 +1,8 @@
 # Kivo — Product Roadmap
 
+> **HISTORICAL.** This file is historical. Current Kivo Agent execution authority is
+> [`docs/KIVO_AGENT_ROADMAP.md`](docs/KIVO_AGENT_ROADMAP.md).
+
 > **Single source of truth.** This file is updated on EVERY merge: the shipping work-order's final step
 > moves the shipped item to DONE and adjusts status. Do not maintain a parallel copy elsewhere.
 > Last updated: 2026-06-24 (Kivo brand + landing + login scenes shipped; cleanup pass merged; getkivo.io live; Sweet Shop demo tenant set up).
