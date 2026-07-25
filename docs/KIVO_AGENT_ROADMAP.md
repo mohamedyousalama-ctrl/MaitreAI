@@ -108,11 +108,15 @@ The product is pre-commercial and must not accept the first public order until t
 
 The most urgent current facts are:
 
-1. **WhatsApp ingress is blocked.** Production callbacks are being rejected with HTTP `401` before Karim runs. The rejected identifier is visible in the founder's Meta test-number screen, but its equality to production `WHATSAPP_PHONE_NUMBER_ID` remains unproven.
-2. **Safety ingress migration 0104 is applied**, but the E0 application integration and real PostgreSQL proof are not cleared.
-3. **Confirmed-order acceptance is not repaired.** R0 only centralized the existing contract; R1 must add the durable confirmation and acceptance facts.
-4. **The pending-order population grew during remediation.** Production currently has 127 non-test Wesaya orders in `pending_confirmation`; the latest was created on 23 July while C-01 was open. New non-test order creation must be stopped before WhatsApp is restored.
-5. **Payment truth, one-active-writer and alert delivery remain unproven.**
+1. **The conversation control plane is partially present and operator claim is broken.**
+   Migration 0099 has a production ledger row and its schema/triggers are present,
+   but six functions are absent. Both console claim routes depend on the absent
+   `control_claim`. `KV-D06-001` is CRITICAL, OPEN and BLOCKING.
+2. **WhatsApp ingress is blocked.** Production callbacks are being rejected with HTTP `401` before Karim runs. The rejected identifier is visible in the founder's Meta test-number screen, but its equality to production `WHATSAPP_PHONE_NUMBER_ID` remains unproven.
+3. **Safety ingress migration 0104 is applied**, but the E0 application integration and real PostgreSQL proof are not cleared.
+4. **Confirmed-order acceptance is not repaired.** R0 only centralized the existing contract; R1 must add the durable confirmation and acceptance facts.
+5. **The pending-order population grew during remediation.** Production currently has 127 non-test Wesaya orders in `pending_confirmation`; the latest was created on 23 July while C-01 was open. New non-test order creation must be stopped before WhatsApp is restored.
+6. **Payment truth, one-active-writer and alert delivery remain unproven.**
 
 ### 1.3 What happens next
 
@@ -127,13 +131,15 @@ Two repository gates are complete:
 
 The active controlled order is:
 
-1. Enforce P0-ORD-01, the temporary freeze on new non-test Wesaya order creation.
-2. Repair P0-WA-01 WhatsApp signature verification and prove the existing webhook accepts and persists one non-order test message.
-3. Remove or govern P0-SHADOW-01, the public shadow BRAIN ingress route.
-4. Rebuild and run the E0 database verification correctly.
-5. Finish E0 and E1 as one pilot safety increment, then prove durable ingress and terminal scanning live.
-6. Complete order acceptance truth and the remaining pilot blockers.
-7. Run the complete live proof before any public order.
+1. Record and securely redesign `KV-D06-001`; do not replay migration 0099.
+2. Define and approve the reversible maintenance/drain control required for database rollout.
+3. Enforce P0-ORD-01, the temporary freeze on new non-test Wesaya order creation.
+4. Repair P0-WA-01 WhatsApp signature verification and prove the existing webhook accepts and persists one non-order test message.
+5. Remove or govern P0-SHADOW-01, the public shadow BRAIN ingress route.
+6. Rebuild and run the E0 database verification correctly.
+7. Finish E0 and E1 as one pilot safety increment, then prove durable ingress and terminal scanning live.
+8. Complete order acceptance truth and the remaining pilot blockers.
+9. Run the complete live proof before any public order.
 
 ---
 
@@ -149,6 +155,7 @@ The active controlled order is:
 | Safety reproduction harness | **MERGED** in PR #552 | [PR #552](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/552) |
 | 0104 source reconciliation | **MERGED** in PR #553 at `0d8ae003d2390cab099cc72bcb2c50d1008b3696`; frozen SQL SHA-256 `560e060351c793990daa8f61bbdad95e998d508977e1610478881d7582c38b80` | [PR #553](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/553) |
 | E0 application integration | **NOT MERGED** | Branch `wo-e0-safety-ingress` at `e1e0cc92b0fe476a7e6f52ac853c8da983fc7744` |
+| Conversation control plane (0099) | **BLOCKED**; `KV-D06-001` **CRITICAL, OPEN** | Ledger row `20260721235747 / conversation_control_plane` exists; the schema, control epoch, assignment table and triggers are present, but `_control_set_ctx` and five `control_*` application functions are absent |
 | Partial payment branch | **FROZEN** | `wo-eng-4-payment-defects-20260723` at `617de81`; incomplete and stale |
 
 ### 2.2 Production database
@@ -201,6 +208,43 @@ Production flag state was re-verified on 25 July 2026.
 ---
 
 ## 3. P0 incident and containment register
+
+### P0-CTRL-01 / KV-D06-001 — Secure the conversation control plane
+
+**State: CRITICAL, OPEN and BLOCKING.**
+
+Migration `0099_conversation_control_plane.sql` is recorded as applied, but
+production lacks `_control_set_ctx`, `control_apply_transition`,
+`control_escalate_to_hold`, `control_claim`, `control_reassign` and
+`control_release_to_ai`.
+
+Both live console claim routes call the absent `control_claim`, including the
+console-v2 route used by Wesaya. Operator claim therefore fails.
+
+The missing repository functions must not be replayed or restored as written.
+Their source lacks narrow execution grants and complete tenant/actor validation.
+The existing assignment history also permits privileged mutation, and its audit
+function can silently lose records.
+
+The secure forward correction must also:
+
+- make return-to-Kivo one atomic transition;
+- remove the direct legacy release update;
+- inventory and reconcile every ownership writer;
+- move the shared control contract out of the console-only module boundary;
+- make assignment history mechanically immutable;
+- prove tenant isolation, actor authorization, concurrency and audit behaviour against real PostgreSQL.
+
+Audit failure policy:
+
+- a transition toward human or safe control may commit only if its normal audit
+  event or a separate durable audit-failure record commits in the same transaction;
+- return to AI, close, idle and reassignment fail completely if their audit event fails;
+- silent audit loss is forbidden.
+
+No replay of `0099`, raw ownership shortcut, application, migration or production
+write is authorized. `0106` remains reserved but blocked. No replacement
+migration label is assigned yet. Pilot status remains **NO-GO**.
 
 ### P0-ORD-01 — Stop the pending-order population from growing
 
@@ -573,6 +617,8 @@ These findings extend the new BRAIN. They do not justify a prompt-only patch or 
 
 | Item | State | Depends on |
 |---|---|---|
+| P0-CTRL-01 / KV-D06-001 | **CRITICAL; OPEN; BLOCKING; design not approved** | Independent clearance of the secure forward design and explicit founder approval before implementation |
+| P0-MAINT-01 | **OPEN; BLOCKING; design not approved** | P0-CTRL-01 rollout boundary plus a verified reversible block, drain, read-back and restore mechanism |
 | P0-ORD-01 / `WO-ENG-P0-ORDER-FREEZE` | **BLOCKING; mandatory code guard** | Engine mutation lane; merge before E0 resumes; baseline stays 127 |
 | P0-WA-01 | **BLOCKING** | `WO-ENG-P0-ORDER-FREEZE`, controlled Meta/Vercel alignment and successful legacy-path test |
 | P0-SHADOW-01 | **BLOCKING BEFORE PILOT** | Remove or govern the second ingress route |
@@ -723,6 +769,11 @@ No public order is allowed until all are proven.
 - [ ] Critical phone alert drill proves delivery, acknowledgment and escalation
 - [ ] Staff know the manual fallback
 - [ ] Maximum supported concurrent conversations/orders is measured and documented
+- [ ] Both console claim routes succeed against the real production-schema contract
+- [ ] Every privileged control function validates tenant and actor inside the database
+- [ ] Return-to-Kivo is one atomic operation
+- [ ] No production ownership writer bypasses the canonical control contract
+- [ ] Assignment history is immutable and audit-degradation behaviour is proven
 
 ### Money
 
@@ -781,6 +832,7 @@ Every Karim test records:
 4. Verify the negative path failed for the intended reason.
 5. Re-run focused, Karim-core, safety, type and build suites.
 6. Run live proof before merging customer-facing behaviour.
+7. A stubbed RPC test cannot prove a database function exists; every required RPC must have a real PostgreSQL contract and role-access proof.
 
 ### 11.4 Detector corpus
 
@@ -828,6 +880,40 @@ No detector policy is accepted until a native Egyptian/Saudi reviewer resolves t
   contract name** `order_acceptance_contract_v1` together with the exact 14-digit
   execution version embedded as approved SQL literals (§12.3 steps 5-6) — never
   the four-digit label. Nothing in the addendum changes.
+
+### 12.1b Conversation control plane (0099) — partially present, blocked
+
+- **Ledger row.** `supabase_migrations.schema_migrations` contains
+  `20260721235747 / conversation_control_plane`. The schema, control epoch,
+  assignment table and triggers are present in production.
+- **Absent functions.** Six functions named by
+  `0099_conversation_control_plane.sql` are absent from production:
+  `_control_set_ctx`, `control_apply_transition`, `control_escalate_to_hold`,
+  `control_claim`, `control_reassign` and `control_release_to_ai`. A ledger row
+  is therefore not proof that the objects a migration names exist.
+- **Broken live routes.** Both live console claim routes call the absent
+  `control_claim`: the legacy route
+  [`app/api/conversations/[id]/assignee/route.ts`](../app/api/conversations/%5Bid%5D/assignee/route.ts)
+  and the console-v2 route
+  [`app/(console-v2)/c/(app)/conversations/claim/route.ts`](../app/%28console-v2%29/c/%28app%29/conversations/claim/route.ts)
+  used by Wesaya. Operator claim fails.
+- **No replay and no byte-for-byte restoration.** `0099` must not be replayed,
+  and its function bodies must not be restored as written. Their source lacks
+  narrow execution grants and complete tenant/actor validation.
+- **Non-atomic handback.** Return-to-Kivo is not one atomic transition and must
+  be redesigned as one.
+- **Legacy direct release.** The direct legacy release update bypasses the
+  canonical control contract and must be removed.
+- **Audit and immutability defects.** The assignment history permits privileged
+  mutation and must be made mechanically immutable; the audit function can
+  silently lose records, and silent audit loss is forbidden.
+- **`0106` reserved but blocked.** The `0106` reservation recorded in §12.1a is
+  unchanged and remains blocked. No migration has been created, prepared,
+  approved or applied under it.
+- **No replacement label.** No replacement migration label is assigned for the
+  secure forward correction. Assigning one is a separate approved decision.
+- **Pilot status.** The pilot remains **NO-GO**. No application, migration or
+  production write is authorized by this entry.
 
 ### 12.2 PR #553
 
@@ -929,6 +1015,11 @@ The existing E0 rollback-only script does not meet these conditions and must not
 | Public shadow BRAIN ingress route | [`app/api/brain/ingress/whatsapp/route.ts`](https://github.com/mohamedyousalama-ctrl/MaitreAI/blob/935afaf42a6e7912f842aa2b6fed9140de806648/app/api/brain/ingress/whatsapp/route.ts) |
 | BRAIN ingress persistence | [`lib/brain/ingress/store.ts`](https://github.com/mohamedyousalama-ctrl/MaitreAI/blob/935afaf42a6e7912f842aa2b6fed9140de806648/lib/brain/ingress/store.ts) |
 | Applied 0104 source | [PR #553](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/553) |
+| Conversation control-plane migration | [`supabase/migrations/0099_conversation_control_plane.sql`](../supabase/migrations/0099_conversation_control_plane.sql) |
+| Shared control module requiring redesign | [`lib/console/conversation-control.ts`](../lib/console/conversation-control.ts) |
+| Legacy claim/release route | [`app/api/conversations/[id]/assignee/route.ts`](../app/api/conversations/%5Bid%5D/assignee/route.ts) |
+| Console-v2 claim route | [`app/(console-v2)/c/(app)/conversations/claim/route.ts`](../app/%28console-v2%29/c/%28app%29/conversations/claim/route.ts) |
+| Stub-only control proof | [`scripts/proof-control.test.ts`](../scripts/proof-control.test.ts) |
 
 ### 14.3 Audit and quality evidence
 
@@ -980,11 +1071,13 @@ Completed repository gates:
 
 The active decisions, in order, are:
 
-1. P0-ORD-01 containment is specified, approved and executed.
-2. P0-WA-01 repair packet is approved and executed against a non-order message.
-3. P0-SHADOW-01 is removed or governed.
-4. A new independent builder writes the E0 PostgreSQL verification from the live schema contract.
-5. E0/E1 safety increment proceeds only after the real proof passes.
+1. `P0-CTRL-01 / KV-D06-001` secure forward design is approved and proven.
+2. `P0-MAINT-01` maintenance and drain procedure is approved.
+3. P0-ORD-01 containment is specified, approved and executed.
+4. P0-WA-01 repair packet is approved and executed against a non-order message.
+5. P0-SHADOW-01 is removed or governed.
+6. A new independent builder writes the E0 PostgreSQL verification from the live schema contract.
+7. E0/E1 safety increment proceeds only after the real proof passes.
 
 K2 must close before any future migration is applied. K4 must close before the R1 cutover. Neither may be silently treated as complete.
 
@@ -1053,3 +1146,6 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 25 Jul 2026 | Final candidate: defined every operational status qualifier and added P0-SHADOW-01 to the executive sequence |
 | 25 Jul 2026 | Post-merge reconciliation: recorded PR #554 and PR #553 as completed repository gates, froze the 0104 source hash, and advanced the active queue to P0-ORD-01 |
 | 25 Jul 2026 | K2 closure: documented the governed migration policy in `DEPLOYMENT.md` §B including the permitted §12.3 isolated-workspace application path, reconciled repository logical labels against the production ledger, and reserved logical label 0106 for the P0-ORD-01 containment migration with 0105 unchanged for `order_acceptance_contract_v1` |
+| 25 Jul 2026 | KV-D06-001 recorded as CRITICAL, OPEN and BLOCKING: migration 0099 has a ledger row but six control-plane functions are absent; two live console claim routes are broken; unsafe replay is prohibited; secure control and maintenance design now precede P0-ORD-01 while 0106 remains reserved but blocked |
+| 25 Jul 2026 | KV-D06-001 roadmap correction: repaired seven repository-relative links and aligned the Phase 1 state/dependency columns; scope and sequence unchanged |
+| 26 Jul 2026 | PR #557 correction 2: restored the pre-existing §1.3 and §16 acceptance language verbatim while retaining the two new control and maintenance predecessors; no safety gate or proof obligation was removed |
