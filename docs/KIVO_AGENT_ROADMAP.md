@@ -27,7 +27,7 @@ It has five jobs:
 
 ### 0.1 Status language
 
-Every material item uses one of these states:
+Every material item uses one or more of these canonical proof and lifecycle states:
 
 | State | Meaning |
 |---|---|
@@ -41,6 +41,21 @@ Every material item uses one of these states:
 | **HISTORICAL** | Useful background, not current authority |
 | **REJECTED** | Disproved, unsafe or superseded |
 | **UNPROVEN** | Plausible but not accepted as truth |
+
+Operational qualifiers may accompany a canonical state but never replace its proof:
+
+| Qualifier | Meaning |
+|---|---|
+| **OPEN** | Unresolved; no completion claim |
+| **APPROVED** | Authorized by the named decision-maker; not necessarily merged, applied or complete |
+| **READY** | The artefact or action is prepared for its named next gate |
+| **BLOCKING** | Later named work must wait; normally paired with `BLOCKED`, `IN PROGRESS` or `PLANNED` |
+| **NOT STARTED** | No active work order; equivalent to `PLANNED` only when scope has been accepted |
+| **REPRODUCED** | A defect has an executable reproduction; it is not thereby repaired |
+| **FROZEN** | Work or a branch is intentionally held and must not advance |
+| **ACTIVATES ON MERGE** | The stated transition takes effect only when the named PR reaches `main` |
+
+No qualifier satisfies an exit condition by itself.
 
 ### 0.2 Truth precedence
 
@@ -101,12 +116,14 @@ The most urgent current facts are:
 The controlled order is:
 
 1. Approve and merge this authoritative roadmap.
-2. Enforce a temporary freeze on new non-test Wesaya order creation.
-3. Repair WhatsApp signature verification and prove the existing webhook accepts and persists one non-order test message.
-4. Rebuild and run the E0 database verification correctly.
-5. Finish E0 and E1 as one pilot safety increment, then prove durable ingress and terminal scanning live.
-6. Complete order acceptance truth and the remaining pilot blockers.
-7. Run the complete live proof before any public order.
+2. Independently clear and merge PR #553 as source-only history without reapplying migration 0104.
+3. Enforce a temporary freeze on new non-test Wesaya order creation.
+4. Repair WhatsApp signature verification and prove the existing webhook accepts and persists one non-order test message.
+5. Remove or govern the public shadow BRAIN ingress route.
+6. Rebuild and run the E0 database verification correctly.
+7. Finish E0 and E1 as one pilot safety increment, then prove durable ingress and terminal scanning live.
+8. Complete order acceptance truth and the remaining pilot blockers.
+9. Run the complete live proof before any public order.
 
 ---
 
@@ -511,7 +528,7 @@ These findings extend the new BRAIN. They do not justify a prompt-only patch or 
 | M-01 | Tenant isolation lacks complete live behavioural proof | Open |
 | M-02 | Repository alone did not prove live migration/flag truth | Partially remediated by manifests and read-back |
 | M-03 | Safety vocabulary is not yet one universal contract | Open |
-| GOV-01 | `ROADMAP.md` falsely claims current single-source authority | Must be marked historical |
+| GOV-01 | `ROADMAP.md` falsely claimed current single-source authority | Resolved in PR #554; repository authority changes when that PR merges |
 | GOV-02 | `DEPLOYMENT.md` documents an inoperable migration process | Must be corrected |
 | GOV-03 | Hundreds of stale branches create deletion risk | Cleanup deferred; every active branch must rebase and show zero unexplained deletions |
 | GOV-04 | Builder handbacks repeatedly overstated evidence | Author/verifier separation remains mandatory |
@@ -535,8 +552,8 @@ These findings extend the new BRAIN. They do not justify a prompt-only patch or 
 
 | Item | State | Exit condition |
 |---|---|---|
-| K0 | **IN PROGRESS** | This file audited, corrected and merged |
-| K1 | **OPEN** | Old roadmaps marked historical and point here |
+| K0 | **APPROVED; ACTIVATES ON MERGE** | This independently approved file becomes repository authority when PR #554 merges |
+| K1 | **READY; ACTIVATES ON MERGE** | PR #554 marks the old roadmaps historical and points them here |
 | K2 | **OPEN** | `DEPLOYMENT.md` describes the real governed migration ceremony |
 | K3 | **OPEN** | PR #553 independently reviewed and merged without reapplying 0104 |
 | K4 | **OPEN** | Signed historical-risk record receives a 126→127 growth and predicate clarification |
@@ -922,16 +939,18 @@ The following claims must not reappear:
 
 ## 16. Current decision queue
 
-These are the next decisions in order:
+**Repository-activation gate:** the founder merges the independently approved documentation PR #554. Until that merge, this file is not repository authority.
 
-1. Independent auditor approves or corrects this document.
-2. Founder approves the documentation PR after corrections.
-3. Independent review clears PR #553 for source-only merge.
-4. P0-ORD-01 containment is specified, approved and executed.
-5. P0-WA-01 repair packet is approved and executed against a non-order message.
-6. P0-SHADOW-01 is removed or governed.
-7. A new independent builder writes the E0 PostgreSQL verification from the live schema contract.
-8. E0/E1 safety increment proceeds only after the real proof passes.
+After activation, these are the next decisions in order:
+
+1. Independent review clears PR #553 for source-only merge without reapplying migration 0104.
+2. P0-ORD-01 containment is specified, approved and executed.
+3. P0-WA-01 repair packet is approved and executed against a non-order message.
+4. P0-SHADOW-01 is removed or governed.
+5. A new independent builder writes the E0 PostgreSQL verification from the live schema contract.
+6. E0/E1 safety increment proceeds only after the real proof passes.
+
+K2 must close before any future migration is applied. K4 must close before the R1 cutover. Neither may be silently treated as complete.
 
 No later roadmap item may jump ahead of an unresolved earlier safety or truth gate.
 
@@ -994,3 +1013,5 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 25 Jul 2026 | Draft v4: folded both mandatory v3 approval conditions before documentation PR |
 | 25 Jul 2026 | Final PR version: folded three auditor-recorded precision items without changing approved scope or sequence |
 | 25 Jul 2026 | Repository correction candidate: replaced Markdown hard-break whitespace, corrected the lifecycle status, and retained identical roadmap scope and sequence |
+| 25 Jul 2026 | Activation candidate: made PR #554's self-activation states durable, aligned the executive sequence with the decision queue, and stated the K2/K4 deadlines |
+| 25 Jul 2026 | Final candidate: defined every operational status qualifier and added P0-SHADOW-01 to the executive sequence |
