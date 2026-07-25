@@ -282,14 +282,16 @@ approved. No payment, acceptance or unrelated application file is in scope.
 **Sequencing against E0:**
 
 1. Pause `wo-e0-safety-ingress`; it must not change or rebase concurrently.
-2. Build `WO-ENG-P0-ORDER-FREEZE` from current `origin/main` under the approved Option B design.
-3. Independently prove the freeze, merge it alone and deploy it.
-4. Enable the approved protected containment state for Wesaya and read it back from the database.
-5. Rebase E0 onto the new `main`, verify the freeze remains intact, then resume E0.
+2. Complete and independently approve the exact Option B database design. No SQL may be prepared before that design is cleared.
+3. Build one migration-bearing work order from current `origin/main`: the logical `0106` source, its focused real-PostgreSQL proofs, and no application file unless separately approved.
+4. Run the governed isolated-CLI preflight described in `DEPLOYMENT.md` §B: allocate one 14-digit execution version, approve the exact SQL bytes and hash, copy them unchanged into the execution file, and prove the dry run lists exactly one pending migration.
+5. After explicit founder approval, apply the exact approved bytes once. Read back the ledger row, schema, trigger, permissions and protected-state default, then run the approved real-database proofs. Merging or deploying repository files is not migration application.
+6. After successful production read-back, preserve on `main` the byte-identical logical `0106` source and its `.APPLIED.md` mapping to the 14-digit execution version.
+7. With separate explicit founder approval, enable the protected containment state for Wesaya and read it back from the database.
+8. Independently prove that a confirmation attempt creates no order row, sends no “order placed” message and creates the required durable critical alert.
+9. Rebase E0 onto the resulting `main`, verify the enabled containment remains intact, then resume E0.
 
-This remains a sequential work order that must complete before E0 resumes, not a parallel
-workstream. Because the containment now lives in the database, it no longer shares the
-E0→E2 application file territory.
+This is a sequential work order that must finish before E0 resumes. The database migration must exist and pass production read-back before the protected state can be enabled.
 
 **Acceptance before WhatsApp signature repair:**
 
@@ -1167,3 +1169,4 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 25 Jul 2026 | KV-D06-001 roadmap correction: repaired seven repository-relative links and aligned the Phase 1 state/dependency columns; scope and sequence unchanged |
 | 26 Jul 2026 | PR #557 correction 2: restored the pre-existing §1.3 and §16 acceptance language verbatim while retaining the two new control and maintenance predecessors; no safety gate or proof obligation was removed |
 | 26 Jul 2026 | P0-ORD-01 reconciled with the founder's selected Option B: the containment is protected database state plus a database-level `orders` trigger, the `order_finalization_freeze` feature-flag mechanism is withdrawn, the mechanism-bound file territory and the thirty-fifth-feature-key claim are removed, enable/read-back/lift language is restated against the protected state, the exact database design remains subject to independent approval, `0106` stays reserved and blocked, and P0-ORD-01 stays OPEN and BLOCKING with every other fact, gate and sequence unchanged |
+| 26 Jul 2026 | P0-ORD-01 migration-sequence clarification: the E0 sequencing now separates design approval, the migration-bearing work order, the governed `DEPLOYMENT.md` §B isolated-CLI preflight, one founder-approved application with full production read-back, the `.APPLIED.md` preservation step, and a separately approved protected-state enablement; the prior "merge it alone and deploy it" step was removed because merging or deploying repository files does not apply a database migration, and the containment cannot be enabled before the migration exists and passes production read-back |
