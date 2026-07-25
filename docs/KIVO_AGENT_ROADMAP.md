@@ -565,7 +565,7 @@ These findings extend the new BRAIN. They do not justify a prompt-only patch or 
 |---|---|---|
 | K0 | **MERGED** through PR #554 | This independently approved file is repository authority |
 | K1 | **MERGED** through PR #554 | PR #554 marks the old roadmaps historical and points them here |
-| K2 | **OPEN** | `DEPLOYMENT.md` describes the real governed migration ceremony |
+| K2 | **MERGED**; **ACTIVATES ON MERGE** | `DEPLOYMENT.md` §B states the governed migration policy: the permitted §12.3 isolated-workspace application path and its four preconditions; no repository-level or broad `db push`; no historical replay; no dashboard paste; no migration repair; no re-application of an applied migration; applied migrations immutable absent a signed re-baseline; a brand-new environment requires a separate founder-approved bootstrap plan and a verified schema manifest |
 | K3 | **MERGED** through PR #553 | PR #553 was independently reviewed and merged without reapplying 0104 |
 | K4 | **OPEN** | Signed historical-risk record receives a 126→127 growth and predicate clarification |
 
@@ -808,6 +808,27 @@ No detector policy is accepted until a native Egyptian/Saudi reviewer resolves t
 - The old documented `supabase db push` path is inoperable from the repository and would see the entire four-digit history as unmatched if linked.
 - Production 0104 is already applied and must not be applied again.
 
+### 12.1a Migration numbering
+
+- `0105` remains **reserved** for the logical migration
+  `order_acceptance_contract_v1`. That reservation is unchanged.
+- `0106` is **reserved** for the P0-ORD-01 safety-containment migration. No such
+  migration has been created, prepared, approved or applied. This entry reserves
+  the logical label only.
+- Four-digit logical labels **do not** define production execution order. They
+  are filing labels only.
+- Production execution order is determined solely by the approved **14-digit
+  ledger version** in `supabase_migrations.schema_migrations`.
+- A gap or an out-of-order four-digit label is therefore expected and harmless:
+  `0106` may be applied before `0105` without any inconsistency, because the
+  ledger version, not the label, records order.
+- Future tooling **must never** sort, select or apply migrations by their
+  four-digit labels.
+- The signed R1 addendum is unaffected. Its cutover boundary is the **logical
+  contract name** `order_acceptance_contract_v1` together with the exact 14-digit
+  execution version embedded as approved SQL literals (§12.3 steps 5-6) — never
+  the four-digit label. Nothing in the addendum changes.
+
 ### 12.2 PR #553
 
 [PR #553](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/553) contains only:
@@ -1031,3 +1052,4 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 25 Jul 2026 | Activation candidate: made PR #554's self-activation states durable, aligned the executive sequence with the decision queue, and stated the K2/K4 deadlines |
 | 25 Jul 2026 | Final candidate: defined every operational status qualifier and added P0-SHADOW-01 to the executive sequence |
 | 25 Jul 2026 | Post-merge reconciliation: recorded PR #554 and PR #553 as completed repository gates, froze the 0104 source hash, and advanced the active queue to P0-ORD-01 |
+| 25 Jul 2026 | K2 closure: documented the governed migration policy in `DEPLOYMENT.md` §B including the permitted §12.3 isolated-workspace application path, reconciled repository logical labels against the production ledger, and reserved logical label 0106 for the P0-ORD-01 containment migration with 0105 unchanged for `order_acceptance_contract_v1` |
