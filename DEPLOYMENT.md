@@ -79,14 +79,89 @@ Real WhatsApp + database (Supabase) are **Sprint 7**, not part of this deploy.
 2. Project Settings → API: copy the **Project URL**, **anon public key**, and
    **service_role key** (the service role is secret).
 
-## B. Run the migrations
-Apply the SQL in `supabase/migrations/` in order. Either:
-- **Dashboard:** SQL Editor → paste `0001_init.sql`, run; then `0002_rls.sql`;
-  then `0003_seed.sql`. **Or**
-- **CLI:** `supabase link` then `supabase db push`.
+## B. Migrations
 
-This creates the full schema, RLS policies, and the `seed_demo_restaurant(user_id)`
-function (does NOT insert data until called with a user).
+**This document does not apply migrations, and following it never will.**
+Applying a migration to any Kivo database is a founder-approved ceremony, not a
+deployment step. The only approved procedure is the governed migration ceremony
+in [`docs/KIVO_AGENT_ROADMAP.md`](docs/KIVO_AGENT_ROADMAP.md) §12.3. See also
+[`supabase/migrations/README.md`](supabase/migrations/README.md).
+
+### Prohibited
+
+- **Never** run `supabase db push` from this project repository.
+- **Never** use `supabase db push` as a broad replay, or against unmatched
+  historical files.
+- **Never** replay a historical migration file, or any historical subset of
+  `supabase/migrations/`.
+- **Never** paste the historical migration set into the Supabase SQL Editor.
+- **Never** use migration repair.
+- **Never** re-apply a migration that is already applied.
+
+### The only permitted use of `supabase db push`
+
+Inside the founder-approved §12.3 **isolated CLI workspace**, and only after all
+of the following hold:
+
+1. the remote timestamped history has been fetched;
+2. the dry run proves **exactly one** approved migration is pending;
+3. its bytes and hash match the founder-approved artefact; and
+4. the founder authorises application.
+
+Migration `0104_safety_ingress_evidence` was applied through exactly this
+governed procedure.
+
+### Application is not historical replay
+
+Applying exactly one new, approved execution file through §12.3 is an
+**application**. It is not a replay. The replay prohibition above covers
+historical migration files and historical subsets of the directory — never the
+single new approved execution file that the ceremony produces.
+
+### Repository files versus the production ledger
+
+The repository holds migration files under `supabase/migrations/`, named with
+four-digit **logical labels**. The production database holds rows in
+`supabase_migrations.schema_migrations`, versioned by **14-digit execution
+versions**. The two sets are not in one-to-one correspondence, and the counts
+differ.
+
+The production ledger uses 14-digit execution versions. Its names are
+historically inconsistent: some retain a four-digit logical prefix
+(`0104_safety_ingress_evidence`), some do not (`brain_execution_substrate`), and
+some carry the label as a suffix (`cod_settlement_atomic_0092`). Therefore ledger
+names cannot reliably be derived from repository filenames. **The four-digit
+repository label is not the execution version.**
+
+A repository file records approved DDL. A ledger row records application. The
+ledger is the only authority on what has been applied. The absence of an
+`.APPLIED.md` companion carries **no** information about whether a migration is
+applied — most applied migrations predate that convention.
+
+### Editing an applied migration
+
+Applied migrations are immutable **unless a separate signed re-baseline records
+the old hash, the new hash and the reason**. This matches
+`supabase/migrations/README.md`; neither document permits a silent edit.
+
+Migration `0104_safety_ingress_evidence` is additionally **byte-frozen**: it may
+not be edited or re-applied. It is applied at ledger version `20260724034339`,
+and its source is frozen to SHA-256
+`560e060351c793990daa8f61bbdad95e998d508977e1610478881d7582c38b80`. Editing it —
+even its stale `PREPARE-ONLY` header — would destroy the approved byte identity.
+Re-running it would drop and recreate a foreign key (lines 163-170, revalidating
+the table), rewrite seven function definitions, replace three triggers, reissue
+the full privilege block, and request a PostgREST schema reload. Those are real
+DDL operations, not a harmless no-op.
+
+### A brand-new environment
+
+No fresh-environment bootstrap procedure is approved. Standing up a brand-new
+Kivo database requires a **separate founder-approved bootstrap plan** and a
+**verified schema manifest**, produced and reviewed before any SQL is executed.
+Until such a plan exists and is approved, there is no supported way to create a
+new environment from this repository, and none of the prohibited actions above
+may be used as a substitute.
 
 ## C. Configure auth
 - **Email OTP** works out of the box. In Auth → Email templates, ensure the
