@@ -1,5 +1,8 @@
 # Kivo — Master Roadmap
 
+> **SCOPE.** This file remains product-wide strategy. Kivo Agent execution authority is
+> [`docs/KIVO_AGENT_ROADMAP.md`](docs/KIVO_AGENT_ROADMAP.md).
+
 > **Restaurant Direct Commerce OS**  
 > We turn restaurants' own WhatsApp, QR, Instagram, and loyal customers into
 > direct orders — then manage delivery, tracking, and repeat sales without giving

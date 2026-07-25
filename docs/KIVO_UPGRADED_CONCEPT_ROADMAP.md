@@ -1,4 +1,8 @@
 # Kivo — Upgraded Concept & Master Roadmap
+
+> **SCOPE.** This file remains the strategic concept. Current implementation status and sequence
+> are governed by [`docs/KIVO_AGENT_ROADMAP.md`](./KIVO_AGENT_ROADMAP.md).
+
 ### Restaurant-First Core Brain + Module Agents
 **Document status:** Strategic north star + execution roadmap
 **Owner:** Mohamed (City Baker LLC — CR 216565)
