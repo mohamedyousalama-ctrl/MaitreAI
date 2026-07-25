@@ -9,7 +9,10 @@
 **Production:** [`getkivo.io`](https://getkivo.io)<br>
 **Supabase project:** `zlighrbsjexrozrmuwpw`<br>
 **Truth snapshot:** 25 July 2026<br>
-**Repository snapshot:** `935afaf42a6e7912f842aa2b6fed9140de806648`
+**Repository evidence baseline:** [`0d8ae003d2390cab099cc72bcb2c50d1008b3696`](https://github.com/mohamedyousalama-ctrl/MaitreAI/commit/0d8ae003d2390cab099cc72bcb2c50d1008b3696)
+
+This is the independently reviewed `main` baseline after PR #553, not a claim
+that `main` can never move.
 
 ---
 
@@ -113,17 +116,24 @@ The most urgent current facts are:
 
 ### 1.3 What happens next
 
-The controlled order is:
+Two repository gates are complete:
 
-1. Approve and merge this authoritative roadmap.
-2. Independently clear and merge PR #553 as source-only history without reapplying migration 0104.
-3. Enforce a temporary freeze on new non-test Wesaya order creation.
-4. Repair WhatsApp signature verification and prove the existing webhook accepts and persists one non-order test message.
-5. Remove or govern the public shadow BRAIN ingress route.
-6. Rebuild and run the E0 database verification correctly.
-7. Finish E0 and E1 as one pilot safety increment, then prove durable ingress and terminal scanning live.
-8. Complete order acceptance truth and the remaining pilot blockers.
-9. Run the complete live proof before any public order.
+- PR #554 is **MERGED** at
+  `21268dcd7594f2a77e062dcdc72660bbdb4221c5`, activating this authoritative
+  roadmap.
+- PR #553 is **MERGED** at
+  `0d8ae003d2390cab099cc72bcb2c50d1008b3696` as source-only history without
+  reapplying migration 0104.
+
+The active controlled order is:
+
+1. Enforce P0-ORD-01, the temporary freeze on new non-test Wesaya order creation.
+2. Repair P0-WA-01 WhatsApp signature verification and prove the existing webhook accepts and persists one non-order test message.
+3. Remove or govern P0-SHADOW-01, the public shadow BRAIN ingress route.
+4. Rebuild and run the E0 database verification correctly.
+5. Finish E0 and E1 as one pilot safety increment, then prove durable ingress and terminal scanning live.
+6. Complete order acceptance truth and the remaining pilot blockers.
+7. Run the complete live proof before any public order.
 
 ---
 
@@ -133,10 +143,11 @@ The controlled order is:
 
 | Fact | State | Evidence |
 |---|---|---|
-| Current reviewed `main` | **VERIFIED** at `935afaf42a6e7912f842aa2b6fed9140de806648` | [Commit](https://github.com/mohamedyousalama-ctrl/MaitreAI/commit/935afaf42a6e7912f842aa2b6fed9140de806648) |
+| Repository evidence baseline after PR #553 | **VERIFIED** at `0d8ae003d2390cab099cc72bcb2c50d1008b3696`; this records the reviewed baseline, not an immovable `main` | [Commit](https://github.com/mohamedyousalama-ctrl/MaitreAI/commit/0d8ae003d2390cab099cc72bcb2c50d1008b3696) |
+| Authoritative roadmap activation | **MERGED** in PR #554 at `21268dcd7594f2a77e062dcdc72660bbdb4221c5` | [PR #554](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/554) |
 | R0 shared acceptance contract | **MERGED** in PR #551 | [PR #551](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/551) |
 | Safety reproduction harness | **MERGED** in PR #552 | [PR #552](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/552) |
-| 0104 source reconciliation | **OPEN, NOT MERGED** | [PR #553](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/553) |
+| 0104 source reconciliation | **MERGED** in PR #553 at `0d8ae003d2390cab099cc72bcb2c50d1008b3696`; frozen SQL SHA-256 `560e060351c793990daa8f61bbdad95e998d508977e1610478881d7582c38b80` | [PR #553](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/553) |
 | E0 application integration | **NOT MERGED** | Branch `wo-e0-safety-ingress` at `e1e0cc92b0fe476a7e6f52ac853c8da983fc7744` |
 | Partial payment branch | **FROZEN** | `wo-eng-4-payment-defects-20260723` at `617de81`; incomplete and stale |
 
@@ -172,7 +183,7 @@ Seven orders have both `customer_id` and `conversation_id` null. Eight orders ha
 | `channel_events` | 0 rows, re-verified 25 July 2026 |
 | `ingress_safety_scans` | 0 rows, re-verified 25 July 2026 |
 | `ingress_safety_evidence` | 0 rows, re-verified 25 July 2026 |
-| Migration 0104 | **APPLIED** |
+| Migration 0104 | **APPLIED**; source **MERGED** through PR #553 at `0d8ae003d2390cab099cc72bcb2c50d1008b3696`; SQL frozen at SHA-256 `560e060351c793990daa8f61bbdad95e998d508977e1610478881d7582c38b80` |
 | E0 live webhook integration | **NOT MERGED** |
 | Rollback-only production verification | **REJECTED; script defects can create false passes** |
 
@@ -552,10 +563,10 @@ These findings extend the new BRAIN. They do not justify a prompt-only patch or 
 
 | Item | State | Exit condition |
 |---|---|---|
-| K0 | **APPROVED; ACTIVATES ON MERGE** | This independently approved file becomes repository authority when PR #554 merges |
-| K1 | **READY; ACTIVATES ON MERGE** | PR #554 marks the old roadmaps historical and points them here |
+| K0 | **MERGED** through PR #554 | This independently approved file is repository authority |
+| K1 | **MERGED** through PR #554 | PR #554 marks the old roadmaps historical and points them here |
 | K2 | **OPEN** | `DEPLOYMENT.md` describes the real governed migration ceremony |
-| K3 | **OPEN** | PR #553 independently reviewed and merged without reapplying 0104 |
+| K3 | **MERGED** through PR #553 | PR #553 was independently reviewed and merged without reapplying 0104 |
 | K4 | **OPEN** | Signed historical-risk record receives a 126→127 growth and predicate clarification |
 
 ### Phase 1 — Contain order creation and restore the channel
@@ -939,16 +950,20 @@ The following claims must not reappear:
 
 ## 16. Current decision queue
 
-**Repository-activation gate:** the founder merges the independently approved documentation PR #554. Until that merge, this file is not repository authority.
+Completed repository gates:
 
-After activation, these are the next decisions in order:
+1. PR #554 is **MERGED** at `21268dcd7594f2a77e062dcdc72660bbdb4221c5`;
+   the independently approved roadmap is repository authority.
+2. PR #553 is **MERGED** at `0d8ae003d2390cab099cc72bcb2c50d1008b3696`
+   as source-only history without reapplying migration 0104.
 
-1. Independent review clears PR #553 for source-only merge without reapplying migration 0104.
-2. P0-ORD-01 containment is specified, approved and executed.
-3. P0-WA-01 repair packet is approved and executed against a non-order message.
-4. P0-SHADOW-01 is removed or governed.
-5. A new independent builder writes the E0 PostgreSQL verification from the live schema contract.
-6. E0/E1 safety increment proceeds only after the real proof passes.
+The active decisions, in order, are:
+
+1. P0-ORD-01 containment is specified, approved and executed.
+2. P0-WA-01 repair packet is approved and executed against a non-order message.
+3. P0-SHADOW-01 is removed or governed.
+4. A new independent builder writes the E0 PostgreSQL verification from the live schema contract.
+5. E0/E1 safety increment proceeds only after the real proof passes.
 
 K2 must close before any future migration is applied. K4 must close before the R1 cutover. Neither may be silently treated as complete.
 
@@ -1015,3 +1030,4 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 25 Jul 2026 | Repository correction candidate: replaced Markdown hard-break whitespace, corrected the lifecycle status, and retained identical roadmap scope and sequence |
 | 25 Jul 2026 | Activation candidate: made PR #554's self-activation states durable, aligned the executive sequence with the decision queue, and stated the K2/K4 deadlines |
 | 25 Jul 2026 | Final candidate: defined every operational status qualifier and added P0-SHADOW-01 to the executive sequence |
+| 25 Jul 2026 | Post-merge reconciliation: recorded PR #554 and PR #553 as completed repository gates, froze the 0104 source hash, and advanced the active queue to P0-ORD-01 |

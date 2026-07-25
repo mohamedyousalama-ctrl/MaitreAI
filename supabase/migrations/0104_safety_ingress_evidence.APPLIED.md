@@ -16,6 +16,16 @@ pending change.
 | Approved file SHA-256 | `560e060351c793990daa8f61bbdad95e998d508977e1610478881d7582c38b80` |
 | Application status | Applied. Must not be applied again. |
 
+## Frozen source status
+
+The SQL header still says `PREPARE-ONLY`. That wording predates the production
+application and is superseded by the production ledger entry
+`20260724034339 / 0104_safety_ingress_evidence`.
+
+Do not correct the SQL header. The applied source is byte-frozen to SHA-256
+`560e060351c793990daa8f61bbdad95e998d508977e1610478881d7582c38b80`;
+editing even that stale wording would destroy the approved byte identity.
+
 ## Byte verification
 
 The live database cannot prove the original file bytes — it stores parsed
@@ -31,6 +41,27 @@ sha256sum supabase/migrations/0104_safety_ingress_evidence.sql
 
 If the hash does not match, this file is not the artefact that was applied.
 Stop and escalate.
+
+## Why reapplication is not a harmless no-op
+
+The committed SQL contains schema-mutating operations whose exact line ranges
+are:
+
+- `ingress_safety_scans_event_fk`: lines 163–164 drop the constraint and lines
+  166–170 add it again. The add does not use `NOT VALID`, so PostgreSQL
+  revalidates existing rows while recreating the constraint.
+- `ingress_safety_scans_monotonic`: lines 259–262 drop and recreate the trigger.
+- `ingress_safety_evidence_immutable`: lines 276–279 drop and recreate the
+  trigger.
+- `ingress_safety_evidence_parent_guard`: lines 314–317 drop and recreate the
+  trigger.
+- Schema-reload notification: line 995 runs
+  `notify pgrst, 'reload schema';`.
+
+Rerunning the file would therefore drop and recreate a foreign key, revalidate
+the table, replace three triggers and request a PostgREST schema reload. Even
+if the final object definitions appeared unchanged, those operations are real
+DDL and must not be replayed.
 
 ## Object correspondence
 
@@ -72,6 +103,15 @@ Privileges: `service_role` holds `SELECT` only on `webhook_envelopes`,
 direct INSERT, UPDATE or DELETE. All writes must pass through the four
 `brain_*` RPCs, on which `service_role` holds EXECUTE. The three trigger
 functions are executable by `postgres` only.
+
+`authenticated` retains `SELECT` on `webhook_envelopes`, `channel_events` and
+`ingress_safety_scans` under their existing tenant-scoped member-read RLS
+policies. Migration 0104 revokes direct write privileges on those tables; it
+does not remove their existing authenticated member-read access.
+
+`ingress_safety_evidence` is different: RLS is enabled and forced, it has no
+read policy, and ordinary roles are revoked. `authenticated` therefore cannot
+read `ingress_safety_evidence`.
 
 ## Scope
 
