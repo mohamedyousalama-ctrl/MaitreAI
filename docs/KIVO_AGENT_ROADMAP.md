@@ -617,8 +617,8 @@ These findings extend the new BRAIN. They do not justify a prompt-only patch or 
 
 | Item | State | Depends on |
 |---|---|---|
-| P0-CTRL-01 / KV-D06-001 | Secure forward redesign of the partially present conversation control plane | **CRITICAL; BLOCKING; design not approved** |
-| P0-MAINT-01 | Exact reversible maintenance block, in-flight drain proof, read-back and restore procedure | **BLOCKING; not designed** |
+| P0-CTRL-01 / KV-D06-001 | **CRITICAL; OPEN; BLOCKING; design not approved** | Independent clearance of the secure forward design and explicit founder approval before implementation |
+| P0-MAINT-01 | **OPEN; BLOCKING; design not approved** | P0-CTRL-01 rollout boundary plus a verified reversible block, drain, read-back and restore mechanism |
 | P0-ORD-01 / `WO-ENG-P0-ORDER-FREEZE` | **BLOCKING; mandatory code guard** | Engine mutation lane; merge before E0 resumes; baseline stays 127 |
 | P0-WA-01 | **BLOCKING** | `WO-ENG-P0-ORDER-FREEZE`, controlled Meta/Vercel alignment and successful legacy-path test |
 | P0-SHADOW-01 | **BLOCKING BEFORE PILOT** | Remove or govern the second ingress route |
@@ -893,9 +893,9 @@ No detector policy is accepted until a native Egyptian/Saudi reviewer resolves t
   is therefore not proof that the objects a migration names exist.
 - **Broken live routes.** Both live console claim routes call the absent
   `control_claim`: the legacy route
-  [`app/api/conversations/[id]/assignee/route.ts`](../../app/api/conversations/%5Bid%5D/assignee/route.ts)
+  [`app/api/conversations/[id]/assignee/route.ts`](../app/api/conversations/%5Bid%5D/assignee/route.ts)
   and the console-v2 route
-  [`app/(console-v2)/c/(app)/conversations/claim/route.ts`](../../app/%28console-v2%29/c/%28app%29/conversations/claim/route.ts)
+  [`app/(console-v2)/c/(app)/conversations/claim/route.ts`](../app/%28console-v2%29/c/%28app%29/conversations/claim/route.ts)
   used by Wesaya. Operator claim fails.
 - **No replay and no byte-for-byte restoration.** `0099` must not be replayed,
   and its function bodies must not be restored as written. Their source lacks
@@ -1015,11 +1015,11 @@ The existing E0 rollback-only script does not meet these conditions and must not
 | Public shadow BRAIN ingress route | [`app/api/brain/ingress/whatsapp/route.ts`](https://github.com/mohamedyousalama-ctrl/MaitreAI/blob/935afaf42a6e7912f842aa2b6fed9140de806648/app/api/brain/ingress/whatsapp/route.ts) |
 | BRAIN ingress persistence | [`lib/brain/ingress/store.ts`](https://github.com/mohamedyousalama-ctrl/MaitreAI/blob/935afaf42a6e7912f842aa2b6fed9140de806648/lib/brain/ingress/store.ts) |
 | Applied 0104 source | [PR #553](https://github.com/mohamedyousalama-ctrl/MaitreAI/pull/553) |
-| Conversation control-plane migration | [`supabase/migrations/0099_conversation_control_plane.sql`](../../supabase/migrations/0099_conversation_control_plane.sql) |
-| Shared control module requiring redesign | [`lib/console/conversation-control.ts`](../../lib/console/conversation-control.ts) |
-| Legacy claim/release route | [`app/api/conversations/[id]/assignee/route.ts`](../../app/api/conversations/%5Bid%5D/assignee/route.ts) |
-| Console-v2 claim route | [`app/(console-v2)/c/(app)/conversations/claim/route.ts`](../../app/%28console-v2%29/c/%28app%29/conversations/claim/route.ts) |
-| Stub-only control proof | [`scripts/proof-control.test.ts`](../../scripts/proof-control.test.ts) |
+| Conversation control-plane migration | [`supabase/migrations/0099_conversation_control_plane.sql`](../supabase/migrations/0099_conversation_control_plane.sql) |
+| Shared control module requiring redesign | [`lib/console/conversation-control.ts`](../lib/console/conversation-control.ts) |
+| Legacy claim/release route | [`app/api/conversations/[id]/assignee/route.ts`](../app/api/conversations/%5Bid%5D/assignee/route.ts) |
+| Console-v2 claim route | [`app/(console-v2)/c/(app)/conversations/claim/route.ts`](../app/%28console-v2%29/c/%28app%29/conversations/claim/route.ts) |
+| Stub-only control proof | [`scripts/proof-control.test.ts`](../scripts/proof-control.test.ts) |
 
 ### 14.3 Audit and quality evidence
 
@@ -1147,3 +1147,4 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 25 Jul 2026 | Post-merge reconciliation: recorded PR #554 and PR #553 as completed repository gates, froze the 0104 source hash, and advanced the active queue to P0-ORD-01 |
 | 25 Jul 2026 | K2 closure: documented the governed migration policy in `DEPLOYMENT.md` §B including the permitted §12.3 isolated-workspace application path, reconciled repository logical labels against the production ledger, and reserved logical label 0106 for the P0-ORD-01 containment migration with 0105 unchanged for `order_acceptance_contract_v1` |
 | 25 Jul 2026 | KV-D06-001 recorded as CRITICAL, OPEN and BLOCKING: migration 0099 has a ledger row but six control-plane functions are absent; two live console claim routes are broken; unsafe replay is prohibited; secure control and maintenance design now precede P0-ORD-01 while 0106 remains reserved but blocked |
+| 25 Jul 2026 | KV-D06-001 roadmap correction: repaired seven repository-relative links and aligned the Phase 1 state/dependency columns; scope and sequence unchanged |
