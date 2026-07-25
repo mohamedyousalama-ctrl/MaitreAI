@@ -133,13 +133,13 @@ The active controlled order is:
 
 1. Record and securely redesign `KV-D06-001`; do not replay migration 0099.
 2. Define and approve the reversible maintenance/drain control required for database rollout.
-3. Enforce `P0-ORD-01`, the temporary freeze on new non-test Wesaya orders.
-4. Repair `P0-WA-01` using the controlled non-order test.
-5. Remove or govern `P0-SHADOW-01`.
-6. Rebuild and run the E0 PostgreSQL verification.
-7. Finish E0 and E1 as one pilot safety increment.
-8. Complete acceptance, payment and remaining pilot truth.
-9. Run the complete live proof before public ordering.
+3. Enforce P0-ORD-01, the temporary freeze on new non-test Wesaya order creation.
+4. Repair P0-WA-01 WhatsApp signature verification and prove the existing webhook accepts and persists one non-order test message.
+5. Remove or govern P0-SHADOW-01, the public shadow BRAIN ingress route.
+6. Rebuild and run the E0 database verification correctly.
+7. Finish E0 and E1 as one pilot safety increment, then prove durable ingress and terminal scanning live.
+8. Complete order acceptance truth and the remaining pilot blockers.
+9. Run the complete live proof before any public order.
 
 ---
 
@@ -1073,11 +1073,11 @@ The active decisions, in order, are:
 
 1. `P0-CTRL-01 / KV-D06-001` secure forward design is approved and proven.
 2. `P0-MAINT-01` maintenance and drain procedure is approved.
-3. `P0-ORD-01` containment is implemented, independently cleared, merged and deployed.
-4. `P0-WA-01` is repaired through the controlled non-order test.
-5. `P0-SHADOW-01` is removed or governed.
-6. A new independent builder writes the E0 PostgreSQL verification.
-7. E0/E1 proceeds only after the real proof passes.
+3. P0-ORD-01 containment is specified, approved and executed.
+4. P0-WA-01 repair packet is approved and executed against a non-order message.
+5. P0-SHADOW-01 is removed or governed.
+6. A new independent builder writes the E0 PostgreSQL verification from the live schema contract.
+7. E0/E1 safety increment proceeds only after the real proof passes.
 
 K2 must close before any future migration is applied. K4 must close before the R1 cutover. Neither may be silently treated as complete.
 
@@ -1148,3 +1148,4 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 25 Jul 2026 | K2 closure: documented the governed migration policy in `DEPLOYMENT.md` §B including the permitted §12.3 isolated-workspace application path, reconciled repository logical labels against the production ledger, and reserved logical label 0106 for the P0-ORD-01 containment migration with 0105 unchanged for `order_acceptance_contract_v1` |
 | 25 Jul 2026 | KV-D06-001 recorded as CRITICAL, OPEN and BLOCKING: migration 0099 has a ledger row but six control-plane functions are absent; two live console claim routes are broken; unsafe replay is prohibited; secure control and maintenance design now precede P0-ORD-01 while 0106 remains reserved but blocked |
 | 25 Jul 2026 | KV-D06-001 roadmap correction: repaired seven repository-relative links and aligned the Phase 1 state/dependency columns; scope and sequence unchanged |
+| 26 Jul 2026 | PR #557 correction 2: restored the pre-existing §1.3 and §16 acceptance language verbatim while retaining the two new control and maintenance predecessors; no safety gate or proof obligation was removed |
