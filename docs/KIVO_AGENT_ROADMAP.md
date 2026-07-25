@@ -1,14 +1,14 @@
 # Kivo Agent — Authoritative Knowledge Base and Roadmap
 
-**Status:** Draft for independent audit. Not yet approved or merged.  
-**Owner:** Mohamed Salama  
-**Product:** Kivo  
-**Frontline agent:** Karim / كريم  
-**Pilot tenant:** Wesaya / وصاية, Cairo  
-**Repository:** [`mohamedyousalama-ctrl/MaitreAI`](https://github.com/mohamedyousalama-ctrl/MaitreAI)  
-**Production:** [`getkivo.io`](https://getkivo.io)  
-**Supabase project:** `zlighrbsjexrozrmuwpw`  
-**Truth snapshot:** 25 July 2026  
+**Status:** Core roadmap independently approved on 25 July 2026. The authoritative revision is always the version present on `main`.<br>
+**Owner:** Mohamed Salama<br>
+**Product:** Kivo<br>
+**Frontline agent:** Karim / كريم<br>
+**Pilot tenant:** Wesaya / وصاية, Cairo<br>
+**Repository:** [`mohamedyousalama-ctrl/MaitreAI`](https://github.com/mohamedyousalama-ctrl/MaitreAI)<br>
+**Production:** [`getkivo.io`](https://getkivo.io)<br>
+**Supabase project:** `zlighrbsjexrozrmuwpw`<br>
+**Truth snapshot:** 25 July 2026<br>
 **Repository snapshot:** `935afaf42a6e7912f842aa2b6fed9140de806648`
 
 ---
@@ -176,7 +176,7 @@ Production flag state was re-verified on 25 July 2026.
 
 ### P0-ORD-01 — Stop the pending-order population from growing
 
-**State:** VERIFIED live condition; mandatory code guard not implemented.  
+**State:** VERIFIED live condition; mandatory code guard not implemented.<br>
 **Named work order:** `WO-ENG-P0-ORDER-FREEZE`
 
 The first reconciliation observed 126 Wesaya pending orders. Production now contains 127 non-test pending orders; the newest was created during remediation on 23 July. No public operation is approved, but the existing test flow can still create rows that look non-test and actionable under legacy rules.
@@ -993,3 +993,4 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 25 Jul 2026 | Draft v3: targeted amendment closing seven v2 audit findings; delta-only re-audit required |
 | 25 Jul 2026 | Draft v4: folded both mandatory v3 approval conditions before documentation PR |
 | 25 Jul 2026 | Final PR version: folded three auditor-recorded precision items without changing approved scope or sequence |
+| 25 Jul 2026 | Repository correction candidate: replaced Markdown hard-break whitespace, corrected the lifecycle status, and retained identical roadmap scope and sequence |
