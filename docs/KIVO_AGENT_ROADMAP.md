@@ -376,6 +376,95 @@ Before pilot, it must be:
 
 It may not remain as an independently reachable writer into the ingress substrate.
 
+### 3.1 Parallel lane — legal identity, public legal pages and Meta
+
+This lane runs **beside** the technical containment sequence. It does **not** reorder, gate or
+weaken `KV-D06-001` / `P0-CTRL-01`, `P0-MAINT-01`, `P0-ORD-01`, `P0-WA-01`, `P0-SHADOW-01`, E0
+or E1. Nothing in this subsection approves legal text, code, deployment or a Meta submission.
+
+**Verified facts recorded by this entry:**
+
+1. The founder has ruled that **City Baker must be removed as Kivo's current public legal
+   identity**.
+2. Kivo's current public legal owner/operator will be **the Saudi establishment**.
+3. The exact Saudi legal name, English rendering, registration number, VAT number, address,
+   telephone and official email remain **UNVERIFIED** until the founder supplies the official
+   documents. No such value may be written into any surface before that.
+4. At the **pre-PR `main` baseline**, **eleven** repository paths outside this roadmap entry
+   contained City Baker: `README.md`, `app/contact/page.tsx`, `app/data-deletion/page.tsx`,
+   `app/privacy/page.tsx`, `app/terms/page.tsx`, `components/SiteFooter.tsx`,
+   `components/landing/Landing.tsx`, `components/landing/copy.ts`,
+   `docs/KIVO_UPGRADED_CONCEPT_ROADMAP.md`, `docs/product/LANDING_BRIEF.md`, `middleware.ts`.
+   **This roadmap entry itself becomes the twelfth repository path**, because it records the
+   historical and legal correction. The count therefore reads: eleven pre-existing paths plus
+   this governance record.
+5. At the **pre-PR `main` baseline** there were **zero** Saudi-establishment references.
+   **This roadmap entry creates the first one.**
+5a. Both roadmap references above are **governance and history, not a public website surface**.
+   They do not satisfy, weaken or partially discharge the public-removal gate. That gate still
+   requires **City Baker to be absent from every current public surface**, and it is unaffected
+   by City Baker continuing to appear in this governance record and in historical documents.
+6. The current Privacy, Terms and Data Deletion pages are **drafts** and contain unresolved
+   decisions or claims requiring verification.
+7. `legal-pages-delivery.zip` is **input material only** — not approved legal text and not
+   repository authority.
+8. **Historical evidence must not be rewritten.** City Baker is removed from current public and
+   controlling surfaces; historical records remain and remain clearly marked historical.
+9. Pilot status remains **NO-GO**.
+
+**Governed backlog:**
+
+| ID | Item | State |
+|---|---|---|
+| P0-LEGAL-01 | Saudi legal identity and document manifest | **BLOCKED** pending founder document upload and independent verification |
+| P0-LEGAL-02 | Verified data-practice and Saudi PDPL manifest | **PLANNED**; requires a complete inventory of collected data, purposes, legal bases, providers, storage locations, sharing, retention, deletion, cross-border transfers, rights, complaint process and DPO assessment |
+| P0-LEGAL-03 | Saudi legal review | **BLOCKED** pending P0-LEGAL-01 and P0-LEGAL-02. No legal page may be presented as final before counsel approval |
+| P0-WEB-LEGAL-01 | Arabic and English About, Privacy, Terms, Data Deletion and Contact pages, plus the public footer | **BLOCKED** pending the approved legal identity and legal text. No placeholder or draft warning may remain at release |
+| P0-DELETE-01 | Operational data-deletion procedure | **PLANNED**. Must cover identity verification, request tracking, controller-versus-processor routing, databases, logs, backups, Meta credentials, providers, legal holds, completion evidence and a synthetic end-to-end test |
+| P0-META-01 | Meta Business Verification and domain verification | **BLOCKED** pending verified Saudi documents, consistent website identity and public legal pages |
+| P0-META-02 | Minimum WhatsApp permission and App Review scope | **PLANNED** pending independent verification against current official Meta requirements. Expected minimum is `whatsapp_business_management` and `whatsapp_business_messaging`. No additional permission may be requested without a proven code use case |
+| P0-META-03 | Reviewer-ready Meta evidence package | **BLOCKED** pending working Embedded Signup and P0-META-02. Must include a safe test business, written reviewer instructions, permission-specific videos, consent, send/receive proof, webhook proof, revocation/deletion proof, and no real customer data or exposed secret |
+| P0-META-04 | Production URL and submission verification | **BLOCKED**. All required URLs must be public HTTPS pages, accessible without login, return successfully, work on mobile, be linked from the footer and contain no placeholders |
+| P0-META-05 | Correct `docs/META_SETUP_GUIDE.md` | **PLANNED and BLOCKING before App Review submission.** The current guide is **incomplete** on permission scope — the evidence is quoted in full immediately below this table. **P0-META-02 supersedes it** and requires the independently verified minimum pair `whatsapp_business_management` **and** `whatsapp_business_messaging`. Until P0-META-05 closes, the guide is **incomplete and non-authoritative** on permission scope |
+
+**P0-META-05 evidence — quoted in full, no line numbers, no ellipsis.**
+
+The permission bullet in `docs/META_SETUP_GUIDE.md` reads, complete and verbatim:
+
+```
+- `whatsapp_business_management` — lets us manage WABAs (WhatsApp Business Accounts) on behalf of restaurant owners.
+```
+
+The guide names that same permission twice more — in its *Request Advanced Access* step and in
+its App Review approval checklist — and defines no other permission bullet.
+
+Search-verifiable statement: `docs/META_SETUP_GUIDE.md` contains **zero occurrences** of
+`whatsapp_business_messaging`. Reproduce with
+`rg -c 'whatsapp_business_messaging' docs/META_SETUP_GUIDE.md`, which returns no count because
+there are no matches. That absence, not any line position, is the defect P0-META-05 closes.
+
+**Scope distinction:**
+
+1. `P0-LEGAL-01` through `P0-WEB-LEGAL-01` are **V1 public-launch gates**.
+2. Meta **Advanced Access for external restaurant WhatsApp accounts** is a **commercial
+   restaurant-onboarding gate**.
+3. The **Wesaya-only exemption is conditional, not automatic.** It applies to a controlled
+   Wesaya-only proof on Kivo's own business data **only when all three of the following are
+   independently verified**:
+   1. the Meta app remains in **Development mode**;
+   2. the test user holds an **approved role** on the Meta app;
+   3. Wesaya routes through the **global `env_fallback` number** matched to the configured
+      `WHATSAPP_PHONE_NUMBER_ID` — the `env_fallback` branch in
+      [`lib/messaging/webhook-routing.ts`](../lib/messaging/webhook-routing.ts).
+
+   The exemption **ends immediately** if either of the following occurs:
+   - the app changes to **Live mode**; or
+   - Wesaya moves to **per-tenant Embedded Signup credentials**.
+
+   If **any** condition is unverified, Meta Advanced Access **remains blocking**. None of the
+   three conditions has been verified by this entry.
+4. Meta approval **never** overrides Kivo's safety, order, payment or pilot gates.
+
 ---
 
 ## 4. Product vision
@@ -742,6 +831,25 @@ After stable supervised orders:
 7. structured conversation outcomes
 8. insights and governed action modules
 
+### Parallel lane — legal identity, public legal pages and Meta
+
+Runs beside the phases above. It does **not** reorder or weaken the `KV-D06-001`,
+`P0-MAINT-01`, `P0-ORD-01`, `P0-WA-01`, E0 or E1 sequence, and no phase above waits on it.
+Full detail in §3.1.
+
+| Item | State | Depends on |
+|---|---|---|
+| P0-LEGAL-01 | **BLOCKED** | Founder document upload plus independent verification |
+| P0-LEGAL-02 | **PLANNED** | The complete data-practice and PDPL inventory named in §3.1 |
+| P0-LEGAL-03 | **BLOCKED** | P0-LEGAL-01 and P0-LEGAL-02; counsel approval before any page is final |
+| P0-WEB-LEGAL-01 | **BLOCKED** | Approved legal identity and approved legal text; no placeholder at release |
+| P0-DELETE-01 | **PLANNED** | The procedure and synthetic end-to-end test named in §3.1 |
+| P0-META-01 | **BLOCKED** | Verified Saudi documents, consistent website identity, public legal pages |
+| P0-META-02 | **PLANNED** | Independent verification against current official Meta requirements |
+| P0-META-03 | **BLOCKED** | Working Embedded Signup and P0-META-02 |
+| P0-META-04 | **BLOCKED** | Public HTTPS URLs with no placeholder, verified independently |
+| P0-META-05 | **PLANNED; BLOCKING before App Review submission** | Correcting `docs/META_SETUP_GUIDE.md` to the P0-META-02 permission pair; the guide is non-authoritative until it closes |
+
 ---
 
 ## 10. Go-live gates
@@ -793,6 +901,24 @@ No public order is allowed until all are proven.
 - [ ] Return-to-Kivo is one atomic operation
 - [ ] No production ownership writer bypasses the canonical control contract
 - [ ] Assignment history is immutable and audit-degradation behaviour is proven
+
+### Legal identity, public legal pages and Meta
+
+Parallel-lane gates (§3.1). They do not gate the technical sequence above, and the technical
+sequence does not gate them.
+
+- [ ] Founder documents received and independently matched
+- [ ] One consistent Saudi identity across the website, Meta portfolio, domain, email and submitted documents
+- [ ] City Baker absent from every current public surface
+- [ ] Final Arabic and English legal pages approved
+- [ ] Deletion process tested with synthetic data
+- [ ] Public production URLs independently verified
+- [ ] Domain and business verification completed
+- [ ] Minimum permissions independently confirmed
+- [ ] App Review evidence independently audited
+- [ ] `docs/META_SETUP_GUIDE.md` is corrected to the independently verified permission pair and is no longer marked incomplete or non-authoritative
+- [ ] The verified data-practice and Saudi PDPL manifest under `P0-LEGAL-02` is independently approved
+- [ ] Explicit founder approval before Meta submission
 
 ### Money
 
@@ -1039,6 +1165,15 @@ The existing E0 rollback-only script does not meet these conditions and must not
 | Legacy claim/release route | [`app/api/conversations/[id]/assignee/route.ts`](../app/api/conversations/%5Bid%5D/assignee/route.ts) |
 | Console-v2 claim route | [`app/(console-v2)/c/(app)/conversations/claim/route.ts`](../app/%28console-v2%29/c/%28app%29/conversations/claim/route.ts) |
 | Stub-only control proof | [`scripts/proof-control.test.ts`](../scripts/proof-control.test.ts) |
+| Public privacy page (draft) | [`app/privacy/page.tsx`](../app/privacy/page.tsx) |
+| Public terms page (draft) | [`app/terms/page.tsx`](../app/terms/page.tsx) |
+| Public data-deletion page (draft) | [`app/data-deletion/page.tsx`](../app/data-deletion/page.tsx) |
+| Public contact page | [`app/contact/page.tsx`](../app/contact/page.tsx) |
+| Public site footer | [`components/SiteFooter.tsx`](../components/SiteFooter.tsx) |
+| Meta setup reference — **INCOMPLETE and NON-AUTHORITATIVE on permission scope until P0-META-05 closes**; it names only `whatsapp_business_management`, never `whatsapp_business_messaging` | [`docs/META_SETUP_GUIDE.md`](./META_SETUP_GUIDE.md) |
+| WhatsApp webhook routing decision — code evidence for the `env_fallback` route that the conditional Wesaya-only exemption depends on (§3.1) | [`lib/messaging/webhook-routing.ts`](../lib/messaging/webhook-routing.ts) |
+| Data-deletion documentation | [`docs/DATA_DELETION.md`](./DATA_DELETION.md) |
+| Privacy data inventory | [`docs/brain/PRIVACY_DATA_INVENTORY.md`](./brain/PRIVACY_DATA_INVENTORY.md) |
 
 ### 14.3 Audit and quality evidence
 
@@ -1170,3 +1305,6 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 26 Jul 2026 | PR #557 correction 2: restored the pre-existing §1.3 and §16 acceptance language verbatim while retaining the two new control and maintenance predecessors; no safety gate or proof obligation was removed |
 | 26 Jul 2026 | P0-ORD-01 reconciled with the founder's selected Option B: the containment is protected database state plus a database-level `orders` trigger, the `order_finalization_freeze` feature-flag mechanism is withdrawn, the mechanism-bound file territory and the thirty-fifth-feature-key claim are removed, enable/read-back/lift language is restated against the protected state, the exact database design remains subject to independent approval, `0106` stays reserved and blocked, and P0-ORD-01 stays OPEN and BLOCKING with every other fact, gate and sequence unchanged |
 | 26 Jul 2026 | P0-ORD-01 migration-sequence clarification: the E0 sequencing now separates design approval, the migration-bearing work order, the governed `DEPLOYMENT.md` §B isolated-CLI preflight, one founder-approved application with full production read-back, the `.APPLIED.md` preservation step, and a separately approved protected-state enablement; the prior "merge it alone and deploy it" step was removed because merging or deploying repository files does not apply a database migration, and the containment cannot be enabled before the migration exists and passes production read-back |
+| 26 Jul 2026 | Legal/Meta governance backlog opened as a parallel lane (§3.1, §9, §10, §14.2): recorded the founder ruling removing City Baker as the current public legal identity, the Saudi establishment as the incoming public legal owner/operator, the eleven current City Baker paths, zero references to the Saudi establishment name, the draft status of the Privacy/Terms/Data Deletion pages, and `legal-pages-delivery.zip` as input material only; added P0-LEGAL-01 to P0-LEGAL-03, P0-WEB-LEGAL-01, P0-DELETE-01 and P0-META-01 to P0-META-04 with their states, the V1-versus-onboarding scope distinction, ten legal/Meta go-live gates and eight source anchors. Backlog and governance only — this approves no legal text, no code, no deployment and no Meta submission; all Saudi identity values remain UNVERIFIED pending founder documents; historical records are unchanged; the KV-D06-001, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence is unchanged; `0105` and `0106` reservations are unchanged; pilot remains NO-GO |
+| 26 Jul 2026 | Legal/Meta backlog correction after auditor findings F-1 to F-5: **F-1** restated the repository counts as a pre-PR baseline of eleven City Baker paths plus this entry as the twelfth, and zero Saudi-establishment references plus this entry as the first, with both marked governance/history and explicitly not discharging the public-removal gate, so no count becomes false on merge; **F-2** added `P0-META-05` (PLANNED and BLOCKING before App Review submission) recording that `docs/META_SETUP_GUIDE.md` names only `whatsapp_business_management` and never `whatsapp_business_messaging`, that P0-META-02 supersedes it with the verified minimum pair, and marked the §14.2 anchor incomplete and non-authoritative until it closes; **F-3** made the Wesaya-only exemption conditional on three independently verified conditions — Development mode, an approved test-user role, and the global `env_fallback` number matched to `WHATSAPP_PHONE_NUMBER_ID` — ending immediately on Live mode or per-tenant Embedded Signup, with Meta Advanced Access remaining blocking while any condition is unverified and none verified by this entry; **F-4** added the `lib/messaging/webhook-routing.ts` source anchor as the code evidence for that `env_fallback` route; **F-5** corrected the pull-request body's line citation. Backlog and governance only — approves no legal text, no code, no deployment and no Meta submission; Saudi identity values remain UNVERIFIED; historical records unchanged; the KV-D06-001, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence unchanged; `0105` and `0106` reservations unchanged; pilot remains NO-GO |
+| 26 Jul 2026 | Legal/Meta backlog correction 2, closing the two non-blocking auditor recommendations. **R-1** removed every remaining absolute line-number reference to `docs/META_SETUP_GUIDE.md` and replaced it with durable evidence: the permission bullet is now quoted complete and verbatim in a fenced block beneath the §3.1 backlog table, with no ellipsis; the guide is noted to name that same permission twice more, in its Request Advanced Access step and its App Review approval checklist, and to define no other permission bullet; and a search-verifiable statement records **zero occurrences** of `whatsapp_business_messaging`, reproducible with `rg -c 'whatsapp_business_messaging' docs/META_SETUP_GUIDE.md`. The line numbers previously cited inside the F-1 to F-5 history row on this unmerged branch were removed in the same pass so no unstable reference survives; that row is otherwise unchanged and this row discloses the edit rather than making it silently. **R-2** added two §10 gates: one requiring `docs/META_SETUP_GUIDE.md` to be corrected to the independently verified permission pair and no longer marked incomplete or non-authoritative, and one closing the auditor's completeness gap by requiring the `P0-LEGAL-02` verified data-practice and Saudi PDPL manifest to be independently approved. Backlog and governance only — approves no legal text, no code, no deployment and no Meta submission; Saudi identity values remain UNVERIFIED; the KV-D06-001, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence unchanged; `0105` and `0106` reservations unchanged; pilot remains NO-GO |
