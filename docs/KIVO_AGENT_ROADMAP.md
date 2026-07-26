@@ -248,35 +248,54 @@ migration label is assigned yet. Pilot status remains **NO-GO**.
 
 ### P0-ORD-01 — Stop the pending-order population from growing
 
-**State:** VERIFIED live condition; mandatory code guard not implemented.<br>
+**State:** **OPEN and BLOCKING.** VERIFIED live condition; the mandatory containment is not implemented.<br>
 **Named work order:** `WO-ENG-P0-ORDER-FREEZE`
 
 The first reconciliation observed 126 Wesaya pending orders. Production now contains 127 non-test pending orders; the newest was created during remediation on 23 July. No public operation is approved, but the existing test flow can still create rows that look non-test and actionable under legacy rules.
 
-No existing feature or server control can guarantee this freeze. The work order must add an explicitly enabled, reversible tenant feature `order_finalization_freeze` and enforce it immediately before `persistOrderFromDraft`.
+No existing feature or server control can guarantee this freeze, and no application-layer
+feature flag can: an application guard is bypassable by every other writer that reaches
+the table. The founder's binding direction is **Option B** — an explicitly enabled,
+reversible **protected database state** plus a **database-level trigger on `orders`** that
+refuses the finalization write.
+
+The exact database design — table, columns, predicates, trigger definition and SQL — is
+**not defined here**. It remains subject to independent approval before any migration is
+prepared, and nothing in this entry authorizes a migration, an application, a database
+write or a production action.
 
 **Exclusive file territory:**
 
-- `lib/tenant/tier.ts` — declare the feature
-- `lib/messaging/respond-and-send.ts` — block finalization before persistence
-- `scripts/fixtures/wesaya-production-flags.ts` — capture the post-enable vector
-- `scripts/proof-order-finalization-freeze.test.ts` — focused proof
+The implementation territory is **not yet fixed**; it follows from the approved Option B
+design. It is expected to comprise one approved migration under the reserved-but-blocked
+label recorded in §12.1a, plus a focused executable proof of the containment against real
+PostgreSQL. Neither exists, and neither may be created before the design is approved.
 
-No migration, payment, acceptance or other application file is in scope.
+`lib/tenant/tier.ts`, `lib/messaging/respond-and-send.ts` and
+`scripts/fixtures/wesaya-production-flags.ts` are **no longer required implementation
+files** for this work order. The superseded `order_finalization_freeze` feature-flag
+mechanism is withdrawn and must not be built.
+
+Option B is migration-bearing: one approved migration is in scope once the design is
+approved. No payment, acceptance or unrelated application file is in scope.
 
 **Sequencing against E0:**
 
 1. Pause `wo-e0-safety-ingress`; it must not change or rebase concurrently.
-2. Build `WO-ENG-P0-ORDER-FREEZE` from current `origin/main` in the same engine mutation window that owns `respond-and-send.ts`.
-3. Independently prove the freeze, merge it alone and deploy it.
-4. Set `order_finalization_freeze=true` for Wesaya and read it back.
-5. Rebase E0 onto the new `main`, verify the freeze remains intact, then resume E0.
+2. Complete and independently approve the exact Option B database design. No SQL may be prepared before that design is cleared.
+3. Build one migration-bearing work order from current `origin/main`: the logical `0106` source, its focused real-PostgreSQL proofs, and no application file unless separately approved.
+4. Run the governed isolated-CLI preflight described in `DEPLOYMENT.md` §B: allocate one 14-digit execution version, approve the exact SQL bytes and hash, copy them unchanged into the execution file, and prove the dry run lists exactly one pending migration.
+5. After explicit founder approval, apply the exact approved bytes once. Read back the ledger row, schema, trigger, permissions and protected-state default, then run the approved real-database proofs. Merging or deploying repository files is not migration application.
+6. After successful production read-back, preserve on `main` the byte-identical logical `0106` source and its `.APPLIED.md` mapping to the 14-digit execution version.
+7. With separate explicit founder approval, enable the protected containment state for Wesaya and read it back from the database.
+8. Independently prove that a confirmation attempt creates no order row, sends no “order placed” message and creates the required durable critical alert.
+9. Rebase E0 onto the resulting `main`, verify the enabled containment remains intact, then resume E0.
 
-This is sequential use of the E0→E2 file territory, not a parallel workstream.
+This is a sequential work order that must finish before E0 resumes. The database migration must exist and pass production read-back before the protected state can be enabled.
 
 **Acceptance before WhatsApp signature repair:**
 
-1. Wesaya flag is explicitly true in production.
+1. The protected containment state is explicitly enabled for Wesaya in production and read back from the database.
 2. A confirmation attempt creates no order row.
 3. No “order placed” customer message is sent.
 4. A durable critical alert identifies the blocked finalization.
@@ -288,7 +307,7 @@ Operational instruction alone is insufficient.
 
 **Founder-controlled lift point:**
 
-The freeze remains explicitly true through channel repair and remediation. It may be lifted only when:
+The protected containment state remains explicitly enabled through channel repair and remediation. It may be lifted only when:
 
 1. E0–E3 and R1/R1b/R1c are deployed at their approved revisions.
 2. The durable R1 cutover record exists and matches its ledger row.
@@ -297,9 +316,9 @@ The freeze remains explicitly true through channel repair and remediation. It ma
 5. All other substantive safety, order, payment, writer, alert and isolation proofs required before the complete live proof have passed; the freeze-lift mechanics themselves are excluded from this precondition.
 6. The founder gives explicit approval for one controlled live-proof order.
 
-The PM then sets `order_finalization_freeze=false`, reads it back, and captures a new hashed production flag vector in `scripts/fixtures/wesaya-production-flags.ts`. That **post-lift** vector becomes the pilot fixture. The earlier freeze-on capture is a remediation fixture preserved by Git history and the work-order application record. The complete live-order proof runs after the lift. Any failure immediately restores the freeze and returns to report-before-repair governance.
+The founder then authorizes disabling the protected containment state. The PM disables it, reads the disabled state back from the database, and records that **post-lift** read-back. The earlier containment-enabled read-back is a remediation record preserved by Git history and the work-order application record. The complete live-order proof runs after the lift. Any failure immediately restores the containment and returns to report-before-repair governance.
 
-Enabling the freeze adds a thirty-fifth Wesaya feature key. The dated 34-key statement in §2.4 is the pre-freeze baseline, not a permanent invariant, and must be updated when the guarded production vector changes.
+Option B adds **no** Wesaya feature key. The dated 34-key statement in §2.4 remains valid and is unaffected by this containment.
 
 ### P0-WA-01 — Production callbacks fail signature verification
 
@@ -619,7 +638,7 @@ These findings extend the new BRAIN. They do not justify a prompt-only patch or 
 |---|---|---|
 | P0-CTRL-01 / KV-D06-001 | **CRITICAL; OPEN; BLOCKING; design not approved** | Independent clearance of the secure forward design and explicit founder approval before implementation |
 | P0-MAINT-01 | **OPEN; BLOCKING; design not approved** | P0-CTRL-01 rollout boundary plus a verified reversible block, drain, read-back and restore mechanism |
-| P0-ORD-01 / `WO-ENG-P0-ORDER-FREEZE` | **BLOCKING; mandatory code guard** | Engine mutation lane; merge before E0 resumes; baseline stays 127 |
+| P0-ORD-01 / `WO-ENG-P0-ORDER-FREEZE` | **OPEN; BLOCKING; Option B design not approved** | Approved protected database state plus a database-level `orders` trigger; merge before E0 resumes; baseline stays 127 |
 | P0-WA-01 | **BLOCKING** | `WO-ENG-P0-ORDER-FREEZE`, controlled Meta/Vercel alignment and successful legacy-path test |
 | P0-SHADOW-01 | **BLOCKING BEFORE PILOT** | Remove or govern the second ingress route |
 
@@ -788,7 +807,7 @@ No public order is allowed until all are proven.
 - [ ] Production deployment SHA is captured and matches the approved pilot revision
 - [ ] Wesaya non-test historical baseline has not increased before R1 cutover
 - [ ] Founder approves the controlled freeze lift after the durable R1 cutover and all pre-live-proof gates
-- [ ] `order_finalization_freeze=false` is read back before the complete live proof
+- [ ] The protected containment state is disabled and read back from the database before the complete live proof
 - [ ] Post-lift production environment/feature vector is captured, hashed and becomes the approved pilot fixture
 - [ ] Complete live proof passes:
 
@@ -1149,3 +1168,5 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 25 Jul 2026 | KV-D06-001 recorded as CRITICAL, OPEN and BLOCKING: migration 0099 has a ledger row but six control-plane functions are absent; two live console claim routes are broken; unsafe replay is prohibited; secure control and maintenance design now precede P0-ORD-01 while 0106 remains reserved but blocked |
 | 25 Jul 2026 | KV-D06-001 roadmap correction: repaired seven repository-relative links and aligned the Phase 1 state/dependency columns; scope and sequence unchanged |
 | 26 Jul 2026 | PR #557 correction 2: restored the pre-existing §1.3 and §16 acceptance language verbatim while retaining the two new control and maintenance predecessors; no safety gate or proof obligation was removed |
+| 26 Jul 2026 | P0-ORD-01 reconciled with the founder's selected Option B: the containment is protected database state plus a database-level `orders` trigger, the `order_finalization_freeze` feature-flag mechanism is withdrawn, the mechanism-bound file territory and the thirty-fifth-feature-key claim are removed, enable/read-back/lift language is restated against the protected state, the exact database design remains subject to independent approval, `0106` stays reserved and blocked, and P0-ORD-01 stays OPEN and BLOCKING with every other fact, gate and sequence unchanged |
+| 26 Jul 2026 | P0-ORD-01 migration-sequence clarification: the E0 sequencing now separates design approval, the migration-bearing work order, the governed `DEPLOYMENT.md` §B isolated-CLI preflight, one founder-approved application with full production read-back, the `.APPLIED.md` preservation step, and a separately approved protected-state enablement; the prior "merge it alone and deploy it" step was removed because merging or deploying repository files does not apply a database migration, and the containment cannot be enabled before the migration exists and passes production read-back |
