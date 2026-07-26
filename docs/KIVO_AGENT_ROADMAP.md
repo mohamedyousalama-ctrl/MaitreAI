@@ -376,6 +376,57 @@ Before pilot, it must be:
 
 It may not remain as an independently reachable writer into the ingress substrate.
 
+### 3.1 Parallel lane — legal identity, public legal pages and Meta
+
+This lane runs **beside** the technical containment sequence. It does **not** reorder, gate or
+weaken `KV-D06-001` / `P0-CTRL-01`, `P0-MAINT-01`, `P0-ORD-01`, `P0-WA-01`, `P0-SHADOW-01`, E0
+or E1. Nothing in this subsection approves legal text, code, deployment or a Meta submission.
+
+**Verified facts recorded by this entry:**
+
+1. The founder has ruled that **City Baker must be removed as Kivo's current public legal
+   identity**.
+2. Kivo's current public legal owner/operator will be **the Saudi establishment**.
+3. The exact Saudi legal name, English rendering, registration number, VAT number, address,
+   telephone and official email remain **UNVERIFIED** until the founder supplies the official
+   documents. No such value may be written into any surface before that.
+4. Current `main` contains City Baker references in **11 paths**: `README.md`,
+   `app/contact/page.tsx`, `app/data-deletion/page.tsx`, `app/privacy/page.tsx`,
+   `app/terms/page.tsx`, `components/SiteFooter.tsx`, `components/landing/Landing.tsx`,
+   `components/landing/copy.ts`, `docs/KIVO_UPGRADED_CONCEPT_ROADMAP.md`,
+   `docs/product/LANDING_BRIEF.md`, `middleware.ts`.
+5. Current `main` contains **zero** references to مؤسسة نجد جميل المطيري.
+6. The current Privacy, Terms and Data Deletion pages are **drafts** and contain unresolved
+   decisions or claims requiring verification.
+7. `legal-pages-delivery.zip` is **input material only** — not approved legal text and not
+   repository authority.
+8. **Historical evidence must not be rewritten.** City Baker is removed from current public and
+   controlling surfaces; historical records remain and remain clearly marked historical.
+9. Pilot status remains **NO-GO**.
+
+**Governed backlog:**
+
+| ID | Item | State |
+|---|---|---|
+| P0-LEGAL-01 | Saudi legal identity and document manifest | **BLOCKED** pending founder document upload and independent verification |
+| P0-LEGAL-02 | Verified data-practice and Saudi PDPL manifest | **PLANNED**; requires a complete inventory of collected data, purposes, legal bases, providers, storage locations, sharing, retention, deletion, cross-border transfers, rights, complaint process and DPO assessment |
+| P0-LEGAL-03 | Saudi legal review | **BLOCKED** pending P0-LEGAL-01 and P0-LEGAL-02. No legal page may be presented as final before counsel approval |
+| P0-WEB-LEGAL-01 | Arabic and English About, Privacy, Terms, Data Deletion and Contact pages, plus the public footer | **BLOCKED** pending the approved legal identity and legal text. No placeholder or draft warning may remain at release |
+| P0-DELETE-01 | Operational data-deletion procedure | **PLANNED**. Must cover identity verification, request tracking, controller-versus-processor routing, databases, logs, backups, Meta credentials, providers, legal holds, completion evidence and a synthetic end-to-end test |
+| P0-META-01 | Meta Business Verification and domain verification | **BLOCKED** pending verified Saudi documents, consistent website identity and public legal pages |
+| P0-META-02 | Minimum WhatsApp permission and App Review scope | **PLANNED** pending independent verification against current official Meta requirements. Expected minimum is `whatsapp_business_management` and `whatsapp_business_messaging`. No additional permission may be requested without a proven code use case |
+| P0-META-03 | Reviewer-ready Meta evidence package | **BLOCKED** pending working Embedded Signup and P0-META-02. Must include a safe test business, written reviewer instructions, permission-specific videos, consent, send/receive proof, webhook proof, revocation/deletion proof, and no real customer data or exposed secret |
+| P0-META-04 | Production URL and submission verification | **BLOCKED**. All required URLs must be public HTTPS pages, accessible without login, return successfully, work on mobile, be linked from the footer and contain no placeholders |
+
+**Scope distinction:**
+
+1. `P0-LEGAL-01` through `P0-WEB-LEGAL-01` are **V1 public-launch gates**.
+2. Meta **Advanced Access for external restaurant WhatsApp accounts** is a **commercial
+   restaurant-onboarding gate**.
+3. It is **not** automatically a blocker for a controlled Wesaya-only proof using Kivo's own
+   business data, unless the current Meta configuration independently proves otherwise.
+4. Meta approval **never** overrides Kivo's safety, order, payment or pilot gates.
+
 ---
 
 ## 4. Product vision
@@ -742,6 +793,24 @@ After stable supervised orders:
 7. structured conversation outcomes
 8. insights and governed action modules
 
+### Parallel lane — legal identity, public legal pages and Meta
+
+Runs beside the phases above. It does **not** reorder or weaken the `KV-D06-001`,
+`P0-MAINT-01`, `P0-ORD-01`, `P0-WA-01`, E0 or E1 sequence, and no phase above waits on it.
+Full detail in §3.1.
+
+| Item | State | Depends on |
+|---|---|---|
+| P0-LEGAL-01 | **BLOCKED** | Founder document upload plus independent verification |
+| P0-LEGAL-02 | **PLANNED** | The complete data-practice and PDPL inventory named in §3.1 |
+| P0-LEGAL-03 | **BLOCKED** | P0-LEGAL-01 and P0-LEGAL-02; counsel approval before any page is final |
+| P0-WEB-LEGAL-01 | **BLOCKED** | Approved legal identity and approved legal text; no placeholder at release |
+| P0-DELETE-01 | **PLANNED** | The procedure and synthetic end-to-end test named in §3.1 |
+| P0-META-01 | **BLOCKED** | Verified Saudi documents, consistent website identity, public legal pages |
+| P0-META-02 | **PLANNED** | Independent verification against current official Meta requirements |
+| P0-META-03 | **BLOCKED** | Working Embedded Signup and P0-META-02 |
+| P0-META-04 | **BLOCKED** | Public HTTPS URLs with no placeholder, verified independently |
+
 ---
 
 ## 10. Go-live gates
@@ -793,6 +862,22 @@ No public order is allowed until all are proven.
 - [ ] Return-to-Kivo is one atomic operation
 - [ ] No production ownership writer bypasses the canonical control contract
 - [ ] Assignment history is immutable and audit-degradation behaviour is proven
+
+### Legal identity, public legal pages and Meta
+
+Parallel-lane gates (§3.1). They do not gate the technical sequence above, and the technical
+sequence does not gate them.
+
+- [ ] Founder documents received and independently matched
+- [ ] One consistent Saudi identity across the website, Meta portfolio, domain, email and submitted documents
+- [ ] City Baker absent from every current public surface
+- [ ] Final Arabic and English legal pages approved
+- [ ] Deletion process tested with synthetic data
+- [ ] Public production URLs independently verified
+- [ ] Domain and business verification completed
+- [ ] Minimum permissions independently confirmed
+- [ ] App Review evidence independently audited
+- [ ] Explicit founder approval before Meta submission
 
 ### Money
 
@@ -1039,6 +1124,14 @@ The existing E0 rollback-only script does not meet these conditions and must not
 | Legacy claim/release route | [`app/api/conversations/[id]/assignee/route.ts`](../app/api/conversations/%5Bid%5D/assignee/route.ts) |
 | Console-v2 claim route | [`app/(console-v2)/c/(app)/conversations/claim/route.ts`](../app/%28console-v2%29/c/%28app%29/conversations/claim/route.ts) |
 | Stub-only control proof | [`scripts/proof-control.test.ts`](../scripts/proof-control.test.ts) |
+| Public privacy page (draft) | [`app/privacy/page.tsx`](../app/privacy/page.tsx) |
+| Public terms page (draft) | [`app/terms/page.tsx`](../app/terms/page.tsx) |
+| Public data-deletion page (draft) | [`app/data-deletion/page.tsx`](../app/data-deletion/page.tsx) |
+| Public contact page | [`app/contact/page.tsx`](../app/contact/page.tsx) |
+| Public site footer | [`components/SiteFooter.tsx`](../components/SiteFooter.tsx) |
+| Meta setup reference | [`docs/META_SETUP_GUIDE.md`](./META_SETUP_GUIDE.md) |
+| Data-deletion documentation | [`docs/DATA_DELETION.md`](./DATA_DELETION.md) |
+| Privacy data inventory | [`docs/brain/PRIVACY_DATA_INVENTORY.md`](./brain/PRIVACY_DATA_INVENTORY.md) |
 
 ### 14.3 Audit and quality evidence
 
@@ -1170,3 +1263,4 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 26 Jul 2026 | PR #557 correction 2: restored the pre-existing §1.3 and §16 acceptance language verbatim while retaining the two new control and maintenance predecessors; no safety gate or proof obligation was removed |
 | 26 Jul 2026 | P0-ORD-01 reconciled with the founder's selected Option B: the containment is protected database state plus a database-level `orders` trigger, the `order_finalization_freeze` feature-flag mechanism is withdrawn, the mechanism-bound file territory and the thirty-fifth-feature-key claim are removed, enable/read-back/lift language is restated against the protected state, the exact database design remains subject to independent approval, `0106` stays reserved and blocked, and P0-ORD-01 stays OPEN and BLOCKING with every other fact, gate and sequence unchanged |
 | 26 Jul 2026 | P0-ORD-01 migration-sequence clarification: the E0 sequencing now separates design approval, the migration-bearing work order, the governed `DEPLOYMENT.md` §B isolated-CLI preflight, one founder-approved application with full production read-back, the `.APPLIED.md` preservation step, and a separately approved protected-state enablement; the prior "merge it alone and deploy it" step was removed because merging or deploying repository files does not apply a database migration, and the containment cannot be enabled before the migration exists and passes production read-back |
+| 26 Jul 2026 | Legal/Meta governance backlog opened as a parallel lane (§3.1, §9, §10, §14.2): recorded the founder ruling removing City Baker as the current public legal identity, the Saudi establishment as the incoming public legal owner/operator, the eleven current City Baker paths, zero references to the Saudi establishment name, the draft status of the Privacy/Terms/Data Deletion pages, and `legal-pages-delivery.zip` as input material only; added P0-LEGAL-01 to P0-LEGAL-03, P0-WEB-LEGAL-01, P0-DELETE-01 and P0-META-01 to P0-META-04 with their states, the V1-versus-onboarding scope distinction, ten legal/Meta go-live gates and eight source anchors. Backlog and governance only — this approves no legal text, no code, no deployment and no Meta submission; all Saudi identity values remain UNVERIFIED pending founder documents; historical records are unchanged; the KV-D06-001, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence is unchanged; `0105` and `0106` reservations are unchanged; pilot remains NO-GO |
