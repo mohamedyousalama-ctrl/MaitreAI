@@ -9,6 +9,7 @@
 **Production:** [`getkivo.io`](https://getkivo.io)<br>
 **Supabase project:** `zlighrbsjexrozrmuwpw`<br>
 **Truth snapshot:** 25 July 2026<br>
+**Last updated:** 26 July 2026 — founder V1/V2 scope decision recorded in §3.2; the 25 July truth snapshot above is retained as history<br>
 **Repository evidence baseline:** [`0d8ae003d2390cab099cc72bcb2c50d1008b3696`](https://github.com/mohamedyousalama-ctrl/MaitreAI/commit/0d8ae003d2390cab099cc72bcb2c50d1008b3696)
 
 This is the independently reviewed `main` baseline after PR #553, not a claim
@@ -89,6 +90,17 @@ This file must be updated whenever any of these changes:
 - a core BRAIN invariant
 
 No parallel “current roadmap” may compete with this file. Older roadmaps remain available as history and must point here.
+
+**Law — same-change roadmap update.** Any approved change affecting V1/V2 scope, readiness,
+dependencies, blocker state, execution order or backlog **must update this authoritative roadmap
+in the same Git change**, recording the founder-local date and a clear last-update and history
+entry. A scope or state change landed without its roadmap update in the same change is not
+governed.
+
+**Law — an absent flag proves nothing.** An absent feature-flag key **never** proves intentional
+disablement. It proves only that the key is not present, and `isFeatureExplicitlyEnabled`
+therefore evaluates false. Founder intent must be recorded explicitly in this file; absence must
+never again be cited as evidence of intent without a recorded disposition.
 
 ---
 
@@ -464,6 +476,86 @@ there are no matches. That absence, not any line position, is the defect P0-META
    If **any** condition is unverified, Meta Advanced Access **remains blocking**. None of the
    three conditions has been verified by this entry.
 4. Meta approval **never** overrides Kivo's safety, order, payment or pilot gates.
+
+### 3.2 Founder V1/V2 scope decision — 26 Jul 2026
+
+**Binding founder decision, 26 Jul 2026: “APPROVE ALL — V1 is WhatsApp and cash/COD only.”**
+
+This closes all five open founder decisions recorded in the audited evidence baseline
+(SCOPE013 §9). It is a **scope and classification decision only**. It authorizes no
+implementation, no configuration, no flag change, no migration, no deployment and no production
+action, and it does not weaken any existing order, acceptance, payment-truth or safety gate.
+
+**Evidence baseline.** This decision is recorded against `SCOPE013.md`, an evidence artefact held
+**outside Git** and independently approved by KIVO-AUDITOR:
+SHA-256 `7a3fd3c4dc950ef4db4e54aae2b453ec23b7b307203f38508a582d026e4c9de2`, 55569 bytes, 555 lines.
+SCOPE013 is **evidence, not repository authority** — this file remains the authority. Its
+production counts are the **audited baseline at its recorded pin**, not newly re-queried current
+values.
+
+**V1 scope.** V1 includes the previously approved capabilities: the new restaurant console UI;
+human control of customer conversations; limited console commands to Kivo; temporary restaurant
+instructions; permanent restaurant instructions; staff-to-Kivo WhatsApp instructions; customer
+memory; and the Egyptian encyclopedia. Because the console UI is V1, these console capabilities
+remain V1 requirements: notification display; acknowledgment identity; acknowledgment escalation;
+kitchen board; kitchen-ticket generation; shift control screen; shift preflight; and the
+More/health screen.
+
+**V1 customer channel: WhatsApp only.**
+
+**V1 payment scope: cash/COD only.** No online or card payment. No PSP integration. No optional
+canonical-payment-method subsystem. This does **not** authorize an unsafe payment default and does
+**not** weaken R4A, R4, the payment-truth gates or any acceptance gate.
+
+**V2 scope.** The website channel; voice notes; and full natural-language restaurant-to-Kivo
+conversation.
+
+**Settled exclusions from V1**, future prioritization not yet scheduled: `conversation_outcomes`,
+`callback_requests`, `qz_print`, `manager_command_recognition`, `psp_payments` and
+`canonical_payment_methods`. These are **no longer** UNCLASSIFIED and no longer carry
+FOUNDER DECISION REQUIRED.
+
+#### 3.2.1 Disposition of all thirteen absent Wesaya flag keys
+
+Exhaustive. Thirteen keys, each exactly once. Recording a disposition here **does not mutate any
+live flag**; every key below remains absent in production and therefore effectively OFF.
+
+| # | Absent key | Disposition | Governed intended state |
+|---:|---|---|---|
+| 1 | `customer_memory` | **Required for V1**, deliberately kept OFF | The capability is required for V1. The live key is absent. Absence is **not** treated as activation or completion. Intended state is **OFF** until its V1 prerequisites, protections and live proof pass |
+| 2 | `staff_command_channel` | **Required for V1**, deliberately kept OFF | As above; additionally gated behind `P0-WA-01` |
+| 3 | `standing_instructions` | **Required for V1**, deliberately kept OFF | As above |
+| 4 | `kitchen_ticket` | **Required for V1**, deliberately kept OFF | As above |
+| 5 | `khalid_persona` | **Intentionally excluded from Egypt V1** | Remains **OFF** |
+| 6 | `ksa_encyclopedia` | **Intentionally excluded from Egypt V1** | Remains **OFF**; see §3.2.2 |
+| 7 | `conversation_outcomes` | **Settled outside V1** | Remains **OFF** for V1 |
+| 8 | `callback_requests` | **Settled outside V1** | Remains **OFF** for V1 |
+| 9 | `qz_print` | **Settled outside V1** | Remains **OFF** for V1 |
+| 10 | `voice_notes` | **Settled outside V1 — V2** | Remains **OFF** for V1; see §3.2.3 |
+| 11 | `manager_command_recognition` | **Settled outside V1** | Remains **OFF** for V1 |
+| 12 | `psp_payments` | **Settled outside V1** | Remains **OFF** for V1; excluded by the cash/COD-only ruling |
+| 13 | `canonical_payment_methods` | **Settled outside V1** | Remains **OFF** for V1; excluded by the cash/COD-only ruling |
+
+#### 3.2.2 KSA corpus ruling
+
+The KSA encyclopedia is **outside Egypt V1** and **remains disabled**. Its current provenance and
+commercial redistribution licence are **unverified**. It **must not be shipped, redistributed or
+commercially activated** until every source, attribution and licence is documented and
+independently approved. If provenance cannot be proven, the corpus must be **replaced with
+lawfully sourced content**. This ruling does **not** block Egypt V1. No licence or provenance
+claim is asserted here.
+
+#### 3.2.3 Voice ruling and `P0-VOICE-01`
+
+Migration `0077` **remains unapplied**, and **must not be applied for V1**. `voice_notes` remains
+**OFF** and is **V2**. The live source/schema contradiction — deployed source reading and writing
+three columns absent from production — **must be removed** by reverting or safely removing the
+current source references to those three absent columns. Voice may return **only** through a
+separately approved V2 design and the governed migration ceremony.
+
+| ID | Item | State |
+|---|---|---|
+| P0-VOICE-01 | Remove the live voice source/schema contradiction by reverting or safely removing the source references to the three absent `conversations` columns | **V1 hygiene repair; BLOCKING.** This is a repair of the live contradiction only. It is **not** activation of voice and **not** authorization to apply `0077` |
 
 ---
 
@@ -849,6 +941,95 @@ Full detail in §3.1.
 | P0-META-03 | **BLOCKED** | Working Embedded Signup and P0-META-02 |
 | P0-META-04 | **BLOCKED** | Public HTTPS URLs with no placeholder, verified independently |
 | P0-META-05 | **PLANNED; BLOCKING before App Review submission** | Correcting `docs/META_SETUP_GUIDE.md` to the P0-META-02 permission pair; the guide is non-authoritative until it closes |
+
+### V1 readiness inventory — audited baseline
+
+Imported from the independently approved evidence baseline `SCOPE013.md`
+(SHA-256 `7a3fd3c4dc950ef4db4e54aae2b453ec23b7b307203f38508a582d026e4c9de2`, 55569 bytes,
+555 lines) §6, rows 1-23. Every figure below is the **audited baseline at that artefact's recorded
+pin**, not a newly re-queried current value. One primary evidence class per row; any additional
+blocker sits in its own column. Evidence states are **not** relabelled because scope is now
+decided.
+
+| # | Capability (one testable unit) | Scope | Evidence class | Blocker | Wesaya evidence (audited baseline) |
+|---:|---|---|---|---|---|
+| 1 | New restaurant console UI shell | V1 | BUILT BUT LIVE PROOF MISSING | none | console_v2=true; console-v2 routes shipped |
+| 2 | Human control of customer conversations (claim/takeover) | V1 | BUILT BUT BROKEN | P0-CTRL-01 / KV-D06-001 | both claim routes call control_claim; function absent in production |
+| 3 | Conversation control audit trail | V1 | BUILT BUT LIVE PROOF MISSING | P0-CTRL-01 | 4 Wesaya conversation_assignment_events rows, written by the surviving trigger |
+| 4 | Console menu availability / 86 write path | V1 | PROVEN WORKING | none | 39 operator events, 19 unavailable, 20 restored, 2 actors, 2026-06-27 to 2026-07-15 |
+| 5 | Agent honours an 86'd item on the next turn | V1 | UNPROVEN | none | no live proof performed |
+| 6 | Limited console commands to Kivo | V1 | BUILT BUT LIVE PROOF MISSING | none | individual session-authenticated routes exist; no defined command set |
+| 7 | Notification display | V1 | BUILT BUT LIVE PROOF MISSING | none | 153 Wesaya system alert rows across 7 code-critical types; 4 dismissed via the manager-only route, consistent with the banner rendering but not proof of it |
+| 8 | Acknowledgment identity | V1 | ABSENT | none | system_alerts has no actor column; dismissed_at records no who |
+| 9 | Acknowledgment escalation | V1 | ABSENT | none | no unacknowledged-escalation mechanism exists in schema or code |
+| 10 | Kitchen board (read-only) | V1 | BUILT BUT LIVE PROOF MISSING | none | app/api/handoff/board/route.ts, ungated, tenant-scoped |
+| 11 | Kitchen-ticket generation | V1 | BUILT BUT OFF | none | kitchen_ticket ABSENT FLAG -> EFFECTIVELY OFF |
+| 12 | Temporary restaurant instructions | V1 | BUILT BUT LIVE PROOF MISSING | none | 1 Wesaya tonight_notes row; path ungated; prompt consumption and expiry unproven |
+| 13 | Permanent restaurant instructions | V1 | BUILT BUT OFF | none | standing_instructions ABSENT FLAG -> EFFECTIVELY OFF; 0 rows |
+| 14 | Staff WhatsApp command implementation | V1 | BUILT BUT OFF | P0-WA-01 | pause, live, eightysix, restore, confirm, status, note_allergen defined; ABSENT FLAG |
+| 15 | Staff WhatsApp registration / configuration | V1 | BUILT BUT OFF | none | Wesaya has ZERO staff-number registrations; the only 2 platform rows belong to tenant 9244d8ef-66b1-417a-a012-41a389ab1abf, "Sweet Shop — سويت شوب", active=false, and are therefore not Wesaya configuration and not evidence of a live registration path for the pilot tenant |
+| 16 | Customer-memory storage | V1 | BUILT BUT OFF | none | customer_memory ABSENT FLAG -> EFFECTIVELY OFF; 0 rows platform-wide |
+| 17 | Customer-memory expiry / correction / deletion | V1 | ABSENT | none | no TTL, no operator correction path, no per-field deletion |
+| 18 | Memory-allergy behavior | V1 | BUILT BUT BROKEN | none | memory_allergy_gate=true but bypassed by allergy_simple=true, and source table empty |
+| 19 | Egyptian encyclopedia | V1 | ABSENT | none | zero occurrences anywhere; knowledge/ contains only ksa/ |
+| 20 | Shift control screen | V1 | BUILT BUT LIVE PROOF MISSING | none | shipped with a tested pure model |
+| 21 | Shift preflight checklist | V1 | ABSENT | none | no pre-shift readiness checklist exists in code |
+| 22 | More / health screen | V1 | ABSENT | none | nav item is an aria-disabled placeholder; no route |
+| 23 | WhatsApp channel ingress | V1 | BUILT BUT BROKEN | P0-WA-01 | production callbacks rejected 401 |
+
+### Post-V1 classifications after the 26 Jul 2026 founder decision
+
+Rows 24-33 of the same audited baseline, with the founder decision applied. Evidence classes are
+carried over unchanged; only the Scope column is now settled. No row remains UNCLASSIFIED.
+
+| # | Capability | Scope after the decision | Evidence class | Blocker | Wesaya evidence (audited baseline) |
+|---:|---|---|---|---|---|
+| 24 | Website channel | **V2** | BUILT BUT LIVE PROOF MISSING | none | ACTIVE_CHANNELS includes website; zero website conversation rows |
+| 25 | KSA encyclopedia | SETTLED EXCLUSION — outside Egypt V1 | BUILT BUT OFF | none | khalid_persona and ksa_encyclopedia both ABSENT for Wesaya |
+| 26 | Voice notes | **V2** | BUILT BUT BROKEN | 0077 unapplied; P0-VOICE-01 | live source/schema contradiction; voice_notes ABSENT FLAG |
+| 27 | Conversation outcomes | SETTLED OUTSIDE V1 — future backlog, not scheduled | BUILT BUT OFF | none | conversation_outcomes ABSENT FLAG; 0 rows platform-wide |
+| 28 | Callback requests | SETTLED OUTSIDE V1 — future backlog, not scheduled | BUILT BUT OFF | none | callback_requests ABSENT FLAG |
+| 29 | QZ print | SETTLED OUTSIDE V1 — future backlog, not scheduled | BUILT BUT OFF | none | qz_print ABSENT FLAG |
+| 30 | Manager command recognition | SETTLED OUTSIDE V1 — future backlog, not scheduled | BUILT BUT OFF | none | manager_command_recognition ABSENT FLAG |
+| 31 | PSP payments | SETTLED OUTSIDE V1 — future backlog, not scheduled | BUILT BUT OFF | none | psp_payments ABSENT FLAG |
+| 32 | Canonical payment methods | SETTLED OUTSIDE V1 — future backlog, not scheduled | BUILT BUT OFF | none | canonical_payment_methods ABSENT FLAG |
+| 33 | Full natural-language restaurant-to-Kivo conversation | SETTLED — V2 | ABSENT | none | no surface exists; correctly excluded from V1 |
+
+### Required V1 launch state — exhaustive
+
+Imported from the same audited baseline, §7. **Exhaustive for every V1 capability above**: rows
+1-23 each carry exactly one requirement, keyed by readiness row number. No V1 capability is
+omitted, folded into another, or left implicit. Rows 24-33 carry no V1 requirement.
+
+| Row | Capability | Required V1 launch state |
+|---:|---|---|
+| 1 | New restaurant console UI shell | Live proof on the shipped shell. |
+| 2 | Human control of customer conversations | P0-CTRL-01 repaired and independently proven. |
+| 3 | Conversation control audit trail | Every control transition writes a correct, tenant-scoped assignment event with the real actor, proven against real PostgreSQL after P0-CTRL-01. Recorded as its own requirement, not inside human control. |
+| 4 | Console menu availability / 86 write path | Already PROVEN WORKING. No outstanding requirement; it must not regress. |
+| 5 | Agent honours an 86'd item on the next turn | Live proof against a real 86 toggle. Remains UNPROVEN and blocking until that proof exists. |
+| 6 | Limited console commands to Kivo | A defined, testable command set with proof. |
+| 7 | Notification display | Proof that a real operator sees a live alert in the console banner. |
+| 8 | Acknowledgment identity | An actor-bearing acknowledgment record, distinct from dismissed_at, so receipt is provable rather than inferred. |
+| 9 | Acknowledgment escalation | A mechanism that escalates an alert left unacknowledged past a defined window, plus the roadmap-mandated phone drill proving delivery and escalation. |
+| 10 | Kitchen board | Live proof that the read-only board buckets real kitchen-bound orders. |
+| 11 | Kitchen-ticket generation | kitchen_ticket enabled with a generation proof. |
+| 12 | Temporary restaurant instructions | Prompt-consumption and expiry proof. |
+| 13 | Permanent restaurant instructions | Enablement plus injection proof. |
+| 14 | Staff WhatsApp command implementation | Enablement plus a command proof, after P0-WA-01. |
+| 15 | Staff WhatsApp registration / configuration | At least one verified Wesaya staff-number registration, proven not to leak into the customer lane. |
+| 16 | Customer-memory storage | Enablement with a write proof for the pilot tenant. |
+| 17 | Customer-memory expiry / correction / deletion | Built and proven before any customer-facing surfacing of memory. |
+| 18 | Memory-allergy behavior | Either supplied with data and proven, or turned off, so the live flag vector stops implying protection that cannot fire. |
+| 19 | Egyptian encyclopedia | Corpus built with documented provenance and licensing, per-entry and pack-level versioning, native Egyptian review, and a test proving allergen-gate output is byte-identical when it is enabled. |
+| 20 | Shift control screen | Live proof on the shipped screen. |
+| 21 | Shift preflight checklist | The checklist built, then proven. |
+| 22 | More / health screen | The screen built, then proven. |
+| 23 | WhatsApp channel ingress | P0-WA-01 repaired and independently proven, with a live inbound-to-reply proof on the pilot tenant. |
+
+This inventory **adds and classifies backlog work**. It does not authorize implementation and does
+not change the active technical ordering: `KV-D06-001` / `P0-CTRL-01`, `P0-MAINT-01`,
+`P0-ORD-01`, `P0-WA-01`, `P0-SHADOW-01`, E0 and E1 keep their existing positions and states.
 
 ---
 
@@ -1308,3 +1489,4 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 26 Jul 2026 | Legal/Meta governance backlog opened as a parallel lane (§3.1, §9, §10, §14.2): recorded the founder ruling removing City Baker as the current public legal identity, the Saudi establishment as the incoming public legal owner/operator, the eleven current City Baker paths, zero references to the Saudi establishment name, the draft status of the Privacy/Terms/Data Deletion pages, and `legal-pages-delivery.zip` as input material only; added P0-LEGAL-01 to P0-LEGAL-03, P0-WEB-LEGAL-01, P0-DELETE-01 and P0-META-01 to P0-META-04 with their states, the V1-versus-onboarding scope distinction, ten legal/Meta go-live gates and eight source anchors. Backlog and governance only — this approves no legal text, no code, no deployment and no Meta submission; all Saudi identity values remain UNVERIFIED pending founder documents; historical records are unchanged; the KV-D06-001, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence is unchanged; `0105` and `0106` reservations are unchanged; pilot remains NO-GO |
 | 26 Jul 2026 | Legal/Meta backlog correction after auditor findings F-1 to F-5: **F-1** restated the repository counts as a pre-PR baseline of eleven City Baker paths plus this entry as the twelfth, and zero Saudi-establishment references plus this entry as the first, with both marked governance/history and explicitly not discharging the public-removal gate, so no count becomes false on merge; **F-2** added `P0-META-05` (PLANNED and BLOCKING before App Review submission) recording that `docs/META_SETUP_GUIDE.md` names only `whatsapp_business_management` and never `whatsapp_business_messaging`, that P0-META-02 supersedes it with the verified minimum pair, and marked the §14.2 anchor incomplete and non-authoritative until it closes; **F-3** made the Wesaya-only exemption conditional on three independently verified conditions — Development mode, an approved test-user role, and the global `env_fallback` number matched to `WHATSAPP_PHONE_NUMBER_ID` — ending immediately on Live mode or per-tenant Embedded Signup, with Meta Advanced Access remaining blocking while any condition is unverified and none verified by this entry; **F-4** added the `lib/messaging/webhook-routing.ts` source anchor as the code evidence for that `env_fallback` route; **F-5** corrected the pull-request body's line citation. Backlog and governance only — approves no legal text, no code, no deployment and no Meta submission; Saudi identity values remain UNVERIFIED; historical records unchanged; the KV-D06-001, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence unchanged; `0105` and `0106` reservations unchanged; pilot remains NO-GO |
 | 26 Jul 2026 | Legal/Meta backlog correction 2, closing the two non-blocking auditor recommendations. **R-1** removed every remaining absolute line-number reference to `docs/META_SETUP_GUIDE.md` and replaced it with durable evidence: the permission bullet is now quoted complete and verbatim in a fenced block beneath the §3.1 backlog table, with no ellipsis; the guide is noted to name that same permission twice more, in its Request Advanced Access step and its App Review approval checklist, and to define no other permission bullet; and a search-verifiable statement records **zero occurrences** of `whatsapp_business_messaging`, reproducible with `rg -c 'whatsapp_business_messaging' docs/META_SETUP_GUIDE.md`. The line numbers previously cited inside the F-1 to F-5 history row on this unmerged branch were removed in the same pass so no unstable reference survives; that row is otherwise unchanged and this row discloses the edit rather than making it silently. **R-2** added two §10 gates: one requiring `docs/META_SETUP_GUIDE.md` to be corrected to the independently verified permission pair and no longer marked incomplete or non-authoritative, and one closing the auditor's completeness gap by requiring the `P0-LEGAL-02` verified data-practice and Saudi PDPL manifest to be independently approved. Backlog and governance only — approves no legal text, no code, no deployment and no Meta submission; Saudi identity values remain UNVERIFIED; the KV-D06-001, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence unchanged; `0105` and `0106` reservations unchanged; pilot remains NO-GO |
+| 26 Jul 2026 | Founder V1/V2 scope decision recorded (§0.3 laws, §3.2, §9 audited baseline). Evidence baseline `SCOPE013.md` independently approved by KIVO-AUDITOR at SHA-256 `7a3fd3c4dc950ef4db4e54aae2b453ec23b7b307203f38508a582d026e4c9de2`, 55569 bytes, 555 lines, and recorded as evidence held outside Git rather than repository authority. All five open founder decisions are closed by the binding ruling “APPROVE ALL — V1 is WhatsApp and cash/COD only”: V1 is WhatsApp-only with cash/COD only, no online or card payment, no PSP integration and no canonical-payment-method subsystem; the website channel, voice notes and full natural-language restaurant-to-Kivo conversation are V2; and `conversation_outcomes`, `callback_requests`, `qz_print`, `manager_command_recognition`, `psp_payments` and `canonical_payment_methods` are settled outside V1 with future prioritization not yet scheduled. All thirteen absent Wesaya flag keys received explicit dispositions in §3.2.1, so absence may never again be cited as founder intent. KSA commercial use remains prohibited pending documented, independently approved provenance and licence, without blocking Egypt V1. Migration `0077` remains unapplied and unauthorized, `voice_notes` remains OFF and V2, and the live voice source/schema contradiction is now governed backlog `P0-VOICE-01`, a V1 hygiene repair that is neither voice activation nor authorization to apply `0077`. The 23-row V1 readiness inventory and the exhaustive 23-row required launch-state table were imported unchanged from the audited baseline, with evidence states preserved and identified as the baseline at its recorded pin rather than newly re-queried values. No implementation, configuration, flag change, migration, deployment or production action occurred; the KV-D06-001, P0-CTRL-01, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence, the `0105` and `0106` reservations, the migration-ceremony rules, the PR #559 Meta/legal backlog and every existing NO-GO gate are unchanged; pilot remains NO-GO |
