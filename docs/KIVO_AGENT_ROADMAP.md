@@ -10,6 +10,7 @@
 **Supabase project:** `zlighrbsjexrozrmuwpw`<br>
 **Truth snapshot:** 25 July 2026<br>
 **Last updated:** 26 July 2026 — founder V1/V2 scope decision recorded in §3.2; the 25 July truth snapshot above is retained as history<br>
+**Last updated:** 27 July 2026 — `KV-D06-001` Revision 14 founder approval and its signed six-clause addendum recorded in §3.3; the 26 July entry above is retained as history<br>
 **Repository evidence baseline:** [`0d8ae003d2390cab099cc72bcb2c50d1008b3696`](https://github.com/mohamedyousalama-ctrl/MaitreAI/commit/0d8ae003d2390cab099cc72bcb2c50d1008b3696)
 
 This is the independently reviewed `main` baseline after PR #553, not a claim
@@ -257,6 +258,13 @@ Audit failure policy:
 No replay of `0099`, raw ownership shortcut, application, migration or production
 write is authorized. `0106` remains reserved but blocked. No replacement
 migration label is assigned yet. Pilot status remains **NO-GO**.
+
+**Revision 14 design approval — 27 Jul 2026.** The secure forward design is now recorded as
+**approved with a signed six-clause addendum** in §3.3. That approval is design and governance
+approval only. It does **not** close this entry, does **not** authorize SQL, a migration, a
+migration label, database access, application implementation or deployment, and does **not**
+change any statement above. `KV-D06-001` / `P0-CTRL-01` remain **CRITICAL, OPEN and BLOCKING**
+until implementation and independent evidence exist.
 
 ### P0-ORD-01 — Stop the pending-order population from growing
 
@@ -557,6 +565,147 @@ separately approved V2 design and the governed migration ceremony.
 |---|---|---|
 | P0-VOICE-01 | Remove the live voice source/schema contradiction by reverting or safely removing the source references to the three absent `conversations` columns | **OPEN; V1 hygiene repair. BLOCKING before pilot go-live.** This is a repair of the live source/schema contradiction only. It is **not** activation of voice and **not** authorization to apply `0077`. It does not enter the E0/E1 safety increment and does not displace `KV-D06-001` / `P0-CTRL-01`, `P0-MAINT-01`, `P0-ORD-01`, `P0-WA-01` or `P0-SHADOW-01`; it is worked after them. |
 
+### 3.3 `KV-D06-001` Revision 14 — founder approval and signed addendum — 27 Jul 2026
+
+**Binding founder decision, 27 Jul 2026: “APPROVE D-1, D-2 AND D-3 — adopt the six-clause
+Revision 14 addendum and the recommended PM engineering rulings.”**
+
+This is a **design and governance approval only**. It authorizes no SQL, no migration preparation,
+no migration number, no database access, no application implementation, no deployment, no
+configuration change, no message, no order, no flag change, no Supabase write, no Meta action, no
+Vercel action and no production action. Nothing in §3.3 was executed: **no probe, query, sweep or
+preflight was run by the change that records it.**
+
+**Governed artefact.**
+
+| Field | Value |
+|---|---|
+| Artefact | `WO-SPEC-KVD06-SECURE-CONTROL-V1 — REVISION 14` |
+| SHA-256 | `f5eda59d06bdb4e72af183ab70deaec5dbb0041a02b6c5ba59bad21e456f6c37` |
+| Bytes | 156,719 |
+| Lines | 2,140 |
+
+Revision 14 is **founder-approved with the signed six-clause addendum recorded in §3.3.2**. The
+artefact is **evidence held outside Git, not repository authority** — this file remains the
+authority, and the authoritative revision is always the version present on `main`.
+
+**Activation.** This record is **founder-approved on 27 Jul 2026** and **ACTIVATES ON MERGE**: it
+becomes an authoritative roadmap record only when the PR carrying it reaches `main`.
+
+**Blocker state is unchanged.** `KV-D06-001` and `P0-CTRL-01` remain **CRITICAL, OPEN and
+BLOCKING**. Only the obsolete “design not approved” wording is superseded, and it is replaced by
+the accurate position: the Revision 14 design is approved with its signed addendum; implementation
+and evidence remain **open**; **no SQL or migration is authorized**; and **`0106` remains reserved
+and BLOCKED**.
+
+#### 3.3.1 Founder decisions — recorded verbatim
+
+**D-1 — protected structures and alert-lane separation.**
+
+> “I approve `control_alert_intents` (B-1) and `member_identity_versions` under Option A (B-11) as
+> new protected structures. I further approve separating the alert-intent lane — A3, F19, B-7 and
+> B-8 — from the `KV-D06-001` closure path into its own increment; closing `KV-D06-001` does not
+> require it, and the alert lane remains blocking for pilot go-live.”
+
+Recorded consequences:
+
+- B-1's **protected-structure design decision is approved**. Implementation and proof remain open.
+- **No stage creating A3 may be scheduled until B-7 and B-8 close.**
+- **B-7 and B-8 remain OPEN and block pilot go-live.**
+- B-11's **Option A governance decision is approved**. Implementation and proof remain open.
+- Implementation and proof of **both** structures remain open; approval of a design is not
+  approval of a migration, and no migration label is assigned to either.
+- A member's role may change; **historical evidence must never be rewritten**.
+
+**D-2 — read-only production preflight.**
+
+> “I authorize a SELECT-only production preflight comprising VP-1 (service-role `auth.uid()`
+> behaviour), PF20 (silently-failing A1 inserts), the L-A/L-B legacy-row classification, and the
+> `service_role` A1-reader dependency sweep. These create and change no state, send no message,
+> create no order, and change no flag, configuration or deployment. Results are reported to
+> KIVO-AUDITOR before any migration specification is drafted.”
+
+This entry **records the authorization and executes nothing**. No VP-1, PF20, classification or
+dependency-sweep probe was run by the change that records this decision. The preflight is carried
+out only under the separate work order described in §3.3.5.
+
+**D-3 — conditional ownership transfer and forced RLS.**
+
+> “I approve in principle transferring ownership of `conversation_assignment_events` and forcing
+> RLS at stage M-5, conditional on the dependency sweep in D-2 finding no `service_role` reader.”
+
+Recorded consequences:
+
+- **B-2 remains OPEN**, pending the dependency sweep and the required application and read-back
+  evidence.
+- **If any `service_role` reader is found, the approval lapses** until the design explicitly grants
+  that access.
+- **Nothing in this record performs or prepares that ownership transfer**, and no SQL, migration or
+  database action is authorized by it.
+
+#### 3.3.2 Signed Revision 14 addendum — exactly six clauses
+
+| ID | Clause |
+|---|---|
+| **AD-1 — Roadmap alignment** | Revision 14 is read against roadmap `c94ab596…` at `main` `a0160626…`, containing the §0.3 laws, the §3.2 founder decision, `P0-VOICE-01`, its §10 Operations gate and the §12.1 `0077` record. PR #560 closed **no** technical blocker |
+| **AD-2 — `P0-CTRL-01` interleave** | `P0-CTRL-01` executes as additive **M-0…M-4**, then **`P0-MAINT-01`**, then mutating **M-5…M-9**. The roadmap's overall ordering remains `P0-CTRL-01` → `P0-MAINT-01` → `P0-ORD-01`; this clause records the **internal interleave** only and reorders nothing else |
+| **AD-3 — Alert-lane separation** | **A3, F19, B-7 and B-8 form a separate increment.** They are **not** required to close `KV-D06-001`, but they remain **mandatory before pilot go-live** |
+| **AD-4 — `P0-VOICE-01` sequencing** | `P0-VOICE-01` must finish **before control-plane caller conversion**. This does **not** activate voice, does **not** authorize `0077`, and does **not** change its priority relative to `P0-ORD-01` or `P0-WA-01`. `0077` remains **unapplied and unauthorized** |
+| **AD-5 — B-13 evidence first** | Run **PF20 before** asking for a founder outage-risk decision. **Escalate only if PF20 identifies live silent A1 failures** |
+| **AD-6 — B-9 deferred** | `actor_label` remains **CHECK-constrained to NULL**. **No personal-data disclosure is authorized**, and **no `KV-D06-001` stage depends on an actor label** |
+
+The addendum has **exactly six clauses**. No seventh clause exists, and none may be added without a
+new signed founder decision.
+
+#### 3.3.3 Approved KIVO-PM engineering rulings
+
+| # | Ruling |
+|---:|---|
+| 1 | **Widen the application ownership-state model and `LEGAL_TRANSITIONS` from five to all seven production states**, including `HOLD_UNCLAIMED` and `AI_RESUME_PENDING`. `KV-D06-002` closes **only on implementation and proof** |
+| 2 | **Repair the five legacy rows — L-A: 4 and L-B: 1 — inside the governed maintenance window.** **No** founder exception and **no** permanent carve-out is granted |
+| 3 | **Adopt Revision 14 §15.4 staged caller rollout, the R-3 mandatory runtime path flag and §15.5 rollback contract** |
+| 4 | **No migration stage may combine additive and revoking work** |
+| 5 | **Keep the alert sweep and delivery work in the separated alert increment.** Both remain **mandatory for pilot go-live** |
+| 6 | **Run PF20 before any B-13 founder escalation** |
+| 7 | **Keep `actor_label` NULL and non-blocking** |
+| 8 | **Complete `P0-VOICE-01` before caller conversion**, while keeping `0077` **unapplied and unauthorized** |
+
+These are approved **engineering rulings**. They define required design and sequencing. They
+authorize no SQL, no migration, no database access, no deployment and no production action.
+
+#### 3.3.4 Findings register — Revision 14
+
+Added without renumbering any existing finding. `KV-D06-003` is outside this record and is neither
+created nor altered here.
+
+| ID | Finding | State |
+|---|---|---|
+| `KV-D06-002` | The application ownership-state model has **five** states while the production/control contract requires **seven** | **OPEN; HARD PREREQUISITE; BLOCKING.** Closes only on implementation and proof |
+| `KV-D06-004` | Deployed voice source references **three production-absent columns** | **OPEN**; governed by `P0-VOICE-01`; **blocks caller conversion and pilot go-live** |
+| `KV-D06-005` | **No proven alert-sweep invoker**, timing contract, stuck-run detection, retry or catch-up bound | **OPEN**; separated alert lane; **PILOT BLOCKING** |
+| `KV-D06-006` | **No proven human alert-delivery and acknowledgment boundary** | **OPEN**; separated alert lane; **PILOT BLOCKING** |
+| `KV-D06-007` | **No approved actor-label source** | **DEFERRED; NON-BLOCKING.** `actor_label` remains **NULL**; **no disclosure authorized** |
+| `KV-D06-008` | Production `service_role` `auth.uid()` behaviour is **unverified** | **OPEN**; VP-1 authorized; **blocks migration drafting until evidence exists** |
+| `KV-D06-009` | Caller conversion, staged rollout and rollback remain **unimplemented** | **OPEN**; **BLOCKING caller conversion and revocation** |
+| `KV-D06-010` | Immutable member identity versioning | **Option A founder-approved**; implementation and proof **OPEN** |
+| `KV-D06-011` | The audit bridge may convert **silent A1 failures into visible errors** | **OPEN**; **PF20 evidence first**; blocks M-2 application pending that evidence |
+
+#### 3.3.5 Next authorized stage
+
+After this roadmap record is **independently audited and merged**, the next technical activity is a
+**separate read-only preflight work order** containing **only**:
+
+1. **VP-1** — service-role `auth.uid()` behaviour;
+2. **PF20** — silently-failing A1 inserts;
+3. the **L-A/L-B legacy-row classification**;
+4. the **`service_role` A1-reader dependency sweep**.
+
+That work order is **SELECT-only**. It creates and changes no state, sends no message, creates no
+order, and changes no flag, configuration or deployment. **No migration specification may be
+drafted before the preflight results are reported to KIVO-AUDITOR.** No migration label, including
+`0106`, is assigned or unblocked by this record, and pilot status remains **NO-GO**.
+
+
 ---
 
 ## 4. Product vision
@@ -817,7 +966,7 @@ These findings extend the new BRAIN. They do not justify a prompt-only patch or 
 
 | Item | State | Depends on |
 |---|---|---|
-| P0-CTRL-01 / KV-D06-001 | **CRITICAL; OPEN; BLOCKING; design not approved** | Independent clearance of the secure forward design and explicit founder approval before implementation |
+| P0-CTRL-01 / KV-D06-001 | **CRITICAL; OPEN; BLOCKING; Revision 14 design approved with the signed six-clause addendum (§3.3)** — implementation and evidence remain open; no SQL or migration is authorized; `0106` remains reserved and BLOCKED | Independent clearance of the secure forward design and explicit founder approval before implementation |
 | P0-MAINT-01 | **OPEN; BLOCKING; design not approved** | P0-CTRL-01 rollout boundary plus a verified reversible block, drain, read-back and restore mechanism |
 | P0-ORD-01 / `WO-ENG-P0-ORDER-FREEZE` | **OPEN; BLOCKING; Option B design not approved** | Approved protected database state plus a database-level `orders` trigger; merge before E0 resumes; baseline stays 127 |
 | P0-WA-01 | **BLOCKING** | `WO-ENG-P0-ORDER-FREEZE`, controlled Meta/Vercel alignment and successful legacy-path test |
@@ -1242,6 +1391,12 @@ No detector policy is accepted until a native Egyptian/Saudi reviewer resolves t
   secure forward correction. Assigning one is a separate approved decision.
 - **Pilot status.** The pilot remains **NO-GO**. No application, migration or
   production write is authorized by this entry.
+- **Revision 14 approval changes nothing here.** The `KV-D06-001` Revision 14 design was
+  founder-approved on 27 Jul 2026 with the signed six-clause addendum (§3.3). That is design
+  and governance approval only. **No SQL is authorized, no migration is prepared, no migration
+  label is assigned, and `0106` remains reserved and blocked.** No migration specification may
+  be drafted before the §3.3.5 read-only preflight results are reported to KIVO-AUDITOR. Every
+  migration-ceremony requirement in §12.3 and `DEPLOYMENT.md` §B continues to apply unchanged.
 
 ### 12.2 PR #553
 
@@ -1420,6 +1575,13 @@ K2 must close before any future migration is applied. K4 must close before the R
 
 No later roadmap item may jump ahead of an unresolved earlier safety or truth gate.
 
+On 27 Jul 2026 the founder approved the `KV-D06-001` Revision 14 design with its signed
+six-clause addendum (§3.3). Decision 1 above is therefore **approved in design only**; its
+remaining work is implementation and independent proof. The next authorized technical activity
+is the **separate read-only preflight work order** in §3.3.5 — VP-1, PF20, the L-A/L-B
+legacy-row classification and the `service_role` A1-reader dependency sweep, SELECT-only. No
+migration specification may be drafted before its results reach KIVO-AUDITOR.
+
 ---
 
 ## 17. Response to independent audit
@@ -1493,3 +1655,4 @@ Draft v1 was rejected. The document owner corrected each finding after reviewing
 | 26 Jul 2026 | Legal/Meta backlog correction 2, closing the two non-blocking auditor recommendations. **R-1** removed every remaining absolute line-number reference to `docs/META_SETUP_GUIDE.md` and replaced it with durable evidence: the permission bullet is now quoted complete and verbatim in a fenced block beneath the §3.1 backlog table, with no ellipsis; the guide is noted to name that same permission twice more, in its Request Advanced Access step and its App Review approval checklist, and to define no other permission bullet; and a search-verifiable statement records **zero occurrences** of `whatsapp_business_messaging`, reproducible with `rg -c 'whatsapp_business_messaging' docs/META_SETUP_GUIDE.md`. The line numbers previously cited inside the F-1 to F-5 history row on this unmerged branch were removed in the same pass so no unstable reference survives; that row is otherwise unchanged and this row discloses the edit rather than making it silently. **R-2** added two §10 gates: one requiring `docs/META_SETUP_GUIDE.md` to be corrected to the independently verified permission pair and no longer marked incomplete or non-authoritative, and one closing the auditor's completeness gap by requiring the `P0-LEGAL-02` verified data-practice and Saudi PDPL manifest to be independently approved. Backlog and governance only — approves no legal text, no code, no deployment and no Meta submission; Saudi identity values remain UNVERIFIED; the KV-D06-001, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence unchanged; `0105` and `0106` reservations unchanged; pilot remains NO-GO |
 | 26 Jul 2026 | Founder V1/V2 scope decision recorded (§0.3 laws, §3.2, §9 audited baseline). Evidence baseline `SCOPE013.md` independently approved by KIVO-AUDITOR at SHA-256 `7a3fd3c4dc950ef4db4e54aae2b453ec23b7b307203f38508a582d026e4c9de2`, 55569 bytes, 555 lines, and recorded as evidence held outside Git rather than repository authority. All five open founder decisions are closed by the binding ruling “APPROVE ALL — V1 is WhatsApp and cash/COD only”: V1 is WhatsApp-only with cash/COD only, no online or card payment, no PSP integration and no canonical-payment-method subsystem; the website channel, voice notes and full natural-language restaurant-to-Kivo conversation are V2; and `conversation_outcomes`, `callback_requests`, `qz_print`, `manager_command_recognition`, `psp_payments` and `canonical_payment_methods` are settled outside V1 with future prioritization not yet scheduled. All thirteen absent Wesaya flag keys received explicit dispositions in §3.2.1, so absence may never again be cited as founder intent. KSA commercial use remains prohibited pending documented, independently approved provenance and licence, without blocking Egypt V1. Migration `0077` remains unapplied and unauthorized, `voice_notes` remains OFF and V2, and the live voice source/schema contradiction is now governed backlog `P0-VOICE-01`, a V1 hygiene repair that is neither voice activation nor authorization to apply `0077`. The 23-row V1 readiness inventory and the exhaustive 23-row required launch-state table were imported unchanged from the audited baseline, with evidence states preserved and identified as the baseline at its recorded pin rather than newly re-queried values. No implementation, configuration, flag change, migration, deployment or production action occurred; the KV-D06-001, P0-CTRL-01, P0-MAINT-01, P0-ORD-01, P0-WA-01, E0 and E1 sequence, the `0105` and `0106` reservations, the migration-ceremony rules, the PR #559 Meta/legal backlog and every existing NO-GO gate are unchanged; pilot remains NO-GO |
 | 26 Jul 2026 | Correction 1 to the founder V1/V2 scope decision after KIVO-AUDITOR rejection of head `b21e2fae8edb3332954aae7879450f8494b9cc00`. `P0-VOICE-01` is restated as OPEN and as **BLOCKING before pilot go-live**, so the live voice source/schema contradiction now explicitly blocks go-live rather than sitting as an unplaced repair. Its placement is made explicit: it is worked **after** the existing safety-critical sequence, it does **not** enter the E0/E1 safety increment, and it does **not** displace `KV-D06-001` / `P0-CTRL-01`, `P0-MAINT-01`, `P0-ORD-01`, `P0-WA-01` or `P0-SHADOW-01`. A matching gate was appended to the §10 Operations list requiring `P0-VOICE-01` closed — no deployed source reading or writing `voice_notes_day`, `voice_notes_sent` or `voice_cost_usd`, with `0077` still unapplied — and that gate blocks pilot go-live only; it does not alter or enter the E0/E1 execution sequence. §12.1 migration truth now records `0077_voice_budget.sql` as prepare-only and unapplied with its three `conversations` columns absent from production. `0077` remains **unauthorized**: nothing here approves applying it, and the governed migration ceremony, the `0105` and `0106` reservations and the existing 0104 statement are unchanged. No code, SQL, migration, flag, configuration, deployment, Supabase, Vercel, Meta or production action occurred; this correction is documentation only. Pilot remains NO-GO |
+| 27 Jul 2026 | `KV-D06-001` Revision 14 founder approval recorded (§3.3, §9 Phase 1, §12.1b, §16). The founder signed **“APPROVE D-1, D-2 AND D-3 — adopt the six-clause Revision 14 addendum and the recommended PM engineering rulings.”** **D-1** approves `control_alert_intents` (B-1) and `member_identity_versions` under Option A (B-11) as new protected structures and separates the alert-intent lane — A3, F19, B-7 and B-8 — from the `KV-D06-001` closure path into its own increment: closing `KV-D06-001` does not require it, no stage creating A3 may be scheduled until B-7 and B-8 close, and B-7/B-8 remain OPEN and block pilot go-live. **D-2** authorizes a SELECT-only production preflight — VP-1, PF20, the L-A/L-B legacy-row classification and the `service_role` A1-reader dependency sweep — whose results reach KIVO-AUDITOR before any migration specification is drafted; **no probe was executed by this record**. **D-3** approves in principle transferring ownership of `conversation_assignment_events` and forcing RLS at stage M-5, conditional on that sweep finding no `service_role` reader; B-2 remains OPEN and the approval lapses if a reader is found. Revision 14 is recorded at SHA-256 `f5eda59d06bdb4e72af183ab70deaec5dbb0041a02b6c5ba59bad21e456f6c37`, 156719 bytes, 2140 lines, as evidence held outside Git, approved with its **six-clause** addendum: AD-1 roadmap alignment against `c94ab596…` at `a0160626…` with PR #560 closing no technical blocker; AD-2 the `P0-CTRL-01` internal interleave M-0…M-4, then `P0-MAINT-01`, then M-5…M-9, leaving the overall `P0-CTRL-01` → `P0-MAINT-01` → `P0-ORD-01` ordering unchanged; AD-3 alert-lane separation, mandatory before pilot go-live; AD-4 `P0-VOICE-01` before control-plane caller conversion without activating voice, authorizing `0077` or changing its priority against `P0-ORD-01` or `P0-WA-01`; AD-5 PF20 evidence before any B-13 founder escalation; AD-6 `actor_label` deferred and CHECK-constrained to NULL with no disclosure authorized. Eight KIVO-PM engineering rulings were approved, covering the five-to-seven ownership-state widening including `HOLD_UNCLAIMED` and `AI_RESUME_PENDING`, repair of the five legacy rows (L-A: 4, L-B: 1) inside the governed maintenance window with no exception or carve-out, adoption of the §15.4 staged caller rollout with the R-3 runtime path flag and §15.5 rollback contract, the prohibition on combining additive and revoking work in one migration stage, retention of the alert sweep and delivery work in the separated increment, PF20 before B-13 escalation, `actor_label` NULL and non-blocking, and `P0-VOICE-01` before caller conversion. Nine findings were added without renumbering any existing finding — `KV-D06-002`, `KV-D06-004`, `KV-D06-005`, `KV-D06-006`, `KV-D06-007`, `KV-D06-008`, `KV-D06-009`, `KV-D06-010` and `KV-D06-011`; `KV-D06-003` was neither created nor altered. Only the obsolete “design not approved” wording on the `P0-CTRL-01` / `KV-D06-001` Phase 1 row was replaced; both remain **CRITICAL, OPEN and BLOCKING**, implementation and evidence remain open, and `0106` remains reserved and BLOCKED. The next authorized technical activity is the separate SELECT-only preflight work order. No implementation, SQL, migration preparation, migration number, database access, flag, configuration, deployment, Supabase, Meta, Vercel or production action was authorized or taken; `0105` remains reserved, `0077` remains unapplied and unauthorized, V1 remains WhatsApp and cash/COD only with website and voice V2, and pilot remains NO-GO |
