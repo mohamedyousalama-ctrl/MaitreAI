@@ -286,7 +286,7 @@ Use one complete 30-day period where possible. Use exactly the same dates across
 | `FIN-UNIT-001` | Measure actual Kivo AI usage | Token/cost distribution per eligible conversation and correctly accepted order, including non-converters and failures | BLOCKED pending live evidence path |
 | `FIN-BSP-001` | Verify WhatsApp/BSP cost | Signed rate card/contract, markup and measured message-category mix | OPEN |
 | `FIN-MARGIN-001` | Measure merchant contribution profit/order | Same-period order revenue, direct variable costs, discounts, refunds and cancellations | OPEN |
-| `FIN-PRICE-001` | Decide Kivo price/package | Founder-approved price after merchant value, platform cost, ROI and sensitivity evidence | BLOCKED by the four evidence items above |
+| `FIN-PRICE-001` | Decide Kivo price/package | Founder-approved price after merchant value, platform cost, ROI and sensitivity evidence | BLOCKED by `COM-EVID-001`, `COM-EVID-002`, `FIN-UNIT-001`, `FIN-BSP-001` and `FIN-MARGIN-001` |
 
 Commercial evidence collection may run in parallel with the governed technical sequence. It does not close or bypass any technical blocker and does not authorize product implementation.
 
