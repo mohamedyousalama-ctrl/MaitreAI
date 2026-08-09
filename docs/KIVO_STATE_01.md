@@ -1,6 +1,6 @@
 # KIVO_STATE-01 — Evidence-backed current-state snapshot
 
-**Status:** Candidate for independent audit; not approved, merged or implementation authority.<br>
+**Status:** ACTIVATES ON AUDITED MERGE — candidate until the pull request carrying it is independently cleared by KIVO-AUDITOR and merged to `main`; upon that merge it becomes the accepted KIVO_STATE-01 snapshot without further amendment. In both states it is an evidence record, not approval and not implementation authority.<br>
 **Snapshot date:** 9 August 2026<br>
 **Repository baseline:** `main` at `6e71a242cf9ae6b631c857c190146a0966c946da`<br>
 **Roadmap at baseline:** Git blob `8565adeb13deaf361d3bec90a08224e222fe60d9`; SHA-256 `9500aa8806c615a38a25d84728e745f2762a961c28f3e45ffae1e3da1c6b8e6f`; 132,371 bytes; 1,845 lines<br>
@@ -259,4 +259,4 @@ Limitations must remain explicit:
 
 ### Adoption boundary
 
-This candidate changes documentation only. It closes no blocker, assigns no migration, authorizes no implementation, and does not alter Egypt V1 or Saudi scope. Builder handback is not clearance. Independent audit and founder merge authority remain required. Pilot remains **NO-GO**.
+This candidate changes documentation only. It closes no blocker, assigns no migration, authorizes no implementation, and does not alter Egypt V1 or Saudi scope. Builder handback is not clearance. Adoption requires independent audit and founder merge authority; this document has no governance effect until both occur. Pilot remains **NO-GO**.
