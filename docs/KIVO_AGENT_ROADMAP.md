@@ -519,8 +519,9 @@ More/health screen.
 
 **Scope note — added 9 Aug 2026.** The narrowed Egypt V1 founder decision recorded in
 [`docs/KIVO_FOUNDER_DECISION_DELTA_2026-08-09.md`](./KIVO_FOUNDER_DECISION_DELTA_2026-08-09.md)
-supersedes part of the V1 capability list above and the derived classifications in §3.2.1 and the
-§9 audited readiness inventory, all retained byte-unchanged as history: **customer memory** is now
+supersedes part of the V1 capability list above and the derived classifications in §3.2.1, the
+§9 audited readiness inventory and the §9 required-V1-launch-state table, all retained
+byte-unchanged as history: **customer memory** is now
 deferred for V1 unless a later separately governed decision adds the minimum necessary bounded
 memory (delta row 12); the separate broad **Egyptian food encyclopedia** product is now deferred,
 while Egyptian-Arabic interaction and menu-grounded restaurant-specific knowledge remain required
