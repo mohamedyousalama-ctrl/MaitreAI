@@ -25,32 +25,31 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  OWNERSHIP_STATES,
+  AUTHORITY_BY_STATE,
+  isLegalTransition,
+  assertLegalTransition,
+  type OwnershipState,
+  type ReplyAuthority,
+} from "../conversation-control/model";
 
 // ---------------------------------------------------------------------------
 // The control mode == conversations.ownership_state (widened by migration 0099).
 // HUMAN_IDLE is the canonical name for the WO's "HUMAN_WAITING" (documented alias).
+//
+// KV-D06-002: the mode set, the authority mapping and the transition table are no
+// longer defined here — they are the canonical application contract in
+// lib/conversation-control/model.ts. `ControlMode` and `CONTROL_MODES` are kept as
+// this module's established public names, now aliases of the shared contract so the
+// two can never disagree. Every export below is unchanged in name and behavior.
 // ---------------------------------------------------------------------------
-export type ControlMode =
-  | "AI_ACTIVE" // Karim owns + replies (authority AI)
-  | "HOLD_UNCLAIMED" // escalated, no human has claimed yet (authority NONE) — NEW
-  | "HUMAN_ACTIVE" // a member has taken over (authority HUMAN)
-  | "HUMAN_IDLE" // == HUMAN_WAITING: member owns but idle, customer waiting (authority HUMAN)
-  | "AI_RESUME_PENDING" // handback validation in flight (authority NONE) — NEW
-  | "SYSTEM_HOLD" // safety hold (allergy); deliberate human release only (authority NONE)
-  | "CLOSED"; // finished (authority NONE)
+export type ControlMode = OwnershipState;
 
-export const CONTROL_MODES: readonly ControlMode[] = [
-  "AI_ACTIVE",
-  "HOLD_UNCLAIMED",
-  "HUMAN_ACTIVE",
-  "HUMAN_IDLE",
-  "AI_RESUME_PENDING",
-  "SYSTEM_HOLD",
-  "CLOSED",
-];
+export const CONTROL_MODES: readonly ControlMode[] = OWNERSHIP_STATES;
 
 /** Derived reply authority. EXACTLY ONE at any time; never AI and HUMAN together. */
-export type ReplyAuthority = "AI" | "HUMAN" | "NONE";
+export type { ReplyAuthority };
 
 export type AssignmentEventType =
   | "CLAIMED"
@@ -74,59 +73,31 @@ function assertNever(x: never): never {
 // when the epoch matches; authorityFor is the intent layer on top.
 // ---------------------------------------------------------------------------
 export function authorityFor(mode: ControlMode): ReplyAuthority {
-  switch (mode) {
-    case "AI_ACTIVE":
-      return "AI";
-    case "HUMAN_ACTIVE":
-    case "HUMAN_IDLE":
-      return "HUMAN";
-    case "HOLD_UNCLAIMED":
-    case "AI_RESUME_PENDING":
-    case "SYSTEM_HOLD":
-    case "CLOSED":
-      return "NONE";
-    default:
-      return assertNever(mode);
-  }
+  const authority = AUTHORITY_BY_STATE[mode];
+  // Unreachable while `mode` is a real ControlMode (the mapping is total over the
+  // union). Kept as the same defensive guard this function has always carried, so an
+  // unmapped value coming from untyped data still fails loudly rather than silently.
+  if (!authority) return assertNever(mode as never);
+  return authority;
 }
 
 // ---------------------------------------------------------------------------
-// The legal-transition table. For the FIVE legacy modes the edges are IDENTICAL to
-// lib/db/ownership.ts LEGAL_TRANSITIONS (so the control plane and the Brain's
-// setOwnershipState never disagree on a shared pair); the only additions are edges
-// that INVOLVE a new mode (HOLD_UNCLAIMED / AI_RESUME_PENDING). Self-transitions are
-// idempotent no-ops (allowed); a null `from` (unknown/legacy row) is never blocked.
+// The legal-transition table now lives in lib/conversation-control/model.ts — the one
+// canonical application contract shared with lib/db/ownership.ts, so the control plane
+// and the Brain's setOwnershipState cannot disagree on any pair. `canTransition` and
+// `assertTransition` remain this module's public names and behave exactly as before:
+// self-transitions are idempotent no-ops (allowed), a null `from` (unknown/legacy row)
+// is never blocked, and the thrown message keeps its "[conversation-control]" prefix.
 // ---------------------------------------------------------------------------
-const TRANSITIONS: Record<ControlMode, readonly ControlMode[]> = {
-  // legacy [HUMAN_ACTIVE, SYSTEM_HOLD, CLOSED] + new [HOLD_UNCLAIMED]
-  AI_ACTIVE: ["HOLD_UNCLAIMED", "HUMAN_ACTIVE", "SYSTEM_HOLD", "CLOSED"],
-  // new state: escalated-and-unclaimed → a human claims it, safety upgrades it, it
-  // returns to AI (deliberate resume), or it closes.
-  HOLD_UNCLAIMED: ["HUMAN_ACTIVE", "SYSTEM_HOLD", "AI_ACTIVE", "CLOSED"],
-  // legacy [HUMAN_IDLE, AI_ACTIVE, CLOSED] + new [AI_RESUME_PENDING]
-  HUMAN_ACTIVE: ["HUMAN_IDLE", "AI_ACTIVE", "AI_RESUME_PENDING", "CLOSED"],
-  // legacy [HUMAN_ACTIVE, AI_ACTIVE, CLOSED] + new [AI_RESUME_PENDING]
-  HUMAN_IDLE: ["HUMAN_ACTIVE", "AI_ACTIVE", "AI_RESUME_PENDING", "CLOSED"],
-  // new state: handback validation → resume (AI_ACTIVE), reclaim/fail (HUMAN_ACTIVE), close.
-  AI_RESUME_PENDING: ["AI_ACTIVE", "HUMAN_ACTIVE", "CLOSED"],
-  // legacy — SYSTEM_HOLD → AI_ACTIVE is legal ONLY as a deliberate human release (#87).
-  SYSTEM_HOLD: ["HUMAN_ACTIVE", "AI_ACTIVE", "CLOSED"],
-  // legacy — a closed conversation reopens to AI on a new inbound.
-  CLOSED: ["AI_ACTIVE"],
-};
 
 /** Pure predicate. null `from` permitted (never block a legacy row); self-transition ok. */
 export function canTransition(from: ControlMode | null | undefined, to: ControlMode): boolean {
-  if (from == null) return true;
-  if (from === to) return true;
-  return TRANSITIONS[from]?.includes(to) ?? false;
+  return isLegalTransition(from, to);
 }
 
 /** Throwing variant for callers/tests that want the transition enforced. */
 export function assertTransition(from: ControlMode | null | undefined, to: ControlMode): void {
-  if (!canTransition(from, to)) {
-    throw new Error(`[conversation-control] illegal transition ${from} → ${to}`);
-  }
+  assertLegalTransition(from, to, "conversation-control");
 }
 
 // ---------------------------------------------------------------------------

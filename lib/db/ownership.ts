@@ -9,7 +9,15 @@
 // Isomorphic (NOT server-only): both the server bridge (service-role client) and the
 // operator UI store (browser client) flip ownership, so both must be able to call this.
 //
-// Step 3 is ENFORCING: an illegal transition now THROWS instead of writing — the map
+// KV-D06-002: the state set, the transition table and the claimability rules are NO
+// LONGER DEFINED HERE. They live in the one canonical application contract,
+// lib/conversation-control/model.ts, and this module re-exports them unchanged so every
+// existing import of OwnershipState / OWNERSHIP_STATES / isLegalTransition /
+// assertLegalTransition / CLAIMABLE_FROM / canClaim keeps working with identical
+// behavior. What changed is only WHERE the contract is defined — one place instead of
+// three. The contract itself is the already-governed seven-state superset.
+//
+// Step 3 is ENFORCING: an illegal transition THROWS instead of writing — the map
 // is the law. Before flipping enforcement on, every live call-site was audited and the
 // three that could pass an illegal transition were fixed to take a legal path (CLOSED
 // is reopened to AI_ACTIVE before any escalation/takeover; SYSTEM_HOLD is never
@@ -19,77 +27,28 @@
 // ============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-
-export type OwnershipState =
-  | "AI_ACTIVE" // Karim owns + replies normally
-  | "HUMAN_ACTIVE" // a staff member took over, Karim silent
-  | "HUMAN_IDLE" // handed to a human, human not acting, customer waiting
-  | "SYSTEM_HOLD" // safety hold (allergy); only a deliberate human release returns it
-  | "CLOSED"; // conversation finished/closed
-
-/** Legal transitions. Self-transitions (X→X) are always allowed as idempotent no-ops.
- *  HARD RULE: SYSTEM_HOLD → AI_ACTIVE is allowed ONLY via a deliberate human release
- *  (the operator "return to AI" action) — the auto-return timer never targets AI_ACTIVE
- *  from a safety hold (it bails before that), so the #87 safety guarantee is preserved. */
-const LEGAL_TRANSITIONS: Record<OwnershipState, readonly OwnershipState[]> = {
-  AI_ACTIVE: ["HUMAN_ACTIVE", "SYSTEM_HOLD", "CLOSED"],
-  HUMAN_ACTIVE: ["HUMAN_IDLE", "AI_ACTIVE", "CLOSED"],
-  HUMAN_IDLE: ["HUMAN_ACTIVE", "AI_ACTIVE", "CLOSED"],
-  SYSTEM_HOLD: ["HUMAN_ACTIVE", "AI_ACTIVE", "CLOSED"],
-  CLOSED: ["AI_ACTIVE"],
-};
-
-export const OWNERSHIP_STATES: readonly OwnershipState[] = [
-  "AI_ACTIVE",
-  "HUMAN_ACTIVE",
-  "HUMAN_IDLE",
-  "SYSTEM_HOLD",
-  "CLOSED",
-];
-
-/** Pure predicate. A null `from` (unknown/legacy row) is permitted — we can't validate
- *  what we can't read, and must never block an existing flow. Self-transitions allowed. */
-export function isLegalTransition(from: OwnershipState | null | undefined, to: OwnershipState): boolean {
-  if (from == null) return true;
-  if (from === to) return true;
-  return LEGAL_TRANSITIONS[from]?.includes(to) ?? false;
-}
-
-/** Throwing variant — used by tests now, and by Step 2's enforced path later. */
-export function assertLegalTransition(from: OwnershipState | null | undefined, to: OwnershipState): void {
-  if (!isLegalTransition(from, to)) {
-    throw new Error(`[ownership] illegal transition ${from} → ${to}`);
-  }
-}
+import {
+  OWNERSHIP_STATES,
+  CLAIMABLE_FROM,
+  isLegalTransition,
+  assertLegalTransition,
+  canClaim,
+  type OwnershipState,
+} from "../conversation-control/model";
 
 // ---------------------------------------------------------------------------
-// MO2 claim authorization (takeover-at-SEND). The assignee route performs a SINGLE
-// atomic conditional UPDATE; `canClaim` is the PURE mirror of its TOTAL contract
-// (the atomic WHERE + the 0-row fallback), so the same authorization is unit-testable.
+// Compatibility surface — every public name this module exported before KV-D06-002
+// is preserved, now sourced from the canonical model rather than redefined here.
+//
+//   OwnershipState        — the seven-state union (was a five-state union)
+//   OWNERSHIP_STATES      — the canonical ordered tuple
+//   isLegalTransition     — pure predicate; null `from` and self-transitions allowed
+//   assertLegalTransition — throwing variant, "[ownership] illegal transition …"
+//   CLAIMABLE_FROM        — the states a claim may transition FROM
+//   canClaim              — pure send-time claim/authorization mirror
 // ---------------------------------------------------------------------------
-
-/** States the atomic claim UPDATE can transition FROM (the assignee route's WHERE).
- *  HUMAN_ACTIVE is intentionally EXCLUDED from the atomic set: an already-active
- *  conversation is either the caller's own (idempotent success — resolved without a
- *  state change or a duplicate audit) or a teammate's (conflict). Adding it would
- *  audit a "claim" on every message send. */
-export const CLAIMABLE_FROM: readonly OwnershipState[] = ["AI_ACTIVE", "HUMAN_IDLE", "SYSTEM_HOLD"];
-
-/** Pure predicate: may member `me` claim / send-into this conversation? True when it
- *  is NOT owned by someone else AND either it sits in a claimable predecessor state
- *  OR it is already this member's HUMAN_ACTIVE (idempotent). Teammate-owned → false
- *  (conflict); CLOSED and unassigned-HUMAN_ACTIVE → false. This is the send-time
- *  ownership proof — the client must pass the server claim before sending, never
- *  trust local `owner === "human"`. */
-export function canClaim(
-  row: { ownershipState: OwnershipState | null | undefined; assignedMemberId: string | null | undefined },
-  me: string
-): boolean {
-  const { ownershipState, assignedMemberId } = row;
-  if (assignedMemberId && assignedMemberId !== me) return false; // someone else owns it → conflict
-  if (ownershipState === "HUMAN_ACTIVE") return assignedMemberId === me; // idempotent only if already mine
-  return !!ownershipState && CLAIMABLE_FROM.includes(ownershipState);
-}
+export { OWNERSHIP_STATES, CLAIMABLE_FROM, isLegalTransition, assertLegalTransition, canClaim };
+export type { OwnershipState };
 
 export interface SetOwnershipResult {
   from: OwnershipState | null;
