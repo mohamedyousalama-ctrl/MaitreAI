@@ -327,13 +327,13 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
 
       - name: "Proof: safety-hold release (informational — skips w/o DB creds)"
-        run: node --experimental-strip-types scripts/proof-safety-hold-release.mjs
+        run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-safety-hold-release.mjs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
 
       - name: "Proof: spine live (informational — skips w/o DB creds)"
-        run: node --experimental-strip-types scripts/proof-spine-live.mjs
+        run: node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-spine-live.mjs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
