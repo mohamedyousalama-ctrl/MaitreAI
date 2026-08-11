@@ -36,8 +36,9 @@
 | ID | Work | Owner | Dependency | Evidence required | Branch / PR / head | State | Next action |
 |---|---|---|---|---|---|---|---|
 | `AGENT-WO-001` | Seven-state application ownership model (`KV-D06-002`) | KIVO-BUILDER | PR #568 verified merge; `WO-ENG-KVD06-002-SEVEN-STATE-APPLICATION-MODEL-001` | Focused ownership suite, cross-module parity proof, control proof, TypeScript, lint, build and full unit suite — all from the final committed tree | `feat/kvd06-seven-state-app-model-20260809`; draft PR and exact head recorded in the PR body and Builder handback | **BUILT / AUDIT PENDING** | Handoff order on the corrected immutable head: Builder handback → KIVO V1 PRODUCT & ENGINEERING QUALITY LEAD re-gate → only if accepted, KIVO-AUDITOR exact-head review |
-| `AGENT-WO-002` | M-0–M-4 additive control-plane specification and proof design | KIVO-PM | Verified completion of `AGENT-WO-001`; separate founder work order | Approved specification plus its proof design, independently cleared | not started | **BLOCKED** | Wait for `AGENT-WO-001` verified completion, then request the founder work order |
-| `AGENT-WO-003` | `P0-MAINT-01` interleave and production-maintenance proof | KIVO-PM | Governed entry conditions; separate founder work order | Reversible block, drain, read-back and restore mechanism proven | not started | **BLOCKED** | Wait for governed entry conditions |
+| `AGENT-WO-002` | M-0–M-4 additive control-plane specification and proof design | KIVO-PM | Verified completion of `AGENT-WO-001`; separate founder work order | Frozen specification `WO-SPEC-KVD06-M0-M4-ADDITIVE-CONTROL-PLANE-001` at SHA-256 `61f9d74378f60b025112f6e98455b168067e66b9f2caa545f57dc74c491a4364` (9,819 bytes), accepted at the Product & Engineering Quality Gate and independently cleared by KIVO-AUDITOR; binding adjudication at SHA-256 `8eb016e5bfd583310bd8627b0eb6108049bdea240ce1c0f8283ef648c5df3a9e` (11,034 bytes); both held byte-identically under `docs/governance/` | `docs/kvd06-m0m4-spec-custody-queue-20260811`; draft custody PR and exact head recorded in the PR body and Builder handback | **AUDIT CLEARED / MERGE PENDING** | Quality exact-head acceptance → KIVO-AUDITOR exact-head review → founder merge only if cleared → independent merge verification |
+| `AGENT-WO-002A` | Pre-maintenance control-plane implementation and proof: `M-0` → `M-1` → `M-2` → `R-3` → `R-4` | KIVO-BUILDER | Verified completion of `AGENT-WO-002`; separate founder-approved implementation WO; all stage-specific entry gates | The exact independently cleared proof obligations from the frozen specification, with disposable-PostgreSQL-only destructive and failure-injection proofs where specified | not started | **BLOCKED** | Wait for a separately founder-approved implementation WO. R-3 additionally remains blocked until the adjudicated L-A disposition evidence gate is independently accepted and `P0-VOICE-01` is complete |
+| `AGENT-WO-003` | `P0-MAINT-01` interleave and production-maintenance proof | KIVO-PM | Verified completion of `AGENT-WO-002A`; its own governed entry conditions; separate founder work order | Reversible block, drain, read-back and restore mechanism proven | not started | **BLOCKED** | Wait for governed entry conditions |
 | `AGENT-WO-004` | M-5–M-9 mutating control-plane implementation and proof | KIVO-BUILDER | `AGENT-WO-002` and `AGENT-WO-003`; separate founder / production authority | Real-PostgreSQL proofs plus the six PF-R1 read-backs at M-5 | not started | **BLOCKED** | Wait for both predecessors and explicit production authority |
 | `AGENT-WO-005` | Durable current-version customer confirmation and restaurant acceptance | KIVO-BUILDER | Control plane accepted; separate work order | Durable cutover record, provenance-bound acceptance, real-database proofs | not started | **BLOCKED** | Wait for control-plane acceptance |
 | `AGENT-WO-006` | WhatsApp ingress and outbound live repair and proof | KIVO-PM + founder | Meta/WhatsApp human prerequisites plus a separate work order | Production webhook 200, one persisted message, one reply, zero new `invalid_signature` over the observation window | not started | **BLOCKED** | Wait for the human Meta/WhatsApp prerequisites |
@@ -71,6 +72,15 @@ a later judgement call:
 - **That closure only makes the next separately scoped specification eligible.** It does **not**
   authorize SQL, migration-specification drafting, a migration label, database access or any
   production action.
+
+### Self-transition rule for the `AGENT-WO-002` specification-custody pull request
+
+- **While open after exact-head clearance:** `AGENT-WO-002` is **`AUDIT CLEARED / MERGE PENDING`**.
+- **After Quality acceptance, KIVO-AUDITOR exact-head clearance, founder merge and independent merge
+  verification:** `AGENT-WO-002` becomes **`VERIFIED COMPLETE`**.
+- **That transition establishes durable specification custody and queue governance only.**
+- It does **not** authorize `AGENT-WO-002A`, SQL, migration drafting, a migration label, production
+  access, `P0-MAINT-01`, M-5+ or any pilot action.
 
 ---
 
