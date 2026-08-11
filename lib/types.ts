@@ -7,6 +7,9 @@
 // Channel model lives in the messaging layer (Sprint 6); re-used here so a
 // conversation can record which channel it originated from.
 import type { ChannelKey } from "./messaging/types";
+// KV-D06-002 — the ownership-state union is the canonical application contract, not a
+// literal repeated here. Type-only, so nothing is imported at runtime.
+import type { OwnershipState } from "./conversation-control/model";
 export type { ChannelKey };
 
 export type ModuleKey =
@@ -343,7 +346,7 @@ export interface Conversation {
   // the spine via setOwnershipState / the allergen gate). Exposed here so the
   // Conversations UI can read the real safety flag instead of inferring it from
   // escalationReason text.
-  ownershipState?: "AI_ACTIVE" | "HOLD_UNCLAIMED" | "HUMAN_ACTIVE" | "HUMAN_IDLE" | "AI_RESUME_PENDING" | "SYSTEM_HOLD" | "CLOSED";
+  ownershipState?: OwnershipState;
   isSafetyHold?: boolean;
   controlEpoch?: number;
   // MO1 — named ownership: which member (members.id) currently owns a human-handled
