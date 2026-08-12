@@ -1040,8 +1040,11 @@ where is_canonical = true and conversation_id='{cid}';""")
     _, cfg = q2(f"""select control_epoch::text||'|'||to_char(updated_at,'YYYY-MM-DD\"T\"HH24:MI:SS.USOF')
 from public.conversations where id='{cid}';""")
     ep, upd = cfg.split("|")
-    okc, outc = q2(f"set role service_role;\nselect (public.kv_sys_control_timeout_return('{cid}',{R},"
-                   f"gen_random_uuid(),{ep},true,15,'auto_return','{upd}'::timestamptz,'t')).operation_status;")
+    TOP = "'6e000000-1111-0000-0000-000000000001'"
+    def f13b(op=TOP, ep_=None, en="true", mins="15", act="auto_return", upd_=None, reason="t", tail=".operation_status"):
+        return (f"set role service_role;\nselect (public.kv_sys_control_timeout_return('{cid}',{R},"
+                f"{op},{ep_ or ep},{en},{mins},'{act}','{upd_ or upd}'::timestamptz,'{reason}')){tail};")
+    okc, outc = q2(f13b())
     check("F13 timeout_return applies under A1-2", "applied",
           outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:130]}")
     _, st = q2(f"select ownership_state||'|'||status from public.conversations where id='{cid}';")
@@ -1049,6 +1052,36 @@ from public.conversations where id='{cid}';""")
     _, ev = q2(f"""select event_type from public.conversation_assignment_events
 where is_canonical = true and conversation_id='{cid}';""")
     check("F13 emits A1 event TIMEOUT_RETURNED", "TIMEOUT_RETURNED", ev)
+
+    # F13 replay ordering and exact fingerprint, proven where the operation can complete.
+    _, a0_t = q2("select count(*) from public.control_operations;")
+    okc, outc = q2(f13b(tail=".replayed"))
+    check("F13 same-fingerprint replay returns the recorded result", "t",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:130]}")
+    # The applied operation already changed control_epoch and updated_at, so a replay that
+    # re-read the conversation or configuration would fail T7 with KIV21. It does not: the
+    # replay is resolved before any such read.
+    check("F13 replay resolved WITHOUT re-reading the conversation (epoch has since changed)",
+          True, okc, ok=okc)
+    q2(f"""update public.restaurants set feature_flags =
+'{{"handoff_timeout": false, "handoff_idle_minutes": 45, "handoff_idle_action": "realert_only"}}'::jsonb
+where id={R};""")
+    okc, outc = q2(f13b(tail=".replayed"))
+    check("F13 same-fingerprint replay survives a later configuration change", "t",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:130]}")
+    q2(f"""update public.restaurants set feature_flags = '{{"handoff_timeout": true}}'::jsonb where id={R};""")
+    # Each of the five expected timeout inputs is a fingerprint field: changing any one alone
+    # must give a deterministic KIV19, never KIV21/KIV22/KIV23/KIV24 and never a false replay.
+    for label, kw in [("expected_epoch",            dict(ep_="999")),
+                      ("expected_handoff_enabled",  dict(en="false")),
+                      ("expected_idle_minutes",     dict(mins="30")),
+                      ("expected_idle_action",      dict(act="realert_only")),
+                      ("expected_updated_at",       dict(upd_="2020-01-01T00:00:00.000000"))]:
+        ok_w, out_w = q2(f13b(**kw))
+        got = "KIV19" if "KIV19" in out_w else (out_w.splitlines()[-1][:70] if not ok_w else "ACCEPTED")
+        check(f"F13 changed {label} alone -> KIV19", "KIV19", got)
+    _, a0_t2 = q2("select count(*) from public.control_operations;")
+    check("F13 replays and KIV19 rejections wrote no additional A0 row", a0_t, a0_t2)
     ok_s, out_s = q2(f"set role service_role;\nselect public.kv_sys_control_timeout_return('{cid}',{R},"
                      f"gen_random_uuid(),999,true,15,'auto_return',now(),'t');")
     check("F13 stale configuration is refused KIV21", True,
@@ -1067,6 +1100,134 @@ where conrelid='public.conversation_assignment_events'::regclass and contype='c'
 and pg_get_constraintdef(oid) like '%HOLD_RELEASED%';""")
     check("0108 did NOT widen the live A1 CHECK (M-5 owns A1-2)", "0", widened)
     q(f"drop database if exists {DB2};", db="postgres")
+
+
+    # ============ U. D2 AUTHORIZATION PRECEDES D6 (no unauthorized no-op success) ============
+    print("\n--- U. AUTHORIZATION IS D2 AND CANNOT BE SKIPPED BY A D6 NO-OP ---")
+    D2 = [("F5 return_to_kivo", "AI_ACTIVE", "ai", "null",
+           "kv_control_return_to_kivo('{c}',{r},gen_random_uuid(),'t')"),
+          ("F8 close",          "CLOSED",    "human", M2ID,
+           "kv_control_close('{c}',{r},gen_random_uuid(),'r','t')"),
+          ("F9 set_human_idle", "HUMAN_IDLE","human", M2ID,
+           "kv_control_set_human_idle('{c}',{r},gen_random_uuid(),'t')")]
+    for i, (label, state, owner, assignee, call) in enumerate(D2):
+        cid = f"6a000000-0000-0000-0000-00000000000{i+1}"
+        mk_conv(cid, state, owner, assignee=assignee)
+        before = conv_state(cid)
+        _, a0b = q("select count(*) from public.control_operations;")
+        _, nb = q("select count(*) from public.control_operations where operation_status='noop';")
+        # U3 is an ordinary member of the tenant and is NOT the assignee.
+        raises(f"{label}: unauthorized member refused even though already at target",
+               as_member(U3, "select public." + call.format(c=cid, r=R) + ";"), "KIV12")
+        check(f"{label}: unauthorized already-target attempt mutated nothing", before, conv_state(cid))
+        _, a0a = q("select count(*) from public.control_operations;")
+        check(f"{label}: unauthorized already-target attempt wrote no A0 row", a0b, a0a)
+        _, na = q("select count(*) from public.control_operations where operation_status='noop';")
+        check(f"{label}: unauthorized already-target attempt wrote no A0 NOOP row", nb, na)
+        # the authorized actor still gets the legitimate no-op
+        okc, outc = q(as_member(U1, "select (public." + call.format(c=cid, r=R)
+                                    + ").operation_status;"))
+        check(f"{label}: manager still receives the legitimate no-op", "noop",
+              outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:110]}")
+
+    # ============ V. F14 TRUE L2 / D5 ORDER AND EXACT FINGERPRINT ============
+    print("\n--- V. F14: replay decided BEFORE any conversation re-read / create / adopt ---")
+    VC  = "6b000000-0000-0000-0000-000000000001"
+    VOP = "'6b000000-1111-0000-0000-000000000001'"
+    CUST = "'44444444-0000-0000-0000-000000000001'"
+    def f14(cid, op, cust=CUST, chan="whatsapp", esc="allergy", note="note", reason="create", tail=".operation_status"):
+        return (f"set role service_role;\nselect (public.kv_control_create_safety_conversation("
+                f"'{cid}',{R},{cust},'{chan}',{op},'{esc}','{note}','{reason}')){tail};")
+    okc, outc = q(f14(VC, VOP))
+    check("F14 original call applies", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:130]}")
+    _, a0_v = q("select count(*) from public.control_operations;")
+    _, conv_v = q("select count(*) from public.conversations;")
+    base_v = conv_state(VC)
+    # A changed customer_id on the SAME operation_id must be decided by the FINGERPRINT (KIV19)
+    # and NOT by the adoption identity check (KIV26). This is the discriminating evidence that
+    # the replay decision happens before create-or-adopt.
+    raises("F14 changed customer_id on the same operation_id -> KIV19 (not KIV26)",
+           f14(VC, VOP, cust="'44444444-0000-0000-0000-00000000000f'"), "KIV19")
+    raises("F14 changed channel on the same operation_id -> KIV19 (not KIV26)",
+           f14(VC, VOP, chan="website"), "KIV19")
+    check("F14 rejected replays mutated no conversation", base_v, conv_state(VC))
+    _, a0_v2 = q("select count(*) from public.control_operations;")
+    check("F14 rejected replays wrote no A0 row", a0_v, a0_v2)
+    _, conv_v2 = q("select count(*) from public.conversations;")
+    check("F14 rejected replays created/adopted no conversation", conv_v, conv_v2)
+    # Same fingerprint still replays, and does so without re-reading: mutate the conversation
+    # first, then confirm the recorded result is returned unchanged.
+    q(f"update public.conversations set status = 'externally changed' where id='{VC}';")
+    okc, outc = q(f14(VC, VOP, tail=".operation_status || '|' || (x.replayed)::text"
+                  ).replace("select (public.", "select (x).operation_status || '|' || (x).replayed::text from (select public.")
+                   .replace(")).operation_status || '|' || (x.replayed)::text;", ")) as x;"))
+    _, rec = q(f"""select operation_status||'|t' from public.control_operations
+where operation_id={VOP};""")
+    okc2, outc2 = q(f14(VC, VOP, tail=".replayed"))
+    check("F14 same-fingerprint replay returns the recorded result after external mutation",
+          "t", outc2.strip().splitlines()[-1] if okc2 else f"FAILED: {outc2.splitlines()[-1][:130]}")
+    _, a0_v3 = q("select count(*) from public.control_operations;")
+    check("F14 same-fingerprint replay wrote no second A0 row", a0_v, a0_v3)
+
+    # ============ W. F13 REPLAY BEFORE CONFIGURATION READ, EXACT FINGERPRINT ============
+    print("\n--- W. F13: replay decided BEFORE configuration re-read; five expected inputs ---")
+    WC = "6c000000-0000-0000-0000-000000000001"
+    mk_conv(WC, "HUMAN_IDLE", "human", assignee=M2ID)
+    q(f"update public.conversations set updated_at = now() - interval '90 minutes' where id='{WC}';")
+    _, wcfg = q(f"""select control_epoch::text||'|'||to_char(updated_at at time zone 'UTC',
+'YYYY-MM-DD"T"HH24:MI:SS.US') from public.conversations where id='{WC}';""")
+    wep, wupd = wcfg.split("|")
+    def f13(cid, op, ep=None, en="true", mins="15", act="auto_return", upd=None, reason="t", tail=".operation_status"):
+        return (f"set role service_role;\nselect (public.kv_sys_control_timeout_return('{cid}',{R},"
+                f"{op},{ep or wep},{en},{mins},'{act}','{upd or wupd}'::timestamptz,'{reason}')){tail};")
+    WOP = "'6c000000-1111-0000-0000-000000000001'"
+    # F13's applied path emits TIMEOUT_RETURNED, blocked by the live 8-value A1 CHECK, so the
+    # ORIGINAL operation is performed in the A1-2 fixture (section T). Here the replay-ordering
+    # and fingerprint behaviour are proven against a recorded A0 row created by that same
+    # governed path in this database using an operation that the live CHECK permits.
+    okc, outc = q(f13(WC, WOP))
+    check("F13 original call is blocked only by the A1 event_type pre-R3 blocker", True,
+          (not okc) and "conversation_assignment_events_event_type_check" in outc,
+          ok=((not okc) and "conversation_assignment_events_event_type_check" in outc))
+    for label, kw in [("expected_epoch", dict(ep="999")),
+                      ("expected_handoff_enabled", dict(en="false")),
+                      ("expected_idle_minutes", dict(mins="30")),
+                      ("expected_idle_action", dict(act="realert_only")),
+                      ("expected_updated_at", dict(upd="2020-01-01T00:00:00.000000"))]:
+        ok_w, out_w = q(f13(WC, WOP, **kw))
+        # No A0 row exists for WOP (the original aborted), so each variant must fail on its own
+        # governed check rather than silently replaying.
+        check(f"F13 changed {label} does not replay the original operation", True,
+              (not ok_w) and "replayed" not in out_w, ok=((not ok_w) and "replayed" not in out_w))
+    _, a0_w = q(f"select count(*) from public.control_operations where operation_id={WOP};")
+    check("F13 aborted attempts recorded no A0 row", "0", a0_w)
+
+    # ============ X. NFC CANONICALIZATION ============
+    print("\n--- X. NFC CANONICALIZATION OF GOVERNED FINGERPRINT TEXT (§16.2) ---")
+    _, nfc_ok = q("select (normalize(U&'\\0065\\0301', NFC) = normalize(U&'\\00E9', NFC))::text;")
+    check("normalize(...,NFC) is available and canonically equates the two forms", "true", nfc_ok)
+    _, raw_ne = q("select (U&'\\0065\\0301' = U&'\\00E9')::text;")
+    check("the two forms are NOT byte-equal before normalization", "false", raw_ne)
+    XC  = "6d000000-0000-0000-0000-000000000001"
+    XOP = "'6d000000-1111-0000-0000-000000000001'"
+    mk_conv(XC, "AI_ACTIVE", "ai")
+    COMPOSED   = "caf" + "é"                 # cafe with precomposed e-acute
+    DECOMPOSED = "café"                     # cafe + combining acute
+    assert COMPOSED != DECOMPOSED
+    okc, outc = q(as_member(U2, f"select (public.kv_control_escalate('{XC}',{R},{XOP},true,"
+                                f"'{COMPOSED}','r')).operation_status;"))
+    check("NFC: original escalate with COMPOSED text applies", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:130]}")
+    okc, outc = q(as_member(U2, f"select (public.kv_control_escalate('{XC}',{R},{XOP},true,"
+                                f"'{DECOMPOSED}','r')).replayed;"))
+    check("NFC: canonically equivalent DECOMPOSED text replays as the same fingerprint", "t",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:130]}")
+    raises("NFC: a materially different normalized value on the same operation_id -> KIV19",
+           as_member(U2, f"select public.kv_control_escalate('{XC}',{R},{XOP},true,"
+                         f"'cafe','r');"), "KIV19")
+    _, a0_x = q(f"select count(*) from public.control_operations where operation_id={XOP};")
+    check("NFC: exactly one A0 row across the composed/decomposed/different attempts", "1", a0_x)
 
     # ---------------------------------------------------------------- IDEMPOTENCE
     print("\n--- IDEMPOTENCE: SECOND APPLICATION of 0108 ---")

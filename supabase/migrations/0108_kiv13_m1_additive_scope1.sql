@@ -707,6 +707,7 @@ declare
   v_epoch_after  bigint;
   v_audit_id     uuid;
   v_require_mgr  boolean := false;
+  v_ff           jsonb;
 begin
   -- ---- D1 identity / tenant resolution -> ONE generic KIV11 -------------------------
   -- Combined predicate. A nonexistent conversation and a wrong-tenant conversation are
@@ -722,6 +723,26 @@ begin
   select t.member_id, t.member_version, t.member_role, t.actor_user_id
     into a_id, a_ver, a_role, a_uid
     from public.kv_control_assert_actor(p_expected_restaurant_id, p_actor_kind, v_require_mgr) t;
+
+  -- Operation-specific actor authority is part of D2 and is evaluated BEFORE D4, D5 and D6.
+  -- An unauthorized member never receives a successful no-op merely because the conversation
+  -- already sits at the operation target.
+  if p_actor_kind = 'member' and a_role <> 'manager' then
+    if p_operation_name in ('return_to_kivo','set_human_idle') then
+      if c.assigned_member_id is distinct from a_id then
+        raise exception 'KIV12 % requires the current assignee or a manager', p_operation_name;
+      end if;
+    elsif p_operation_name = 'close' then
+      -- assignee when human-owned; manager when unassigned, AI-owned or system-owned
+      if c.owner = 'human' and c.assigned_member_id is not null then
+        if c.assigned_member_id is distinct from a_id then
+          raise exception 'KIV12 close requires the current assignee or a manager';
+        end if;
+      else
+        raise exception 'KIV12 close of an unassigned, AI-owned or system-owned conversation requires a manager';
+      end if;
+    end if;
+  end if;
 
   -- ---- D3 parameter validity -> KIV14 ------------------------------------------------
   if p_operation_name in ('escalate','create_safety_conversation') then
@@ -749,6 +770,17 @@ begin
     'op:' || p_expected_restaurant_id::text || ':' || p_operation_id::text, 0));
 
   -- ---- request fingerprint (Revision 14 §16.2) ---------------------------------------
+  -- Revision 14 §16.2. Common prefix, then the exact per-operation additions IN ORDER.
+  -- For create_safety_conversation the customer and channel fields are taken from the row
+  -- itself: creation wrote exactly p_customer_id/p_channel and adoption verified equality on
+  -- both, so these are identical to the caller's parameters by construction.
+  -- For timeout_return the five expected inputs are reconstructed from the state F13 has
+  -- already proven equal to them at T7, so they too are identical to the caller's parameters.
+  if p_operation_name = 'timeout_return' then
+    -- alias must not be `r`: that name is the kv_control_result variable in this scope.
+    select rr.feature_flags into v_ff from public.restaurants rr
+     where rr.id = p_expected_restaurant_id;
+  end if;
   v_fields := array[
       p_operation_name, p_expected_restaurant_id::text, p_conversation_id::text,
       p_operation_id::text, p_actor_kind, a_id::text, a_uid::text ]
@@ -763,14 +795,30 @@ begin
          when 'close'                then array[p_close_reason, p_reason]
          when 'set_human_idle'       then array[p_reason]
          when 'reopen_closed'        then array[p_trigger_message_id::text, p_reason]
+         when 'timeout_return'       then array[
+                c.control_epoch::text,
+                case when coalesce((v_ff ->> 'handoff_timeout')::boolean, false)
+                     then 't' else 'f' end,
+                (case when coalesce(nullif(v_ff ->> 'handoff_idle_minutes','')::integer, 15)
+                           between 1 and 1440
+                      then coalesce(nullif(v_ff ->> 'handoff_idle_minutes','')::integer, 15)
+                      else 15 end)::text,
+                case when (v_ff ->> 'handoff_idle_action') = 'realert_only'
+                     then 'realert_only' else 'auto_return' end,
+                to_char(c.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'),
+                p_reason]
          when 'create_safety_conversation'
-                                     then array[p_allergy_note, p_escalation_reason, p_reason]
+                                     then array[c.customer_id::text, c.channel,
+                                                p_escalation_reason, p_allergy_note, p_reason]
          else array[p_reason]
        end;
   foreach v_f in array v_fields loop
     if v_f is null then
       v_buf := v_buf || pg_catalog.convert_to('ffffffff', 'UTF8');
     else
+      -- §16.2: text is NFC. normalize() is a core SQL built-in under UTF8; no extension and
+      -- no new object is introduced by using it.
+      v_f := normalize(v_f, NFC);
       v_buf := v_buf
         || pg_catalog.convert_to(
              lpad(to_hex(octet_length(pg_catalog.convert_to(v_f,'UTF8'))), 8, '0'), 'UTF8')
@@ -875,11 +923,6 @@ begin
       if c.ownership_state not in ('HUMAN_ACTIVE','HUMAN_IDLE') then
         raise exception 'KIV14 illegal transition from % for %', c.ownership_state, p_operation_name;
       end if;
-      -- F5 actor: the current assignee, or a manager. timeout_return is system-actor only.
-      if p_operation_name = 'return_to_kivo' and p_actor_kind = 'member'
-         and a_role <> 'manager' and c.assigned_member_id is distinct from a_id then
-        raise exception 'KIV12 return_to_kivo requires the current assignee or a manager';
-      end if;
     end if;
 
   elsif p_operation_name = 'release_hold' then
@@ -917,17 +960,6 @@ begin
                                    'AI_RESUME_PENDING') then
         raise exception 'KIV14 illegal transition from % for close', c.ownership_state;
       end if;
-      -- F8 actor: the current assignee when human-owned; a manager when unassigned,
-      -- AI-owned or system-owned.
-      if p_actor_kind = 'member' and a_role <> 'manager' then
-        if c.owner = 'human' and c.assigned_member_id is not null then
-          if c.assigned_member_id is distinct from a_id then
-            raise exception 'KIV12 close requires the current assignee or a manager';
-          end if;
-        else
-          raise exception 'KIV12 close of an unassigned, AI-owned or system-owned conversation requires a manager';
-        end if;
-      end if;
     end if;
 
   elsif p_operation_name = 'set_human_idle' then
@@ -936,11 +968,6 @@ begin
     if not v_noop then
       if c.ownership_state <> 'HUMAN_ACTIVE' then
         raise exception 'KIV14 illegal transition from % for set_human_idle', c.ownership_state;
-      end if;
-      -- F9 actor: the current assignee, or a manager.
-      if p_actor_kind = 'member' and a_role <> 'manager'
-         and c.assigned_member_id is distinct from a_id then
-        raise exception 'KIV12 set_human_idle requires the current assignee or a manager';
       end if;
     end if;
 
@@ -1224,9 +1251,10 @@ language sql security definer set search_path = ''
 as $$ select public.kv_control_transition($1,$2,$3,'reopen_closed','AI_ACTIVE',
        null,null,null,null,$4,null,null,$5,'system'); $$;
 
--- F13 — timeout_return. Decision order §10.2 T1..T14. Tenant configuration is read from
--- public.restaurants.feature_flags (E15: handoff_timeout, handoff_idle_minutes 1..1440
--- default 15, handoff_idle_action default 'auto_return'; idle clock = conversations.updated_at).
+-- F13 — timeout_return. Decision order §10.2 T1..T14, with §3 L3 honoured exactly: the
+-- operation lock and the ACTUAL A0 fingerprint/replay decision precede any conversation or
+-- configuration read. A valid same-operation replay never re-reads current configuration.
+-- Tenant configuration is read from public.restaurants.feature_flags (E15).
 create or replace function public.kv_sys_control_timeout_return(
   p_conversation_id uuid, p_expected_restaurant_id uuid, p_operation_id uuid,
   p_expected_epoch bigint, p_expected_handoff_enabled boolean, p_expected_idle_minutes integer,
@@ -1242,21 +1270,70 @@ declare
   s_enable boolean;
   s_min    integer;
   s_action text;
+  v_fields text[];
+  v_f      text;
+  v_buf    bytea := ''::bytea;
+  v_fp     text;
+  v_prior  public.control_operations%rowtype;
 begin
+  -- D3 parameter validity, before any lock and without reading the database.
   if p_expected_idle_minutes < 1 or p_expected_idle_minutes > 1440 then                    -- T3
     raise exception 'KIV14 expected idle minutes out of range';
   end if;
   if p_expected_idle_action not in ('auto_return','realert_only') then                     -- T3
     raise exception 'KIV14 expected idle action is not an allowed value';
   end if;
+  perform public.kv_control_assert_actor(p_expected_restaurant_id, 'system', false);       -- T2
 
-  -- T1: same combined predicate and same generic KIV11 as the universal core.
+  perform pg_advisory_xact_lock(hashtextextended(                                          -- T4
+    'op:' || p_expected_restaurant_id::text || ':' || p_operation_id::text, 0));
+
+  -- T5 (D5) THE REPLAY DECISION, before any conversation or configuration read. The five
+  -- expected inputs are fingerprint fields in the exact §16.2 order.
+  v_fields := array[
+      'timeout_return', p_expected_restaurant_id::text, p_conversation_id::text,
+      p_operation_id::text, 'system', null, null,
+      p_expected_epoch::text,
+      case when p_expected_handoff_enabled then 't' else 'f' end,
+      p_expected_idle_minutes::text,
+      p_expected_idle_action,
+      to_char(p_expected_updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'),
+      p_reason];
+  foreach v_f in array v_fields loop
+    if v_f is null then
+      v_buf := v_buf || pg_catalog.convert_to('ffffffff', 'UTF8');
+    else
+      v_f := normalize(v_f, NFC);
+      v_buf := v_buf
+        || pg_catalog.convert_to(
+             lpad(to_hex(octet_length(pg_catalog.convert_to(v_f,'UTF8'))), 8, '0'), 'UTF8')
+        || pg_catalog.convert_to(v_f, 'UTF8');
+    end if;
+  end loop;
+  v_fp := encode(extensions.digest(v_buf, 'sha256'), 'hex');
+
+  select * into v_prior from public.control_operations
+   where restaurant_id = p_expected_restaurant_id and operation_id = p_operation_id;
+  if found then
+    if v_prior.request_fingerprint <> v_fp then
+      raise exception 'KIV19 operation_id reused with a different request fingerprint';
+    end if;
+    -- Same fingerprint: return the recorded result verbatim. No conversation read, no
+    -- configuration read, nothing written - even if configuration has since changed.
+    return (v_prior.conversation_id, v_prior.restaurant_id, v_prior.operation_id,
+            v_prior.transition_id, v_prior.operation_name, v_prior.from_mode, v_prior.to_mode,
+            v_prior.epoch_before, v_prior.epoch_after, v_prior.changed, true,
+            v_prior.operation_status, v_prior.audit_kind, v_prior.audit_id,
+            v_prior.alert_intent_id, v_prior.actor_kind, v_prior.actor_member_id,
+            v_prior.actor_member_version, v_prior.actor_role)::public.kv_control_result;
+  end if;
+
+  -- T1/T6 only now: identity, tenant and configuration are read after replay resolution.
   select * into c from public.conversations
    where id = p_conversation_id and restaurant_id = p_expected_restaurant_id;
   if not found then
     raise exception 'KIV11 tenant or conversation identity did not resolve';
   end if;
-  perform public.kv_control_assert_actor(p_expected_restaurant_id, 'system', false);       -- T2
 
   select r.feature_flags into ff from public.restaurants r where r.id = p_expected_restaurant_id;
   s_enable := coalesce((ff ->> 'handoff_timeout')::boolean, false);
@@ -1273,8 +1350,6 @@ begin
     raise exception 'KIV21 expected epoch or timeout configuration mismatch';
   end if;
 
-  -- T8 no-op is delegated to the universal core, which evaluates the 7.10 predicate and
-  -- writes exactly one A0 'noop' row. A held row can never match it and always reaches T9.
   if not (c.ownership_state = 'AI_ACTIVE' and c.owner = 'ai' and c.assigned_member_id is null
           and c.escalation_reason is null and c.handover_note is null
           and c.is_safety_hold = false) then
@@ -1300,8 +1375,10 @@ begin
     null, null, null, null, null, null, null, p_reason, 'system');
 end $$;
 
--- F14 — create_safety_conversation. Path L2 (§7.11): identity lock, then create-or-adopt with
--- identity verification, then the universal core for D6/D7 under the operation lock.
+-- F14 — create_safety_conversation. Path L2 (§7.11) in exact order: identity lock, operation
+-- lock, ACTUAL A0 fingerprint/replay decision, row re-read, create-or-adopt, then the
+-- universal core for D6/D7. The replay decision precedes every conversation read, so a
+-- replayed call creates nothing, adopts nothing and mutates nothing.
 create or replace function public.kv_control_create_safety_conversation(
   p_conversation_id uuid, p_restaurant_id uuid, p_customer_id uuid, p_channel text,
   p_operation_id uuid, p_escalation_reason text, p_allergy_note text, p_reason text)
@@ -1310,7 +1387,13 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
-declare c public.conversations%rowtype;
+declare
+  c        public.conversations%rowtype;
+  v_fields text[];
+  v_f      text;
+  v_buf    bytea := ''::bytea;
+  v_fp     text;
+  v_prior  public.control_operations%rowtype;
 begin
   if p_channel not in ('whatsapp','website') then                                    -- Phase 0
     raise exception 'KIV14 channel % is outside the V1 allowlist', p_channel;
@@ -1320,22 +1403,43 @@ begin
   end if;
   perform public.kv_control_assert_actor(p_restaurant_id, 'system', false);
 
-  -- Phase 1 (D4), L2 lock order: identity lock FIRST, then the operation lock. Only L2 holds
-  -- both, always identity first, so no cycle exists.
+  -- Phase 1 (D4), L2 lock order: identity lock FIRST, then the operation lock.
   perform pg_advisory_xact_lock(hashtextextended('conv:' || p_conversation_id::text, 0));
   perform pg_advisory_xact_lock(hashtextextended(
     'op:' || p_restaurant_id::text || ':' || p_operation_id::text, 0));
 
-  -- Phase 2 (D5) A0 REPLAY, BEFORE the row re-read and before create-or-adopt. A replayed
-  -- call must return the recorded result without creating, adopting or mutating anything.
-  -- The universal core re-finds the same A0 row and returns it verbatim, raising KIV19 on a
-  -- different fingerprint.
-  if exists (select 1 from public.control_operations
-              where restaurant_id = p_restaurant_id and operation_id = p_operation_id) then
-    return public.kv_control_transition(
-      p_conversation_id, p_restaurant_id, p_operation_id, 'create_safety_conversation',
-      'SYSTEM_HOLD', true, null, null, null, null, p_escalation_reason, p_allergy_note,
-      p_reason, 'system');
+  -- Phase 2 (D5) THE REPLAY DECISION, before the row re-read and before create-or-adopt.
+  -- Fingerprint fields in the exact §16.2 order for this operation: the common prefix, then
+  -- p_customer_id, p_channel, p_escalation_reason, p_allergy_note, p_reason.
+  v_fields := array[
+      'create_safety_conversation', p_restaurant_id::text, p_conversation_id::text,
+      p_operation_id::text, 'system', null, null,
+      p_customer_id::text, p_channel, p_escalation_reason, p_allergy_note, p_reason];
+  foreach v_f in array v_fields loop
+    if v_f is null then
+      v_buf := v_buf || pg_catalog.convert_to('ffffffff', 'UTF8');
+    else
+      v_f := normalize(v_f, NFC);
+      v_buf := v_buf
+        || pg_catalog.convert_to(
+             lpad(to_hex(octet_length(pg_catalog.convert_to(v_f,'UTF8'))), 8, '0'), 'UTF8')
+        || pg_catalog.convert_to(v_f, 'UTF8');
+    end if;
+  end loop;
+  v_fp := encode(extensions.digest(v_buf, 'sha256'), 'hex');
+
+  select * into v_prior from public.control_operations
+   where restaurant_id = p_restaurant_id and operation_id = p_operation_id;
+  if found then
+    if v_prior.request_fingerprint <> v_fp then
+      raise exception 'KIV19 operation_id reused with a different request fingerprint';
+    end if;
+    return (v_prior.conversation_id, v_prior.restaurant_id, v_prior.operation_id,
+            v_prior.transition_id, v_prior.operation_name, v_prior.from_mode, v_prior.to_mode,
+            v_prior.epoch_before, v_prior.epoch_after, v_prior.changed, true,
+            v_prior.operation_status, v_prior.audit_kind, v_prior.audit_id,
+            v_prior.alert_intent_id, v_prior.actor_kind, v_prior.actor_member_id,
+            v_prior.actor_member_version, v_prior.actor_role)::public.kv_control_result;
   end if;
 
   select * into c from public.conversations where id = p_conversation_id;            -- Phase 3
