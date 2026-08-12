@@ -234,14 +234,20 @@ grant select on public.members, public.restaurants, public.customers, public.mes
         destroy(); sys.exit(1)
 
     R = "'11111111-1111-1111-1111-111111111111'"
-    U1 = "'22222222-2222-2222-2222-222222222221'"
-    U2 = "'22222222-2222-2222-2222-222222222222'"
+    U1 = "'22222222-2222-2222-2222-222222222221'"   # manager
+    U2 = "'22222222-2222-2222-2222-222222222222'"   # operation - acts as the assignee
+    U3 = "'22222222-2222-2222-2222-222222222223'"   # operation - unrelated ordinary member
+    U4 = "'22222222-2222-2222-2222-222222222224'"   # operation - MIV close-test subject
+    M1ID = "'33333333-0000-0000-0000-000000000001'"  # manager member row
+    M2ID = "'33333333-0000-0000-0000-000000000002'"  # assignee member row
     SEED = f"""
 insert into public.restaurants (id, feature_flags) values ({R}, '{{"handoff_timeout": true}}'::jsonb);
-insert into auth.users (id) values ({U1}), ({U2});
+insert into auth.users (id) values ({U1}), ({U2}), ({U3}), ({U4});
 insert into public.members (id, restaurant_id, user_id, role) values
  ('33333333-0000-0000-0000-000000000001',{R},{U1},'manager'),
- ('33333333-0000-0000-0000-000000000002',{R},{U2},'operation');
+ ('33333333-0000-0000-0000-000000000002',{R},{U2},'operation'),
+ ('33333333-0000-0000-0000-000000000003',{R},{U3},'operation'),
+ ('33333333-0000-0000-0000-000000000004',{R},{U4},'operation');
 insert into public.customers (id) values ('44444444-0000-0000-0000-000000000001');
 insert into public.conversations (id, restaurant_id, customer_id, channel, ownership_state, owner)
  values ('55555555-0000-0000-0000-000000000001',{R},'44444444-0000-0000-0000-000000000001',
@@ -416,17 +422,36 @@ and privilege_type='UPDATE';""")
     _, fcount = q("""select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 where n.nspname='public' and (p.proname like 'kv_control_%' or p.proname like 'kv_sys_control_%');""")
     check("exactly sixteen SCOPE-1 control functions", "16", fcount)
-    _, fnames = q("""select string_agg(p.proname,',' order by p.proname) from pg_proc p
+    # EXACT inventory: name AND argument type list, as a sorted set. A wrong sixteen-function
+    # set — a missing, extra, renamed or wrongly-typed function — fails this assertion.
+    EXPECTED_F = sorted([
+      "kv_control_create_conversation(uuid,uuid,uuid,text)",                       # F1
+      "kv_sys_control_create_conversation(uuid,uuid,uuid,text)",                   # F2
+      "kv_control_claim(uuid,uuid,uuid,text)",                                     # F3
+      "kv_control_reassign(uuid,uuid,uuid,uuid,text)",                             # F4
+      "kv_control_return_to_kivo(uuid,uuid,uuid,text)",                            # F5
+      "kv_control_release_hold(uuid,uuid,uuid,text,text)",                         # F6
+      "kv_control_clear_stale_assignee(uuid,uuid,uuid,text)",                      # F7
+      "kv_control_close(uuid,uuid,uuid,text,text)",                                # F8
+      "kv_control_set_human_idle(uuid,uuid,uuid,text)",                            # F9
+      "kv_sys_control_escalate(uuid,uuid,uuid,boolean,text,text)",                 # F10
+      "kv_control_escalate(uuid,uuid,uuid,boolean,text,text)",                     # F11
+      "kv_sys_control_reopen_closed(uuid,uuid,uuid,uuid,text)",                    # F12
+      "kv_sys_control_timeout_return(uuid,uuid,uuid,bigint,boolean,integer,text,"
+      "timestamp with time zone,text)",                                            # F13
+      "kv_control_create_safety_conversation(uuid,uuid,uuid,text,uuid,text,text,text)",  # F14
+      "kv_control_transition(uuid,uuid,uuid,text,text,boolean,uuid,text,text,uuid,text,"
+      "text,text,text)",                                                           # F15
+      "kv_control_assert_actor(uuid,text,boolean)",                                # F16
+    ])
+    _, fsigs = q("""select string_agg(p.proname||'('||oidvectortypes(p.proargtypes)||')',
+E'\n' order by p.proname||'('||oidvectortypes(p.proargtypes)||')') from pg_proc p
 join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
 and (p.proname like 'kv_control_%' or p.proname like 'kv_sys_control_%');""")
-    check("exact F1..F16 inventory",
-          "kv_control_assert_actor,kv_control_claim,kv_control_clear_stale_assignee,"
-          "kv_control_close,kv_control_create_conversation,kv_control_create_safety_conversation,"
-          "kv_control_escalate,kv_control_release_hold,kv_control_return_to_kivo,"
-          "kv_control_set_human_idle,kv_control_transition,kv_sys_control_create_conversation,"
-          "kv_sys_control_escalate,kv_sys_control_reopen_closed,kv_sys_control_timeout_return,"
-          "kv_control_reassign".replace(",kv_control_reassign", ""), fnames,
-          ok=(len(fnames.split(",")) == 16 and "kv_control_reassign" in fnames))
+    actual_f = sorted(x.strip().replace(", ", ",") for x in fsigs.split("\n") if x.strip())
+    check("EXACT F1..F16 inventory and signatures", EXPECTED_F, actual_f)
+    check("no function missing from the exact set", [], sorted(set(EXPECTED_F) - set(actual_f)))
+    check("no function beyond the exact set", [], sorted(set(actual_f) - set(EXPECTED_F)))
     _, bad = q("""select coalesce(string_agg(p.proname,',' order by p.proname),'none') from pg_proc p
 join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
 and (p.proname like 'kv_control_%' or p.proname like 'kv_sys_control_%' or p.proname like 'kv_tg_%')
@@ -550,7 +575,7 @@ select member_id, 2, restaurant_id, user_id, role from public.member_identity_ve
            "ux_miv_open_version")
     accepts("closing an open version is the one permitted MIV update",
             """update public.member_identity_versions set valid_to = now() + interval '1 second'
-where member_id='33333333-0000-0000-0000-000000000002';""")
+where member_id='33333333-0000-0000-0000-000000000004';""")
     _, members_after2 = q("select md5(string_agg(id::text||user_id::text||role, ',' order by id)) from public.members;")
     check("public.members still unchanged after MIV work", members_before, members_after2)
     _, mtrg_members = q("""select count(*) from pg_trigger where tgrelid='public.members'::regclass
@@ -698,6 +723,350 @@ where tgrelid='public.conversation_assignment_events'::regclass and not tgisinte
     raises("A2 UPDATE rejected KIV18",
            "update public.conversation_audit_failures set failure_sqlstate = '23505';", "KIV18")
     raises("A2 DELETE rejected KIV18", "delete from public.conversation_audit_failures;", "KIV18")
+
+
+    # ================= O. CLAIMABILITY — 11 Aug binding adjudication =================
+    print("\n--- O. CLAIMABILITY: CLAIMABLE_FROM is exactly AI_ACTIVE, HOLD_UNCLAIMED, "
+          "HUMAN_IDLE, SYSTEM_HOLD ---")
+
+    def mk_conv(cid, state, owner, assignee="null", hold="false"):
+        q(f"""insert into public.conversations
+(id, restaurant_id, customer_id, channel, ownership_state, owner, assigned_member_id, is_safety_hold)
+values ('{cid}',{R},'44444444-0000-0000-0000-000000000001','whatsapp','{state}','{owner}',
+        {assignee}, {hold});""")
+
+    def as_member(uid, sql):
+        return f"select set_config('request.jwt.claim.sub', {uid}, false); set role authenticated;\n{sql}"
+
+    def conv_state(cid):
+        _, v = q(f"""select ownership_state||'|'||owner||'|'||coalesce(assigned_member_id::text,'~')
+||'|'||is_safety_hold::text||'|'||status||'|'||control_epoch::text
+from public.conversations where id='{cid}';""")
+        return v
+
+    # the four governed D7 sources each succeed
+    for i, (state, owner, hold) in enumerate([("AI_ACTIVE", "ai", "false"),
+                                              ("HOLD_UNCLAIMED", "human", "false"),
+                                              ("HUMAN_IDLE", "human", "false"),
+                                              ("SYSTEM_HOLD", "human", "true")]):
+        cid = f"5a000000-0000-0000-0000-00000000000{i+1}"
+        mk_conv(cid, state, owner, hold=hold)
+        okc, outc = q(as_member(U2, f"select (public.kv_control_claim('{cid}',{R},"
+                                    f"gen_random_uuid(),'src')).operation_status;"))
+        check(f"claim from {state} applies (D7 source)", "applied",
+              outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:120]}")
+    _, held = q("select is_safety_hold::text from public.conversations where id='5a000000-0000-0000-0000-000000000004';")
+    check("claim from SYSTEM_HOLD preserves is_safety_hold = true", "true", held)
+
+    # HUMAN_ACTIVE already assigned to the claiming member -> idempotent D6 success
+    CID_SAME = "5a000000-0000-0000-0000-000000000011"
+    mk_conv(CID_SAME, "HUMAN_ACTIVE", "human", assignee=M2ID)
+    okc, outc = q(as_member(U2, f"select (public.kv_control_claim('{CID_SAME}',{R},"
+                                f"gen_random_uuid(),'same')).operation_status;"))
+    check("HUMAN_ACTIVE assigned to the claiming member = idempotent D6 noop", "noop",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:120]}")
+
+    # HUMAN_ACTIVE with a NULL assignee is NOT claimable, and mutates nothing
+    CID_NULL = "5a000000-0000-0000-0000-000000000012"
+    mk_conv(CID_NULL, "HUMAN_ACTIVE", "human")
+    before = conv_state(CID_NULL)
+    _, a0_before = q("select count(*) from public.control_operations;")
+    raises("HUMAN_ACTIVE with a NULL assignee is NOT claimable (KIV14)",
+           as_member(U2, f"select public.kv_control_claim('{CID_NULL}',{R},gen_random_uuid(),'null');"),
+           "KIV14")
+    check("unassigned HUMAN_ACTIVE claim attempt mutated nothing", before, conv_state(CID_NULL))
+    _, a0_after = q("select count(*) from public.control_operations;")
+    check("unassigned HUMAN_ACTIVE claim attempt wrote no A0 row", a0_before, a0_after)
+
+    # HUMAN_ACTIVE assigned to another member is NOT claimable, and mutates nothing
+    CID_OTHER = "5a000000-0000-0000-0000-000000000013"
+    mk_conv(CID_OTHER, "HUMAN_ACTIVE", "human", assignee=M1ID)
+    before = conv_state(CID_OTHER)
+    _, a0_before = q("select count(*) from public.control_operations;")
+    raises("HUMAN_ACTIVE assigned to another member is NOT claimable (KIV15)",
+           as_member(U2, f"select public.kv_control_claim('{CID_OTHER}',{R},gen_random_uuid(),'other');"),
+           "KIV15")
+    check("other-assignee claim attempt mutated nothing", before, conv_state(CID_OTHER))
+    _, a0_after = q("select count(*) from public.control_operations;")
+    check("other-assignee claim attempt wrote no A0 row", a0_before, a0_after)
+
+    # ================= P. F5 / F8 / F9 ACTOR AUTHORIZATION =================
+    print("\n--- P. F5 / F8 / F9 ACTOR AUTHORIZATION (Revision 14 §7.4, §7.7, §7.8) ---")
+
+    # F5 return_to_kivo: assignee OK, manager OK, unrelated ordinary member REFUSED
+    CID = "5b000000-0000-0000-0000-000000000001"
+    mk_conv(CID, "HUMAN_ACTIVE", "human", assignee=M2ID)
+    raises("F5 unrelated ordinary member is refused (KIV12)",
+           as_member(U3, f"select public.kv_control_return_to_kivo('{CID}',{R},gen_random_uuid(),'x');"),
+           "KIV12")
+    okc, outc = q(as_member(U2, f"select (public.kv_control_return_to_kivo('{CID}',{R},"
+                                f"gen_random_uuid(),'assignee')).operation_status;"))
+    check("F5 current assignee succeeds", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:120]}")
+    CID = "5b000000-0000-0000-0000-000000000002"
+    mk_conv(CID, "HUMAN_ACTIVE", "human", assignee=M2ID)
+    okc, outc = q(as_member(U1, f"select (public.kv_control_return_to_kivo('{CID}',{R},"
+                                f"gen_random_uuid(),'manager')).operation_status;"))
+    check("F5 manager succeeds", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:120]}")
+
+    # F8 close
+    CID = "5b000000-0000-0000-0000-000000000011"
+    mk_conv(CID, "HUMAN_ACTIVE", "human", assignee=M2ID)
+    raises("F8 unrelated ordinary member refused on a human-owned shape (KIV12)",
+           as_member(U3, f"select public.kv_control_close('{CID}',{R},gen_random_uuid(),'r','x');"),
+           "KIV12")
+    okc, outc = q(as_member(U2, f"select (public.kv_control_close('{CID}',{R},"
+                                f"gen_random_uuid(),'r','assignee')).operation_status;"))
+    check("F8 current assignee succeeds on a human-owned shape", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:120]}")
+    CID = "5b000000-0000-0000-0000-000000000012"
+    mk_conv(CID, "AI_ACTIVE", "ai")
+    raises("F8 ordinary member refused on an AI-owned / unassigned shape (KIV12)",
+           as_member(U3, f"select public.kv_control_close('{CID}',{R},gen_random_uuid(),'r','x');"),
+           "KIV12")
+    okc, outc = q(as_member(U1, f"select (public.kv_control_close('{CID}',{R},"
+                                f"gen_random_uuid(),'r','manager')).operation_status;"))
+    check("F8 manager succeeds where manager authority is required", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:120]}")
+
+    # F9 set_human_idle
+    CID = "5b000000-0000-0000-0000-000000000021"
+    mk_conv(CID, "HUMAN_ACTIVE", "human", assignee=M2ID)
+    raises("F9 unrelated ordinary member is refused (KIV12)",
+           as_member(U3, f"select public.kv_control_set_human_idle('{CID}',{R},gen_random_uuid(),'x');"),
+           "KIV12")
+    # F9's applied path emits event IDLE, one of the five values the LIVE 0099 eight-value
+    # A1 CHECK rejects (the pre-R3 blocker of section 9). In this faithful fixture the
+    # authorized actor therefore passes authorization and fails only on that blocker, which is
+    # itself the evidence. The full applied path is proven in section T against a fixture
+    # carrying Revision 14 A1-2. The migration does NOT widen the CHECK.
+    okc, outc = q(as_member(U2, f"select public.kv_control_set_human_idle('{CID}',{R},"
+                                f"gen_random_uuid(),'assignee');"))
+    check("F9 current assignee passes authorization (fails only on the A1 event_type blocker)",
+          True, (not okc) and "conversation_assignment_events_event_type_check" in outc,
+          ok=((not okc) and "conversation_assignment_events_event_type_check" in outc))
+    CID = "5b000000-0000-0000-0000-000000000022"
+    mk_conv(CID, "HUMAN_ACTIVE", "human", assignee=M2ID)
+    okc, outc = q(as_member(U1, f"select public.kv_control_set_human_idle('{CID}',{R},"
+                                f"gen_random_uuid(),'manager');"))
+    check("F9 manager passes authorization (fails only on the A1 event_type blocker)",
+          True, (not okc) and "conversation_assignment_events_event_type_check" in outc,
+          ok=((not okc) and "conversation_assignment_events_event_type_check" in outc))
+
+    # ================= Q. SB4 STATUS WRITE-THROUGH =================
+    print("\n--- Q. SB4 PRESENTATION STATUS WRITE-THROUGH (Revision 14 §8.2) ---")
+    STALE = "'a stale presentation value'"
+    SB4 = [("claim", "HUMAN_ACTIVE", "موظف يتابع", "AI_ACTIVE", "ai", "null", "false",
+            "kv_control_claim('{c}',{r},gen_random_uuid(),'sb4')", U2),
+           ("return_to_kivo", "AI_ACTIVE", "AI نشط", "HUMAN_ACTIVE", "human", M2ID, "false",
+            "kv_control_return_to_kivo('{c}',{r},gen_random_uuid(),'sb4')", U2),
+           ("close", "CLOSED", "مغلقة", "HUMAN_ACTIVE", "human", M2ID, "false",
+            "kv_control_close('{c}',{r},gen_random_uuid(),'r','sb4')", U2),
+           ("escalate safety", "SYSTEM_HOLD", "يحتاج تدخل موظف", "AI_ACTIVE", "ai", "null", "false",
+            "kv_control_escalate('{c}',{r},gen_random_uuid(),true,'why','sb4')", U2),
+           ("escalate non-safety", "HOLD_UNCLAIMED", "يحتاج تدخل موظف", "AI_ACTIVE", "ai", "null", "false",
+            "kv_control_escalate('{c}',{r},gen_random_uuid(),false,'why','sb4')", U2)]
+    for i, (name, target, status, src, owner, assignee, hold, call, uid) in enumerate(SB4):
+        cid = f"5c000000-0000-0000-0000-00000000000{i+1}"
+        mk_conv(cid, src, owner, assignee=assignee, hold=hold)
+        q(f"update public.conversations set status = {STALE} where id='{cid}';")
+        okc, outc = q(as_member(uid, "select (public." + call.format(c=cid, r=R)
+                                     + ").operation_status;"))
+        if not okc:
+            print(f"         (call error: {outc.splitlines()[-1][:130]})")
+        _, st = q(f"select ownership_state||'|'||status from public.conversations where id='{cid}';")
+        check(f"SB4 {name} -> {target} writes the governed status despite a stale prior value",
+              f"{target}|{status}", st)
+    # NO-OP writes nothing to conversations
+    CID = "5c000000-0000-0000-0000-000000000021"
+    mk_conv(CID, "HUMAN_ACTIVE", "human", assignee=M2ID)
+    q(f"update public.conversations set status = {STALE} where id='{CID}';")
+    before = conv_state(CID)
+    okc, outc = q(as_member(U2, f"select (public.kv_control_claim('{CID}',{R},"
+                                f"gen_random_uuid(),'noop')).operation_status;"))
+    check("SB5 no-op outcome recognised", "noop",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:120]}")
+    check("SB5 no-op writes NOTHING to conversations (stale status untouched)", before, conv_state(CID))
+    # ALERTED cannot occur in SCOPE-1: A0-18 and KIV24 both forbid it
+    _, alerted = q("select count(*) from public.control_operations where operation_status='alerted';")
+    check("SB5 alerted outcome does not occur in SCOPE-1", "0", alerted)
+
+    # ================= R. F14 EXACT L2 ORDER =================
+    print("\n--- R. F14 L2 ORDER: A0 replay BEFORE row re-read / create-or-adopt (§3 L2) ---")
+    NEWC = "5d000000-0000-0000-0000-000000000001"
+    OP14 = "'5d000000-1111-0000-0000-000000000001'"
+    okc, outc = q(f"set role service_role;\nselect (public.kv_control_create_safety_conversation("
+                  f"'{NEWC}',{R},'44444444-0000-0000-0000-000000000001','whatsapp',{OP14},"
+                  f"'allergy','note','create')).operation_status;")
+    check("F14 first call creates and applies", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:150]}")
+    _, st14 = q(f"select ownership_state||'|'||is_safety_hold::text||'|'||status "
+                f"from public.conversations where id='{NEWC}';")
+    check("F14 applied row is SYSTEM_HOLD + hold + مراجعة حساسية", "SYSTEM_HOLD|true|مراجعة حساسية", st14)
+    before = conv_state(NEWC)
+    _, a0b = q("select count(*) from public.control_operations;")
+    _, convb = q("select count(*) from public.conversations;")
+    okc, outc = q(f"set role service_role;\nselect (public.kv_control_create_safety_conversation("
+                  f"'{NEWC}',{R},'44444444-0000-0000-0000-000000000001','whatsapp',{OP14},"
+                  f"'allergy','note','create')).replayed;")
+    check("F14 same-fingerprint replay returns the recorded result", "t",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:150]}")
+    check("F14 replay mutated no conversation", before, conv_state(NEWC))
+    _, a0a = q("select count(*) from public.control_operations;")
+    check("F14 replay wrote no second A0 row", a0b, a0a)
+    _, conva = q("select count(*) from public.conversations;")
+    check("F14 replay created no conversation", convb, conva)
+    # replay is honoured BEFORE create-or-adopt: a replay whose identity parameters would
+    # otherwise raise an adoption conflict still returns the recorded result.
+    okc, outc = q(f"set role service_role;\nselect (public.kv_control_create_safety_conversation("
+                  f"'{NEWC}',{R},'44444444-0000-0000-0000-000000000001','whatsapp',{OP14},"
+                  f"'allergy','note','create')).operation_status;")
+    check("F14 replay is honoured before any re-read/create/adopt", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc[:150]}")
+    raises("F14 different fingerprint on the same operation_id remains KIV19",
+           f"set role service_role;\nselect public.kv_control_create_safety_conversation("
+           f"'{NEWC}',{R},'44444444-0000-0000-0000-000000000001','whatsapp',{OP14},"
+           f"'allergy','DIFFERENT note','create');", "KIV19")
+
+    # ================= S. GENERIC KIV11 — NO EXISTENCE ORACLE =================
+    print("\n--- S. TENANT RESOLUTION: one generic KIV11 for every non-creation entry point ---")
+    R2 = "'1a111111-1111-1111-1111-111111111111'"
+    q(f"""insert into public.restaurants (id) values ({R2});
+insert into public.conversations (id, restaurant_id, channel, ownership_state, owner)
+values ('5e000000-0000-0000-0000-000000000001',{R2},'whatsapp','AI_ACTIVE','ai');""")
+    MISSING = "'5e000000-9999-9999-9999-999999999999'"
+    OTHER   = "'5e000000-0000-0000-0000-000000000001'"
+    ENTRY = [
+      ("F3  claim",                "member", "kv_control_claim({c},{r},gen_random_uuid(),'t')"),
+      ("F4  reassign",             "member", "kv_control_reassign({c},{r},gen_random_uuid()," + M2ID + ",'t')"),
+      ("F5  return_to_kivo",       "member", "kv_control_return_to_kivo({c},{r},gen_random_uuid(),'t')"),
+      ("F6  release_hold",         "member", "kv_control_release_hold({c},{r},gen_random_uuid(),'n','t')"),
+      ("F7  clear_stale_assignee", "member", "kv_control_clear_stale_assignee({c},{r},gen_random_uuid(),'t')"),
+      ("F8  close",                "member", "kv_control_close({c},{r},gen_random_uuid(),'r','t')"),
+      ("F9  set_human_idle",       "member", "kv_control_set_human_idle({c},{r},gen_random_uuid(),'t')"),
+      ("F11 escalate (member)",    "member", "kv_control_escalate({c},{r},gen_random_uuid(),true,'w','t')"),
+      ("F10 escalate (system)",    "system", "kv_sys_control_escalate({c},{r},gen_random_uuid(),true,'w','t')"),
+      ("F12 reopen_closed",        "system", "kv_sys_control_reopen_closed({c},{r},gen_random_uuid()," + MISSING + ",'t')"),
+      ("F13 timeout_return",       "system", "kv_sys_control_timeout_return({c},{r},gen_random_uuid(),"
+                                             "0,true,15,'auto_return',now(),'t')"),
+    ]
+    for label, kind, call in ENTRY:
+        msgs = []
+        for cid in (MISSING, OTHER):
+            body = "select public." + call.format(c=cid, r=R) + ";"
+            sql = as_member(U1, body) if kind == "member" else "set role service_role;\n" + body
+            ok_e, out_e = q(sql)
+            line = [l for l in out_e.splitlines() if "ERROR" in l]
+            msgs.append(line[0].split("ERROR:")[-1].strip() if line else ("NO ERROR" if ok_e else out_e[:80]))
+        check(f"{label}: nonexistent and wrong-tenant give the SAME generic KIV11",
+              ["KIV11 tenant or conversation identity did not resolve"] * 2, msgs)
+
+
+    # ================= T. THE FIVE A1-BLOCKED OPERATIONS, UNDER REVISION 14 A1-2 =========
+    print("\n--- T. OPERATIONS BLOCKED BY THE LIVE 8-VALUE A1 CHECK, PROVEN UNDER A1-2 ---")
+    print("    SUPPLEMENTARY FIXTURE. The A1 event_type CHECK here carries Revision 14 A1-2's")
+    print("    THIRTEEN governed values, which M-5 installs. Migration 0108 does NOT widen the")
+    print("    live CHECK and this fixture is not evidence that it does. Its only purpose is to")
+    print("    prove that the five operations blocked by the 8-value CHECK are otherwise correct.")
+    DB2 = "kivo_m1_a12"
+    q(f"drop database if exists {DB2};", db="postgres")
+    q(f"create database {DB2};", db="postgres")
+    A12 = ("'CLAIMED','RELEASED','REASSIGNED','MANAGER_TAKEOVER','HANDED_TO_AI','ESCALATED',"
+           "'SYSTEM_HOLD','CLOSED','HOLD_RELEASED','REOPENED','IDLE','TIMEOUT_RETURNED',"
+           "'STALE_ASSIGNEE_CLEARED'")
+    BASE2 = BASE.replace(
+        "event_type text not null check (event_type in ('CLAIMED','RELEASED','REASSIGNED',\n"
+        "    'MANAGER_TAKEOVER','HANDED_TO_AI','ESCALATED','SYSTEM_HOLD','CLOSED')),",
+        f"event_type text not null check (event_type in ({A12})),")
+    check("A1-2 fixture actually differs from the faithful 0099 fixture", True, BASE2 != BASE,
+          ok=(BASE2 != BASE))
+    ok2, out2 = q(BASE2, db=DB2)
+    if not ok2:
+        print(f"    A1-2 fixture baseline failed: {out2[:300]}")
+    q(SEED, db=DB2)
+    ok2a, _ = qf(str(M0), db=DB2)
+    ok2b, out2b = qf(str(M1), db=DB2)
+    check("0107 + 0108 apply cleanly on the A1-2 fixture", True, ok2a and ok2b, ok=(ok2a and ok2b))
+
+    def q2(sql):
+        return q(sql, db=DB2)
+
+    def mk2(cid, state, owner, assignee="null", hold="false", stale=True):
+        q2(f"""insert into public.conversations
+(id, restaurant_id, customer_id, channel, ownership_state, owner, assigned_member_id, is_safety_hold)
+values ('{cid}',{R},'44444444-0000-0000-0000-000000000001','whatsapp','{state}','{owner}',
+        {assignee}, {hold});""")
+        if stale:
+            q2(f"update public.conversations set status = 'a stale presentation value' where id='{cid}';")
+
+    BLOCKED = [
+      ("F9  set_human_idle",       "IDLE",                   "HUMAN_IDLE", "تم التحويل لموظف",
+       "HUMAN_ACTIVE", "human", M2ID, "false",
+       "kv_control_set_human_idle('{c}',{r},gen_random_uuid(),'t')", "member", U2),
+      ("F6  release_hold",         "HOLD_RELEASED",          "AI_ACTIVE",  "AI نشط",
+       "SYSTEM_HOLD", "human", "null", "true",
+       "kv_control_release_hold('{c}',{r},gen_random_uuid(),'note','t')", "member", U1),
+      ("F7  clear_stale_assignee", "STALE_ASSIGNEE_CLEARED", "AI_ACTIVE",  "AI نشط",
+       "AI_ACTIVE", "ai", M2ID, "false",
+       "kv_control_clear_stale_assignee('{c}',{r},gen_random_uuid(),'t')", "member", U1),
+      ("F12 reopen_closed",        "REOPENED",               "AI_ACTIVE",  "AI نشط",
+       "CLOSED", "ai", "null", "false",
+       "kv_sys_control_reopen_closed('{c}',{r},gen_random_uuid(),'7c000000-0000-0000-0000-000000000001','t')",
+       "system", None),
+    ]
+    for i, (label, event, target, status, src, owner, assignee, hold, call, kind, uid) in enumerate(BLOCKED):
+        cid = f"5f000000-0000-0000-0000-00000000000{i+1}"
+        mk2(cid, src, owner, assignee=assignee, hold=hold)
+        if "reopen_closed" in call:
+            q2(f"""insert into public.messages (id, restaurant_id, conversation_id)
+values ('7c000000-0000-0000-0000-000000000001',{R},'{cid}');""")
+        body = "select (public." + call.format(c=cid, r=R) + ").operation_status;"
+        sql = (f"select set_config('request.jwt.claim.sub', {uid}, false); set role authenticated;\n{body}"
+               if kind == "member" else f"set role service_role;\n{body}")
+        okc, outc = q2(sql)
+        check(f"{label} applies under A1-2", "applied",
+              outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:130]}")
+        _, st = q2(f"select ownership_state||'|'||status from public.conversations where id='{cid}';")
+        check(f"{label} SB4 status -> {target}", f"{target}|{status}", st)
+        _, ev = q2(f"""select event_type from public.conversation_assignment_events
+where is_canonical = true and conversation_id='{cid}';""")
+        check(f"{label} emits A1 event {event}", event, ev)
+
+    # F13 timeout_return: exercised through its own T1..T14 order under A1-2.
+    cid = "5f000000-0000-0000-0000-000000000009"
+    mk2(cid, "HUMAN_IDLE", "human", assignee=M2ID)
+    q2(f"update public.conversations set updated_at = now() - interval '60 minutes' where id='{cid}';")
+    _, cfg = q2(f"""select control_epoch::text||'|'||to_char(updated_at,'YYYY-MM-DD\"T\"HH24:MI:SS.USOF')
+from public.conversations where id='{cid}';""")
+    ep, upd = cfg.split("|")
+    okc, outc = q2(f"set role service_role;\nselect (public.kv_sys_control_timeout_return('{cid}',{R},"
+                   f"gen_random_uuid(),{ep},true,15,'auto_return','{upd}'::timestamptz,'t')).operation_status;")
+    check("F13 timeout_return applies under A1-2", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:130]}")
+    _, st = q2(f"select ownership_state||'|'||status from public.conversations where id='{cid}';")
+    check("F13 SB4 status -> AI_ACTIVE", "AI_ACTIVE|AI نشط", st)
+    _, ev = q2(f"""select event_type from public.conversation_assignment_events
+where is_canonical = true and conversation_id='{cid}';""")
+    check("F13 emits A1 event TIMEOUT_RETURNED", "TIMEOUT_RETURNED", ev)
+    ok_s, out_s = q2(f"set role service_role;\nselect public.kv_sys_control_timeout_return('{cid}',{R},"
+                     f"gen_random_uuid(),999,true,15,'auto_return',now(),'t');")
+    check("F13 stale configuration is refused KIV21", True,
+          (not ok_s) and "KIV21" in out_s, ok=((not ok_s) and "KIV21" in out_s))
+
+    # The blocker itself, stated as a proven fact rather than an assertion about the migration.
+    _, live_vals = q("""select pg_get_constraintdef(oid) from pg_constraint
+where conrelid='public.conversation_assignment_events'::regclass and contype='c'
+and pg_get_constraintdef(oid) like '%event_type%';""")
+    missing = [v for v in ("HOLD_RELEASED","REOPENED","IDLE","TIMEOUT_RETURNED","STALE_ASSIGNEE_CLEARED")
+               if v not in live_vals]
+    check("PRE-R3 BLOCKER: the live A1 CHECK omits exactly these five governed events",
+          ["HOLD_RELEASED","REOPENED","IDLE","TIMEOUT_RETURNED","STALE_ASSIGNEE_CLEARED"], missing)
+    _, widened = q("""select count(*) from pg_constraint
+where conrelid='public.conversation_assignment_events'::regclass and contype='c'
+and pg_get_constraintdef(oid) like '%HOLD_RELEASED%';""")
+    check("0108 did NOT widen the live A1 CHECK (M-5 owns A1-2)", "0", widened)
+    q(f"drop database if exists {DB2};", db="postgres")
 
     # ---------------------------------------------------------------- IDEMPOTENCE
     print("\n--- IDEMPOTENCE: SECOND APPLICATION of 0108 ---")

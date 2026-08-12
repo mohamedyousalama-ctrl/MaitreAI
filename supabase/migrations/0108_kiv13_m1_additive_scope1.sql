@@ -708,13 +708,13 @@ declare
   v_audit_id     uuid;
   v_require_mgr  boolean := false;
 begin
-  -- ---- D1 identity / tenant resolution -> KIV11 -------------------------------------
-  select * into c from public.conversations where id = p_conversation_id;
+  -- ---- D1 identity / tenant resolution -> ONE generic KIV11 -------------------------
+  -- Combined predicate. A nonexistent conversation and a wrong-tenant conversation are
+  -- indistinguishable to the caller: the API is not an existence oracle.
+  select * into c from public.conversations
+   where id = p_conversation_id and restaurant_id = p_expected_restaurant_id;
   if not found then
-    raise exception 'KIV11 conversation does not exist';
-  end if;
-  if c.restaurant_id <> p_expected_restaurant_id then
-    raise exception 'KIV11 conversation does not belong to the expected tenant';
+    raise exception 'KIV11 tenant or conversation identity did not resolve';
   end if;
 
   -- ---- D2 actor resolution and authorization -> KIV12 -------------------------------
@@ -796,7 +796,11 @@ begin
   end if;
 
   -- ---- D4 row lock and post-lock re-read ---------------------------------------------
-  select * into c from public.conversations where id = p_conversation_id for update;
+  select * into c from public.conversations
+   where id = p_conversation_id and restaurant_id = p_expected_restaurant_id for update;
+  if not found then
+    raise exception 'KIV11 tenant or conversation identity did not resolve';
+  end if;
   v_epoch_before := c.control_epoch;
 
   -- ---- operation contracts (Revision 14 §7) -------------------------------------------
@@ -809,15 +813,25 @@ begin
     when 'create_safety_conversation' then 'ESCALATED' end;
 
   if p_operation_name = 'claim' then
+    -- CLAIMABLE_FROM is exactly AI_ACTIVE, HOLD_UNCLAIMED, HUMAN_IDLE, SYSTEM_HOLD.
+    -- The 11 August 2026 binding adjudication supersedes Revision 14 §7.1 D7's inclusion of
+    -- HUMAN_ACTIVE with a NULL assignee. HUMAN_ACTIVE is NOT a D7 claimable source: it
+    -- succeeds only as an idempotent D6 when already assigned to the claiming member.
     v_target_state := 'HUMAN_ACTIVE'; v_target_owner := 'human';
     v_noop := c.ownership_state = 'HUMAN_ACTIVE' and c.owner = 'human'
-              and c.assigned_member_id is not distinct from a_id;
+              and c.assigned_member_id is not distinct from a_id
+              and a_id is not null;
     if not v_noop then
-      if c.ownership_state = 'HUMAN_ACTIVE' and c.assigned_member_id is not null
-         and c.assigned_member_id <> a_id then
-        raise exception 'KIV15 claim lost - held by another member';
+      if c.ownership_state = 'HUMAN_ACTIVE' then
+        if c.assigned_member_id is not null then
+          -- assigned to another member
+          raise exception 'KIV15 claim lost - held by another member';
+        end if;
+        -- unassigned HUMAN_ACTIVE is not a claim source; its legacy population is a separate
+        -- pre-R-3 maintenance obligation and is never repaired here.
+        raise exception 'KIV14 illegal transition from % for claim', c.ownership_state;
       end if;
-      if c.ownership_state not in ('AI_ACTIVE','HOLD_UNCLAIMED','HUMAN_IDLE','SYSTEM_HOLD','HUMAN_ACTIVE') then
+      if c.ownership_state not in ('AI_ACTIVE','HOLD_UNCLAIMED','HUMAN_IDLE','SYSTEM_HOLD') then
         raise exception 'KIV14 illegal transition from % for claim', c.ownership_state;
       end if;
     end if;
@@ -861,6 +875,11 @@ begin
       if c.ownership_state not in ('HUMAN_ACTIVE','HUMAN_IDLE') then
         raise exception 'KIV14 illegal transition from % for %', c.ownership_state, p_operation_name;
       end if;
+      -- F5 actor: the current assignee, or a manager. timeout_return is system-actor only.
+      if p_operation_name = 'return_to_kivo' and p_actor_kind = 'member'
+         and a_role <> 'manager' and c.assigned_member_id is distinct from a_id then
+        raise exception 'KIV12 return_to_kivo requires the current assignee or a manager';
+      end if;
     end if;
 
   elsif p_operation_name = 'release_hold' then
@@ -898,17 +917,31 @@ begin
                                    'AI_RESUME_PENDING') then
         raise exception 'KIV14 illegal transition from % for close', c.ownership_state;
       end if;
-      if p_actor_kind = 'member' and c.owner = 'human' and c.assigned_member_id is not null
-         and c.assigned_member_id <> a_id and a_role <> 'manager' then
-        raise exception 'KIV12 close requires the assignee or a manager';
+      -- F8 actor: the current assignee when human-owned; a manager when unassigned,
+      -- AI-owned or system-owned.
+      if p_actor_kind = 'member' and a_role <> 'manager' then
+        if c.owner = 'human' and c.assigned_member_id is not null then
+          if c.assigned_member_id is distinct from a_id then
+            raise exception 'KIV12 close requires the current assignee or a manager';
+          end if;
+        else
+          raise exception 'KIV12 close of an unassigned, AI-owned or system-owned conversation requires a manager';
+        end if;
       end if;
     end if;
 
   elsif p_operation_name = 'set_human_idle' then
     v_target_state := 'HUMAN_IDLE'; v_target_owner := 'human';
     v_noop := c.ownership_state = 'HUMAN_IDLE' and c.owner = 'human';
-    if not v_noop and c.ownership_state <> 'HUMAN_ACTIVE' then
-      raise exception 'KIV14 illegal transition from % for set_human_idle', c.ownership_state;
+    if not v_noop then
+      if c.ownership_state <> 'HUMAN_ACTIVE' then
+        raise exception 'KIV14 illegal transition from % for set_human_idle', c.ownership_state;
+      end if;
+      -- F9 actor: the current assignee, or a manager.
+      if p_actor_kind = 'member' and a_role <> 'manager'
+         and c.assigned_member_id is distinct from a_id then
+        raise exception 'KIV12 set_human_idle requires the current assignee or a manager';
+      end if;
     end if;
 
   elsif p_operation_name = 'reopen_closed' then
@@ -990,8 +1023,18 @@ begin
     allergy_note    = case p_operation_name
                         when 'create_safety_conversation' then p_allergy_note
                         else allergy_note end,
-    status          = case p_operation_name
-                        when 'create_safety_conversation' then 'مراجعة حساسية'
+    -- SB4: every APPLIED transition writes the governed presentation status in this same
+    -- UPDATE. Status is presentation data only (SB1-SB3): it is not part of legality, D6
+    -- equality or audit equivalence, and a stale value can neither block a transition nor
+    -- manufacture a no-op (SB7). NO-OP and ALERTED write nothing at all (SB5).
+    status          = case
+                        when p_operation_name = 'create_safety_conversation' then 'مراجعة حساسية'
+                        when v_target_state = 'AI_ACTIVE'         then 'AI نشط'
+                        when v_target_state = 'HOLD_UNCLAIMED'    then 'يحتاج تدخل موظف'
+                        when v_target_state = 'HUMAN_ACTIVE'      then 'موظف يتابع'
+                        when v_target_state = 'HUMAN_IDLE'        then 'تم التحويل لموظف'
+                        when v_target_state = 'SYSTEM_HOLD'       then 'يحتاج تدخل موظف'
+                        when v_target_state = 'CLOSED'            then 'مغلقة'
                         else status end,
     updated_at      = now()
   where id = p_conversation_id;
@@ -1207,9 +1250,11 @@ begin
     raise exception 'KIV14 expected idle action is not an allowed value';
   end if;
 
-  select * into c from public.conversations where id = p_conversation_id;                  -- T1
-  if not found or c.restaurant_id <> p_expected_restaurant_id then
-    raise exception 'KIV11 conversation does not resolve within the expected tenant';
+  -- T1: same combined predicate and same generic KIV11 as the universal core.
+  select * into c from public.conversations
+   where id = p_conversation_id and restaurant_id = p_expected_restaurant_id;
+  if not found then
+    raise exception 'KIV11 tenant or conversation identity did not resolve';
   end if;
   perform public.kv_control_assert_actor(p_expected_restaurant_id, 'system', false);       -- T2
 
@@ -1275,7 +1320,23 @@ begin
   end if;
   perform public.kv_control_assert_actor(p_restaurant_id, 'system', false);
 
-  perform pg_advisory_xact_lock(hashtextextended('conv:' || p_conversation_id::text, 0)); -- Phase 1
+  -- Phase 1 (D4), L2 lock order: identity lock FIRST, then the operation lock. Only L2 holds
+  -- both, always identity first, so no cycle exists.
+  perform pg_advisory_xact_lock(hashtextextended('conv:' || p_conversation_id::text, 0));
+  perform pg_advisory_xact_lock(hashtextextended(
+    'op:' || p_restaurant_id::text || ':' || p_operation_id::text, 0));
+
+  -- Phase 2 (D5) A0 REPLAY, BEFORE the row re-read and before create-or-adopt. A replayed
+  -- call must return the recorded result without creating, adopting or mutating anything.
+  -- The universal core re-finds the same A0 row and returns it verbatim, raising KIV19 on a
+  -- different fingerprint.
+  if exists (select 1 from public.control_operations
+              where restaurant_id = p_restaurant_id and operation_id = p_operation_id) then
+    return public.kv_control_transition(
+      p_conversation_id, p_restaurant_id, p_operation_id, 'create_safety_conversation',
+      'SYSTEM_HOLD', true, null, null, null, null, p_escalation_reason, p_allergy_note,
+      p_reason, 'system');
+  end if;
 
   select * into c from public.conversations where id = p_conversation_id;            -- Phase 3
   if not found then
