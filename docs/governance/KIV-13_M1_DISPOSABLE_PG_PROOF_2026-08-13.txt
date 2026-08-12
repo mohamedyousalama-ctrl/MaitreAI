@@ -4,17 +4,17 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
 --- PROVENANCE ---
   repository            : /home/user/MaitreAI
   git branch            : feat/kiv13-m1-additive-scope1
-  git HEAD              : 51a40ae9b595cc48fc5f3ed21987a680b042d909
+  git HEAD              : 18e71ad1d358c9bda7b781f28e6439600df02f64
   git tree state        : clean
   proof script          : scripts/proof-kiv13-m1-disposable-pg.py
-  proof script sha256   : 523517b5ceb9e3d55f14974c3cdc073da62d8dff886c835f16010ea48689d0c7
+  proof script sha256   : 8298d0a26fd0ebcfc9ab8aae8becc857649e25f6950513933db877c8e132b9d8
   M-0 migration         : supabase/migrations/0107_kiv12_m0_constraint_prestage.sql
   M-0 bytes / sha256    : 4096 / 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6
   M-0 expected sha256   : 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6  match=YES
   M-1 migration         : supabase/migrations/0108_kiv13_m1_additive_scope1.sql
-  M-1 bytes             : 74453
-  M-1 sha256            : 06bc41f51c11f345b2d52240b5c69c32470b6fcb3e9554e8a6760492288e5f23
-  M-1 git blob          : 3e836f5ab0a3851a044ab01a1483cb0758b48883
+  M-1 bytes             : 79700
+  M-1 sha256            : 7e2e28018d20f0d9d5d609946ac643688d773d7c84e54fd0078d747e3c3e31c6
+  M-1 git blob          : 10283f0e525b2e61ed448cbe28b6c3783d0cd8f7
   M-0 git blob          : d492d2e58fee28c93fd84ec71081dc71c81fce0b
   M-0 blob@HEAD         : d492d2e58fee28c93fd84ec71081dc71c81fce0b
 --- ENVIRONMENT ---
@@ -636,6 +636,33 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
   [PASS] F13 emits A1 event TIMEOUT_RETURNED
          expected: TIMEOUT_RETURNED
          actual:   TIMEOUT_RETURNED
+  [PASS] F13 same-fingerprint replay returns the recorded result
+         expected: t
+         actual:   t
+  [PASS] F13 replay resolved WITHOUT re-reading the conversation (epoch has since changed)
+         expected: True
+         actual:   True
+  [PASS] F13 same-fingerprint replay survives a later configuration change
+         expected: t
+         actual:   t
+  [PASS] F13 changed expected_epoch alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 changed expected_handoff_enabled alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 changed expected_idle_minutes alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 changed expected_idle_action alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 changed expected_updated_at alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 replays and KIV19 rejections wrote no additional A0 row
+         expected: 5
+         actual:   5
   [PASS] F13 stale configuration is refused KIV21
          expected: True
          actual:   True
@@ -645,6 +672,122 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
   [PASS] 0108 did NOT widen the live A1 CHECK (M-5 owns A1-2)
          expected: 0
          actual:   0
+
+--- U. AUTHORIZATION IS D2 AND CANNOT BE SKIPPED BY A D6 NO-OP ---
+  [PASS] F5 return_to_kivo: unauthorized member refused even though already at target
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F5 return_to_kivo: unauthorized already-target attempt mutated nothing
+         expected: AI_ACTIVE|ai|~|false|AI نشط|0
+         actual:   AI_ACTIVE|ai|~|false|AI نشط|0
+  [PASS] F5 return_to_kivo: unauthorized already-target attempt wrote no A0 row
+         expected: 19
+         actual:   19
+  [PASS] F5 return_to_kivo: unauthorized already-target attempt wrote no A0 NOOP row
+         expected: 3
+         actual:   3
+  [PASS] F5 return_to_kivo: manager still receives the legitimate no-op
+         expected: noop
+         actual:   noop
+  [PASS] F8 close: unauthorized member refused even though already at target
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F8 close: unauthorized already-target attempt mutated nothing
+         expected: CLOSED|human|33333333-0000-0000-0000-000000000002|false|AI نشط|0
+         actual:   CLOSED|human|33333333-0000-0000-0000-000000000002|false|AI نشط|0
+  [PASS] F8 close: unauthorized already-target attempt wrote no A0 row
+         expected: 20
+         actual:   20
+  [PASS] F8 close: unauthorized already-target attempt wrote no A0 NOOP row
+         expected: 4
+         actual:   4
+  [PASS] F8 close: manager still receives the legitimate no-op
+         expected: noop
+         actual:   noop
+  [PASS] F9 set_human_idle: unauthorized member refused even though already at target
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F9 set_human_idle: unauthorized already-target attempt mutated nothing
+         expected: HUMAN_IDLE|human|33333333-0000-0000-0000-000000000002|false|AI نشط|0
+         actual:   HUMAN_IDLE|human|33333333-0000-0000-0000-000000000002|false|AI نشط|0
+  [PASS] F9 set_human_idle: unauthorized already-target attempt wrote no A0 row
+         expected: 21
+         actual:   21
+  [PASS] F9 set_human_idle: unauthorized already-target attempt wrote no A0 NOOP row
+         expected: 5
+         actual:   5
+  [PASS] F9 set_human_idle: manager still receives the legitimate no-op
+         expected: noop
+         actual:   noop
+
+--- V. F14: replay decided BEFORE any conversation re-read / create / adopt ---
+  [PASS] F14 original call applies
+         expected: applied
+         actual:   applied
+  [PASS] F14 changed customer_id on the same operation_id -> KIV19 (not KIV26)
+         expected: raises KIV19
+         actual:   raised KIV19
+  [PASS] F14 changed channel on the same operation_id -> KIV19 (not KIV26)
+         expected: raises KIV19
+         actual:   raised KIV19
+  [PASS] F14 rejected replays mutated no conversation
+         expected: SYSTEM_HOLD|human|~|true|مراجعة حساسية|1
+         actual:   SYSTEM_HOLD|human|~|true|مراجعة حساسية|1
+  [PASS] F14 rejected replays wrote no A0 row
+         expected: 23
+         actual:   23
+  [PASS] F14 rejected replays created/adopted no conversation
+         expected: 26
+         actual:   26
+  [PASS] F14 same-fingerprint replay returns the recorded result after external mutation
+         expected: t
+         actual:   t
+  [PASS] F14 same-fingerprint replay wrote no second A0 row
+         expected: 23
+         actual:   23
+
+--- W. F13: replay decided BEFORE configuration re-read; five expected inputs ---
+  [PASS] F13 original call is blocked only by the A1 event_type pre-R3 blocker
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_epoch does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_handoff_enabled does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_idle_minutes does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_idle_action does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_updated_at does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 aborted attempts recorded no A0 row
+         expected: 0
+         actual:   0
+
+--- X. NFC CANONICALIZATION OF GOVERNED FINGERPRINT TEXT (§16.2) ---
+  [PASS] normalize(...,NFC) is available and canonically equates the two forms
+         expected: true
+         actual:   true
+  [PASS] the two forms are NOT byte-equal before normalization
+         expected: false
+         actual:   false
+  [PASS] NFC: original escalate with COMPOSED text applies
+         expected: applied
+         actual:   applied
+  [PASS] NFC: canonically equivalent DECOMPOSED text replays as the same fingerprint
+         expected: t
+         actual:   t
+  [PASS] NFC: a materially different normalized value on the same operation_id -> KIV19
+         expected: raises KIV19
+         actual:   raised KIV19
+  [PASS] NFC: exactly one A0 row across the composed/decomposed/different attempts
+         expected: 1
+         actual:   1
 
 --- IDEMPOTENCE: SECOND APPLICATION of 0108 ---
   0108 second application: APPLIED CLEANLY
@@ -659,7 +802,7 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          actual:   4
 
 ==============================================================================
-TOTAL 190 assertions — PASS 190 — FAIL 0
+TOTAL 235 assertions — PASS 235 — FAIL 0
 ==============================================================================
 
 --- TEARDOWN: destroy the disposable cluster ---
