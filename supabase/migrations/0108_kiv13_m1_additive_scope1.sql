@@ -707,7 +707,7 @@ declare
   v_epoch_after  bigint;
   v_audit_id     uuid;
   v_require_mgr  boolean := false;
-  v_ff           jsonb;
+  v_outer_fp     text;
 begin
   -- ---- D1 identity / tenant resolution -> ONE generic KIV11 -------------------------
   -- Combined predicate. A nonexistent conversation and a wrong-tenant conversation are
@@ -770,17 +770,27 @@ begin
     'op:' || p_expected_restaurant_id::text || ':' || p_operation_id::text, 0));
 
   -- ---- request fingerprint (Revision 14 §16.2) ---------------------------------------
-  -- Revision 14 §16.2. Common prefix, then the exact per-operation additions IN ORDER.
-  -- For create_safety_conversation the customer and channel fields are taken from the row
-  -- itself: creation wrote exactly p_customer_id/p_channel and adoption verified equality on
-  -- both, so these are identical to the caller's parameters by construction.
-  -- For timeout_return the five expected inputs are reconstructed from the state F13 has
-  -- already proven equal to them at T7, so they too are identical to the caller's parameters.
-  if p_operation_name = 'timeout_return' then
-    -- alias must not be `r`: that name is the kv_control_result variable in this scope.
-    select rr.feature_flags into v_ff from public.restaurants rr
-     where rr.id = p_expected_restaurant_id;
+  -- AUTHORITATIVE REQUEST IDENTITY.
+  -- Operations whose §16.2 fingerprint fields are not all present in this function's governed
+  -- signature (create_safety_conversation: customer and channel; timeout_return: the five
+  -- expected inputs) are entered only through F14 / F13, which compute the canonical
+  -- fingerprint from the ORIGINAL caller inputs and hand it here transaction-locally. It is
+  -- NEVER reconstructed from conversation epoch, updated_at, ownership state, tenant feature
+  -- flags or any other post-validation mutable state, so an exact retry always replays against
+  -- the exact original identity and concurrent state changes can never make it spuriously
+  -- KIV19. The value is consumed once and cleared so it cannot leak to a later operation in
+  -- the same transaction.
+  v_outer_fp := nullif(current_setting('kv.request_fingerprint', true), '');
+  if v_outer_fp is not null then
+    perform set_config('kv.request_fingerprint', '', true);
   end if;
+  if p_operation_name in ('timeout_return','create_safety_conversation') then
+    if v_outer_fp is null or v_outer_fp !~ '^[0-9a-f]{64}$' then
+      raise exception 'KIV14 % must be invoked through its governed entry point',
+        p_operation_name;
+    end if;
+    v_fp := v_outer_fp;
+  else
   v_fields := array[
       p_operation_name, p_expected_restaurant_id::text, p_conversation_id::text,
       p_operation_id::text, p_actor_kind, a_id::text, a_uid::text ]
@@ -795,21 +805,6 @@ begin
          when 'close'                then array[p_close_reason, p_reason]
          when 'set_human_idle'       then array[p_reason]
          when 'reopen_closed'        then array[p_trigger_message_id::text, p_reason]
-         when 'timeout_return'       then array[
-                c.control_epoch::text,
-                case when coalesce((v_ff ->> 'handoff_timeout')::boolean, false)
-                     then 't' else 'f' end,
-                (case when coalesce(nullif(v_ff ->> 'handoff_idle_minutes','')::integer, 15)
-                           between 1 and 1440
-                      then coalesce(nullif(v_ff ->> 'handoff_idle_minutes','')::integer, 15)
-                      else 15 end)::text,
-                case when (v_ff ->> 'handoff_idle_action') = 'realert_only'
-                     then 'realert_only' else 'auto_return' end,
-                to_char(c.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'),
-                p_reason]
-         when 'create_safety_conversation'
-                                     then array[c.customer_id::text, c.channel,
-                                                p_escalation_reason, p_allergy_note, p_reason]
          else array[p_reason]
        end;
   foreach v_f in array v_fields loop
@@ -826,6 +821,7 @@ begin
     end if;
   end loop;
   v_fp := encode(extensions.digest(v_buf, 'sha256'), 'hex');
+  end if;
 
   -- ---- D5 replay against A0, the sole operation-identity authority -> KIV19 ----------
   select * into v_prior from public.control_operations
@@ -1329,8 +1325,15 @@ begin
   end if;
 
   -- T1/T6 only now: identity, tenant and configuration are read after replay resolution.
+  -- T6 acquires the governed conversation ROW LOCK, and it is taken BEFORE the T7 expected
+  -- state/configuration validation. Everything from here to the transition decision is
+  -- evaluated against the locked row, so a concurrent governed operation cannot move the
+  -- conversation between validation and application: a stale timeout can never overwrite a
+  -- fresh human claim or reassignment. The lock is held for the remainder of the transaction,
+  -- so the universal core's own re-read observes exactly this row.
   select * into c from public.conversations
-   where id = p_conversation_id and restaurant_id = p_expected_restaurant_id;
+   where id = p_conversation_id and restaurant_id = p_expected_restaurant_id
+   for update;
   if not found then
     raise exception 'KIV11 tenant or conversation identity did not resolve';
   end if;
@@ -1370,6 +1373,8 @@ begin
     end if;
   end if;
 
+  -- Hand the ORIGINAL canonical request identity to the A0-writing path.
+  perform set_config('kv.request_fingerprint', v_fp, true);
   return public.kv_control_transition(                                                     -- T8 / T14
     p_conversation_id, p_expected_restaurant_id, p_operation_id, 'timeout_return', 'AI_ACTIVE',
     null, null, null, null, null, null, null, p_reason, 'system');
@@ -1460,6 +1465,9 @@ begin
     end if;
   end if;
 
+  -- Hand the ORIGINAL canonical request identity to the A0-writing path, unchanged by the
+  -- create-or-adopt step that just ran.
+  perform set_config('kv.request_fingerprint', v_fp, true);
   return public.kv_control_transition(                                               -- Phase 4
     p_conversation_id, p_restaurant_id, p_operation_id, 'create_safety_conversation',
     'SYSTEM_HOLD', true, null, null, null, null, p_escalation_reason, p_allergy_note,

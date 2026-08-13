@@ -12,7 +12,7 @@ and opens no network listener — the cluster is reachable only over a unix sock
 Usage:  sudo python3 scripts/proof-kiv13-m1-disposable-pg.py
 Exit 0 = every assertion passed.
 """
-import subprocess, hashlib, pathlib, sys, re, os, shutil
+import subprocess, hashlib, pathlib, sys, re, os, shutil, time
 
 SELF = pathlib.Path(__file__).resolve()
 ROOT = SELF.parent.parent
@@ -70,6 +70,19 @@ def raises(label, sql, want_code, role=None):
 def accepts(label, sql, role=None):
     ok, out = q(sql, role=role)
     return check(label, "accepted", "accepted" if ok else f"REJECTED: {out.splitlines()[0][:100]}", ok=ok)
+
+
+BGFILE = pathlib.Path("/tmp/kiv13_m1_bg.sql")
+
+
+def bg(sql, db=DB):
+    """Start a REAL second session and return the process. Used to hold locks concurrently."""
+    BGFILE.write_text(sql, encoding="utf-8")
+    BGFILE.chmod(0o644)
+    return subprocess.Popen(
+        ["su", "postgres", "-c",
+         f'{PGBIN}/psql -h {SOCK} -p {PORT} -U {USER} -d {db} -X -f {BGFILE}'],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
 def destroy():
@@ -1037,8 +1050,9 @@ where is_canonical = true and conversation_id='{cid}';""")
     cid = "5f000000-0000-0000-0000-000000000009"
     mk2(cid, "HUMAN_IDLE", "human", assignee=M2ID)
     q2(f"update public.conversations set updated_at = now() - interval '60 minutes' where id='{cid}';")
-    _, cfg = q2(f"""select control_epoch::text||'|'||to_char(updated_at,'YYYY-MM-DD\"T\"HH24:MI:SS.USOF')
-from public.conversations where id='{cid}';""")
+    # Render exactly as §16.2 canonicalizes a timestamp: UTC, microseconds, no offset suffix.
+    _, cfg = q2(f"""select control_epoch::text||'|'||to_char(updated_at at time zone 'UTC',
+'YYYY-MM-DD"T"HH24:MI:SS.US') from public.conversations where id='{cid}';""")
     ep, upd = cfg.split("|")
     TOP = "'6e000000-1111-0000-0000-000000000001'"
     def f13b(op=TOP, ep_=None, en="true", mins="15", act="auto_return", upd_=None, reason="t", tail=".operation_status"):
@@ -1082,6 +1096,37 @@ where id={R};""")
         check(f"F13 changed {label} alone -> KIV19", "KIV19", got)
     _, a0_t2 = q2("select count(*) from public.control_operations;")
     check("F13 replays and KIV19 rejections wrote no additional A0 row", a0_t, a0_t2)
+
+    # F13 -> F15 AUTHORITATIVE REQUEST IDENTITY. The stored A0 fingerprint must be the canonical
+    # §16.2 identity of the ORIGINAL request, computed here by an independent SQL oracle rather
+    # than by reusing the migration's own encoder.
+    def canon2(fields):
+        vals = ",".join(f"({i+1},{v})" for i, v in enumerate(fields))
+        return f"""select encode(extensions.digest((select coalesce(string_agg(
+  case when v is null then pg_catalog.convert_to('ffffffff','UTF8')
+       else pg_catalog.convert_to(lpad(to_hex(octet_length(
+              pg_catalog.convert_to(normalize(v,NFC),'UTF8'))),8,'0'),'UTF8')
+            || pg_catalog.convert_to(normalize(v,NFC),'UTF8') end,
+  ''::bytea order by i), ''::bytea) from (values {vals}) as f(i,v)), 'sha256'),'hex');"""
+    _, expect_f13 = q2(canon2(["'timeout_return'", R, f"'{cid}'", TOP, "'system'",
+                               "null::text", "null::text",
+                               f"'{ep}'", "'t'", "'15'", "'auto_return'", f"'{upd}'", "'t'"]))
+    _, stored_f13 = q2(f"select request_fingerprint from public.control_operations where operation_id={TOP};")
+    check("F13 A0 stores exactly the OUTER canonical §16.2 identity of the original request",
+          expect_f13, stored_f13)
+    check("F13 stored identity is NOT derived from post-validation mutable state", True,
+          expect_f13 == stored_f13 and len(stored_f13) == 64,
+          ok=(expect_f13 == stored_f13 and len(stored_f13) == 64))
+    # drift the conversation as well as the configuration, then retry the exact original request
+    q2(f"""update public.conversations set status='drifted' where id='{cid}';""")
+    q2(f"""update public.restaurants set feature_flags =
+'{{"handoff_timeout": false, "handoff_idle_minutes": 5}}'::jsonb where id={R};""")
+    okr, outr = q2(f13b(tail=".replayed"))
+    check("F13 exact retry replays after BOTH conversation and configuration drift", "t",
+          outr.strip().splitlines()[-1] if okr else f"FAILED: {outr.splitlines()[-1][:130]}")
+    _, stored_f13b = q2(f"select request_fingerprint from public.control_operations where operation_id={TOP};")
+    check("F13 stored identity unchanged by that drift", expect_f13, stored_f13b)
+    q2(f"""update public.restaurants set feature_flags = '{{"handoff_timeout": true}}'::jsonb where id={R};""")
     ok_s, out_s = q2(f"set role service_role;\nselect public.kv_sys_control_timeout_return('{cid}',{R},"
                      f"gen_random_uuid(),999,true,15,'auto_return',now(),'t');")
     check("F13 stale configuration is refused KIV21", True,
@@ -1228,6 +1273,101 @@ where operation_id={VOP};""")
                          f"'cafe','r');"), "KIV19")
     _, a0_x = q(f"select count(*) from public.control_operations where operation_id={XOP};")
     check("NFC: exactly one A0 row across the composed/decomposed/different attempts", "1", a0_x)
+
+
+    # ================= Y. DETERMINISTIC CONCURRENCY AND REQUEST IDENTITY =================
+    print("\n--- Y. CONCURRENCY: real second session, actual lock behaviour ---")
+
+    # An INDEPENDENT §16.2 encoder, written here in SQL rather than reusing the migration's,
+    # so the stored A0 identity is checked against an oracle the migration did not produce.
+    def canon(fields):
+        vals = ",".join(f"({i+1},{v})" for i, v in enumerate(fields))
+        return f"""select encode(extensions.digest((select coalesce(string_agg(
+  case when v is null then pg_catalog.convert_to('ffffffff','UTF8')
+       else pg_catalog.convert_to(lpad(to_hex(octet_length(
+              pg_catalog.convert_to(normalize(v,NFC),'UTF8'))),8,'0'),'UTF8')
+            || pg_catalog.convert_to(normalize(v,NFC),'UTF8') end,
+  ''::bytea order by i), ''::bytea) from (values {vals}) as f(i,v)), 'sha256'),'hex');"""
+
+    # ---- Y1: F13 takes the conversation ROW LOCK, and takes it before deciding ----------
+    YC = "6f000000-0000-0000-0000-000000000001"
+    mk_conv(YC, "HUMAN_IDLE", "human", assignee=M2ID)
+    q(f"update public.conversations set updated_at = now() - interval '90 minutes' where id='{YC}';")
+    _, ycfg = q(f"""select control_epoch::text||'|'||to_char(updated_at at time zone 'UTC',
+'YYYY-MM-DD"T"HH24:MI:SS.US') from public.conversations where id='{YC}';""")
+    yep, yupd = ycfg.split("|")
+
+    def y_timeout(op, ep=None, upd=None, timeout_ms=None):
+        pre = f"set statement_timeout = {timeout_ms};\n" if timeout_ms else ""
+        return (pre + f"set role service_role;\nselect public.kv_sys_control_timeout_return('{YC}',{R},"
+                f"{op},{ep or yep},true,15,'auto_return','{upd or yupd}'::timestamptz,'t');")
+
+    # control: with no competing lock the call proceeds (it fails only on the A1 pre-R3 blocker)
+    ok_ctl, out_ctl = q(y_timeout("gen_random_uuid()", timeout_ms=4000))
+    check("Y1 control: with no competing lock F13 proceeds to the transition (no timeout)",
+          True, "statement timeout" not in out_ctl, ok=("statement timeout" not in out_ctl))
+
+    # now a REAL concurrent session holds the conversation row lock
+    holder = bg(f"begin; select id from public.conversations where id='{YC}' for update;"
+                f" select pg_sleep(6); commit;")
+    time.sleep(2.0)
+    ok_blk, out_blk = q(y_timeout("gen_random_uuid()", timeout_ms=2500))
+    check("Y1 F13 BLOCKS on the conversation row lock, so it locks before deciding",
+          True, (not ok_blk) and "statement timeout" in out_blk,
+          ok=((not ok_blk) and "statement timeout" in out_blk))
+    holder.wait(timeout=30)
+    _, y_a0 = q(f"select count(*) from public.control_operations where conversation_id='{YC}';")
+    check("Y1 the blocked timeout wrote no A0 row", "0", y_a0)
+
+    # ---- Y2: a stale timeout cannot apply over fresh human activity ---------------------
+    ZC = "6f000000-0000-0000-0000-000000000002"
+    mk_conv(ZC, "HUMAN_IDLE", "human", assignee=M2ID)
+    q(f"update public.conversations set updated_at = now() - interval '90 minutes' where id='{ZC}';")
+    _, zcfg = q(f"""select control_epoch::text||'|'||to_char(updated_at at time zone 'UTC',
+'YYYY-MM-DD"T"HH24:MI:SS.US') from public.conversations where id='{ZC}';""")
+    zep, zupd = zcfg.split("|")
+    # caller B: a fresh governed human claim commits first
+    okb, outb = q(as_member(U2, f"select (public.kv_control_claim('{ZC}',{R},"
+                                f"gen_random_uuid(),'fresh human activity')).operation_status;"))
+    check("Y2 caller B's fresh human claim applies", "applied",
+          outb.strip().splitlines()[-1] if okb else f"FAILED: {outb.splitlines()[-1][:110]}")
+    before_z = conv_state(ZC)
+    _, a0_z = q("select count(*) from public.control_operations;")
+    # caller A: the stale timeout, still holding its ORIGINAL pre-claim expectations
+    ok_z, out_z = q(f"set role service_role;\nselect public.kv_sys_control_timeout_return('{ZC}',{R},"
+                    f"gen_random_uuid(),{zep},true,15,'auto_return','{zupd}'::timestamptz,'t');")
+    check("Y2 stale timeout is refused KIV21 after the fresh claim", True,
+          (not ok_z) and "KIV21" in out_z, ok=((not ok_z) and "KIV21" in out_z))
+    check("Y2 fresh human ownership was NOT overwritten", before_z, conv_state(ZC))
+    _, st_z = q(f"""select ownership_state||'|'||coalesce(assigned_member_id::text,'~')
+from public.conversations where id='{ZC}';""")
+    check("Y2 conversation remains HUMAN_ACTIVE with its assignee", f"HUMAN_ACTIVE|{M2ID.strip(chr(39))}", st_z)
+    _, a0_z2 = q("select count(*) from public.control_operations;")
+    check("Y2 the stale timeout wrote no A0 row", a0_z, a0_z2)
+
+    # ---- Y3: F14 stored identity == the outer authoritative fingerprint -----------------
+    NC = "6f000000-0000-0000-0000-000000000011"
+    NOP = "'6f000000-1111-0000-0000-000000000011'"
+    okc, outc = q(f"set role service_role;\nselect (public.kv_control_create_safety_conversation("
+                  f"'{NC}',{R},'44444444-0000-0000-0000-000000000001','whatsapp',{NOP},"
+                  f"'why','note','r')).operation_status;")
+    check("Y3 F14 applies", "applied",
+          outc.strip().splitlines()[-1] if okc else f"FAILED: {outc.splitlines()[-1][:130]}")
+    _, expect_f14 = q(canon(["'create_safety_conversation'", R, f"'{NC}'", NOP, "'system'",
+                             "null::text", "null::text",
+                             "'44444444-0000-0000-0000-000000000001'", "'whatsapp'",
+                             "'why'", "'note'", "'r'"]))
+    _, stored_f14 = q(f"select request_fingerprint from public.control_operations where operation_id={NOP};")
+    check("Y3 A0 stores exactly F14's outer canonical §16.2 identity", expect_f14, stored_f14)
+    # a later state change must not alter that identity, and an exact retry must still replay
+    q(f"update public.conversations set status='drifted', allergy_note='drifted' where id='{NC}';")
+    okr, outr = q(f"set role service_role;\nselect (public.kv_control_create_safety_conversation("
+                  f"'{NC}',{R},'44444444-0000-0000-0000-000000000001','whatsapp',{NOP},"
+                  f"'why','note','r')).replayed;")
+    check("Y3 exact F14 retry replays after state drift (no spurious KIV19)", "t",
+          outr.strip().splitlines()[-1] if okr else f"FAILED: {outr.splitlines()[-1][:130]}")
+    _, stored_f14b = q(f"select request_fingerprint from public.control_operations where operation_id={NOP};")
+    check("Y3 stored identity did not drift", expect_f14, stored_f14b)
 
     # ---------------------------------------------------------------- IDEMPOTENCE
     print("\n--- IDEMPOTENCE: SECOND APPLICATION of 0108 ---")
