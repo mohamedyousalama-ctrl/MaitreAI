@@ -4,17 +4,17 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
 --- PROVENANCE ---
   repository            : /home/user/MaitreAI
   git branch            : feat/kiv13-m1-additive-scope1
-  git HEAD              : 18e71ad1d358c9bda7b781f28e6439600df02f64
+  git HEAD              : 66e4e20a49fa11e0c80e592aa51c637337290682
   git tree state        : clean
   proof script          : scripts/proof-kiv13-m1-disposable-pg.py
-  proof script sha256   : 8298d0a26fd0ebcfc9ab8aae8becc857649e25f6950513933db877c8e132b9d8
+  proof script sha256   : 96dc5e14e8ea6adf84aa3ce6b4ad4717a06e6b52b41ca6e3847fa05b7df21556
   M-0 migration         : supabase/migrations/0107_kiv12_m0_constraint_prestage.sql
   M-0 bytes / sha256    : 4096 / 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6
   M-0 expected sha256   : 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6  match=YES
   M-1 migration         : supabase/migrations/0108_kiv13_m1_additive_scope1.sql
-  M-1 bytes             : 79700
-  M-1 sha256            : 7e2e28018d20f0d9d5d609946ac643688d773d7c84e54fd0078d747e3c3e31c6
-  M-1 git blob          : 10283f0e525b2e61ed448cbe28b6c3783d0cd8f7
+  M-1 bytes             : 80100
+  M-1 sha256            : 8a435974b1b302223548b4aeadfa84ee0a11918a301d8698f7774a49f757a107
+  M-1 git blob          : da9b63e98b2a37291b2d4cfd36788aa941303bd2
   M-0 git blob          : d492d2e58fee28c93fd84ec71081dc71c81fce0b
   M-0 blob@HEAD         : d492d2e58fee28c93fd84ec71081dc71c81fce0b
 --- ENVIRONMENT ---
@@ -663,6 +663,18 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
   [PASS] F13 replays and KIV19 rejections wrote no additional A0 row
          expected: 5
          actual:   5
+  [PASS] F13 A0 stores exactly the OUTER canonical §16.2 identity of the original request
+         expected: 4f630b511845c5c4289476b256dc34634a8e4d4badd1acdf5a96cd2c4d2365c0
+         actual:   4f630b511845c5c4289476b256dc34634a8e4d4badd1acdf5a96cd2c4d2365c0
+  [PASS] F13 stored identity is NOT derived from post-validation mutable state
+         expected: True
+         actual:   True
+  [PASS] F13 exact retry replays after BOTH conversation and configuration drift
+         expected: t
+         actual:   t
+  [PASS] F13 stored identity unchanged by that drift
+         expected: 4f630b511845c5c4289476b256dc34634a8e4d4badd1acdf5a96cd2c4d2365c0
+         actual:   4f630b511845c5c4289476b256dc34634a8e4d4badd1acdf5a96cd2c4d2365c0
   [PASS] F13 stale configuration is refused KIV21
          expected: True
          actual:   True
@@ -789,6 +801,44 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          expected: 1
          actual:   1
 
+--- Y. CONCURRENCY: real second session, actual lock behaviour ---
+  [PASS] Y1 control: with no competing lock F13 proceeds to the transition (no timeout)
+         expected: True
+         actual:   True
+  [PASS] Y1 F13 BLOCKS on the conversation row lock, so it locks before deciding
+         expected: True
+         actual:   True
+  [PASS] Y1 the blocked timeout wrote no A0 row
+         expected: 0
+         actual:   0
+  [PASS] Y2 caller B's fresh human claim applies
+         expected: applied
+         actual:   applied
+  [PASS] Y2 stale timeout is refused KIV21 after the fresh claim
+         expected: True
+         actual:   True
+  [PASS] Y2 fresh human ownership was NOT overwritten
+         expected: HUMAN_ACTIVE|human|33333333-0000-0000-0000-000000000002|false|موظف يتابع|1
+         actual:   HUMAN_ACTIVE|human|33333333-0000-0000-0000-000000000002|false|موظف يتابع|1
+  [PASS] Y2 conversation remains HUMAN_ACTIVE with its assignee
+         expected: HUMAN_ACTIVE|33333333-0000-0000-0000-000000000002
+         actual:   HUMAN_ACTIVE|33333333-0000-0000-0000-000000000002
+  [PASS] Y2 the stale timeout wrote no A0 row
+         expected: 25
+         actual:   25
+  [PASS] Y3 F14 applies
+         expected: applied
+         actual:   applied
+  [PASS] Y3 A0 stores exactly F14's outer canonical §16.2 identity
+         expected: fed6558d63b13f019c8c8eb3d8d596f3310b61711d6c53d8c42ee3f43090cb30
+         actual:   fed6558d63b13f019c8c8eb3d8d596f3310b61711d6c53d8c42ee3f43090cb30
+  [PASS] Y3 exact F14 retry replays after state drift (no spurious KIV19)
+         expected: t
+         actual:   t
+  [PASS] Y3 stored identity did not drift
+         expected: fed6558d63b13f019c8c8eb3d8d596f3310b61711d6c53d8c42ee3f43090cb30
+         actual:   fed6558d63b13f019c8c8eb3d8d596f3310b61711d6c53d8c42ee3f43090cb30
+
 --- IDEMPOTENCE: SECOND APPLICATION of 0108 ---
   0108 second application: APPLIED CLEANLY
   [PASS] second application succeeds without error
@@ -802,7 +852,7 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          actual:   4
 
 ==============================================================================
-TOTAL 235 assertions — PASS 235 — FAIL 0
+TOTAL 251 assertions — PASS 251 — FAIL 0
 ==============================================================================
 
 --- TEARDOWN: destroy the disposable cluster ---
