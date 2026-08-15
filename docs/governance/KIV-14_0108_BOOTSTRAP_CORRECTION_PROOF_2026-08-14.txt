@@ -4,23 +4,23 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
 --- PROVENANCE ---
   repository            : /home/user/MaitreAI
   git branch            : fix/kiv14-0108-transactional-bootstrap
-  git HEAD              : 2738a70b0dcb894317b5a7cb8bb0f166fd2e9690
+  git HEAD              : 9850a88b4fe6a01452d28b02ac68e7c28e4abdab
   git tree state        : clean
   proof script          : scripts/proof-kiv13-m1-disposable-pg.py
-  proof script sha256   : 8a7bb2d5cac9477449cb8a7a539a695800e9016ecde04b6d47d4c5b838a56f5a
+  proof script sha256   : c90a0e285dae5da88c3b9866091abaabcc934a0b7620968986e99ee57f4623f9
   M-0 migration         : supabase/migrations/0107_kiv12_m0_constraint_prestage.sql
   M-0 bytes / sha256    : 4096 / 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6
   M-0 expected sha256   : 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6  match=YES
   M-1 migration         : supabase/migrations/0108_kiv13_m1_additive_scope1.sql
-  M-1 bytes             : 84502
-  M-1 sha256            : 7b24f4ea7f8c6ae56d6469cc998a71fcfb5cdd19f942c2701709a2f796701b92
-  M-1 git blob          : 1eb624e19c3c7b9d57f9f3f3debaec2d1a008d6e
+  M-1 bytes             : 85275
+  M-1 sha256            : d0e9a595399dcf60e653c92b05fd4d5174db3a6488200f8d0ab050fc1f9fb50b
+  M-1 git blob          : 6106d330bdae162b24d8d6b1a47710b52c4018f6
   M-0 git blob          : d492d2e58fee28c93fd84ec71081dc71c81fce0b
   M-0 blob@HEAD         : d492d2e58fee28c93fd84ec71081dc71c81fce0b
 --- ENVIRONMENT ---
   class                 : DISPOSABLE LOCAL — created by this script, destroyed at the end
-  PGDATA                : /var/lib/postgresql/kiv77_m1_proof
-  port / socket         : 55437 / /tmp   (listen_addresses='' — no TCP listener)
+  PGDATA                : /var/lib/postgresql/kiv77_6950_7c006b6ff6
+  port / socket         : 44671 / /var/tmp/kiv77_6950_7c006b6ff6   (listen_addresses='' — no TCP listener)
   database              : kivo_m1
   production contact    : NONE — no production host, credential or network egress
   scaffolding           : auth.uid()/auth.users and the Supabase roles anon,
@@ -98,6 +98,50 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
   [PASS] injection after the first ownership transfer: no A1 column survives
          expected: 0
          actual:   0
+
+--- R3. HOSTILE STARTING STATES -> SAFE ABORT + COMPLETE ROLLBACK ---
+  [PASS] W2 fixture: PUBLIC granted CREATE on schema public
+         expected: True
+         actual:   True
+  [PASS] W2 fixture: PUBLIC really holds schema CREATE
+         expected: t
+         actual:   t
+  [PASS] W2 migration ABORTS when PUBLIC holds schema CREATE
+         expected: True
+         actual:   True
+  [PASS] W2 abort is the governed fail-closed cleanup check, not an incidental error
+         expected: True
+         actual:   True
+  [PASS] W2: no kivo_control_owner role survives
+         expected: 0
+         actual:   0
+  [PASS] W2: no M-1 object survives
+         expected: 0
+         actual:   0
+  [PASS] W2: no A1 column survives
+         expected: 0
+         actual:   0
+  [PASS] W1 fixture: a non-superuser (kv_exec) recorded a membership
+         expected: True
+         actual:   True
+  [PASS] W1 fixture: at least one membership has a non-superuser grantor
+         expected: True
+         actual:   True
+  [PASS] W1 migration ABORTS on an unexpected membership state
+         expected: True
+         actual:   True
+  [PASS] W1 abort is a governed KIV77 cleanup check
+         expected: True
+         actual:   True
+  [PASS] W1: no M-1 object survives the abort
+         expected: 0
+         actual:   0
+  [PASS] W1: the migration's bootstrap SET/INHERIT grant did not survive the abort
+         expected: 0
+         actual:   0
+  [PASS] W1 the migration's final safety check verifies the surviving grantor is a superuser
+         expected: True
+         actual:   True
   [PASS] CORRECTED 0108 succeeds on the identical non-superuser fixture
          expected: True
          actual:   True
@@ -735,8 +779,8 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          expected: 5
          actual:   5
   [PASS] F13 A0 stores exactly the OUTER canonical §16.2 identity of the original request
-         expected: 2083495ae15f11656eb0c193fd8e50e87a2c81ccdf997d878e65fbd52bd4f701
-         actual:   2083495ae15f11656eb0c193fd8e50e87a2c81ccdf997d878e65fbd52bd4f701
+         expected: f5890e04059deff86f6e9d8a3ec7a5f81b912acfcae686c12b700155082dbb4b
+         actual:   f5890e04059deff86f6e9d8a3ec7a5f81b912acfcae686c12b700155082dbb4b
   [PASS] F13 stored identity is NOT derived from post-validation mutable state
          expected: True
          actual:   True
@@ -744,8 +788,8 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          expected: t
          actual:   t
   [PASS] F13 stored identity unchanged by that drift
-         expected: 2083495ae15f11656eb0c193fd8e50e87a2c81ccdf997d878e65fbd52bd4f701
-         actual:   2083495ae15f11656eb0c193fd8e50e87a2c81ccdf997d878e65fbd52bd4f701
+         expected: f5890e04059deff86f6e9d8a3ec7a5f81b912acfcae686c12b700155082dbb4b
+         actual:   f5890e04059deff86f6e9d8a3ec7a5f81b912acfcae686c12b700155082dbb4b
   [PASS] F13 stale configuration is refused KIV21
          expected: True
          actual:   True
@@ -970,9 +1014,13 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          actual:   4
 
 ==============================================================================
-TOTAL 288 assertions — PASS 288 — FAIL 0
+TOTAL 302 assertions — PASS 302 — FAIL 0
 ==============================================================================
 
---- TEARDOWN: destroy the disposable cluster ---
-  cluster removed       : YES
+--- TEARDOWN: destroy every task-owned artifact (KIV-77 W4) ---
+  run tag               : kiv77_6950_7c006b6ff6
+  cluster / PGDATA      : REMOVED
+  run dir (socket + temp/injected SQL): REMOVED
+  task-owned processes  : NONE
+  leftovers             : NONE
   production touched    : NO
