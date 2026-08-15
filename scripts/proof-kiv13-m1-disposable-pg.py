@@ -85,6 +85,15 @@ def qf_exec(path, db=DB, user=None):
     return (p.returncode == 0, (p.stdout + p.stderr).strip())
 
 
+def qf_exec_no_txn(path, db=DB, user=None):
+    """Q3 EVIDENCE ONLY. Applies a migration WITHOUT the mandatory whole-file transaction
+    wrapper, i.e. statement-by-statement under autocommit. This exists solely to demonstrate
+    that such a runner is unsafe. It must never be used to apply 0108 for real."""
+    p = sh(f'{PGBIN}/psql -h {SOCK} -p {PORT} -U {user or EXEC} -d {db} -X '
+           f'-v ON_ERROR_STOP=1 -f {path}')
+    return (p.returncode == 0, (p.stdout + p.stderr).strip())
+
+
 def qx(sql, db=DB):
     """Read-only/observational query issued AS the executor role."""
     _own(SCRATCH, sql)
@@ -453,7 +462,7 @@ join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prona
                            "bf5f982b8a8e9f622baae98d3a7460a8ac5443a3:"
                            "supabase/migrations/0108_kiv13_m1_additive_scope1.sql"],
                           capture_output=True, text=True).stdout
-    HIST.write_text(hist, encoding="utf-8"); HIST.chmod(0o644)
+    _own(HIST, hist)          # Q1: every task-created SQL artifact is 0600 owner-only
     check("historical accepted 0108 recovered at its accepted SHA-256",
           "8a435974b1b302223548b4aeadfa84ee0a11918a301d8698f7774a49f757a107",
           hashlib.sha256(hist.encode("utf-8")).hexdigest())
@@ -552,10 +561,15 @@ join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prona
     assert_rolled_back("W2")
 
     # ---- W1: an extra membership recorded by a NON-SUPERUSER grantor ----
-    # Note recorded honestly: a state with exactly ONE surviving membership whose grantor is a
-    # non-superuser cannot be constructed, because granting a role requires the grantor to hold
-    # a membership row itself. The grantor guard is therefore defence-in-depth, exercised here
-    # alongside the count guard: any membership recorded by a non-superuser must abort the run.
+    # LIMITATIONS, RECORDED EXPLICITLY (KIV-87 Q5):
+    #   * the hostile W1 grantor state CANNOT be isolated behaviourally, because the
+    #     membership-COUNT guard fires first; this test therefore exercises the guard family,
+    #     not the grantor branch alone;
+    #   * the accompanying source-substring assertion confirms the guard is present in the
+    #     file. It is NOT full independent behavioural proof of the grantor branch;
+    #   * INHERIT is required by THIS candidate's current statement order (grants and FKs that
+    #     follow the ownership transfer). It is not claimed to be unavoidable under every
+    #     possible design.
     fresh_repro()
     q("create role kv_probe nologin;", db=DB3)
     q("do $r$ begin if not exists (select 1 from pg_roles where rolname='kivo_control_owner')"
@@ -592,6 +606,39 @@ and (m.set_option or m.inherit_option);""", db=DB3)
           True, "not g.rolsuper" in M1.read_text(encoding="utf-8")
                 and "bootstrap superuser" in M1.read_text(encoding="utf-8"),
           ok=("not g.rolsuper" in M1.read_text(encoding="utf-8")))
+
+    # ---- Q3 (KIV-87): the whole-file transaction wrapper is MANDATORY ----
+    # Must run HERE, before the main application, because roles are CLUSTER-WIDE: once the
+    # main database has applied 0108 successfully the role exists and owns objects, so
+    # "the role must not survive" would be unfalsifiable. Same file, same injected failure,
+    # applied two ways - the only difference is the runner.
+    print("\n--- R4. KIV-87 Q3: MANDATORY WHOLE-FILE TRANSACTION WRAPPER ---")
+    corrected_q3 = M1.read_text(encoding="utf-8")
+    anchor_q3 = ("alter table public.member_identity_versions owner to kivo_control_owner;"
+                 "                  -- R3")
+    assert corrected_q3.count(anchor_q3) == 1
+    _own(INJECTED, corrected_q3.replace(
+        anchor_q3,
+        anchor_q3 + "\ndo $boom$ begin raise exception 'KIV87 Q3 INJECTED FAILURE'; end $boom$;\n", 1))
+    fresh_repro()
+    ok_q3, out_q3 = qf_exec_no_txn(str(INJECTED), db=DB3)
+    check("Q3 statement-by-statement: the injected failure aborts the run", True,
+          (not ok_q3) and "KIV87 Q3 INJECTED FAILURE" in out_q3,
+          ok=((not ok_q3) and "KIV87 Q3 INJECTED FAILURE" in out_q3))
+    _, q3_role = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
+    check("Q3 statement-by-statement: the role SURVIVES — the wrapper is MANDATORY", "1", q3_role)
+    _, q3_memb = q("""select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid
+where r.rolname='kivo_control_owner' and (m.set_option or m.inherit_option);""")
+    check("Q3 statement-by-statement: a usable SET/INHERIT bootstrap grant also survives",
+          "1", q3_memb)
+    drop_kco()
+    fresh_repro()
+    ok_q3b, _ = qf_exec(str(INJECTED), db=DB3)
+    check("Q3 with the wrapper: the identical failure aborts", True, not ok_q3b, ok=(not ok_q3b))
+    _, q3_role_b = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
+    check("Q3 with the wrapper: NO role survives", "0", q3_role_b)
+    check("Q3 with the wrapper: NO membership survives", "NONE", miv_membership(db=DB3))
+    drop_kco()
 
     # ---- corrected 0108 succeeds on the very same non-superuser fixture ----
     fresh_repro()
@@ -685,12 +732,16 @@ values ('55555555-0000-0000-0000-000000000001',{R},'ESCALATED',null,'AI_ACTIVE',
     # executor->kivo_control_owner membership (ADMIN TRUE / SET FALSE / INHERIT FALSE,
     # grantor = bootstrap superuser) that the executor cannot remove.
     #
-    # WHAT CHANGED, STATED PLAINLY: the permitted INBOUND membership count changed from
-    # ZERO to AT MOST ONE under the approved 14 August adjudication. That is a relaxation
-    # of the original condition, not a tightening. SET and INHERIT remain forbidden on any
-    # surviving membership, outbound membership remains forbidden entirely, and section Z
-    # additionally pins the surviving record's exact shape and its bootstrap-superuser
-    # grantor. The relaxation is exactly the scope the adjudication approved and no more.
+    # ASSERTION-HISTORY, STATED HONESTLY (KIV-87 Q2). The historical combined
+    # zero-membership assertion WAS REPLACED. It is not accurate to say that no assertion
+    # was removed, skipped or weakened:
+    #   * inbound membership changed from ZERO to AT MOST ONE - a RELAXATION;
+    #   * outbound membership remains ZERO, unchanged;
+    #   * the one permitted inbound row must be the exact unusable automatic row;
+    #   * compensating checks added in section Z: exact shape, bootstrap-superuser grantor,
+    #     no SET, no INHERIT, SET ROLE denied, and no inherited object permission.
+    # The relaxation is exactly the scope the 14 August adjudication approved and no more,
+    # and the compensating checks are what make it safe.
     _, mem_out = q("""select count(*) from pg_auth_members m
 join pg_roles g on g.oid=m.member where g.rolname='kivo_control_owner';""")
     check("R19 kivo_control_owner is a member of no role", "0", mem_out)
@@ -1768,6 +1819,47 @@ and (p.proname like 'kv_control%' or p.proname like 'kv_sys_control%' or p.prona
     check("MIV missing/extra/duplicate-open/identity-mismatch/non-version-1 all zero "
           "(measured against the contemporaneous population at application time)",
           "0/0/0/0/0", MIV_ANOM_AT_APPLY)
+
+    # ================= Q. KIV-87 QUALITY CORRECTIONS (Q1, Q3, Q4) =================
+    print("\n--- Q. KIV-87: FILE MODES, MANDATORY TRANSACTION RUNNER, PREFLIGHT RECORD ---")
+
+    # ---- Q1: every task-created SQL artifact is 0600 and owned by postgres ----
+    import stat as _stat
+    import pwd as _pwd
+    bad_mode = []
+    for f in sorted(RUNDIR.glob("*.sql")):
+        st = f.stat()
+        owner = _pwd.getpwuid(st.st_uid).pw_name
+        mode = oct(_stat.S_IMODE(st.st_mode))
+        if mode != "0o600" or owner != "postgres":
+            bad_mode.append(f"{f.name}:{mode}:{owner}")
+    _, rundir_mode = ("", oct(_stat.S_IMODE(RUNDIR.stat().st_mode)))
+    check("Q1 run directory is 0700", "0o700", rundir_mode)
+    check("Q1 EVERY task-created SQL file is 0600 and owned by postgres "
+          f"({len(list(RUNDIR.glob('*.sql')))} files checked, incl. historical_0108.sql)",
+          "none", ",".join(bad_mode) if bad_mode else "none")
+    check("Q1 historical_0108.sql was actually created by this run", True, HIST.exists(),
+          ok=HIST.exists())
+
+    # ---- Q3: the whole-file transaction wrapper is MANDATORY, proven by its absence ----
+    # Applied statement-by-statement (autocommit), a failure part-way leaves the role behind.
+    # This is why 0108 must only ever be applied with psql --single-transaction or a proved
+    # equivalent. The corrected candidate carries no top-level BEGIN/COMMIT of its own.
+    check("Q3 the governed applier uses the whole-file transaction wrapper", True,
+          "--single-transaction" in pathlib.Path(__file__).read_text(encoding="utf-8"),
+          ok=("--single-transaction" in pathlib.Path(__file__).read_text(encoding="utf-8")))
+    check("Q3 0108 carries no top-level BEGIN/COMMIT of its own (it relies on the runner)",
+          True,
+          not re.search(r"(?mi)^\s*(begin|commit)\s*;", M1.read_text(encoding="utf-8")),
+          ok=not re.search(r"(?mi)^\s*(begin|commit)\s*;", M1.read_text(encoding="utf-8")))
+    check("Q3 0108 header records the mandatory transaction runner as fail-closed", True,
+          "MANDATORY EXECUTION PRECONDITION" in M1.read_text(encoding="utf-8"),
+          ok=("MANDATORY EXECUTION PRECONDITION" in M1.read_text(encoding="utf-8")))
+    # ---- Q4: the mandatory SELECT-only production preflight is recorded in the source ----
+    check("Q4 0108 header records the mandatory Founder-authorized SELECT-only PUBLIC-CREATE "
+          "preflight before any future production application", True,
+          "SELECT-ONLY PRODUCTION PREFLIGHT" in M1.read_text(encoding="utf-8"),
+          ok=("SELECT-ONLY PRODUCTION PREFLIGHT" in M1.read_text(encoding="utf-8")))
 
     # ---------------------------------------------------------------- IDEMPOTENCE
     print("\n--- IDEMPOTENCE: SECOND APPLICATION of 0108 ---")

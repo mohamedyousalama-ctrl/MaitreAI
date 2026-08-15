@@ -39,6 +39,41 @@
 -- APPLICATION: this repository has no migration runner. Merging this file does not execute
 -- it. Applying it to any database is a separate, separately approved event under the governed
 -- migration ceremony. Not applied to production by the work order that authored it.
+--
+-- ============================================================================
+-- MANDATORY EXECUTION PRECONDITION - WHOLE-FILE TRANSACTION WRAPPER (KIV-87 Q3)
+-- ============================================================================
+-- THIS FILE MUST BE APPLIED AS ONE TRANSACTION, AND MUST NEVER BE APPLIED
+-- STATEMENT BY STATEMENT.
+--
+-- Use `psql --single-transaction -v ON_ERROR_STOP=1 -f <this file>`, or a runner
+-- independently proved to wrap the entire file in a single transaction.
+--
+-- This file deliberately carries NO top-level BEGIN/COMMIT of its own, so that it
+-- composes with a runner that supplies the transaction. Consequently the fail-closed
+-- guarantees below exist ONLY under such a runner:
+--   * section 1B grants temporary bootstrap capability; section 16 removes it. Under
+--     autocommit, a failure between them leaves the role and its grants behind.
+--   * section 16's verification raises on incomplete cleanup. That raise only undoes
+--     the migration if the whole file is inside one transaction.
+-- Applying this file statement-by-statement is therefore a governance violation, not a
+-- style preference. The governed proof demonstrates the difference executably: with the
+-- wrapper an injected failure leaves no role; without it, the role survives.
+--
+-- ============================================================================
+-- MANDATORY SELECT-ONLY PRODUCTION PREFLIGHT (KIV-87 Q4)
+-- ============================================================================
+-- Before ANY future production application of this migration, a separately
+-- Founder-authorized, SELECT-ONLY preflight must establish whether PUBLIC holds
+-- CREATE on schema public:
+--
+--   select has_schema_privilege('public', 'public', 'CREATE');
+--
+-- If PUBLIC does hold it, the bootstrap-only CREATE grant in section 1B cannot be
+-- cleanly withdrawn - has_schema_privilege() still reports CREATE via PUBLIC - and this
+-- migration is DESIGNED to abort in section 16 and roll back completely. That outcome is
+-- correct and must not be "fixed" in the moment: no role, grant, schema or permission
+-- repair may be improvised, and no production remediation is authorized by this file.
 -- ============================================================================
 
 -- 0108 depends on 0107's conversations_restaurant_id_id_key and on pgcrypto's digest.
