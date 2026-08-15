@@ -4,23 +4,23 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
 --- PROVENANCE ---
   repository            : /home/user/MaitreAI
   git branch            : fix/kiv14-0108-transactional-bootstrap
-  git HEAD              : 9850a88b4fe6a01452d28b02ac68e7c28e4abdab
+  git HEAD              : d772ff449418076799ca78a388231c33f4a7f9b1
   git tree state        : clean
   proof script          : scripts/proof-kiv13-m1-disposable-pg.py
-  proof script sha256   : c90a0e285dae5da88c3b9866091abaabcc934a0b7620968986e99ee57f4623f9
+  proof script sha256   : 3309f9cc06fa87861130d08bb10d814c905a28e0319eab826b7ab1422135addd
   M-0 migration         : supabase/migrations/0107_kiv12_m0_constraint_prestage.sql
   M-0 bytes / sha256    : 4096 / 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6
   M-0 expected sha256   : 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6  match=YES
   M-1 migration         : supabase/migrations/0108_kiv13_m1_additive_scope1.sql
-  M-1 bytes             : 85275
-  M-1 sha256            : d0e9a595399dcf60e653c92b05fd4d5174db3a6488200f8d0ab050fc1f9fb50b
-  M-1 git blob          : 6106d330bdae162b24d8d6b1a47710b52c4018f6
+  M-1 bytes             : 87489
+  M-1 sha256            : 8b3aa745f8e60178ebda7a9101fc4d654e252b8d27372924434d00345d59090c
+  M-1 git blob          : 6f38ae7f10560efeadd32dfd7d36ccd417cedaf6
   M-0 git blob          : d492d2e58fee28c93fd84ec71081dc71c81fce0b
   M-0 blob@HEAD         : d492d2e58fee28c93fd84ec71081dc71c81fce0b
 --- ENVIRONMENT ---
   class                 : DISPOSABLE LOCAL — created by this script, destroyed at the end
-  PGDATA                : /var/lib/postgresql/kiv77_6950_7c006b6ff6
-  port / socket         : 44671 / /var/tmp/kiv77_6950_7c006b6ff6   (listen_addresses='' — no TCP listener)
+  PGDATA                : /var/lib/postgresql/kiv77_7465_914b51003d
+  port / socket         : 42071 / /var/tmp/kiv77_7465_914b51003d   (listen_addresses='' — no TCP listener)
   database              : kivo_m1
   production contact    : NONE — no production host, credential or network egress
   scaffolding           : auth.uid()/auth.users and the Supabase roles anon,
@@ -142,6 +142,26 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
   [PASS] W1 the migration's final safety check verifies the surviving grantor is a superuser
          expected: True
          actual:   True
+
+--- R4. KIV-87 Q3: MANDATORY WHOLE-FILE TRANSACTION WRAPPER ---
+  [PASS] Q3 statement-by-statement: the injected failure aborts the run
+         expected: True
+         actual:   True
+  [PASS] Q3 statement-by-statement: the role SURVIVES — the wrapper is MANDATORY
+         expected: 1
+         actual:   1
+  [PASS] Q3 statement-by-statement: a usable SET/INHERIT bootstrap grant also survives
+         expected: 1
+         actual:   1
+  [PASS] Q3 with the wrapper: the identical failure aborts
+         expected: True
+         actual:   True
+  [PASS] Q3 with the wrapper: NO role survives
+         expected: 0
+         actual:   0
+  [PASS] Q3 with the wrapper: NO membership survives
+         expected: NONE
+         actual:   NONE
   [PASS] CORRECTED 0108 succeeds on the identical non-superuser fixture
          expected: True
          actual:   True
@@ -779,8 +799,8 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          expected: 5
          actual:   5
   [PASS] F13 A0 stores exactly the OUTER canonical §16.2 identity of the original request
-         expected: f5890e04059deff86f6e9d8a3ec7a5f81b912acfcae686c12b700155082dbb4b
-         actual:   f5890e04059deff86f6e9d8a3ec7a5f81b912acfcae686c12b700155082dbb4b
+         expected: db4b5eff7338f958a9aac13105c9552dc13e722b2c699ffb4fdb589d80e9ea8b
+         actual:   db4b5eff7338f958a9aac13105c9552dc13e722b2c699ffb4fdb589d80e9ea8b
   [PASS] F13 stored identity is NOT derived from post-validation mutable state
          expected: True
          actual:   True
@@ -788,8 +808,8 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          expected: t
          actual:   t
   [PASS] F13 stored identity unchanged by that drift
-         expected: f5890e04059deff86f6e9d8a3ec7a5f81b912acfcae686c12b700155082dbb4b
-         actual:   f5890e04059deff86f6e9d8a3ec7a5f81b912acfcae686c12b700155082dbb4b
+         expected: db4b5eff7338f958a9aac13105c9552dc13e722b2c699ffb4fdb589d80e9ea8b
+         actual:   db4b5eff7338f958a9aac13105c9552dc13e722b2c699ffb4fdb589d80e9ea8b
   [PASS] F13 stale configuration is refused KIV21
          expected: True
          actual:   True
@@ -1001,6 +1021,29 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          expected: 0/0/0/0/0
          actual:   0/0/0/0/0
 
+--- Q. KIV-87: FILE MODES, MANDATORY TRANSACTION RUNNER, PREFLIGHT RECORD ---
+  [PASS] Q1 run directory is 0700
+         expected: 0o700
+         actual:   0o700
+  [PASS] Q1 EVERY task-created SQL file is 0600 and owned by postgres (4 files checked, incl. historical_0108.sql)
+         expected: none
+         actual:   none
+  [PASS] Q1 historical_0108.sql was actually created by this run
+         expected: True
+         actual:   True
+  [PASS] Q3 the governed applier uses the whole-file transaction wrapper
+         expected: True
+         actual:   True
+  [PASS] Q3 0108 carries no top-level BEGIN/COMMIT of its own (it relies on the runner)
+         expected: True
+         actual:   True
+  [PASS] Q3 0108 header records the mandatory transaction runner as fail-closed
+         expected: True
+         actual:   True
+  [PASS] Q4 0108 header records the mandatory Founder-authorized SELECT-only PUBLIC-CREATE preflight before any future production application
+         expected: True
+         actual:   True
+
 --- IDEMPOTENCE: SECOND APPLICATION of 0108 ---
   0108 second application: APPLIED CLEANLY
   [PASS] second application succeeds without error
@@ -1014,11 +1057,11 @@ KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
          actual:   4
 
 ==============================================================================
-TOTAL 302 assertions — PASS 302 — FAIL 0
+TOTAL 315 assertions — PASS 315 — FAIL 0
 ==============================================================================
 
 --- TEARDOWN: destroy every task-owned artifact (KIV-77 W4) ---
-  run tag               : kiv77_6950_7c006b6ff6
+  run tag               : kiv77_7465_914b51003d
   cluster / PGDATA      : REMOVED
   run dir (socket + temp/injected SQL): REMOVED
   task-owned processes  : NONE
