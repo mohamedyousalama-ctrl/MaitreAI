@@ -1605,6 +1605,22 @@ begin
     if v_bad is not null then
       raise exception 'KIV77 surviving membership has an unexpected shape: %', v_bad;
     end if;
+
+    -- The permitted record is the one PostgreSQL creates automatically during CREATE ROLE,
+    -- whose grantor is the bootstrap superuser. A membership recorded by any non-superuser
+    -- grantor is NOT that record: it would be an ordinary grant that the executor could have
+    -- removed, so its survival means cleanup did not complete. Fail closed.
+    select g.rolname into v_bad
+      from pg_auth_members m
+      join pg_roles r on r.oid = m.roleid
+      join pg_roles g on g.oid = m.grantor
+     where r.rolname = 'kivo_control_owner'
+       and not g.rolsuper;
+    if v_bad is not null then
+      raise exception
+        'KIV77 surviving membership on kivo_control_owner was granted by non-superuser %, not by a bootstrap superuser',
+        v_bad;
+    end if;
   end if;
 
   if v_create then
