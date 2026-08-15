@@ -9,10 +9,16 @@ the cluster.
 LOCAL DISPOSABLE POSTGRESQL ONLY. Never contacts production, reads no production credential,
 and opens no network listener — the cluster is reachable only over a unix socket.
 
+KIV-77 (14 Aug 2026) extends this proof to the real production execution model: the cluster is
+PostgreSQL 17, and 0107/0108 are applied by a NON-SUPERUSER CREATEROLE role (kv_exec, modelled
+on Supabase `postgres`) in a single transaction — never by the bootstrap superuser. It adds
+section R (the historical 0108 failing for the production reason, plus failure-injection
+rollback) and section Z (transactional-bootstrap cleanup and final privilege state).
+
 Usage:  sudo python3 scripts/proof-kiv13-m1-disposable-pg.py
 Exit 0 = every assertion passed.
 """
-import subprocess, hashlib, pathlib, sys, re, os, shutil, time
+import subprocess, hashlib, pathlib, sys, re, os, shutil, time, uuid, atexit, socket as _socket
 
 SELF = pathlib.Path(__file__).resolve()
 ROOT = SELF.parent.parent
@@ -20,10 +26,31 @@ M0 = ROOT / "supabase/migrations/0107_kiv12_m0_constraint_prestage.sql"
 M1 = ROOT / "supabase/migrations/0108_kiv13_m1_additive_scope1.sql"
 M0_SHA = "3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6"
 
-PGBIN = "/usr/lib/postgresql/16/bin"
-PGDATA = "/var/lib/postgresql/kiv13_m1_proof"
-PORT, DB, USER, SOCK = "55433", "kivo_m1", "kivoproof", "/tmp"
-SCRATCH = pathlib.Path("/tmp/kiv13_m1_q.sql")
+PGBIN = "/usr/lib/postgresql/17/bin"          # KIV-77: production parity (PG 17)
+
+# KIV-77 W4: everything this run owns is namespaced by a unique tag, lives in an owner-only
+# directory, and is removed by a single teardown registered BEFORE the cluster is created —
+# so cleanup still runs if initdb or pg_ctl never succeeds.
+RUNTAG = f"kiv77_{os.getpid()}_{uuid.uuid4().hex[:10]}"
+RUNDIR = pathlib.Path("/var/tmp") / RUNTAG      # short path: also holds the unix socket
+PGDATA = f"/var/lib/postgresql/{RUNTAG}"
+
+
+def _free_port():
+    with _socket.socket() as s_:
+        s_.bind(("127.0.0.1", 0))
+        return str(s_.getsockname()[1])
+
+
+PORT, DB, USER, SOCK = _free_port(), "kivo_m1", "kivoproof", str(RUNDIR)
+# KIV-77: the governed NON-SUPERUSER execution role. Migrations are applied as this role,
+# never as the bootstrap superuser, so the proof exercises the real production privilege
+# model (Supabase `postgres`: rolsuper=false, rolcreaterole=true).
+EXEC = "kv_exec"
+DB3 = "kivo_repro"                            # isolated DB for the historical-0108 repro
+HIST = RUNDIR / "historical_0108.sql"
+INJECTED = RUNDIR / "injected_0108.sql"
+SCRATCH = RUNDIR / "q.sql"
 
 results = []
 
@@ -40,8 +67,7 @@ def git(args):
 def q(sql, db=DB, role=None):
     """Run SQL as USER, optionally SET ROLE first. -> (ok, output|error)."""
     body = (f"set role {role};\n" if role else "") + sql
-    SCRATCH.write_text(body, encoding="utf-8")
-    SCRATCH.chmod(0o644)
+    _own(SCRATCH, body)
     p = sh(f'{PGBIN}/psql -h {SOCK} -p {PORT} -U {USER} -d {db} -tAX -v ON_ERROR_STOP=1 -f {SCRATCH}')
     return (p.returncode == 0, (p.stdout if p.returncode == 0 else p.stderr).strip())
 
@@ -49,6 +75,39 @@ def q(sql, db=DB, role=None):
 def qf(path, db=DB):
     p = sh(f'{PGBIN}/psql -h {SOCK} -p {PORT} -U {USER} -d {db} -X -v ON_ERROR_STOP=1 -f {path}')
     return (p.returncode == 0, (p.stdout + p.stderr).strip())
+
+
+def qf_exec(path, db=DB, user=None):
+    """KIV-77: apply a migration exactly as the governed runner does — as the NON-SUPERUSER
+    execution role, in ONE transaction, so partial application is impossible."""
+    p = sh(f'{PGBIN}/psql -h {SOCK} -p {PORT} -U {user or EXEC} -d {db} -X '
+           f'-v ON_ERROR_STOP=1 --single-transaction -f {path}')
+    return (p.returncode == 0, (p.stdout + p.stderr).strip())
+
+
+def qf_exec_no_txn(path, db=DB, user=None):
+    """Q3 EVIDENCE ONLY. Applies a migration WITHOUT the mandatory whole-file transaction
+    wrapper, i.e. statement-by-statement under autocommit. This exists solely to demonstrate
+    that such a runner is unsafe. It must never be used to apply 0108 for real."""
+    p = sh(f'{PGBIN}/psql -h {SOCK} -p {PORT} -U {user or EXEC} -d {db} -X '
+           f'-v ON_ERROR_STOP=1 -f {path}')
+    return (p.returncode == 0, (p.stdout + p.stderr).strip())
+
+
+def qx(sql, db=DB):
+    """Read-only/observational query issued AS the executor role."""
+    _own(SCRATCH, sql)
+    p = sh(f'{PGBIN}/psql -h {SOCK} -p {PORT} -U {EXEC} -d {db} -tAX -v ON_ERROR_STOP=1 -f {SCRATCH}')
+    return (p.returncode == 0, (p.stdout if p.returncode == 0 else p.stderr).strip())
+
+
+def miv_membership(db=DB):
+    """Every surviving membership on kivo_control_owner, as grantor/admin/set/inherit."""
+    _, out = q("""select coalesce(string_agg(g.rolname||'/admin='||m.admin_option
+||'/set='||m.set_option||'/inherit='||m.inherit_option, ' ; ' order by g.rolname), 'NONE')
+from pg_auth_members m join pg_roles r on r.oid=m.roleid
+join pg_roles g on g.oid=m.grantor where r.rolname='kivo_control_owner';""", db=db)
+    return out.strip()
 
 
 def check(label, expected, actual, ok=None):
@@ -72,23 +131,59 @@ def accepts(label, sql, role=None):
     return check(label, "accepted", "accepted" if ok else f"REJECTED: {out.splitlines()[0][:100]}", ok=ok)
 
 
-BGFILE = pathlib.Path("/tmp/kiv13_m1_bg.sql")
+BGFILE = RUNDIR / "bg.sql"
 
 
 def bg(sql, db=DB):
     """Start a REAL second session and return the process. Used to hold locks concurrently."""
-    BGFILE.write_text(sql, encoding="utf-8")
-    BGFILE.chmod(0o644)
+    _own(BGFILE, sql)
     return subprocess.Popen(
         ["su", "postgres", "-c",
          f'{PGBIN}/psql -h {SOCK} -p {PORT} -U {USER} -d {db} -X -f {BGFILE}'],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
+def _own(path, text):
+    """KIV-77 W4: write a task-owned temp file readable ONLY by its owner (postgres)."""
+    path.write_text(text, encoding="utf-8")
+    os.chmod(path, 0o600)
+    shutil.chown(path, user="postgres")
+
+
 def destroy():
-    sh(f'{PGBIN}/pg_ctl -D {PGDATA} stop -m fast')
-    shutil.rmtree(PGDATA, ignore_errors=True)
-    SCRATCH.unlink(missing_ok=True)
+    """KIV-77 W4: remove EVERY artifact this task owns - cluster, processes, socket, PGDATA
+    and every temp/injected SQL file. Safe before the server ever starts, and idempotent."""
+    try:
+        subprocess.run(["su", "postgres", "-c", f'{PGBIN}/pg_ctl -D {PGDATA} stop -m immediate'],
+                       capture_output=True, text=True, timeout=60)
+    except Exception:
+        pass
+    try:  # only processes carrying THIS run's unique tag; other clusters are never touched
+        for pid in subprocess.run(["pgrep", "-f", RUNTAG],
+                                  capture_output=True, text=True).stdout.split():
+            if pid and pid != str(os.getpid()):
+                subprocess.run(["kill", "-9", pid], capture_output=True)
+    except Exception:
+        pass
+    for p in (pathlib.Path(PGDATA), RUNDIR):     # PGDATA, socket, temp and injected SQL
+        shutil.rmtree(p, ignore_errors=True)
+
+
+def teardown_report():
+    left = []
+    if pathlib.Path(PGDATA).exists():
+        left.append("PGDATA")
+    if RUNDIR.exists():
+        left.append("RUNDIR(socket/temp SQL)")
+    try:
+        if subprocess.run(["pgrep", "-f", RUNTAG], capture_output=True, text=True).stdout.strip():
+            left.append("processes")
+    except Exception:
+        pass
+    return left
+
+
+atexit.register(destroy)     # registered BEFORE any cluster exists (W4)
 
 
 print("=" * 78)
@@ -124,6 +219,9 @@ print(f"                          production proof of PostgREST behaviour.")
 
 print("\n--- PROVISION DISPOSABLE CLUSTER ---")
 destroy()
+RUNDIR.mkdir(parents=True, exist_ok=True)
+os.chmod(RUNDIR, 0o700)
+shutil.chown(RUNDIR, user="postgres")   # owner-only: only postgres (and root) may read
 os.makedirs(PGDATA, exist_ok=True)
 shutil.chown(PGDATA, user="postgres")
 os.chmod(PGDATA, 0o700)
@@ -137,6 +235,9 @@ if p.returncode:
     destroy(); sys.exit(1)
 ok, ver = q("select version();", db="postgres")
 print(f"  server version        : {ver}")
+q("do $r$ begin if not exists (select 1 from pg_roles where rolname='kv_exec') then create role kv_exec login nosuperuser createrole inherit; end if; end $r$;", db="postgres")
+_, _execattr = q("select 'super='||rolsuper||' createrole='||rolcreaterole||' inherit='||rolinherit from pg_roles where rolname='kv_exec';", db="postgres")
+print(f"  execution role        : kv_exec  {_execattr}   (NON-SUPERUSER — migrations run as this role)")
 
 try:
     q(f"drop database if exists {DB};", db="postgres")
@@ -240,6 +341,47 @@ grant select, insert, update, delete, truncate, references, trigger
 grant select, insert, update on public.conversations to anon, authenticated, service_role;
 grant select on public.members, public.restaurants, public.customers, public.messages
   to anon, authenticated, service_role;
+-- KIV-77 DISPOSABLE TEST SCAFFOLDING: the governed non-superuser execution role, modelled on
+-- the Supabase `postgres` role that actually runs migrations. It is NOT a superuser, it holds
+-- CREATEROLE, and it owns the application objects exactly as Supabase `postgres` does.
+do $r$ begin
+  if not exists (select 1 from pg_roles where rolname='kv_exec') then
+    create role kv_exec login nosuperuser createrole inherit;
+  end if;
+end $r$;
+grant usage, create on schema public to kv_exec;
+grant usage on schema extensions to kv_exec;
+grant usage on schema auth       to kv_exec;
+grant all on all tables    in schema auth to kv_exec;
+-- Supabase `postgres` owns the application schemas, which is why it can GRANT on them.
+-- Without this the fixture would be UNFAITHFUL: the executor would fail earlier, on the
+-- section-2 grants, instead of on the ownership transfer the defect is actually about.
+alter schema public     owner to kv_exec;
+alter schema auth       owner to kv_exec;
+alter schema extensions owner to kv_exec;
+alter function extensions.digest(bytea, text) owner to kv_exec;
+do $r$
+declare x record;
+begin
+  for x in select c.oid::regclass as o, c.relkind as k
+             from pg_class c join pg_namespace n on n.oid=c.relnamespace
+            where n.nspname in ('public','auth') and c.relkind in ('r','p','v','S')
+              and not exists (select 1 from pg_depend d
+                               where d.objid=c.oid and d.deptype='e')
+  loop
+    if x.k = 'S' then execute format('alter sequence %s owner to kv_exec', x.o);
+    else                execute format('alter table %s owner to kv_exec', x.o);
+    end if;
+  end loop;
+  for x in select p.oid::regprocedure as o
+             from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+            where n.nspname in ('public','auth') and p.prokind='f'
+              and not exists (select 1 from pg_depend d
+                               where d.objid=p.oid and d.deptype='e')
+  loop
+    execute format('alter function %s owner to kv_exec', x.o);
+  end loop;
+end $r$;
 """
     ok, out = q(BASE)
     print("  baseline built" if ok else f"  BASELINE FAILED: {out[:600]}")
@@ -302,15 +444,238 @@ insert into public.conversation_assignment_events
 join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='log_assignment_event';""")
     print(f"  seeded: members N={n_members}, one conversation, one legacy A1 row")
 
+
+    # ================= R. KIV-77: PRODUCTION-DISCOVERED PRIVILEGE DEFECT =================
+    # Runs BEFORE the corrected migration is applied anywhere, because roles are CLUSTER-WIDE:
+    # only here can "the role must not exist afterwards" be a meaningful rollback assertion.
+    print("\n--- R. HISTORICAL 0108 UNDER THE GOVERNED NON-SUPERUSER EXECUTOR ---")
+    _, execattr = q("select 'rolsuper='||rolsuper||' rolcreaterole='||rolcreaterole"
+                    "||' rolinherit='||rolinherit from pg_roles where rolname='kv_exec';")
+    check("executor mirrors Supabase postgres (non-superuser, CREATEROLE)",
+          "rolsuper=false rolcreaterole=true rolinherit=true", execattr)
+    _, pubcreate = q("select coalesce(has_schema_privilege('public','public','CREATE'),false);")
+    check("PUBLIC supplies no schema CREATE shortcut", "f", pubcreate)
+    _, kco_pre = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
+    check("kivo_control_owner does not exist before any application", "0", kco_pre)
+
+    hist = subprocess.run(["git", "-C", str(ROOT), "show",
+                           "bf5f982b8a8e9f622baae98d3a7460a8ac5443a3:"
+                           "supabase/migrations/0108_kiv13_m1_additive_scope1.sql"],
+                          capture_output=True, text=True).stdout
+    _own(HIST, hist)          # Q1: every task-created SQL artifact is 0600 owner-only
+    check("historical accepted 0108 recovered at its accepted SHA-256",
+          "8a435974b1b302223548b4aeadfa84ee0a11918a301d8698f7774a49f757a107",
+          hashlib.sha256(hist.encode("utf-8")).hexdigest())
+
+    def drop_kco():
+        """Roles are CLUSTER-WIDE. Return the cluster to a pre-M1 state so that
+        'the role must not survive' is a meaningful rollback assertion."""
+        q(f"drop database if exists {DB3};", db="postgres")
+        q("do $r$ begin if exists (select 1 from pg_roles where rolname='kivo_control_owner')"
+          " then execute 'drop role kivo_control_owner'; end if; end $r$;", db="postgres")
+
+    def fresh_repro():
+        drop_kco()
+        q(f"create database {DB3};", db="postgres")
+        q(BASE, db=DB3); q(SEED, db=DB3)
+        return qf_exec(str(M0), db=DB3)[0]
+
+    check("0107 applies as the non-superuser executor", True, fresh_repro(), ok=fresh_repro())
+    ok_h, out_h = qf_exec(str(HIST), db=DB3)
+    check("historical 0108 FAILS as the non-superuser executor", True, not ok_h, ok=(not ok_h))
+    check("...for the expected reason: cannot SET ROLE kivo_control_owner", True,
+          ("42501" in out_h or "must be able to SET ROLE" in out_h) and "kivo_control_owner" in out_h,
+          ok=(("42501" in out_h or "must be able to SET ROLE" in out_h) and "kivo_control_owner" in out_h))
+    _, h_role = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
+    check("historical 0108 rolled back completely: no role survives", "0", h_role)
+    _, h_tab = q("select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace "
+                 "where n.nspname='public' and c.relname in ('member_identity_versions',"
+                 "'control_operations','conversation_audit_failures');", db=DB3)
+    check("historical 0108 rolled back completely: no M-1 table survives", "0", h_tab)
+
+    # ---- failure injection: complete rollback at two required points ----
+    print("\n--- R2. FAILURE INJECTION -> COMPLETE ROLLBACK ---")
+    corrected = M1.read_text(encoding="utf-8")
+    BOOM = "\ndo $boom$ begin raise exception 'KIV77 INJECTED FAILURE'; end $boom$;\n"
+    INJECTS = [
+        ("after bootstrap privilege creation",
+         "grant create on schema public to kivo_control_owner;   -- bootstrap-only; revoked in section 16"),
+        ("after the first ownership transfer",
+         "alter table public.member_identity_versions owner to kivo_control_owner;                  -- R3"),
+    ]
+    for label, anchor in INJECTS:
+        assert corrected.count(anchor) == 1, f"inject anchor missing: {label}"
+        injected = corrected.replace(anchor, anchor + BOOM, 1)
+        _own(INJECTED, injected)
+        fresh_repro()
+        ok_i, out_i = qf_exec(str(INJECTED), db=DB3)
+        check(f"injection {label}: migration fails", True,
+              (not ok_i) and "KIV77 INJECTED FAILURE" in out_i,
+              ok=((not ok_i) and "KIV77 INJECTED FAILURE" in out_i))
+        _, i_role = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
+        check(f"injection {label}: no role survives", "0", i_role)
+        check(f"injection {label}: no membership survives", "NONE", miv_membership(db=DB3))
+        _, i_tab = q("select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace "
+                     "where n.nspname='public' and c.relname in ('member_identity_versions',"
+                     "'control_operations','conversation_audit_failures');", db=DB3)
+        check(f"injection {label}: no M-1 object survives", "0", i_tab)
+        _, i_col = q("select count(*) from pg_attribute where attrelid="
+                     "'public.conversation_assignment_events'::regclass and attnum>0 "
+                     "and not attisdropped and attname in ('transition_id','operation_id',"
+                     "'actor_kind','is_canonical','actor_member_version','actor_user_id',"
+                     "'actor_label','actor_role');", db=DB3)
+        check(f"injection {label}: no A1 column survives", "0", i_col)
+
+
+    # ---- R3. KIV-77 W2/W1: hostile pre-existing privilege states must ABORT SAFELY ----
+    print("\n--- R3. HOSTILE STARTING STATES -> SAFE ABORT + COMPLETE ROLLBACK ---")
+
+    def assert_rolled_back(tag):
+        _, r_role = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
+        check(f"{tag}: no kivo_control_owner role survives", "0", r_role)
+        _, r_tab = q("select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace "
+                     "where n.nspname='public' and c.relname in ('member_identity_versions',"
+                     "'control_operations','conversation_audit_failures');", db=DB3)
+        check(f"{tag}: no M-1 object survives", "0", r_tab)
+        _, r_col = q("select count(*) from pg_attribute where attrelid="
+                     "'public.conversation_assignment_events'::regclass and attnum>0 "
+                     "and not attisdropped and attname in ('transition_id','operation_id',"
+                     "'actor_kind','is_canonical','actor_member_version','actor_user_id',"
+                     "'actor_label','actor_role');", db=DB3)
+        check(f"{tag}: no A1 column survives", "0", r_col)
+
+    # ---- W2: PUBLIC already holds CREATE on schema public ----
+    # The bootstrap-only CREATE grant then cannot be cleanly withdrawn, because
+    # has_schema_privilege() still reports CREATE via PUBLIC. The migration must NOT declare
+    # success while kivo_control_owner effectively retains schema CREATE.
+    fresh_repro()
+    ok_pg, _ = qx("grant create on schema public to public;", db=DB3)
+    check("W2 fixture: PUBLIC granted CREATE on schema public", True, ok_pg, ok=ok_pg)
+    _, pub_has = q("select has_schema_privilege('public','public','CREATE');", db=DB3)
+    check("W2 fixture: PUBLIC really holds schema CREATE", "t", pub_has)
+    ok_w2, out_w2 = qf_exec(str(M1), db=DB3)
+    check("W2 migration ABORTS when PUBLIC holds schema CREATE", True, not ok_w2, ok=(not ok_w2))
+    check("W2 abort is the governed fail-closed cleanup check, not an incidental error", True,
+          "KIV77" in out_w2 and "CREATE on schema public" in out_w2,
+          ok=("KIV77" in out_w2 and "CREATE on schema public" in out_w2))
+    assert_rolled_back("W2")
+
+    # ---- W1: an extra membership recorded by a NON-SUPERUSER grantor ----
+    # LIMITATIONS, RECORDED EXPLICITLY (KIV-87 Q5):
+    #   * the hostile W1 grantor state CANNOT be isolated behaviourally, because the
+    #     membership-COUNT guard fires first; this test therefore exercises the guard family,
+    #     not the grantor branch alone;
+    #   * the accompanying source-substring assertion confirms the guard is present in the
+    #     file. It is NOT full independent behavioural proof of the grantor branch;
+    #   * INHERIT is required by THIS candidate's current statement order (grants and FKs that
+    #     follow the ownership transfer). It is not claimed to be unavoidable under every
+    #     possible design.
+    fresh_repro()
+    q("create role kv_probe nologin;", db=DB3)
+    q("do $r$ begin if not exists (select 1 from pg_roles where rolname='kivo_control_owner')"
+      " then create role kivo_control_owner nologin noinherit; end if; end $r$;", db=DB3)
+    q("grant kivo_control_owner to kv_exec with admin option, set false, inherit false;", db=DB3)
+    ok_pw, _ = qx("grant kivo_control_owner to kv_probe with admin option, set false, inherit false;",
+                  db=DB3)
+    check("W1 fixture: a non-superuser (kv_exec) recorded a membership", True, ok_pw, ok=ok_pw)
+    _, w1_grantors = q("""select string_agg(distinct g.rolsuper::text, ',' order by g.rolsuper::text)
+from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles g on g.oid=m.grantor
+where r.rolname='kivo_control_owner';""", db=DB3)
+    check("W1 fixture: at least one membership has a non-superuser grantor", True,
+          "false" in w1_grantors, ok=("false" in w1_grantors))
+    ok_w1, out_w1 = qf_exec(str(M1), db=DB3)
+    check("W1 migration ABORTS on an unexpected membership state", True, not ok_w1, ok=(not ok_w1))
+    check("W1 abort is a governed KIV77 cleanup check", True, "KIV77" in out_w1,
+          ok=("KIV77" in out_w1))
+    _, w1_tab = q("select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace "
+                  "where n.nspname='public' and c.relname in ('member_identity_versions',"
+                  "'control_operations','conversation_audit_failures');", db=DB3)
+    check("W1: no M-1 object survives the abort", "0", w1_tab)
+    _, w1_boot = q("""select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid
+join pg_roles g on g.oid=m.member where r.rolname='kivo_control_owner' and g.rolname='kv_exec'
+and (m.set_option or m.inherit_option);""", db=DB3)
+    check("W1: the migration's bootstrap SET/INHERIT grant did not survive the abort", "0", w1_boot)
+    q("do $r$ begin if exists (select 1 from pg_roles where rolname='kivo_control_owner')"
+      " then execute 'revoke kivo_control_owner from kv_probe'; "
+      " execute 'revoke kivo_control_owner from kv_exec'; end if; end $r$;", db=DB3)
+    drop_kco()
+    q("drop role if exists kv_probe;", db="postgres")
+
+    # ---- W1 positive: the migration source carries the grantor guard ----
+    check("W1 the migration's final safety check verifies the surviving grantor is a superuser",
+          True, "not g.rolsuper" in M1.read_text(encoding="utf-8")
+                and "bootstrap superuser" in M1.read_text(encoding="utf-8"),
+          ok=("not g.rolsuper" in M1.read_text(encoding="utf-8")))
+
+    # ---- Q3 (KIV-87): the whole-file transaction wrapper is MANDATORY ----
+    # Must run HERE, before the main application, because roles are CLUSTER-WIDE: once the
+    # main database has applied 0108 successfully the role exists and owns objects, so
+    # "the role must not survive" would be unfalsifiable. Same file, same injected failure,
+    # applied two ways - the only difference is the runner.
+    print("\n--- R4. KIV-87 Q3: MANDATORY WHOLE-FILE TRANSACTION WRAPPER ---")
+    corrected_q3 = M1.read_text(encoding="utf-8")
+    anchor_q3 = ("alter table public.member_identity_versions owner to kivo_control_owner;"
+                 "                  -- R3")
+    assert corrected_q3.count(anchor_q3) == 1
+    _own(INJECTED, corrected_q3.replace(
+        anchor_q3,
+        anchor_q3 + "\ndo $boom$ begin raise exception 'KIV87 Q3 INJECTED FAILURE'; end $boom$;\n", 1))
+    fresh_repro()
+    ok_q3, out_q3 = qf_exec_no_txn(str(INJECTED), db=DB3)
+    check("Q3 statement-by-statement: the injected failure aborts the run", True,
+          (not ok_q3) and "KIV87 Q3 INJECTED FAILURE" in out_q3,
+          ok=((not ok_q3) and "KIV87 Q3 INJECTED FAILURE" in out_q3))
+    _, q3_role = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
+    check("Q3 statement-by-statement: the role SURVIVES — the wrapper is MANDATORY", "1", q3_role)
+    _, q3_memb = q("""select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid
+where r.rolname='kivo_control_owner' and (m.set_option or m.inherit_option);""")
+    check("Q3 statement-by-statement: a usable SET/INHERIT bootstrap grant also survives",
+          "1", q3_memb)
+    drop_kco()
+    fresh_repro()
+    ok_q3b, _ = qf_exec(str(INJECTED), db=DB3)
+    check("Q3 with the wrapper: the identical failure aborts", True, not ok_q3b, ok=(not ok_q3b))
+    _, q3_role_b = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
+    check("Q3 with the wrapper: NO role survives", "0", q3_role_b)
+    check("Q3 with the wrapper: NO membership survives", "NONE", miv_membership(db=DB3))
+    drop_kco()
+
+    # ---- corrected 0108 succeeds on the very same non-superuser fixture ----
+    fresh_repro()
+    ok_c, out_c = qf_exec(str(M1), db=DB3)
+    if not ok_c:
+        print(f"    corrected-0108 failure detail: {out_c[-700:]}")
+    check("CORRECTED 0108 succeeds on the identical non-superuser fixture", True, ok_c, ok=ok_c)
+    check("corrected 0108 leaves exactly the one permitted membership", True,
+          miv_membership(db=DB3).endswith("/admin=true/set=false/inherit=false"),
+          ok=miv_membership(db=DB3).endswith("/admin=true/set=false/inherit=false"))
+    # leave the cluster pristine so the MAIN application below creates the role itself
+    drop_kco()
+
     print("\n--- APPLY 0107 (M-0), then 0108 (M-1), verbatim ---")
-    ok0, out0 = qf(str(M0))
-    print(f"  0107 first application : {'APPLIED CLEANLY' if ok0 else 'FAILED'}")
+    ok0, out0 = qf_exec(str(M0))
+    print(f"  0107 first application : {'APPLIED CLEANLY' if ok0 else 'FAILED'}  (as {EXEC}, single transaction)")
     if not ok0:
         print(out0[-900:]); destroy(); sys.exit(1)
-    ok1, out1 = qf(str(M1))
+    ok1, out1 = qf_exec(str(M1))
     print(f"  0108 first application : {'APPLIED CLEANLY' if ok1 else 'FAILED'}")
     if not ok1:
         print(out1[-3000:]); destroy(); sys.exit(1)
+
+    # KIV-77: MIV completeness must be measured against the population AT APPLICATION TIME.
+    # Later proof sections deliberately seed extra members (MIV maintenance is M-2, not M-1),
+    # so capturing it here is the only correct measurement point.
+    _, MIV_ANOM_AT_APPLY = q("""select
+ (select count(*) from public.members m where not exists
+    (select 1 from public.member_identity_versions v where v.member_id=m.id and v.valid_to is null))::text
+ ||'/'||(select count(*) from public.member_identity_versions v where not exists
+    (select 1 from public.members m where m.id=v.member_id))::text
+ ||'/'||(select count(*) from (select member_id from public.member_identity_versions
+    where valid_to is null group by member_id having count(*)>1) d)::text
+ ||'/'||(select count(*) from public.member_identity_versions v join public.members m on m.id=v.member_id
+    where v.valid_to is null and (v.restaurant_id,v.user_id,v.role)
+      is distinct from (m.restaurant_id,m.user_id,m.role))::text
+ ||'/'||(select count(*) from public.member_identity_versions where valid_to is null and version<>1)::text;""")
 
     # ---------------------------------------------------------------- A. ADDITIVE LAW
     print("\n--- A. ADDITIVE LAW (Revision 14 §15.4 M-1) ---")
@@ -362,10 +727,28 @@ values ('55555555-0000-0000-0000-000000000001',{R},'ESCALATED',null,'AI_ACTIVE',
 ||rolcreatedb::text||','||rolcreaterole::text from pg_roles where rolname='kivo_control_owner';""")
     check("R1 kivo_control_owner attributes (login,super,bypassrls,createdb,createrole)",
           "false,false,false,false,false", attrs)
-    _, mem = q("""select count(*) from pg_auth_members m
-join pg_roles r on r.oid=m.roleid join pg_roles g on g.oid=m.member
-where r.rolname='kivo_control_owner' or g.rolname='kivo_control_owner';""")
-    check("R2/R19 no role membership to or from kivo_control_owner", "0", mem)
+    # KIV-77 (14 Aug adjudication): this assertion is RE-STATED. Under a non-superuser
+    # CREATEROLE executor PostgreSQL unavoidably records one automatic
+    # executor->kivo_control_owner membership (ADMIN TRUE / SET FALSE / INHERIT FALSE,
+    # grantor = bootstrap superuser) that the executor cannot remove.
+    #
+    # ASSERTION-HISTORY, STATED HONESTLY (KIV-87 Q2). The historical combined
+    # zero-membership assertion WAS REPLACED. It is not accurate to say that no assertion
+    # was removed, skipped or weakened:
+    #   * inbound membership changed from ZERO to AT MOST ONE - a RELAXATION;
+    #   * outbound membership remains ZERO, unchanged;
+    #   * the one permitted inbound row must be the exact unusable automatic row;
+    #   * compensating checks added in section Z: exact shape, bootstrap-superuser grantor,
+    #     no SET, no INHERIT, SET ROLE denied, and no inherited object permission.
+    # The relaxation is exactly the scope the 14 August adjudication approved and no more,
+    # and the compensating checks are what make it safe.
+    _, mem_out = q("""select count(*) from pg_auth_members m
+join pg_roles g on g.oid=m.member where g.rolname='kivo_control_owner';""")
+    check("R19 kivo_control_owner is a member of no role", "0", mem_out)
+    _, mem_in = q("""select count(*)::text||'/'||coalesce(sum((m.set_option or m.inherit_option)::int),0)::text
+from pg_auth_members m join pg_roles r on r.oid=m.roleid where r.rolname='kivo_control_owner';""")
+    check("R2 at most the one PostgreSQL-mandated membership, carrying neither SET nor INHERIT",
+          True, mem_in in ("0/0", "1/0"), ok=(mem_in in ("0/0", "1/0")))
     _, disj = q("""select count(*) from pg_auth_members m
 join pg_roles r on r.oid=m.roleid join pg_roles g on g.oid=m.member
 where (r.rolname='authenticated' and g.rolname='service_role')
@@ -998,8 +1381,8 @@ values ('5e000000-0000-0000-0000-000000000001',{R2},'whatsapp','AI_ACTIVE','ai')
     if not ok2:
         print(f"    A1-2 fixture baseline failed: {out2[:300]}")
     q(SEED, db=DB2)
-    ok2a, _ = qf(str(M0), db=DB2)
-    ok2b, out2b = qf(str(M1), db=DB2)
+    ok2a, _ = qf_exec(str(M0), db=DB2)
+    ok2b, out2b = qf_exec(str(M1), db=DB2)
     check("0107 + 0108 apply cleanly on the A1-2 fixture", True, ok2a and ok2b, ok=(ok2a and ok2b))
 
     def q2(sql):
@@ -1369,9 +1752,118 @@ from public.conversations where id='{ZC}';""")
     _, stored_f14b = q(f"select request_fingerprint from public.control_operations where operation_id={NOP};")
     check("Y3 stored identity did not drift", expect_f14, stored_f14b)
 
+
+    # ================= Z. KIV-77 BOOTSTRAP / CLEANUP FINAL STATE =================
+    print("\n--- Z. KIV-77: BOOTSTRAP CLEANUP AND FINAL PRIVILEGE STATE ---")
+    memb = miv_membership()
+    check("exactly ONE membership survives on kivo_control_owner", 1,
+          0 if memb == "NONE" else len(memb.split(" ; ")),
+          ok=(memb != "NONE" and len(memb.split(" ; ")) == 1))
+    check("the surviving membership is the PostgreSQL-mandated automatic record "
+          "(ADMIN TRUE / SET FALSE / INHERIT FALSE)", True,
+          memb.endswith("/admin=true/set=false/inherit=false"),
+          ok=memb.endswith("/admin=true/set=false/inherit=false"))
+    _, grantor_is_boot = q("""select (g.rolname = (select rolname from pg_roles where oid=10))::text
+from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles g on g.oid=m.grantor
+where r.rolname='kivo_control_owner';""")
+    check("its grantor is the bootstrap superuser", "true", grantor_is_boot)
+    _, n_capable = q("""select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid
+where r.rolname='kivo_control_owner' and (m.set_option or m.inherit_option);""")
+    check("NO surviving membership carries SET or INHERIT", "0", n_capable)
+    ok_sr, out_sr = qx("set role kivo_control_owner; select 1;")
+    check("executor can NO LONGER 'SET ROLE kivo_control_owner'", True,
+          (not ok_sr) and "permission denied to set role" in out_sr,
+          ok=((not ok_sr) and "permission denied to set role" in out_sr))
+    _, boot_create = q("select has_schema_privilege('kivo_control_owner','public','CREATE');")
+    check("bootstrap-only schema CREATE was removed", "f", boot_create)
+    _, keep_usage = q("select has_schema_privilege('kivo_control_owner','public','USAGE');")
+    check("the governed schema USAGE grant is retained", "t", keep_usage)
+
+    # the executor must inherit NO object permission from the target role
+    _, inh = q("""select coalesce(string_agg(x,','),'none') from (
+  select case when has_table_privilege('kv_exec','public.member_identity_versions','INSERT')
+              then 'miv_insert' end as x
+  union all select case when has_table_privilege('kv_exec','public.control_operations','INSERT')
+              then 'a0_insert' end
+  union all select case when has_table_privilege('kv_exec','public.conversation_audit_failures','INSERT')
+              then 'a2_insert' end
+  union all select case when has_function_privilege('kv_exec','public.kv_control_transition(uuid,uuid,uuid,text,text,boolean,uuid,text,text,uuid,text,text,text,text)','EXECUTE')
+              then 'f15_execute' end) s where x is not null;""")
+    check("executor inherits NO object permission from kivo_control_owner", "none", inh)
+
+    # ownership actually landed where the accepted contract requires
+    _, own = q("""select string_agg(distinct pg_get_userbyid(relowner), ',') from pg_class c
+join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'
+and c.relname in ('member_identity_versions','control_operations','conversation_audit_failures');""")
+    check("MIV / A0 / A2 are owned by kivo_control_owner", "kivo_control_owner", own)
+    _, town = q("select pg_get_userbyid(typowner) from pg_type where typname='kv_control_result';")
+    check("kv_control_result is owned by kivo_control_owner", "kivo_control_owner", town)
+    _, fown = q("""select string_agg(distinct pg_get_userbyid(proowner), ',') from pg_proc p
+join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+and (p.proname like 'kv_control%' or p.proname like 'kv_sys_control%' or p.proname like 'kv_tg_%');""")
+    check("all governed functions are owned by kivo_control_owner", "kivo_control_owner", fown)
+    _, rattr = q("""select 'login='||rolcanlogin||' super='||rolsuper||' bypassrls='||rolbypassrls
+||' createdb='||rolcreatedb||' createrole='||rolcreaterole||' inherit='||rolinherit
+||' repl='||rolreplication from pg_roles where rolname='kivo_control_owner';""")
+    check("kivo_control_owner attributes are exactly as governed",
+          "login=false super=false bypassrls=false createdb=false createrole=false "
+          "inherit=false repl=false", rattr)
+
+    # members untouched + MIV completeness under the corrected migration
+    _, members_after_z = q("select md5(string_agg(id::text||user_id::text||role, ',' order by id)) "
+                           "from public.members;")
+    check("public.members identity fingerprint unchanged by the corrected migration",
+          members_before, members_after_z)
+    _, n_members_z = q("select count(*) from public.members;")
+    check("public.members count unchanged", n_members, n_members_z)
+    check("MIV missing/extra/duplicate-open/identity-mismatch/non-version-1 all zero "
+          "(measured against the contemporaneous population at application time)",
+          "0/0/0/0/0", MIV_ANOM_AT_APPLY)
+
+    # ================= Q. KIV-87 QUALITY CORRECTIONS (Q1, Q3, Q4) =================
+    print("\n--- Q. KIV-87: FILE MODES, MANDATORY TRANSACTION RUNNER, PREFLIGHT RECORD ---")
+
+    # ---- Q1: every task-created SQL artifact is 0600 and owned by postgres ----
+    import stat as _stat
+    import pwd as _pwd
+    bad_mode = []
+    for f in sorted(RUNDIR.glob("*.sql")):
+        st = f.stat()
+        owner = _pwd.getpwuid(st.st_uid).pw_name
+        mode = oct(_stat.S_IMODE(st.st_mode))
+        if mode != "0o600" or owner != "postgres":
+            bad_mode.append(f"{f.name}:{mode}:{owner}")
+    _, rundir_mode = ("", oct(_stat.S_IMODE(RUNDIR.stat().st_mode)))
+    check("Q1 run directory is 0700", "0o700", rundir_mode)
+    check("Q1 EVERY task-created SQL file is 0600 and owned by postgres "
+          f"({len(list(RUNDIR.glob('*.sql')))} files checked, incl. historical_0108.sql)",
+          "none", ",".join(bad_mode) if bad_mode else "none")
+    check("Q1 historical_0108.sql was actually created by this run", True, HIST.exists(),
+          ok=HIST.exists())
+
+    # ---- Q3: the whole-file transaction wrapper is MANDATORY, proven by its absence ----
+    # Applied statement-by-statement (autocommit), a failure part-way leaves the role behind.
+    # This is why 0108 must only ever be applied with psql --single-transaction or a proved
+    # equivalent. The corrected candidate carries no top-level BEGIN/COMMIT of its own.
+    check("Q3 the governed applier uses the whole-file transaction wrapper", True,
+          "--single-transaction" in pathlib.Path(__file__).read_text(encoding="utf-8"),
+          ok=("--single-transaction" in pathlib.Path(__file__).read_text(encoding="utf-8")))
+    check("Q3 0108 carries no top-level BEGIN/COMMIT of its own (it relies on the runner)",
+          True,
+          not re.search(r"(?mi)^\s*(begin|commit)\s*;", M1.read_text(encoding="utf-8")),
+          ok=not re.search(r"(?mi)^\s*(begin|commit)\s*;", M1.read_text(encoding="utf-8")))
+    check("Q3 0108 header records the mandatory transaction runner as fail-closed", True,
+          "MANDATORY EXECUTION PRECONDITION" in M1.read_text(encoding="utf-8"),
+          ok=("MANDATORY EXECUTION PRECONDITION" in M1.read_text(encoding="utf-8")))
+    # ---- Q4: the mandatory SELECT-only production preflight is recorded in the source ----
+    check("Q4 0108 header records the mandatory Founder-authorized SELECT-only PUBLIC-CREATE "
+          "preflight before any future production application", True,
+          "SELECT-ONLY PRODUCTION PREFLIGHT" in M1.read_text(encoding="utf-8"),
+          ok=("SELECT-ONLY PRODUCTION PREFLIGHT" in M1.read_text(encoding="utf-8")))
+
     # ---------------------------------------------------------------- IDEMPOTENCE
     print("\n--- IDEMPOTENCE: SECOND APPLICATION of 0108 ---")
-    ok2, out2 = qf(str(M1))
+    ok2, out2 = qf_exec(str(M1))
     print(f"  0108 second application: {'APPLIED CLEANLY' if ok2 else 'FAILED'}")
     if not ok2:
         print(out2[-1500:])
@@ -1393,9 +1885,14 @@ where n.nspname='public' and (p.proname like 'kv_control_%' or p.proname like 'k
                 print(f"  - {lab}: expected {e!r}, actual {a!r}")
     print("=" * 78)
 finally:
-    print("\n--- TEARDOWN: destroy the disposable cluster ---")
+    print("\n--- TEARDOWN: destroy every task-owned artifact (KIV-77 W4) ---")
     destroy()
-    print(f"  cluster removed       : {'YES' if not pathlib.Path(PGDATA).exists() else 'NO'}")
+    _left = teardown_report()
+    print(f"  run tag               : {RUNTAG}")
+    print(f"  cluster / PGDATA      : {'REMOVED' if not pathlib.Path(PGDATA).exists() else 'PRESENT'}")
+    print(f"  run dir (socket + temp/injected SQL): {'REMOVED' if not RUNDIR.exists() else 'PRESENT'}")
+    print(f"  task-owned processes  : {'NONE' if 'processes' not in _left else 'PRESENT'}")
+    print(f"  leftovers             : {_left if _left else 'NONE'}")
     print(f"  production touched    : NO")
 
 sys.exit(1 if any(not r[3] for r in results) else 0)

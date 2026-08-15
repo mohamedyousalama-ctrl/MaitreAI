@@ -39,6 +39,41 @@
 -- APPLICATION: this repository has no migration runner. Merging this file does not execute
 -- it. Applying it to any database is a separate, separately approved event under the governed
 -- migration ceremony. Not applied to production by the work order that authored it.
+--
+-- ============================================================================
+-- MANDATORY EXECUTION PRECONDITION - WHOLE-FILE TRANSACTION WRAPPER (KIV-87 Q3)
+-- ============================================================================
+-- THIS FILE MUST BE APPLIED AS ONE TRANSACTION, AND MUST NEVER BE APPLIED
+-- STATEMENT BY STATEMENT.
+--
+-- Use `psql --single-transaction -v ON_ERROR_STOP=1 -f <this file>`, or a runner
+-- independently proved to wrap the entire file in a single transaction.
+--
+-- This file deliberately carries NO top-level BEGIN/COMMIT of its own, so that it
+-- composes with a runner that supplies the transaction. Consequently the fail-closed
+-- guarantees below exist ONLY under such a runner:
+--   * section 1B grants temporary bootstrap capability; section 16 removes it. Under
+--     autocommit, a failure between them leaves the role and its grants behind.
+--   * section 16's verification raises on incomplete cleanup. That raise only undoes
+--     the migration if the whole file is inside one transaction.
+-- Applying this file statement-by-statement is therefore a governance violation, not a
+-- style preference. The governed proof demonstrates the difference executably: with the
+-- wrapper an injected failure leaves no role; without it, the role survives.
+--
+-- ============================================================================
+-- MANDATORY SELECT-ONLY PRODUCTION PREFLIGHT (KIV-87 Q4)
+-- ============================================================================
+-- Before ANY future production application of this migration, a separately
+-- Founder-authorized, SELECT-ONLY preflight must establish whether PUBLIC holds
+-- CREATE on schema public:
+--
+--   select has_schema_privilege('public', 'public', 'CREATE');
+--
+-- If PUBLIC does hold it, the bootstrap-only CREATE grant in section 1B cannot be
+-- cleanly withdrawn - has_schema_privilege() still reports CREATE via PUBLIC - and this
+-- migration is DESIGNED to abort in section 16 and roll back completely. That outcome is
+-- correct and must not be "fixed" in the moment: no role, grant, schema or permission
+-- repair may be improvised, and no production remediation is authorized by this file.
 -- ============================================================================
 
 -- 0108 depends on 0107's conversations_restaurant_id_id_key and on pgcrypto's digest.
@@ -66,7 +101,35 @@ begin
       nologin nosuperuser nobypassrls nocreatedb nocreaterole noinherit noreplication;
   end if;
 end $$;
--- Granted to no role, and receives no role membership. R2 / R19.
+-- R2 / R19: kivo_control_owner is granted to no role in the FINAL state. The only membership
+-- that may survive this migration is the one PostgreSQL creates automatically when a
+-- non-superuser CREATEROLE executor runs CREATE ROLE: grantor = bootstrap superuser,
+-- ADMIN TRUE, SET FALSE, INHERIT FALSE. That record is not removable by the executor and
+-- confers no ability to act as kivo_control_owner. Section 1B adds temporary capability on
+-- top of it; section 16 removes every trace of that temporary capability.
+
+-- ===========================================================================
+-- 1B. TRANSACTIONAL BOOTSTRAP — TEMPORARY, REMOVED BY SECTION 16 BEFORE SUCCESS
+--     PostgreSQL 16+ requires the executing role to be able to SET ROLE to a new owner
+--     before ALTER ... OWNER TO succeeds, and requires the new owner to hold CREATE on the
+--     containing schema. A Supabase-style non-superuser executor (rolsuper=false,
+--     rolcreaterole=true) receives neither from the automatic CREATE ROLE grant, which is
+--     recorded as ADMIN TRUE / SET FALSE / INHERIT FALSE. Without this section the first
+--     ownership transfer fails with SQLSTATE 42501 "must be able to SET ROLE".
+--
+--     SET is required for the ownership transfers themselves. INHERIT is required because
+--     later statements in this migration act on objects kivo_control_owner already owns:
+--     the MIV initialization INSERT under FORCE row level security, the GRANTs in sections 5
+--     and 15, and the A0/A2 foreign keys that reference the MIV table.
+--
+--     Both capabilities are transaction-scoped in effect: section 16 removes them, and any
+--     failure anywhere in this migration rolls the whole thing back, including the role.
+-- ===========================================================================
+do $$
+begin
+  execute format('grant kivo_control_owner to %I with inherit true, set true', current_user);
+end $$;
+grant create on schema public to kivo_control_owner;   -- bootstrap-only; revoked in section 16
 
 -- ===========================================================================
 -- 2. ADDITIVE PRIVILEGES FOR THE NEW PRINCIPAL ONLY — adjudication §2D
@@ -1519,6 +1582,86 @@ grant execute on function public.kv_control_create_safety_conversation(
 
 -- INTERNAL: F15 public.kv_control_transition and F16 public.kv_control_assert_actor keep the
 -- REVOKE and receive NO grant. Nothing is granted to anon or PUBLIC anywhere in this file.
+
+-- ===========================================================================
+-- 16. BOOTSTRAP CLEANUP — REMOVES EVERY TEMPORARY CAPABILITY FROM SECTION 1B
+--     Runs before this migration can succeed. The verification block below fails closed,
+--     so an incomplete cleanup aborts and rolls the entire migration back rather than
+--     leaving a privileged remnant behind.
+-- ===========================================================================
+revoke create on schema public from kivo_control_owner;
+do $$
+begin
+  execute format('revoke kivo_control_owner from %I', current_user);
+end $$;
+
+do $$
+declare
+  v_total    integer;
+  v_capable  integer;
+  v_create   boolean;
+  v_bad      text;
+begin
+  select count(*) into v_total
+    from pg_auth_members m join pg_roles r on r.oid = m.roleid
+   where r.rolname = 'kivo_control_owner';
+
+  -- No surviving membership may confer the ability to act as kivo_control_owner.
+  select count(*) into v_capable
+    from pg_auth_members m join pg_roles r on r.oid = m.roleid
+   where r.rolname = 'kivo_control_owner'
+     and (m.set_option or m.inherit_option);
+
+  v_create := pg_catalog.has_schema_privilege('kivo_control_owner', 'public', 'CREATE');
+
+  if v_capable <> 0 then
+    raise exception
+      'KIV77 bootstrap cleanup incomplete: % membership(s) still carry SET or INHERIT on kivo_control_owner',
+      v_capable;
+  end if;
+
+  -- At most one record may remain: the automatic CREATE ROLE grant made by the bootstrap
+  -- superuser, ADMIN TRUE / SET FALSE / INHERIT FALSE. A superuser executor produces none.
+  if v_total > 1 then
+    raise exception
+      'KIV77 bootstrap cleanup incomplete: % memberships remain on kivo_control_owner, at most 1 permitted',
+      v_total;
+  end if;
+
+  if v_total = 1 then
+    select g.rolname || '/admin=' || m.admin_option || '/set=' || m.set_option
+           || '/inherit=' || m.inherit_option
+      into v_bad
+      from pg_auth_members m
+      join pg_roles r on r.oid = m.roleid
+      join pg_roles g on g.oid = m.grantor
+     where r.rolname = 'kivo_control_owner'
+       and not (m.admin_option and not m.set_option and not m.inherit_option);
+    if v_bad is not null then
+      raise exception 'KIV77 surviving membership has an unexpected shape: %', v_bad;
+    end if;
+
+    -- The permitted record is the one PostgreSQL creates automatically during CREATE ROLE,
+    -- whose grantor is the bootstrap superuser. A membership recorded by any non-superuser
+    -- grantor is NOT that record: it would be an ordinary grant that the executor could have
+    -- removed, so its survival means cleanup did not complete. Fail closed.
+    select g.rolname into v_bad
+      from pg_auth_members m
+      join pg_roles r on r.oid = m.roleid
+      join pg_roles g on g.oid = m.grantor
+     where r.rolname = 'kivo_control_owner'
+       and not g.rolsuper;
+    if v_bad is not null then
+      raise exception
+        'KIV77 surviving membership on kivo_control_owner was granted by non-superuser %, not by a bootstrap superuser',
+        v_bad;
+    end if;
+  end if;
+
+  if v_create then
+    raise exception 'KIV77 bootstrap cleanup incomplete: kivo_control_owner retains CREATE on schema public';
+  end if;
+end $$;
 
 -- Rollback (governed, manual — never run as part of a replay): drop the sixteen functions and
 -- the five trigger functions, the three new tables, the type, the eight A1 columns, the eleven
