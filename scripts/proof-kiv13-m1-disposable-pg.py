@@ -585,8 +585,14 @@ where r.rolname='kivo_control_owner';""", db=DB3)
           "false" in w1_grantors, ok=("false" in w1_grantors))
     ok_w1, out_w1 = qf_exec(str(M1), db=DB3)
     check("W1 migration ABORTS on an unexpected membership state", True, not ok_w1, ok=(not ok_w1))
-    check("W1 abort is a governed KIV77 cleanup check", True, "KIV77" in out_w1,
-          ok=("KIV77" in out_w1))
+    # KIV-126 note: this assertion previously required the KIV77 label specifically. The
+    # KIV-126 member guard is deliberately ordered BEFORE the KIV77 count guard, so this
+    # hostile state now trips the more specific guard first and reports KIV126 naming
+    # kv_probe. The condition is NOT weakened - it still requires a governed fail-closed
+    # guard to abort the run, and now also requires the offending member to be named.
+    check("W1 abort is a governed KIV77/KIV126 cleanup check naming the offending member",
+          True, ("KIV77" in out_w1 or "KIV126" in out_w1) and "kv_probe" in out_w1,
+          ok=(("KIV77" in out_w1 or "KIV126" in out_w1) and "kv_probe" in out_w1))
     _, w1_tab = q("select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace "
                   "where n.nspname='public' and c.relname in ('member_identity_versions',"
                   "'control_operations','conversation_audit_failures');", db=DB3)
@@ -638,6 +644,116 @@ where r.rolname='kivo_control_owner' and (m.set_option or m.inherit_option);""")
     _, q3_role_b = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
     check("Q3 with the wrapper: NO role survives", "0", q3_role_b)
     check("Q3 with the wrapper: NO membership survives", "NONE", miv_membership(db=DB3))
+    drop_kco()
+
+
+    # ================= R5. KIV-126: EXECUTOR IDENTITY + PRE-EXISTING ROLE GUARD =========
+    # Roles are CLUSTER-WIDE, so these run BEFORE the main application: only here can
+    # "no role survives" and "the role must not be adopted" be falsifiable.
+    print("\n--- R5. KIV-126: MEMBER IDENTITY AND PRE-EXISTING ROLE ATTRIBUTE GUARDS ---")
+
+    def kco_rollback_proof(tag):
+        _, n_role = q("select count(*) from pg_roles where rolname='kivo_control_owner';")
+        _, n_tab = q("select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace "
+                     "where n.nspname='public' and c.relname in ('member_identity_versions',"
+                     "'control_operations','conversation_audit_failures');", db=DB3)
+        _, n_col = q("select count(*) from pg_attribute where attrelid="
+                     "'public.conversation_assignment_events'::regclass and attnum>0 "
+                     "and not attisdropped and attname in ('transition_id','operation_id',"
+                     "'actor_kind','is_canonical','actor_member_version','actor_user_id',"
+                     "'actor_label','actor_role');", db=DB3)
+        check(f"{tag}: no M-1 object survives the abort", "0", n_tab)
+        check(f"{tag}: no A1 column survives the abort", "0", n_col)
+        return n_role
+
+    # ---- (a) UNRELATED MEMBERSHIP: a membership held by someone other than the executor ----
+    # Constructed so the executor still holds ADMIN (so section 1B can run) and neither
+    # membership carries SET/INHERIT, which isolates the KIV-126 member guard: it fires
+    # before the count guard and names the offending member.
+    fresh_repro()
+    q("drop role if exists kv_probe;", db="postgres")
+    q("create role kv_probe nologin;", db="postgres")
+    qx("create role kivo_control_owner nologin nosuperuser nobypassrls nocreatedb "
+       "nocreaterole noinherit noreplication;", db=DB3)
+    ok_g, _ = qx("grant kivo_control_owner to kv_probe with admin option, set false, inherit false;",
+                 db=DB3)
+    check("K126(a) fixture: an unrelated role holds a membership on kivo_control_owner",
+          True, ok_g, ok=ok_g)
+    _, memb_pre = q("""select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid
+join pg_roles mm on mm.oid=m.member where r.rolname='kivo_control_owner' and mm.rolname='kv_probe';""")
+    check("K126(a) fixture: that unrelated membership really exists", "1", memb_pre)
+    ok_a, out_a = qf_exec(str(M1), db=DB3)
+    check("K126(a) migration ABORTS on a membership held by a non-executor", True, not ok_a,
+          ok=(not ok_a))
+    check("K126(a) the abort is the governed KIV126 member guard, naming the offender", True,
+          "KIV126" in out_a and "kv_probe" in out_a and "governed executor" in out_a,
+          ok=("KIV126" in out_a and "kv_probe" in out_a and "governed executor" in out_a))
+    kco_rollback_proof("K126(a)")
+    _, boot_a = q("""select count(*) from pg_auth_members m join pg_roles r on r.oid=m.roleid
+where r.rolname='kivo_control_owner' and (m.set_option or m.inherit_option);""")
+    check("K126(a) no bootstrap SET/INHERIT grant survives the abort", "0", boot_a)
+    q("do $r$ begin if exists (select 1 from pg_roles where rolname='kivo_control_owner')"
+      " then execute 'revoke kivo_control_owner from kv_probe'; end if; end $r$;", db=DB3)
+    drop_kco(); q("drop role if exists kv_probe;", db="postgres")
+
+    # ---- (b) EVERY unsafe pre-existing role attribute must abort and roll back ----
+    UNSAFE = [("LOGIN", "login"), ("SUPERUSER", "superuser"), ("BYPASSRLS", "bypassrls"),
+              ("CREATEDB", "createdb"), ("CREATEROLE", "createrole"), ("INHERIT", "inherit"),
+              ("REPLICATION", "replication")]
+    for label, attr in UNSAFE:
+        fresh_repro()
+        # created by the BOOTSTRAP SUPERUSER: a non-superuser executor cannot mint
+        # SUPERUSER/BYPASSRLS/REPLICATION, and the guard must hold however the role arrived.
+        # LOGIN is the one attribute that contradicts the NOLOGIN default, so it replaces
+        # it rather than being appended to it.
+        spec = "login" if attr == "login" else f"nologin {attr}"
+        okc, outc = q(f"create role kivo_control_owner {spec};", db=DB3)
+        check(f"K126(b) fixture: pre-existing role carries {label}", True, okc,
+              ok=okc) or print(f"    {outc[:160]}")
+        ok_b, out_b = qf_exec(str(M1), db=DB3)
+        check(f"K126(b) {label}: migration ABORTS on the unsafe pre-existing role", True,
+              (not ok_b) and "KIV126" in out_b and label in out_b,
+              ok=((not ok_b) and "KIV126" in out_b and label in out_b))
+        kco_rollback_proof(f"K126(b) {label}")
+        drop_kco()
+
+    # ---- (c) a SAFE pre-existing role must be ACCEPTED ----
+    # Superuser pre-creates the governed role with every safe attribute and grants the
+    # executor ADMIN (no SET/INHERIT), mirroring a legitimate earlier partial install.
+    fresh_repro()
+    q("create role kivo_control_owner nologin nosuperuser nobypassrls nocreatedb "
+      "nocreaterole noinherit noreplication;", db=DB3)
+    q("grant kivo_control_owner to kv_exec with admin option, set false, inherit false;", db=DB3)
+    ok_c, out_c = qf_exec(str(M1), db=DB3)
+    if not ok_c:
+        print(f"    K126(c) failure detail: {out_c[-700:]}")
+    check("K126(c) a SAFE pre-existing kivo_control_owner is accepted and the migration succeeds",
+          True, ok_c, ok=ok_c)
+    check("K126(c) the surviving membership belongs to the governed executor", True,
+          miv_membership(db=DB3).startswith(USER + "/") or "/admin=true" in miv_membership(db=DB3),
+          ok=("/admin=true" in miv_membership(db=DB3)))
+    _, c_member = q("""select coalesce(string_agg(distinct mm.rolname, ','),'NONE')
+from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles mm on mm.oid=m.member
+where r.rolname='kivo_control_owner';""")
+    check("K126(c) no membership belongs to any role other than the executor", EXEC, c_member)
+    _, c_attr = q("""select 'login='||rolcanlogin||' super='||rolsuper||' bypassrls='||rolbypassrls
+||' createdb='||rolcreatedb||' createrole='||rolcreaterole||' inherit='||rolinherit
+||' repl='||rolreplication from pg_roles where rolname='kivo_control_owner';""")
+    check("K126(c) the adopted role still carries exactly the governed safe attributes",
+          "login=false super=false bypassrls=false createdb=false createrole=false "
+          "inherit=false repl=false", c_attr)
+    # ---- (d) second application must NOT reinitialize MIV ----
+    _, miv_1 = q("select count(*) from public.member_identity_versions;", db=DB3)
+    _, miv_min1 = q("select coalesce(min(valid_from)::text,'none') from public.member_identity_versions;",
+                    db=DB3)
+    ok_d, out_d = qf_exec(str(M1), db=DB3)
+    check("K126(d) second application of 0108 succeeds (idempotent)", True, ok_d, ok=ok_d)
+    _, miv_2 = q("select count(*) from public.member_identity_versions;", db=DB3)
+    _, miv_min2 = q("select coalesce(min(valid_from)::text,'none') from public.member_identity_versions;",
+                    db=DB3)
+    check("K126(d) second application did NOT reinitialize MIV (row count unchanged)", miv_1, miv_2)
+    check("K126(d) second application did NOT rewrite MIV rows (valid_from unchanged)",
+          miv_min1, miv_min2)
     drop_kco()
 
     # ---- corrected 0108 succeeds on the very same non-superuser fixture ----
