@@ -7,10 +7,28 @@
 | Issue | KIV-146 — Define bounded production-change maintenance and rollback procedure for alpha |
 | Milestone | G2 — Security, order truth, WhatsApp & safety |
 | Authored | 17 August 2026 |
-| Status | **DRAFT — awaiting fresh independent review.** Not accepted. Not self-approved. |
+| Revision | **REVISION 2** — remediates KIV-160 Attempt 1 BLOCK findings F-1 … F-7 |
+| Supersedes | Revision 1, commit `369faa747c48b10a01749b092e50a65e15f4d159` (BLOCKED by KIV-160 Attempt 1) |
+| Status | **DRAFT — awaiting a fresh independent Engineering review of this exact revision.** Not accepted. Not self-approved. |
 | Governs | KIV-14 (Change Class A) and KIV-25 (Change Class B) only |
 | Replaces | The standalone full P0-MAINT / M2 maintenance-interleave program as an alpha milestone (KIV-142 §"Maintenance/control-plane simplification") |
 | Authorizes | **Nothing.** This document is a procedure/evidence gate. |
+| Authority status as at | **2026-08-17T16:53:26Z** (§2.1) |
+
+### Revision 2 change log — KIV-160 Attempt 1 findings
+
+| Finding | Disposition | Sections changed |
+|---|---|---|
+| **F-1** — Class B read-back 6 could be deferred fail-open | Fixed | §7.2, **§7.3**, §7.4, §6 (HS-25) |
+| **F-2** — Class B reversal authority ambiguous | Fixed, PM's preferred fail-closed design adopted | §2.7, §5.1, **§5.4**, §6 (HS-26, HS-27) |
+| **F-3** — §2.6 success membership state contradicted §7.1 / `0108` §16 | Fixed | §2.6, §5.3 step 8 |
+| **F-4** — stale KIV-144 / KIV-159 authority wording | Fixed, single timestamp | header, §2.1 |
+| **F-5** — EXECUTE-grant cross-reference `§7.2` → `§7.1` | Fixed | §2.6 |
+| **F-6** — PF-4a/PF-4b reflowed while labelled mandated text | Fixed, restored byte-identical | §2.5 |
+| **F-7** — reviewer recommendation: wildcard function-pattern preflight | **Adopted** as read-only PF-4f. `0108` **not modified** | §2.5 (PF-4f), §2.6, §5.3 step 3, §7.1, §6 (HS-24) |
+
+Revision 2 is documentation-only. No migration, source, runtime or production artifact was
+changed. `0108` is untouched.
 
 ---
 
@@ -29,7 +47,8 @@ run as a standing program.
 * Not a backup/restore or PITR runbook. Point-in-time recovery and project restore are
   **explicitly excluded as rollback mechanisms** (§5.6).
 * Not production authority. Founder authority for Change Class A lives in KIV-159; for
-  Change Class B in KIV-144 (Done). Completion and independent acceptance of KIV-146 is a
+  Change Class B in KIV-144. **§2.1 is the single place this document states their status, as at
+  one timestamp** — do not restate it elsewhere. Completion and independent acceptance of KIV-146 is a
   **precondition** of those authorities being exercised, never a substitute for them.
 * Not a licence to touch anything outside the exact boundary in §2.
 
@@ -68,14 +87,24 @@ reviewer accepts it.
 | | **Change Class A** | **Change Class B** |
 |---|---|---|
 | Issue | KIV-14 — M-1 / `0108` first production application | KIV-25 — minimum alpha security hardening |
-| Authority | KIV-159 APPROVE (not yet recorded at authoring time) | KIV-144 (Done) |
+| Authority issue | KIV-159 | KIV-144 |
+| Authority status | **Done** — recorded 2026-08-17T15:59:34Z | **Done** — recorded 2026-08-17T15:59:19Z |
 | Nature | Additive DDL + one insert into a new table | Mutating owner / RLS / grant change on existing objects |
-| Reversible by transaction alone | **Yes** (§5.2) | **No** — needs the §4 before-state to reverse (§5.4) |
+| Reversible by transaction alone | **Yes** (§5.2) | **No** — needs the §3.3 before-state to restore (§5.4) |
 | Block/drain required | **No** (§4.2) | **Conditional** (§4.3) |
+| Post-execution acceptance | KIV-159 condition 5 — separately released independent reviewer (§7.4) | KIV-145 (§7.4) |
 
-Nothing else. A change that is not one of these two is out of scope; do not stretch this
-procedure to cover it, and do not treat KIV-144 as covering Class A (KIV-159 says so
-explicitly).
+**Authority status is stated as at 2026-08-17T16:53:26Z**, the single timestamp for every
+authority fact in this document. Both authorities existed when Revision 2 was written; neither
+is pending. Anyone re-reading this document later must re-read KIV-159 and KIV-144 rather than
+rely on this table.
+
+**What those authorities do and do not do.** Each creates authority only. Neither executes
+production, and neither substitutes for the §2.7 entry checklist — KIV-159 condition 1 makes
+independent acceptance of *this procedure* a precondition of Class A execution, and PM must
+separately release the exact executor. A change that is not Class A or Class B is out of scope;
+do not stretch this procedure to cover it, and do not treat KIV-144 as covering Class A
+(KIV-159 says so explicitly).
 
 ### 2.2 Target identity — PF-1
 
@@ -141,27 +170,41 @@ Read-only, separately Founder-authorized, run immediately before the mutation, i
 session and against the same pinned target. **Recording these here does not authorize running
 them.**
 
-**PF-4a — `kivo_control_owner` must not pre-exist** (KIV-14 mandated text):
+**Byte-identity rule for PF-4a and PF-4b.** The two statements below are reproduced
+**byte-identically from the KIV-14 mandated text**, unreflowed, including line breaks, spacing
+and clause order. The executor must nevertheless re-copy them from KIV-14 at execution time and
+diff them against this file. If the two differ in any byte, **KIV-14 is authoritative** and the
+divergence is a **HARD STOP (HS-2)** reported to PM — not something to reconcile in the moment.
+
+**PF-4a — `kivo_control_owner` must not pre-exist** (KIV-14 mandated text, verbatim):
 
 ```sql
 select
-  r.rolname, r.rolsuper, r.rolinherit, r.rolcreaterole, r.rolcreatedb,
-  r.rolcanlogin, r.rolreplication, r.rolbypassrls
+  r.rolname,
+  r.rolsuper,
+  r.rolinherit,
+  r.rolcreaterole,
+  r.rolcreatedb,
+  r.rolcanlogin,
+  r.rolreplication,
+  r.rolbypassrls
 from pg_roles r
 where r.rolname = 'kivo_control_owner';
 ```
 
-**PF-4b — no standing membership on it** (KIV-14 mandated text):
+**PF-4b — no standing membership on it** (KIV-14 mandated text, verbatim):
 
 ```sql
 select
   member_role.rolname as member_role,
   target_role.rolname as granted_role,
   grantor_role.rolname as grantor_role,
-  m.admin_option, m.inherit_option, m.set_option
+  m.admin_option,
+  m.inherit_option,
+  m.set_option
 from pg_auth_members m
-join pg_roles member_role  on member_role.oid  = m.member
-join pg_roles target_role  on target_role.oid  = m.roleid
+join pg_roles member_role on member_role.oid = m.member
+join pg_roles target_role on target_role.oid = m.roleid
 join pg_roles grantor_role on grantor_role.oid = m.grantor
 where target_role.rolname = 'kivo_control_owner'
    or member_role.rolname = 'kivo_control_owner'
@@ -194,14 +237,70 @@ Expected: one row. Absent = **HARD STOP (HS-6)** (`0108` would abort on its own 
 
 **PF-4e (Change Class B only) — the before-state of every invariant to be changed** must be
 readable and read back *before* the change, per §3.3. If it cannot be captured, Class B must
-not execute: its rollback is defined by that capture and nothing else. **HARD STOP (HS-7)**.
+not execute: its restoration is defined by that capture and nothing else. **HARD STOP (HS-7)**.
+
+**PF-4f (Change Class A) — no unexpected pre-existing function matches the lockdown
+patterns.** Adopted from the KIV-160 reviewer recommendation (F-7).
+
+`0108` section 15 does not enumerate its functions by name. It loops over `pg_proc` selecting
+every function in schema `public` whose name matches `kv_control_%`, `kv_sys_control_%` or
+`kv_tg_%`, and for each match performs `ALTER FUNCTION ... OWNER TO kivo_control_owner` and
+`REVOKE ALL ON FUNCTION ... FROM public, anon, authenticated, service_role`. Any pre-existing
+function matching one of those patterns — however it came to exist — would therefore be
+silently re-owned and stripped of its grants, which is a change to a pre-existing object and
+outside the additive boundary declared in §2.6.
+
+This read-only preflight closes that gap without touching the migration:
+
+```sql
+select
+  p.oid::regprocedure                as function_signature,
+  pg_catalog.pg_get_userbyid(p.proowner) as current_owner
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and (p.proname like 'kv_control_%'
+    or p.proname like 'kv_sys_control_%'
+    or p.proname like 'kv_tg_%')
+order by 1;
+```
+
+Expected: **zero rows** before the first Class A application. Any returned row = **HARD STOP
+(HS-24)**. Do not drop, rename, re-own or re-grant the offending function, and do not edit
+`0108` to narrow its pattern — both are outside this procedure's authority. Report the exact
+signature and owner to PM for adjudication.
+
+`0108` is **not modified** by this procedure. PF-4f is a read-only assertion about production
+state, added because the migration's wildcard is a source characteristic the procedure can
+guard but must not change.
 
 ### 2.6 Exact affected boundary
 
 **Change Class A — objects this change may create or write. Nothing else.**
 
 *New role:* `kivo_control_owner` — `NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE
-NOINHERIT NOREPLICATION`, granted to no role at success.
+NOINHERIT NOREPLICATION`.
+
+**Expected membership state at success** (stated here to agree exactly with §7.1 and `0108`
+section 16; the governed production executor is a non-superuser):
+
+* `0108` section 1B temporarily grants `kivo_control_owner` to the executing role `WITH INHERIT
+  TRUE, SET TRUE`, and grants that role bootstrap-only `CREATE` on schema `public`. **Section 16
+  withdraws both before the migration can succeed**, and its verification fails closed, so an
+  incomplete withdrawal aborts and rolls the whole migration back.
+* At success, **no surviving membership may confer the ability to act as the role**: zero
+  memberships carry `set_option` or `inherit_option`.
+* For the **governed non-superuser executor** (`postgres`: `rolsuper=false`,
+  `rolcreaterole=true`), **exactly one membership record remains** — the one PostgreSQL creates
+  automatically during `CREATE ROLE` — and it must be held by the executing role itself, with
+  `admin_option=true`, `set_option=false`, `inherit_option=false`, and a **superuser grantor**.
+  A membership held by any other role, or recorded by a non-superuser grantor, is rejected by
+  section 16 by name.
+* A superuser executor would leave **no** membership record. That case is not the governed
+  production path and must not be arranged to make this assertion simpler.
+
+So the correct expectation is **"no membership that can act as the role, and at most one
+inert `ADMIN`-only record held by the executor"** — not "granted to no role".
 
 *New tables (3), owned by `kivo_control_owner`, RLS enabled **and** forced:*
 `public.member_identity_versions` (MIV), `public.control_operations` (A0),
@@ -238,8 +337,14 @@ NOINHERIT NOREPLICATION`, granted to no role at success.
 `public.members`, `public.restaurants`, `public.customers`; column-scoped
 `SELECT (id, restaurant_id, conversation_id)` on `public.messages`; `SELECT, INSERT` on A1;
 column-scoped `INSERT` (8 columns) and `UPDATE` (9 columns) on `public.conversations`.
-Plus the designed `EXECUTE` grants of §7.2 to `authenticated` / `service_role`, and
-`SELECT` on MIV to `authenticated`.
+Plus the designed `EXECUTE` grants asserted in **§7.1** to `authenticated` / `service_role`,
+and `SELECT` on MIV to `authenticated`.
+
+*Mechanism note (see PF-4f).* The ownership transfer and `EXECUTE` lockdown of the 21 functions
+is applied by `0108` through a wildcard scan of `public` for `kv_control_%`,
+`kv_sys_control_%` and `kv_tg_%`. The boundary above is therefore only exact if **no other
+function in `public` matches those patterns**. PF-4f asserts that read-only before execution,
+and §7.1 asserts it again afterwards.
 
 *The only row writes:* the MIV initialization — one version-1 row per existing member, into
 the new MIV table only, `N = count(public.members)` **at application time** (population-
@@ -272,9 +377,13 @@ activation; the Khalid project; alpha/Pilot GO; KIV-88 advisories; M-2/R-3/R-4/M
 2. **KIV-146 is complete and independently accepted** (KIV-159 condition 1).
 3. For Class B: KIV-14 has completed and been independently verified (KIV-25 is blocked by it).
 4. PM has fresh-read custody and pinned the exact bytes (§2.3).
-5. The **post-commit reversal script is already authored, independently reviewed and
-   separately authorized** (§5.3 — rollback-before-execute rule).
-6. PF-1 through PF-4 pass.
+5. The reversal path for this exact change already exists, per §5.1:
+   * **Class A** — the post-commit reversal script of §5.3 is authored, independently reviewed
+     and carries its **own separate Founder authorization**, held unused.
+   * **Class B** — the bounded restoration plan of §5.4 is authored, independently reviewed,
+     and **fully materialized against the §3.3 capture and read back** before the forward
+     mutation runs. Not materialized = **HARD STOP (HS-26)** *before* the forward change.
+6. PF-1 through PF-4 pass, PF-4f included for Class A.
 7. PM has released exactly one named executor for exactly one attempt.
 8. Alpha WhatsApp ingress state is known and recorded (§4.3).
 
@@ -321,7 +430,11 @@ Any item unsatisfied = do not start.
 
 B-10 and B-11 must be captured **per object named in the authorization**, and read back before
 proceeding. A Class B change whose exact prior owner, RLS flags and grant set are not on record
-has no defined rollback and must not execute.
+has no defined restoration and must not execute (HS-7).
+
+These captured values are also the inputs the §5.4.2 restoration plan is **materialized** from,
+before the forward change runs. Capture is therefore not merely evidence for Class B — it is a
+precondition of having any reversal at all.
 
 ---
 
@@ -383,12 +496,21 @@ must be verified, not assumed. An unreverted block at end of window is an incomp
 
 ## 5. EXACT ROLLBACK / RESTORE
 
-### 5.1 Rollback-before-execute rule
+### 5.1 Rollback-before-execute rule, and which authority covers which reversal
 
-The reversal path for the specific change must be **authored, independently reviewed and
-separately authorized before the forward change runs** (§2.7 item 5). Rollback is never
-improvised after a failure. An executor facing an unexpected state has exactly one authorized
-move: stop and report (§6).
+The reversal path for the specific change must be **authored and independently reviewed before
+the forward change runs** (§2.7 item 5). Rollback is never improvised after a failure. Outside
+the two reversal paths defined below, an executor facing an unexpected state has exactly one
+authorized move: stop and report (§6).
+
+Authority differs by class, and the difference is deliberate:
+
+| | Reversal path | Covered by the forward authorization? |
+|---|---|---|
+| **Class A** | R-A transactional rollback (§5.2) — the database performs it | **Yes.** It is the migration's own designed failure behaviour, not a further action |
+| **Class A** | R-B post-commit reversal (§5.3) | **No.** Requires its own separate Founder authorization, obtained before the forward run and held unused |
+| **Class B** | Bounded restoration to the captured before-state (§5.4) | **Yes**, strictly within the §5.4 bounds |
+| **Class B** | Anything beyond bounded restoration | **No.** New Founder authorization required; until it exists, the §5.4 holding state applies |
 
 ### 5.2 Tier R-A — transactional rollback (primary; the *only* rollback for Class A)
 
@@ -454,7 +576,12 @@ no-truncate triggers by design. MIV is removed by dropping the table, or not at 
 2. **Drop the eight A1 columns** (guard above must have passed): `actor_role`, `actor_label`,
    `actor_user_id`, `actor_member_version`, `is_canonical`, `actor_kind`, `operation_id`,
    `transition_id`.
-3. **Drop the sixteen control functions** (exact signatures):
+3. **Drop the sixteen control functions — by exact signature, never by wildcard.** `0108`
+   *applies* its lockdown by pattern (§2.6 mechanism note); reversal must not. A pattern-based
+   `DROP` would delete any unrelated pre-existing function matching `kv_control_%`,
+   `kv_sys_control_%` or `kv_tg_%`. Drop exactly these sixteen and, in step 5, exactly the five
+   trigger functions. If a signature is absent, stop and report — do not substitute a pattern
+   match:
    * `public.kv_control_create_conversation(uuid,uuid,uuid,text)`
    * `public.kv_sys_control_create_conversation(uuid,uuid,uuid,text)`
    * `public.kv_control_claim(uuid,uuid,uuid,text)`
@@ -484,8 +611,10 @@ no-truncate triggers by design. MIV is removed by dropping the table, or not at 
    `public.messages`; `SELECT` on `public.customers`, `public.restaurants`, `public.members`,
    `public.conversations`; `EXECUTE` on `extensions.digest(bytea,text)`; `USAGE` on schemas
    `extensions`, `auth`, `public`.
-8. **Drop the role** `kivo_control_owner`. It should hold nothing by then; if the drop reports
-   dependent objects, stop — the enumeration above is incomplete for the actual state.
+8. **Drop the role** `kivo_control_owner`. By this point it should own nothing and hold no
+   privilege; the inert `ADMIN`-only membership record described in §2.6 is removed with the
+   role and is not an obstacle. If the drop reports dependent objects, stop — the enumeration
+   above is incomplete for the actual state (HS-18).
 9. **Delete the `0108` migration-ledger row only**, if one was inserted.
 
 **Out of reversal scope:** `0107`/M-0 stays applied. Reversing M-0 is not covered by this
@@ -494,19 +623,92 @@ procedure and would need its own authorization. Nothing may be dropped that is n
 **Reversal verification:** re-run the §3.2 capture set with byte-identical query text and
 require equality to the before-state, plus the §5.2 residue checklist. Record both.
 
-### 5.4 Change Class B reversal
+### 5.4 Change Class B bounded restoration — one unambiguous rule
 
 Class B has no transactional free ride: an owner transfer or a revoke that commits stays
-committed. Its reversal is **exactly the §3.3 captured values**, replayed per object:
+committed. Revision 1 left the authority for reversing it ambiguous — it demanded a
+pre-authorized reversal while defining that reversal from values that only exist at execution
+time. This section replaces that with a single rule.
 
-* `alter table <obj> owner to <captured owner>;`
-* restore `relrowsecurity` / `relforcerowsecurity` to the captured booleans;
-* re-grant precisely the captured grant set — same grantees, same privilege types, same column
-  scopes — and revoke anything the change added.
+#### 5.4.1 The rule
 
-Rules: one transaction per invariant group; no privilege is restored that the capture does not
-show; `BYPASSRLS` is never granted as part of a reversal; and a reversal that would leave the
-system in a state matching neither before nor after is not performed — stop and escalate.
+**The KIV-25 forward-change authorization covers exactly one further action: a bounded
+restoration of the originally authorized named objects to their exact §3.3 captured
+before-state, and only when the forward change committed but §7.2 after-state verification
+failed.** Nothing else is covered.
+
+Bounded restoration is **restoration, not a second forward attempt**, and therefore **does not
+violate HS-19**. The single-attempt rule governs forward mutations. Saying so explicitly is the
+point: without it, an executor facing a failed verification would be frozen between an unsafe
+committed state and a rule that appears to forbid acting.
+
+#### 5.4.2 How the pre-authored plan and the execution-time values fit together
+
+The contradiction is resolved by separating the *plan* from the *values*:
+
+1. **Before the forward change** (§2.7 item 5) the executor authors a **restoration plan
+   skeleton**: the exact ordered statement forms, naming every originally authorized object, with
+   the captured values left as named placeholders. This skeleton is what the independent
+   reviewer reviews.
+2. **After the §3 capture and still before the forward change**, the executor **materializes**
+   the skeleton — binds each placeholder to the concrete value read from the §3.3 capture,
+   producing the literal statement text that would be run — and **reads the materialized text
+   back into evidence (E-9)**.
+3. **Only then may the forward change run.** If materialization cannot be completed, or the
+   capture is incomplete, or the read-back does not match the capture:
+   **HARD STOP (HS-26) before the forward mutation.** Nothing is executed.
+
+So the plan is pre-authored and pre-reviewed; the values are captured before execution; and the
+executable restoration exists, in full literal form, before there is anything to restore.
+
+#### 5.4.3 Bounds on the restoration
+
+* **Objects:** only the objects named in the original KIV-25 authorization. An object not named
+  there may not be touched even to restore it — that is HS-20.
+* **State:** only owner, `relrowsecurity`, `relforcerowsecurity`, and the captured grant set
+  (same grantees, same privilege types, same column scopes). Revoke exactly what the forward
+  change added; restore exactly what it removed.
+* **Text:** only the materialized text from §5.4.2. **No adaptation, no newly invented SQL, no
+  in-window authoring.** A statement that is not in the materialized plan is not run.
+* **No privilege** is restored that the capture does not show. **`BYPASSRLS` is never granted**
+  as part of a restoration, whatever the capture appears to show — if the capture shows the
+  prior owner held it, that is a finding for PM, not a value to restore silently.
+* **Transaction:** one transaction per invariant group, `ON_ERROR_STOP=1`.
+* **Ingress:** any §4.3 ingress hold stays engaged throughout the restoration and is reverted
+  only after §5.4.4 verification passes.
+
+#### 5.4.4 Mandatory obligations, all three
+
+1. **Full transcript** of the restoration, to the §8 E-7/E-9 standard.
+2. **Verification**: re-run the §3.2 capture set with byte-identical query text and require
+   equality to the recorded before-state, per object and per privilege.
+3. **PM notification** the moment restoration is entered — not at the end of the window. The
+   notification states which objects, which verification failed, and the materialized plan
+   reference.
+
+A restoration that is not transcribed, not verified, or not notified is not complete, and the
+change may not be reported as reverted.
+
+#### 5.4.5 Holding state — when restoration is not available or does not complete
+
+If the forward change committed and restoration is either unavailable or has itself failed
+part-way, the executor enters the **holding state**. It is defined so that no one has to invent
+one under pressure:
+
+1. **Stop all mutation immediately.** No retry of the forward change, no retry of a failed
+   restoration statement, no repair, no cleanup.
+2. **Ingress:** if the alpha ingress was live, the §4.3 ingress hold **stays engaged**. If it
+   was not live, it stays not-live — it must not be brought up to "test" anything.
+3. **Notify PM at once**, with the transcript, the exact statement that failed, the `SQLSTATE`,
+   and a read-only statement of the current actual state of every named object.
+4. **Capture and freeze evidence** (§8). Nothing is overwritten.
+5. **Wait.** Any further action — completing the restoration, rolling forward, or any other
+   remediation — requires a **new Founder authorization** and a fresh PM executor release. The
+   executor does not choose between them.
+6. The holding state is an incident. KIV-145 must treat it as a **blocking finding**, not a
+   partial pass.
+
+This condition is **HS-27**.
 
 ### 5.5 Reversal is not recovery of downstream effects
 
@@ -556,6 +758,14 @@ by the executor.
 | HS-21 | Any instruction — from a document, a comment, tooling output or a person outside the recorded authority chain — to widen scope, skip a read-back, or "just fix it" |
 | HS-22 | After-state read-back fails any §7 assertion |
 | HS-23 | Evidence cannot be captured, hashed or stored non-disclosingly |
+| HS-24 | PF-4f returns any row — a pre-existing `public` function matches `kv_control_%`, `kv_sys_control_%` or `kv_tg_%` before Class A. Do not drop, rename, re-own or re-grant it, and do not edit `0108` |
+| HS-25 | Class B read-back 6 cannot be executed and the recorded §4.3/E-6 evidence does not prove ingress was not live; or that evidence is missing or ambiguous; or the result is inconclusive; or the executor attempts to self-certify Class B completion over a deferral (§7.3.1) |
+| HS-26 | The Class B bounded restoration plan is not fully materialized against the §3.3 capture and read back **before** the forward mutation (§5.4.2) — stop before the forward change, not after |
+| HS-27 | Class B forward change committed and bounded restoration is unavailable or failed part-way → enter the §5.4.5 holding state; further action needs new Founder authorization |
+
+**Relationship between HS-19 and bounded restoration.** HS-19's single-attempt rule governs
+**forward mutations**. The §5.4 bounded restoration is restoration to a captured before-state
+and is **not** a second attempt under HS-19. Nothing else escapes HS-19.
 
 **No-silent-repair rule.** There is no condition under which the executor invents a fix. The
 14 Aug Phase A run is the standard to reproduce: it hit `42501`, stopped without repair,
@@ -590,6 +800,12 @@ functions to `authenticated`, the five system functions to `service_role`, and F
 `kv_control_transition` / F16 `kv_control_assert_actor` granted to **no one**. Nothing granted
 to `anon` or `PUBLIC` anywhere.
 
+**Pattern closure (PF-4f counterpart):** re-run the PF-4f query. It must now return **exactly
+21 rows — the 21 functions of §2.6 and no others**, all owned by `kivo_control_owner`. A 22nd
+match means an unrelated function was re-owned and had its grants stripped by the wildcard
+scan, i.e. the change went outside its declared boundary. That is HS-22, and it is also a
+finding PM must adjudicate before any reversal is attempted.
+
 **A1:** the eight columns exist, are nullable, and every one is **entirely NULL** — M-1 adds
 no data to A1.
 
@@ -616,7 +832,8 @@ All six, in this exact form, per PF-R1:
 3. **RLS enabled**;
 4. **FORCE RLS enabled**;
 5. **service-role grants revoked as designed**;
-6. **required application paths still functioning**.
+6. **required application paths still functioning** — governed by **§7.3**, which is the only
+   place a deferral of this read-back is defined, and which never treats a deferral as a pass.
 
 Plus PF-R1's standing constraints: FORCE RLS does **not** constrain a role holding
 `BYPASSRLS`; revoking the service-role table grant is the control that removes its direct
@@ -624,25 +841,69 @@ access; ownership transfer to the non-`BYPASSRLS` control owner is load-bearing;
 result must **never** claim FORCE RLS alone contains `service_role`. A report that makes that
 claim is not acceptable evidence regardless of the read-back values.
 
-### 7.3 Application recovery
+### 7.3 Application recovery, and the only permitted deferral of read-back 6
 
 1. **Revert every block engaged in §4**, in reverse order, and verify the revert by read-back.
-   No block may outlive the window.
+   No block may outlive the window. For Class B this happens only after §7.2 has passed, or
+   after §5.4.4 verification has passed — never with an unverified state in place.
 2. **Confirm the required alpha application paths still work.** For Class B this is read-back 6
-   and is mandatory. The bounded smoke set is: WhatsApp ingress accepted → conversation
+   and is **mandatory**. The bounded smoke set is: WhatsApp ingress accepted → conversation
    readable → operator can read conversations / orders / menu → outbound reply path available.
 3. **Bounds on the smoke check.** Non-destructive and test-marked only. No real customer is
    messaged. No deployment, Meta/account action, restaurant action or alpha traffic is
-   performed — all are outside this procedure. If the path check cannot be run inside those
-   bounds, record it as **deferred to the governed alpha UAT** and say so plainly; do not
-   claim a path works on inference.
+   performed — all are outside this procedure. A path is never reported working on inference.
+
+#### 7.3.1 Deferral of read-back 6 — the exact and only permitted condition
+
+Revision 1 called read-back 6 mandatory and simultaneously let the executor mark it deferred.
+That was fail-open: it let the executor self-decide that the check was unrunnable and route
+around HS-22. The rule is now closed.
+
+**A deferral is permitted only when the recorded §4.3 evidence proves the alpha ingress was not
+live for the whole window.** That evidence is the E-6 ingress-state record, captured before the
+change, not a judgement formed afterwards. There is no other permitted condition.
+
+When that exact condition holds, the deferral carries all of the following, together:
+
+* it is recorded in **E-10** as **`READ-BACK 6 NOT EXECUTED — DEFERRED`**, citing the E-6
+  ingress-state evidence that permits it;
+* it is **explicitly not accepted as KIV-25 completion**. Class B is **incomplete** while it
+  stands. The executor may not report KIV-25 as done, satisfied, or passing;
+* it is carried as an **explicit blocking precondition into KIV-145 and into alpha GO**, and
+  stays blocking **until the path check is actually executed and passes**. KIV-145 may not
+  issue a PASS over a standing deferral;
+* it is stated in the handback as an open blocking item, in those words, not as a footnote.
+
+**Outside that exact non-live condition, inability to run the path check is a HARD STOP
+(HS-25).** That includes: ingress was live and the check cannot be run; the E-6 record is
+missing, incomplete or ambiguous about liveness; the executor believes the check is
+"impractical", "not meaningful here", or blocked by tooling; or the check ran and its result is
+inconclusive. An inconclusive result is a failure, not a deferral.
+
+**The executor may not self-certify completion on a deferral.** Recording a permitted deferral
+is the executor's whole authority over read-back 6; deciding whether Class B is nevertheless
+acceptable belongs to KIV-145 (§7.4). An attempt to self-certify is **HS-25**.
+
+**A deferral never satisfies HS-22.** HS-22 fires for any §7 assertion that fails; §7.3.1 does
+not exempt read-back 6 from it, it only defines the narrow case in which the read-back may go
+unexecuted and remain openly outstanding.
+
 4. **Nothing is "warmed up", re-run or nudged** to make a read-back pass.
 
-### 7.4 Independent verification
+### 7.4 Independent verification — no executor self-acceptance
 
-The executor packages evidence and stops. Acceptance is a separate act by a fresh independent
-reviewer — KIV-145 for Class B, KIV-159 condition 5 for Class A. Until then the result is
-recorded but not relied upon, and no downstream G2 work proceeds on it.
+The executor packages evidence and stops. Acceptance is a separate act by a reviewer who is
+**separately released by PM, did not author this procedure, and did not execute the change**:
+
+* **Class A** — KIV-159 condition 5: separate independent post-execution verification, required
+  before any downstream G2 work may rely on the production result. The executor's own §7.1
+  read-back is that reviewer's input, never a substitute for them.
+* **Class B** — KIV-145, which independently establishes the intended state and every read-back
+  including the application-path non-regression, and which must BLOCK on a standing §7.3.1
+  deferral or any unproven security fact.
+
+Until that acceptance is recorded the result is evidence only. Nothing downstream proceeds on
+it, and no executor statement — however complete — converts it into acceptance.
 
 ---
 
@@ -657,11 +918,11 @@ recorded but not relied upon, and no downstream G2 work proceeds on it.
 | E-3 Query text | The exact before/after query text, stored once and hashed (parity rule, §3.1) |
 | E-4 Before-state | Full §3.2 capture with timestamps |
 | E-5 Preflight | PF-1 … PF-4 results verbatim |
-| E-6 Block record | What was blocked, why it was necessary, engage and revert timestamps — or the recorded finding that no block was necessary |
+| E-6 Block record | What was blocked, why it was necessary, engage and revert timestamps — or the recorded finding that no block was necessary. For Class B this record also carries the **ingress liveness state**, which is the only evidence that can permit a §7.3.1 deferral |
 | E-7 Execution transcript | The full runner transcript: command line, every statement outcome, all warnings, all errors, `SQLSTATE`s, start/end timestamps, and the commit-or-rollback outcome stated explicitly |
 | E-8 After-state | Full §7 read-back, assertion by assertion, pass/fail each |
-| E-9 Residue/reversal record | §5.2 checklist if rolled back; §5.3/§5.4 record if reversed |
-| E-10 Path-check record | §7.3 result, or the explicit deferral |
+| E-9 Residue / reversal / restoration record | §5.2 residue checklist if rolled back; §5.3 record if reversed post-commit. For Class B: the **materialized restoration plan produced before the forward change** (§5.4.2), plus — if restoration ran — its full transcript, §5.4.4 verification and PM notification, or the §5.4.5 holding-state record |
+| E-10 Path-check record | §7.3 result. If read-back 6 was not executed, the verbatim `READ-BACK 6 NOT EXECUTED — DEFERRED` marking, the E-6 ingress evidence permitting it, and the statement that KIV-25 is incomplete and KIV-145 / alpha GO carry a blocking precondition |
 | E-11 Manifest | SHA-256, byte count and line count of every artifact above, plus the authorizing issue IDs |
 
 ### 8.2 Custody rules
@@ -697,11 +958,12 @@ KIV-146 may close when a fresh independent reviewer confirms this procedure:
 2. defines before-state capture and read-back (§3);
 3. requires reversible block/drain **only** where the specific change needs it, and says which
    of the two change classes needs it and why (§4);
-4. gives exact rollback/restore steps for both change classes, including the pre-authored
-   reversal rule and the named-object drop order (§5);
+4. gives exact rollback/restore steps for both change classes, including which authority covers
+   which reversal (§5.1), the named-object drop order (§5.3), and one unambiguous Class B
+   restoration rule with a defined holding state (§5.4);
 5. states closed failure and abort conditions (§6);
 6. defines after-state verification and service/application recovery, including the six PF-R1
-   read-backs (§7);
+   read-backs and the single closed deferral condition for read-back 6 (§7);
 7. defines evidence custody (§8);
 8. is specific enough to govern KIV-14 and KIV-25 without recreating the old broad maintenance
    program (§0.3);
@@ -709,18 +971,29 @@ KIV-146 may close when a fresh independent reviewer confirms this procedure:
 
 ### 9.1 Known limits the reviewer should test
 
-* **Reviewer must independently recompute the §2.3 fingerprints.** They were verified once
-  during authoring, from the repository and the GitHub PR record; they are a pin proposal, not
-  an accepted custody fact.
+* **Reviewer must independently recompute the §2.3 fingerprints.** They were verified during
+  Revision 1 authoring from the repository and the GitHub PR record, and were independently
+  recomputed as exact by KIV-160 Attempt 1; they remain a pin proposal, to be re-verified
+  against the live custody state at pin time rather than trusted from this file.
 * The `main`-versus-`feat/kiv12-m0-constraint-prestage` divergence (§2.3 note 2) is reported,
   not resolved. Whether the KIV-14 stack should reach `main` before production application is a
   PM/Founder call this procedure does not make.
 * Class B's object list is necessarily generic here: KIV-25's authorization must name the exact
-  objects before §2.6 can be treated as closed for that change.
-* §7.3's path check may be unrunnable inside the current bounds (no deployment, no Meta, no
-  restaurant action, alpha NO-GO). The procedure requires that to be declared as a deferral
-  rather than papered over; the reviewer should check that this is acceptable for KIV-25's
-  read-back 6, or route it back for tightening.
+  objects before §2.6 can be treated as closed for that change. KIV-160 Attempt 1 adjudicated
+  this treatment sufficiently fail-closed as an object-scope rule; §5.4.3 now binds the
+  restoration to that same named-object set, so a generic KIV-25 execution has no restoration
+  path and cannot pass §2.7 item 5.
+* §7.3's path check may still be unrunnable inside the current bounds (no deployment, no Meta,
+  no restaurant action, alpha NO-GO). Revision 2 no longer treats that as the executor's call:
+  §7.3.1 permits non-execution **only** on recorded not-live ingress evidence, and only as an
+  openly outstanding blocking precondition on KIV-145 and alpha GO. The reviewer should test
+  that this closes F-1 rather than relocating it.
+* **F-7 was adopted as PF-4f without touching `0108`.** PF-4f is a read-only assertion about
+  production state; it neither narrows the migration's wildcard nor claims to. If the reviewer
+  judges the wildcard itself unacceptable, that is a source finding against `0108` under
+  separate authority, not something this procedure may fix.
+* Revision 2 changed only this file. `0108`, `0107`, the proof harness and every runtime path
+  are untouched, and Revision 1's commit was not amended or rewritten.
 
 ### 9.2 Non-authority
 
