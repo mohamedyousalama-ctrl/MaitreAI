@@ -101,6 +101,42 @@ begin
       nologin nosuperuser nobypassrls nocreatedb nocreaterole noinherit noreplication;
   end if;
 end $$;
+
+-- KIV-126: a PRE-EXISTING kivo_control_owner must match EVERY governed safe attribute.
+-- The create above is guarded by IF NOT EXISTS, so a role of this name created earlier by
+-- some other actor would otherwise be adopted silently, inheriting whatever attributes it
+-- already had. A role that can log in, bypass RLS, create roles or databases, inherit, or
+-- replicate is not the governed principal, and adopting it would hand the control plane a
+-- privileged identity. Verified unconditionally: when this migration created the role the
+-- check is satisfied by construction; when the role pre-existed it is the only thing
+-- standing between an unsafe principal and ownership of MIV, A0, A2 and every governed
+-- function. Fails closed, so the whole migration rolls back.
+do $$
+declare
+  r   record;
+  bad text;
+begin
+  select rolcanlogin, rolsuper, rolbypassrls, rolcreatedb, rolcreaterole,
+         rolinherit, rolreplication
+    into r
+    from pg_roles where rolname = 'kivo_control_owner';
+  if not found then
+    raise exception 'KIV126 kivo_control_owner does not exist after creation';
+  end if;
+  bad := nullif(concat_ws(', ',
+    case when r.rolcanlogin     then 'LOGIN'       end,
+    case when r.rolsuper        then 'SUPERUSER'   end,
+    case when r.rolbypassrls    then 'BYPASSRLS'   end,
+    case when r.rolcreatedb     then 'CREATEDB'    end,
+    case when r.rolcreaterole   then 'CREATEROLE'  end,
+    case when r.rolinherit      then 'INHERIT'     end,
+    case when r.rolreplication  then 'REPLICATION' end), '');
+  if bad is not null then
+    raise exception
+      'KIV126 pre-existing kivo_control_owner carries unsafe attribute(s): % — governed role must be NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION',
+      bad;
+  end if;
+end $$;
 -- R2 / R19: kivo_control_owner is granted to no role in the FINAL state. The only membership
 -- that may survive this migration is the one PostgreSQL creates automatically when a
 -- non-superuser CREATEROLE executor runs CREATE ROLE: grantor = bootstrap superuser,
@@ -1618,6 +1654,25 @@ begin
     raise exception
       'KIV77 bootstrap cleanup incomplete: % membership(s) still carry SET or INHERIT on kivo_control_owner',
       v_capable;
+  end if;
+
+  -- KIV-126: any surviving membership must belong to THE GOVERNED EXECUTOR and to no other
+  -- member. The single record the adjudication permits is the automatic CREATE ROLE grant
+  -- made to the executing role itself. A membership held by any other role is a standing
+  -- grant this migration neither made nor can account for: it would leave a third party
+  -- able to administer kivo_control_owner after the control plane is installed. Checked
+  -- before the count guard so the failure names the offending member.
+  select mm.rolname into v_bad
+    from pg_auth_members m
+    join pg_roles r  on r.oid  = m.roleid
+    join pg_roles mm on mm.oid = m.member
+   where r.rolname = 'kivo_control_owner'
+     and mm.rolname <> current_user
+   limit 1;
+  if v_bad is not null then
+    raise exception
+      'KIV126 surviving membership on kivo_control_owner belongs to %, not to the governed executor %',
+      v_bad, current_user;
   end if;
 
   -- At most one record may remain: the automatic CREATE ROLE grant made by the bootstrap
