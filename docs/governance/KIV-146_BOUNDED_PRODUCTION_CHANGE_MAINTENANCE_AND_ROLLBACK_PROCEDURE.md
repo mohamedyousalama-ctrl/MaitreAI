@@ -7,33 +7,27 @@
 | Issue | KIV-146 — Define bounded production-change maintenance and rollback procedure for alpha |
 | Milestone | G2 — Security, order truth, WhatsApp & safety |
 | Authored | 17 August 2026 |
-| Revision | **REVISION 4** — remediates KIV-160 Attempt 3 BLOCK findings R3-1 … R3-5 and the routed cleanups |
-| Supersedes | Revision 3, commit `5ea300040565378c317fe9188d415e5370d68be8` (BLOCKED by KIV-160 Attempt 3) · Revision 2, `af1567b49a50e138ff3ba464cb2fe470c9ef1f96` (BLOCKED by Attempt 2) · Revision 1, `369faa747c48b10a01749b092e50a65e15f4d159` (BLOCKED by Attempt 1) |
-| Status | **DRAFT — awaiting a fresh independent Engineering review (KIV-160 Attempt 4) of this exact revision.** Not accepted. Not self-approved. |
+| Revision | **REVISION 5** — remediates KIV-168 R5-1 … R5-3: the Class A ingress/B-14 circular dependency and the Class A B-9 before-state executability defect exposed by KIV-14 Production Execution Release 3 |
+| Supersedes | Revision 4, commit `a8d675b80f3af041b1db32c7f9344c64d74adac4` (**terminally accepted**; its both-class ingress/B-14 wording is remediated here under KIV-168) · Revision 3, `5ea300040565378c317fe9188d415e5370d68be8` (BLOCKED by KIV-160 Attempt 3) · Revision 2, `af1567b49a50e138ff3ba464cb2fe470c9ef1f96` (BLOCKED by Attempt 2) · Revision 1, `369faa747c48b10a01749b092e50a65e15f4d159` (BLOCKED by Attempt 1) |
+| Status | **DRAFT — awaiting the KIV-168 review chain (new fresh independent Engineering review → separate Quality → separate Auditor) of this exact revision.** Not accepted. Not self-approved. Until terminal reacceptance, Revision 4 (`a8d675b8`) remains the operative accepted procedure. |
 | Governs | KIV-14 (Change Class A) and KIV-25 (Change Class B) only |
 | Replaces | The standalone full P0-MAINT / M2 maintenance-interleave program as an alpha milestone (KIV-142 §"Maintenance/control-plane simplification") |
 | Authorizes | **Nothing.** This document is a procedure/evidence gate. |
 | Authority status as at | **2026-08-17T18:02:46Z** (§2.1) |
 
-### Revision 4 change log — KIV-160 Attempt 3 findings
+### Revision 5 change log — KIV-168 Release 3 procedure defects
 
 | Finding | Disposition | Sections changed |
 |---|---|---|
-| **R3-1** — a successful live-branch restoration had no lawful hold-release exit: §5.4.3 required the hold to stay engaged until §5.4.4 passed, while §7.5.3 made any hold transition outside L-1/L-5/L-8 an HS-29 | Fixed. The L sequence now has an explicit restoration terminus **L-10 … L-14**, with **L-12 as a fourth authorized hold transition**, an objective post-revert read-back at L-13, a terminal evidence step at L-14, and a defined failure route. Mirror **Q-8 … Q-10** for the not-live branch | **§7.5.1**, §7.5.2, **§7.5.4**, §7.5.5, §4.3, §5.4.3, §5.4.4, §6 (HS-29 rewritten) |
-| **R3-2** — one full-plan RM-VERIFY SHA-256 was incompatible with S-2 partial restoration: a subset can never equal the full-plan hash, and executing an unverified subset defeats N-2 | Fixed. Restoration is now materialized and verified as **one independently frozen artifact per invariant group, `RM-G-i`**, each with its own PASS and SHA-256, plus a fingerprinted **`RM-MANIFEST`**. **There is no full-plan SHA-256 to compare a subset against** — the defect is removed by construction | **§5.4.2**, §1, §2.7 item 5, §5.4.1, §5.4.3, §8.1 (E-9), §6 (HS-26, HS-28 rewritten) |
-| **R3-3** — S-1 and S-2 also matched the catch-all S-3, so §5.4.1.2 default-deny voided the canonical verdicts | Fixed. §5.4.1 is rewritten as an **ordered three-discriminant decision procedure** — determinability, then boundary, then committed-group count — which **partitions the space**. Rows are now **S-4, S-3E, S-0, S-1, S-2**, mutually exclusive by construction. **The HARD STOP that fired is recorded as the trigger and is never a classifier**; that was the source of the overlap | **§5.4.1**, §6 |
-| **R3-4** — a missing smoke bound was not fail-closed, and the hold state was evidenced only by timestamps | Fixed. New **PF-5** requires KIV-25 to name both the exact governed ingress/hold control **and** a finite wall-clock smoke bound before any mutation, with the **same-control rule** and **objective read-back after every hold transition**. Absent, unreadable, ambiguous or invalid = **HS-30 before mutation** | **§2.5 (PF-5)**, §2.7, §4.3, §7.3.1, §7.5, §8.1 (E-6), §6 (**HS-30**) |
-| **R3-5** — trigger inventory wrong (9, should be 11) and the raw `pg_constraint = 41` assertion would return 43 and false-HARD-STOP | Fixed. **11 triggers** inventoried by name everywhere, including the two `CREATE CONSTRAINT TRIGGER` objects `tg_a0_audit_exclusivity` and `tg_a2_parent_guard`. The Revision 3 structural arithmetic (**41 = 39 + 2**, 9 standalone indexes, 6 FKs, 16 index relations) is **retained unchanged**. New **§2.6.2** replaces raw totals with **filtered, version-robust catalog assertions** using an explicit `contype` allow-list and `NOT tgisinternal`, and pins the server-version record | **§2.6**, **§2.6.1**, **§2.6.2**, §3.2 (B-9), §5.2, §5.3, §7.1 |
-| **Cleanup 1** | IS-1/IS-2 restated as **objective bracketing evidence**, never continuous-state proof; the named control must be inside the read-only boundary; deferral stays non-accepting and fail-closed | §7.3.1, §8.1 (E-6) |
-| **Cleanup 2** | **IS-2 is now recorded unconditionally on the Q path** — at Q-5, before the deferral question is even asked, so both endpoints bracket the sequence whether or not Q-4 passed | §7.5.2, §7.5.5 |
-| **Cleanup 3** | Stale §4.3 wording pointing the revert at §7.3 removed; §7.5 is authoritative | §4.3 |
-| **Cleanup 4 (OBS-6)** | Preserved as **non-blocking**. See §9.1 — the substance of OBS-6 is not stated in the KIV-160 Attempt 3 intake or the Revision 4 release, so no wording change was attempted that could weaken the Q-branch fail-closed rules | §9.1 |
+| **R5-1** — Class A could not lawfully satisfy §2.7 item 8 / §3.2 B-14: both-class wording required reading "the governed alpha ingress control named in the KIV-25 authorization", while §2.5 PF-5 makes that exact control a **Change Class B / KIV-25** requirement and KIV-25 — downstream of KIV-14 and KIV-165 — names none yet. KIV-14 Production Execution Release 3 correctly HARD STOPPED before mutation on exactly this circular dependency | Fixed without inventing a control and without weakening Class B: **PF-5 / IS-1 / IS-2 / hold-transition evidence is now explicitly Class B-only**, and Class A records the **fixed B-15 ingress-applicability statement** tied to §4.2 — no ingress read, no ingress mutation, no KIV-25 naming decision awaited, no inference from alpha GO/NO-GO status, and no deployment/Meta/account/restaurant action required to satisfy a read-only entry check | **§2.5 (class applicability)**, **§2.7 item 8**, **§3.2 (B-14, new B-15)**, **§4.2**, §4.3, §7.3.1, §8.1 (E-6) |
+| **R5-2** — §3.2 B-9 sent the both-class before-state capture to the §2.6.2 C-1 … C-4 assertions, whose `::regclass` casts cannot resolve in the intended Class A before-state — the three `0108` tables correctly absent — so a **correct** production state would error the capture. §5.2 already acknowledged the same technical fact for residue checking | Fixed. New **§2.6.3 catalog-safe absence probes A-1 … A-4** (`to_regclass` / `to_regtype` / allow-listed name reads that return NULL or zero rows instead of erroring; never a raw total) define the executable Class A before-state; **C-1 … C-4 are not run while the tables are absent and keep their authoritative after-state role unchanged (§7.1)**; any unexpected presence is **HS-11**. §5.2's by-table-absence residue rule now cites the same executable probe form | **§2.6.3 (new)**, **§3.2 (B-9, lead-in)**, §5.2 (cross-reference only) |
+| **R5-3** — KIV-168's no-regression / authority-preservation obligations | Proven on the artifact and recorded: **§5.3 Class A post-commit reversal byte-identical to Revision 4** (KIV-167's separately approved reversal path is not silently changed); **PF-4a/PF-4b byte-identical**; PF-4f intact; §5.2 behavior unchanged in substance; Class B **PF-5 same-control / finite-smoke-bound / objective-read-back** rules and every §7.5 hold rule intact and not weakened; §5.4 restoration, §6 HARD STOPs and the exact source/target/whole-file-transaction/contemporaneous-N/role/evidence rules untouched; `0108`, `0107`, runtime code and production untouched | §9.1, **§9.2 (Revision 5 re-verification)**, **§9.2.2 (new carry-forward)** |
 
-**F-1 … F-7 (Attempt 1) remain CLOSED, and the Revision 3 fixes not implicated above remain
-intact.** Revision 4 does not reopen, weaken or redesign any of them; §9.2 records the specific
-no-regression checks, and §9.2.1 records the Revision 3 carry-forward.
+**F-1 … F-7 (Attempt 1) remain CLOSED, and the Revision 3 and Revision 4 fixes remain
+intact.** Revision 5 does not reopen, weaken or redesign any of them; §9.2 records the
+re-verification, §9.2.1 the Revision 3 carry-forward, and §9.2.2 the Revision 4 carry-forward.
 
-Revision 4 is documentation-only. No migration, source, runtime or production artifact was
+Revision 5 is documentation-only. No migration, source, runtime or production artifact was
 changed. `0108` and `0107` are untouched.
 
 ---
@@ -320,6 +314,12 @@ intended one. A timestamp records *when* something was attempted; only the read-
 *what the state actually is*. An observed value that does not equal the intended post-transition
 value is **HS-29** — except at L-12, where §7.5.4 routes it to the holding state.
 
+**Class applicability (R5-1).** PF-5, PF-5a/PF-5b, IS-1/IS-2 and the four hold transitions
+exist **only for Change Class B**. Change Class A neither satisfies nor is gated on any of
+them: it reads no ingress control, requires none to be named by KIV-25, and records the fixed
+**B-15** statement instead (§3.2, §4.2). No Class A step waits on, or is failed for, a KIV-25
+naming decision. Nothing in this paragraph relaxes any PF-5 obligation for Class B.
+
 ### 2.6 Exact affected boundary
 
 **Change Class A — objects this change may create or write. Nothing else.**
@@ -584,6 +584,96 @@ order by i.indrelid::regclass::text, i.indexrelid::regclass::text;
 * **The two system-named primary keys are asserted by table and `contype`**, never by guessing
   a name, since PostgreSQL — not `0108` — assigns them.
 
+### 2.6.3 Class A before-state absence probes (R5-2)
+
+§3.2 B-9's Class A before-state expects every §2.6 object to be **absent**. The §2.6.2
+C-1 … C-4 assertions cannot express that state: their `::regclass` casts fail to resolve when
+the three tables are — correctly — not there, so running them before a first Class A
+application would error on a **correct** production state. §5.2 already records the same
+technical fact for post-rollback residue checking. This section gives the Class A before-state
+(and, by reference, that residue check) the same treatment as exact executable read-only
+queries, with no executor interpretation.
+
+**Scope rule.** A-1 … A-4 are the only catalog form the Class A before-state existence check
+uses. **C-1 … C-4 are not run while the three tables are absent**; they remain the
+authoritative structural assertions wherever the three tables exist — their §7.1 after-state
+role is unchanged, and nothing here weakens it. Nothing below asserts a raw or untyped catalog
+total (§2.6.2 version rule).
+
+**A-1 — the three tables, catalog-safe.** `to_regclass()` returns NULL instead of erroring
+when a relation does not exist:
+
+```sql
+select
+  to_regclass('public.member_identity_versions')    as miv,
+  to_regclass('public.control_operations')          as a0,
+  to_regclass('public.conversation_audit_failures') as a2;
+```
+
+Expected: one row, **all three columns NULL**.
+
+**A-2 — the type, catalog-safe:**
+
+```sql
+select to_regtype('public.kv_control_result') as kv_control_result;
+```
+
+Expected: one row, **NULL**.
+
+**A-3 — the 15 policies, by allow-listed name over the policy catalog** (returns rows only
+for policies that exist; never errors, whether or not any table exists):
+
+```sql
+select p.schemaname, p.tablename, p.policyname
+from pg_policies p
+where p.policyname in (
+  'miv_control_owner_ins','miv_control_owner_sel','miv_control_owner_upd','miv_member_sel',
+  'a0_control_owner_ins','a0_control_owner_sel','a2_control_owner_ins','a2_control_owner_sel',
+  'conversations_control_owner_rw','members_control_owner_sel',
+  'restaurants_control_owner_sel','customers_control_owner_sel','messages_control_owner_sel',
+  'a1_control_owner_ins','a1_control_owner_sel')
+order by 1, 2, 3;
+```
+
+Expected: **zero rows**. The query reports the table each match sits on, so an unexpected
+presence reaches PM with its exact location rather than being adjudicated in-window.
+
+**A-4 — the eight A1 columns, catalog-safe:**
+
+```sql
+select a.attname
+from pg_attribute a
+where a.attrelid = to_regclass('public.conversation_assignment_events')
+  and a.attnum > 0
+  and not a.attisdropped
+  and a.attname in ('transition_id','operation_id','actor_kind','is_canonical',
+                    'actor_member_version','actor_user_id','actor_label','actor_role')
+order by a.attname;
+```
+
+Expected: **zero rows**. A-4 is meaningful only beside a successful B-5: if A1 itself were
+missing, `to_regclass` would yield NULL and A-4 would return zero rows — falsely clean — but
+B-5's `count(public.conversation_assignment_events)` errors first in that state (HS-12), so
+an absent A1 cannot read as a pass.
+
+**Covered without their own probes, by construction and by existing preflights:**
+
+* the **41 structural constraints, 2 constraint-trigger catalog rows, 11 triggers and 16
+  index relations** of §2.6.1 exist only on the three tables, so A-1's three NULLs establish
+  their absence — the §5.2 by-table-absence rule, now in executable form;
+* the **role** `kivo_control_owner` — PF-4a and B-6/B-7 (expected zero rows; HS-4 otherwise);
+* the **21 functions** — every one matches a PF-4f pattern, so PF-4f's zero-row expectation
+  covers them (HS-24 otherwise);
+* the **`0108` migration-ledger row** — B-12.
+
+**Fail-closed rule.** Any non-NULL value from A-1 or A-2, or any row from A-3 or A-4,
+contradicts the recorded production baseline (**M-0 applied / M-1 not applied**) and is a
+**HARD STOP (HS-11)**: record the exact observation verbatim and report to PM. Do not drop,
+rename, re-own or otherwise "clean up" anything found, and do not run C-1 … C-4 to
+investigate a partially present state — adjudicating an unexpected presence is PM's, not the
+executor's. The executor records the server version beside the A-1 … A-4 results, exactly as
+§2.6.2 requires beside C-1 … C-4.
+
 ### 2.7 Entry checklist — all must be true, in order
 
 1. The change is Change Class A or B, named in a recorded Founder authorization.
@@ -603,7 +693,11 @@ order by i.indrelid::regclass::text, i.indexrelid::regclass::text;
      mismatched or BLOCKed PASS = **HARD STOP (HS-28)**. Both stop *before* the forward change.
 6. PF-1 through PF-4 pass, PF-4f included for Class A, **and PF-5 passes for Class B**.
 7. PM has released exactly one named executor for exactly one attempt.
-8. Alpha WhatsApp ingress state is known and recorded (§4.3).
+8. **Class B:** alpha WhatsApp ingress state is known and recorded as **IS-1** — an objective
+   read-back of the PF-5a-validated control (§3.2 B-14, §4.3), never an inference from alpha
+   GO/NO-GO status. **Class A:** the fixed ingress-applicability record **B-15** is captured
+   (§3.2, §4.2) — no ingress control is read, mutated or required to exist, and no KIV-25
+   naming decision is awaited (R5-1).
 
 Any item unsatisfied = do not start.
 
@@ -628,6 +722,11 @@ Any item unsatisfied = do not start.
 
 ### 3.2 Capture set — both classes
 
+One capture set serves both classes, with the class-specific lines marked (R5-1, R5-2):
+**B-14 (IS-1) is captured only for Class B**, **B-15 only for Class A**, and **B-9's
+executable form differs by class**. Every other line is captured identically for both
+classes.
+
 | # | Capture | Notes |
 |---|---|---|
 | B-1 | `select current_database(), current_user, version()` | plus the project ref stated back |
@@ -638,12 +737,13 @@ Any item unsatisfied = do not start.
 | B-6 | Role inventory: `rolname, rolsuper, rolcanlogin, rolbypassrls, rolcreatedb, rolcreaterole, rolinherit, rolreplication` for `postgres`, `service_role`, `authenticated`, `anon`, `kivo_control_owner` | |
 | B-7 | PF-4b `pg_auth_members` result | |
 | B-8 | PF-4c `has_schema_privilege('public','public','CREATE')` | |
-| B-9 | Existence check for every §2.6 object: role, 3 tables, the complete §2.6.1 inventory — **41 structural constraints, 2 constraint-trigger catalog rows, 11 triggers, 16 index relations** — 15 policies, type, 21 functions, 8 A1 columns | expected: all absent for Class A. **Run the §2.6.2 C-1 … C-4 filtered assertions; never a raw `pg_constraint` or `pg_trigger` total.** Record the server version alongside |
+| B-9 | Existence check for every §2.6 object: role, 3 tables, the complete §2.6.1 inventory — **41 structural constraints, 2 constraint-trigger catalog rows, 11 triggers, 16 index relations** — 15 policies, type, 21 functions, 8 A1 columns | **Class A** — expected: all absent. Run the **§2.6.3 catalog-safe absence probes A-1 … A-4** (PF-4a, PF-4f and B-12 cover role, functions and ledger); **C-1 … C-4 are not run in this state** — their `::regclass` casts cannot resolve while the tables are correctly absent (R5-2); any presence = **HS-11**. **Class B** — the three tables exist (§2.7 item 3): run the **§2.6.2 C-1 … C-4 filtered assertions** with their §2.6.2 expected shapes. Both classes: **never a raw `pg_constraint` or `pg_trigger` total.** Record the server version alongside |
 | B-10 | Owner, `relrowsecurity`, `relforcerowsecurity` for every governed table | the pre-change values Class B must be able to restore |
 | B-11 | Grant set for every governed table and function: grantee, privilege type, column scope | the pre-change values Class B must be able to restore |
 | B-12 | Migration ledger: `max(version)` and whether a `0108` row exists | |
 | B-13 | Non-disclosing member fingerprint evidence consistent with the KIV-14 baseline method | proves `public.members` was not mutated, without disclosing it |
-| B-14 | **IS-1 — ingress-state evidence point (OBS-2).** The enabled/disabled state of the governed alpha ingress control named in the KIV-25 authorization, plus `count(public.messages)`, recorded together with the B-4 and B-5 counts and one statement timestamp | the pre-change half of the whole-window ingress proof; its end-of-window counterpart is **IS-2** (§7.3.1) |
+| B-14 | **IS-1 — ingress-state evidence point (Class B only; OBS-2, R5-1).** The objectively read-back enabled/disabled state of the governed alpha ingress control named in the KIV-25 authorization and validated at PF-5a, plus `count(public.messages)`, recorded together with the B-4 and B-5 counts and one statement timestamp | the pre-change half of the Class B whole-window ingress proof; its end-of-window counterpart is **IS-2** (§7.3.1). **Never captured for Class A**, which reads no ingress control and records B-15 instead |
+| B-15 | **Class A ingress-applicability record (Class A only; R5-1).** Recorded verbatim, with one statement timestamp: `CLASS A — ALPHA INGRESS CONTROL NOT APPLICABLE PER §4.2: NO BLOCK, NO DRAIN, NO INGRESS READ, NO INGRESS MUTATION. NO KIV-25-NAMED CONTROL IS REQUIRED TO EXIST FOR THIS CHANGE.` | satisfies §2.7 item 8 for Class A (§4.2). A fixed statement, not an observation: it claims nothing about technical ingress state, which is **not** inferred from alpha GO/NO-GO status; no deployment, Meta/account or restaurant action may be taken — or required — to observe ingress for it (§0.2). PF-5, IS-1/IS-2 and hold transitions remain Class B-only (§2.5) |
 
 ### 3.3 Class B additional requirement
 
@@ -689,13 +789,24 @@ file; do not split the file to shorten the lock.
 
 Choose a low-traffic window. A window choice is not authority to proceed without §2.7.
 
+**Ingress applicability (R5-1).** For the same reasons there is no block or drain, Class A
+**neither reads nor mutates any alpha ingress control**, and no such control is required to
+exist for it: PF-5, IS-1/IS-2 and every hold transition are Class B constructs under the
+KIV-25 authorization (§2.5, §7.3.1, §7.5). Class A's entry/capture record for §2.7 item 8 is
+the fixed **B-15** statement (§3.2), recorded verbatim with its timestamp. Technical ingress
+state is **not** inferred from alpha GO/NO-GO status, and no deployment, Meta/account or
+restaurant action may be taken — or required — to observe ingress for a Class A entry check
+(§0.2).
+
 ### 4.3 Change Class B — conditional, reversible, minimal
 
 Class B revokes grants and transfers ownership on **live** objects. It therefore *can* break
 the alpha application path mid-change.
 
-* **If alpha WhatsApp ingress is not live** (the state at authoring time — Pilot/alpha is
-  NO-GO): no block or drain is required or permitted. Record the ingress state as evidence.
+* **If alpha WhatsApp ingress is not live**: no block or drain is required or permitted.
+  Record the ingress state as evidence — the not-live finding is the objectively read-back
+  **IS-1** value of the PF-5a control (B-14), never an inference from Pilot/alpha GO/NO-GO
+  status (which was NO-GO at authoring time).
 * **If alpha ingress is live**: the only permitted block is a **reversible pause of ingress
   using the exact governed safety ingress/hold control named by the KIV-25 authorization and
   validated at PF-5a** (the alpha-critical safety control of KIV-142 item 8), engaged
@@ -771,8 +882,9 @@ worked example: it rolled back completely and left no residue.
    * **all 41 structural constraints, both constraint-trigger catalog rows and all 16 index
      relations of §2.6.1 absent** (they fall with their tables, so this is a check that the
      tables really are gone, not a separate cleanup). With the tables absent, the §2.6.2
-     `::regclass` casts will not resolve, so the residue check is by table absence — do not
-     report a cast failure as a HARD STOP here;
+     `::regclass` casts will not resolve, so the residue check is by table absence —
+     executable as the §2.6.3 A-1 probe (R5-2) — do not report a cast failure as a HARD
+     STOP here;
    * all eight A1 columns absent;
    * no `0108` migration-ledger row;
    * `count(public.members)` = `N` from B-3, with no evidence of mutation;
@@ -1348,7 +1460,7 @@ The bracket requires all of the following:
 | **IS-1** | At §3 capture, **before** the change (capture line **B-14**) | The objectively read-back enabled/disabled state of the **PF-5a-validated** control, plus `count(public.messages)`, `count(public.conversations)` (B-4) and `count(public.conversation_assignment_events)` (B-5), with one statement timestamp |
 | **IS-2** | At **end of window**, before evidence packaging — recorded **unconditionally** at whichever terminus the run reaches: **L-7** (live clean), **L-13** (live restoration), **Q-5** (not-live clean, whether or not Q-4 passed) or **Q-10** (not-live restoration) | The same four values, read with **byte-identical query text**, with its own statement timestamp |
 
-**IS-1 and IS-2 are always recorded, in every run.** They are the sequence's bracket, not a
+**IS-1 and IS-2 are always recorded, in every Class B run.** They are the sequence's bracket, not a
 deferral artifact — §7.5.5 requires both regardless of branch, terminus or read-back-6 outcome.
 The deferral question below simply consults them.
 
@@ -1522,7 +1634,7 @@ its revert at L-12. The two now agree.
 | E-3 Query text | The exact before/after query text, stored once and hashed (parity rule, §3.1) |
 | E-4 Before-state | Full §3.2 capture with timestamps |
 | E-5 Preflight | PF-1 … PF-4 results verbatim |
-| E-6 Block and ingress record | What was blocked, why it was necessary — or the recorded finding that no block was necessary. For Class B it also carries: the **PF-5a control identifier** and the **PF-5b wall-clock bound** as named by KIV-25; which §7.5 sequence applied and the IS-1 value that selected it; **IS-1 and IS-2 in full** (§7.3.1), the objective bracketing evidence, recorded in every run; and for **every** hold transition — **L-1 engage, L-5 release, L-8 re-engage, L-12 revert** — both the timestamp **and the objectively read-back observed state**, since a timestamp alone is not evidence of state (R3-4) |
+| E-6 Block and ingress record | What was blocked, why it was necessary — or the recorded finding that no block was necessary. **For Class A it carries exactly the fixed B-15 ingress-applicability statement with its timestamp (§3.2, §4.2); no control identifier, no IS-1/IS-2 and no hold transition exists for Class A (R5-1).** For Class B it also carries: the **PF-5a control identifier** and the **PF-5b wall-clock bound** as named by KIV-25; which §7.5 sequence applied and the IS-1 value that selected it; **IS-1 and IS-2 in full** (§7.3.1), the objective bracketing evidence, recorded in every run; and for **every** hold transition — **L-1 engage, L-5 release, L-8 re-engage, L-12 revert** — both the timestamp **and the objectively read-back observed state**, since a timestamp alone is not evidence of state (R3-4) |
 | E-7 Execution transcript | The full runner transcript: command line, every statement outcome, all warnings, all errors, `SQLSTATE`s, start/end timestamps, and the commit-or-rollback outcome stated explicitly |
 | E-8 After-state | Full §7 read-back, assertion by assertion, pass/fail each |
 | E-9 Residue / reversal / restoration record | §5.2 residue checklist if rolled back; §5.3 record if reversed post-commit. For Class B: the reviewed **per-group skeletons `SK-G-1 … SK-G-n`**; **every `RM-G-i` artifact with its own SHA-256, byte count and line count**, plus **`RM-MANIFEST`**; the **RM-VERIFY record** — verifier identity and a **PASS/BLOCK per artifact against that artifact's SHA-256**, all of which must match the executor's; the **§5.4.1 read-only determination**, the Q1–Q3 answers, and which of **S-0 … S-4** was matched, with the HARD STOP that fired recorded as **trigger only**; and — if restoration ran — its full transcript, each artifact's fingerprint recomputed immediately before use, **which groups were run and which were skipped whole**, the §5.4.4 verification, and the PM notification. If the holding state was entered, the §5.4.5 record instead |
@@ -1629,6 +1741,21 @@ KIV-146 may close when a fresh independent reviewer confirms this procedure:
   separate authority, not something this procedure may fix.
 * Revision 2 changed only this file. `0108`, `0107`, the proof harness and every runtime path
   are untouched, and Revision 1's commit was not amended or rewritten.
+* **The Class A ingress-applicability record (B-15) is a fixed statement, not an observation
+  (R5-1).** It asserts only that §4.2's no-block/no-drain/no-ingress-mutation rule applies to
+  Class A and that no KIV-25-named control is required to exist for it; it makes no claim
+  about technical ingress state, which is exactly why it can never be inferred from — or
+  contradicted by — alpha GO/NO-GO status. The reviewer should confirm it cannot be read as
+  ingress-state evidence, and that every Class B obligation — PF-5, IS-1/IS-2, the four hold
+  transitions, HS-25/HS-29/HS-30 — is untouched by it.
+* **§2.6.3's absence probes are catalog-safe by construction (R5-2)** — `to_regclass`,
+  `to_regtype` and allow-listed name reads that return NULL or zero rows rather than erroring
+  — assert named objects only, never a raw total, and fail closed to HS-11 on any presence.
+  The reviewer should confirm A-1 … A-4 against exact `0108` independently, and that
+  C-1 … C-4's §7.1 after-state authority is unchanged.
+* Revision 5, like every revision before it, changed only this file. `0108`, `0107`, the proof
+  harness and every runtime path are untouched, and Revision 4's terminally accepted commit
+  `a8d675b8` was not amended, rewritten or force-pushed.
 
 ### 9.2 F-1 … F-7 no-regression record
 
@@ -1656,6 +1783,17 @@ statement and §7.1's OBS-3 clarification are unchanged. §2.6's EXECUTE cross-r
 reads §7.1. §2.1 still carries exactly one authority timestamp. §7.3.1's deferral condition was
 made **harder** again, never easier. `0108` and `0107` remain untouched.
 
+**Revision 5 re-verified all seven.** F-6's byte identity holds: **PF-4a and PF-4b were not
+edited and are byte-identical to Revision 4**, which had re-verified them against the KIV-14
+mandated text. PF-4f, its §7.1 pattern counterpart and the §5.3 no-wildcard-drop prohibition
+are unchanged — **§5.3 is byte-identical to Revision 4 in full**, so the exact post-commit
+reversal path separately approved under KIV-167 is not silently changed. §2.6's membership
+statement and §7.1's OBS-3 clarification are unchanged, and §2.6's EXECUTE cross-reference
+still reads §7.1. §2.1 still carries exactly one authority timestamp, deliberately
+unrefreshed: Revision 5 re-read no authority issue and adds no authority fact. §7.3.1's
+deferral condition is unchanged in substance — its wording gains only the explicit Class B
+scope it already had in context. `0108` and `0107` remain untouched.
+
 ### 9.2.1 Revision 3 carry-forward — what Revision 4 did not implicate
 
 The Revision 3 fixes outside R3-1 … R3-5 are retained intact:
@@ -1673,6 +1811,26 @@ The Revision 3 fixes outside R3-1 … R3-5 are retained intact:
 **No broad or deferred maintenance scope is introduced.** Revision 4 adds no infrastructure: PF-5
 validates two values KIV-25 already owes, RM-VERIFY reuses the existing independent-reviewer
 lane, and §2.6.2 replaces unsafe assertions with safe ones. §0.3's exclusion list is unchanged.
+
+### 9.2.2 Revision 4 carry-forward — what Revision 5 did not implicate
+
+The Revision 4 fixes are retained intact:
+
+| Revision 4 fix | Revision 5 treatment |
+|---|---|
+| **R3-1** restoration termini L-10 … L-14 / Q-8 … Q-10, L-12 as the fourth authorized hold transition | **Untouched** — §7.5.1, §7.5.2, §7.5.4 and §7.5.5 are unchanged |
+| **R3-2** per-group `RM-G-i` artifacts, `RM-MANIFEST`, per-artifact RM-VERIFY | **Untouched** — §5.4.2, §2.7 item 5 and HS-26/HS-28 are unchanged |
+| **R3-3** ordered three-discriminant S-0 … S-4 partition | **Untouched** — §5.4.1 is unchanged |
+| **R3-4** PF-5 named control + finite smoke bound, same-control rule, objective read-back after every hold transition, HS-30 | **Retained in full for Class B and not weakened.** Revision 5 changes only its *class applicability*: the implicitly both-class wording at §2.7 item 8 / §3.2 B-14 is now explicitly Class B-only — which is what PF-5's own heading already said. Every PF-5a condition, the PF-5b bound rule, every hold-transition read-back and the HS-30 trigger are unchanged |
+| **R3-5** 11-trigger inventory, allow-list catalog assertions C-1 … C-4, version pinning | **Retained.** C-1 … C-4, their expected shapes and the §2.6.2 version assumptions are unchanged; §2.6.3 adds the before-state absence form beside them without altering any expected shape or their §7.1 after-state role |
+| Cleanups 1–3 — IS-1/IS-2 as objective bracketing evidence, IS-2 unconditional at Q-5, §4.3 revert pointer to §7.5 | **Untouched** on the Class B path; the IS-1/IS-2 wording gains only its explicit Class B qualifier |
+
+No Revision 5 change relaxes a Revision 4 constraint. Where Revision 5 changes applicability
+(Class A), it removes an impossibility — an entry requirement to read a control that the
+governing Class A authority chain can never name — rather than a safeguard, exactly as
+Revision 3's §7.5 removed the live-branch impossibility. Revision 5 likewise adds no
+infrastructure and no new scope: B-15 is one fixed evidence sentence, and §2.6.3 replaces
+erroring casts with safe reads. §0.3's exclusion list is unchanged.
 
 ### 9.3 Non-authority
 
