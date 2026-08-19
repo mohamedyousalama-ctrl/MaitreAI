@@ -7,13 +7,45 @@
 | Issue | KIV-146 — Define bounded production-change maintenance and rollback procedure for alpha |
 | Milestone | G2 — Security, order truth, WhatsApp & safety |
 | Authored | 17 August 2026 |
-| Revision | **REVISION 6** — discharges KIV-178 R6-1 … R6-13: consciously re-instantiates the Class A ceremony for the exact terminally source-cleared KIV-174 additive `0109` remediation of the already-committed-but-unaccepted post-`0108` production state, and leaves the KIV-25 Change Class B contract unchanged |
+| Revision | **REVISION 6** — discharges KIV-178 R6-1 … R6-13: consciously re-instantiates the Class A ceremony for the exact terminally source-cleared KIV-174 additive `0109` remediation of the already-committed-but-unaccepted post-`0108` production state, and leaves the KIV-25 Change Class B contract unchanged. **Corrected under KIV-181 R181-1 … R181-9 to close the KIV-180 `QUALITY BLOCK`** — see the KIV-181 change log below |
 | Supersedes | Revision 5, commit `8691d60a8141f470fe974641eccebd96f3a7e000` (**terminally accepted**; remains historical accepted evidence and the operative procedure until this revision is terminally accepted — see §0.4) · Revision 4, commit `a8d675b80f3af041b1db32c7f9344c64d74adac4` (**terminally accepted**) · Revision 3, `5ea300040565378c317fe9188d415e5370d68be8` (BLOCKED by KIV-160 Attempt 3) · Revision 2, `af1567b49a50e138ff3ba464cb2fe470c9ef1f96` (BLOCKED by Attempt 2) · Revision 1, `369faa747c48b10a01749b092e50a65e15f4d159` (BLOCKED by Attempt 1) |
-| Status | **DRAFT CANDIDATE — awaiting the KIV-178 review chain (fresh independent Engineering → separate Quality → separate Auditor) and external Linear PM terminal acceptance of this exact revision.** Not accepted. Not self-approved. Builder does not self-approve. Until external PM terminal acceptance, **Revision 5 (`8691d60a`) remains the operative accepted procedure**, and no Change Class A2 step in this document may be performed. |
+| Status | **DRAFT CANDIDATE — awaiting a fresh independent Engineering → separate Quality → separate Auditor chain and external Linear PM terminal acceptance of this exact revision.** Not accepted. Not self-approved. Builder does not self-approve. **The KIV-179 Engineering PASS and the KIV-180 Quality verdict were recorded against candidate `b5b61b9e75813625879cf1521f53f11cc90c5e13` and are not acceptance evidence for these changed bytes** — the KIV-181 remediation changes Revision-6 bytes, so the review chain restarts in full (KIV-181 review-chain reset law). Until external PM terminal acceptance, **Revision 5 (`8691d60a`) remains the operative accepted procedure**, and no Change Class A2 step in this document may be performed. |
 | Governs | KIV-14 (Change Class **A1** — historical `0108` first application; and Change Class **A2** — the exact `0109` remediation, new in Revision 6) and KIV-25 (Change Class **B**) only |
 | Replaces | The standalone full P0-MAINT / M2 maintenance-interleave program as an alpha milestone (KIV-142 §"Maintenance/control-plane simplification") |
 | Authorizes | **Nothing.** This document is a procedure/evidence gate. |
 | Authority status as at | **2026-08-17T18:02:46Z** for the Revision-5 Class A1 / Class B authorities (§2.1). **Change Class A2 forward authority and Class A2 post-commit reversal authority do not exist and are not requested by this document** (§2.1, §5.1, §0.4) |
+
+### Revision 6 remediation change log — KIV-181, closing the KIV-180 `QUALITY BLOCK`
+
+KIV-180 returned `QUALITY BLOCK` against Revision-6 candidate
+`b5b61b9e75813625879cf1521f53f11cc90c5e13`. This remediation is **narrow, docs-only, and additive
+or corrective in place**. It reopens nothing that was proved, weakens no obligation, and changes no
+source, migration, runtime or application artifact. **KIV-181 authorizes nothing** — no PR, no
+merge, no integration, no production or Supabase contact, no `0109` execution, no reversal, no
+ledger mutation, no KIV-25 action, no deployment and no Alpha GO.
+
+| Finding | Disposition | Sections changed |
+|---|---|---|
+| **R181-1** — *blocking (Q-180-1)*. P-7 required an executor capability the procedure never gated. On a **correct** A2 state a governed executor either raised `permission denied for table member_identity_versions` or received a silently row-security-filtered `miv_rows = 0`, and **PF-4b2 returned the identical governed topology in both failing profiles and in the passing one**. §2.6.5's diagnostic rule then told the reader to conclude absence — a **phantom empty control plane** reported to PM as MIV ground truth | New **§2.6.5 P-0** executor read-capability and visibility gate, read-only and catalog-safe, testing `has_table_privilege` and `row_security_active` **for `current_user`** against the three tables the data-bearing probes read. **P-6 and P-7 are not interpreted at all until P-0 passes.** A capability failure is the new **HS-41**, which is explicitly **not** HS-32 and asserts nothing about MIV, A1 or the control plane. Propagated to **every** place P-7 is required or re-run. **No repair may be used to make the gate pass**, and the gate tests capabilities, never a role name | **§2.6.5 (P-0 new; P-6, P-7, fail-closed rule)**, §2.5.1, §2.7 item 6, §3.2 (B-16), §7.1.1, §5.7 (V-2, post-reversal read-backs), §5.8 step 2, §6 (**HS-41 new**, HS-32 scoped), §8.1 (E-12), §9.1, §9.4 |
+| **R181-2** — *material (Q-180-2)*. P-8 shipped **no query text**, in a document requiring byte-identical query-text parity and forbidding *"any SQL invented in-window"* | Exact read-only text shipped as **P-8a** (catalog-safe ledger presence and executor readability), **P-8b** (one-row summary), **P-8c** (the complete verbatim enumeration). Explicit cardinality and result columns; truthful absent-ledger behaviour; **no pass/fail expectation**. **`has_0108_row` / `has_0109_row` are deliberately not computed** — this project's own deployment record states ledger names cannot be derived from repository labels, and a version-substring match was proved to produce a false positive on a real 14-digit version. The determination is PM's, from the P-8c listing. **Zero ledger-write authority is created** | **§2.6.5 (P-8 → P-8a/P-8b/P-8c)**, §7.1.1, §8.1 (E-12), §9.1 |
+| **R181-3** — *NB-1*. §2.6.5 called **P-5** catalog-safe when it errors on an absent role or schema, and called **P-8** a `pg_catalog` probe when it reads the migration ledger | **P-5 is made genuinely catalog-safe** — the OID-taking form via `pg_roles` and `to_regnamespace`, both NULL-yielding, with the probe's meaning unchanged. P-8 is described truthfully as a user-table read. §2.6.5 now **enumerates every probe's cardinality, absent-object behaviour and error classification**, and states plainly that **no error path becomes a clean PASS** | **§2.6.5** |
+| **R181-4** — *NB-2*. Blanket *"every assertion/probe returns exactly one row"* contradicted P-3 / PF-4f(A2)'s 21 rows, and could not detect a wrong count **inside** a returned row | The blanket statements are **scoped truthfully**. §2.5.1's rule now binds only PF-4a2, PF-4b2 and PF-4g; §2.6.5 ships a **per-probe cardinality table** including P-3's 21 rows and P-8c's `ledger_rows` rows, and names the only zero-row HARD STOP. **No rule may rely on cardinality to catch a filtered count** — that is P-0's job | **§2.5.1**, **§2.6.5** |
+| **R181-5** — *NB-4*. §5.8's authorized cleanup revoke is a production mutation whose exact text was never required to be written down, fingerprinted, independently reviewed or transaction-wrapped | New **§5.8 rule 5a**: materialized **outside** the live window after the exact residue and grantor are captured; exact bytes and **SHA-256** recorded and re-verified before use; **independently reviewed by a context that did not author it**; separately PM/Founder-released for **that exact incident and that exact artifact**; run under the proved whole-file `ON_ERROR_STOP` standard with post-conditions inside the transaction; **no improvisation, no `CASCADE`, no generic wildcard**. The proved §5.8 safety facts — grantor-specific cleanup, no plain-superuser shortcut, no `CASCADE`, complete reread — are **retained unchanged**. **No cleanup artifact or authority is created here** | **§5.8** |
+| **R181-6** — *NB-3, NB-6*. The §6 lead-in claimed HS-6 would fire on a correct A2 state; §9.3 sat after §9.4/§9.5, E-12 between E-10 and E-11, B-16/B-17 before B-14/B-15 | §6's lead-in now states the accurate distinction — HS-4, HS-11 and HS-24 **would fire**; **HS-6 would not**, and is excluded because PF-4d asserts the wrong thing about A2. Ordering normalised by **moving only the out-of-order rows and one whole section, byte-identically**: no protected region moved or changed, and **B-14, B-15 and E-1 … E-11 are byte-identical** | **§6**, §8.1, §3.2, §9.3 |
+| **R181-7** — protected regions / no-regression | **§5.3 remains byte-identical** at SHA-256 `4e9fa2e2855d378becffdae2fa261f59f952ab677a9af2a252aae0cc21aa3e2a`; **PF-4a/PF-4b remain byte-identical**; **every Change Class B / KIV-25 region remains byte-identical**; exact `0109` is not edited or re-materialized; A2 forward and reversal authority remain absent; `Authorizes: Nothing` and DRAFT status remain true. §9.2.3 records the proof | §9.2.3 |
+| **R181-8** — mandatory PostgreSQL 17.x proof | Every corrected query and every load-bearing mechanism re-executed on a disposable **PostgreSQL 17.11** cluster built from the exact `0108` bytes over the repository's own `0001 … 0107` stack, reproducing the KIV-165 line-175 warning signature and the governed Release-4 topology. Recorded in §2.6.5 and §9.1 | §2.6.5, §9.1 |
+
+**NB-5 (G2 semantic-equivalence checklist) and NB-7 (HS-31 / HS-32 boundary) were Quality-accepted
+as-is and are deliberately not widened.** Everything KIV-180 independently confirmed sound —
+authority separation, the exact §5.3 KIV-167 pin, Class-B byte identity, the A1/A2 disposition
+inventory, the G1 … G5 design, exact `0109` transaction behaviour, the §5.7 restoration mechanism
+and round trip, §5.8's grantor and `CASCADE` mechanics, integration custody and ledger zero-DML
+truth — is left intact.
+
+**Review status of these bytes.** Any changed Revision-6 byte invalidates the KIV-179 Engineering
+PASS and the KIV-180 Quality verdict **as acceptance evidence for the new bytes**. This candidate
+therefore requires a **fresh Engineering → fresh Quality → fresh Auditor → PM terminal acceptance**
+chain. **Revision 5 remains operative until that chain completes.**
 
 ### Revision 6 change log — KIV-178, the exact `0109` remediation ceremony
 
@@ -33,13 +65,13 @@ to A2*. Nothing carries over by assumption. The complete rule-by-rule inventory 
 | Finding | Disposition | Sections changed |
 |---|---|---|
 | **R6-1** — revision identity and conscious scope transition. Auditor A-OBS-3: Revision 5 names `0108` 44 times and `0109` once — in §5.6, as an unauthorized "fix". Patching only PF-3/HS-3 and PF-4a/PF-4b would leave the rest of the Class A instantiation silently mis-scoped | **Change Class A1 / A2 split** introduced (§2.1, §0.4). Every Revision-5 Class A rule is dispositioned for A2 in **§9.4**, and each governing section carries an explicit A1/A2 scope line. Revision 5 remains historical accepted evidence and stays operative until this candidate is terminally accepted | **§0.4 (new)**, **§2.1**, §2.3, §2.4, §2.5, §2.6, §2.7, §3.2, §4.2, §5.1, §5.2, §5.6, §6, §7.1, §8.1, **§9.4 (new)** |
-| **R6-2** — exact current production entry boundary. The A2 entry world is the committed post-`0108` state, not the pre-`0108` world | New **§2.6.5 Class A2 presence probes P-1 … P-8** (the exact polar opposite of the §2.6.3 absence probes, which are **not applicable to A2**), plus the recorded A2 entry facts in **§2.1.1**. Divergence or ambiguity = **HS-32** | **§2.1.1 (new)**, **§2.6.5 (new)**, §2.6.3 (scope line only), §3.2 |
+| **R6-2** — exact current production entry boundary. The A2 entry world is the committed post-`0108` state, not the pre-`0108` world | New **§2.6.5 Class A2 presence probes P-0 … P-8** (the exact polar opposite of the §2.6.3 absence probes, which are **not applicable to A2**), plus the recorded A2 entry facts in **§2.1.1**. Divergence or ambiguity = **HS-32**; an executor read-capability or visibility failure at **P-0** is **HS-41** and is not a state finding (R181-1) | **§2.1.1 (new)**, **§2.6.5 (new)**, §2.6.3 (scope line only), §3.2 |
 | **R6-3** — PF-4a/PF-4b are inverted for A2 (Quality Q-A, Auditor A5, both binding). They expect `kivo_control_owner` and its membership to be **absent**; the committed post-`0108` state necessarily contains both, and `0109`'s own P1 requires the role to exist | **Consciously superseded for Change Class A2 only** by new **PF-4a2 / PF-4b2** (§2.5), which assert the correctly polarised post-`0108` topology and reject drift. The Revision-5 **R5-3 byte-identity rule and PF-4a/PF-4b themselves are left byte-identical and remain authoritative for A1** — the supersession is by scope, stated and reasoned, never by silent textual edit | **§2.5 (PF-4a2/PF-4b2 added; PF-4a/PF-4b unedited)**, §6 (HS-31), §9.2, §9.4 |
 | **R6-4** — whole-file transaction. Revision 5 §2.4/PF-3 names `0108_kiv13_m1_additive_scope1.sql` by filename, so **as written it does not bind a `0109` run** | New **PF-3.A2** binds the exact `0109` runner, and **HS-3 is extended to A2** as a HARD STOP *before mutation*. The Auditor's stronger evidence is carried verbatim: under autocommit a **reported failure** leaves both the replaced function and a standing `INHERIT TRUE` residue, and the Auditor used that residue to redefine a governed function the executor does not own. **No statement-by-statement or autocommit escape hatch exists** | **§2.4 (PF-3.A2)**, §6 (HS-3 extended), §5.7 |
 | **R6-5** — live `auth.uid()` semantic guard G1 … G5. After `0109` the governed resolver no longer calls `auth.uid()`, so its semantics must be proved *before* the swap and its future drift must be owned | New **PF-4g (G1 … G3)** read-only fail-closed guard in the same target and same maintenance window; **G4** re-capture immediately before the forward transaction (§3.2 B-17); **G5** standing owner — the **durable Kivo PM role** — with an explicit re-check trigger (§7.1.1, §9.5). **G2 is never an adaptation point**; comparison is semantic, not raw-whitespace text | **§2.5 (PF-4g)**, §3.2 (B-17), §6 (HS-33/HS-34), §7.1.1, **§9.5 (new)** |
 | **R6-6** — true request-GUC security model. The comment inside the cleared `0109` source implying the request GUCs are not caller-settable SQL state is **false at the PostgreSQL layer**, independently proved by both Quality and the Auditor | The true model is recorded in **§2.6.4**: these GUCs *are* caller-settable at the database layer; the effective identity boundary is the request/PostgREST layer plus the unchanged actor/member/MIV/manager checks; exact `0109` introduces **no new identity source and no new authority path**. The source comment correction is a **separately gated later source pass** — this document does not modify `0109` and forbids folding the fix silently into integration | **§2.6.4 (new)**, §2.3, §9.1 |
 | **R6-7** — no authorized `0109` post-commit reversal path exists (Quality Q-B, Auditor A6, both binding). KIV-167 authorizes **only** the exact Revision-4/5 §5.3 path, which is a broad `0108` teardown that would **drop** `kv_control_assert_actor` rather than reverse `0109` | New **§5.7 — Tier R-B2**, an exact `0109`-specific post-commit reversal that restores the exact accepted `0108` definition of that one function and nothing else. **§5.3 is left byte-identical** so KIV-167's authority is neither altered nor stretched. R-B2 requires its **own fresh separate Founder authorization, held unused before the forward run**, which **does not exist** and is not claimed here | **§5.7 (new)**, §5.1, §5.6 (clarification), §6 (HS-35 … HS-38), §2.7 |
-| **R6-8** — dangerous-window residue incident guidance (Auditor A-OBS-2) | New **§5.8**: HARD STOP all mutation; read-only inspection; no automatic cleanup; no plain-superuser `REVOKE` assumption — a plain superuser revoke **fails** with `dependent privileges exist`; the correct prepared cleanup is a **grantor-issued bounded revoke** after exact state verification and explicit PM/Founder release; **`CASCADE` is forbidden** unless separately reviewed and authorized because it would also remove the governed standing membership `0108`/`0109` assert; full re-read before any further decision | **§5.8 (new)**, §6 (HS-39) |
+| **R6-8** — dangerous-window residue incident guidance (Auditor A-OBS-2) | New **§5.8**: HARD STOP all mutation; read-only inspection; no automatic cleanup; no plain-superuser `REVOKE` assumption — a plain superuser revoke **fails** with `dependent privileges exist`; the correct prepared cleanup is a **grantor-issued bounded revoke** after exact state verification and explicit PM/Founder release; **`CASCADE` is forbidden** unless separately reviewed and authorized because it would also remove the governed standing membership `0108`/`0109` assert; full re-read before any further decision. **Rule 5a (R181-5)** additionally requires any cleanup statement to be materialized outside the live window, fingerprinted, independently reviewed, separately released for that exact incident, and run under the proved whole-file transaction standard | **§5.8 (new)**, §6 (HS-39) |
 | **R6-9** — the KIV-165 / KIV-173 migration-ledger contradiction | Resolved truthfully for the actual runner in **§7.1.1**: exact `0109` writes **no** ledger row; **absence of a `0109` row is not evidence the transaction failed**; ledger state is captured and reported as evidence only; **no retroactive `0108` row** and **no invented out-of-band `0109` ledger mutation**. Revision 5 §2.6/§7.1's unconditional `0108` ledger expectation is **not applicable to A2** | **§7.1.1**, §3.2 (B-12 scope), §9.4 |
 | **R6-10** — forward success / post-commit verification for A2 | New **§7.1.1** after-state contract: exact repaired body semantics; owner, SECURITY DEFINER, empty `search_path`, signature, result shape and ACL unchanged; temporary capability fully returned; executor `SET ROLE` still unavailable; no unintended auth-schema privilege; both request-subject transports working; every fail-closed path intact; service path unchanged; HS-12-clean run; second application refuses; truthful ledger evidence; zero unrelated drift. **Separate independent post-remediation verification remains mandatory — executor evidence cannot self-close KIV-14** | **§7.1.1 (new)**, §7.4 |
 | **R6-11** — integration custody I1 … I5 | Recorded in **§2.3.1**. The reviewed source artifact is exact `cc74e14c…`; it must **not** be rebased, cherry-picked or re-materialized, because that would silently transfer three independent reviews to bytes nobody reviewed. **This document authorizes no integration and no PR** | **§2.3.1 (new)**, §9.1 |
@@ -55,7 +87,7 @@ Revision 5 carry-forward, and §9.4 the complete Class A disposition inventory.
 
 Revision 6 is documentation-only. No migration, source, runtime or production artifact was changed.
 `0109`, `0108` and `0107` are untouched, and no PR, merge, integration or production action was
-performed.
+performed. **The KIV-181 remediation above holds to exactly the same boundary.**
 
 ### Revision 5 change log — KIV-168 Release 3 procedure defects — historical, retained
 
@@ -584,14 +616,21 @@ change of the rule.** PF-4a, PF-4b and the R5-3 byte-identity obligation are lef
 and continue to govern A1 unchanged. Nothing below weakens any A1 obligation, and **no silent
 textual edit was made.**
 
-**Cardinality rule (R6-3).** Every A2 assertion below returns **exactly one row**. That is
-deliberate. A1's assertions are satisfied by an empty result, so under A2's inverted polarity an
+**Cardinality rule, scoped truthfully (R6-3, R181-4).** **PF-4a2, PF-4b2 and PF-4g each return
+exactly one row**, and for those three, **zero rows returned is itself a failure, not a pass**. That
+is deliberate. A1's assertions are satisfied by an empty result, so under A2's inverted polarity an
 empty result — a typo, a permission error swallowed by tooling, a query run against the wrong
-session — could be misread as clean. Under A2, **zero rows returned from any check below is itself
-a failure**, not a pass. Every check in this section is also catalog-safe: PF-4a2, PF-4b2 and PF-4g
-read `pg_catalog` through aggregates, so a missing object yields zero counts and NULLs rather than
-an error — and under the rule above those are failures. (§2.6.5's P-6 and P-7 are the deliberate
-exception, for the reason stated there.)
+session — could be misread as clean. Those three checks are also catalog-safe: they read
+`pg_catalog` through aggregates, so a missing object yields zero counts and NULLs rather than an
+error, and under the rule above those are failures.
+
+**This rule is scoped to those three checks and is not a blanket property of A2 (R181-4).** It does
+**not** extend to the A2 form of **PF-4f**, which requires **exactly 21 rows** and whose own text
+governs, nor to §2.6.5, which states a **truthful per-probe cardinality** including P-3's 21 rows
+and P-8c's `ledger_rows` rows. **And it detects nothing about the values inside a returned row:** a
+count-bearing probe can return exactly one row whose counts are silently wrong, which is why
+§2.6.5's **P-0** capability gate exists and why no rule in this document may lean on cardinality to
+catch a filtered count.
 
 **PF-4a2 — `kivo_control_owner` must exist, with exactly the governed safe attribute set**
 (supersedes PF-4a for A2):
@@ -1187,25 +1226,129 @@ release-quality documentation defect, not a security defect. **Do not modify `01
 procedure, and do not fold the comment fix silently into integration** — either would change the
 terminally cleared bytes and void the KIV-175/176/177 chain (§2.3, §2.3.1 I4).
 
-### 2.6.5 Change Class A2 presence probes P-1 … P-8 (R6-2)
+### 2.6.5 Change Class A2 presence probes P-0 … P-8 (R6-2, R181-1, R181-2, R181-3, R181-4)
 
 These define the executable A2 before-state. They are the **exact polar opposite** of §2.6.3's
-absence probes and replace them entirely for A2. Every probe is **read-only** and returns
-**exactly one row**, so a missing result is a detectable fault rather than a silent pass (§2.5.1
-cardinality rule). The executor records the server version beside the results, exactly as §2.6.2
-requires beside C-1 … C-4.
+absence probes and replace them entirely for A2. Every probe is **read-only**. The executor records
+the server version beside the results, exactly as §2.6.2 requires beside C-1 … C-4.
 
-**How far catalog-safety extends, stated precisely.** **P-1 … P-5 and P-8 are catalog-safe by
-construction**: they read `pg_catalog` through aggregates, `to_regtype` and `has_schema_privilege`,
-so they return a row with zero counts or NULLs rather than erroring when an expected object is
-absent — and under the cardinality rule those zeros and NULLs are failures, not passes. **P-6 and
-P-7 are not, and deliberately so**: they read `public.conversation_assignment_events`,
-`public.members` and `public.member_identity_versions` directly, because a count of actual rows is
-the only thing that can answer what they ask. In the A2 entry world all three necessarily exist, so
-if one of those reads errors, the error **is** the finding — **HS-12**, and **HS-32** — which is the
-correct fail-closed outcome. This mirrors §2.6.3's treatment of A-4 beside B-5 exactly: a probe is
-allowed to error when erroring is the only honest answer, provided the procedure says so in
-advance.
+**Cardinality is stated per probe, never as a blanket rule (R181-4).** An earlier Revision-6 draft
+said every probe here returns exactly one row. That was false for **P-3**, and it is false for the
+shipped **P-8c**. Worse, a blanket cardinality rule cannot detect the failure it was written to
+catch: a probe can return exactly one row whose **counts inside it are silently wrong**, which is
+precisely the executor-visibility defect **P-0** now exists to prevent. **The per-probe row below
+governs. No rule anywhere in this document may rely on a blanket cardinality statement to detect a
+filtered or incorrect count value.**
+
+| Probe | Guaranteed cardinality | Behaviour when a target is absent or unreadable | How an error is classified |
+|---|---|---|---|
+| **P-0** | exactly one row, always | returns one row of NULLs — `to_regclass`, `has_table_privilege` and `row_security_active` are all strict on a NULL relation, so absence never raises | catalog-safe; it cannot error on absence, so **any** error from P-0 is unexpected → **HS-12** |
+| **P-1** | exactly one row, always | zero counts | catalog-safe; any error → **HS-12** |
+| **P-2** | exactly one row, always | `type_present = false` | catalog-safe; any error → **HS-12** |
+| **P-3** | **exactly 21 rows** on the expected state | **zero rows**, and zero rows here is itself the finding | catalog-safe; **zero rows = HS-32**; any error → **HS-12** |
+| **P-4** | exactly one row, always | `fn_rows = 0` with NULL flags | catalog-safe; any error → **HS-12** |
+| **P-5** | exactly one row, always | `role_present` / `auth_schema_present` false, privilege flags NULL | **catalog-safe in the corrected form below (R181-3)**; any error → **HS-12** |
+| **P-6** | exactly one row — **only once P-0 has passed** | not applicable: P-0 and P-1 have already proved presence, and P-0 has proved readability | **deliberately reads table rows.** An error or a filtered count here is an **executor-capability** finding → **HS-41**, *not* HS-32 |
+| **P-7** | exactly one row — **only once P-0 has passed** | not applicable, for the same reason | as P-6 → **HS-41**, *not* HS-32 |
+| **P-8a** | exactly one row, always | returns NULLs when the ledger relation is absent | catalog-safe; any error → **HS-12** |
+| **P-8b** | exactly one row, always — **only once P-8a shows the ledger present and readable** | on an empty ledger: `ledger_rows = 0`, `max_version` NULL. **That is truthful evidence, not a failure** | **deliberately reads a user table.** An error → record verbatim, **HS-12** |
+| **P-8c** | **exactly `ledger_rows` rows** — zero on an empty ledger, which is truthful evidence and **not** a stop | as P-8b | as P-8b |
+
+**A zero-row result is a HARD STOP only where the table above says so** — that is **P-3**, and only
+P-3. **P-8c** returning zero rows is evidence with no pass/fail expectation.
+
+**Which probes may error, and why the distinction is load-bearing.** **P-0, P-1 … P-5 and P-8a are
+catalog-safe by construction**: they read `pg_catalog` through aggregates, `to_regclass`,
+`to_regtype`, `to_regnamespace`, `has_table_privilege`, `has_schema_privilege` and
+`row_security_active`, every one of which is strict on a NULL object reference, so an absent object
+yields NULLs rather than an error. **P-6, P-7, P-8b and P-8c are not catalog probes and are not
+catalog-safe**: they read the rows of `public.conversation_assignment_events`,
+`public.members`, `public.member_identity_versions` and the migration ledger directly, because a
+count of actual rows is the only thing that can answer what they ask.
+
+**An earlier draft of this section mis-stated both facts, and each mis-statement was proved wrong
+on PostgreSQL 17 (R181-3).** It listed **P-5** as catalog-safe, when
+`has_schema_privilege('kivo_control_owner','auth','USAGE')` raises `ERROR: role "…" does not exist`
+or `ERROR: schema "…" does not exist` rather than returning NULL — P-5 is corrected below so the
+claim becomes true. It also listed **P-8** as reading `pg_catalog`, when P-8 reads the **migration
+ledger**, a user table in a user schema. Neither statement is repeated anywhere in this document.
+
+**A P-6 or P-7 error does not mean the object is absent.** The earlier draft said *"in the A2 entry
+world all three necessarily exist, so if one of those reads errors, the error **is** the finding."*
+**That reasoning is false and it is now removed.** On a perfectly correct A2 state the far more
+likely cause is **executor privilege or RLS posture on an object that is present and exactly
+right** — see **P-0**. Presence is established by P-0 and P-1, readability by P-0; only then is a
+P-6/P-7 result about data at all.
+
+**No error path becomes a clean PASS.** Every error above is recorded verbatim and reported to PM.
+An error is never rewritten as a zero, a NULL or a pass; a probe that could not be executed is
+never reported as a probe that returned nothing; and a count obtained without P-0 having passed is
+never reported as state.
+
+**P-0 — executor read-capability and visibility gate. It runs first, and P-6 and P-7 mean nothing
+until it passes (R181-1).**
+
+**Why this gate exists.** P-6 and P-7 read table *rows*, not catalog metadata, so their answers are
+only ever as complete as the executing role's visibility of those tables. **Neither PF-4a2 nor
+PF-4b2 can measure that.** Exact `0108` transfers `public.member_identity_versions` to
+`kivo_control_owner`, leaves **RLS and FORCE RLS** enabled — which P-1 itself asserts — and grants
+`SELECT` on it only to `authenticated`; and PF-4b2 *requires* the executor's standing membership to
+carry `inherit_option = false` and `set_option = false`, so the executor derives **no** access from
+ownership. P-7's executability and correctness therefore rest on two executor properties that are
+nowhere else in this procedure: whether the executor can select from the table at all, and whether
+row-level security filters what it sees. **PF-4b2 returns the identical governed topology whether
+the executor sees every MIV row or none of them.** Without this gate, a correct A2 state can
+produce either `ERROR: permission denied for table member_identity_versions` or a clean single row
+reading `miv_rows = 0` — a **phantom empty control plane** reported to PM as MIV ground truth.
+
+```sql
+select
+  current_user                                                                                            as executor,
+  pg_catalog.current_setting('row_security')                                                              as row_security_setting,
+  pg_catalog.to_regclass('public.members')                                  is not null                   as members_present,
+  pg_catalog.has_table_privilege(pg_catalog.to_regclass('public.members'),'SELECT')                        as members_select,
+  pg_catalog.row_security_active(pg_catalog.to_regclass('public.members'))                                 as members_rls_active,
+  pg_catalog.to_regclass('public.member_identity_versions')                 is not null                   as miv_present,
+  pg_catalog.has_table_privilege(pg_catalog.to_regclass('public.member_identity_versions'),'SELECT')       as miv_select,
+  pg_catalog.row_security_active(pg_catalog.to_regclass('public.member_identity_versions'))                as miv_rls_active,
+  pg_catalog.to_regclass('public.conversation_assignment_events')           is not null                   as cae_present,
+  pg_catalog.has_table_privilege(pg_catalog.to_regclass('public.conversation_assignment_events'),'SELECT') as cae_select,
+  pg_catalog.row_security_active(pg_catalog.to_regclass('public.conversation_assignment_events'))          as cae_rls_active;
+```
+
+Expected: **exactly one row**, with **every `_present` true**, **every `_select` true**, and **every
+`_rls_active` FALSE**. `executor` and `row_security_setting` are recorded as evidence, not asserted.
+
+**Anything else — any `false`, any NULL, or no row at all — is HARD STOP (HS-41).** HS-41 is an
+**executor-capability / visibility** finding and is deliberately **not** HS-32: it says nothing
+whatever about MIV, A1 or control-plane state, and it must never be reported as though it did.
+
+**What each column decides, precisely.**
+
+* `*_present = false` — the table is absent. That contradicts §2.1.1 and P-1 will say so too, but
+  P-0 stops first and reports it as *unreadable-or-absent*, not as a count.
+* `*_select = false` — the executor holds no `SELECT` on that table, directly or by inheritance. A
+  read would raise `42501`. **This is the profile in which the naive probe errors.**
+* `*_rls_active = true` — row-level security **would be applied to this executor's reads of this
+  table**. Every row not passing a policy is silently removed and **no error is raised**. **This is
+  the profile in which the naive probe returns a clean, wrong zero.** `row_security_active()` is
+  evaluated for `current_user` in the current environment and already accounts for the table's
+  `relrowsecurity` and `relforcerowsecurity` flags, table ownership, the executor's `BYPASSRLS`
+  attribute and the `row_security` setting, so no separate assertion of any of those is needed.
+
+**This gate tests capabilities, never identity (R181-1).** It contains no role name for the
+executor and no expectation about `current_user`. A role called `postgres` with the wrong
+capabilities fails it; a differently named role with the right capabilities passes it. Executor
+*identity* against the Release-4 evidence remains a separate matter, routed to **HS-32** by §2.5.1.
+**No privilege may be inferred from a role name, from Supabase convention, or from the fact that a
+fixture happened to work.**
+
+**Nothing may be repaired to make this gate pass.** No `GRANT`, no `REVOKE`, no membership change,
+no `BYPASSRLS` change, no `SET ROLE`, no role switch, no policy change, no change to `row_security`,
+and no other live repair — in preflight or at any later re-run. An executor that cannot pass P-0 is
+**not the executor this change may be run by**, and that is a finding for PM, not a gap to close
+in-window. **A capability HOLD is not a data finding, and the procedure keeps the two apart on
+purpose:** HS-41 means *we do not yet know the MIV state*; HS-32 means *we know it and it is wrong*.
 
 **P-1 — the three governed tables exist, owned and protected as `0108` left them:**
 
@@ -1276,17 +1419,39 @@ gate**, since a body hash is environment- and formatting-sensitive.
 
 ```sql
 select
-  pg_catalog.has_schema_privilege('kivo_control_owner','auth','USAGE')   as auth_usage,
-  pg_catalog.has_schema_privilege('kivo_control_owner','auth','CREATE')  as auth_create,
-  pg_catalog.has_schema_privilege('kivo_control_owner','public','CREATE') as public_create;
+  (select r.oid from pg_catalog.pg_roles r where r.rolname = 'kivo_control_owner') is not null  as role_present,
+  pg_catalog.to_regnamespace('auth')   is not null                                              as auth_schema_present,
+  pg_catalog.has_schema_privilege(
+    (select r.oid from pg_catalog.pg_roles r where r.rolname = 'kivo_control_owner'),
+    pg_catalog.to_regnamespace('auth')::oid,   'USAGE')                                         as auth_usage,
+  pg_catalog.has_schema_privilege(
+    (select r.oid from pg_catalog.pg_roles r where r.rolname = 'kivo_control_owner'),
+    pg_catalog.to_regnamespace('auth')::oid,   'CREATE')                                        as auth_create,
+  pg_catalog.has_schema_privilege(
+    (select r.oid from pg_catalog.pg_roles r where r.rolname = 'kivo_control_owner'),
+    pg_catalog.to_regnamespace('public')::oid, 'CREATE')                                        as public_create;
 ```
 
-Expected: one row, **all three false**. `auth_usage = true` would mean the runtime defect KIV-173
-proved is **not** present and A2's premise does not hold — **HARD STOP (HS-32)**. It is also the
-signature of an unauthorized in-place grant repair, which is forbidden. **Do not grant, revoke or
-repair any of these.**
+Expected: **exactly one row**, with `role_present` and `auth_schema_present` **true** and
+`auth_usage`, `auth_create`, `public_create` **all three false**. `auth_usage = true` would mean the
+runtime defect KIV-173 proved is **not** present and A2's premise does not hold — **HARD STOP
+(HS-32)**. It is also the signature of an unauthorized in-place grant repair, which is forbidden.
+**Do not grant, revoke or repair any of these.**
 
-**P-6 — the eight A1 evidence columns exist and are still entirely NULL:**
+**Why this form and not the shorter one (R181-3).** The name-taking form
+`has_schema_privilege('kivo_control_owner','auth','USAGE')` **raises** `ERROR: role "…" does not
+exist` when the role is absent and `ERROR: schema "…" does not exist` when the schema is absent —
+independently reproduced on PostgreSQL 17.11. It was therefore wrongly described as catalog-safe.
+The OID-taking form above resolves the role through `pg_roles` and the schema through
+`to_regnamespace`, both of which yield NULL rather than raising, and `has_schema_privilege` is
+strict on a NULL argument. **The probe now genuinely returns one row in every state**, and an absent
+role or schema surfaces as `role_present = false` / `auth_schema_present = false` with NULL
+privilege flags — a recorded fail-closed observation under the expectation above, never an error and
+never a silent pass. **The meaning of the probe is unchanged**; only its behaviour on an absent
+object is corrected.
+
+**P-6 — the eight A1 evidence columns exist and are still entirely NULL. P-0 must have passed
+first (R181-1):**
 
 ```sql
 select
@@ -1306,7 +1471,14 @@ Expected: one row, `a1_columns = 8` and `a1_nonnull_rows = 0`. Recorded because 
 reversal guard depends on it and because a non-zero value would mean a later stage began
 populating canonical evidence — a material change of state PM must adjudicate.
 
-**P-7 — MIV is in the state `0108` left it:**
+**`a1_nonnull_rows` is a row count and is therefore governed by P-0 (R181-1).** `a1_columns` is a
+catalog count and is safe on its own. `a1_nonnull_rows` is not: without `cae_select = true` and
+`cae_rls_active = false` at P-0, this read either raises `42501` or returns a row-security-filtered
+number. **If P-0 did not pass, do not run P-6 and do not interpret any value it returned:
+HS-41.**
+
+**P-7 — MIV is in the state `0108` left it. P-0 must have passed first, and its result is what
+makes this probe a statement about MIV rather than about the executor (R181-1):**
 
 ```sql
 select
@@ -1319,25 +1491,150 @@ select
 Expected: one row, `miv_rows = members_n`, `miv_open_rows = members_n`, `miv_non_v1_rows = 0`.
 `members_n` is read **contemporaneously** and is never assumed from any historical figure.
 
-**P-8 — migration-ledger state, captured truthfully as evidence only.** Record `max(version)` and
-whether a `0108` row and a `0109` row exist. **This probe has no pass/fail expectation** — see
-§7.1.1 (R6-9) for why. **No ledger row may be inserted, corrected or backfilled.**
+**Order of interpretation, which is not optional (R181-1).**
 
-**Fail-closed rule.** Any divergence from, or ambiguity about, the expectations above is **HARD
-STOP (HS-32)**: record the exact observation verbatim and report to PM. Do not grant, revoke,
-create, drop, re-own, retry `0108`, or "clean up" anything found. Adjudicating an unexpected state
-is PM's, not the executor's.
+1. **If P-0 did not pass, stop at HS-41.** Do **not** run P-7, and if it was already run, do **not**
+   interpret, record as state, or report to PM any number it returned. The finding is
+   *executor capability / visibility*, and the honest report is **"MIV ground truth is not
+   established"** — never "MIV is empty", never "MIV diverges", never an A2 entry-state divergence.
+2. **Only once P-0 has passed** do the three counts describe MIV, and only then may a divergence
+   from the expectation above be concluded — **HARD STOP (HS-32)**.
+
+**`miv_rows = 0` is never reportable as MIV ground truth unless P-0 passed in the same session
+against the same target.** A zero produced under `miv_rls_active = true` is an artifact of the
+executor's row-security posture, not a fact about the control plane, and reporting it as one would
+manufacture a false claim that production's control plane is empty at the exact moment the
+programme is establishing ground truth after KIV-165.
+
+**Independently reproduced on PostgreSQL 17.11**, from the exact `0108` bytes, on a governed
+post-`0108` fixture whose MIV ground truth is 20 rows / 20 open / 0 non-v1 — a **correct** A2 entry
+state — with the governed standing membership held by the executor, granted by a superuser, with
+`admin = true / set = false / inherit = false`:
+
+| Executor capability profile | P-0 | P-7 as a bare read | Correct outcome |
+|---|---|---|---|
+| Release-4-like: `SELECT` on MIV **and** complete visibility | `miv_select = t`, `miv_rls_active = f` | `20 \| 20 \| 20 \| 0` — **correct** | **PASS**, and the counts are MIV ground truth |
+| Holds `SELECT`, **lacks** RLS-bypass/complete visibility | `miv_select = t`, **`miv_rls_active = t`** | `20 \| 0 \| 0 \| 0` — a clean row, **silently filtered**, no error | **HS-41** before any count is read |
+| **Lacks** `SELECT` on MIV | **`miv_select = f`** | `ERROR: permission denied for table member_identity_versions` | **HS-41**, an executor-capability finding, **not** HS-12/HS-32 evidence of absence |
+
+**PF-4b2 returned `1 \| 0 \| 0 \| 0 \| 0 \| 0` — identical — in all three profiles.** That is the
+whole point: the topology gate cannot tell them apart, and P-0 can.
+
+**If no read-only path can establish this, stop.** If in a live window P-0 cannot pass without
+adding capability the executor has not been proved to hold, the answer is **HS-41 and report** —
+never a grant, never a `SET ROLE`, never a policy change, and never a substitute query that appears
+to answer the same question with less privilege.
+
+**P-8 — migration-ledger state, captured truthfully as evidence only (R181-2).** **This probe has
+no pass/fail expectation** — see §7.1.1 (R6-9) for why. **No ledger row may be inserted, corrected,
+backfilled or deleted, and nothing below authorizes any ledger write of any kind.**
+
+An earlier Revision-6 draft shipped **no query text for P-8**, in a document whose §3.1 requires
+byte-identical query-text parity and whose §5.6 and §5.7 forbid *"any SQL invented in-window"*. The
+exact text is shipped here, in three parts, so the executor authors nothing.
+
+**P-8a — is the ledger relation present, and can this executor read it? Catalog-safe; exactly one
+row in every state:**
+
+```sql
+select
+  pg_catalog.to_regclass('supabase_migrations.schema_migrations') is not null                              as ledger_present,
+  pg_catalog.has_table_privilege(pg_catalog.to_regclass('supabase_migrations.schema_migrations'),'SELECT') as ledger_select,
+  pg_catalog.row_security_active(pg_catalog.to_regclass('supabase_migrations.schema_migrations'))          as ledger_rls_active;
+```
+
+Recorded as evidence, with **no pass/fail expectation**. `ledger_present = false` is a truthful,
+expected-in-principle observation — this repository has no migration runner — and is **not** a
+failure. **P-8b and P-8c are run only when `ledger_present` and `ledger_select` are true and
+`ledger_rls_active` is false**; otherwise they are not run and the recorded evidence is P-8a's row
+plus the verbatim statement *"ledger not present / not readable by this executor; no ledger content
+captured"*.
+
+**P-8b — ledger summary. Exactly one row whenever it is run, including on an empty ledger:**
+
+```sql
+select
+  count(*)                                                   as ledger_rows,
+  max(m.version)                                             as max_version,
+  count(*) filter (where m.name like '%0108%')               as name_0108_candidates,
+  count(*) filter (where m.name like '%0109%')               as name_0109_candidates
+from supabase_migrations.schema_migrations m;
+```
+
+**P-8c — the complete verbatim ledger enumeration. Exactly `ledger_rows` rows; zero rows on an empty
+ledger is truthful evidence, not a stop:**
+
+```sql
+select m.version, m.name
+from supabase_migrations.schema_migrations m
+order by m.version;
+```
+
+**Exact semantics, including the one this procedure deliberately does not compute.**
+
+* **`max(version)`** — the lexical maximum of the `version` column over the rows this executor can
+  see, or **NULL** on an empty ledger. It is the ledger's own 14-digit execution version, and it is
+  reported as read.
+* **`ledger_rows`** — the number of ledger rows visible to this executor. `0` means *no visible
+  rows*, which on an unreadable ledger would already have been caught by P-8a.
+* **`has_0108_row` and `has_0109_row` are NOT computed by any query here, and the executor must not
+  assert either.** This document's own accepted deployment record states that the repository's
+  four-digit labels are filing labels only, that the production ledger is keyed by 14-digit
+  execution versions, that ledger **names** are historically inconsistent — some keep the label
+  (`0104_safety_ingress_evidence`), some drop it (`brain_execution_substrate`), some carry it as a
+  suffix (`cod_settlement_atomic_0092`) — and therefore that **ledger names cannot reliably be
+  derived from repository filenames**. A query-computed boolean would be invented precision.
+* **`name_0108_candidates` / `name_0109_candidates` are a search aid, not a determination.** They
+  count ledger **names** containing the label substring, and they are reported as candidate counts
+  under exactly that word. **They are deliberately not matched against `version`:** on PostgreSQL
+  17.11 the real 14-digit version `20260801090000` — the row for `0104_safety_ingress_evidence` —
+  contains the substring `0109` and would produce a **false positive**. That was reproduced, and it
+  is why the match is restricted to `name` and why the candidate count is never a verdict.
+* **The determination is PM's, from the verbatim P-8c listing**, which is the actual evidence. The
+  executor reports P-8a, P-8b and the complete P-8c rows and draws no conclusion.
+
+**Truthful absent-ledger and error behaviour.** P-8a cannot error on absence. **P-8b and P-8c can**
+— they name a relation directly — which is exactly why P-8a gates them. If P-8b or P-8c nevertheless
+raises (for instance the relation exists with a different column shape), that error is real and
+unanticipated: record it verbatim, report it, and treat it under **HS-12**. **It is not evidence
+about ledger content, it is not a zero, and it is not a pass.**
+
+**Fail-closed rule, with the two findings kept apart (R181-1).** Any divergence from, or ambiguity
+about, the expectations above is a **HARD STOP**: record the exact observation verbatim and report to
+PM. Do not grant, revoke, create, drop, re-own, retry `0108`, or "clean up" anything found.
+Adjudicating an unexpected state is PM's, not the executor's. **Which stop applies is itself part of
+the finding, and PM and any later reviewer must be able to tell them apart:**
+
+* **HS-41 — executor capability / visibility.** P-0 failed, or a P-6/P-7 read raised or was filtered.
+  The correct report is **"MIV / A1 ground truth is not established under this executor profile"**.
+  It asserts **nothing** about MIV, A1, the control plane or the A2 entry state, and it must never be
+  written up, summarised or escalated as though it did. The remedy is a PM decision about the
+  executor, never a repair.
+* **HS-32 — A2 entry-state divergence.** The capability gate passed, the reads are trustworthy, and
+  the observed state genuinely differs from §2.1.1. Only this one is a statement about production.
+
+**A capability HOLD may never be converted into a state finding, and a state finding may never be
+excused as a capability problem.**
 
 **Builder validation note.** Every query in §2.5.1 and §2.6.5 was executed as written on a
-disposable PostgreSQL 17.11 fixture built from the exact `0108` Git bytes. **PF-4a2, PF-4b2, P-1,
-P-2, P-4, P-5 and P-7 each returned exactly one row**, and PF-4a2 and P-4 were additionally
-confirmed to return **one row with zero counts and NULL flags** — never zero rows and never an
-error — when their target object is absent, so an absent object fails closed under the cardinality
-rule rather than reading as clean. **P-6 errored when its table was absent**, exactly as this
-section says it should. **PF-4b2 was proved to detect dangerous-window residue on three independent
-counters at once** (`membership_rows = 2`, `rows_with_inherit = 1`, `rows_without_admin = 1`). This
-is Builder evidence for review, not acceptance, and it is a fixture — **it is not evidence about
-production state**, which must be read contemporaneously at execution time.
+disposable PostgreSQL 17.11 fixture built from the exact `0108` Git bytes, over the repository's own
+`0001 … 0107` stack, with a Supabase-faithful role graph in which the executor is a **non-superuser**
+role carrying `BYPASSRLS` and `CREATEROLE`, the governed membership is granted by a **superuser**,
+and MIV ground truth is 20 rows / 20 open / 0 non-v1. The fixture reproduced the exact KIV-165 defect
+signature — `WARNING: no privileges were granted for "auth"` at `0108` line 175 — and the governed
+post-`0108` topology `admin = true / set = false / inherit = false` with a superuser grantor.
+
+**P-0, PF-4a2, PF-4b2, P-1, P-2, P-4, P-5, P-6, P-7, P-8a and P-8b each returned exactly one row**;
+**P-3 returned exactly 21**; **P-8c returned exactly `ledger_rows` rows**, including **zero rows on
+an empty ledger without erroring**. **P-0 and the corrected P-5 were additionally confirmed to
+return one row of NULLs — never zero rows and never an error — when their target object or role is
+absent.** **P-0 was proved to separate all three executor capability profiles** (correct;
+`SELECT` without complete visibility; no `SELECT`) **while PF-4b2 returned the identical governed
+topology in all three**. **PF-4b2 was proved to detect dangerous-window residue on four independent
+counters at once** (`membership_rows = 2`, `rows_with_inherit = 1`, `rows_without_admin = 1`,
+`rows_with_nonsuperuser_grantor = 1`). This is Builder evidence for review, not acceptance, and it
+is a fixture — **it is not evidence about production state**, which must be read contemporaneously
+at execution time.
 
 ### 2.7 Entry checklist — all must be true, in order
 
@@ -1370,8 +1667,11 @@ production state**, which must be read contemporaneously at execution time.
      mismatched or BLOCKed PASS = **HARD STOP (HS-28)**. Both stop *before* the forward change.
 6. PF-1 through PF-4 pass, PF-4f included for Class A1, **and PF-5 passes for Class B**.
    **For Class A2 instead:** PF-1, PF-2.A2, **PF-3.A2**, PF-4a2, PF-4b2, PF-4c, the A2 form of
-   PF-4f, **PF-4g (G1 … G3)** and the §2.6.5 presence probes **P-1 … P-8** all pass. PF-4a, PF-4b
-   and PF-4d are **not run for A2** (§2.5.1), and §2.6.3's A-1 … A-4 are **not applicable**.
+   PF-4f, **PF-4g (G1 … G3)** and the §2.6.5 presence probes **P-0 … P-8** all pass — **P-0 first,
+   and P-6 and P-7 are not interpreted at all until P-0 has passed** (§2.6.5, R181-1). A P-0 failure
+   is **HS-41**, an executor-capability HOLD, and is never recorded as an entry-state divergence.
+   PF-4a, PF-4b and PF-4d are **not run for A2** (§2.5.1), and §2.6.3's A-1 … A-4 are **not
+   applicable**.
 7. PM has released exactly one named executor for exactly one attempt.
 8. **Class B:** alpha WhatsApp ingress state is known and recorded as **IS-1** — an objective
    read-back of the PF-5a-validated control (§3.2 B-14, §4.3), never an inference from alpha
@@ -1418,7 +1718,7 @@ classes.
 
 > **Change Class A2 (R6-1, R6-2).** A2 captures **B-1 … B-13 and B-15** as written, plus the two
 > new A2-only lines **B-16** and **B-17**. Three lines take their A2 form: **B-9** runs the §2.6.5
-> presence probes **P-1 … P-8** — never §2.6.3's A-1 … A-4, which assert the opposite state and are
+> presence probes **P-0 … P-8** — never §2.6.3's A-1 … A-4, which assert the opposite state and are
 > not applicable; **B-2** recomputes the **PF-2.A2** `0109` identities as well as `0108`'s; and
 > **B-12** is captured for A2 as **truthful evidence with no pass/fail expectation** (§7.1.1,
 > R6-9). **B-14 is never captured for A2.**
@@ -1438,10 +1738,10 @@ classes.
 | B-11 | Grant set for every governed table and function: grantee, privilege type, column scope | the pre-change values Class B must be able to restore |
 | B-12 | Migration ledger: `max(version)` and whether a `0108` row exists | |
 | B-13 | Non-disclosing member fingerprint evidence consistent with the KIV-14 baseline method | proves `public.members` was not mutated, without disclosing it |
-| B-16 | **Change Class A2 only (R6-2).** The complete §2.6.5 **P-1 … P-8** presence-probe results verbatim, with the server version and one statement timestamp — including the **P-4** target-function identity and its `body_md5`, and the **P-5** proof that `kivo_control_owner` still lacks `auth` USAGE | this is A2's before-state. **P-4's `body_md5` is the exact pre-`0109` fingerprint §5.7 must restore to and §7.1.1 must show changed.** Never captured for A1 or B |
-| B-17 | **Change Class A2 only — G4 (R6-5).** The **PF-4g / G1 … G3** capture re-run **immediately before the forward transaction**, in the same session against the same target: `prosrc`, `prosrc_md5`, `functiondef`, `arg_list`, `uid_rows`, the recorded semantic determination against V4, and the statement timestamp | closes the capture-to-mutation window at no risk, because the capture is read-only and cheap. **Divergence from the G1 capture, or any non-V4-equivalent semantics, is HS-33 — never an adaptation point.** Never captured for A1 or B |
 | B-14 | **IS-1 — ingress-state evidence point (Class B only; OBS-2, R5-1).** The objectively read-back enabled/disabled state of the governed alpha ingress control named in the KIV-25 authorization and validated at PF-5a, plus `count(public.messages)`, recorded together with the B-4 and B-5 counts and one statement timestamp | the pre-change half of the Class B whole-window ingress proof; its end-of-window counterpart is **IS-2** (§7.3.1). **Never captured for Class A**, which reads no ingress control and records B-15 instead |
 | B-15 | **Class A ingress-applicability record (Class A only; R5-1).** Recorded verbatim, with one statement timestamp: `CLASS A — ALPHA INGRESS CONTROL NOT APPLICABLE PER §4.2: NO BLOCK, NO DRAIN, NO INGRESS READ, NO INGRESS MUTATION. NO KIV-25-NAMED CONTROL IS REQUIRED TO EXIST FOR THIS CHANGE.` | satisfies §2.7 item 8 for Class A (§4.2). A fixed statement, not an observation: it claims nothing about technical ingress state, which is **not** inferred from alpha GO/NO-GO status; no deployment, Meta/account or restaurant action may be taken — or required — to observe ingress for it (§0.2). PF-5, IS-1/IS-2 and hold transitions remain Class B-only (§2.5) |
+| B-16 | **Change Class A2 only (R6-2, R181-1, R181-2).** The complete §2.6.5 **P-0 … P-8** presence-probe results verbatim, with the server version and one statement timestamp — including the **P-0** executor read-capability and visibility row, the **P-4** target-function identity and its `body_md5`, the **P-5** proof that `kivo_control_owner` still lacks `auth` USAGE, and the **P-8a / P-8b / P-8c** ledger evidence | this is A2's before-state. **P-0 is captured first and is what makes B-16's P-6 and P-7 counts admissible as state at all; a B-16 recorded without a passing P-0 does not contain MIV or A1 ground truth and must not be read as if it did** (§2.6.5, R181-1). **P-4's `body_md5` is the exact pre-`0109` fingerprint §5.7 must restore to and §7.1.1 must show changed.** Never captured for A1 or B |
+| B-17 | **Change Class A2 only — G4 (R6-5).** The **PF-4g / G1 … G3** capture re-run **immediately before the forward transaction**, in the same session against the same target: `prosrc`, `prosrc_md5`, `functiondef`, `arg_list`, `uid_rows`, the recorded semantic determination against V4, and the statement timestamp | closes the capture-to-mutation window at no risk, because the capture is read-only and cheap. **Divergence from the G1 capture, or any non-V4-equivalent semantics, is HS-33 — never an adaptation point.** Never captured for A1 or B |
 
 ### 3.3 Class B additional requirement
 
@@ -2126,11 +2426,17 @@ result verbatim:
   §7.1.1. **`still_unrepaired = true` means `0109` is not in place and there is nothing to reverse:
   HARD STOP (HS-37).** A `body_md5` matching neither the recorded pre-`0109` nor the recorded
   post-`0109` value means the function is a third thing nobody governs: **HARD STOP (HS-37)**.
-* **V-2 — the surrounding topology is intact.** Re-run **PF-4a2**, **PF-4b2**, **P-1**, **P-2**,
-  **P-3**, **P-5**, **P-6** and **P-7** byte-identically and require their recorded values. In
-  particular `membership_rows = 1` with `rows_with_set = 0` and `rows_with_inherit = 0`, and
-  `auth_usage = false`. **Any drift is HARD STOP (HS-37)**: reversing into a state that has already
-  moved would compound the problem, not undo it.
+* **V-2 — the surrounding topology is intact.** Re-run **P-0** byte-identically **first** and
+  require its recorded values — every `_present` and `_select` true, every `_rls_active` false.
+  **A P-0 failure here is HARD STOP (HS-41), not HS-37**: it means this executor cannot see the
+  state it would be reversing into, so **P-6 and P-7 are neither run nor interpreted**, and the
+  finding is an executor-capability HOLD reported to PM — never recorded as surrounding-topology
+  drift, and never repaired to let the reversal proceed. Only once P-0 has passed, re-run
+  **PF-4a2**, **PF-4b2**, **P-1**, **P-2**, **P-3**, **P-5**, **P-6** and **P-7** byte-identically
+  and require their recorded values. In particular `membership_rows = 1` with `rows_with_set = 0`
+  and `rows_with_inherit = 0`, and `auth_usage = false`. **Any drift is HARD STOP (HS-37)**:
+  reversing into a state that has already moved would compound the problem, not undo it. **A reversal
+  is never entered on unproved visibility (R181-1).**
 * **V-3 — the restoration target text is on record.** The exact `0108` definition below is present
   in the reviewed reversal artifact and its fingerprint matches the value recorded in evidence.
   **The executor never types this function from memory, from `0108` at execution time, or from
@@ -2240,10 +2546,12 @@ correction or deletion; and **any SQL invented in-window**. If the reviewed reve
 cover the observed state, the answer is **stop and report**, never improvise (**HS-21**).
 
 **Reversal read-backs and evidence — mandatory after commit.** Re-run byte-identically and record:
-**P-4** (require `fn_rows = 1`, **`still_unrepaired = true`**, and `body_md5` **equal to the B-16
-pre-`0109` value** — this is the single strongest proof the restoration was exact); **PF-4a2**;
-**PF-4b2** (require the identical single-row topology, `rows_with_inherit = 0`); **P-1, P-2, P-3,
-P-5, P-6, P-7** unchanged; `pg_has_role(current_user,'kivo_control_owner','USAGE')` **false** and
+**P-0** first (require its B-16 values — every `_present` and `_select` true, every `_rls_active`
+false; **a failure is HS-41, and P-6 and P-7 are then neither run nor interpreted, and no MIV or A1
+claim is made in the reversal record** — R181-1); **P-4** (require `fn_rows = 1`,
+**`still_unrepaired = true`**, and `body_md5` **equal to the B-16 pre-`0109` value** — this is the
+single strongest proof the restoration was exact); **PF-4a2**; **PF-4b2** (require the identical
+single-row topology, `rows_with_inherit = 0`); **P-1, P-2, P-3, P-5, P-6, P-7** unchanged; `pg_has_role(current_user,'kivo_control_owner','USAGE')` **false** and
 `SET ROLE` still denied; `count(public.members)` = B-3, `count(public.conversations)` = B-4,
 `count(public.conversation_assignment_events)` = B-5 with no evidence of mutation (B-13); and the
 ledger state recorded truthfully with **no** row written or removed. Any assertion failing is
@@ -2289,8 +2597,11 @@ executor **does not own**, after a run had reported failure.
    forward attempt, no "just put it back". The authorization is consumed.
 2. **Inspect read-only, and record verbatim.** Capture the complete membership state including
    **grantor** for every row — re-run **PF-4b2** and the byte-identical PF-4b detail listing — plus
-   the **P-4** function-body state, **P-5**, and the full §2.6.5 probe set. The grantor identity is
-   load-bearing for step 5 and is the field most often omitted.
+   the **P-4** function-body state, **P-5**, and the full §2.6.5 probe set, **P-0 first** (R181-1).
+   The grantor identity is load-bearing for steps 5 and 5a and is the field most often omitted. **If
+   P-0 fails, record HS-41 and report that MIV/A1 state could not be established under this executor
+   — do not run or interpret P-6/P-7, and do not describe the incident as involving control-plane
+   data loss on the strength of a filtered or failed read.**
 3. **No automatic cleanup.** Nothing is revoked, granted, dropped or replaced on the executor's
    own judgement. Residue is reported and adjudicated, not tidied.
 4. **Do not assume a plain superuser `REVOKE` will work.** It generally will not. With this residue
@@ -2303,6 +2614,39 @@ executor **does not own**, after a run had reported failure.
    **original grantor** recorded at step 2 — performed **only after** exact state verification and
    **only after** explicit PM/Founder release for this specific incident. It is bounded: it removes
    exactly the residue membership and nothing else.
+5a. **No cleanup statement is executed until it has been through the same ceremony as every other
+   governed mutation (R181-5).** §5.1 says *"rollback is never improvised after a failure"* and §5.6
+   and §5.7 forbid *"any SQL invented in-window"* absolutely. A cleanup revoke **is a production
+   mutation**, and until now this section required its exact text neither to be written down, nor
+   fingerprinted, nor reviewed, nor transaction-wrapped. **All six of the following are mandatory,
+   and all of them are satisfied before any cleanup runs:**
+   1. **Materialized outside the live execution window.** The exact incident-specific cleanup SQL is
+      authored **after** the step-2 read-only capture has recorded the exact residue rows and their
+      **grantor** identity, and **outside** the window in which the incident occurred. There is no
+      pre-authored generic cleanup artifact, and there is no in-window authoring.
+   2. **Exact bytes recorded.** The cleanup artifact is a literal file whose exact text, byte count
+      and **SHA-256** are recorded in evidence, exactly as §5.4.2 requires of `RM-G-i` and
+      `RM-MANIFEST`. The fingerprint is recomputed immediately before use and must equal the
+      reviewed value.
+   3. **Independently reviewed before execution, by a context that did not author it.** The reviewer
+      confirms the statement is bounded to the exact recorded residue rows, names the exact recorded
+      grantor, and touches nothing else. **Executor self-review is never sufficient.**
+   4. **Separately released.** A PM/Founder release naming **this exact incident and this exact
+      cleanup artifact at its exact SHA-256**. A release for a different incident, or for cleanup in
+      general, authorizes nothing here.
+   5. **Run under the proved whole-file standard.** One whole-file single transaction with
+      `ON_ERROR_STOP=1`, proved for the cleanup runner exactly as **PF-3.A2** requires of the forward
+      run and **V-4** requires of the reversal runner. **Inability to prove it is HS-3, before any
+      mutation.** The post-conditions of rule 7 are asserted **inside** that transaction, so a
+      cleanup that does not achieve exactly the recorded intent does not commit.
+   6. **No improvisation, no CASCADE, no wildcard.** No executor judgement, no `CASCADE` (rule 6), no
+      generic emergency statement, no "while we are in here" widening. If the reviewed artifact does
+      not cover the observed residue, the answer is **stop and report** and a new artifact through
+      this same ceremony — never an edit in the window (**HS-21**).
+
+   **This document creates no such artifact and no such authority.** It fixes the contract that any
+   future cleanup must satisfy; it does not pre-authorize, pre-approve or pre-materialize a cleanup
+   for any incident, and no incident to which it would apply has occurred.
 6. **`CASCADE` is forbidden.** It may not be used unless separately reviewed and explicitly
    authorized for the incident, because `CASCADE` would **also remove the governed standing
    membership record** — the inert `admin=true / set=false / inherit=false` row — thereby changing
@@ -2362,7 +2706,7 @@ by the executor.
 | HS-29 | The §7.5 sequence is violated: the ingress hold is released without all four L-4 gate conditions; the hold is engaged, released, re-engaged, reverted or otherwise altered at any point other than **L-1, L-5, L-8 or L-12**; L-12 is performed without an L-11 PASS; a hold-transition state read-back does not equal the intended post-transition value (except at L-12/L-13, which route to §5.4.5); a step is reordered, skipped, merged or repeated; **IS-2 is not recorded**; a block is engaged anywhere in the Q branch; or the smoke set or its PF-5b bound is changed in-window |
 | HS-30 | **Before any Class B mutation**, the KIV-25 authorization fails PF-5: it does not name the exact governed ingress/hold control, or that control's state is not readable read-only, or reading it falls outside this procedure's read-only boundary, or more than one control could match, or it is not the same control §4.3/§7.5 engages and reverts; **or** it names no finite wall-clock smoke bound, or the bound is open-ended, zero, negative, invalid, or left to the executor's discretion. The executor never supplies, infers or defaults either value |
 | HS-31 | **Class A2.** PF-4a2 or PF-4b2 fails: `kivo_control_owner` is absent, carries any unsafe attribute, or its standing membership topology is anything other than **exactly one** inert record held by the executor with a superuser grantor and `admin=true / set=false / inherit=false`. Includes zero rows returned, more than one membership, any `set_option`, any `inherit_option`, any missing `admin_option`, a non-superuser grantor, and a member that is not the executing role. **Do not create, alter, grant, revoke or repair anything** (§2.5.1, R6-3) |
-| HS-32 | **Class A2.** The observed entry state diverges from, or is ambiguous against, §2.1.1: any §2.6.5 presence probe **P-1 … P-7** fails its expectation; the A2 form of PF-4f returns other than exactly 21 correctly-owned rows; **P-4** shows the target is not the un-repaired `0108` definition at the exact `0108` identity (`still_unrepaired = false`, or any owner / `SECURITY DEFINER` / `search_path` / result-shape / argument-list / ACL difference); **P-5** shows `kivo_control_owner` unexpectedly holds `auth` USAGE — which would also be the signature of an unauthorized in-place grant repair; or the live executor identity does not match the Release-4 evidence. **Record verbatim and report; do not adapt, repair, re-grant, retry `0108` or clean anything up** (§2.1.1, §2.6.5, R6-2) |
+| HS-32 | **Class A2.** The observed entry state diverges from, or is ambiguous against, §2.1.1, **on reads whose completeness P-0 has already proved (R181-1)**: any §2.6.5 presence probe **P-1 … P-7** fails its expectation; the A2 form of PF-4f returns other than exactly 21 correctly-owned rows; **P-4** shows the target is not the un-repaired `0108` definition at the exact `0108` identity (`still_unrepaired = false`, or any owner / `SECURITY DEFINER` / `search_path` / result-shape / argument-list / ACL difference); **P-5** shows `kivo_control_owner` unexpectedly holds `auth` USAGE — which would also be the signature of an unauthorized in-place grant repair; or the live executor identity does not match the Release-4 evidence. **HS-32 is a statement about production state and is available only once P-0 has passed**: an executor-capability or visibility failure is **HS-41**, never this. In particular an errored or row-security-filtered **P-6/P-7** read is **never** HS-32, and `miv_rows = 0` obtained without a passing P-0 is **never** reportable as MIV state (§2.6.5, R181-1). **Record verbatim and report; do not adapt, repair, re-grant, retry `0108` or clean anything up** (§2.1.1, §2.6.5, R6-2) |
 | HS-33 | **Class A2.** The **G2** semantic guard fails, at PF-4g or at the **G4** re-check (§3.2 B-17): the live `auth.uid()` body is not semantically the accepted V4 two-GUC COALESCE behaviour, or the G4 capture diverges from the G1 capture. **G2 is never an adaptation point**: this requires a new adjudication, and **`0109` is never rewritten or adjusted to match a divergent live definition** (§2.5.1, R6-5) |
 | HS-34 | **Class A2.** The **G3** binding requirement fails: `auth.uid` does not resolve to **exactly one** `pg_proc` row with an empty argument list, so the governed resolver's zero-argument call site cannot be proved to bind the function that was captured (§2.5.1, R6-5) |
 | HS-35 | **Class A2.** The §5.7 post-commit reversal is absent, unreviewed, or lacks its **own fresh separate Founder authorization held unused** before the forward run. Stops **before** the forward change (§2.7 item 5, §5.1, R6-7) |
@@ -2371,22 +2715,39 @@ by the executor.
 | HS-38 | **Class A2.** A §5.7 post-reversal read-back fails — most importantly **P-4** not showing `still_unrepaired = true` with `body_md5` **equal to the B-16 pre-`0109` value**, or **PF-4b2** not showing the identical single-row topology with `rows_with_inherit = 0`. An incident (§5.7) |
 | HS-39 | **Dangerous-window residue.** A non-transactional or misconfigured run has left residue — characteristically a standing membership on `kivo_control_owner` with `inherit_option = true`, and possibly a function already replaced while the run reported failure. **HARD STOP all further mutation and enter §5.8.** No automatic cleanup; no assumption that a plain superuser `REVOKE` will succeed (it fails with `dependent privileges exist`); **`CASCADE` forbidden** unless separately reviewed and authorized, because it would also remove the governed standing membership every other assertion depends on (§5.8, R6-8, A-OBS-2) |
 | HS-40 | **Class A2.** Any attempt to modify the terminally source-cleared exact `0109` bytes, to fold the known section-3 security-comment correction into integration, or to rebase, cherry-pick or re-materialize the reviewed commit `cc74e14c16a8b5e02d9ea9668976b83de7aeb872`. Any changed `0109` byte voids the KIV-175/176/177 chain and requires a **new** source chain (§2.3, §2.3.1 I4, §2.6.4, R6-6, R6-11) |
+| HS-41 | **Class A2 — executor read-capability / visibility, and it is not a data finding (R181-1).** The §2.6.5 **P-0** gate fails: any governed table it names is absent, the executor holds no `SELECT` on it, or `row_security_active` is **true** for it — so the executor's reads of that table would raise `42501` or be **silently row-filtered**. Also fires if **P-6** or **P-7** was run or interpreted without a passing P-0, or raised, in any window: preflight, **B-16**, **§7.1.1**, **§5.7 V-2**, the **§5.7** post-reversal read-backs or **§5.8** step 2. **No count obtained under this condition is MIV, A1 or control-plane state.** Report it as *"ground truth not established under this executor profile"*, never as an entry-state divergence, never as a phantom empty control plane, and never as HS-32. **No GRANT, REVOKE, membership change, `BYPASSRLS` change, `SET ROLE`, role switch, policy change, `row_security` change or substitute lower-privilege query may be used to make the gate pass** — the executor profile is PM's decision, not an in-window repair (§2.6.5, §2.7 item 6, R181-1) |
 
-**Which Class A1 HARD STOPs do not apply to Change Class A2 (R6-1).** Four of the conditions above
-are written with A1's polarity and would fire on a **correct** A2 state. They must not be applied to
-A2, and their A2 counterparts are named here so nothing is left to inference:
+**Which Class A1 HARD STOPs do not apply to Change Class A2 (R6-1, R181-6).** Four of the conditions
+above are written with A1's polarity and **would fire on, or assert the wrong thing about, a correct
+A2 state**. That distinction is exact and it matters: **HS-4, HS-11 and HS-24 would genuinely fire**
+on a correct A2 state — independently re-tested on PostgreSQL 17.11 — whereas **HS-6 would not**,
+because `0107`'s `conversations_restaurant_id_id_key` is present in the post-`0108` world so its
+*"constraint is absent"* trigger is never met. HS-6 is excluded because **PF-4d asserts the wrong
+thing about A2, not because it would fire**; excluding it is harmless in either direction, since
+`0109` has no `0107` dependency and PF-4d would pass if it were run. They must not be applied to A2,
+and their A2 counterparts are named here so nothing is left to inference:
 
 | A1 condition | Why it cannot apply to A2 | A2 counterpart |
 |---|---|---|
 | **HS-4** — PF-4a or PF-4b returns any row | In the A2 entry world `kivo_control_owner` and its inert membership record **exist by design**, and exact `0109`'s own precondition P1 requires the role to exist. HS-4 would hard-stop the very run A2 requires | **HS-31**, via PF-4a2 / PF-4b2 (§2.5.1) |
-| **HS-6** — `0107`'s `conversations_restaurant_id_id_key` is absent | PF-4d is **not applicable** to A2: `0109` has no `0107` dependency and makes no header check on it (§2.5.1) | none needed; A2's dependency on the committed `0108` state is asserted by **P-1 … P-8** and by `0109`'s own P1 … P7 |
+| **HS-6** — `0107`'s `conversations_restaurant_id_id_key` is absent | **Would not fire on a correct A2 state** — the constraint is present after `0108`, so the trigger is never met. It is excluded because PF-4d is **not applicable** to A2: `0109` has no `0107` dependency and makes no header check on it (§2.5.1) | none needed; A2's dependency on the committed `0108` state is asserted by **P-0 … P-8** and by `0109`'s own P1 … P7 |
 | **HS-11** — an observed count contradicts the recorded baseline *M-0 applied / M-1 not applied* | That baseline is A1's. A2's baseline is the **committed post-`0108`** state of §2.1.1, in which the M-1 objects are present and populated | **HS-32**, against §2.1.1 and §2.6.5 |
 | **HS-24** — PF-4f returns any row | For A2, PF-4f is re-polarised: **exactly 21** correctly-owned rows are required, and **zero** rows would mean the control plane is not in the state `0109` repairs (§2.5.1) | **HS-32**, via the A2 form of PF-4f |
 
 **Every other HARD STOP above applies to A2 unchanged**, including HS-1, HS-2, HS-3 (§2.4 PF-3.A2),
 HS-5, HS-8, HS-10, HS-12, HS-13, HS-14, HS-15, HS-19, HS-20, HS-21, HS-22 and HS-23. HS-7, HS-9,
 HS-16, HS-17, HS-18 and HS-25 … HS-30 are Class-B or A1-reversal conditions and are unchanged.
+**HS-31 … HS-41 are the Class A2 conditions**, and **HS-41 is new in this remediation (R181-1)**.
 §9.4 records the complete disposition.
+
+**HS-41 beside HS-12 and HS-32, so no reader has to infer the boundary.** All three can be reached
+by the same observed symptom, and they are not interchangeable. **HS-41** is the executor: a read
+that was refused or silently filtered because of *who is reading*, so the state is simply unknown.
+**HS-32** is the state: a trustworthy read that came back wrong. **HS-12** is anything else
+unexpected — an error, warning or `SQLSTATE` this document did not anticipate in advance, including
+a P-8b/P-8c error against a ledger P-8a said was readable. **A P-6 or P-7 error is HS-41 and not
+HS-12**, because §2.6.5 anticipates it in advance and names its cause; the general HS-12 rule is
+what catches everything the procedure did *not* foresee.
 
 **Relationship between HS-19 and bounded restoration.** HS-19's single-attempt rule governs
 **forward mutations**. The §5.4 bounded restoration is restoration to a captured before-state
@@ -2563,8 +2924,11 @@ attempting a second run — `0109`'s precondition P7 raises `KIV174 precondition
 not the un-repaired 0108 definition` once `still_unrepaired = false`. HS-19 forbids a second
 attempt regardless.
 
-**No unrelated drift anywhere.** Re-run **P-1, P-2, P-3, P-6, P-7** byte-identically and require
-their B-16 values: the three governed tables still present, owned by `kivo_control_owner`, with RLS
+**No unrelated drift anywhere.** Re-run **P-0** byte-identically first and require its B-16 values —
+every `_present` and `_select` true, every `_rls_active` false. **A P-0 failure here is HS-41, an
+executor-capability HOLD, and P-6 and P-7 are then neither run nor interpreted; it is never recorded
+as after-state drift and never as HS-22** (§2.6.5, R181-1). Only once P-0 has passed, re-run
+**P-1, P-2, P-3, P-6, P-7** byte-identically and require their B-16 values: the three governed tables still present, owned by `kivo_control_owner`, with RLS
 **and** FORCE RLS on; the type present; **exactly 21** governed functions, all owned by
 `kivo_control_owner` (the PF-4f pattern-closure form — a 22nd match or a 20th is **HS-22**); the
 eight A1 columns present and still entirely NULL; MIV rows = open rows = `count(public.members)`
@@ -2585,8 +2949,13 @@ outright:
 * **The absence of a `0109` ledger row is therefore expected, and must never be treated as evidence
   that the SQL transaction failed.** Commit-or-rollback is determined from the runner transcript
   and from the **P-4** body state, never from the ledger.
-* **Capture and report ledger state truthfully as evidence** — **P-8**: `max(version)`, whether a
-  `0108` row exists, whether a `0109` row exists. **This has no pass/fail expectation for A2.**
+* **Capture and report ledger state truthfully as evidence** — **P-8a**, **P-8b** and the complete
+  verbatim **P-8c** enumeration, using the exact shipped query text of §2.6.5 (R181-2). **This has no
+  pass/fail expectation for A2.** `max(version)` and `ledger_rows` are reported as read;
+  **whether a `0108` row or a `0109` row exists is PM's determination from the P-8c listing and is
+  never a value the executor asserts or a query computes** — ledger names cannot reliably be derived
+  from repository labels, and the label-substring candidate counts are a search aid only (§2.6.5).
+  **An absent or unreadable ledger is recorded truthfully from P-8a and is not a failure.**
 * **Do not retroactively insert a `0108` ledger row.** Not now, not as tidying, not as part of any
   reversal. It was never authorized and is not authorized here.
 * **Do not invent an out-of-band `0109` ledger mutation.** Any ledger write would need its own
@@ -2744,8 +3113,11 @@ The executor packages evidence and stops. Acceptance is a separate act by a revi
   required **before KIV-14 can be accepted and before KIV-25 can start**. The executor's own
   §7.1.1 read-back is that reviewer's input, never a substitute for them, and **executor evidence
   can never self-close KIV-14**. That verifier must also reconcile: the **G1 / G4** live
-  `auth.uid()` evidence; the truthful **P-8** ledger state, without treating a missing `0109` row
-  as failure (§7.1.1, R6-9); and whether KIV-165's BLOCK, KIV-172's HOLD and KIV-173's
+  `auth.uid()` evidence; the truthful **P-8a / P-8b / P-8c** ledger state, without treating a
+  missing `0109` row as failure and without accepting any executor-asserted `has_0108_row` /
+  `has_0109_row` boolean (§7.1.1, §2.6.5, R6-9, R181-2); **whether P-0 passed in every window in
+  which P-6 or P-7 was read, since without it no MIV or A1 count in the evidence is ground truth
+  (R181-1)**; and whether KIV-165's BLOCK, KIV-172's HOLD and KIV-173's
   `RUNTIME REPAIR REQUIRED` are now discharged or still standing.
 * **Class B** — KIV-145, which independently establishes the intended state and every read-back
   including the application-path non-regression, and which must BLOCK on a standing §7.3.1
@@ -2872,8 +3244,8 @@ its revert at L-12. The two now agree.
 | E-8 After-state | Full §7 read-back, assertion by assertion, pass/fail each |
 | E-9 Residue / reversal / restoration record | §5.2 residue checklist if rolled back; §5.3 record if reversed post-commit. For Class B: the reviewed **per-group skeletons `SK-G-1 … SK-G-n`**; **every `RM-G-i` artifact with its own SHA-256, byte count and line count**, plus **`RM-MANIFEST`**; the **RM-VERIFY record** — verifier identity and a **PASS/BLOCK per artifact against that artifact's SHA-256**, all of which must match the executor's; the **§5.4.1 read-only determination**, the Q1–Q3 answers, and which of **S-0 … S-4** was matched, with the HARD STOP that fired recorded as **trigger only**; and — if restoration ran — its full transcript, each artifact's fingerprint recomputed immediately before use, **which groups were run and which were skipped whole**, the §5.4.4 verification, and the PM notification. If the holding state was entered, the §5.4.5 record instead |
 | E-10 Path-check record | §7.3 / §7.5 result: which sequence and which terminus ran; the L-3 read-back values; the L-6/Q-4 smoke outcome against the PF-5b bound; and the **L-7 post-release re-verification compared value-by-value against L-3**. On a restoration terminus: the **L-11/Q-9 verification**, the **L-13 post-revert read-back compared against IS-1 and against the captured before-state**, and the verbatim terminal marking `CLASS B NOT COMPLETE — RESTORED TO BEFORE-STATE`. If read-back 6 was not executed: the verbatim `READ-BACK 6 NOT EXECUTED — DEFERRED` marking, the IS-1/IS-2 bracketing evidence and count deltas permitting it (§7.3.1), and the statement that KIV-25 is incomplete and KIV-145 / alpha GO carry a blocking precondition |
-| E-12 Change Class A2 evidence (R6-2, R6-4, R6-5, R6-7, R6-9, R6-11) | **A2 only.** The **PF-2.A2** recomputed `0109` identities (commit, sole parent, path, blob, SHA-256, bytes, lines) and the recomputed `0108` identities; the **PF-3.A2** whole-file single-transaction runner proof, stated as proof and not as intent; **PF-4a2**, **PF-4b2** and the byte-identical PF-4b detail listing; the A2 form of **PF-4f** with its verbatim 21-signature list; **PF-4g / G1 … G3** — captured `prosrc`, `prosrc_md5`, `functiondef`, `arg_list`, `uid_rows` and the recorded **semantic determination** against V4; **B-16** (the complete **P-1 … P-8** presence-probe results with server version, including P-4's pre-`0109` `body_md5`); **B-17** (the **G4** immediate-pre-forward re-capture and its fingerprint); the §7.1.1 after-state assertion by assertion; the truthful **P-8** ledger evidence with the explicit statement that a missing `0109` row is expected and is **not** evidence of failure; the §5.2 A2 residue checklist if rolled back; and — if §5.7 was lawfully entered — the fresh Founder authorization reference, the named **D-1 … D-4** condition, the reversal artifact with its own SHA-256, **V-1 … V-4**, the reversal transcript, the post-reversal read-backs, and the verbatim terminal marking `CLASS A2 NOT COMPLETE — REVERSED TO PRE-0109 DEGRADED STATE`. If §5.8 was entered, the residue incident record instead: the complete membership state **including grantor**, the P-4 body state, and the PM/Founder release under which any cleanup was performed. **Integration evidence (I1 … I5) belongs to a separate authorization and is not produced by an execution window.** |
 | E-11 Manifest | SHA-256, byte count and line count of every artifact above, plus the authorizing issue IDs |
+| E-12 Change Class A2 evidence (R6-2, R6-4, R6-5, R6-7, R6-9, R6-11) | **A2 only.** The **PF-2.A2** recomputed `0109` identities (commit, sole parent, path, blob, SHA-256, bytes, lines) and the recomputed `0108` identities; the **PF-3.A2** whole-file single-transaction runner proof, stated as proof and not as intent; **PF-4a2**, **PF-4b2** and the byte-identical PF-4b detail listing; the A2 form of **PF-4f** with its verbatim 21-signature list; **PF-4g / G1 … G3** — captured `prosrc`, `prosrc_md5`, `functiondef`, `arg_list`, `uid_rows` and the recorded **semantic determination** against V4; **B-16** (the complete **P-0 … P-8** presence-probe results with server version, including the **P-0** executor read-capability and visibility row and P-4's pre-`0109` `body_md5`); **B-17** (the **G4** immediate-pre-forward re-capture and its fingerprint); **the P-0 result for every window in which P-6 or P-7 was read — preflight, §7.1.1, §5.7 V-2 and the §5.7 post-reversal read-backs — because a P-6/P-7 count recorded without a passing P-0 is not evidence of state and must be reported as HS-41 rather than as a finding (R181-1)**; the §7.1.1 after-state assertion by assertion; the truthful **P-8a / P-8b / P-8c** ledger evidence, including the complete verbatim P-8c enumeration, with the explicit statement that a missing `0109` row is expected and is **not** evidence of failure and that `has_0108_row` / `has_0109_row` are **PM determinations, not executor assertions** (R181-2); the §5.2 A2 residue checklist if rolled back; and — if §5.7 was lawfully entered — the fresh Founder authorization reference, the named **D-1 … D-4** condition, the reversal artifact with its own SHA-256, **V-1 … V-4**, the reversal transcript, the post-reversal read-backs, and the verbatim terminal marking `CLASS A2 NOT COMPLETE — REVERSED TO PRE-0109 DEGRADED STATE`. If §5.8 was entered, the residue incident record instead: the complete membership state **including grantor**, the P-4 body state, and the PM/Founder release under which any cleanup was performed — plus, for any cleanup that ran, the **exact cleanup artifact text, its SHA-256, the independent pre-execution review, the incident-specific release naming that exact SHA-256, and the whole-file transaction proof** required by §5.8 rule 5a (R181-5). **Integration evidence (I1 … I5) belongs to a separate authorization and is not produced by an execution window.** |
 
 ### 8.2 Custody rules
 
@@ -2943,6 +3315,52 @@ confirm that this revision:
     making the authority separations impossible to misread (§0.4) (R6-13).
 
 ### 9.1 Known limits the reviewer should test
+
+**KIV-181 remediation evidence, and its limits, stated first because a reviewer should test it
+first.** Every corrected query and every load-bearing mechanism below was re-executed on one
+disposable **PostgreSQL 17.11** cluster, unix-socket only with `listen_addresses = ''` — no TCP
+listener was ever configured — built by applying the repository's own `0001 … 0107` stack and then
+**exact `0108`** (SHA-256 `00cd7b7fe2ee581df7b9d038301123db45a80962fe8a6ad3c0435e2893dea9ee`) under
+`psql --single-transaction -v ON_ERROR_STOP=1`, with a Supabase-faithful role graph in which the
+executor is **non-superuser** with `BYPASSRLS` and `CREATEROLE` and the governed membership is
+granted by a **superuser**. **Zero production and zero Supabase contact.**
+
+* The fixture reproduced the **exact KIV-165 defect signature** — `WARNING: no privileges were
+  granted for "auth"` at `0108` **line 175** — and the governed post-`0108` topology
+  `admin = true / set = false / inherit = false` with a superuser grantor, PF-4a2 `role_rows = 1`
+  with all eight `ok_*` true, and PF-4b2 `1 | 0 | 0 | 0 | 0 | 0`, against MIV ground truth
+  **20 rows / 20 open / 0 non-v1** with `count(public.members) = 20`.
+* **P-0 separated all three executor capability profiles** — correct Release-4-like capability →
+  P-7 `20 | 20 | 20 | 0`; `SELECT` without complete visibility → a **clean, silently filtered**
+  `20 | 0 | 0 | 0`; no `SELECT` → `ERROR: permission denied for table member_identity_versions` —
+  **while PF-4b2 returned the identical governed topology in all three.**
+* **The corrected P-5 returns one row in every state**, including absent role and absent schema,
+  where the superseded name-taking form raised `ERROR: role "…" does not exist` and
+  `ERROR: schema "…" does not exist`.
+* **P-8a, P-8b and P-8c executed as written and remained read-only**, with P-8c returning zero rows
+  on an empty ledger without erroring. A real 14-digit execution version, `20260801090000` — the
+  row for `0104_safety_ingress_evidence` — **contains the substring `0109`**, which is the
+  reproduced false positive behind §2.6.5's refusal to compute `has_0109_row`.
+* **Exact `0109`** (SHA-256 `e1a185e3a38b41fe1c5c9e8f9ebbedaefd88b9151cf390cf0cf22aa9123fa9e3`)
+  applied under the mandatory wrapper **diagnostic-silent** — stdout exactly
+  `DO DO DO CREATE FUNCTION DO DO`, **stderr 0 bytes** — taking `body_md5` from
+  `a5d906876b3b70fa60db3b75ae356595` to `00a73f86a902ff222760ff8fcab8abf1` **with owner,
+  `SECURITY DEFINER`, `proconfig`, result shape, argument list and `acl` all unchanged**.
+* **The §5.7 round trip returned byte-exactly** to `a5d906876b3b70fa60db3b75ae356595` with
+  `still_unrepaired = true`, and the embedded restoration block was independently confirmed
+  **byte-for-byte identical** to exact `0108` lines 715 – 766 at **52 lines, 1,755 bytes, SHA-256
+  `36e79e6e872acf2586da0ba24768b1d8df8a64e30d37c242cd2f4c74587d8da0`**.
+* **§5.8's mechanics reproduced exactly:** a plain **superuser** revoke failed with
+  `ERROR: dependent privileges exist / HINT: Use CASCADE to revoke them too`; the **grantor-issued**
+  bounded revoke succeeded; and **`CASCADE` removed the governed standing membership as well**,
+  after which PF-4b2 read `0 | 0 | 0 | 0 | 0 | 0` and the executor could no longer take the
+  temporary capability at all (`Only roles with the ADMIN option … may grant this role`).
+
+**The limit, stated plainly and not softened: a fixture is not evidence about production.** It
+establishes what these queries do against the topology PostgreSQL 17 actually produces for the
+governed executor profile. **The live executor's capabilities must still be read contemporaneously
+at execution time — which is exactly what P-0 is for**, and P-0's own result is never assumed from
+this record, from the Release-4 evidence, or from a role name.
 
 * **Reviewer must independently recompute the §2.3 fingerprints.** They were verified during
   Revision 1 authoring from the repository and the GitHub PR record, and were independently
@@ -3173,6 +3591,19 @@ unchanged, in full and in substance:
 | **§1** restoration-verifier role and RM-VERIFY separation; **§3.3** Class B additional requirement; **E-9**, **E-10** | **Byte-identical. Not edited.** §1 changes in three other places, none of which touches a Class B obligation: the G5 standing owner is **added** (§9.5); the **Founder** row and the **Independent reviewer** row each gain an **A2 clause alongside** their existing text, with `KIV-145 for Class B` left exactly as written and Class A1's KIV-159 references intact |
 | **§2.7 item 5 Class B branch**, **item 3**, **item 8 Class B branch** | **Unchanged in substance.** Item 6 and item 8 gain an **A2 clause alongside** the Class B text, which is not modified; item 8's Class A wording becomes "Class A1 and Class A2" for the B-15 record |
 
+**Class B sections changed by the KIV-181 remediation: NONE (R181-7).** The remediation touched
+§2.5.1, §2.6.5, §2.7 item 6, §3.2 (B-16 and the A2 scope note), §5.7, §5.8, §6, §7.1.1, §7.4, §8.1
+(E-12), §9.1, §9.2.3, §9.4 and the document header/change log. **Every one of those is Class A2 or
+Revision-6-authored material.** §5.3 remains byte-identical at full-section SHA-256
+`4e9fa2e2855d378becffdae2fa261f59f952ab677a9af2a252aae0cc21aa3e2a`; **PF-4a and PF-4b remain
+byte-identical**; and every Class B region listed in the table above remains byte-identical. The
+NB-6 ordering normalisation moved **only** the E-12 row, the B-16/B-17 rows and the whole §9.3
+section, each **byte-identically** — **B-14, B-15 and E-1 … E-11 are unchanged in content**, and no
+protected region was moved or altered. The only §5.8 change is the **addition** of rule 5a beside
+rules 1 … 7, which are unchanged; §5.8 is Revision-6 material and carries no Class B obligation.
+**No Class-B or §5.3 byte region was touched, so no prior KIV-25 or KIV-167 review is invalidated by
+this remediation.**
+
 **Class B sections changed by Revision 6: NONE.** The only places where Class B text appears
 alongside new material are the §2.7 entry checklist and the §8.1 evidence table, where an **A2
 clause was added beside** the Class B clause without altering it. No Class B obligation was
@@ -3199,6 +3630,28 @@ it removes an impossibility — an entry preflight that asserts the absence of e
 the change requires to be present — rather than a safeguard, exactly as Revision 5's R5-1 removed
 the ingress circular dependency and Revision 3's §7.5 removed the live-branch impossibility.
 Revision 6 adds **no** infrastructure and no new scope: §0.3's exclusion list is unchanged.
+
+### 9.3 Non-authority
+
+This document authorizes nothing. It does not authorize production or Supabase access, SQL or
+migration execution, source or runtime change, deployment, Meta/account action, restaurant
+action, Khalid-project action, or alpha/Pilot GO.
+
+**Revision 6 additionally authorizes none of:** any PR, merge, rebase, cherry-pick or integration
+of the exact `0109` artifact; any application of `0109` to any database; any use of §5.7; any
+migration-ledger mutation; any repair of the missing `auth`-schema grant; any retry of `0108`; any
+KIV-25 work; or any Meta/WhatsApp/order/restaurant/M2 action. **It is a procedure candidate and an
+evidence gate, and it is not yet even accepted as that** (§0.4).
+
+**Current true production state (R6-2), superseding the Revision-5 statement above.** Release 4
+committed exact `0108`, and **KIV-165 returned BLOCK**, so that state is **committed but not
+accepted** and supports no downstream reliance. **The authenticated member-control runtime is
+broken**, failing closed with `42501` at every authenticated member entry point (KIV-173). Exact
+`0109` is **terminally source-cleared but not integrated, not merged and not applied**. **No
+`0108` migration-ledger row exists.** `public.members` `N` is whatever a contemporaneous read
+returns and is **never assumed** — the historical `N = 20` figure is evidence from an earlier
+window, not an execution invariant. **KIV-14 remains blocked and not accepted; KIV-25 remains
+blocked and not authorized; Release 4 is consumed; Pilot/alpha remains NO-GO.**
 
 ### 9.4 Complete Change Class A disposition inventory for `0109` (R6-1, A-OBS-3)
 
@@ -3229,12 +3682,12 @@ by assumption, and nothing is left undispositioned.
 | **§2.6** Class A explicit prohibitions (revoke nothing, re-own nothing, no RLS change, no pre-existing row write) | **Retained and tightened for A2** — A2's prohibition list is strictly narrower still | §2.6.4 |
 | **§2.6.1** constraint / index named inventory | **Retained.** A2 creates none of it; the inventory is the reference the **P-1** presence probe and §7.1.1's no-drift assertion rest on | §2.6.1 |
 | **§2.6.2** C-1 … C-4 filtered catalog assertions and the version-robustness rule | **Retained, and not run by A2** — A2 changes no table, constraint, trigger or index, so there is nothing for them to assert about this change. Their §7.1 after-state authority for A1 is unchanged. **A2 inherits the design rule**: never a raw total, always allow-listed, always record the server version | §2.6.2, §2.6.5 |
-| **§2.6.3** A-1 … A-4 absence probes | **NOT APPLICABLE to A2** — they assert the `0108` objects are absent, which is the exact opposite of the A2 entry world. Replaced for A2 by **§2.6.5 P-1 … P-8** | §2.6.3, §2.6.5 |
+| **§2.6.3** A-1 … A-4 absence probes | **NOT APPLICABLE to A2** — they assert the `0108` objects are absent, which is the exact opposite of the A2 entry world. Replaced for A2 by **§2.6.5 P-0 … P-8** | §2.6.3, §2.6.5 |
 | **§2.7** entry checklist items 1 … 8 | **Extended for A2**, with items 1, 2, 5 and 6 carrying explicit A2 clauses and a new **item 9** (G4). Item 3 and every Class B branch are unchanged | §2.7 |
 | **§3.1** capture rules — parity, non-disclosure, append-only, timestamps, HS-8 | **Retained unchanged for A2** | §3.1 |
 | **§3.2** B-1 … B-8, B-10, B-11, B-13 | **Retained unchanged for A2** | §3.2 |
 | **§3.2** B-2 source fingerprints | **Extended for A2** to recompute the PF-2.A2 `0109` identities as well as `0108`'s | §3.2 |
-| **§3.2** B-9 before-state existence check | **A2 form: the §2.6.5 presence probes P-1 … P-8.** Never A-1 … A-4 | §3.2, §2.6.5 |
+| **§3.2** B-9 before-state existence check | **A2 form: the §2.6.5 presence probes P-0 … P-8, P-0 first.** Never A-1 … A-4 | §3.2, §2.6.5 |
 | **§3.2** B-12 ledger capture | **Retained for A2 as truthful evidence with no pass/fail expectation** | §3.2, §7.1.1 |
 | **§3.2** B-14 (IS-1) | **Never captured for A2** — Class B only, unchanged | §3.2 |
 | **§3.2** B-15 fixed ingress-applicability record | **Retained and applies to A2 identically** | §3.2, §4.2 |
@@ -3258,6 +3711,16 @@ by assumption, and nothing is left undispositioned.
 | **§7.5** Class B sequences | **Not applicable** — Class B only, byte-identical | §7.5 |
 | **§8.1** E-1 … E-11, §8.2 custody rules | **Retained unchanged for A2.** E-6 covers A1 and A2 identically; **E-12** is added for A2 | §8.1 |
 | **§9.3** non-authority | **Retained and updated to the true current state** | §9.3 |
+
+**What the KIV-181 remediation added to this inventory, and what it did not (R181-1, R181-2).** The
+remediation dispositions nothing new from Revision 5 — it corrects Revision-6 material only. Two
+A2-only obligations are **added** and are recorded here so the inventory stays complete:
+
+| Added A2 obligation | Disposition | Where |
+|---|---|---|
+| **P-0** — executor read-capability and MIV/A1 visibility gate | **New for A2, and mandatory before P-6 or P-7 is interpreted in any window.** Failure is **HS-41**, an executor-capability HOLD that asserts nothing about state. It has no A1 counterpart because A1's probes assert absence and read no governed table rows | §2.6.5, §2.7 item 6, §3.2 B-16, §7.1.1, §5.7, §5.8, §6 HS-41 |
+| **P-8a / P-8b / P-8c** — exact shipped ledger query text | **New for A2, evidence only, no pass/fail expectation.** Supersedes the text-less P-8 for A2. Revision 5 §2.6/§7.1's unconditional `0108` ledger expectation remains **not applicable to A2** (R6-9) | §2.6.5, §7.1.1, §8.1 E-12 |
+| **§5.8 rule 5a** — cleanup-artifact governance | **New, and additive to rules 1 … 7, which are unchanged.** It creates no cleanup artifact and no cleanup authority | §5.8 |
 
 ### 9.5 G5 — the standing post-`0109` `auth.uid()` drift obligation (R6-5)
 
@@ -3294,25 +3757,3 @@ inlined expression in `public.kv_control_assert_actor(...)` and the vendor's own
 **finding for PM/Founder adjudication and a new governed change**, never an in-window adaptation,
 and **never** a reason to edit the applied function outside a full source chain. Record it, report
 it, and stop.
-
-### 9.3 Non-authority
-
-This document authorizes nothing. It does not authorize production or Supabase access, SQL or
-migration execution, source or runtime change, deployment, Meta/account action, restaurant
-action, Khalid-project action, or alpha/Pilot GO.
-
-**Revision 6 additionally authorizes none of:** any PR, merge, rebase, cherry-pick or integration
-of the exact `0109` artifact; any application of `0109` to any database; any use of §5.7; any
-migration-ledger mutation; any repair of the missing `auth`-schema grant; any retry of `0108`; any
-KIV-25 work; or any Meta/WhatsApp/order/restaurant/M2 action. **It is a procedure candidate and an
-evidence gate, and it is not yet even accepted as that** (§0.4).
-
-**Current true production state (R6-2), superseding the Revision-5 statement above.** Release 4
-committed exact `0108`, and **KIV-165 returned BLOCK**, so that state is **committed but not
-accepted** and supports no downstream reliance. **The authenticated member-control runtime is
-broken**, failing closed with `42501` at every authenticated member entry point (KIV-173). Exact
-`0109` is **terminally source-cleared but not integrated, not merged and not applied**. **No
-`0108` migration-ledger row exists.** `public.members` `N` is whatever a contemporaneous read
-returns and is **never assumed** — the historical `N = 20` figure is evidence from an earlier
-window, not an execution invariant. **KIV-14 remains blocked and not accepted; KIV-25 remains
-blocked and not authorized; Release 4 is consumed; Pilot/alpha remains NO-GO.**
