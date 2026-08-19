@@ -44,7 +44,7 @@ to A2*. Nothing carries over by assumption. The complete rule-by-rule inventory 
 | **R6-10** — forward success / post-commit verification for A2 | New **§7.1.1** after-state contract: exact repaired body semantics; owner, SECURITY DEFINER, empty `search_path`, signature, result shape and ACL unchanged; temporary capability fully returned; executor `SET ROLE` still unavailable; no unintended auth-schema privilege; both request-subject transports working; every fail-closed path intact; service path unchanged; HS-12-clean run; second application refuses; truthful ledger evidence; zero unrelated drift. **Separate independent post-remediation verification remains mandatory — executor evidence cannot self-close KIV-14** | **§7.1.1 (new)**, §7.4 |
 | **R6-11** — integration custody I1 … I5 | Recorded in **§2.3.1**. The reviewed source artifact is exact `cc74e14c…`; it must **not** be rebased, cherry-picked or re-materialized, because that would silently transfer three independent reviews to bytes nobody reviewed. **This document authorizes no integration and no PR** | **§2.3.1 (new)**, §9.1 |
 | **R6-12** — KIV-25 Change Class B no-regression | **Class B is untouched.** §5.4, §7.2, §7.3, §7.3.1, §7.5, PF-5/PF-5a/PF-5b, IS-1/IS-2, the four hold transitions, RM-VERIFY and HS-25 … HS-30 are **byte-identical to Revision 5**. §9.2.3 records the proof | §9.2.3 (new) — **no Class B section edited** |
-| **R6-13** — authority / status precision | **§0.4** and **§5.1** make the four separations impossible to misread: source acceptance ≠ merge authority; procedure acceptance ≠ production authority; forward production authority and `0109` reversal authority are **two separate Founder decisions**; no KIV-159/KIV-167 authority may be widened by inference; Alpha GO remains a separate G4 Founder decision; and the in-file status stays **DRAFT** until external Linear PM terminal acceptance | **§0.4 (new)**, §2.1, §5.1, §9.3 |
+| **R6-13** — authority / status precision | **§0.4** and **§5.1** make the four separations impossible to misread: source acceptance ≠ merge authority; procedure acceptance ≠ production authority; forward production authority and `0109` reversal authority are **two separate Founder decisions**; no KIV-159/KIV-167 authority may be widened by inference; Alpha GO remains a separate G4 Founder decision; and the in-file status stays **DRAFT** until external Linear PM terminal acceptance | **§0.4 (new)**, **§0.2**, **§1**, §2.1, §5.1, §9.3 |
 
 **Everything Revision 6 did *not* touch stays closed.** F-1 … F-7 remain CLOSED; the Revision 3,
 4 and 5 fixes remain intact; **§5.3 is byte-identical to Revision 5 and Revision 4** (full-section
@@ -91,9 +91,11 @@ run as a standing program.
   rota, status page, or generic drain/queue infrastructure.
 * Not a backup/restore or PITR runbook. Point-in-time recovery and project restore are
   **explicitly excluded as rollback mechanisms** (§5.6).
-* Not production authority. Founder authority for Change Class A lives in KIV-159; for
-  Change Class B in KIV-144. **§2.1 is the single place this document states their status, as at
-  one timestamp** — do not restate it elsewhere. Completion and independent acceptance of KIV-146 is a
+* Not production authority. Founder authority for Change Class **A1** lives in KIV-159 and for
+  Change Class **B** in KIV-144. **Change Class A2 has no forward authority and no reversal
+  authority: neither exists, and KIV-159 and KIV-167 confer nothing on it** (§0.4, §2.1, §5.1).
+  **§2.1 is the single place this document states their status, as at one timestamp** — do not
+  restate it elsewhere. Completion and independent acceptance of KIV-146 is a
   **precondition** of those authorities being exercised, never a substitute for them.
 * Not a licence to touch anything outside the exact boundary in §2.
 
@@ -153,11 +155,11 @@ KIV-25 is **blocked and not authorized**. Release 4 is **consumed**. Alpha/Pilot
 
 | Role | Holds | May not |
 |---|---|---|
-| **Founder** | Production authority for the named change (KIV-159 / KIV-144) | — |
+| **Founder** | Production authority for the named change — Class A1 KIV-159, Class B KIV-144. **For Change Class A2 there is none: a new, separate, exact forward authorization is required and does not exist, and the §5.7 reversal requires its own fresh separate authorization that also does not exist** (§0.4, §2.1, §5.1) | — |
 | **PM** | Fresh-reads custody, pins the exact source bytes, releases exactly one executor, receives HARD STOP reports | Execute the mutation |
 | **Executor** | Runs preflight, before-state capture, the one authorized mutation, after-state read-back, evidence packaging | Approve its own result; adapt, repair or improvise; widen scope; run a second attempt; **be the sole approver of the materialized restoration text (§5.4.2)** |
 | **Restoration verifier** (Class B only) | Independently verifies **every per-group materialized restoration artifact `RM-G-1 … RM-G-n` and `RM-MANIFEST`, issuing a PASS or BLOCK per artifact against its own SHA-256**, before the forward mutation — **RM-VERIFY**, §5.4.2 | Be the executor; have authored the restoration skeletons; execute anything |
-| **Independent reviewer** | Accepts or blocks the result (KIV-145 for Class B; KIV-159 condition 5 for Class A) | Have participated in execution |
+| **Independent reviewer** | Accepts or blocks the result (KIV-145 for Class B; KIV-159 condition 5 for Class A1; **for Class A2, the separate mandatory independent post-remediation verification of §7.4** — executor evidence can never self-close KIV-14) | Have participated in execution |
 
 The **restoration verifier** is separately released by PM. It may come from the same independent
 Engineering lane as the acceptance reviewer, and the two may be the same window provided that
@@ -234,16 +236,20 @@ A2 preflight time is **HARD STOP (HS-32)**. Record the exact observation verbati
 Do not adapt, repair, re-grant, retry `0108`, or proceed on a "close enough" reading.
 
 **Authority status is stated as at 2026-08-17T18:02:46Z**, the single timestamp for every
-authority fact in this document. Both authorities existed when Revision 2 was written; neither
-is pending. Anyone re-reading this document later must re-read KIV-159 and KIV-144 rather than
-rely on this table.
+authority fact in this document. Both **Class A1 and Class B** authorities existed when Revision 2
+was written; neither is pending. **Change Class A2 carries no timestamp because it has no authority
+to timestamp** — its forward authorization and its §5.7 reversal authorization are absences, not
+pending items, and an absence needs no as-at date. Anyone re-reading this document later must
+re-read KIV-159 and KIV-144 rather than rely on this table.
 
 **What those authorities do and do not do.** Each creates authority only. Neither executes
 production, and neither substitutes for the §2.7 entry checklist — KIV-159 condition 1 makes
 independent acceptance of *this procedure* a precondition of Class A execution, and PM must
 separately release the exact executor. A change that is not Class A or Class B is out of scope;
 do not stretch this procedure to cover it, and do not treat KIV-144 as covering Class A
-(KIV-159 says so explicitly).
+(KIV-159 says so explicitly). **Equally, do not treat KIV-159 as covering Change Class A2**: its
+forward authority was for the exact `0108` M-1 retry, it was consumed by Release 4, and it is
+spent. Widening it by inference is exactly the failure §0.4 exists to prevent.
 
 ### 2.2 Target identity — PF-1
 
@@ -3164,7 +3170,7 @@ unchanged, in full and in substance:
 | **PF-5, PF-5a, PF-5b**, the same-control rule, the objective read-back after every hold transition, and the §2.5 *"Class applicability (R5-1)"* paragraph | **Byte-identical. Not edited.** |
 | **IS-1 / IS-2**, capture line **B-14**, and §4.3 in its entirety | **Byte-identical. Not edited.** B-14 remains Class B-only and is explicitly never captured for A2 |
 | **HS-7, HS-9, HS-25, HS-26, HS-27, HS-28, HS-29, HS-30** | **Byte-identical. Not edited.** |
-| **§1** restoration-verifier role and RM-VERIFY separation; **§3.3** Class B additional requirement; **E-9**, **E-10** | **Byte-identical. Not edited.** The only §1 change is an **addition** — the G5 standing owner (§9.5), which touches no Class B role |
+| **§1** restoration-verifier role and RM-VERIFY separation; **§3.3** Class B additional requirement; **E-9**, **E-10** | **Byte-identical. Not edited.** §1 changes in three other places, none of which touches a Class B obligation: the G5 standing owner is **added** (§9.5); the **Founder** row and the **Independent reviewer** row each gain an **A2 clause alongside** their existing text, with `KIV-145 for Class B` left exactly as written and Class A1's KIV-159 references intact |
 | **§2.7 item 5 Class B branch**, **item 3**, **item 8 Class B branch** | **Unchanged in substance.** Item 6 and item 8 gain an **A2 clause alongside** the Class B text, which is not modified; item 8's Class A wording becomes "Class A1 and Class A2" for the B-15 record |
 
 **Class B sections changed by Revision 6: NONE.** The only places where Class B text appears
