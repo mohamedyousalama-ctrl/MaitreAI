@@ -1,7 +1,7 @@
 {
   "accepted_repaired_body_md5": "00a73f86a902ff222760ff8fcab8abf1",
   "backend_pid_method": "psycopg.Connection.info.backend_pid -> libpq PQbackendPID (BackendKeyData; no SQL)",
-  "capture_command": "REFUSED by this package; KIV-218 does not authorize capture",
+  "capture_command": "Default `capture` remains REFUSED. Authorized capture requires a matching CaptureAuthority document plus explicit invocation binding; runtime parameters do not create Linear/PM governance authority.",
   "class_inventory": {
     "capture_order": [
       "P-0",
@@ -94,6 +94,11 @@
     "branch": "claude/kiv-217-a2-pcsb-query-driver-package",
     "commit": "37836b0b3ec22c7d8190aa39168f21641c0067ff"
   },
+  "kiv220_accepted_parent": {
+    "commit": "8cc7331aa19eb90f3cf5c7625e074ccd5c134638",
+    "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
+    "manifest_sha256": "e1e733a50df2e0c60904790bd3de5af2c6bea9c5b478588ed082d74f416b0690"
+  },
   "not_production_evidence": true,
   "not_section7_fixture_evidence": true,
   "operative_procedure": {
@@ -102,9 +107,9 @@
     "path": "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md",
     "sha256": "48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a"
   },
-  "package_context": "KIVO-A2-RECOVERY-PACKAGE-TOPOLOGY-BUILDER-218",
+  "package_context": "KIVO-A2-RECOVERY-CAPTURE-BINDING-BUILDER-221",
   "package_id": "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE",
-  "package_version": "0.1.1-kiv218-remediation-candidate",
+  "package_version": "0.1.2-kiv221-capture-binding-candidate",
   "platform_baseline": {
     "cli_tarball_asset": "supabase-postgres-v17.6.1.150-cli-darwin-arm64.tar.gz",
     "cli_tarball_sha256": "e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6",

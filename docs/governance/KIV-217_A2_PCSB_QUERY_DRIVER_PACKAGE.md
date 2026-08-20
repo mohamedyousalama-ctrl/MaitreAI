@@ -1,11 +1,34 @@
-# KIV-217 A2 PCSB query/driver package — KIV-218 remediation operator contract
+# KIV-217 A2 PCSB query/driver package — KIV-221 capture-binding operator contract
 
-**Context:** `KIVO-A2-RECOVERY-PACKAGE-TOPOLOGY-BUILDER-218`  
+**Context:** `KIVO-A2-RECOVERY-CAPTURE-BINDING-BUILDER-221`  
 **Package id:** `KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE`  
-**Package version:** `0.1.1-kiv218-remediation-candidate`  
-**KIV-217 published custody (unchanged parent object):** branch `claude/kiv-217-a2-pcsb-query-driver-package` commit `37836b0b3ec22c7d8190aa39168f21641c0067ff`
+**Package version:** `0.1.2-kiv221-capture-binding-candidate`  
+**KIV-220 accepted parent (unchanged SQL / hash-of-hashes):** commit `8cc7331aa19eb90f3cf5c7625e074ccd5c134638`  
+**KIV-217 published custody (unchanged grandparent object):** branch `claude/kiv-217-a2-pcsb-query-driver-package` commit `37836b0b3ec22c7d8190aa39168f21641c0067ff`
 
-**This document is the operator contract for the no-production candidate package.** It is not KIV-14 acceptance, not PCSB-3 capture authority, and not §7 fixture evidence.
+**This document is the operator contract for the no-production candidate package plus the KIV-221 authorization-bound capture invocation seam.** It is not KIV-14 acceptance, not PCSB-3 capture authority, and not §7 fixture evidence.
+
+## Capture-binding seam (KIV-221)
+
+Default behavior remains fail-closed and no-production:
+
+* `PersistentCaptureSession.connect()` without a `CaptureAuthority` still calls `assert_not_production_target`.
+* `allow_remote=True` remains an unconditional refusal.
+* `python -m kiv14_pcsb capture` remains **hard-refused** (exit 2).
+
+The reviewed production-capable path is **disabled until** a later separately released Linear work order supplies **all** of:
+
+1. a JSON `CaptureAuthority` document (non-secret fields only);
+2. matching explicit CLI invocation bindings (`--work-order`, `--pcsb`, `--evidence-dir`);
+3. a runtime-only `--conninfo-file` whose non-secret identity matches `authorized_target`.
+
+Required authority bindings: work-order id, `PCSB-n` identity (not PCSB-1/2), this package id, exact package commit, live `package_manifest.json` SHA-256, live statement hash-of-hashes, authorized target non-secret identity, evidence directory, and the exact governance disclaimer that **possession of runtime parameters does not create Linear/PM authority**.
+
+Target authorization is checked **before** `reviewed_psycopg_connect` and without SQL. Mismatched/missing/malformed authority refuses before authentication. Direct `db.<ref>.supabase.co` and transaction-mode port `6543` cannot be authorized. There is no environment-only switch, monkey-patch, or `allow_remote` bypass.
+
+`AuthorizedCaptureRunner` is single-shot: no retry parameter, no reconnect, no second `connect`, no same-runner restart. It reuses `PersistentCaptureSession` + the unchanged statement sequence through PS-TIME end.
+
+This Builder gate does **not** invoke the authorized path against production.
 
 ## Governing pins (recomputed at package prep)
 
@@ -17,8 +40,9 @@
 | SHA-256 | `48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a` |
 | Revision-6 blob (must not change) | `c16f2bdc84173faefb98a065b02f9fe3b5e24d2a` |
 | Exact `0109` source blob (must not change) | `8923ed066d21a5cbac5f6ffc47606aee9b5c9c07` |
+| Statement hash-of-hashes (must not change from KIV-220) | `6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845` |
 
-This package **does not edit** those protected bytes.
+This package **does not edit** those protected bytes or any statement SQL.
 
 ## What this package is
 
@@ -26,9 +50,10 @@ A complete PCSB query/driver candidate required by operative procedure §§5.2, 
 
 It may be used later by a **separately authorized** capturer only after:
 
-1. PM terminal intake of KIV-218;
-2. independent reviewer PASS / hash-pin of the **unchanged** successor package;
-3. a later, separately governed PCSB-3 capture work order.
+1. KIV-220 independent PASS / PM hash-pin of exact parent `8cc7331…` (already recorded);
+2. PM terminal intake of this KIV-221 successor;
+3. independent reviewer PASS / hash-pin of the **unchanged** KIV-221 successor package;
+4. a later, separately governed PCSB-n capture work order that supplies matching `CaptureAuthority`.
 
 Until then: **zero** production/Supabase authentication and **zero** production SQL.
 
@@ -58,7 +83,7 @@ Implemented by `PersistentCaptureSession`:
 6. Disconnect, reconnect, PID drift, or direct `Connection.execute` / `cursor.execute` is fail-closed.
 7. No psql `\if`, shell gate, second invocation, or retry.
 
-`python -m kiv14_pcsb capture` is **hard-refused** in this package.
+`python -m kiv14_pcsb capture` is **hard-refused** in this package. The reviewed seam is `python -m kiv14_pcsb authorized-capture` and still refuses unless every authority/invocation/target/package pin matches.
 
 ## Statement sequence (P3)
 
@@ -93,6 +118,11 @@ PYTHONPATH=. python -m kiv14_pcsb selftest
 PYTHONPATH=. python -m kiv14_pcsb manifest
 PYTHONPATH=. python -m kiv14_pcsb preflight
 PYTHONPATH=. python -m kiv14_pcsb capture   # always exit 2 / REFUSED
+PYTHONPATH=. python -m kiv14_pcsb authorized-capture \
+  --authority FILE --work-order KIV-n --pcsb PCSB-n \
+  --conninfo-file FILE --evidence-dir DIR
+# authorized-capture still refuses unless a later Linear work order supplies
+# matching non-secret authority. KIV-221 does not invoke it against production.
 ```
 
 Disposable PostgreSQL **17.6** is expected at `$KIVO_KIV218_PG176_PREFIX` or `/tmp/kivo-kiv218-supabase-pg176/work-prefix`, which must be the official `supabase-postgres-v17.6.1.150-cli-darwin-arm64` extract (SHA-256 `e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6`, tag commit `a97b439c4a9033f9d40080623a688ddcda2961ff`). Clusters listen on `127.0.0.1` only. Never mix Homebrew/system PostgreSQL into the Class B cluster.
@@ -115,11 +145,13 @@ No third Kivo bootstrap recipe. No dump shortcut. No ad-hoc DDL.
 
 ## Safety (P9)
 
-Default conninfo is loopback only. The package refuses `supabase.co` / pooler hosts, project ref `zlighrbsjexrozrmuwpw`, and any non-loopback host. There is no production DSN, password, token, or `.pgpass` in this package. KIV-198/199 credentials must not be inspected or reused.
+Default conninfo is loopback only. Without a matching `CaptureAuthority`, the package refuses `supabase.co` / pooler hosts, project ref `zlighrbsjexrozrmuwpw`, any non-loopback host, and `allow_remote=True`. There is no production DSN, password, token, or `.pgpass` in this package. KIV-198/199 credentials must not be inspected or reused.
+
+The authorized seam compares non-secret conninfo identity to `authorized_target` **before** connection creation. Secrets must not appear in the authority JSON or in written evidence.
 
 ## Terminal law
 
-KIV-218 completion does **not** authorize PCSB-3. Leave KIV-218 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
+KIV-221 completion does **not** authorize PCSB-3. Leave KIV-221 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
 
-READY line: `A2 ACCEPTANCE-RECOVERY QUERY/DRIVER PACKAGE REMEDIATION READY FOR INDEPENDENT REVIEW`  
-HOLD line: `A2 ACCEPTANCE-RECOVERY QUERY/DRIVER PACKAGE REMEDIATION HOLD`
+READY line: `A2 ACCEPTANCE-RECOVERY CAPTURE-BINDING REMEDIATION READY FOR INDEPENDENT REVIEW`  
+HOLD line: `A2 ACCEPTANCE-RECOVERY CAPTURE-BINDING REMEDIATION HOLD`

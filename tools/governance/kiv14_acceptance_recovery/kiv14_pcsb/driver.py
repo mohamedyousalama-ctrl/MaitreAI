@@ -7,6 +7,7 @@ import psycopg
 from psycopg import pq
 from psycopg.rows import dict_row
 
+from .authority import CaptureAuthority, assert_authorized_capture_target
 from .constants import BACKEND_PID_METHOD, DRIVER_NAME, DRIVER_VERSION
 from .errors import ContinuityFailure, FailClosed, SequenceViolation
 from .safety import assert_not_production_target
@@ -30,6 +31,18 @@ def driver_identity() -> dict[str, Any]:
     }
 
 
+def reviewed_psycopg_connect(conninfo: str) -> psycopg.Connection[Any]:
+    """The only reviewed connection factory. Callers must already have passed
+    ``assert_not_production_target`` or ``assert_authorized_capture_target``.
+    """
+    return psycopg.connect(
+        conninfo,
+        autocommit=True,
+        prepare_threshold=None,
+        row_factory=dict_row,
+    )
+
+
 @dataclass(frozen=True)
 class DenialResult:
     statement_id: str
@@ -46,6 +59,7 @@ class PersistentCaptureSession:
     """
 
     conninfo: str
+    authority: CaptureAuthority | None = None
     _conn: psycopg.Connection[Any] | None = None
     _raw_execute: Any = None
     pre_p0_backend_pid: int | None = None
@@ -58,13 +72,11 @@ class PersistentCaptureSession:
     def connect(self) -> None:
         if self._conn is not None:
             raise SequenceViolation("connect called twice on the same session object")
-        assert_not_production_target(self.conninfo)
-        conn = psycopg.connect(
-            self.conninfo,
-            autocommit=True,
-            prepare_threshold=None,
-            row_factory=dict_row,
-        )
+        if self.authority is None:
+            assert_not_production_target(self.conninfo)
+        else:
+            assert_authorized_capture_target(self.conninfo, self.authority)
+        conn = reviewed_psycopg_connect(self.conninfo)
         pid = conn.info.backend_pid
         if not pid or pid <= 0:
             conn.close()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from urllib.parse import unquote, urlparse
+from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .constants import PRODUCTION_HOST_MARKERS, PRODUCTION_PROJECT_REF
 
@@ -30,6 +31,45 @@ def _hosts_from_conninfo(conninfo: str) -> list[str]:
     return hosts
 
 
+def conninfo_nonsecret_identity(conninfo: str) -> dict[str, Any]:
+    """Parse host/user/port/database/sslmode only. Never returns password."""
+    text = conninfo.strip()
+    if "://" in text:
+        parsed = urlparse(text)
+        query = parse_qs(parsed.query)
+        sslmode = None
+        if "sslmode" in query and query["sslmode"]:
+            sslmode = query["sslmode"][0]
+        database = unquote(parsed.path.lstrip("/")) if parsed.path else None
+        return {
+            "host": parsed.hostname,
+            "port": parsed.port if parsed.port is not None else 5432,
+            "database": database or None,
+            "user": unquote(parsed.username) if parsed.username else None,
+            "sslmode": sslmode,
+            "hosts": [parsed.hostname] if parsed.hostname else [],
+        }
+    fields: dict[str, str] = {}
+    for part in text.replace("\n", " ").split():
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        if key == "password":
+            continue
+        fields[key] = unquote(value.strip("'\""))
+    host = fields.get("host") or fields.get("hostaddr")
+    port_raw = fields.get("port")
+    port = int(port_raw) if port_raw else 5432
+    return {
+        "host": host,
+        "port": port,
+        "database": fields.get("dbname") or fields.get("database"),
+        "user": fields.get("user"),
+        "sslmode": fields.get("sslmode"),
+        "hosts": _hosts_from_conninfo(conninfo),
+    }
+
+
 def is_loopback_or_local_socket(host: str | None) -> bool:
     if host is None or host == "":
         # libpq default without host is a Unix-domain socket — local only.
@@ -44,9 +84,12 @@ def assert_not_production_target(
     host: str | None = None,
     allow_remote: bool = False,
 ) -> None:
-    """Refuse production/Supabase endpoints. Remote non-loopback is refused unless
-    a later separately authorized capture work order sets allow_remote (KIV-217
-    never does).
+    """Refuse production/Supabase endpoints and any non-loopback host.
+
+    ``allow_remote=True`` remains an unconditional refusal. The only reviewed
+    production-capable path is ``assert_authorized_capture_target`` after a
+    matching ``CaptureAuthority`` document is supplied. Runtime flags do not
+    create Linear/PM governance authority.
     """
     if allow_remote:
         raise ProductionTargetRefused(

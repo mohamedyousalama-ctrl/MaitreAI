@@ -5,6 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .authority import CaptureInvocation, load_capture_authority
+from .capture_binding import AuthorizedCaptureRunner
+from .errors import CaptureAuthorityRefused, FailClosed, SequenceViolation
 from .evidence import build_package_manifest, canonical_dumps, write_package_manifest
 from .preflight import run_preflight
 from .static_validate import validate_all_statement_contracts, validate_bad_example_detects_kiv208
@@ -41,22 +44,67 @@ def cmd_preflight() -> int:
 
 def cmd_capture() -> int:
     sys.stderr.write(
-        "REFUSED: KIV-218 does not authorize production authentication, "
-        "Supabase SQL, or PCSB-n capture. Zero production/Supabase auth/SQL.\n"
+        "REFUSED: default capture remains disabled. Authorized capture requires "
+        "the reviewed `authorized-capture` command with a matching CaptureAuthority "
+        "document and explicit invocation binding. Runtime parameters do not create "
+        "governance authority. This invocation performs zero production authentication.\n"
     )
     return 2
+
+
+def cmd_authorized_capture(args: argparse.Namespace) -> int:
+    try:
+        authority = load_capture_authority(Path(args.authority))
+        invocation = CaptureInvocation(
+            work_order_id=args.work_order,
+            pcsb_identity=args.pcsb,
+            evidence_directory=args.evidence_dir,
+        )
+        conninfo = Path(args.conninfo_file).read_text()
+        payload = AuthorizedCaptureRunner().run(
+            authority=authority,
+            invocation=invocation,
+            conninfo=conninfo,
+        )
+    except CaptureAuthorityRefused as exc:
+        sys.stderr.write(f"REFUSED before authentication: {exc}\n")
+        return 2
+    except (FailClosed, SequenceViolation) as exc:
+        sys.stderr.write(f"FAIL-CLOSED: {exc}\n")
+        return 1
+    completeness = payload.get("completeness")
+    sys.stdout.write(
+        canonical_dumps(
+            {
+                "completeness": completeness,
+                "incomplete_reason": payload.get("incomplete_reason"),
+                "pcsb_identity": payload.get("pcsb_identity"),
+                "work_order_id": payload.get("work_order_id"),
+            }
+        )
+    )
+    return 0 if completeness == "complete" else 1
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kiv14_pcsb",
-        description="KIV-218 no-production A2 PCSB query/driver package remediation",
+        description="KIV-221 no-production A2 PCSB capture-binding package",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("selftest", help="run package self-tests")
     sub.add_parser("manifest", help="write deterministic package_manifest.json")
     sub.add_parser("preflight", help="Class A + Class B PG 17.6 preflight")
-    sub.add_parser("capture", help="always refused under KIV-218")
+    sub.add_parser("capture", help="always refused unless using authorized-capture")
+    authorized = sub.add_parser(
+        "authorized-capture",
+        help="reviewed authority-bound capture; refuses unless all bindings match",
+    )
+    authorized.add_argument("--authority", required=True, help="JSON CaptureAuthority path")
+    authorized.add_argument("--work-order", required=True, help="must match authority.work_order_id")
+    authorized.add_argument("--pcsb", required=True, help="must match authority.pcsb_identity")
+    authorized.add_argument("--conninfo-file", required=True, help="runtime libpq conninfo; not logged")
+    authorized.add_argument("--evidence-dir", required=True, help="must match authority.evidence_directory")
     args = parser.parse_args(argv)
     if args.command == "selftest":
         return cmd_selftest()
@@ -66,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_preflight()
     if args.command == "capture":
         return cmd_capture()
+    if args.command == "authorized-capture":
+        return cmd_authorized_capture(args)
     parser.error("unknown command")
     return 2
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from hashlib import sha256
@@ -11,10 +12,14 @@ from uuid import UUID
 from .constants import (
     ACCEPTED_REPAIRED_BODY_MD5,
     BACKEND_PID_METHOD,
+    CAPTURE_COMMAND_DEFAULT,
     DRIVER_PACKAGE,
     DRIVER_VERSION,
     KIV217_PUBLISHED_BRANCH,
     KIV217_PUBLISHED_COMMIT,
+    KIV220_ACCEPTED_COMMIT,
+    KIV220_ACCEPTED_HASH_OF_HASHES,
+    KIV220_ACCEPTED_MANIFEST_SHA256,
     OPERATIVE_PROCEDURE_BLOB,
     OPERATIVE_PROCEDURE_COMMIT,
     OPERATIVE_PROCEDURE_PATH,
@@ -138,7 +143,12 @@ def build_package_manifest(root: Path | None = None) -> dict[str, Any]:
         "not_section7_fixture_evidence": True,
         "not_production_evidence": True,
         "production_supabase_auth_sql_count": 0,
-        "capture_command": "REFUSED by this package; KIV-218 does not authorize capture",
+        "capture_command": CAPTURE_COMMAND_DEFAULT,
+        "kiv220_accepted_parent": {
+            "commit": KIV220_ACCEPTED_COMMIT,
+            "manifest_sha256": KIV220_ACCEPTED_MANIFEST_SHA256,
+            "hash_of_hashes": KIV220_ACCEPTED_HASH_OF_HASHES,
+        },
         "operative_procedure": {
             "commit": OPERATIVE_PROCEDURE_COMMIT,
             "path": OPERATIVE_PROCEDURE_PATH,
@@ -188,4 +198,32 @@ def write_run_evidence(dest_dir: Path, payload: dict[str, Any]) -> dict[str, Any
     path.write_text(text)
     digest = sha256(text.encode()).hexdigest()
     (dest_dir / "run_evidence.sha256").write_text(digest + "\n")
+    return {"path": str(path), "sha256": digest, "bytes": len(text.encode())}
+
+
+SECRET_PATTERNS = (
+    re.compile(r"password\s*=", re.I),
+    re.compile(r"postgres(ql)?://[^\s\"']+", re.I),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\."),
+    re.compile(r"service_role[_-]?key", re.I),
+    re.compile(r"\bsbp_[A-Za-z0-9]", re.I),
+    re.compile(r"SUPABASE_SERVICE", re.I),
+    re.compile(r"PGPASSWORD", re.I),
+)
+
+
+def refuse_if_secrets(text: str, *, where: str) -> None:
+    for pattern in SECRET_PATTERNS:
+        if pattern.search(text):
+            raise RuntimeError(f"refusing to write secret-bearing evidence at {where}")
+
+
+def write_capture_evidence(dest_dir: Path, filename: str, payload: dict[str, Any]) -> dict[str, Any]:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / filename
+    text = canonical_dumps(payload)
+    refuse_if_secrets(text, where=str(path))
+    path.write_text(text)
+    digest = sha256(text.encode()).hexdigest()
+    path.with_suffix(path.suffix + ".sha256").write_text(digest + "\n")
     return {"path": str(path), "sha256": digest, "bytes": len(text.encode())}

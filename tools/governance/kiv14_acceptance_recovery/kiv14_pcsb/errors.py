@@ -23,3 +23,10 @@ class StaticContractFailure(FailClosed):
 
 class Hold(RuntimeError):
     """Lawful package HOLD — missing topology/prerequisite, not a workaround."""
+
+
+class CaptureAuthorityRefused(RuntimeError):
+    """Raised before authentication when capture authority is missing or mismatched.
+
+    This is not a post-authentication capture failure and must not retry.
+    """
