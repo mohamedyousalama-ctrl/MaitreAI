@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from .authority import destination_binding_review_contract
 from .constants import (
     ACCEPTED_REPAIRED_BODY_MD5,
     BACKEND_PID_METHOD,
@@ -27,6 +28,10 @@ from .constants import (
     KIV224_ACCEPTED_MANIFEST_BLOB,
     KIV224_ACCEPTED_MANIFEST_SHA256,
     KIV224_ACCEPTED_PACKAGE_VERSION,
+    KIV229_BLOCKED_COMMIT,
+    KIV229_BLOCKED_MANIFEST_BLOB,
+    KIV229_BLOCKED_MANIFEST_SHA256,
+    KIV229_BLOCKED_PACKAGE_VERSION,
     OPERATIVE_PROCEDURE_BLOB,
     OPERATIVE_PROCEDURE_COMMIT,
     OPERATIVE_PROCEDURE_PATH,
@@ -169,6 +174,14 @@ def build_package_manifest(root: Path | None = None) -> dict[str, Any]:
             "manifest_blob": KIV224_ACCEPTED_MANIFEST_BLOB,
             "hash_of_hashes": KIV220_ACCEPTED_HASH_OF_HASHES,
         },
+        "kiv229_blocked_parent": {
+            "commit": KIV229_BLOCKED_COMMIT,
+            "package_version": KIV229_BLOCKED_PACKAGE_VERSION,
+            "manifest_sha256": KIV229_BLOCKED_MANIFEST_SHA256,
+            "manifest_blob": KIV229_BLOCKED_MANIFEST_BLOB,
+            "hash_of_hashes": KIV220_ACCEPTED_HASH_OF_HASHES,
+        },
+        "destination_binding": destination_binding_review_contract(),
         "operative_procedure": {
             "commit": OPERATIVE_PROCEDURE_COMMIT,
             "path": OPERATIVE_PROCEDURE_PATH,

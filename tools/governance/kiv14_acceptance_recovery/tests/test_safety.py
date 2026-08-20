@@ -31,7 +31,7 @@ def test_refuses_project_ref_in_conninfo():
 
 def test_refuses_non_loopback():
     with pytest.raises(ProductionTargetRefused):
-        assert_not_production_target("host=10.0.0.8 port=5432 dbname=postgres user=x")
+        assert_not_production_target("host=10.0.0.8 port=5432 dbname=postgres user=x sslmode=disable")
 
 
 def test_refuses_allow_remote_even_if_requested():

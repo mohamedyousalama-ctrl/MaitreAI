@@ -1,8 +1,9 @@
-"""KIV-229 direct-postgres route remediation of the KIV-224-accepted package.
+"""KIV-231 conninfo destination-binding remediation of the KIV-229 candidate.
 
 Default capture remains refused. The reviewed authorized-capture seam is
 disabled until a later Linear work order supplies matching runtime authority
-for route_class direct-postgres. Session Pooler is continuity-ineligible.
+for route_class direct-postgres. Effective libpq destination is bound to the
+authority-validated identity. Session Pooler is continuity-ineligible.
 This package does not authenticate to production or capture PCSB-n.
 """
 

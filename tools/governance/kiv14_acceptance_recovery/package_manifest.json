@@ -72,6 +72,87 @@
       "G1"
     ]
   },
+  "destination_binding": {
+    "effective_destination_equals_authority_identity": true,
+    "governance_note": "These runtime fields do not create Linear/PM governance authority. Only a separately released Linear work order does.",
+    "kiv230_r2_closed": [
+      "uri_query_hostaddr",
+      "uri_query_host_override_of_netloc",
+      "PGHOSTADDR",
+      "PGHOST",
+      "PGPORT",
+      "PGDATABASE",
+      "PGUSER",
+      "PGSERVICE",
+      "PGSERVICEFILE",
+      "service_and_service_file",
+      "hostaddr",
+      "multi_host_multi_port",
+      "duplicate_identity_keys",
+      "unix_socket_empty_host"
+    ],
+    "opaque_conninfo_never_passed_to_libpq": true,
+    "permitted_authorized_capture_identity_keys": [
+      "host",
+      "port",
+      "dbname",
+      "user",
+      "sslmode"
+    ],
+    "permitted_non_destination_keys": [
+      "client_encoding"
+    ],
+    "refused_conninfo_keys": [
+      "hostaddr",
+      "service",
+      "passfile",
+      "channel_binding",
+      "target_session_attrs",
+      "load_balance_hosts",
+      "requiressl",
+      "sslrootcert",
+      "sslcert",
+      "sslkey",
+      "sslcrl",
+      "krbsrvname",
+      "gssencmode",
+      "replication",
+      "options",
+      "fallback_application_name",
+      "application_name",
+      "connect_timeout",
+      "keepalives",
+      "keepalives_idle",
+      "keepalives_interval",
+      "keepalives_count",
+      "tcp_user_timeout",
+      "client_min_messages"
+    ],
+    "review_method": {
+      "adversarial_live_targets": "loopback / reserved / fake only",
+      "kiv230_process_note": "Package review must not connect to the production endpoint to prove destination binding.",
+      "production_dns_tcp_auth_sql_permitted": false,
+      "production_dns_tcp_auth_sql_required": false,
+      "production_shaped_strings": "parser and factory-mock tests only; never DNS-resolve or TCP-connect"
+    },
+    "runtime_secret_material": "in-memory only for connect; never logged, hashed, or evidenced",
+    "stripped_libpq_environment": [
+      "PGHOST",
+      "PGHOSTADDR",
+      "PGPORT",
+      "PGDATABASE",
+      "PGUSER",
+      "PGSERVICE",
+      "PGSERVICEFILE",
+      "PGSYSCONFDIR",
+      "PGPASSFILE",
+      "PGSSLMODE",
+      "PGREQUIRESSL",
+      "PGCHANNELBINDING",
+      "PGTARGETSESSIONATTRS",
+      "PGLOADBALANCEHOSTS"
+    ]
+  },
   "driver": {
     "autocommit": true,
     "backend_pid_method": "psycopg.Connection.info.backend_pid -> libpq PQbackendPID (BackendKeyData; no SQL)",
@@ -112,6 +193,13 @@
     "manifest_sha256": "ecac3712937d0d8a458f5fb417a8dcac57bce9de29bb4fe31b4615a3312a4af4",
     "package_version": "0.1.3-kiv224-package-commit-binding-candidate"
   },
+  "kiv229_blocked_parent": {
+    "commit": "ff7978c6e6a4054684ee81da0608c240768e9856",
+    "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
+    "manifest_blob": "0bab6db8cb26a625c2dc01a6cf656700840980cf",
+    "manifest_sha256": "82d2def8b7e87a027f800ee3f8c06809fca3289ea15ffb77759a4cdf1ed3100b",
+    "package_version": "0.1.4-kiv229-direct-postgres-route-candidate"
+  },
   "not_production_evidence": true,
   "not_section7_fixture_evidence": true,
   "operative_procedure": {
@@ -120,9 +208,9 @@
     "path": "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md",
     "sha256": "48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a"
   },
-  "package_context": "KIVO-A2-RECOVERY-DIRECT-ROUTE-PACKAGE-BUILDER-229",
+  "package_context": "KIVO-A2-RECOVERY-CONNINFO-DESTINATION-BUILDER-231",
   "package_id": "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE",
-  "package_version": "0.1.4-kiv229-direct-postgres-route-candidate",
+  "package_version": "0.1.5-kiv231-conninfo-destination-binding-candidate",
   "platform_baseline": {
     "cli_tarball_asset": "supabase-postgres-v17.6.1.150-cli-darwin-arm64.tar.gz",
     "cli_tarball_sha256": "e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6",

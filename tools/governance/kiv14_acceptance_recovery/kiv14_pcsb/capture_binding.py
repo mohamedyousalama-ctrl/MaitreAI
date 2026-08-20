@@ -8,6 +8,7 @@ from .authority import (
     CaptureInvocation,
     assert_authority_matches_this_package,
     assert_invocation_matches_authority,
+    destination_binding_review_contract,
     later_executor_pre_auth_contract,
 )
 from .constants import ROUTE_CLASS_DIRECT_POSTGRES
@@ -60,6 +61,7 @@ class AuthorizedCaptureRunner:
                 if authority.authorized_target.route_class == ROUTE_CLASS_DIRECT_POSTGRES
                 else None
             ),
+            "destination_binding_review_contract": destination_binding_review_contract(),
         }
         write_capture_evidence(dest, "capture_pre_auth.json", pre_auth)
 

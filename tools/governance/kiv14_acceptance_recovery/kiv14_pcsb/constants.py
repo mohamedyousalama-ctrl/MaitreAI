@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 PACKAGE_ID = "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE"
-PACKAGE_VERSION = "0.1.4-kiv229-direct-postgres-route-candidate"
-PACKAGE_CONTEXT = "KIVO-A2-RECOVERY-DIRECT-ROUTE-PACKAGE-BUILDER-229"
+PACKAGE_VERSION = "0.1.5-kiv231-conninfo-destination-binding-candidate"
+PACKAGE_CONTEXT = "KIVO-A2-RECOVERY-CONNINFO-DESTINATION-BUILDER-231"
 KIV217_PUBLISHED_COMMIT = "37836b0b3ec22c7d8190aa39168f21641c0067ff"
 KIV217_PUBLISHED_BRANCH = "claude/kiv-217-a2-pcsb-query-driver-package"
 KIV220_ACCEPTED_COMMIT = "8cc7331aa19eb90f3cf5c7625e074ccd5c134638"
@@ -24,6 +24,12 @@ KIV224_ACCEPTED_MANIFEST_SHA256 = (
     "ecac3712937d0d8a458f5fb417a8dcac57bce9de29bb4fe31b4615a3312a4af4"
 )
 KIV224_ACCEPTED_MANIFEST_BLOB = "0f6805e74e417fa81d591badd5adfc854605279f"
+KIV229_BLOCKED_COMMIT = "ff7978c6e6a4054684ee81da0608c240768e9856"
+KIV229_BLOCKED_PACKAGE_VERSION = "0.1.4-kiv229-direct-postgres-route-candidate"
+KIV229_BLOCKED_MANIFEST_SHA256 = (
+    "82d2def8b7e87a027f800ee3f8c06809fca3289ea15ffb77759a4cdf1ed3100b"
+)
+KIV229_BLOCKED_MANIFEST_BLOB = "0bab6db8cb26a625c2dc01a6cf656700840980cf"
 
 OPERATIVE_PROCEDURE_COMMIT = "d5d223068e8033c7c72e65ba9b26154264b5c764"
 OPERATIVE_PROCEDURE_PATH = "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md"
@@ -102,6 +108,63 @@ KIV229_VERDICT_READY = (
     "A2 ACCEPTANCE-RECOVERY DIRECT-ROUTE PACKAGE REMEDIATION READY FOR INDEPENDENT REVIEW"
 )
 KIV229_VERDICT_HOLD = "A2 ACCEPTANCE-RECOVERY DIRECT-ROUTE PACKAGE REMEDIATION HOLD"
+KIV231_VERDICT_READY = (
+    "A2 ACCEPTANCE-RECOVERY CONNINFO DESTINATION-BINDING REMEDIATION READY FOR INDEPENDENT REVIEW"
+)
+KIV231_VERDICT_HOLD = "A2 ACCEPTANCE-RECOVERY CONNINFO DESTINATION-BINDING REMEDIATION HOLD"
+
+# Identity keys permitted on authorized-capture after canonicalization.
+# password may exist in memory only; client_encoding is non-destination.
+CONNINFO_PERMITTED_IDENTITY_KEYS = ("host", "port", "dbname", "user", "sslmode")
+CONNINFO_PERMITTED_SECRET_KEYS = ("password",)
+CONNINFO_PERMITTED_NONDEST_KEYS = ("client_encoding",)
+CONNINFO_PERMITTED_KEYS = (
+    CONNINFO_PERMITTED_IDENTITY_KEYS
+    + CONNINFO_PERMITTED_SECRET_KEYS
+    + CONNINFO_PERMITTED_NONDEST_KEYS
+)
+CONNINFO_REFUSED_KEYS = (
+    "hostaddr",
+    "service",
+    "passfile",
+    "channel_binding",
+    "target_session_attrs",
+    "load_balance_hosts",
+    "requiressl",
+    "sslrootcert",
+    "sslcert",
+    "sslkey",
+    "sslcrl",
+    "krbsrvname",
+    "gssencmode",
+    "replication",
+    "options",
+    "fallback_application_name",
+    "application_name",
+    "connect_timeout",
+    "keepalives",
+    "keepalives_idle",
+    "keepalives_interval",
+    "keepalives_count",
+    "tcp_user_timeout",
+    "client_min_messages",
+)
+LIBPQ_DESTINATION_ENV_VARS = (
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPORT",
+    "PGDATABASE",
+    "PGUSER",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+    "PGSYSCONFDIR",
+    "PGPASSFILE",
+    "PGSSLMODE",
+    "PGREQUIRESSL",
+    "PGCHANNELBINDING",
+    "PGTARGETSESSIONATTRS",
+    "PGLOADBALANCEHOSTS",
+)
 
 CAPTURE_COMMAND_DEFAULT = (
     "Default `capture` remains REFUSED. Authorized capture requires a matching "

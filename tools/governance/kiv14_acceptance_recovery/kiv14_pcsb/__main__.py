@@ -110,7 +110,7 @@ def cmd_prove_direct_pid_equivalence() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kiv14_pcsb",
-        description="KIV-229 no-production A2 direct-postgres route package",
+        description="KIV-231 no-production A2 conninfo destination-binding package",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("selftest", help="run package self-tests")

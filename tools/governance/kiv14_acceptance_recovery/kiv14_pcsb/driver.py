@@ -11,11 +11,15 @@ from psycopg.rows import dict_row
 from .authority import (
     CaptureAuthority,
     assert_authority_matches_this_package,
-    assert_authorized_capture_target,
+    bind_authorized_effective_conninfo,
 )
 from .constants import BACKEND_PID_METHOD, DRIVER_NAME, DRIVER_VERSION
 from .errors import ContinuityFailure, FailClosed, SequenceViolation
-from .safety import assert_not_production_target
+from .safety import (
+    assert_not_production_target,
+    cleared_libpq_destination_environment,
+    parse_canonical_conninfo,
+)
 
 
 def driver_identity() -> dict[str, Any]:
@@ -37,15 +41,23 @@ def driver_identity() -> dict[str, Any]:
 
 
 def reviewed_psycopg_connect(conninfo: str) -> psycopg.Connection[Any]:
-    """The only reviewed connection factory. Callers must already have passed
-    ``assert_not_production_target`` or ``assert_authorized_capture_target``.
+    """The only reviewed connection factory.
+
+    Callers must already have passed ``assert_not_production_target`` or
+    ``bind_authorized_effective_conninfo``. The factory re-parses, reconstructs
+    keyword parameters from that canonical identity, and strips libpq
+    destination/identity environment variables before ``psycopg.connect``.
+    The original opaque conninfo is never passed through to libpq.
     """
-    return psycopg.connect(
-        conninfo,
-        autocommit=True,
-        prepare_threshold=None,
-        row_factory=dict_row,
-    )
+    identity = parse_canonical_conninfo(conninfo)
+    effective = identity.as_keyword_conninfo()
+    with cleared_libpq_destination_environment():
+        return psycopg.connect(
+            effective,
+            autocommit=True,
+            prepare_threshold=None,
+            row_factory=dict_row,
+        )
 
 
 @dataclass(frozen=True)
@@ -79,10 +91,11 @@ class PersistentCaptureSession:
             raise SequenceViolation("connect called twice on the same session object")
         if self.authority is None:
             assert_not_production_target(self.conninfo)
+            effective = parse_canonical_conninfo(self.conninfo).as_keyword_conninfo()
         else:
             assert_authority_matches_this_package(self.authority, root=root)
-            assert_authorized_capture_target(self.conninfo, self.authority)
-        conn = reviewed_psycopg_connect(self.conninfo)
+            effective = bind_authorized_effective_conninfo(self.conninfo, self.authority)
+        conn = reviewed_psycopg_connect(effective)
         pid = conn.info.backend_pid
         if not pid or pid <= 0:
             conn.close()

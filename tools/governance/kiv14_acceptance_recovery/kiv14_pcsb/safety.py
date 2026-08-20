@@ -1,9 +1,19 @@
 from __future__ import annotations
 
-from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+import os
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Any, Iterator
+from urllib.parse import parse_qsl, unquote, urlparse
 
-from .constants import PRODUCTION_HOST_MARKERS, PRODUCTION_PROJECT_REF
+from .constants import (
+    CONNINFO_PERMITTED_KEYS,
+    CONNINFO_REFUSED_KEYS,
+    LIBPQ_DESTINATION_ENV_VARS,
+    PRODUCTION_HOST_MARKERS,
+    PRODUCTION_PROJECT_REF,
+)
+from .errors import ConninfoDestinationRefused
 
 
 class ProductionTargetRefused(RuntimeError):
@@ -14,65 +24,292 @@ class PackageSafetyError(RuntimeError):
     pass
 
 
-def _hosts_from_conninfo(conninfo: str) -> list[str]:
-    text = conninfo.strip()
-    hosts: list[str] = []
-    if "://" in text:
-        parsed = urlparse(text)
-        if parsed.hostname:
-            hosts.append(parsed.hostname)
-        return hosts
+_URI_SCHEMES = frozenset({"postgres", "postgresql"})
+_PERMITTED_KEY_SET = frozenset(CONNINFO_PERMITTED_KEYS)
+_REFUSED_KEY_SET = frozenset(CONNINFO_REFUSED_KEYS)
+_URI_ALLOWED_QUERY_KEYS = frozenset({"sslmode"})
+
+
+@dataclass(frozen=True)
+class CanonicalConninfo:
+    """Non-secret identity plus optional in-memory secret/non-dest extras.
+
+    ``password`` exists only so a later separately authorized connection can
+    authenticate. It must never be logged, hashed, or written to evidence.
+    """
+
+    host: str
+    port: int
+    database: str
+    user: str
+    sslmode: str
+    password: str | None = None
+    client_encoding: str | None = None
+
+    def public_identity(self) -> dict[str, Any]:
+        return {
+            "host": self.host,
+            "port": self.port,
+            "database": self.database,
+            "user": self.user,
+            "sslmode": self.sslmode,
+            "hosts": [self.host],
+        }
+
+    def as_keyword_conninfo(self) -> str:
+        parts = [
+            f"host={_keyword_value(self.host)}",
+            f"port={self.port}",
+            f"dbname={_keyword_value(self.database)}",
+            f"user={_keyword_value(self.user)}",
+        ]
+        if self.password is not None:
+            parts.append(f"password={_keyword_value(self.password)}")
+        parts.append(f"sslmode={_keyword_value(self.sslmode)}")
+        if self.client_encoding is not None:
+            parts.append(f"client_encoding={_keyword_value(self.client_encoding)}")
+        return " ".join(parts)
+
+
+def _refuse_dest(message: str) -> None:
+    raise ConninfoDestinationRefused(message)
+
+
+def _keyword_value(value: str) -> str:
+    if any(ch in value for ch in " \t\n'\"\\"):
+        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{escaped}'"
+    return value
+
+
+def _forbid_ambiguous_host(host: str) -> None:
+    if host != host.strip():
+        _refuse_dest("authorized conninfo host has surrounding whitespace")
+    if not host:
+        _refuse_dest("unix-socket / empty-host fallback is refused")
+    if host.startswith("/"):
+        _refuse_dest("unix-socket host is refused")
+    if "," in host:
+        _refuse_dest("multi-host conninfo is refused")
+    if host.endswith("."):
+        _refuse_dest("trailing-dot hostname is refused")
+    if any(ch.isspace() for ch in host):
+        _refuse_dest("hostname contains whitespace")
+
+
+def _parse_port(raw: str, *, where: str) -> int:
+    text = raw.strip()
+    if not text or "," in text:
+        _refuse_dest(f"{where} port is missing or is a multi-port list")
+    if not text.isdigit():
+        _refuse_dest(f"{where} port is not an integer")
+    port = int(text)
+    if port < 1 or port > 65535:
+        _refuse_dest(f"{where} port is out of range")
+    return port
+
+
+def _split_keyword_tokens(text: str) -> list[tuple[str, str]]:
+    tokens: list[tuple[str, str]] = []
     for part in text.replace("\n", " ").split():
         if "=" not in part:
-            continue
+            _refuse_dest("keyword conninfo contains a token that is not key=value")
         key, value = part.split("=", 1)
+        key = key.strip()
+        if not key:
+            _refuse_dest("keyword conninfo contains an empty key")
+        if value.startswith("'") or value.startswith('"'):
+            if len(value) < 2 or value[-1] != value[0]:
+                _refuse_dest("keyword conninfo has an unmatched quoted value")
+            value = value[1:-1]
+        tokens.append((key, unquote(value)))
+    return tokens
+
+
+def _canonical_from_fields(fields: dict[str, str], *, default_port: int | None) -> CanonicalConninfo:
+    unknown = sorted(set(fields) - _PERMITTED_KEY_SET - {"database"})
+    refused_hit = sorted(set(fields) & _REFUSED_KEY_SET)
+    if refused_hit:
+        _refuse_dest(f"conninfo contains refused destination/indirection key(s): {refused_hit}")
+    if unknown:
+        _refuse_dest(f"conninfo contains unreviewed key(s): {unknown}")
+    if "hostaddr" in fields:
+        _refuse_dest("hostaddr is refused on the reviewed connection path")
+    if "service" in fields:
+        _refuse_dest("service= / service-file indirection is refused")
+    if "dbname" in fields and "database" in fields:
+        _refuse_dest("conninfo names both dbname and database")
+    host = fields.get("host")
+    if host is None:
+        _refuse_dest("authorized conninfo must name exactly one host")
+    _forbid_ambiguous_host(host)
+    port_raw = fields.get("port")
+    if port_raw is None:
+        if default_port is None:
+            _refuse_dest("keyword conninfo must name port explicitly")
+        port = default_port
+    else:
+        port = _parse_port(port_raw, where="conninfo")
+    database = fields.get("dbname") or fields.get("database")
+    user = fields.get("user")
+    sslmode = fields.get("sslmode")
+    if not database:
+        _refuse_dest("conninfo database/dbname is missing")
+    if not user:
+        _refuse_dest("conninfo user is missing")
+    if not sslmode:
+        _refuse_dest("conninfo sslmode must be explicit; environment sslmode is not a substitute")
+    password = fields.get("password")
+    client_encoding = fields.get("client_encoding")
+    return CanonicalConninfo(
+        host=host,
+        port=port,
+        database=database,
+        user=user,
+        sslmode=sslmode,
+        password=password,
+        client_encoding=client_encoding,
+    )
+
+
+def parse_canonical_conninfo(conninfo: str) -> CanonicalConninfo:
+    """Fail-closed parser: identity must be explicit, unambiguous, and allowlisted.
+
+    URI query may not override netloc. hostaddr, service, multi-host/port lists,
+    duplicate identity keys, unix sockets, and empty host are refused. The
+    returned identity is the only identity later passed to libpq.
+    """
+    if not conninfo or not conninfo.strip():
+        _refuse_dest("conninfo missing; authentication refused")
+    text = conninfo.strip()
+    if "://" in text:
+        return _parse_uri_conninfo(text)
+    return _parse_keyword_conninfo(text)
+
+
+def _parse_uri_conninfo(text: str) -> CanonicalConninfo:
+    parsed = urlparse(text)
+    if parsed.scheme.lower() not in _URI_SCHEMES:
+        _refuse_dest(f"unsupported conninfo URI scheme {parsed.scheme!r}")
+    if parsed.params:
+        _refuse_dest("URI params (semicolon) form is refused")
+    if parsed.fragment:
+        _refuse_dest("URI fragment is refused")
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    seen: set[str] = set()
+    query: dict[str, str] = {}
+    for raw_key, raw_value in query_pairs:
+        key = raw_key.strip().lower()
+        if key in seen:
+            _refuse_dest(f"URI query has duplicate key {key!r}")
+        seen.add(key)
         if key in {"host", "hostaddr"}:
-            hosts.append(unquote(value.strip("'\"")))
-    return hosts
+            _refuse_dest(
+                "URI query host=/hostaddr= cannot override or replace the URI netloc host"
+            )
+        if key in {"port", "dbname", "database", "user", "password", "service", "passfile"}:
+            _refuse_dest(f"URI query {key}= is refused; identity belongs in the URI netloc/path")
+        if key not in _URI_ALLOWED_QUERY_KEYS:
+            if key in _REFUSED_KEY_SET or key not in _PERMITTED_KEY_SET:
+                _refuse_dest(f"URI query key {key!r} is refused")
+            _refuse_dest(f"URI query key {key!r} is not permitted")
+        query[key] = unquote(raw_value)
+    host = parsed.hostname
+    if host is None:
+        _refuse_dest("URI netloc host is missing; unix-socket / empty-host fallback is refused")
+    _forbid_ambiguous_host(host)
+    if parsed.port is None:
+        port = 5432
+    else:
+        port = int(parsed.port)
+        if port < 1 or port > 65535:
+            _refuse_dest("URI port is out of range")
+    path = parsed.path or ""
+    if path in {"", "/"}:
+        _refuse_dest("URI database path is missing")
+    if path.count("/") > 1:
+        _refuse_dest("URI database path is ambiguous")
+    database = unquote(path.lstrip("/"))
+    if not database:
+        _refuse_dest("URI database path is missing")
+    user = unquote(parsed.username) if parsed.username else None
+    if not user:
+        _refuse_dest("URI user is missing")
+    password = unquote(parsed.password) if parsed.password is not None else None
+    sslmode = query.get("sslmode")
+    if not sslmode:
+        _refuse_dest("URI sslmode must be explicit in the query; environment sslmode is not a substitute")
+    return CanonicalConninfo(
+        host=host,
+        port=port,
+        database=database,
+        user=user,
+        sslmode=sslmode,
+        password=password,
+        client_encoding=None,
+    )
+
+
+def _parse_keyword_conninfo(text: str) -> CanonicalConninfo:
+    tokens = _split_keyword_tokens(text)
+    fields: dict[str, str] = {}
+    for key, value in tokens:
+        lowered = key.lower()
+        if lowered in fields:
+            _refuse_dest(f"duplicate conninfo key {lowered!r} is refused")
+        fields[lowered] = value
+    return _canonical_from_fields(fields, default_port=None)
 
 
 def conninfo_nonsecret_identity(conninfo: str) -> dict[str, Any]:
     """Parse host/user/port/database/sslmode only. Never returns password."""
-    text = conninfo.strip()
-    if "://" in text:
-        parsed = urlparse(text)
-        query = parse_qs(parsed.query)
-        sslmode = None
-        if "sslmode" in query and query["sslmode"]:
-            sslmode = query["sslmode"][0]
-        database = unquote(parsed.path.lstrip("/")) if parsed.path else None
-        return {
-            "host": parsed.hostname,
-            "port": parsed.port if parsed.port is not None else 5432,
-            "database": database or None,
-            "user": unquote(parsed.username) if parsed.username else None,
-            "sslmode": sslmode,
-            "hosts": [parsed.hostname] if parsed.hostname else [],
-        }
-    fields: dict[str, str] = {}
-    for part in text.replace("\n", " ").split():
-        if "=" not in part:
-            continue
-        key, value = part.split("=", 1)
-        if key == "password":
-            continue
-        fields[key] = unquote(value.strip("'\""))
-    host = fields.get("host") or fields.get("hostaddr")
-    port_raw = fields.get("port")
-    port = int(port_raw) if port_raw else 5432
-    return {
-        "host": host,
-        "port": port,
-        "database": fields.get("dbname") or fields.get("database"),
-        "user": fields.get("user"),
-        "sslmode": fields.get("sslmode"),
-        "hosts": _hosts_from_conninfo(conninfo),
-    }
+    return parse_canonical_conninfo(conninfo).public_identity()
+
+
+def reconstruct_keyword_conninfo(
+    identity: CanonicalConninfo,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+    database: str | None = None,
+    user: str | None = None,
+    sslmode: str | None = None,
+) -> str:
+    """Build the exact keyword conninfo later passed to libpq.
+
+    Identity fields may be taken from the authority-bound target. Password and
+    client_encoding, if present, stay in memory only for the connect call.
+    """
+    bound = CanonicalConninfo(
+        host=host if host is not None else identity.host,
+        port=port if port is not None else identity.port,
+        database=database if database is not None else identity.database,
+        user=user if user is not None else identity.user,
+        sslmode=sslmode if sslmode is not None else identity.sslmode,
+        password=identity.password,
+        client_encoding=identity.client_encoding,
+    )
+    return bound.as_keyword_conninfo()
+
+
+@contextmanager
+def cleared_libpq_destination_environment() -> Iterator[None]:
+    """Remove libpq destination/identity environment for the connect call only."""
+    saved: dict[str, str] = {}
+    for key in LIBPQ_DESTINATION_ENV_VARS:
+        if key in os.environ:
+            saved[key] = os.environ.pop(key)
+    try:
+        yield
+    finally:
+        os.environ.update(saved)
 
 
 def is_loopback_or_local_socket(host: str | None) -> bool:
     if host is None or host == "":
-        # libpq default without host is a Unix-domain socket — local only.
+        # Historical helper: empty host meant a Unix-domain socket. Canonical
+        # parsing now refuses that fallback; this predicate remains for
+        # route-class checks on already-parsed hosts.
         return True
     lowered = host.lower()
     return lowered in {"127.0.0.1", "::1", "localhost", "/tmp", "/var/run/postgresql"} or lowered.startswith("/")
@@ -98,7 +335,6 @@ def assert_not_production_target(
     haystacks = []
     if conninfo:
         haystacks.append(conninfo.lower())
-        haystacks.extend(h.lower() for h in _hosts_from_conninfo(conninfo))
     if host:
         haystacks.append(host.lower())
     joined = " ".join(haystacks)
@@ -109,9 +345,10 @@ def assert_not_production_target(
             )
     if PRODUCTION_PROJECT_REF in joined:
         raise ProductionTargetRefused("refusing production project ref")
-    hosts = []
+    hosts: list[str] = []
     if conninfo:
-        hosts.extend(_hosts_from_conninfo(conninfo))
+        identity = parse_canonical_conninfo(conninfo)
+        hosts.append(identity.host)
     if host:
         hosts.append(host)
     for item in hosts:

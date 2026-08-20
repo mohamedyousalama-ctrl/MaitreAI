@@ -11,6 +11,9 @@ from typing import Any, Mapping, NoReturn
 
 from .constants import (
     ALLOWED_ROUTE_CLASSES,
+    CONNINFO_PERMITTED_IDENTITY_KEYS,
+    CONNINFO_PERMITTED_NONDEST_KEYS,
+    CONNINFO_REFUSED_KEYS,
     CONSUMED_PCSB_IDENTITIES,
     DIRECT_POSTGRES_DATABASE,
     DIRECT_POSTGRES_PORT,
@@ -19,6 +22,7 @@ from .constants import (
     GOVERNANCE_DISCLAIMER,
     HISTORICAL_KIV226_SESSION_POOLER_HOST,
     HISTORICAL_KIV226_SESSION_POOLER_PORT,
+    LIBPQ_DESTINATION_ENV_VARS,
     PACKAGE_ID,
     POOLER_HOST_SUFFIX,
     ROUTE_CLASS_DIRECT_POSTGRES,
@@ -26,8 +30,13 @@ from .constants import (
     ROUTE_CLASS_SESSION_POOLER,
     TRANSACTION_POOLER_PORT,
 )
-from .errors import CaptureAuthorityRefused
-from .safety import conninfo_nonsecret_identity, is_loopback_or_local_socket
+from .errors import CaptureAuthorityRefused, ConninfoDestinationRefused
+from .safety import (
+    CanonicalConninfo,
+    is_loopback_or_local_socket,
+    parse_canonical_conninfo,
+    reconstruct_keyword_conninfo,
+)
 from .statements import package_root
 
 WORK_ORDER_RE = re.compile(r"^KIV-[1-9][0-9]*$")
@@ -491,15 +500,87 @@ def later_executor_pre_auth_contract() -> dict[str, Any]:
     }
 
 
-def assert_authorized_capture_target(conninfo: str, authority: CaptureAuthority) -> None:
+def destination_binding_review_contract() -> dict[str, Any]:
+    """How a future reviewer proves destination binding without production contact."""
+    return {
+        "effective_destination_equals_authority_identity": True,
+        "opaque_conninfo_never_passed_to_libpq": True,
+        "permitted_authorized_capture_identity_keys": list(CONNINFO_PERMITTED_IDENTITY_KEYS),
+        "permitted_non_destination_keys": list(CONNINFO_PERMITTED_NONDEST_KEYS),
+        "runtime_secret_material": "in-memory only for connect; never logged, hashed, or evidenced",
+        "refused_conninfo_keys": list(CONNINFO_REFUSED_KEYS),
+        "stripped_libpq_environment": list(LIBPQ_DESTINATION_ENV_VARS),
+        "review_method": {
+            "adversarial_live_targets": "loopback / reserved / fake only",
+            "production_shaped_strings": (
+                "parser and factory-mock tests only; never DNS-resolve or TCP-connect"
+            ),
+            "production_dns_tcp_auth_sql_required": False,
+            "production_dns_tcp_auth_sql_permitted": False,
+            "kiv230_process_note": (
+                "Package review must not connect to the production endpoint to "
+                "prove destination binding."
+            ),
+        },
+        "kiv230_r2_closed": [
+            "uri_query_hostaddr",
+            "uri_query_host_override_of_netloc",
+            "PGHOSTADDR",
+            "PGHOST",
+            "PGPORT",
+            "PGDATABASE",
+            "PGUSER",
+            "PGSERVICE",
+            "PGSERVICEFILE",
+            "service_and_service_file",
+            "hostaddr",
+            "multi_host_multi_port",
+            "duplicate_identity_keys",
+            "unix_socket_empty_host",
+        ],
+        "governance_note": (
+            "These runtime fields do not create Linear/PM governance authority. "
+            "Only a separately released Linear work order does."
+        ),
+    }
+
+
+def bind_authorized_effective_conninfo(conninfo: str, authority: CaptureAuthority) -> str:
+    """Validate conninfo against authority and return the libpq keyword string.
+
+    The returned string is reconstructed from the authority-bound identity, not
+    from the original opaque conninfo. Password/client_encoding may be carried
+    in memory from the parsed input and are never written to evidence.
+    """
+    parsed = assert_authorized_capture_target(conninfo, authority)
+    target = authority.authorized_target
+    return reconstruct_keyword_conninfo(
+        parsed,
+        host=target.host,
+        port=int(target.port),
+        database=target.database,
+        user=target.user,
+        sslmode=target.sslmode,
+    )
+
+
+def assert_authorized_capture_target(
+    conninfo: str, authority: CaptureAuthority
+) -> CanonicalConninfo:
     """Allow connection only to the exact non-secret target bound in authority.
 
     Checked before connection creation and without SQL. Possession of runtime
-    parameters does not create Linear/PM governance authority.
+    parameters does not create Linear/PM governance authority. Returns the
+    parsed canonical identity so callers can reconstruct effective libpq
+    parameters from the same validated identity.
     """
     if not conninfo or not conninfo.strip():
         _refuse("conninfo missing; authentication refused")
-    identity = conninfo_nonsecret_identity(conninfo)
+    try:
+        parsed = parse_canonical_conninfo(conninfo)
+    except ConninfoDestinationRefused:
+        raise
+    identity = parsed.public_identity()
     target = authority.authorized_target
     hosts = [h for h in (identity.get("hosts") or []) if h]
     if len(hosts) != 1:
@@ -532,3 +613,4 @@ def assert_authorized_capture_target(conninfo: str, authority: CaptureAuthority)
             sslmode=identity.get("sslmode") or "",
             project_ref=target.project_ref,
         )
+    return parsed

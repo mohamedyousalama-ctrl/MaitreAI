@@ -1,16 +1,17 @@
-# KIV-217 A2 PCSB query/driver package — KIV-229 direct-postgres route operator contract
+# KIV-217 A2 PCSB query/driver package — KIV-231 conninfo destination-binding operator contract
 
-**Context:** `KIVO-A2-RECOVERY-DIRECT-ROUTE-PACKAGE-BUILDER-229`  
+**Context:** `KIVO-A2-RECOVERY-CONNINFO-DESTINATION-BUILDER-231`  
 **Package id:** `KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE`  
-**Package version:** `0.1.4-kiv229-direct-postgres-route-candidate`  
+**Package version:** `0.1.5-kiv231-conninfo-destination-binding-candidate`  
+**KIV-229 blocked parent (direct-postgres route, not hash-pinnable):** commit `ff7978c6e6a4054684ee81da0608c240768e9856`  
 **KIV-224 accepted parent (package-commit binding, continuity-ineligible on Session Pooler):** commit `f260efd4df4c377af4493fe58d94dd432c306136`  
 **KIV-221 blocked parent (capture-binding candidate, not hash-pinned):** commit `886fbf580a1f51c5e1354459919d21d7477e4968`  
 **KIV-220 accepted parent (unchanged SQL / hash-of-hashes):** commit `8cc7331aa19eb90f3cf5c7625e074ccd5c134638`  
 **KIV-217 published custody (unchanged grandparent object):** branch `claude/kiv-217-a2-pcsb-query-driver-package` commit `37836b0b3ec22c7d8190aa39168f21641c0067ff`
 
-**This document is the operator contract for the no-production candidate package plus the KIV-229 authority-bound `direct-postgres` route class.** It is not KIV-14 acceptance, not PCSB-4 capture authority, not KIV-229 governance authority, and not §7 fixture evidence. Production statement SQL is byte-identical to exact `f260efd4…`.
+**This document is the operator contract for the no-production candidate package plus the KIV-231 effective-libpq-destination binding on the KIV-229 `direct-postgres` route class.** It is not KIV-14 acceptance, not PCSB-4 capture authority, not KIV-231 governance authority, and not §7 fixture evidence. Production statement SQL is byte-identical to exact `ff7978c6…` / `f260efd4…`.
 
-## Capture-binding seam (KIV-221 + KIV-224 + KIV-229)
+## Capture-binding seam (KIV-221 + KIV-224 + KIV-229 + KIV-231)
 
 Default behavior remains fail-closed and no-production:
 
@@ -22,7 +23,7 @@ The reviewed production-capable path is **disabled until** a later separately re
 
 1. a JSON `CaptureAuthority` document (non-secret fields only);
 2. matching explicit CLI invocation bindings (`--work-order`, `--pcsb`, `--evidence-dir`);
-3. a runtime-only `--conninfo-file` whose non-secret identity matches `authorized_target`.
+3. a runtime-only `--conninfo-file` whose **effective** non-secret identity matches `authorized_target` after fail-closed canonicalization.
 
 Required authority bindings: work-order id, `PCSB-n` identity (not PCSB-1/2), this package id, exact package commit, live `package_manifest.json` SHA-256, live statement hash-of-hashes, authorized target non-secret identity, evidence directory, and the exact governance disclaimer that **possession of runtime parameters does not create Linear/PM authority**.
 
@@ -36,11 +37,50 @@ Package Git identity is **fail-closed before authentication** (unchanged from KI
 * manifest SHA / hash-of-hashes remain independent additional bindings, not substitutes for commit identity;
 * a wrong or unavailable package commit never reaches `reviewed_psycopg_connect`.
 
-This package does **not** encode KIV-229 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
+This package does **not** encode KIV-231 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
 
 Target authorization is checked **before** `reviewed_psycopg_connect` and without SQL. Mismatched/missing/malformed authority refuses before authentication. There is no environment-only switch, monkey-patch, or `allow_remote` bypass.
 
-### Direct-postgres route class (KIV-229)
+### Effective libpq destination binding (KIV-231)
+
+KIV-230 BLOCKED `ff7978c6…` because authority validated a partial identity while `reviewed_psycopg_connect` passed the original opaque conninfo to libpq. This successor closes that hole.
+
+After authority PASS, the parameters passed to psycopg/libpq are **reconstructed from the same validated canonical identity**. The original opaque conninfo string is never the libpq input.
+
+**Permitted `authorized-capture` conninfo keys**
+
+| Key | Role |
+| --- | --- |
+| `host` | destination identity; exactly one; no lists |
+| `port` | destination identity; exactly one integer |
+| `dbname` | destination identity (`database` is accepted only as a keyword alias, not together with `dbname`) |
+| `user` | destination identity |
+| `sslmode` | destination identity; must be explicit |
+| runtime secret material | in memory only for a later separately authorized connect; never logged, hashed, or evidenced |
+| `client_encoding` | non-destination; optional |
+
+URI form may supply the same identity via netloc/path plus query `sslmode` only.
+
+**Refused before the factory (fail closed)**
+
+* URI query `hostaddr=` and URI query `host=` (cannot override netloc)
+* keyword `hostaddr`
+* `service=` / service-file indirection
+* `PGHOSTADDR`, `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGSERVICE`, `PGSERVICEFILE` and the other listed libpq destination/identity environment variables — stripped for the connect call
+* multi-host / multi-port lists
+* duplicate identity-affecting keys
+* unix-socket or empty-host fallback
+* any unreviewed conninfo key
+
+A future reviewer **must** prove destination binding without touching the production endpoint:
+
+* adversarial live targets are loopback / reserved / fake only;
+* production-shaped strings are parser and factory-mock tests only — never DNS-resolved and never TCP-connected;
+* production DNS / raw-TCP / authentication / SQL is neither required nor permitted for package review.
+
+This is process hardening inside the package/test contract. It does not change the operative recovery procedure.
+
+### Direct-postgres route class (KIV-229, preserved)
 
 `CaptureAuthority.authorized_target.route_class` may be:
 
@@ -105,7 +145,7 @@ It may be used later by a **separately authorized** capturer only after:
 
 1. KIV-220 independent PASS / PM hash-pin of exact parent `8cc7331…` (already recorded);
 2. KIV-225 independent PASS / PM hash-pin of exact `f260efd4…` package-commit binding (already recorded; continuity-ineligible on Session Pooler);
-3. independent reviewer PASS / hash-pin of this KIV-229 successor direct-postgres route;
+3. independent reviewer PASS / hash-pin of this KIV-231 successor destination binding (and of the KIV-229 direct-postgres route it remediates);
 4. a later, separately governed PCSB-n capture work order that supplies matching `CaptureAuthority` for `direct-postgres`.
 
 Until then: **zero** production/Supabase authentication and **zero** production SQL. This work order creates **no PCSB-4** authority.
@@ -175,7 +215,7 @@ PYTHONPATH=. python -m kiv14_pcsb authorized-capture \
   --authority FILE --work-order KIV-n --pcsb PCSB-n \
   --conninfo-file FILE --evidence-dir DIR
 # authorized-capture still refuses unless a later Linear work order supplies
-# matching non-secret authority. KIV-229 does not invoke it against production.
+# matching non-secret authority. KIV-231 does not invoke it against production.
 PYTHONPATH=. python -m kiv14_pcsb prove-direct-pid-equivalence
 # tooling-only disposable PG 17.6 PQbackendPID == pg_backend_pid(); never production.
 ```
@@ -202,13 +242,13 @@ No third Kivo bootstrap recipe. No dump shortcut. No ad-hoc DDL.
 
 Default conninfo is loopback only. Without a matching `CaptureAuthority`, the package refuses `supabase.co` / pooler hosts, project ref `zlighrbsjexrozrmuwpw`, any non-loopback host, and `allow_remote=True`. There is no production DSN, password, token, or `.pgpass` in this package. KIV-198/199 credentials must not be inspected or reused.
 
-The authorized seam compares non-secret conninfo identity to `authorized_target` **before** connection creation. Secrets must not appear in the authority JSON or in written evidence. Session Pooler / port 6543 / pooler username form cannot be authorized. Production statement SQL / hash-of-hashes remain exact `6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845`.
+The authorized seam canonicalizes conninfo, compares that non-secret identity to `authorized_target`, then reconstructs keyword parameters from the **authority-bound** identity before `psycopg.connect`. Libpq destination/identity environment variables are stripped for that call. Secrets must not appear in the authority JSON or in written evidence. Session Pooler / port 6543 / pooler username form cannot be authorized. Production statement SQL / hash-of-hashes remain exact `6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845`.
 
 The tooling-only `prove-direct-pid-equivalence` SQL (`SELECT pg_backend_pid() AS sql_backend_pid`) is not in the production statement set and cannot enter `authorized-capture`.
 
 ## Terminal law
 
-KIV-229 completion does **not** authorize PCSB-4. Leave KIV-229 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
+KIV-231 completion does **not** authorize PCSB-4. Leave KIV-231 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
 
-READY line: `A2 ACCEPTANCE-RECOVERY DIRECT-ROUTE PACKAGE REMEDIATION READY FOR INDEPENDENT REVIEW`  
-HOLD line: `A2 ACCEPTANCE-RECOVERY DIRECT-ROUTE PACKAGE REMEDIATION HOLD`
+READY line: `A2 ACCEPTANCE-RECOVERY CONNINFO DESTINATION-BINDING REMEDIATION READY FOR INDEPENDENT REVIEW`  
+HOLD line: `A2 ACCEPTANCE-RECOVERY CONNINFO DESTINATION-BINDING REMEDIATION HOLD`
