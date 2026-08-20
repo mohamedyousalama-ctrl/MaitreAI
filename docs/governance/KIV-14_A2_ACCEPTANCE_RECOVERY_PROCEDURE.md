@@ -1,17 +1,17 @@
 # KIV-14 — A2 ACCEPTANCE-RECOVERY PROCEDURE
 
-**One-restaurant WhatsApp-first controlled alpha · post-KIV-202 MAY STAND**
+**One-restaurant WhatsApp-first controlled alpha · post-KIV-202 MAY STAND · post-PCSB-1/PCSB-2 capture-package HOLD**
 
 | Field | Value |
 |---|---|
-| Issue | KIV-203 — Build docs-only KIV-14 A2 acceptance-recovery procedure after KIV-202 MAY STAND decision |
+| Issue | KIV-209 — Remediate accepted KIV-14 recovery procedure after PCSB-1/2 capture-runner failures — recapture promotion + pre-reviewed query pack |
 | Milestone | G2 — Security, order truth, WhatsApp & safety |
 | Authored | 20 August 2026 |
-| Status | **DRAFT CANDIDATE — awaiting a fresh independent Engineering → separate Quality → separate Auditor chain and external Linear PM terminal acceptance of these exact bytes.** Not accepted. Not self-approved. Builder does not self-approve. Not operative. |
-| Governs | Whether, and how, **KIV-14 current-state acceptance** may later be declared from the already-committed exact-`0109` production state after KIV-202 Option A. It does **not** govern Change Class A2 forward execution, §5.7 reversal, Change Class B / KIV-25, deployment, Meta/WhatsApp, restaurant action, or Alpha GO. |
-| Replaces | **Nothing.** Accepted KIV-146 Revision 6 remains the historical/operative execution law for the KIV-200 window and the held-unused §5.7 path. This document does not edit, supersede, weaken or silently rewrite that law. |
-| Authorizes | **Nothing.** This document is a procedure/evidence gate. Acceptance of this document is not production authority, not SQL authority, not KIV-14 acceptance, not a waiver of any historical finding, and not KIV-25 / deployment / Alpha authority. |
-| Candidate base | Exact accepted Revision-6 procedure commit `9092758fa60b6ac1024e7e8777ed177636c4faab`. Current default `main` is **not** the candidate base. |
+| Status | **DRAFT CANDIDATE — awaiting a fresh independent Engineering → separate Quality → separate Auditor chain and external Linear PM terminal acceptance of these exact bytes.** Not accepted. Not self-approved. Builder does not self-approve. Not operative. Not a licence to start PCSB-3. |
+| Governs | Whether, and how, **KIV-14 current-state acceptance** may later be declared from the already-committed exact-`0109` production state after KIV-202 Option A, including how a later PCSB-n becomes the **operative prospective baseline** and how any future capture package must be pre-reviewed before authentication. It does **not** govern Change Class A2 forward execution, §5.7 reversal, Change Class B / KIV-25, deployment, Meta/WhatsApp, restaurant action, or Alpha GO. |
+| Replaces | **Nothing until PM terminal acceptance of these exact bytes.** Accepted KIV-146 Revision 6 remains the historical/operative execution law for the KIV-200 window and the held-unused §5.7 path. Previously accepted recovery-procedure commit `235134849099a89bc4176c23914a3429087f6af6` remains the last accepted recovery-procedure text, but recovery **execution** is HOLD pending this remediation chain; those bytes may not be used to release a third production capture window. This document does not edit, supersede, weaken or silently rewrite Revision 6. |
+| Authorizes | **Nothing.** This document is a procedure/evidence gate. Acceptance of this document is not production authority, not SQL authority, not PCSB-3 authority, not KIV-14 acceptance, not a waiver of any historical finding, and not KIV-25 / deployment / Alpha authority. |
+| Candidate base | Exact previously accepted recovery-procedure commit `235134849099a89bc4176c23914a3429087f6af6`, whose sole parent is exact accepted Revision-6 procedure commit `9092758fa60b6ac1024e7e8777ed177636c4faab`. Current default `main` is **not** the candidate base. |
 
 ---
 
@@ -28,6 +28,16 @@ It answers that question by defining a **new prospective evidence and authority 
 currently committed exact-`0109` state. It does **not** assume acceptance is possible merely because
 the repaired runtime is technically healthy.
 
+This KIV-209 revision additionally closes two load-bearing gaps that the previously accepted
+bytes left implicit after two separately governed read-only capture windows ended BLOCK:
+
+1. lawful, append-only **PCSB-n lifecycle and promotion** to exactly one PM-accepted **operative
+   prospective baseline**;
+2. a completely pre-built, independently reviewed / hash-pinned **PCSB query and client package**
+   before any future production authentication.
+
+It remains a **prospective current-state acceptance procedure**, not a historical waiver.
+
 ### 0.2 It is not
 
 * Not a rewrite, patch, waiver or second edition of accepted KIV-146 Revision 6.
@@ -39,6 +49,8 @@ the repaired runtime is technically healthy.
 * Not Change Class B / KIV-25 authority, deployment authority, Meta/WhatsApp authority,
   restaurant authority, or Alpha GO.
 * Not a licence to manufacture production test state.
+* Not a licence to overwrite, rename, complete, or upgrade incomplete **PCSB-1** or **PCSB-2**.
+* Not standing authentication authority for PCSB-3 or any later capture window.
 
 ### 0.3 Recovery-path existence decision
 
@@ -60,6 +72,10 @@ acceptance only**, because Revision 6 §8.2 classifies a custody-chain gap as a 
 KIV-202 already allowed the committed state to stand, and this procedure refuses to relabel the
 broken historical chain as repaired. Builder does **not** claim it is sufficient for historical
 execution compliance — that compliance is permanently impossible.
+
+KIV-207 and KIV-208 did **not** close this path. They proved two capture-package / client-tooling
+defects after a passing P-0. Recovery execution is therefore **HOLD for procedure/package
+remediation**, not `NO LAWFUL CURRENT-STATE ACCEPTANCE PATH`, and not a reversal trigger.
 
 ### 0.4 The four distinctions that may never be collapsed
 
@@ -90,9 +106,23 @@ reversal path. This document:
   chain-closure vocabulary by pin, because those are the accepted technical contracts this
   recovery must still honour for **current-state** proof.
 
-This document itself **authorizes no production access or SQL**. Any later live verification
-or fixture execution requires a separately issued work order after these bytes are terminally
-accepted.
+This document itself **authorizes no production access or SQL**. Any later live verification,
+query-package preparation that is not itself production authentication, or fixture execution
+requires a separately issued work order after these bytes are terminally accepted.
+
+### 0.6 Relationship to the previously accepted recovery-procedure bytes
+
+Commit `235134849099a89bc4176c23914a3429087f6af6` was terminally accepted on KIV-206 as the
+operative KIV-14 A2 acceptance-recovery procedure. Those exact bytes remain historical accepted
+text until a later PM terminal acceptance of a successor.
+
+These KIV-209 bytes are a **narrow revision candidate**. They become operative **only** after a
+fresh Builder → Engineering → Quality → Auditor → PM terminal-acceptance chain. Until that
+happens:
+
+* recovery execution remains HOLD;
+* no PCSB-3 or later production authentication may be released from this candidate;
+* incomplete PCSB-1 and incomplete PCSB-2 remain append-only historical recovery-failure evidence.
 
 ---
 
@@ -134,6 +164,19 @@ Founder residual-risk decision must **never** soften, rewrite, reconstruct or re
     or release KIV-190.
 12. KIV-14 remains **blocked / not accepted**. KIV-25 remains blocked. Alpha remains **NO-GO**
     until later separately governed gates.
+13. **PCSB-1** (KIV-207) is permanently **incomplete** historical recovery-failure evidence.
+    P-0 was first SQL and PASSed. Client `psql` then rejected `\\if not :p0_members_rls_active`
+    as invalid boolean `not f`. Remaining PS-* were not captured. This was **not** HS-41.
+    Production committed writes = 0. KIV-190 remained UNUSED. PCSB-1 must never be overwritten,
+    renamed, completed later, or upgraded to PASS.
+14. **PCSB-2** (KIV-208) is permanently **incomplete** historical recovery-failure evidence.
+    P-0 was first SQL and PASSed. Host-side inspection of the P-0 row gated continuation. The
+    same session captured P-1…P-8, PF-4, G1–G3 and prospective table/column grants. A composed
+    non-shipped function-grant query then failed with `column "function_signature" does not exist`
+    at `ORDER BY function_signature::text`. `ON_ERROR_STOP=1` terminated psql. Remaining PS-*
+    were incomplete. This was **not** HS-41. Production committed writes = 0. KIV-190 remained
+    UNUSED. PCSB-2 must never be overwritten, renamed, completed later, or upgraded to PASS.
+    Historical labels `PCSB-1` and `PCSB-2` remain factual and are not renamed.
 
 ---
 
@@ -191,6 +234,19 @@ These are **historical independent observations**, not the new prospective basel
 Any later live window must **re-capture**. Equality with these values is reconciliation, not
 proof that KIV-200 B-11 existed.
 
+### 2.5 Previously accepted recovery-procedure identity (historical; this candidate revises it)
+
+* commit `235134849099a89bc4176c23914a3429087f6af6`
+* sole parent `9092758fa60b6ac1024e7e8777ed177636c4faab`
+* path `docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md`
+* Git blob `94c1cd7a88846876fef9550ec75c31a616b409b6`
+* SHA-256 `e454684b5928f0bcec8af6a7a172b9158ca818ef5952d78487f547dc44ab7ebe`
+* 48,059 bytes / 881 lines
+
+These bytes are the **candidate base**, not the bytes under review once this revision is
+committed. They remain historical accepted procedure text until PM terminally accepts a
+successor.
+
 ---
 
 ## 3. ROLES, INDEPENDENCE, AND WHAT THIS DOCUMENT AUTHORIZES
@@ -199,16 +255,20 @@ proof that KIV-200 B-11 existed.
 
 | Role | Holds | May not |
 |---|---|---|
-| **Builder (KIV-203)** | Author these exact bytes on a fresh branch from `9092758f…` | Self-approve; execute recovery; touch production; edit Revision 6 or `0109` |
+| **Builder (KIV-209)** | Author these exact bytes on a fresh branch from `2351348…` | Self-approve; execute recovery; touch production; edit Revision 6 or `0109`; start PCSB-3 |
 | **Engineering** | Independently review the exact pinned candidate bytes | Reuse the Builder context; execute recovery; invent production authority |
 | **Quality** | Independently review the same unchanged bytes after Engineering PASS | Reuse Builder or Engineering context; execute recovery |
 | **Auditor** | Terminal independent audit of the same unchanged bytes after Quality PASS | Self-edit; execute recovery; create PM acceptance |
-| **PM** | Pin exact candidate bytes; create each downstream review issue only after the preceding gate; terminally accept or reject **this procedure** | Treat procedure acceptance as KIV-14 acceptance or as production authority |
+| **PM** | Pin exact candidate bytes; create each downstream review issue only after the preceding gate; terminally accept or reject **this procedure** | Treat procedure acceptance as KIV-14 acceptance, as production authority, or as PCSB-3 release |
 | **Founder** | Later residual-risk / exception decision **only after** recovery-evidence PASS, under §9 | Be inferred from KIV-202 MAY STAND; waive history; authorize KIV-25 / Alpha by silence |
 
-No reviewer of **this procedure** may reuse `KIVO-A2-ACCEPTANCE-BUILDER-203`, `KIVO-A2-EXECUTOR-200`,
-`KIVO-A2-POSTVERIFY-201`, or any prior KIV-174/175/176/177, KIV-185/186/187/188, or other
-Builder/Engineering/Quality/Auditor/production-executor context named ineligible by KIV-203.
+No reviewer of **this procedure** may reuse `KIVO-A2-RECOVERY-PROCEDURE-BUILDER-209`,
+`KIVO-A2-ACCEPTANCE-BUILDER-203`, `KIVO-A2-ACCEPTANCE-ENGINEERING-204`,
+`KIVO-A2-ACCEPTANCE-QUALITY-205`, `KIVO-A2-ACCEPTANCE-AUDITOR-206`,
+`KIVO-A2-RECOVERY-PCSB-207`, `KIVO-A2-RECOVERY-PCSB-208`, `KIVO-A2-EXECUTOR-200`,
+`KIVO-A2-POSTVERIFY-201`, or any prior KIV-174/175/176/177, KIV-185/186/187/188, KIV-198/199,
+or other Builder/Engineering/Quality/Auditor/production-executor context named ineligible by
+KIV-209.
 
 ### 3.2 Roles for **later recovery-evidence execution** (only after this procedure is terminally accepted)
 
@@ -217,16 +277,28 @@ Procedure review is **not** execution evidence.
 After PM terminal acceptance of **these bytes**, PM must issue **separate fresh work orders**
 with separate fresh contexts for:
 
-1. **Prospective baseline capturer** — read-only production capture of PCSB-1 (§5).
-2. **Live current-state verifier** — read-only / rollback-only production verification (§6).
-3. **Fixture executor** — disposable PostgreSQL 17.x only (§7). Never production.
-4. **Independent recovery reviewer** — did not capture, did not live-verify, did not fixture-execute,
-   and did not author this procedure.
-5. **Founder residual-risk decision** — §9, only after `ACCEPTANCE RECOVERY EVIDENCE PASS — FOUNDER DISPOSITION REQUIRED`.
-6. **PM current-state acceptance** — only after (5) records the exact bounded Founder decision.
+1. **Query/driver-package preparer** — no-production authoring of the complete pre-pinned PCSB
+   package required by §5.8–§5.9. This role **may not authenticate to production**.
+2. **Independent query/driver-package reviewer** — did not author the package; confirms
+   alias/column visibility, output shape, ordering, non-mutating semantics, and hash pins.
+   This role **may not authenticate to production**.
+3. **Prospective baseline capturer** — read-only production capture of the next unused PCSB-n
+   (§5), only after (1) and (2) PASS and only under a separately issued capture work order.
+4. **Live current-state verifier** — read-only / rollback-only production verification (§6)
+   against the **operative** PCSB-n designated under §5.6.
+5. **Fixture executor** — disposable PostgreSQL 17.x only (§7). Never production.
+6. **Independent recovery reviewer** — did not capture, did not live-verify, did not
+   fixture-execute, did not author this procedure, and did not author or review the query package
+   as the capturer.
+7. **Founder residual-risk decision** — §9, only after `ACCEPTANCE RECOVERY EVIDENCE PASS — FOUNDER DISPOSITION REQUIRED`.
+8. **PM current-state acceptance** — only after (7) records the exact bounded Founder decision.
 
 Each of those contexts is ineligible to reuse any of the others, and ineligible to reuse the
 procedure-review contexts.
+
+PM creates each downstream issue only after intake of the preceding gate. No parallel /
+pre-created execution chain. **No PCSB-n production authentication may be released until
+steps (1) and (2) have independently PASS and PM has created the capture work order.**
 
 ### 3.3 Authority this document does **not** create
 
@@ -240,10 +312,13 @@ This document authorizes **no**:
 * `0109` reapplication or any second forward attempt;
 * §5.7 / KIV-190 reversal;
 * KIV-25, deployment, Meta/WhatsApp, restaurant or Alpha action;
-* PR or merge of this candidate.
+* PR or merge of this candidate;
+* PCSB-3 or any later capture window;
+* standing authentication authority of any kind.
 
-Any future live verification authority must be **separately issued** after this procedure is
-terminally accepted.
+Any future live verification or capture authority must be **separately issued** after this
+procedure is terminally accepted **and** after the required query/driver package is independently
+reviewed and hash-pinned.
 
 ---
 
@@ -252,8 +327,8 @@ terminally accepted.
 The candidate, and every later execution under it, **explicitly rejects**:
 
 1. reconstructing or inferring historical B-11 from current grants;
-2. calling PCSB-1, PS-GRANT, or any later grant listing **"recovered B-11"**, **"reconstructed B-11"**,
-   or **"the missing pre-state"**;
+2. calling any PCSB-n, PS-GRANT, or any later grant listing **"recovered B-11"**,
+   **"reconstructed B-11"**, or **"the missing pre-state"**;
 3. relabeling KIV-201 BLOCK as PASS;
 4. claiming exact `0109` having no table/function GRANT DDL proves the missing pre-state;
 5. using production GRANT/REVOKE, member/MIV edits, role widening, RLS/policy changes, test-user
@@ -267,44 +342,73 @@ The candidate, and every later execution under it, **explicitly rejects**:
 10. changing accepted KIV-146 Revision 6 or KIV-25 semantics inside this candidate;
 11. creating new production authority by wording;
 12. overwriting, renaming or editing KIV-200 / KIV-201 evidence;
-13. presenting `new prospective chain complete` as `old execution chain repaired`.
+13. presenting `new prospective chain complete` as `old execution chain repaired`;
+14. overwriting, renaming, completing later, or upgrading incomplete **PCSB-1** or **PCSB-2**
+    to PASS, or treating either as the operative prospective baseline;
+15. silently promoting a later PCSB-n into every historical literal `PCSB-1` reference without
+    an explicit PM operative-baseline designation under §5.6;
+16. authoring or improvising new composed SQL after production authentication;
+17. relying on an unreviewed psql `\\if`, shell conditional, alias/order expression, or
+    evidence-packaging step as a load-bearing continuation control;
+18. correcting a failed query in the same work order or session and continuing;
+19. silently restarting or opening a second authentication after a client, query, or evidence
+    failure;
+20. authenticating for a PCSB capture without a complete pre-pinned query/driver package that
+    covers every required §5 artifact through PS-TIME end.
 
 Any of the above = `ACCEPTANCE RECOVERY BLOCK`.
 
 ---
 
-## 5. R1 — PROSPECTIVE CURRENT-STATE BASELINE (PCSB-1)
+## 5. R1 — PROSPECTIVE CURRENT-STATE BASELINE (PCSB-n)
 
 ### 5.1 Name and prohibition
 
-The new timestamped baseline is named:
+A timestamped prospective baseline identity is named:
 
-**`PCSB-1` — Prospective Current-State Baseline 1**
+**`PCSB-n` — Prospective Current-State Baseline n**
+
+`n` is a positive integer, assigned **monotonically** by separately released work orders.
+Historical identities already used:
+
+* **`PCSB-1`** — KIV-207; permanently incomplete; append-only failure evidence.
+* **`PCSB-2`** — KIV-208; permanently incomplete; append-only failure evidence.
+
+Those labels remain factual. They are **not** renamed. They are **not** the operative
+prospective baseline.
 
 Individual captures are named **`PS-*`**. They are **not** `B-*`.
 
-**It is forbidden to call PCSB-1, PS-GRANT, or any subset of them recovered B-11.** They are a
-**new prospective baseline captured after commit**, used only to detect drift during the
+**It is forbidden to call any PCSB-n, PS-GRANT, or any subset of them recovered B-11.** They are
+a **new prospective baseline captured after commit**, used only to detect drift during the
 recovery-verification window and to feed the new evidence chain. They have **no** power to close
 the historical E-2 → E-4 → E-7 → E-8 gap in the KIV-200 chain.
 
-### 5.2 When it is captured
+### 5.2 When a PCSB-n may be captured
 
 Only after:
 
 * this procedure is terminally accepted;
-* a separately issued read-only capture work order exists;
+* the complete query/driver package for that PCSB-n has been prepared and independently
+  reviewed / hash-pinned under §5.8–§5.9;
+* a separately issued read-only capture work order exists for that exact `PCSB-n` identity;
 * the capturer has independently recomputed §2 custody and found MATCH;
+* the capturer has independently recomputed the query/driver-package pins and found MATCH;
 * P-0 has passed **first** in that live window (Revision 6 HS-41 law).
 
 If P-0 fails: **do not interpret P-6/P-7**; record HS-41; return `ACCEPTANCE RECOVERY BLOCK`.
 No GRANT, membership, BYPASSRLS, policy, `row_security`, `SET ROLE`, or substitute query may be
 used to make P-0 pass.
 
-### 5.3 Required PCSB-1 contents
+The continuation gate after a passing P-0 is **host-side inspection of the returned P-0 row**
+in that same already-open session. Unproved psql boolean expansion such as
+`\\if not :variable` is forbidden as that gate.
+
+### 5.3 Required contents of a **complete** PCSB-n
 
 Capture with statement timestamps, non-disclosing methods, and SHA-256 / byte count / line count
 for every artifact. Use byte-identical Revision 6 query forms where Revision 6 ships them.
+Every non-shipped statement must come from the pre-pinned package in §5.8.
 
 | ID | Content | Notes |
 |---|---|---|
@@ -320,6 +424,10 @@ for every artifact. Use byte-identical Revision 6 query forms where Revision 6 s
 | **PS-LEDGER** | Complete P-8c enumeration | Evidence only |
 | **PS-TIME** | Capture window start/end timestamps and backend pid class (no secrets) | Same-session statement as far as the capturer can prove |
 
+A PCSB-n is **complete** only if every row above is captured, hashed, and accepted by PM as a
+complete package. A passing P-0, or any proper subset of PS-*, does **not** make the PCSB-n
+complete.
+
 ### 5.4 Hashing and custody
 
 Every PS-* artifact:
@@ -327,19 +435,161 @@ Every PS-* artifact:
 * SHA-256 of the redacted artifact bytes;
 * byte count and line count;
 * statement timestamp(s);
-* query-text hash where a Revision 6 query form was reused.
+* query-text hash where a Revision 6 query form was reused **or** where a pre-pinned
+  non-shipped statement was used.
 
-The PCSB-1 manifest (`AR-E-11` in §12) hashes every PS-* digest. The manifest hash is posted to
-the governing Linear issue. **Append-only.** A re-capture is a new PCSB-n, never an overwrite of
-PCSB-1.
+The **internal complete-PCSB digest list** hashes every PS-* digest for that PCSB-n and is
+posted to the governing Linear issue. That internal list lives **inside AR-E-4** when the
+PCSB-n is the operative complete baseline, or **inside AR-E-4F** when the PCSB-n is incomplete
+failure evidence. It is **not** AR-E-11. AR-E-11 remains only the final overall chain
+hash-of-hashes in §14.2.
+
+**Append-only.** A failed or incomplete capture remains its original `PCSB-n` forever. A
+re-capture is a new `PCSB-(n+1)`, never an overwrite of any earlier PCSB-n, including PCSB-1
+and PCSB-2.
 
 ### 5.5 Drift rule during the recovery window
 
-Live verification (§6) and Founder disposition (§9) must occur against **PCSB-1**. Material
-unexplained drift in body identity, PF-4 topology, P-5 privilege flags, PS-GRANT, membership
-counts, or owner/RLS flags = `ACCEPTANCE RECOVERY BLOCK`. Legitimate inter-window activity may
-be separated from mutation-window drift only with evidence, never by guessing. Current grants
-still **cannot** be used to infer the missing historical B-11.
+Live verification (§6) and Founder disposition (§9) must occur against the **operative
+prospective baseline** designated under §5.6 — not against an incomplete historical PCSB-n,
+and not against a later undesignated recapture. Material unexplained drift in body identity,
+PF-4 topology, P-5 privilege flags, PS-GRANT, membership counts, or owner/RLS flags =
+`ACCEPTANCE RECOVERY BLOCK`. Legitimate inter-window activity may be separated from
+mutation-window drift only with evidence, never by guessing. Current grants still **cannot**
+be used to infer the missing historical B-11.
+
+### 5.6 PCSB-n lifecycle and operative-baseline promotion
+
+This subsection is load-bearing. PM will not silently infer that a later PCSB-n substitutes
+for every historical literal `PCSB-1` reference.
+
+**Lifecycle**
+
+1. Every capture window is a distinct `PCSB-n` identity assigned **before** authentication by
+   the capturing work order.
+2. `n` increases monotonically. The next unused identity after incomplete PCSB-1 and
+   incomplete PCSB-2 would historically be **PCSB-3**. This document does **not** release
+   PCSB-3.
+3. If the window fails, is incomplete, loses its session, or hits any AR-HS / client / query /
+   evidence failure, that `PCSB-n` is permanently incomplete. It remains append-only failure
+   evidence. It **never becomes complete later**.
+4. Recapture requires all of: a new separately released work order; a fresh context; a fresh
+   authentication and session; a new `PCSB-(n+1)` identity; and a complete pre-pinned
+   query/driver package for that new identity. Same-work-order restart is forbidden.
+5. Incomplete prior PCSBs remain preserved failure evidence and **cannot** be used as the
+   operative baseline.
+
+**Operative prospective baseline**
+
+Exactly one PCSB-n may be designated the **operative prospective baseline** for downstream
+§6 live verification, independent recovery review, Founder §9, and AR-E-4 linkage.
+
+Designation requires **all** of:
+
+* the PCSB-n is **complete** under §5.3;
+* PM has terminally accepted that complete package;
+* PM has explicitly recorded the designation in the capture work order's terminal intake.
+
+Until that designation exists, there is **no** operative prospective baseline. §6, §9, and
+AR-E-4 must not proceed by inference.
+
+**Replacement after an operative baseline already exists**
+
+If a later recapture is required because of material drift or package invalidation after an
+operative baseline was designated:
+
+* the prior operative baseline remains preserved as historical complete evidence and is **not**
+  overwritten;
+* the replacement is a new `PCSB-(n+1)` under a new work order and a new pre-pinned package;
+* promotion of the replacement requires a new complete capture, a new PM terminal acceptance,
+  and an explicit new designation;
+* absence of that new designation = fail closed; the previous operative baseline remains
+  operative unless PM explicitly withdraws it for a stated AR-HS / drift / package-invalidation
+  reason. Withdrawal without a replacement leaves **no** operative baseline.
+
+**Historical labels**
+
+Literal historical names `PCSB-1` and `PCSB-2` remain the names of those two incomplete
+windows. Downstream clauses in this document that previously said `PCSB-1` when they meant
+the baseline used for §6 / §9 / AR-E-4 now mean the **operative prospective baseline**.
+
+### 5.7 Reserved — collision avoidance with Revision 6
+
+This document does **not** define a recovery-procedure §5.7. Accepted Revision 6 §5.7 remains
+the Change Class A2 post-commit reversal path. KIV-190 remains UNUSED. Numbering jumps from
+§5.6 to §5.8 so that no later worker can confuse a recovery-procedure clause with Revision 6
+§5.7.
+
+### 5.8 Pre-reviewed / hash-pinned PCSB query and client package
+
+**Normative rule.** All non-shipped / composed SQL, psql meta-commands / client control flow,
+ordering, output-shaping, evidence-writer logic, and the exact statement sequence for a future
+PCSB capture **must be prepared before production authentication** and **independently reviewed
+and hash-pinned before the capture work order is released**.
+
+The package must be complete through **PS-TIME end**. A package that stops at P-0, or at
+table/column grants, or that leaves function-grant / PS-OWN / PS-ROLE / PS-COUNT / PS-BODY /
+PS-TIME-end statements to be invented in-window, is ineligible.
+
+**The package must include, as hashed artifacts:**
+
+1. exact ordered statement sequence from session start through PS-TIME end;
+2. exact text of every SQL statement — Revision-6-shipped forms by pin; every non-shipped
+   composed statement in full;
+3. exact output-column contract per statement;
+4. deterministic `ORDER BY` wherever hashing requires ordering, using only names that exist in
+   that statement's select-list or an independently proved underlying catalog column;
+5. exact client/driver control flow, including the host-side P-0 row-inspection gate; no
+   unreviewed `\\if` / `\\elif` / shell conditional as a load-bearing continuation control;
+6. evidence-writer steps and artifact names for every required PS-*;
+7. SHA-256 of every query text and of the package manifest;
+8. independent-review record covering §5.9.
+
+**The package and the later capturer are prohibited from:**
+
+* authoring or improvising new composed SQL after production authentication;
+* relying on an unreviewed psql `\\if`, shell conditional, alias/order expression, or
+  evidence-packaging step as a load-bearing continuation control;
+* correcting a failed query in the same work order or session and continuing;
+* silently restarting or opening a second authentication after a client, query, or evidence
+  failure.
+
+If any statement, client control, or evidence-writer step fails after authentication: **stop**.
+That PCSB-n is incomplete AR-E-4F evidence. Return `ACCEPTANCE RECOVERY BLOCK`. Do not repair
+in-window.
+
+### 5.9 Validation standard for non-shipped queries
+
+Every non-Revision-6-shipped query used in a PCSB package must satisfy **all** of the following
+**before** production release of that package:
+
+* exact query text and output-column contract;
+* deterministic ordering where ordering is required for hashing;
+* PostgreSQL **17.x** compatibility, with **17.6 preferred** and recorded;
+* static / source review for catalog and object assumptions, including that every `ORDER BY`
+  / output alias names an actual select-list entry or proved catalog column;
+* an independent reviewer confirmation of alias / column visibility, output shape, ordering,
+  and non-mutating semantics;
+* query-text SHA-256 recorded before production release;
+* **no** validation claim that requires production mutation or production test data.
+
+**Builder decision — preflight tooling validation method.** Syntax and catalog-object
+validation of every non-Revision-6-shipped PCSB query **must** be performed against a
+**disposable non-production PostgreSQL 17.6** environment before the query package may be
+released for production authentication.
+
+That validation is **preflight tooling validation only**. It is **not** §7 fixture evidence
+and **not** production evidence. It must use no production credentials, no production PII, and
+no connection to `zlighrbsjexrozrmuwpw`.
+
+If a disposable PostgreSQL 17.6 environment cannot be created lawfully at package-prep time,
+the package remains **unreleased (HOLD)** until it can. Static review and independent review
+remain additional mandatory gates; they are **not** a substitute for proving that an alias
+used in `ORDER BY` actually exists.
+
+Revision-6-shipped query forms remain pinned by Revision 6 identity. They do not require
+re-invention. They still require package-level sequencing, hashing, and the host-side P-0 gate
+stated in §5.2 / §5.8.
 
 ---
 
@@ -351,6 +601,9 @@ Re-prove, from the **current** committed state, every Revision 6 §7.1.1 / §7.4
 can be safely proved **without** manufacturing production state and **without** committed
 mutation. KIV-201's successful techniques are the permitted method class. KIV-201's **results
 are historical**; the new chain must re-run the live battery under its own work order.
+
+Live verification occurs only against the **operative prospective baseline**. Incomplete
+PCSB-1 and incomplete PCSB-2 are not that baseline.
 
 ### 6.2 Permitted live methods
 
@@ -388,9 +641,10 @@ exactly that assertion.
 
 P-0 first. Then, at minimum:
 
-* P-1…P-7 against PCSB-1, with P-6/P-7 only after P-0 PASS;
-* P-4 `still_unrepaired=false`, body MD5 equals PCSB-1 / accepted repaired identity, owner /
-  SECURITY DEFINER / empty `search_path` / signature / result shape / owner-only ACL;
+* P-1…P-7 against the operative prospective baseline, with P-6/P-7 only after P-0 PASS;
+* P-4 `still_unrepaired=false`, body MD5 equals the operative baseline / accepted repaired
+  identity, owner / SECURITY DEFINER / empty `search_path` / signature / result shape /
+  owner-only ACL;
 * PF-4b2 `1/0/0/0/0/0` plus detail listing; no inherited/SET residue;
 * `pg_has_role(..., USAGE)=false`; `SET ROLE kivo_control_owner` denied `42501`;
 * P-5 all false;
@@ -431,6 +685,9 @@ semantics, transferable to the current-state acceptance question **only** throug
 No other method is authorized by this candidate. A later reviewer may reject the fixture
 design as insufficient; they may not replace it in-window with production state manufacture.
 
+§5.9 disposable PostgreSQL 17.6 validation of a PCSB query package is **not** this §7 fixture
+and must never be filed as FX-* or cited as semantic proof of F-MIV / F-KIND.
+
 ### 7.2 Fixture source inputs (exact)
 
 Independently recompute before build:
@@ -469,7 +726,7 @@ assertions under test:
 
 Before any fixture behavioural result may be cited:
 
-1. Live PCSB-1 / live verification records current `body_md5`.
+1. Live operative-baseline / live verification records current `body_md5`.
 2. Fixture records fixture `body_md5` of `public.kv_control_assert_actor(uuid,text,boolean)`.
 3. Require **live `body_md5` = fixture `body_md5`**. Historical KIV-201 value
    `00a73f86a902ff222760ff8fcab8abf1` is the expected identity unless a later independently
@@ -599,10 +856,10 @@ remains blocked. **Neither choice retroactively cleans 0108 or 0109 execution hi
 
 ### 9.1 Who may **not** declare KIV-14 accepted
 
-* the KIV-203 Builder;
+* the KIV-203 Builder or the KIV-209 Builder;
 * any procedure reviewer;
-* any recovery-evidence capturer, live verifier, or fixture executor;
-* KIV-200 / KIV-201 historical contexts;
+* any recovery-evidence capturer, live verifier, fixture executor, or query-package author/reviewer;
+* KIV-200 / KIV-201 / KIV-207 / KIV-208 historical contexts;
 * PM acting **without** the §9.3 Founder decision and **without** a complete new evidence chain.
 
 Executor or reviewer silence is not a waiver of HS-8.
@@ -636,15 +893,18 @@ for Builder to invent a quieter waiver.
 **Prerequisites, all of them, before the decision issue may be opened:**
 
 1. this procedure terminally accepted by PM after Builder → Engineering → Quality → Auditor;
-2. PCSB-1 captured and hashed;
-3. live §6 battery complete: every exercisable assertion PASS; the two §7 cases not claimed
-   live-PASS;
-4. fixture §7 complete: F-MIV PASS, F-KIND-A PASS, F-KIND-B PASS, §7.4 bridge PASS, independent
+2. a complete query/driver package independently reviewed and hash-pinned under §5.8–§5.9;
+3. a **complete + PM-terminally-accepted** PCSB-n designated as the operative prospective
+   baseline under §5.6; incomplete PCSB-1 and incomplete PCSB-2 remain failure evidence and do
+   not satisfy this prerequisite;
+4. live §6 battery complete against that operative baseline: every exercisable assertion PASS;
+   the two §7 cases not claimed live-PASS;
+5. fixture §7 complete: F-MIV PASS, F-KIND-A PASS, F-KIND-B PASS, §7.4 bridge PASS, independent
    fixture reproduction PASS;
-5. independent recovery reviewer PASS on the **new** chain, with explicit restatement that the
+6. independent recovery reviewer PASS on the **new** chain, with explicit restatement that the
    **old** chain remains broken;
-6. zero committed production mutation in the recovery-evidence windows;
-7. KIV-189 still CONSUMED; KIV-190 still UNUSED; D-4 still not satisfied unless a **later**
+7. zero committed production mutation in the recovery-evidence windows;
+8. KIV-189 still CONSUMED; KIV-190 still UNUSED; D-4 still not satisfied unless a **later**
    separate `must not stand` decision exists — this path does not create one.
 
 **Decision issue authorizes no SQL.** Founder records exactly one of:
@@ -672,6 +932,7 @@ Meaning:
 * KIV-14 is accepted **as a current-state outcome** of the repaired exact-`0109` production
   state plus the new prospective chain plus the named residual-risk decision;
 * historical KIV-200 / KIV-201 / KIV-165 findings remain on the record as history;
+* incomplete PCSB-1 and incomplete PCSB-2 remain incomplete historical recovery-failure evidence;
 * G5 remains in force;
 * KIV-25, deployment, Meta/WhatsApp, restaurant action and Alpha GO remain **not** authorized
   by this declaration.
@@ -686,7 +947,8 @@ It does not:
 * make the 0108 HS-12 run clean;
 * insert a ledger row;
 * consume or release KIV-190;
-* create a second forward attempt.
+* create a second forward attempt;
+* complete or upgrade PCSB-1 or PCSB-2.
 
 ---
 
@@ -702,13 +964,21 @@ pre-create or self-run the next gate.
 
 ### 10.2 Recovery-evidence chain (after procedure acceptance)
 
-Separate fresh contexts, separately released, none reused from §10.1 or from KIV-200/201:
+Separate fresh contexts, separately released, none reused from §10.1 or from
+KIV-200/201/207/208:
 
-**PCSB capturer → live verifier → fixture executor → independent recovery reviewer →
-(optional second fixture reproducer, required by §7.6) → PM evidence intake → Founder §9
-decision → PM current-state acceptance.**
+**query/driver-package preparer → independent query/driver-package reviewer → PCSB capturer →
+live verifier → fixture executor → independent recovery reviewer → (second fixture reproducer,
+required by §7.6) → PM evidence intake → Founder §9 decision → PM current-state acceptance.**
+
+§7.6 is the operative independent-reproduction requirement. A later worker who treats
+reproduction as skippable **cannot complete the path** to current-state acceptance, because
+§9.3 requires independent fixture reproduction PASS before the Founder decision issue may be
+opened.
 
 Procedure review is not execution evidence. Execution evidence is not procedure acceptance.
+Query-package review is not production capture. An incomplete PCSB-n is not the operative
+baseline.
 
 ---
 
@@ -719,13 +989,13 @@ automatically route to KIV-190. KIV-202 chose MAY STAND. D-4 is not satisfied. A
 reversal still requires a new deciding-authority determination that the committed state
 **must not stand** under accepted Revision 6, plus a separately released §5.7 executor.
 
-### 11.1 Procedure-artifact outcomes (KIV-203 review chain)
+### 11.1 Procedure-artifact outcomes (KIV-209 review chain)
 
-* `A2 ACCEPTANCE-RECOVERY PROCEDURE CANDIDATE READY FOR ENGINEERING` — Builder handback only.
+* `A2 ACCEPTANCE-RECOVERY PROCEDURE REVISION CANDIDATE READY FOR ENGINEERING` — Builder handback only.
 * later Engineering / Quality / Auditor PASS or BLOCK on **these bytes**, as those work orders
   define.
 * PM terminal **procedure accepted** or **procedure rejected**. Procedure acceptance ≠ KIV-14
-  acceptance.
+  acceptance and ≠ PCSB-3 release.
 
 ### 11.2 Recovery-evidence outcomes (later execution)
 
@@ -733,9 +1003,12 @@ reversal still requires a new deciding-authority determination that the committe
 |---|---|
 | **`ACCEPTANCE RECOVERY EVIDENCE PASS — FOUNDER DISPOSITION REQUIRED`** | New prospective chain is internally complete. Historical chain remains broken. Founder §9 decision is now the remaining gate. |
 | **`KIV-14 CURRENT-STATE ACCEPTANCE PASS`** | Only after the §9 MAY PROCEED decision **and** PM declaration. Current-state acceptance only. |
-| **`ACCEPTANCE RECOVERY BLOCK`** | Any failed, missing, or NOT PROVED mandatory assertion in the new chain; any forbidden shortcut; any custody mismatch; any committed mutation in a recovery window; any attempt to relabel history. KIV-14 remains blocked. KIV-190 remains UNUSED. |
+| **`ACCEPTANCE RECOVERY BLOCK`** | Any failed, missing, or NOT PROVED mandatory assertion in the new chain; any forbidden shortcut; any custody mismatch; any committed mutation in a recovery window; any attempt to relabel history; any incomplete PCSB-n treated as operative. KIV-14 remains blocked. KIV-190 remains UNUSED. |
 | **`NO LAWFUL CURRENT-STATE ACCEPTANCE PATH`** | Available if a later independent reviewer of **operative** procedure bytes, or Founder under §9, concludes that current-state acceptance is impossible under the governing law even with residual-risk disclosure. This is **not** D-4 and **not** a reversal order. |
 | **`FOUNDER HOLDS CURRENT-STATE ACCEPTANCE`** | Founder recorded HOLD. Committed `0109` remains. KIV-14 remains blocked. No reversal. |
+
+An incomplete capture such as PCSB-1 or PCSB-2 is `ACCEPTANCE RECOVERY BLOCK` for **that
+window**. It is not, by itself, `NO LAWFUL CURRENT-STATE ACCEPTANCE PATH`.
 
 ---
 
@@ -792,22 +1065,27 @@ chain.
 execution chain repaired`.** The AR-E-0 artifact below exists to make that confusion a
 procedure violation.
 
+Incomplete PCSB-1 and incomplete PCSB-2 are **new-chain recovery-failure evidence**. They do
+not repair the old chain and they do not become AR-E-4.
+
 ### 14.2 AR-E set (new chain)
 
 | Artifact | Content |
 |---|---|
 | **AR-E-0 Historical non-closure record** | Verbatim: KIV-200 `A2 FORWARD COMMITTED — POST-COMMIT HOLD`; HS-8; `B-11 grant-set listing not captured`; KIV-201 `INDEPENDENT A2 POST-REMEDIATION BLOCK`; `B-11 PRE-STATE GAP UNRECOVERABLE FROM AUTHORITATIVE EVIDENCE`; KIV-202 MAY STAND text; KIV-189 CONSUMED; KIV-190 UNUSED; D-4 NOT satisfied. Statement: **this new chain does not repair the old one** |
-| **AR-E-1 Authority record** | This procedure's PM acceptance; later capture/verify/fixture work-order IDs; named contexts; Founder §9 record when it exists |
+| **AR-E-1 Authority record** | This procedure's PM acceptance; later package/capture/verify/fixture work-order IDs; named contexts; Founder §9 record when it exists |
 | **AR-E-2 Source pin** | Recomputed §2 identities at each recovery window |
-| **AR-E-3 Query text** | Hashed query text used live and in fixture |
-| **AR-E-4 PCSB-1** | Full §5 capture, including **PS-GRANT explicitly labeled not-B-11** |
-| **AR-E-5 Live verification** | §6 assertion by assertion: PASS / FAIL / NOT PROVED |
+| **AR-E-3 Query text** | Hashed query text actually used live and in fixture |
+| **AR-E-QP Query/driver package** | Complete pre-reviewed / hash-pinned PCSB statement sequence, non-shipped SQL, client control flow, output contracts, and independent-review record, prepared **before** authentication |
+| **AR-E-4 Operative complete PCSB-n** | Full §5 capture of the **operative** complete + PM-accepted PCSB-n, including **PS-GRANT explicitly labeled not-B-11**. This is **not** necessarily historical PCSB-1 |
+| **AR-E-4F Incomplete / failed PCSB-n evidence** | Separately fingerprinted recovery-failure evidence for each incomplete PCSB-n, including historical PCSB-1 and PCSB-2. Not AR-E-4. Cannot be promoted, overwritten, renamed, or upgraded to PASS |
+| **AR-E-5 Live verification** | §6 assertion by assertion: PASS / FAIL / NOT PROVED, against the operative baseline |
 | **AR-E-6 Fixture pack** | FX-* plus §7.4 bridge (live MD5, fixture MD5, `0109` blob) |
 | **AR-E-7 Independent recovery review** | Reviewer identity, ineligibility statement, verdict |
 | **AR-E-8 Founder residual-risk record** | Exact §9 sentence recorded, or HOLD, or decline |
 | **AR-E-9 Mutation/side-effect counts** | Production committed writes, ledger writes, repo writes, credential mutations, external side effects — required **zero** in recovery-evidence windows |
 | **AR-E-10 Outcome** | Exactly one §11.2 classification |
-| **AR-E-11 Manifest** | SHA-256, byte count, line count of every AR-E / PS / FX artifact; manifest hash posted to Linear |
+| **AR-E-11 Manifest** | SHA-256, byte count, line count of every AR-E / PS / FX / QP artifact; **final overall hash-of-hashes** of the new chain; manifest hash posted to Linear. AR-E-11 is **only** this overall manifest, never a PCSB-n identity and never an incomplete-capture digest list |
 
 ### 14.3 Custody rules
 
@@ -817,12 +1095,15 @@ procedure violation.
   member emails or phone numbers.
 * Two-place record: redacted artifacts under a separately authorized documentation path if PM
   so requires; Linear carries digests and the outcome. Neither alone is the whole record.
-* **New-chain closure:** AR-E-2 → AR-E-4 → AR-E-5 → AR-E-6 → AR-E-7 must be fingerprint-linkable
-  as one **new** unbroken chain. A gap in the **new** chain is BLOCK. Completeness of the new
-  chain is **not** completeness of the old chain. AR-E-0 exists specifically so that statement
-  cannot be lost.
+* **New-chain closure:** AR-E-QP → AR-E-2 → AR-E-4 → AR-E-5 → AR-E-6 → AR-E-7 must be
+  fingerprint-linkable as one **new** unbroken chain. AR-E-4F artifacts are cited by the chain
+  and must remain distinct from AR-E-4. A gap in the **new** chain is BLOCK. Completeness of
+  the new chain is **not** completeness of the old chain. AR-E-0 exists specifically so that
+  statement cannot be lost.
 * Failure is evidence. BLOCK, HOLD and Founder decline are packaged with the same custody
   standard as PASS.
+* Incomplete PCSB-1 and incomplete PCSB-2 remain AR-E-4F. They are never silently filed as
+  AR-E-4 and never become AR-E-11.
 
 ---
 
@@ -849,6 +1130,13 @@ renumber Revision 6 HS-1…HS-41.
 | **AR-HS-13** | Declaring `KIV-14 CURRENT-STATE ACCEPTANCE PASS` without the exact §9 MAY PROCEED sentence |
 | **AR-HS-14** | Any KIV-25 / deployment / Meta / WhatsApp / restaurant / Alpha action from this path |
 | **AR-HS-15** | Cancelling G5 because recovery PASSed |
+| **AR-HS-16** | Using an incomplete PCSB-n, including PCSB-1 or PCSB-2, as the operative prospective baseline |
+| **AR-HS-17** | In-window improvised SQL, unreviewed client control flow, or unreviewed alias/order expression after authentication |
+| **AR-HS-18** | Same-work-order query correction and continuation after a client, query, or evidence failure |
+| **AR-HS-19** | Second authentication or silent restart after a client, query, session, or evidence failure in the same work order |
+| **AR-HS-20** | PCSB-n production authentication without terminally accepted procedure bytes **and** an independently reviewed hash-pinned query/driver package covering every required §5 artifact through PS-TIME end |
+| **AR-HS-21** | Overwriting, renaming, or upgrading incomplete PCSB-1 / PCSB-2, or any later incomplete PCSB-n, to PASS |
+| **AR-HS-22** | Treating §5.9 query-package tooling validation as §7 fixture evidence or as production evidence |
 
 Any AR-HS = `ACCEPTANCE RECOVERY BLOCK`.
 
@@ -856,26 +1144,36 @@ Any AR-HS = `ACCEPTANCE RECOVERY BLOCK`.
 
 ## 16. REQUIRED LATER SEQUENCE (AFTER THIS PROCEDURE IS ACCEPTED)
 
-Informative only. **This section authorizes none of these steps.**
+Informative only. **This section authorizes none of these steps.** It creates **no** standing
+authentication authority and does **not** release PCSB-3.
 
 1. PM pins these exact procedure bytes and records terminal procedure acceptance.
-2. Fresh read-only PCSB-1 capture work order.
-3. Fresh live §6 verification work order (zero committed mutation).
-4. Fresh disposable §7 fixture work order (no production).
-5. Independent recovery review of the new chain, including AR-E-0.
-6. If evidence PASS: Founder §9 decision issue (no SQL).
-7. If Founder MAY PROCEED: PM may record `KIV-14 CURRENT-STATE ACCEPTANCE PASS`.
-8. KIV-25 / Alpha remain separately gated.
+2. Fresh no-production query/driver-package preparation work order (§5.8–§5.9).
+3. Fresh independent query/driver-package review and hash-pin.
+4. Only then may PM consider a fresh read-only capture work order for the next unused PCSB-n
+   identity. Historically that next unused identity after incomplete PCSB-1 and incomplete
+   PCSB-2 would be PCSB-3. **This document does not create that work order.**
+5. Fresh live §6 verification work order against the operative baseline (zero committed
+   mutation).
+6. Fresh disposable §7 fixture work order (no production).
+7. Independent recovery review of the new chain, including AR-E-0 and AR-E-4F.
+8. If evidence PASS: Founder §9 decision issue (no SQL).
+9. If Founder MAY PROCEED: PM may record `KIV-14 CURRENT-STATE ACCEPTANCE PASS`.
+10. KIV-25 / Alpha remain separately gated.
 
-If any step BLOCKs: stop. Do not reverse from the BLOCK. Do not retry `0109`.
+If any step BLOCKs: stop. Do not reverse from the BLOCK. Do not retry `0109`. Do not complete
+an incomplete PCSB-n in a later window under the same identity.
 
 ---
 
 ## 17. BUILDER CANDIDATE BOUNDARY
 
-This file is the **only** intended changed path of the KIV-203 candidate.
+This file is the **only** intended changed path of the KIV-209 candidate.
 
 Accepted Revision 6 bytes remain byte-identical. Exact `0109`, `0108`, `0107`, runtime,
 migrations, tests, config and package files are not edited by this work order.
+
+PCSB-1 and PCSB-2 remain incomplete historical recovery evidence. No PCSB-3, production SQL,
+fixture, KIV-190, KIV-25, or Alpha action is authorized by these bytes.
 
 `Authorizes: Nothing.`
