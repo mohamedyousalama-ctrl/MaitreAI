@@ -75,7 +75,7 @@ class AuthorizedCaptureRunner:
             "steps": [],
         }
         try:
-            session.connect()
+            session.connect(root=root)
             pre_auth["connection_attempted"] = True
             write_capture_evidence(dest, "capture_pre_auth.json", pre_auth)
             payload["pre_p0_backend_pid"] = session.pre_p0_backend_pid

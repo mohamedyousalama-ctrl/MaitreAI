@@ -99,6 +99,12 @@
     "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
     "manifest_sha256": "e1e733a50df2e0c60904790bd3de5af2c6bea9c5b478588ed082d74f416b0690"
   },
+  "kiv221_blocked_parent": {
+    "commit": "886fbf580a1f51c5e1354459919d21d7477e4968",
+    "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
+    "manifest_blob": "febfd8b6332253c249ff68dc6a42454909d229cd",
+    "manifest_sha256": "adf4d3c79ea0b3c2c804833be48fbf2e1efac294250cca21d8b7510a94159543"
+  },
   "not_production_evidence": true,
   "not_section7_fixture_evidence": true,
   "operative_procedure": {
@@ -107,9 +113,9 @@
     "path": "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md",
     "sha256": "48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a"
   },
-  "package_context": "KIVO-A2-RECOVERY-CAPTURE-BINDING-BUILDER-221",
+  "package_context": "KIVO-A2-RECOVERY-PACKAGE-COMMIT-BUILDER-224",
   "package_id": "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE",
-  "package_version": "0.1.2-kiv221-capture-binding-candidate",
+  "package_version": "0.1.3-kiv224-package-commit-binding-candidate",
   "platform_baseline": {
     "cli_tarball_asset": "supabase-postgres-v17.6.1.150-cli-darwin-arm64.tar.gz",
     "cli_tarball_sha256": "e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ PCSB_RE = re.compile(r"^PCSB-[1-9][0-9]*$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 DIRECT_DB_HOST_RE = re.compile(r"^db\.[^.]+\.supabase\.co$")
+GIT_HEAD_TIMEOUT_SECONDS = 5
+FORBIDDEN_HEAD_SENTINELS = frozenset({"0" * 40})
 
 AUTHORITY_KEYS = frozenset(
     {
@@ -253,22 +256,81 @@ def assert_invocation_matches_authority(
         _refuse("invocation evidence_directory does not match authority document")
 
 
-def current_package_commit(root: Path | None = None) -> str | None:
-    pkg = root or package_root()
-    repo = pkg.resolve().parents[3]
-    if not (repo / ".git").exists():
-        return None
+def _git_subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"):
+        env.pop(key, None)
+    return env
+
+
+def discover_containing_git_repository(start: Path) -> Path:
+    """Prove the Git worktree that contains ``start`` without a fixed ancestor index.
+
+    A valid marker is either a ``.git`` directory (normal checkout) or a ``.git``
+    file (linked worktree). Absence of a marker is an unprovable / exported tree.
+    """
+    current = start.resolve()
+    if current.is_file():
+        current = current.parent
+    seen: set[Path] = set()
+    while True:
+        if current in seen:
+            _refuse("repository root cannot be proved (path cycle)")
+        seen.add(current)
+        git_marker = current / ".git"
+        if git_marker.is_dir() or git_marker.is_file():
+            return current
+        parent = current.parent
+        if parent == current:
+            _refuse(
+                "repository root cannot be proved (no .git directory or worktree file)"
+            )
+        current = parent
+
+
+def _git_text(repo: Path, *git_args: str) -> str:
     try:
-        out = subprocess.check_output(
-            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        completed = subprocess.run(
+            ["git", "-C", str(repo), *git_args],
+            capture_output=True,
             text=True,
-            timeout=5,
+            timeout=GIT_HEAD_TIMEOUT_SECONDS,
+            check=False,
+            env=_git_subprocess_env(),
         )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    head = out.strip().lower()
+    except FileNotFoundError:
+        _refuse("Git executable is unavailable; package identity cannot be proved")
+    except subprocess.TimeoutExpired:
+        _refuse("Git HEAD resolution timed out; package identity cannot be proved")
+    except OSError as exc:
+        _refuse(f"Git invocation failed; package identity cannot be proved: {exc}")
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        suffix = f": {detail}" if detail else ""
+        _refuse(f"Git HEAD is unavailable; package identity cannot be proved{suffix}")
+    return completed.stdout
+
+
+def current_package_commit(root: Path | None = None) -> str:
+    """Return the exact 40-character lowercase HEAD SHA of the package checkout.
+
+    Unavailable, unprovable, malformed, timed-out, or sentinel Git identity is a
+    pre-authentication refusal. Detached HEAD is accepted only when this SHA is
+    independently proved. Manifest/hash pins are not a substitute.
+    """
+    pkg = (root or package_root()).resolve()
+    repo = discover_containing_git_repository(pkg)
+    toplevel = _git_text(repo, "rev-parse", "--show-toplevel").strip()
+    if not toplevel:
+        _refuse("Git worktree toplevel is unavailable; package identity cannot be proved")
+    proved_root = Path(toplevel).resolve()
+    if proved_root != repo.resolve():
+        _refuse("Git worktree toplevel does not match the discovered repository root")
+    head = _git_text(repo, "rev-parse", "--verify", "HEAD").strip().lower()
     if not COMMIT_RE.fullmatch(head):
-        return None
+        _refuse("Git HEAD is malformed; package identity cannot be proved")
+    if head in FORBIDDEN_HEAD_SENTINELS:
+        _refuse("zero-SHA Git identity is not a proved package commit")
     return head
 
 
@@ -298,7 +360,7 @@ def assert_authority_matches_this_package(
     if authority.package_hash_of_hashes != pins["hash_of_hashes"]:
         _refuse("authority package_hash_of_hashes does not match live statement hash-of-hashes")
     head = current_package_commit(root)
-    if head is not None and authority.package_commit != head:
+    if authority.package_commit != head:
         _refuse("authority package_commit does not match git HEAD of this checkout")
 
 

@@ -20,6 +20,9 @@ from .constants import (
     KIV220_ACCEPTED_COMMIT,
     KIV220_ACCEPTED_HASH_OF_HASHES,
     KIV220_ACCEPTED_MANIFEST_SHA256,
+    KIV221_BLOCKED_COMMIT,
+    KIV221_BLOCKED_MANIFEST_BLOB,
+    KIV221_BLOCKED_MANIFEST_SHA256,
     OPERATIVE_PROCEDURE_BLOB,
     OPERATIVE_PROCEDURE_COMMIT,
     OPERATIVE_PROCEDURE_PATH,
@@ -147,6 +150,12 @@ def build_package_manifest(root: Path | None = None) -> dict[str, Any]:
         "kiv220_accepted_parent": {
             "commit": KIV220_ACCEPTED_COMMIT,
             "manifest_sha256": KIV220_ACCEPTED_MANIFEST_SHA256,
+            "hash_of_hashes": KIV220_ACCEPTED_HASH_OF_HASHES,
+        },
+        "kiv221_blocked_parent": {
+            "commit": KIV221_BLOCKED_COMMIT,
+            "manifest_sha256": KIV221_BLOCKED_MANIFEST_SHA256,
+            "manifest_blob": KIV221_BLOCKED_MANIFEST_BLOB,
             "hash_of_hashes": KIV220_ACCEPTED_HASH_OF_HASHES,
         },
         "operative_procedure": {

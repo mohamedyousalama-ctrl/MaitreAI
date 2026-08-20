@@ -89,7 +89,7 @@ def cmd_authorized_capture(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kiv14_pcsb",
-        description="KIV-221 no-production A2 PCSB capture-binding package",
+        description="KIV-224 no-production A2 PCSB package-commit binding package",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("selftest", help="run package self-tests")

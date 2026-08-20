@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import psycopg
 from psycopg import pq
 from psycopg.rows import dict_row
 
-from .authority import CaptureAuthority, assert_authorized_capture_target
+from .authority import (
+    CaptureAuthority,
+    assert_authority_matches_this_package,
+    assert_authorized_capture_target,
+)
 from .constants import BACKEND_PID_METHOD, DRIVER_NAME, DRIVER_VERSION
 from .errors import ContinuityFailure, FailClosed, SequenceViolation
 from .safety import assert_not_production_target
@@ -69,12 +74,13 @@ class PersistentCaptureSession:
     p0_passed: bool = False
     closed: bool = False
 
-    def connect(self) -> None:
+    def connect(self, *, root: Path | None = None) -> None:
         if self._conn is not None:
             raise SequenceViolation("connect called twice on the same session object")
         if self.authority is None:
             assert_not_production_target(self.conninfo)
         else:
+            assert_authority_matches_this_package(self.authority, root=root)
             assert_authorized_capture_target(self.conninfo, self.authority)
         conn = reviewed_psycopg_connect(self.conninfo)
         pid = conn.info.backend_pid
