@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+PACKAGE_ID = "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE"
+PACKAGE_VERSION = "0.1.0-candidate"
+PACKAGE_CONTEXT = "KIVO-A2-RECOVERY-PACKAGE-BUILDER-217"
+
+OPERATIVE_PROCEDURE_COMMIT = "d5d223068e8033c7c72e65ba9b26154264b5c764"
+OPERATIVE_PROCEDURE_PATH = "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md"
+OPERATIVE_PROCEDURE_BLOB = "27a85182bc8acb79c525daec03d4aa3a262fcc51"
+OPERATIVE_PROCEDURE_SHA256 = (
+    "48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a"
+)
+
+REVISION6_COMMIT = "9092758fa60b6ac1024e7e8777ed177636c4faab"
+REVISION6_PATH = (
+    "docs/governance/KIV-146_BOUNDED_PRODUCTION_CHANGE_MAINTENANCE_AND_ROLLBACK_PROCEDURE.md"
+)
+REVISION6_BLOB = "c16f2bdc84173faefb98a065b02f9fe3b5e24d2a"
+
+SOURCE_0109_COMMIT = "cc74e14c16a8b5e02d9ea9668976b83de7aeb872"
+SOURCE_0109_PATH = "supabase/migrations/0109_kiv174_member_actor_runtime_repair.sql"
+SOURCE_0109_BLOB = "8923ed066d21a5cbac5f6ffc47606aee9b5c9c07"
+SOURCE_0109_SHA256 = (
+    "e1a185e3a38b41fe1c5c9e8f9ebbedaefd88b9151cf390cf0cf22aa9123fa9e3"
+)
+
+INTEGRATION_MERGE = "585d340c6b7ec28618b22c6fec49fd271aa47813"
+INTEGRATION_PARENT_1 = "d5b4b1dd0925964ae44d55e125893081afddc651"
+INTEGRATION_PARENT_2 = "cc74e14c16a8b5e02d9ea9668976b83de7aeb872"
+BLOB_0107 = "d492d2e58fee28c93fd84ec71081dc71c81fce0b"
+BLOB_0108 = "7b500626331dd4eaf4620d29c95953740f6e5541"
+SHA256_0108 = "00cd7b7fe2ee581df7b9d038301123db45a80962fe8a6ad3c0435e2893dea9ee"
+
+P0_QUERY_SHA256 = "b81387b10b67dcf2a2e430ded065d6e097faae29eac0e3f0adc1e21968f4102b"
+ACCEPTED_REPAIRED_BODY_MD5 = "00a73f86a902ff222760ff8fcab8abf1"
+
+DRIVER_NAME = "psycopg"
+DRIVER_PACKAGE = "psycopg[binary]"
+DRIVER_VERSION = "3.2.9"
+BACKEND_PID_METHOD = (
+    "psycopg.Connection.info.backend_pid -> libpq PQbackendPID "
+    "(BackendKeyData; no SQL)"
+)
+
+PYTHON_REQUIRES = ">=3.11"
+
+DEFAULT_PG176_PREFIX = "/tmp/kivo-kiv217-pg176/prefix"
+PG176_TARBALL_SHA256 = (
+    "e0630a3600aea27511715563259ec2111cd5f4353a4b040e0be827f94cd7a8b0"
+)
+EXPECTED_SERVER_VERSION_PREFIX = "17.6"
+
+# Hosts/refs that this package must never target by default or during prep.
+PRODUCTION_HOST_MARKERS = (
+    "supabase.co",
+    "supabase.com",
+    "pooler.supabase.com",
+    "zlighrbsjexrozrmuwpw",
+    "aws-1-us-east-2.pooler.supabase.com",
+    "db.zlighrbsjexrozrmuwpw.supabase.co",
+)
+PRODUCTION_PROJECT_REF = "zlighrbsjexrozrmuwpw"
