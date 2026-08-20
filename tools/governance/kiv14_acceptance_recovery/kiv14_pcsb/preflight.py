@@ -15,6 +15,8 @@ from .constants import (
     INTEGRATION_PARENT_1,
     INTEGRATION_PARENT_2,
     SOURCE_0109_BLOB,
+    VERDICT_HOLD,
+    VERDICT_READY,
 )
 from .driver import PersistentCaptureSession, driver_identity
 from .errors import Hold
@@ -26,6 +28,7 @@ from .local_pg import (
     statements_logged_for_pid,
     stop_cluster,
 )
+from .platform import apply_method1, init_official_platform, is_official_cli_prefix
 from .safety import assert_not_production_target
 from .sequence import prove_failed_p0_blocks_later
 from .statements import QueryClass, STATEMENTS, package_root, statement_by_id
@@ -188,10 +191,93 @@ def is_auth_users_hold(stderr: str) -> bool:
     return any(marker.lower() in lowered for marker in AUTH_USERS_MARKERS)
 
 
-def run_class_b_preflight(cluster: LocalCluster, repo: Path | None = None) -> dict[str, Any]:
-    """Attempt method-1 source-derived bootstrap. Fail closed into HOLD on auth.users.
+def run_class_b_queries(cluster: LocalCluster) -> dict[str, Any]:
+    """Tooling validation of packaged Class B SQL. Not a PCSB capture. Not §7 evidence."""
+    assert_not_production_target(cluster.conninfo)
+    pkg = package_root()
+    out: dict[str, Any] = {
+        "query_role": cluster.user,
+        "not_section7_fixture_evidence": True,
+        "not_capture": True,
+        "queries": {},
+    }
+    with psycopg.connect(
+        cluster.conninfo,
+        autocommit=True,
+        prepare_threshold=None,
+        row_factory=dict_row,
+    ) as conn:
+        out["server_version"] = conn.info.parameter_status("server_version")
+        require_server_17_6(out["server_version"])
+        out["backend_pid"] = conn.info.backend_pid
+        for stmt in STATEMENTS:
+            if stmt.query_class is not QueryClass.B:
+                continue
+            rec: dict[str, Any] = {
+                "id": stmt.id,
+                "expected_sqlstate": stmt.expected_sqlstate,
+            }
+            sql = stmt.sql_text(pkg)
+            try:
+                cur = conn.execute(sql)
+                if cur.description:
+                    rows = [jsonable(dict(r)) for r in cur.fetchall()]
+                    columns = list(rows[0].keys()) if rows else [c.name for c in cur.description]
+                else:
+                    rows, columns = [], []
+                missing = [c for c in stmt.columns if c not in columns]
+                rec.update(
+                    {
+                        "n_rows": len(rows),
+                        "columns": columns,
+                        "missing_declared_columns": missing,
+                        "sqlstate": None,
+                    }
+                )
+                if stmt.expected_sqlstate:
+                    rec["status"] = "unexpected_success"
+                elif missing:
+                    rec["status"] = "contract_miss"
+                elif stmt.cardinality == "exactly_one" and len(rows) != 1:
+                    rec["status"] = "cardinality_miss"
+                else:
+                    rec["status"] = "ok"
+                if stmt.id == "PS-GRANT-FUNCTION":
+                    rec["function_signature_in_select"] = "function_signature" in columns
+                    rec["order_by_uses_alias"] = "function_signature" in stmt.order_by
+                if stmt.id in {"PS-BODY", "PF-4-USAGE", "PS-COUNT"} and rows:
+                    rec["sample"] = rows[0]
+            except Exception as exc:
+                sqlstate = getattr(exc, "sqlstate", None)
+                rec.update(
+                    {
+                        "status": "error",
+                        "sqlstate": sqlstate,
+                        "error": str(exc)[-500:],
+                    }
+                )
+                if stmt.expected_sqlstate and sqlstate == stmt.expected_sqlstate:
+                    rec["status"] = "expected_denial"
+            out["queries"][stmt.id] = rec
+    expected_ok = {
+        stmt.id: (
+            "expected_denial" if stmt.expected_sqlstate else "ok"
+        )
+        for stmt in STATEMENTS
+        if stmt.query_class is QueryClass.B
+    }
+    out["validated"] = all(
+        out["queries"][stmt_id].get("status") == status
+        for stmt_id, status in expected_ok.items()
+    )
+    return out
 
-    Does not invent Supabase auth objects. Does not run Class B queries on bare PG.
+
+def run_class_b_preflight(cluster: LocalCluster, repo: Path | None = None) -> dict[str, Any]:
+    """Method-1 source-derived bootstrap, then Class B query validation on platform topology.
+
+    Bare PostgreSQL still HOLDs. Official CLI platform + method 1 validates Class B.
+    Does not invent Supabase auth objects.
     """
     repo = repo or repo_root()
     assert_not_production_target(cluster.conninfo)
@@ -225,13 +311,15 @@ def run_class_b_preflight(cluster: LocalCluster, repo: Path | None = None) -> di
         "class_b_queries_executed": False,
         "class_b_queries_validated": False,
         "hold_reason": None,
+        "platform_baseline": bool(cluster.platform_baseline),
+        "query_role": cluster.user,
+        "bootstrap_user": cluster.bootstrap_user,
     }
     if pin_0108 != BLOB_0108 or pin_0109 != SOURCE_0109_BLOB:
         record["hold"] = True
         record["hold_reason"] = "integration-merge 0108/0109 blobs did not MATCH pins"
         return record
 
-    psql = cluster.bin("psql")
     first = files[0]
     sql_bytes = subprocess.check_output(
         ["git", "show", f"{INTEGRATION_MERGE}:{first}"],
@@ -244,6 +332,35 @@ def run_class_b_preflight(cluster: LocalCluster, repo: Path | None = None) -> di
         alt = cluster.prefix / "share" / "extension" / "pgcrypto.control"
         pgcrypto_control = alt if alt.is_file() else pgcrypto_control
     record["pgcrypto_control_present"] = pgcrypto_control.is_file()
+
+    if cluster.platform_baseline:
+        applied = apply_method1(cluster, repo, files)
+        record["applied"] = applied.get("applied") or []
+        record["failed_at"] = applied.get("failed_at")
+        record["stderr"] = applied.get("stderr")
+        record["stdout"] = applied.get("stdout")
+        if not applied.get("ok"):
+            record["hold"] = True
+            record["hold_reason"] = (
+                "method 1 failed on the official CLI platform baseline at "
+                f"{applied.get('failed_at')}: {(applied.get('stderr') or '')[-500:]}"
+            )
+            return record
+        queries = run_class_b_queries(cluster)
+        record["class_b_queries_executed"] = True
+        record["class_b_query_validation"] = queries
+        record["class_b_queries_validated"] = bool(queries.get("validated"))
+        if not record["class_b_queries_validated"]:
+            record["hold"] = True
+            record["hold_reason"] = (
+                "Class B queries did not satisfy contracts on the official "
+                "CLI platform + method 1 topology"
+            )
+        return record
+
+    env = os.environ.copy()
+    env["PATH"] = f"{cluster.prefix / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin"
+    psql = cluster.bin("psql")
     with tempfile.NamedTemporaryFile(suffix=".sql", delete=False) as handle:
         handle.write(sql_bytes)
         tmp_path = handle.name
@@ -266,6 +383,7 @@ def run_class_b_preflight(cluster: LocalCluster, repo: Path | None = None) -> di
             ],
             capture_output=True,
             text=True,
+            env=env,
         )
     finally:
         os.unlink(tmp_path)
@@ -303,10 +421,15 @@ def run_preflight(*, dest_dir: Path | None = None) -> dict[str, Any]:
         payload["class_a"] = run_class_a_preflight(class_a_cluster)
         payload["class_a"]["port"] = class_a_cluster.port
         payload["class_a"]["data_dir"] = str(class_a_cluster.data_dir)
-        class_b_cluster = init_and_start(label="class-b")
+        if is_official_cli_prefix():
+            class_b_cluster = init_official_platform(label="class-b")
+        else:
+            class_b_cluster = init_and_start(label="class-b")
         payload["class_b"] = run_class_b_preflight(class_b_cluster)
         payload["class_b"]["port"] = class_b_cluster.port
         payload["class_b"]["data_dir"] = str(class_b_cluster.data_dir)
+        if class_b_cluster.prepare_record:
+            payload["class_b"]["prepare_record"] = class_b_cluster.prepare_record
     finally:
         if class_a_cluster is not None:
             stop_cluster(class_a_cluster)
@@ -326,17 +449,21 @@ def run_preflight(*, dest_dir: Path | None = None) -> dict[str, Any]:
         "p0_status"
     ) in {"FAIL", "SQL_ERROR"}
     payload["class_a_preflight_ok"] = bool(class_a_ok and contract_ok)
-    payload["class_b_validated"] = False
+    payload["class_b_validated"] = bool(
+        payload.get("class_b", {}).get("class_b_queries_validated")
+    )
     payload["terminal_verdict"] = (
-        "A2 ACCEPTANCE-RECOVERY QUERY/DRIVER PACKAGE PREPARATION HOLD"
-        if class_b_hold or not payload["class_a_preflight_ok"]
-        else "A2 ACCEPTANCE-RECOVERY QUERY/DRIVER PACKAGE CANDIDATE READY FOR INDEPENDENT REVIEW"
+        VERDICT_HOLD
+        if class_b_hold or not payload["class_a_preflight_ok"] or not payload["class_b_validated"]
+        else VERDICT_READY
     )
     payload["hold_findings"] = []
     if class_b_hold:
         payload["hold_findings"].append(payload["class_b"].get("hold_reason"))
     if not payload["class_a_preflight_ok"]:
         payload["hold_findings"].append("Class A preflight did not satisfy contracts")
+    if not payload["class_b_validated"] and not class_b_hold:
+        payload["hold_findings"].append("Class B queries were not validated")
     write_run_evidence(dest, payload)
     (dest / "preflight.json").write_text(canonical_dumps(payload))
     return payload

@@ -1,0 +1,47 @@
+{
+  "not_kivo_ddl": true,
+  "not_production": true,
+  "purpose": "Exact official Supabase PostgreSQL 17.6 platform baseline pins for KIV-218 Class B topology. These artifacts present platform objects the Kivo lineage does not create. They are not a third Kivo bootstrap.",
+  "supabase_postgres_git": {
+    "repository": "https://github.com/supabase/postgres",
+    "tag": "v17.6.1.150-cli",
+    "commit": "a97b439c4a9033f9d40080623a688ddcda2961ff"
+  },
+  "cli_tarball": {
+    "asset": "supabase-postgres-v17.6.1.150-cli-darwin-arm64.tar.gz",
+    "release": "https://github.com/supabase/postgres/releases/tag/v17.6.1.150-cli",
+    "sha256": "e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6",
+    "psql_version": "17.6",
+    "variant": "cli",
+    "receipt_extensions": [
+      "supautils",
+      "pg_graphql",
+      "pgsodium",
+      "supabase_vault",
+      "pg_net",
+      "pg_cron",
+      "safeupdate"
+    ]
+  },
+  "pgmq": {
+    "why": "The official darwin-arm64 CLI tarball omits pgmq.control. Exact method-1 file 0103_brain_execution_substrate.sql requires CREATE EXTENSION pgmq. The same supabase/postgres pin's nix/ext/pgmq installs SQL-only pgmq 1.5.1 from tembo-io/pgmq. Vendored files are that official install output, not invented queue DDL.",
+    "upstream_repository": "https://github.com/tembo-io/pgmq",
+    "upstream_tag": "v1.5.1",
+    "upstream_commit": "7fd411d8ffd53b5313039f59167124c861d46430",
+    "nix_versions_json_key": "pgmq.1.5.1",
+    "nix_hash": "sha256-IU+i6ONPwtgsFKdzya6E+222ualR66gkbb0lDr+7Rb8=",
+    "control_sha256": "5dfc26e5bf07ec972a428de2c11cd1431cc98b12f4472a0bdbc15319dd04dc9d",
+    "sql_1_5_1_sha256": "65b9302faa660539584769a572b57f2df76ccf1b3a2153c37cefc57b8db633e9"
+  },
+  "darwin_adhoc_libiconv": {
+    "why": "Official tarball libiconv.dylib has an invalid code signature on macOS 26 (AMFI SIGKILL / Code Signature Invalid). Host re-sign with codesign --force --sign - is a codesign repair of the official dylib, not SQL invention.",
+    "path_in_prefix": "lib/libiconv.dylib"
+  },
+  "method_1_psql_flags": {
+    "default": "psql -v ON_ERROR_STOP=1 -f <file>",
+    "0108_and_0109": "psql --single-transaction -v ON_ERROR_STOP=1 -f <file>",
+    "0059": "no transaction wrap; CREATE INDEX CONCURRENTLY"
+  },
+  "class_b_query_role": "postgres",
+  "class_b_query_role_note": "Official migrate.sh demotes postgres. Class B tooling uses that demoted login role so PF-4-SET-ROLE is the expected 42501 denial. supabase_admin remains bootstrap-only for method 1 apply."
+}

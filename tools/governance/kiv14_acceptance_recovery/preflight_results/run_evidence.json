@@ -5,12 +5,12 @@
       "later_sql_detail": "PS-TIME-START blocked: P-0 did not PASS; later SQL is forbidden",
       "later_sql_status": "blocked",
       "logged_statements_for_backend": [
-        "2026-08-20 10:46:08.579 +03 [37108] LOG:  statement: select\n\t  current_user                                                                                            as executor,\n\t  pg_catalog.current_setting('row_security')                                                              as row_security_setting,\n\t  pg_catalog.to_regclass('public.members')                                  is not null                   as members_present,\n\t  pg_catalog.has_table_privilege(pg_catalog.to_regclass('public.members'),'SELECT')                        as members_select,\n\t  pg_catalog.row_security_active(pg_catalog.to_regclass('public.members'))                                 as members_rls_active,\n\t  pg_catalog.to_regclass('public.member_identity_versions')                 is not null                   as miv_present,\n\t  pg_catalog.has_table_privilege(pg_catalog.to_regclass('public.member_identity_versions'),'SELECT')       as miv_select,\n\t  pg_catalog.row_security_active(pg_catalog.to_regclass('public.member_identity_versions'))                as miv_rls_active,\n\t  pg_catalog.to_regclass('public.conversation_assignment_events')           is not null                   as cae_present,\n\t  pg_catalog.has_table_privilege(pg_catalog.to_regclass('public.conversation_assignment_events'),'SELECT') as cae_select,\n\t  pg_catalog.row_security_active(pg_catalog.to_regclass('public.conversation_assignment_events'))          as cae_rls_active;\n\t"
+        "2026-08-20 14:48:20.763 +03 [60190] LOG:  statement: select\n\t  current_user                                                                                            as executor,\n\t  pg_catalog.current_setting('row_security')                                                              as row_security_setting,\n\t  pg_catalog.to_regclass('public.members')                                  is not null                   as members_present,\n\t  pg_catalog.has_table_privilege(pg_catalog.to_regclass('public.members'),'SELECT')                        as members_select,\n\t  pg_catalog.row_security_active(pg_catalog.to_regclass('public.members'))                                 as members_rls_active,\n\t  pg_catalog.to_regclass('public.member_identity_versions')                 is not null                   as miv_present,\n\t  pg_catalog.has_table_privilege(pg_catalog.to_regclass('public.member_identity_versions'),'SELECT')       as miv_select,\n\t  pg_catalog.row_security_active(pg_catalog.to_regclass('public.member_identity_versions'))                as miv_rls_active,\n\t  pg_catalog.to_regclass('public.conversation_assignment_events')           is not null                   as cae_present,\n\t  pg_catalog.has_table_privilege(pg_catalog.to_regclass('public.conversation_assignment_events'),'SELECT') as cae_select,\n\t  pg_catalog.row_security_active(pg_catalog.to_regclass('public.conversation_assignment_events'))          as cae_rls_active;\n\t"
       ],
       "p0_detail": "P-0 FAIL: members_present=False (need true); members_select=None (need true); miv_present=False (need true); miv_select=None (need true); cae_present=False (need true); cae_select=None (need true); members_rls_active=None (need false); miv_rls_active=None (need false); cae_rls_active=None (need false)",
       "p0_status": "FAIL",
       "p0_was_first_logged_sql": true,
-      "pre_p0_backend_pid": 37108,
+      "pre_p0_backend_pid": 60190,
       "server_version": "17.6",
       "sql_log": [
         "P-0"
@@ -66,7 +66,7 @@
       "server_version_num": null,
       "tooling_session_kind": "class_a_tooling_validation_not_capture"
     },
-    "data_dir": "/tmp/kivo-kiv217-pg176/runs/class-a-52018/data",
+    "data_dir": "/tmp/kivo-kiv217-pg176/runs/class-a-56443/data",
     "driver": {
       "autocommit": true,
       "backend_pid_method": "psycopg.Connection.info.backend_pid -> libpq PQbackendPID (BackendKeyData; no SQL)",
@@ -81,55 +81,323 @@
     },
     "kivo_or_supabase_objects_created": false,
     "not_section7_fixture_evidence": true,
-    "port": 52018
+    "port": 56443
   },
   "class_a_preflight_ok": true,
   "class_b": {
-    "applied": [],
+    "applied": [
+      "supabase/migrations/0001_init.sql",
+      "supabase/migrations/0002_rls.sql",
+      "supabase/migrations/0003_seed.sql",
+      "supabase/migrations/0004_amendment_01.sql",
+      "supabase/migrations/0005_amendment_02.sql",
+      "supabase/migrations/0006_realtime.sql",
+      "supabase/migrations/0007_reset.sql",
+      "supabase/migrations/0008_amendment_03_dialect.sql",
+      "supabase/migrations/0009_amendment_03_brain.sql",
+      "supabase/migrations/0010_amendment_04_handover.sql",
+      "supabase/migrations/0011_s9_5_print_settings.sql",
+      "supabase/migrations/0012_persona_name.sql",
+      "supabase/migrations/0013_egypt_first.sql",
+      "supabase/migrations/0014_tax_vat.sql",
+      "supabase/migrations/0015_menu_variants.sql",
+      "supabase/migrations/0016_seed_wesaya.sql",
+      "supabase/migrations/0017_restaurant_slug.sql",
+      "supabase/migrations/0018_order_source.sql",
+      "supabase/migrations/0019_whatsapp_credentials.sql",
+      "supabase/migrations/0020_whatsapp_secret_column_grants.sql",
+      "supabase/migrations/0021_payment_config.sql",
+      "supabase/migrations/0022_restaurant_tier.sql",
+      "supabase/migrations/0023_conversation_reports.sql",
+      "supabase/migrations/0024_restaurant_feature_flags.sql",
+      "supabase/migrations/0025_conversation_reports_supersede.sql",
+      "supabase/migrations/0026_customer_memory.sql",
+      "supabase/migrations/0027_agent_runs_perception.sql",
+      "supabase/migrations/0028_conversation_safety_hold.sql",
+      "supabase/migrations/0029_cod_ledger.sql",
+      "supabase/migrations/0030_eightysix.sql",
+      "supabase/migrations/0031_delivery.sql",
+      "supabase/migrations/0032_ownership_state.sql",
+      "supabase/migrations/0033_stuck_reason.sql",
+      "supabase/migrations/0034_conversation_lock.sql",
+      "supabase/migrations/0035_onboarding.sql",
+      "supabase/migrations/0036_menu_draft.sql",
+      "supabase/migrations/0037_allergen_flag_default.sql",
+      "supabase/migrations/0038_rls_ungoverned_tables.sql",
+      "supabase/migrations/0039_restaurant_hours.sql",
+      "supabase/migrations/0040_system_alerts.sql",
+      "supabase/migrations/0041_rls_financial_lockdown.sql",
+      "supabase/migrations/0042_audit_events.sql",
+      "supabase/migrations/0043_orders_coords.sql",
+      "supabase/migrations/0044_orders_is_test.sql",
+      "supabase/migrations/0045_realtime_restaurants.sql",
+      "supabase/migrations/0046_realtime_menu.sql",
+      "supabase/migrations/0047_realtime_cod.sql",
+      "supabase/migrations/0048_realtime_dispatch.sql",
+      "supabase/migrations/0049_realtime_members.sql",
+      "supabase/migrations/0050_menu_publish_upsert.sql",
+      "supabase/migrations/0051_pos_handoff.sql",
+      "supabase/migrations/0052_conversation_stage.sql",
+      "supabase/migrations/0053_conversation_ad_referral.sql",
+      "supabase/migrations/0054_conversations_stage_no_clock.sql",
+      "supabase/migrations/0055_allergen_review_state.sql",
+      "supabase/migrations/0056_conversation_staff_notes.sql",
+      "supabase/migrations/0057_tester_allowlist.sql",
+      "supabase/migrations/0058_psp_credentials.sql",
+      "supabase/migrations/0059_payment_session_idempotency.sql",
+      "supabase/migrations/0060_conversation_outcomes.sql",
+      "supabase/migrations/0061_processed_payment_events.sql",
+      "supabase/migrations/0062_staff_command_channel.sql",
+      "supabase/migrations/0063_message_sent_by_member.sql",
+      "supabase/migrations/0064_alert_routing.sql",
+      "supabase/migrations/0065_standing_instructions.sql",
+      "supabase/migrations/0066_tonight_notes.sql",
+      "supabase/migrations/0067_retry_jobs.sql",
+      "supabase/migrations/0068_template_registry.sql",
+      "supabase/migrations/0069_wa_capacity.sql",
+      "supabase/migrations/0070_media_guard.sql",
+      "supabase/migrations/0071_knowledge_change_requests.sql",
+      "supabase/migrations/0072_pos_item_code_pairings.sql",
+      "supabase/migrations/0073_callback_requests.sql",
+      "supabase/migrations/0074_pdpl_consent.sql",
+      "supabase/migrations/0075_ramadan_mode.sql",
+      "supabase/migrations/0076_printer_config.sql",
+      "supabase/migrations/0077_voice_budget.sql",
+      "supabase/migrations/0078_mizan_reviews.sql",
+      "supabase/migrations/0079_monitoring.sql",
+      "supabase/migrations/0080_allergy_companion.sql",
+      "supabase/migrations/0081_delivery_geo_routing.sql",
+      "supabase/migrations/0082_delivery_runs.sql",
+      "supabase/migrations/0083_allergy_companion_two_axis.sql",
+      "supabase/migrations/0084_payment_methods.sql",
+      "supabase/migrations/0085_inbound_coalescing.sql",
+      "supabase/migrations/0086_turn_claim.sql",
+      "supabase/migrations/0087_agent_runs_cache_creation.sql",
+      "supabase/migrations/0088_publish_menu_draft_lockdown.sql",
+      "supabase/migrations/0089_enforce_min_one_manager.sql",
+      "supabase/migrations/0090_grants_lockdown.sql",
+      "supabase/migrations/0091_delivery_tables_lockdown.sql",
+      "supabase/migrations/0092_cod_settlement_atomic.sql",
+      "supabase/migrations/0093_cod_capture_atomic.sql",
+      "supabase/migrations/0094_members_last_manager_delete_guard.sql",
+      "supabase/migrations/0095_usage_cost_events.sql",
+      "supabase/migrations/0096_cost_views.sql",
+      "supabase/migrations/0098_agent_runs_meta.sql",
+      "supabase/migrations/0099_conversation_control_plane.sql",
+      "supabase/migrations/0100_brain_foundation.sql",
+      "supabase/migrations/0101_brain_foundation_fk_tightening.sql",
+      "supabase/migrations/0102_brain_ingress_events.sql",
+      "supabase/migrations/0103_brain_execution_substrate.sql",
+      "supabase/migrations/0104_safety_ingress_evidence.sql",
+      "supabase/migrations/0107_kiv12_m0_constraint_prestage.sql",
+      "supabase/migrations/0108_kiv13_m1_additive_scope1.sql",
+      "supabase/migrations/0109_kiv174_member_actor_runtime_repair.sql"
+    ],
     "blob_0108_at_merge": "7b500626331dd4eaf4620d29c95953740f6e5541",
     "blob_0108_match": true,
     "blob_0109_at_merge": "8923ed066d21a5cbac5f6ffc47606aee9b5c9c07",
     "blob_0109_match": true,
+    "bootstrap_user": "supabase_admin",
     "class": "B",
-    "class_b_queries_executed": false,
-    "class_b_queries_validated": false,
-    "class_b_statement_ids_not_validated": [
-      "PF-4-USAGE",
-      "PF-4-SET-ROLE",
-      "PS-GRANT-TABLE",
-      "PS-GRANT-COLUMN",
-      "PS-GRANT-FUNCTION",
-      "PS-OWN",
-      "PS-ROLE",
-      "PS-COUNT",
-      "PS-BODY"
-    ],
-    "data_dir": "/tmp/kivo-kiv217-pg176/runs/class-b-52023/data",
+    "class_b_queries_executed": true,
+    "class_b_queries_validated": true,
+    "class_b_query_validation": {
+      "backend_pid": 61723,
+      "not_capture": true,
+      "not_section7_fixture_evidence": true,
+      "queries": {
+        "PF-4-SET-ROLE": {
+          "error": "permission denied to set role \"kivo_control_owner\"",
+          "expected_sqlstate": "42501",
+          "id": "PF-4-SET-ROLE",
+          "sqlstate": "42501",
+          "status": "expected_denial"
+        },
+        "PF-4-USAGE": {
+          "columns": [
+            "has_usage"
+          ],
+          "expected_sqlstate": null,
+          "id": "PF-4-USAGE",
+          "missing_declared_columns": [],
+          "n_rows": 1,
+          "sample": {
+            "has_usage": false
+          },
+          "sqlstate": null,
+          "status": "ok"
+        },
+        "PS-BODY": {
+          "columns": [
+            "fn_rows",
+            "body_md5",
+            "equals_accepted_repaired",
+            "still_unrepaired"
+          ],
+          "expected_sqlstate": null,
+          "id": "PS-BODY",
+          "missing_declared_columns": [],
+          "n_rows": 1,
+          "sample": {
+            "body_md5": "00a73f86a902ff222760ff8fcab8abf1",
+            "equals_accepted_repaired": true,
+            "fn_rows": 1,
+            "still_unrepaired": false
+          },
+          "sqlstate": null,
+          "status": "ok"
+        },
+        "PS-COUNT": {
+          "columns": [
+            "members_n",
+            "conversations_n",
+            "cae_n",
+            "members_id_fingerprint"
+          ],
+          "expected_sqlstate": null,
+          "id": "PS-COUNT",
+          "missing_declared_columns": [],
+          "n_rows": 1,
+          "sample": {
+            "cae_n": 0,
+            "conversations_n": 0,
+            "members_id_fingerprint": null,
+            "members_n": 0
+          },
+          "sqlstate": null,
+          "status": "ok"
+        },
+        "PS-GRANT-COLUMN": {
+          "columns": [
+            "schema_name",
+            "table_name",
+            "column_name",
+            "grantor",
+            "grantee",
+            "privilege_type",
+            "is_grantable"
+          ],
+          "expected_sqlstate": null,
+          "id": "PS-GRANT-COLUMN",
+          "missing_declared_columns": [],
+          "n_rows": 184,
+          "sqlstate": null,
+          "status": "ok"
+        },
+        "PS-GRANT-FUNCTION": {
+          "columns": [
+            "schema_name",
+            "function_name",
+            "identity_args",
+            "function_signature",
+            "grantor",
+            "grantee",
+            "privilege_type",
+            "is_grantable"
+          ],
+          "expected_sqlstate": null,
+          "function_signature_in_select": true,
+          "id": "PS-GRANT-FUNCTION",
+          "missing_declared_columns": [],
+          "n_rows": 56,
+          "order_by_uses_alias": true,
+          "sqlstate": null,
+          "status": "ok"
+        },
+        "PS-GRANT-TABLE": {
+          "columns": [
+            "schema_name",
+            "table_name",
+            "grantor",
+            "grantee",
+            "privilege_type",
+            "is_grantable"
+          ],
+          "expected_sqlstate": null,
+          "id": "PS-GRANT-TABLE",
+          "missing_declared_columns": [],
+          "n_rows": 362,
+          "sqlstate": null,
+          "status": "ok"
+        },
+        "PS-OWN": {
+          "columns": [
+            "schema_name",
+            "table_name",
+            "owner",
+            "relrowsecurity",
+            "relforcerowsecurity"
+          ],
+          "expected_sqlstate": null,
+          "id": "PS-OWN",
+          "missing_declared_columns": [],
+          "n_rows": 9,
+          "sqlstate": null,
+          "status": "ok"
+        },
+        "PS-ROLE": {
+          "columns": [
+            "rolname",
+            "rolsuper",
+            "rolinherit",
+            "rolcreaterole",
+            "rolcreatedb",
+            "rolcanlogin",
+            "rolreplication",
+            "rolbypassrls"
+          ],
+          "expected_sqlstate": null,
+          "id": "PS-ROLE",
+          "missing_declared_columns": [],
+          "n_rows": 5,
+          "sqlstate": null,
+          "status": "ok"
+        }
+      },
+      "query_role": "postgres",
+      "server_version": "17.6",
+      "validated": true
+    },
+    "data_dir": "/tmp/kivo-kiv218-pg176/runs/class-b-56447/data",
     "expected_blob_0108": "7b500626331dd4eaf4620d29c95953740f6e5541",
     "expected_blob_0109": "8923ed066d21a5cbac5f6ffc47606aee9b5c9c07",
-    "failed_at": "supabase/migrations/0001_init.sql",
+    "failed_at": null,
     "first_file": "supabase/migrations/0001_init.sql",
-    "hold": true,
-    "hold_findings": [
-      "AR-HS-25 / \u00a75.9: exact method-1 file supabase/migrations/0001_init.sql references auth.users(id). Bare PostgreSQL 17.6 does not provide Supabase auth.users. Inventing auth schema/tables/request-GUCs is forbidden.",
-      "method-1 apply stopped at CREATE EXTENSION pgcrypto: this disposable PostgreSQL 17.6 prefix has no pgcrypto contrib (openssl headers were not present to build it from the same 17.6 tarball). Homebrew/other PG builds will not be mixed in. Extension invention is forbidden."
-    ],
-    "hold_reason": "AR-HS-25 / \u00a75.9: exact method-1 file supabase/migrations/0001_init.sql references auth.users(id). Bare PostgreSQL 17.6 does not provide Supabase auth.users. Inventing auth schema/tables/request-GUCs is forbidden. method-1 apply stopped at CREATE EXTENSION pgcrypto: this disposable PostgreSQL 17.6 prefix has no pgcrypto contrib (openssl headers were not present to build it from the same 17.6 tarball). Homebrew/other PG builds will not be mixed in. Extension invention is forbidden.",
+    "hold": false,
+    "hold_reason": null,
     "integration_merge": "585d340c6b7ec28618b22c6fec49fd271aa47813",
     "integration_parent_1": "d5b4b1dd0925964ae44d55e125893081afddc651",
     "integration_parent_2": "cc74e14c16a8b5e02d9ea9668976b83de7aeb872",
     "invented_auth_objects": false,
-    "invented_extensions": false,
     "method": 1,
     "migration_count": 106,
     "not_section7_fixture_evidence": true,
-    "pgcrypto_control_present": false,
-    "port": 52023,
+    "pgcrypto_control_present": true,
+    "platform_baseline": true,
+    "port": 56447,
+    "prepare_record": {
+      "libiconv": {
+        "needed": false,
+        "path": "/tmp/kivo-kiv218-supabase-pg176/work-prefix/lib/libiconv.dylib",
+        "present": true,
+        "repaired": false
+      },
+      "official_cli_prefix": true,
+      "pgmq": {
+        "control": "/tmp/kivo-kiv218-supabase-pg176/work-prefix/share/postgresql/extension/pgmq.control",
+        "control_sha256": "5dfc26e5bf07ec972a428de2c11cd1431cc98b12f4472a0bdbc15319dd04dc9d",
+        "copied": false,
+        "sql": "/tmp/kivo-kiv218-supabase-pg176/work-prefix/share/postgresql/extension/pgmq--1.5.1.sql",
+        "sql_sha256": "65b9302faa660539584769a572b57f2df76ccf1b3a2153c37cefc57b8db633e9",
+        "version": "1.5.1"
+      }
+    },
+    "query_role": "postgres",
     "source_references_auth_users": true,
-    "stderr": "psql:/var/folders/q0/6_k2qt2n77d7f838r72z8xxw0000gn/T/tmpfkh0_577.sql:7: ERROR:  extension \"pgcrypto\" is not available\nDETAIL:  Could not open extension control file \"/private/tmp/kivo-kiv217-pg176/prefix/share/postgresql/extension/pgcrypto.control\": No such file or directory.\nHINT:  The extension must first be installed on the system where PostgreSQL is running.\n",
-    "stdout": ""
+    "stderr": null,
+    "stdout": null
   },
-  "class_b_validated": false,
+  "class_b_validated": true,
   "class_inventory": {
     "capture_order": [
       "P-0",
@@ -212,11 +480,9 @@
     "imported_psycopg_version": "3.2.9",
     "prepare_threshold": null
   },
-  "hold_findings": [
-    "AR-HS-25 / \u00a75.9: exact method-1 file supabase/migrations/0001_init.sql references auth.users(id). Bare PostgreSQL 17.6 does not provide Supabase auth.users. Inventing auth schema/tables/request-GUCs is forbidden. method-1 apply stopped at CREATE EXTENSION pgcrypto: this disposable PostgreSQL 17.6 prefix has no pgcrypto contrib (openssl headers were not present to build it from the same 17.6 tarball). Homebrew/other PG builds will not be mixed in. Extension invention is forbidden."
-  ],
+  "hold_findings": [],
   "not_production_evidence": true,
   "not_section7_fixture_evidence": true,
   "production_supabase_auth_sql_count": 0,
-  "terminal_verdict": "A2 ACCEPTANCE-RECOVERY QUERY/DRIVER PACKAGE PREPARATION HOLD"
+  "terminal_verdict": "A2 ACCEPTANCE-RECOVERY QUERY/DRIVER PACKAGE REMEDIATION READY FOR INDEPENDENT REVIEW"
 }

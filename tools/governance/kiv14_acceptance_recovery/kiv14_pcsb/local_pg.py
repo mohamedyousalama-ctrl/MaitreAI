@@ -14,7 +14,12 @@ from .safety import default_local_conninfo
 
 
 def pg176_prefix() -> Path:
-    return Path(os.environ.get("KIVO_KIV217_PG176_PREFIX", DEFAULT_PG176_PREFIX))
+    return Path(
+        os.environ.get(
+            "KIVO_KIV218_PG176_PREFIX",
+            os.environ.get("KIVO_KIV217_PG176_PREFIX", DEFAULT_PG176_PREFIX),
+        )
+    )
 
 
 def unused_loopback_port() -> int:
@@ -32,13 +37,31 @@ class LocalCluster:
     user: str = "kiv217"
     dbname: str = "postgres"
     process: subprocess.Popen[bytes] | None = None
+    password: str | None = None
+    bootstrap_user: str = "kiv217"
+    platform_baseline: bool = False
+    prepare_record: dict | None = None
+    log_path_override: Path | None = None
 
     @property
     def conninfo(self) -> str:
-        return default_local_conninfo(self.port, dbname=self.dbname, user=self.user)
+        return default_local_conninfo(
+            self.port, dbname=self.dbname, user=self.user, password=self.password
+        )
+
+    @property
+    def bootstrap_conninfo(self) -> str:
+        return default_local_conninfo(
+            self.port,
+            dbname=self.dbname,
+            user=self.bootstrap_user,
+            password=self.password,
+        )
 
     @property
     def log_path(self) -> Path:
+        if self.log_path_override is not None:
+            return self.log_path_override
         return self.data_dir / "log" / "postgresql.log"
 
     def bin(self, name: str) -> Path:
@@ -50,7 +73,18 @@ def assert_pg176_prefix(prefix: Path | None = None) -> Path:
     postgres = prefix / "bin" / "postgres"
     if not postgres.is_file():
         raise Hold(f"PostgreSQL 17.6 prefix missing at {prefix}")
-    version = subprocess.check_output([str(postgres), "--version"], text=True).strip()
+    from .platform import is_official_cli_prefix, prepare_official_prefix
+
+    if is_official_cli_prefix(prefix):
+        prepare_official_prefix(prefix)
+    version = subprocess.check_output(
+        [str(postgres), "--version"],
+        text=True,
+        env={
+            **os.environ,
+            "PATH": f"{prefix / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin",
+        },
+    ).strip()
     if "17.6" not in version:
         raise Hold(f"expected postgres (PostgreSQL) 17.6, got {version!r}")
     return prefix
@@ -73,6 +107,10 @@ def init_and_start(
     log_dir = data_dir / "log"
     socket_dir.mkdir(parents=True)
     initdb = prefix / "bin" / "initdb"
+    env = {
+        **os.environ,
+        "PATH": f"{prefix / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin",
+    }
     subprocess.check_call(
         [
             str(initdb),
@@ -86,6 +124,7 @@ def init_and_start(
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
+        env=env,
     )
     conf = data_dir / "postgresql.conf"
     extra = (
@@ -104,6 +143,10 @@ def init_and_start(
     )
     conf.write_text(conf.read_text() + extra)
     log_dir.mkdir(parents=True, exist_ok=True)
+    env = {
+        **os.environ,
+        "PATH": f"{prefix / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin",
+    }
     proc = subprocess.Popen(
         [
             str(prefix / "bin" / "postgres"),
@@ -114,6 +157,7 @@ def init_and_start(
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        env=env,
     )
     cluster = LocalCluster(
         prefix=prefix,
@@ -121,6 +165,8 @@ def init_and_start(
         socket_dir=socket_dir,
         port=port,
         process=proc,
+        bootstrap_user="kiv217",
+        platform_baseline=False,
     )
     try:
         _wait_ready(cluster)
@@ -130,10 +176,20 @@ def init_and_start(
     return cluster
 
 
-def _wait_ready(cluster: LocalCluster, timeout: float = 20.0) -> None:
+def _wait_ready(
+    cluster: LocalCluster,
+    timeout: float = 20.0,
+    *,
+    user: str | None = None,
+    password: str | None = None,
+) -> None:
     pg_isready = cluster.bin("pg_isready")
     deadline = time.time() + timeout
     last = ""
+    env = os.environ.copy()
+    env["PATH"] = f"{cluster.prefix / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin"
+    if password:
+        env["PGPASSWORD"] = password
     while time.time() < deadline:
         if cluster.process is not None and cluster.process.poll() is not None:
             raise RuntimeError(
@@ -147,12 +203,13 @@ def _wait_ready(cluster: LocalCluster, timeout: float = 20.0) -> None:
                 "-p",
                 str(cluster.port),
                 "-U",
-                cluster.user,
+                user or cluster.user,
                 "-d",
                 cluster.dbname,
             ],
             capture_output=True,
             text=True,
+            env=env,
         )
         if result.returncode == 0:
             return
@@ -163,11 +220,18 @@ def _wait_ready(cluster: LocalCluster, timeout: float = 20.0) -> None:
 
 def stop_cluster(cluster: LocalCluster) -> None:
     pg_ctl = cluster.bin("pg_ctl")
+    env = {
+        **os.environ,
+        "PATH": f"{cluster.prefix / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin",
+    }
+    if cluster.password:
+        env["PGPASSWORD"] = cluster.password
     if pg_ctl.is_file():
         subprocess.run(
             [str(pg_ctl), "-D", str(cluster.data_dir), "-m", "fast", "stop"],
             capture_output=True,
             text=True,
+            env=env,
         )
     if cluster.process is not None and cluster.process.poll() is None:
         cluster.process.terminate()

@@ -78,8 +78,16 @@ def assert_not_production_target(
             )
 
 
-def default_local_conninfo(port: int, dbname: str = "postgres", user: str = "kiv217") -> str:
-    return (
-        f"host=127.0.0.1 port={port} dbname={dbname} user={user} "
-        "sslmode=disable client_encoding=UTF8"
-    )
+def default_local_conninfo(
+    port: int,
+    dbname: str = "postgres",
+    user: str = "kiv217",
+    password: str | None = None,
+) -> str:
+    parts = [
+        f"host=127.0.0.1 port={port} dbname={dbname} user={user}",
+        "sslmode=disable client_encoding=UTF8",
+    ]
+    if password:
+        parts.insert(1, f"password={password}")
+    return " ".join(parts)

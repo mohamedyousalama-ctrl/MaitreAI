@@ -1,7 +1,10 @@
-# KIV-217 A2 PCSB query/driver package — candidate manifest / operator contract
+# KIV-217 A2 PCSB query/driver package — KIV-218 remediation operator contract
 
-**Context:** `KIVO-A2-RECOVERY-PACKAGE-BUILDER-217`  
+**Context:** `KIVO-A2-RECOVERY-PACKAGE-TOPOLOGY-BUILDER-218`  
 **Package id:** `KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE`  
+**Package version:** `0.1.1-kiv218-remediation-candidate`  
+**KIV-217 published custody (unchanged parent object):** branch `claude/kiv-217-a2-pcsb-query-driver-package` commit `37836b0b3ec22c7d8190aa39168f21641c0067ff`
+
 **This document is the operator contract for the no-production candidate package.** It is not KIV-14 acceptance, not PCSB-3 capture authority, and not §7 fixture evidence.
 
 ## Governing pins (recomputed at package prep)
@@ -23,8 +26,8 @@ A complete PCSB query/driver candidate required by operative procedure §§5.2, 
 
 It may be used later by a **separately authorized** capturer only after:
 
-1. PM terminal intake of KIV-217;
-2. independent reviewer PASS / hash-pin of the **unchanged** package;
+1. PM terminal intake of KIV-218;
+2. independent reviewer PASS / hash-pin of the **unchanged** successor package;
 3. a later, separately governed PCSB-3 capture work order.
 
 Until then: **zero** production/Supabase authentication and **zero** production SQL.
@@ -92,7 +95,9 @@ PYTHONPATH=. python -m kiv14_pcsb preflight
 PYTHONPATH=. python -m kiv14_pcsb capture   # always exit 2 / REFUSED
 ```
 
-Disposable PostgreSQL **17.6** is expected at `$KIVO_KIV217_PG176_PREFIX` or `/tmp/kivo-kiv217-pg176/prefix` (`postgres (PostgreSQL) 17.6`). Clusters listen on `127.0.0.1` only.
+Disposable PostgreSQL **17.6** is expected at `$KIVO_KIV218_PG176_PREFIX` or `/tmp/kivo-kiv218-supabase-pg176/work-prefix`, which must be the official `supabase-postgres-v17.6.1.150-cli-darwin-arm64` extract (SHA-256 `e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6`, tag commit `a97b439c4a9033f9d40080623a688ddcda2961ff`). Clusters listen on `127.0.0.1` only. Never mix Homebrew/system PostgreSQL into the Class B cluster.
+
+Exact source pins: `tools/governance/kiv14_acceptance_recovery/topology/SOURCE_PIN.json`.
 
 ## Preflight (P5–P7)
 
@@ -100,11 +105,13 @@ Class A and Class B preflight is **tooling/query validation only**. It is not §
 
 **Class A:** clean disposable 17.6, no Kivo/Supabase objects created. (1) Capture-contract session: P-0 first, expected FAIL/SQL error on absent tables, later SQL blocked. (2) Separate tooling connection labeled `class_a_tooling_validation_not_capture` executes only Class A SQL and checks output columns. That second connection is **not** a PCSB capture.
 
-**Class B:** method 1 only — apply the accepted integration merge tree `585d340c6b7ec28618b22c6fec49fd271aa47813` (parents `d5b4b1dd…` then `cc74e14c…`) in filename order via `psql` as **bootstrap**, never as the capture driver. Exact `0108` blob `7b500626331dd4eaf4620d29c95953740f6e5541` and exact `0109` blob `8923ed066d21a5cbac5f6ffc47606aee9b5c9c07` are recomputed from that tree before apply.
+**Class B:** official Supabase CLI 17.6 platform baseline (prerequisite presentation only) **then** method 1 — apply the accepted integration merge tree `585d340c6b7ec28618b22c6fec49fd271aa47813` (parents `d5b4b1dd…` then `cc74e14c…`) in filename order via `psql` as **bootstrap** (`supabase_admin`), never as the capture driver. Exact `0108` blob `7b500626331dd4eaf4620d29c95953740f6e5541` and exact `0109` blob `8923ed066d21a5cbac5f6ffc47606aee9b5c9c07` are recomputed from that tree before apply. `0108`/`0109` are applied with `psql --single-transaction` as those files require; `0059` is not transaction-wrapped because it uses `CREATE INDEX CONCURRENTLY`. Class B query validation then uses the demoted official `postgres` role so `PF-4-SET-ROLE` is the expected `42501` denial.
 
-`0001_init.sql` both (1) `CREATE EXTENSION pgcrypto` and (2) references `auth.users(id)`. This disposable 17.6 prefix does not ship pgcrypto contrib (openssl headers were not present to build it from the same tarball), and bare PostgreSQL does not provide Supabase `auth`. Inventing `pgcrypto`, `auth.users`, request-GUCs, or platform roles is forbidden (§5.9 / AR-HS-25). Method-1 apply therefore fails closed. The package **does not validate Class B queries** and remains **HOLD** for Class B topology. Class B SQL is still fully packaged for independent review.
+The CLI tarball already ships `pgcrypto` and the official `migrate.sh` / init-scripts that create `auth`, `auth.users`, platform roles, `auth.uid()`, and request-GUC helpers (`current_setting('request.jwt.claim.sub', true)`). `pgmq` is omitted from the CLI variant receipt; the same `supabase/postgres` pin's `nix/ext/pgmq` installs SQL-only `pgmq` 1.5.1 from `tembo-io/pgmq` `7fd411d8…`. Those exact control/SQL bytes are vendored under `topology/pgmq/` and copied into the prefix if missing. That is source-derived platform presentation, not Kivo DDL invention and not a third bootstrap. On darwin, official `libiconv.dylib` may need an adhoc `codesign --force --sign -` repair when AMFI rejects the tarball signature; that is host codesign repair, not SQL invention.
 
-No third bootstrap recipe. No dump shortcut. No ad-hoc DDL.
+Bare PostgreSQL (no official CLI `migrate.sh`) still HOLDs on `auth.users` / missing platform objects. Homebrew/other PG builds are not mixed in.
+
+No third Kivo bootstrap recipe. No dump shortcut. No ad-hoc DDL.
 
 ## Safety (P9)
 
@@ -112,4 +119,7 @@ Default conninfo is loopback only. The package refuses `supabase.co` / pooler ho
 
 ## Terminal law
 
-KIV-217 completion does **not** authorize PCSB-3. Leave KIV-217 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
+KIV-218 completion does **not** authorize PCSB-3. Leave KIV-218 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
+
+READY line: `A2 ACCEPTANCE-RECOVERY QUERY/DRIVER PACKAGE REMEDIATION READY FOR INDEPENDENT REVIEW`  
+HOLD line: `A2 ACCEPTANCE-RECOVERY QUERY/DRIVER PACKAGE REMEDIATION HOLD`

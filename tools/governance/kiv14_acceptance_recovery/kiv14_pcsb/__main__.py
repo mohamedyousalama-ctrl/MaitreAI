@@ -36,12 +36,12 @@ def cmd_manifest() -> int:
 def cmd_preflight() -> int:
     payload = run_preflight()
     sys.stdout.write(canonical_dumps({"terminal_verdict": payload["terminal_verdict"], "hold_findings": payload["hold_findings"]}))
-    return 0 if payload.get("class_a_preflight_ok") else 1
+    return 0 if payload.get("class_a_preflight_ok") and payload.get("class_b_validated") else 1
 
 
 def cmd_capture() -> int:
     sys.stderr.write(
-        "REFUSED: KIV-217 does not authorize production authentication, "
+        "REFUSED: KIV-218 does not authorize production authentication, "
         "Supabase SQL, or PCSB-n capture. Zero production/Supabase auth/SQL.\n"
     )
     return 2
@@ -50,13 +50,13 @@ def cmd_capture() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kiv14_pcsb",
-        description="KIV-217 no-production A2 PCSB query/driver package",
+        description="KIV-218 no-production A2 PCSB query/driver package remediation",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("selftest", help="run package self-tests")
     sub.add_parser("manifest", help="write deterministic package_manifest.json")
     sub.add_parser("preflight", help="Class A + Class B PG 17.6 preflight")
-    sub.add_parser("capture", help="always refused under KIV-217")
+    sub.add_parser("capture", help="always refused under KIV-218")
     args = parser.parse_args(argv)
     if args.command == "selftest":
         return cmd_selftest()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from kiv14_pcsb.constants import P0_QUERY_SHA256
+from kiv14_pcsb.constants import P0_QUERY_SHA256, PGMQ_CONTROL_SHA256, PGMQ_SQL_SHA256, PGMQ_VERSION
 from kiv14_pcsb.statements import QueryClass, STATEMENTS, package_root, statement_by_id, verify_p0_pin
 from kiv14_pcsb.static_validate import (
     validate_all_statement_contracts,
@@ -49,3 +49,15 @@ def test_capture_order_ends_at_ps_time_end():
     assert ids.index("PS-GRANT-FUNCTION") < ids.index("PS-OWN")
     assert ids.index("G2") == ids.index("G1") + 1
     assert ids.index("PS-TIME-START") == ids.index("P-0") + 1
+
+
+def test_vendored_pgmq_pins():
+    from hashlib import sha256
+
+    root = package_root() / "topology" / "pgmq"
+    control = (root / "pgmq.control").read_bytes()
+    sql = (root / f"pgmq--{PGMQ_VERSION}.sql").read_bytes()
+    assert sha256(control).hexdigest() == PGMQ_CONTROL_SHA256
+    assert sha256(sql).hexdigest() == PGMQ_SQL_SHA256
+    assert b"LANGUAGE C" not in sql
+    assert b"MODULE_PATHNAME" not in sql

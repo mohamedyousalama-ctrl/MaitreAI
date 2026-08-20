@@ -13,6 +13,8 @@ from .constants import (
     BACKEND_PID_METHOD,
     DRIVER_PACKAGE,
     DRIVER_VERSION,
+    KIV217_PUBLISHED_BRANCH,
+    KIV217_PUBLISHED_COMMIT,
     OPERATIVE_PROCEDURE_BLOB,
     OPERATIVE_PROCEDURE_COMMIT,
     OPERATIVE_PROCEDURE_PATH,
@@ -21,6 +23,10 @@ from .constants import (
     PACKAGE_ID,
     PACKAGE_VERSION,
     P0_QUERY_SHA256,
+    PG176_TARBALL_ASSET,
+    PG176_TARBALL_SHA256,
+    SUPABASE_POSTGRES_COMMIT,
+    SUPABASE_POSTGRES_TAG,
 )
 from .driver import driver_identity
 from .statements import Origin, QueryClass, STATEMENTS, package_root, verify_p0_pin
@@ -132,7 +138,7 @@ def build_package_manifest(root: Path | None = None) -> dict[str, Any]:
         "not_section7_fixture_evidence": True,
         "not_production_evidence": True,
         "production_supabase_auth_sql_count": 0,
-        "capture_command": "REFUSED by this package; KIV-217 does not authorize capture",
+        "capture_command": "REFUSED by this package; KIV-218 does not authorize capture",
         "operative_procedure": {
             "commit": OPERATIVE_PROCEDURE_COMMIT,
             "path": OPERATIVE_PROCEDURE_PATH,
@@ -145,6 +151,18 @@ def build_package_manifest(root: Path | None = None) -> dict[str, Any]:
         "driver_pin": {
             "python_package": DRIVER_PACKAGE,
             "python_package_version": DRIVER_VERSION,
+        },
+        "kiv217_published_custody": {
+            "branch": KIV217_PUBLISHED_BRANCH,
+            "commit": KIV217_PUBLISHED_COMMIT,
+        },
+        "platform_baseline": {
+            "supabase_postgres_tag": SUPABASE_POSTGRES_TAG,
+            "supabase_postgres_commit": SUPABASE_POSTGRES_COMMIT,
+            "cli_tarball_asset": PG176_TARBALL_ASSET,
+            "cli_tarball_sha256": PG176_TARBALL_SHA256,
+            "source_pin_path": "topology/SOURCE_PIN.json",
+            "not_third_kivo_bootstrap": True,
         },
         "static_order_by_checked_ids": checked,
         "class_inventory": class_inventory(),
