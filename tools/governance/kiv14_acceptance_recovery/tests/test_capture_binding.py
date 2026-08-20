@@ -24,6 +24,7 @@ from kiv14_pcsb.constants import (
     GOVERNANCE_DISCLAIMER,
     KIV220_ACCEPTED_HASH_OF_HASHES,
     PACKAGE_ID,
+    ROUTE_CLASS_DIRECT_POSTGRES,
     ROUTE_CLASS_LOOPBACK,
     ROUTE_CLASS_SESSION_POOLER,
 )
@@ -44,6 +45,11 @@ POOLER_USER = "postgres.zlighrbsjexrozrmuwpw"
 POOLER_REF = "zlighrbsjexrozrmuwpw"
 POOLER_CONNINFO = (
     f"host={POOLER_HOST} port=5432 dbname=postgres user={POOLER_USER} sslmode=require"
+)
+DIRECT_HOST = "db.zlighrbsjexrozrmuwpw.supabase.co"
+DIRECT_USER = "postgres"
+DIRECT_CONNINFO = (
+    f"host={DIRECT_HOST} port=5432 dbname=postgres user={DIRECT_USER} sslmode=require"
 )
 
 
@@ -73,6 +79,19 @@ def _target_pooler() -> dict:
         "port": 5432,
         "database": "postgres",
         "user": POOLER_USER,
+        "sslmode": "require",
+    }
+
+
+def _target_direct() -> dict:
+    return {
+        "route_class": ROUTE_CLASS_DIRECT_POSTGRES,
+        "project_name": "MaitreAi",
+        "project_ref": POOLER_REF,
+        "host": DIRECT_HOST,
+        "port": 5432,
+        "database": "postgres",
+        "user": DIRECT_USER,
         "sslmode": "require",
     }
 
@@ -137,6 +156,8 @@ def test_default_path_still_refuses_remote_and_allow_remote(monkeypatch):
     with pytest.raises(ProductionTargetRefused):
         PersistentCaptureSession(POOLER_CONNINFO).connect()
     with pytest.raises(ProductionTargetRefused):
+        PersistentCaptureSession(DIRECT_CONNINFO).connect()
+    with pytest.raises(ProductionTargetRefused):
         assert_not_production_target("host=127.0.0.1 port=1 dbname=x user=x", allow_remote=True)
 
 
@@ -146,7 +167,7 @@ def test_missing_malformed_wrong_work_order_refuses_before_connect(tmp_path, mon
 
     monkeypatch.setattr("kiv14_pcsb.driver.reviewed_psycopg_connect", boom)
     dest = tmp_path / "ev"
-    good = _authority_dict(dest=dest, target=_target_pooler())
+    good = _authority_dict(dest=dest, target=_target_direct())
     with pytest.raises(CaptureAuthorityRefused, match="malformed work_order_id"):
         parse_capture_authority({**good, "work_order_id": "WO-1"})
     with pytest.raises(CaptureAuthorityRefused, match="missing keys"):
@@ -155,7 +176,7 @@ def test_missing_malformed_wrong_work_order_refuses_before_connect(tmp_path, mon
     invocation = CaptureInvocation("KIV-1", authority.pcsb_identity, authority.evidence_directory)
     runner = AuthorizedCaptureRunner()
     with pytest.raises(CaptureAuthorityRefused, match="work_order_id does not match"):
-        runner.run(authority=authority, invocation=invocation, conninfo=POOLER_CONNINFO)
+        runner.run(authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO)
 
 
 def test_wrong_pcsb_package_hash_and_target_refuse_before_connect(tmp_path, monkeypatch):
@@ -165,12 +186,12 @@ def test_wrong_pcsb_package_hash_and_target_refuse_before_connect(tmp_path, monk
     monkeypatch.setattr("kiv14_pcsb.driver.reviewed_psycopg_connect", boom)
     dest = tmp_path / "ev"
     with pytest.raises(CaptureAuthorityRefused, match="permanently incomplete"):
-        parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler(), pcsb="PCSB-1"))
+        parse_capture_authority(_authority_dict(dest=dest, target=_target_direct(), pcsb="PCSB-1"))
     with pytest.raises(CaptureAuthorityRefused, match="malformed pcsb_identity"):
-        parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler(), pcsb="pcsb-3"))
+        parse_capture_authority(_authority_dict(dest=dest, target=_target_direct(), pcsb="pcsb-3"))
     bad_hash = _authority_dict(
         dest=dest,
-        target=_target_pooler(),
+        target=_target_direct(),
         package_hash_of_hashes="f" * 64,
     )
     authority = parse_capture_authority(bad_hash)
@@ -179,15 +200,11 @@ def test_wrong_pcsb_package_hash_and_target_refuse_before_connect(tmp_path, monk
     )
     with pytest.raises(CaptureAuthorityRefused, match="hash_of_hashes"):
         AuthorizedCaptureRunner().run(
-            authority=authority, invocation=invocation, conninfo=POOLER_CONNINFO
+            authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
         )
-    matching = parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler()))
+    matching = parse_capture_authority(_authority_dict(dest=dest, target=_target_direct()))
     with pytest.raises(CaptureAuthorityRefused, match="host does not match"):
-        assert_authorized_capture_target(
-            "host=db.zlighrbsjexrozrmuwpw.supabase.co port=5432 dbname=postgres "
-            f"user={POOLER_USER} sslmode=require",
-            matching,
-        )
+        assert_authorized_capture_target(POOLER_CONNINFO, matching)
 
 
 def test_authorized_target_reaches_reviewed_factory_only_when_bound(tmp_path, monkeypatch):
@@ -199,14 +216,14 @@ def test_authorized_target_reaches_reviewed_factory_only_when_bound(tmp_path, mo
 
     monkeypatch.setattr("kiv14_pcsb.driver.reviewed_psycopg_connect", fake_connect)
     dest = tmp_path / "ev"
-    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler()))
+    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_direct()))
     with pytest.raises(ProductionTargetRefused):
         PersistentCaptureSession(POOLER_CONNINFO).connect()
     assert reached == []
-    session = PersistentCaptureSession(POOLER_CONNINFO, authority=authority)
+    session = PersistentCaptureSession(DIRECT_CONNINFO, authority=authority)
     session.connect()
     try:
-        assert reached == [POOLER_CONNINFO]
+        assert reached == [DIRECT_CONNINFO]
         assert session.pre_p0_backend_pid == 4242
         assert session.sql_log == []
     finally:
@@ -281,15 +298,15 @@ def test_evidence_refuses_secrets(tmp_path):
 def test_runner_has_no_retry_path(tmp_path, monkeypatch):
     monkeypatch.setattr("kiv14_pcsb.driver.reviewed_psycopg_connect", lambda _c: _FakeConn())
     dest = tmp_path / "ev-retry"
-    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler()))
+    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_direct()))
     invocation = CaptureInvocation(
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
     runner = AuthorizedCaptureRunner()
-    payload = runner.run(authority=authority, invocation=invocation, conninfo=POOLER_CONNINFO)
+    payload = runner.run(authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO)
     assert payload["retry"] is False
     with pytest.raises(SequenceViolation, match="retry"):
-        runner.run(authority=authority, invocation=invocation, conninfo=POOLER_CONNINFO)
+        runner.run(authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO)
 
 
 def test_default_capture_command_still_refused():
@@ -300,7 +317,7 @@ def test_default_capture_command_still_refused():
 def test_authorized_capture_cli_refuses_mismatched_binding(tmp_path, monkeypatch):
     monkeypatch.setattr("kiv14_pcsb.driver.reviewed_psycopg_connect", lambda _c: _FakeConn())
     dest = tmp_path / "ev-cli"
-    payload = _authority_dict(dest=dest, target=_target_pooler())
+    payload = _authority_dict(dest=dest, target=_target_direct())
     authority_path = _write_authority(tmp_path, payload)
     conn_path = tmp_path / "conninfo"
     conn_path.write_text(POOLER_CONNINFO)
@@ -332,25 +349,47 @@ def test_authority_file_roundtrip(tmp_path):
 
 def test_direct_db_host_and_transaction_port_rejected(tmp_path):
     dest = tmp_path / "ev"
-    with pytest.raises(CaptureAuthorityRefused, match="direct db"):
+    with pytest.raises(CaptureAuthorityRefused, match="continuity-ineligible"):
+        parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler()))
+    with pytest.raises(CaptureAuthorityRefused, match="6543"):
+        parse_capture_authority(
+            _authority_dict(dest=dest, target={**_target_direct(), "port": 6543})
+        )
+    with pytest.raises(CaptureAuthorityRefused, match="6543"):
+        parse_capture_authority(
+            _authority_dict(
+                dest=dest,
+                target={**_target_direct(), "port": 6543},
+            )
+        )
+    dedicated = {
+        **_target_direct(),
+        "port": 6543,
+    }
+    with pytest.raises(CaptureAuthorityRefused, match="6543"):
+        parse_capture_authority(_authority_dict(dest=dest, target=dedicated))
+    with pytest.raises(CaptureAuthorityRefused, match="host/project_ref mismatch"):
         parse_capture_authority(
             _authority_dict(
                 dest=dest,
                 target={
-                    **_target_pooler(),
-                    "host": "db.zlighrbsjexrozrmuwpw.supabase.co",
+                    **_target_direct(),
+                    "host": "db.otherref.supabase.co",
                 },
             )
         )
-    with pytest.raises(CaptureAuthorityRefused, match="6543"):
+    with pytest.raises(CaptureAuthorityRefused, match="postgres.<ref>"):
         parse_capture_authority(
-            _authority_dict(dest=dest, target={**_target_pooler(), "port": 6543})
+            _authority_dict(
+                dest=dest,
+                target={**_target_direct(), "user": POOLER_USER},
+            )
         )
 
 
 def test_secret_key_in_authority_rejected(tmp_path):
     dest = tmp_path / "ev"
-    payload = _authority_dict(dest=dest, target=_target_pooler())
+    payload = _authority_dict(dest=dest, target=_target_direct())
     payload["password"] = "nope"
     with pytest.raises(CaptureAuthorityRefused, match="unknown keys"):
         parse_capture_authority(payload)
@@ -411,15 +450,15 @@ def test_normal_checkout_exact_commit_passes_package_identity(tmp_path, monkeypa
     dest = tmp_path / "ev-match"
     head = current_package_commit()
     assert len(head) == 40
-    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler()))
+    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_direct()))
     assert authority.package_commit == head
     invocation = CaptureInvocation(
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
     AuthorizedCaptureRunner().run(
-        authority=authority, invocation=invocation, conninfo=POOLER_CONNINFO
+        authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
     )
-    assert reached == [POOLER_CONNINFO]
+    assert reached == [DIRECT_CONNINFO]
 
 
 def test_wrong_arbitrary_commit_never_reaches_factory(tmp_path, monkeypatch):
@@ -435,14 +474,14 @@ def test_wrong_arbitrary_commit_never_reaches_factory(tmp_path, monkeypatch):
     live = current_package_commit()
     assert wrong != live
     authority = parse_capture_authority(
-        _authority_dict(dest=dest, target=_target_pooler(), package_commit=wrong)
+        _authority_dict(dest=dest, target=_target_direct(), package_commit=wrong)
     )
     invocation = CaptureInvocation(
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
     with pytest.raises(CaptureAuthorityRefused, match="package_commit"):
         AuthorizedCaptureRunner().run(
-            authority=authority, invocation=invocation, conninfo=POOLER_CONNINFO
+            authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
         )
     with pytest.raises(CaptureAuthorityRefused, match="package_commit"):
         PersistentCaptureSession(POOLER_CONNINFO, authority=authority).connect()
@@ -459,7 +498,7 @@ def test_missing_repo_and_exported_tree_refuse_before_factory(tmp_path, monkeypa
     export = _copy_package(tmp_path / "exported-tree")
     with pytest.raises(CaptureAuthorityRefused, match="repository root cannot be proved"):
         current_package_commit(export)
-    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler()))
+    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_direct()))
     invocation = CaptureInvocation(
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
@@ -467,7 +506,7 @@ def test_missing_repo_and_exported_tree_refuse_before_factory(tmp_path, monkeypa
         AuthorizedCaptureRunner().run(
             authority=authority,
             invocation=invocation,
-            conninfo=POOLER_CONNINFO,
+            conninfo=DIRECT_CONNINFO,
             root=export,
         )
     missing = tmp_path / "no-repo" / "tools" / "governance" / "kiv14_acceptance_recovery"
@@ -484,7 +523,7 @@ def test_git_executable_error_and_timeout_refuse_before_factory(tmp_path, monkey
         lambda conninfo: reached.append(conninfo) or _FakeConn(),
     )
     dest = tmp_path / "ev-gitfail"
-    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler()))
+    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_direct()))
     invocation = CaptureInvocation(
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
@@ -495,7 +534,7 @@ def test_git_executable_error_and_timeout_refuse_before_factory(tmp_path, monkey
     monkeypatch.setattr("kiv14_pcsb.authority.subprocess.run", missing_git)
     with pytest.raises(CaptureAuthorityRefused, match="Git executable is unavailable"):
         AuthorizedCaptureRunner().run(
-            authority=authority, invocation=invocation, conninfo=POOLER_CONNINFO
+            authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
         )
 
     def timeout_git(*_a, **_k):
@@ -504,7 +543,7 @@ def test_git_executable_error_and_timeout_refuse_before_factory(tmp_path, monkey
     monkeypatch.setattr("kiv14_pcsb.authority.subprocess.run", timeout_git)
     runner = AuthorizedCaptureRunner()
     with pytest.raises(CaptureAuthorityRefused, match="timed out"):
-        runner.run(authority=authority, invocation=invocation, conninfo=POOLER_CONNINFO)
+        runner.run(authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO)
     assert reached == []
 
 
@@ -515,7 +554,7 @@ def test_malformed_and_unavailable_head_refuse_before_factory(tmp_path, monkeypa
         lambda conninfo: reached.append(conninfo) or _FakeConn(),
     )
     dest = tmp_path / "ev-head"
-    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler()))
+    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_direct()))
     invocation = CaptureInvocation(
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
@@ -536,7 +575,7 @@ def test_malformed_and_unavailable_head_refuse_before_factory(tmp_path, monkeypa
     monkeypatch.setattr("kiv14_pcsb.authority.subprocess.run", malformed_head)
     with pytest.raises(CaptureAuthorityRefused, match="Git HEAD is malformed"):
         AuthorizedCaptureRunner().run(
-            authority=authority, invocation=invocation, conninfo=POOLER_CONNINFO
+            authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
         )
     assert reached == []
 
@@ -553,7 +592,7 @@ def test_detached_head_match_accepted_mismatch_refuses(tmp_path, monkeypatch):
     assert proved == head
     dest = tmp_path / "ev-detach"
     matching = parse_capture_authority(
-        _authority_dict(dest=dest, target=_target_pooler(), package_commit=head)
+        _authority_dict(dest=dest, target=_target_direct(), package_commit=head)
     )
     invocation = CaptureInvocation(
         matching.work_order_id, matching.pcsb_identity, matching.evidence_directory
@@ -561,13 +600,13 @@ def test_detached_head_match_accepted_mismatch_refuses(tmp_path, monkeypatch):
     AuthorizedCaptureRunner().run(
         authority=matching,
         invocation=invocation,
-        conninfo=POOLER_CONNINFO,
+        conninfo=DIRECT_CONNINFO,
         root=pkg,
     )
-    assert reached == [POOLER_CONNINFO]
+    assert reached == [DIRECT_CONNINFO]
     reached.clear()
     mismatch = parse_capture_authority(
-        _authority_dict(dest=dest / "b", target=_target_pooler(), package_commit="b" * 40)
+        _authority_dict(dest=dest / "b", target=_target_direct(), package_commit="b" * 40)
     )
     mismatch_invocation = CaptureInvocation(
         mismatch.work_order_id, mismatch.pcsb_identity, mismatch.evidence_directory
@@ -576,7 +615,7 @@ def test_detached_head_match_accepted_mismatch_refuses(tmp_path, monkeypatch):
         AuthorizedCaptureRunner().run(
             authority=mismatch,
             invocation=mismatch_invocation,
-            conninfo=POOLER_CONNINFO,
+            conninfo=DIRECT_CONNINFO,
             root=pkg,
         )
     assert reached == []
@@ -608,7 +647,7 @@ def test_manifest_and_hash_mismatch_still_refuse(tmp_path, monkeypatch):
     )
     dest = tmp_path / "ev-pins"
     bad_manifest = parse_capture_authority(
-        _authority_dict(dest=dest, target=_target_pooler(), package_manifest_sha256="c" * 64)
+        _authority_dict(dest=dest, target=_target_direct(), package_manifest_sha256="c" * 64)
     )
     invocation = CaptureInvocation(
         bad_manifest.work_order_id,
@@ -617,18 +656,87 @@ def test_manifest_and_hash_mismatch_still_refuse(tmp_path, monkeypatch):
     )
     with pytest.raises(CaptureAuthorityRefused, match="package_manifest_sha256"):
         AuthorizedCaptureRunner().run(
-            authority=bad_manifest, invocation=invocation, conninfo=POOLER_CONNINFO
+            authority=bad_manifest, invocation=invocation, conninfo=DIRECT_CONNINFO
         )
     bad_hash = parse_capture_authority(
-        _authority_dict(dest=dest / "h", target=_target_pooler(), package_hash_of_hashes="d" * 64)
+        _authority_dict(dest=dest / "h", target=_target_direct(), package_hash_of_hashes="d" * 64)
     )
     hash_invocation = CaptureInvocation(
         bad_hash.work_order_id, bad_hash.pcsb_identity, bad_hash.evidence_directory
     )
     with pytest.raises(CaptureAuthorityRefused, match="hash_of_hashes"):
         AuthorizedCaptureRunner().run(
-            authority=bad_hash, invocation=hash_invocation, conninfo=POOLER_CONNINFO
+            authority=bad_hash, invocation=hash_invocation, conninfo=DIRECT_CONNINFO
         )
     assert reached == []
-    matching = parse_capture_authority(_authority_dict(dest=dest / "ok", target=_target_pooler()))
+    matching = parse_capture_authority(_authority_dict(dest=dest / "ok", target=_target_direct()))
     assert_authority_matches_this_package(matching)
+
+
+def test_session_pooler_and_pooler_hosts_refuse_before_factory(tmp_path, monkeypatch):
+    reached: list[str] = []
+    monkeypatch.setattr(
+        "kiv14_pcsb.driver.reviewed_psycopg_connect",
+        lambda conninfo: reached.append(conninfo) or _FakeConn(),
+    )
+    dest = tmp_path / "ev-pooler"
+    with pytest.raises(CaptureAuthorityRefused, match="continuity-ineligible"):
+        parse_capture_authority(_authority_dict(dest=dest, target=_target_pooler()))
+    with pytest.raises(CaptureAuthorityRefused, match=r"pooler\.supabase\.com"):
+        parse_capture_authority(
+            _authority_dict(
+                dest=dest,
+                target={
+                    **_target_direct(),
+                    "host": "aws-0-eu-west-1.pooler.supabase.com",
+                    "user": DIRECT_USER,
+                },
+            )
+        )
+    with pytest.raises(CaptureAuthorityRefused, match="KIV-226"):
+        parse_capture_authority(
+            _authority_dict(
+                dest=dest,
+                target={
+                    **_target_direct(),
+                    "host": POOLER_HOST,
+                    "user": DIRECT_USER,
+                },
+            )
+        )
+    assert reached == []
+
+
+def test_correct_direct_postgres_reaches_factory_after_pre_connect_checks(tmp_path, monkeypatch):
+    reached: list[str] = []
+    monkeypatch.setattr(
+        "kiv14_pcsb.driver.reviewed_psycopg_connect",
+        lambda conninfo: reached.append(conninfo) or _FakeConn(),
+    )
+    dest = tmp_path / "ev-direct-ok"
+    authority = parse_capture_authority(_authority_dict(dest=dest, target=_target_direct()))
+    invocation = CaptureInvocation(
+        authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
+    )
+    payload = AuthorizedCaptureRunner().run(
+        authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
+    )
+    assert reached == [DIRECT_CONNINFO]
+    assert payload["retry"] is False
+    pre_auth = dest / "capture_pre_auth.json"
+    text = pre_auth.read_text()
+    assert "password" not in text.lower()
+    assert "2600:1f16" not in text
+    contract = payload["authorized_target"]
+    assert contract["route_class"] == ROUTE_CLASS_DIRECT_POSTGRES
+    assert contract["host"] == DIRECT_HOST
+    import json as _json
+
+    recorded = _json.loads(text)
+    assert recorded["later_executor_pre_auth_contract"]["kiv228_feasibility_receipt"][
+        "aaaa_literal_frozen"
+    ] is False
+    assert recorded["later_executor_pre_auth_contract"]["kiv228_observed_aaaa_must_not_be_frozen"] is True
+    assert recorded["connection_attempted"] is True
+    assert recorded["sql_attempted"] is False
+

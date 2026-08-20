@@ -1,15 +1,16 @@
-# KIV-217 A2 PCSB query/driver package — KIV-224 package-commit binding operator contract
+# KIV-217 A2 PCSB query/driver package — KIV-229 direct-postgres route operator contract
 
-**Context:** `KIVO-A2-RECOVERY-PACKAGE-COMMIT-BUILDER-224`  
+**Context:** `KIVO-A2-RECOVERY-DIRECT-ROUTE-PACKAGE-BUILDER-229`  
 **Package id:** `KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE`  
-**Package version:** `0.1.3-kiv224-package-commit-binding-candidate`  
+**Package version:** `0.1.4-kiv229-direct-postgres-route-candidate`  
+**KIV-224 accepted parent (package-commit binding, continuity-ineligible on Session Pooler):** commit `f260efd4df4c377af4493fe58d94dd432c306136`  
 **KIV-221 blocked parent (capture-binding candidate, not hash-pinned):** commit `886fbf580a1f51c5e1354459919d21d7477e4968`  
 **KIV-220 accepted parent (unchanged SQL / hash-of-hashes):** commit `8cc7331aa19eb90f3cf5c7625e074ccd5c134638`  
 **KIV-217 published custody (unchanged grandparent object):** branch `claude/kiv-217-a2-pcsb-query-driver-package` commit `37836b0b3ec22c7d8190aa39168f21641c0067ff`
 
-**This document is the operator contract for the no-production candidate package plus the KIV-221 authorization-bound capture invocation seam as remediated by KIV-224 fail-closed package-commit identity.** It is not KIV-14 acceptance, not PCSB-3 capture authority, not KIV-224 governance authority, and not §7 fixture evidence.
+**This document is the operator contract for the no-production candidate package plus the KIV-229 authority-bound `direct-postgres` route class.** It is not KIV-14 acceptance, not PCSB-4 capture authority, not KIV-229 governance authority, and not §7 fixture evidence. Production statement SQL is byte-identical to exact `f260efd4…`.
 
-## Capture-binding seam (KIV-221 + KIV-224)
+## Capture-binding seam (KIV-221 + KIV-224 + KIV-229)
 
 Default behavior remains fail-closed and no-production:
 
@@ -25,7 +26,7 @@ The reviewed production-capable path is **disabled until** a later separately re
 
 Required authority bindings: work-order id, `PCSB-n` identity (not PCSB-1/2), this package id, exact package commit, live `package_manifest.json` SHA-256, live statement hash-of-hashes, authorized target non-secret identity, evidence directory, and the exact governance disclaimer that **possession of runtime parameters does not create Linear/PM authority**.
 
-Package Git identity is **fail-closed before authentication**:
+Package Git identity is **fail-closed before authentication** (unchanged from KIV-224):
 
 * repository discovery walks from the package directory until it finds a `.git` directory or a `.git` worktree file — it does not use a fixed ancestor index;
 * exact current `HEAD` must resolve to a 40-character lowercase commit SHA;
@@ -35,9 +36,48 @@ Package Git identity is **fail-closed before authentication**:
 * manifest SHA / hash-of-hashes remain independent additional bindings, not substitutes for commit identity;
 * a wrong or unavailable package commit never reaches `reviewed_psycopg_connect`.
 
-This package does **not** encode KIV-224 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
+This package does **not** encode KIV-229 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
 
-Target authorization is checked **before** `reviewed_psycopg_connect` and without SQL. Mismatched/missing/malformed authority refuses before authentication. Direct `db.<ref>.supabase.co` and transaction-mode port `6543` cannot be authorized. There is no environment-only switch, monkey-patch, or `allow_remote` bypass.
+Target authorization is checked **before** `reviewed_psycopg_connect` and without SQL. Mismatched/missing/malformed authority refuses before authentication. There is no environment-only switch, monkey-patch, or `allow_remote` bypass.
+
+### Direct-postgres route class (KIV-229)
+
+`CaptureAuthority.authorized_target.route_class` may be:
+
+* `loopback-disposable` — tests/tooling only;
+* `direct-postgres` — the only reviewed production-capable class.
+
+`session-mode-pooler` is **continuity-ineligible** after KIV-226 (`PQbackendPID` ≠ SQL `pg_backend_pid()` on the Supavisor Shared Session Pooler). Requesting that class, host `*.pooler.supabase.com`, historical KIV-226 target `aws-1-us-east-2.pooler.supabase.com:5432`, transaction/dedicated-pooler port `6543`, `db.<ref>.supabase.co:6543`, pooler username `postgres.<ref>`, or a project-ref / direct-host mismatch is a pre-auth refusal.
+
+For `direct-postgres` the bound identity must be exactly:
+
+* host `db.<project_ref>.supabase.co`
+* port `5432`
+* database `postgres`
+* user `postgres` (official direct role; not the Shared Pooler `postgres.<ref>` form)
+* sslmode `require`
+
+Current official Supabase docs (connecting-to-postgres) distinguish:
+
+| Route | Host:port | This package |
+| --- | --- | --- |
+| Direct Postgres | `db.[project-id].supabase.co:5432` | `direct-postgres` only |
+| Shared Pooler session | `aws-[region].pooler.supabase.com:5432` | refused (continuity-ineligible) |
+| Shared Pooler transaction | `aws-[region].pooler.supabase.com:6543` | refused |
+| Dedicated Pooler | `db.[project-id].supabase.co:6543` | refused |
+
+KIV-228 feasibility PASS is **receipt only**: project `MaitreAi`, ref `zlighrbsjexrozrmuwpw`, direct host `db.zlighrbsjexrozrmuwpw.supabase.co`, port `5432`. The observed AAAA literal is **not** frozen as server identity. DNS may change.
+
+### Later-executor pre-auth contract (IPv6 / current-route)
+
+Any later production work order/capturer must independently revalidate **before authentication**:
+
+1. authoritative current direct host/project association;
+2. current DNS address family (A and AAAA recorded separately);
+3. executor-host reachability for at least one currently supported address family;
+4. no unapproved paid/infrastructure change.
+
+Bind the later authority to hostname/project/port/database/user/sslmode, **not** a transient AAAA literal. If a later executor is IPv4-only or a paid IPv4 add-on would be needed, the later work order must HOLD and return to Founder before any change. This package does not perform production raw-TCP re-probing.
 
 `AuthorizedCaptureRunner` is single-shot: no retry parameter, no reconnect, no second `connect`, no same-runner restart. It reuses `PersistentCaptureSession` + the unchanged statement sequence through PS-TIME end.
 
@@ -64,10 +104,11 @@ A complete PCSB query/driver candidate required by operative procedure §§5.2, 
 It may be used later by a **separately authorized** capturer only after:
 
 1. KIV-220 independent PASS / PM hash-pin of exact parent `8cc7331…` (already recorded);
-2. independent reviewer PASS / hash-pin of this KIV-224 successor package-commit binding;
-3. a later, separately governed PCSB-n capture work order that supplies matching `CaptureAuthority`.
+2. KIV-225 independent PASS / PM hash-pin of exact `f260efd4…` package-commit binding (already recorded; continuity-ineligible on Session Pooler);
+3. independent reviewer PASS / hash-pin of this KIV-229 successor direct-postgres route;
+4. a later, separately governed PCSB-n capture work order that supplies matching `CaptureAuthority` for `direct-postgres`.
 
-Until then: **zero** production/Supabase authentication and **zero** production SQL.
+Until then: **zero** production/Supabase authentication and **zero** production SQL. This work order creates **no PCSB-4** authority.
 
 ## Driver identity (P1)
 
@@ -134,7 +175,9 @@ PYTHONPATH=. python -m kiv14_pcsb authorized-capture \
   --authority FILE --work-order KIV-n --pcsb PCSB-n \
   --conninfo-file FILE --evidence-dir DIR
 # authorized-capture still refuses unless a later Linear work order supplies
-# matching non-secret authority. KIV-224 does not invoke it against production.
+# matching non-secret authority. KIV-229 does not invoke it against production.
+PYTHONPATH=. python -m kiv14_pcsb prove-direct-pid-equivalence
+# tooling-only disposable PG 17.6 PQbackendPID == pg_backend_pid(); never production.
 ```
 
 Disposable PostgreSQL **17.6** is expected at `$KIVO_KIV218_PG176_PREFIX` or `/tmp/kivo-kiv218-supabase-pg176/work-prefix`, which must be the official `supabase-postgres-v17.6.1.150-cli-darwin-arm64` extract (SHA-256 `e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6`, tag commit `a97b439c4a9033f9d40080623a688ddcda2961ff`). Clusters listen on `127.0.0.1` only. Never mix Homebrew/system PostgreSQL into the Class B cluster.
@@ -159,11 +202,13 @@ No third Kivo bootstrap recipe. No dump shortcut. No ad-hoc DDL.
 
 Default conninfo is loopback only. Without a matching `CaptureAuthority`, the package refuses `supabase.co` / pooler hosts, project ref `zlighrbsjexrozrmuwpw`, any non-loopback host, and `allow_remote=True`. There is no production DSN, password, token, or `.pgpass` in this package. KIV-198/199 credentials must not be inspected or reused.
 
-The authorized seam compares non-secret conninfo identity to `authorized_target` **before** connection creation. Secrets must not appear in the authority JSON or in written evidence.
+The authorized seam compares non-secret conninfo identity to `authorized_target` **before** connection creation. Secrets must not appear in the authority JSON or in written evidence. Session Pooler / port 6543 / pooler username form cannot be authorized. Production statement SQL / hash-of-hashes remain exact `6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845`.
+
+The tooling-only `prove-direct-pid-equivalence` SQL (`SELECT pg_backend_pid() AS sql_backend_pid`) is not in the production statement set and cannot enter `authorized-capture`.
 
 ## Terminal law
 
-KIV-224 completion does **not** authorize PCSB-3. Leave KIV-224 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
+KIV-229 completion does **not** authorize PCSB-4. Leave KIV-229 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
 
-READY line: `A2 ACCEPTANCE-RECOVERY PACKAGE-COMMIT BINDING REMEDIATION READY FOR INDEPENDENT REVIEW`  
-HOLD line: `A2 ACCEPTANCE-RECOVERY PACKAGE-COMMIT BINDING REMEDIATION HOLD`
+READY line: `A2 ACCEPTANCE-RECOVERY DIRECT-ROUTE PACKAGE REMEDIATION READY FOR INDEPENDENT REVIEW`  
+HOLD line: `A2 ACCEPTANCE-RECOVERY DIRECT-ROUTE PACKAGE REMEDIATION HOLD`

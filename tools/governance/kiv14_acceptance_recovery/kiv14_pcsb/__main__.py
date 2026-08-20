@@ -7,8 +7,10 @@ from pathlib import Path
 
 from .authority import CaptureInvocation, load_capture_authority
 from .capture_binding import AuthorizedCaptureRunner
-from .errors import CaptureAuthorityRefused, FailClosed, SequenceViolation
+from .direct_pid_equivalence import prove_direct_pid_equivalence
+from .errors import CaptureAuthorityRefused, ContinuityFailure, FailClosed, Hold, SequenceViolation
 from .evidence import build_package_manifest, canonical_dumps, write_package_manifest
+from .local_pg import init_and_start, stop_cluster
 from .preflight import run_preflight
 from .static_validate import validate_all_statement_contracts, validate_bad_example_detects_kiv208
 from .statements import verify_p0_pin
@@ -86,10 +88,29 @@ def cmd_authorized_capture(args: argparse.Namespace) -> int:
     return 0 if completeness == "complete" else 1
 
 
+def cmd_prove_direct_pid_equivalence() -> int:
+    """Disposable loopback PG 17.6 only. Never production/Supabase."""
+    cluster = None
+    try:
+        cluster = init_and_start(label="kiv229-direct-pid-equivalence")
+        payload = prove_direct_pid_equivalence(cluster.conninfo)
+    except Hold as exc:
+        sys.stderr.write(f"HOLD: {exc}\n")
+        return 2
+    except (ContinuityFailure, FailClosed, SequenceViolation) as exc:
+        sys.stderr.write(f"FAIL-CLOSED: {exc}\n")
+        return 1
+    finally:
+        if cluster is not None:
+            stop_cluster(cluster)
+    sys.stdout.write(canonical_dumps(payload))
+    return 0 if payload.get("equal") else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="kiv14_pcsb",
-        description="KIV-224 no-production A2 PCSB package-commit binding package",
+        description="KIV-229 no-production A2 direct-postgres route package",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("selftest", help="run package self-tests")
@@ -105,6 +126,10 @@ def main(argv: list[str] | None = None) -> int:
     authorized.add_argument("--pcsb", required=True, help="must match authority.pcsb_identity")
     authorized.add_argument("--conninfo-file", required=True, help="runtime libpq conninfo; not logged")
     authorized.add_argument("--evidence-dir", required=True, help="must match authority.evidence_directory")
+    sub.add_parser(
+        "prove-direct-pid-equivalence",
+        help="tooling-only disposable PG17.6 PQbackendPID == pg_backend_pid(); never production",
+    )
     args = parser.parse_args(argv)
     if args.command == "selftest":
         return cmd_selftest()
@@ -116,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_capture()
     if args.command == "authorized-capture":
         return cmd_authorized_capture(args)
+    if args.command == "prove-direct-pid-equivalence":
+        return cmd_prove_direct_pid_equivalence()
     parser.error("unknown command")
     return 2
 

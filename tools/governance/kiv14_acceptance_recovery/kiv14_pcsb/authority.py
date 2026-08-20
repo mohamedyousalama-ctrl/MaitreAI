@@ -12,11 +12,18 @@ from typing import Any, Mapping, NoReturn
 from .constants import (
     ALLOWED_ROUTE_CLASSES,
     CONSUMED_PCSB_IDENTITIES,
+    DIRECT_POSTGRES_DATABASE,
+    DIRECT_POSTGRES_PORT,
+    DIRECT_POSTGRES_SSLMODE,
+    DIRECT_POSTGRES_USER,
     GOVERNANCE_DISCLAIMER,
+    HISTORICAL_KIV226_SESSION_POOLER_HOST,
+    HISTORICAL_KIV226_SESSION_POOLER_PORT,
     PACKAGE_ID,
+    POOLER_HOST_SUFFIX,
+    ROUTE_CLASS_DIRECT_POSTGRES,
     ROUTE_CLASS_LOOPBACK,
     ROUTE_CLASS_SESSION_POOLER,
-    SESSION_POOLER_PORT,
     TRANSACTION_POOLER_PORT,
 )
 from .errors import CaptureAuthorityRefused
@@ -194,32 +201,45 @@ def parse_capture_authority(payload: Mapping[str, Any]) -> CaptureAuthority:
     if missing_target:
         _refuse(f"authorized_target missing keys: {sorted(missing_target)}")
     route_class = _require_str(target_raw, "route_class")
+    if route_class == ROUTE_CLASS_SESSION_POOLER:
+        _refuse(
+            "session-mode-pooler is continuity-ineligible after KIV-226 "
+            "(PQbackendPID != pg_backend_pid() on Supavisor Session Pooler); "
+            "authorized production route_class is direct-postgres only"
+        )
     if route_class not in ALLOWED_ROUTE_CLASSES:
         _refuse(f"unauthorized route_class {route_class!r}")
     host = _require_str(target_raw, "host")
     port_raw = target_raw.get("port")
     if not isinstance(port_raw, int) or isinstance(port_raw, bool):
         _refuse("authorized_target.port must be an integer")
-    if port_raw == TRANSACTION_POOLER_PORT:
-        _refuse("transaction-mode pooler port 6543 is not an authorized A2 route")
-    if route_class == ROUTE_CLASS_SESSION_POOLER:
-        if port_raw != SESSION_POOLER_PORT:
-            _refuse("session-mode pooler port must be 5432")
-        if DIRECT_DB_HOST_RE.fullmatch(host.lower()):
-            _refuse("direct db.<ref>.supabase.co host is not an authorized A2 route")
-        if is_loopback_or_local_socket(host):
-            _refuse("session-mode-pooler route_class cannot bind a loopback host")
+    project_ref = _require_str(target_raw, "project_ref")
+    database = _require_str(target_raw, "database")
+    user = _require_str(target_raw, "user")
+    sslmode = _require_str(target_raw, "sslmode")
+    _refuse_continuity_ineligible_pooler_identity(
+        host=host, port=port_raw, user=user, route_class=route_class
+    )
+    if route_class == ROUTE_CLASS_DIRECT_POSTGRES:
+        _assert_direct_postgres_route_policy(
+            host=host,
+            port=port_raw,
+            database=database,
+            user=user,
+            sslmode=sslmode,
+            project_ref=project_ref,
+        )
     if route_class == ROUTE_CLASS_LOOPBACK and not is_loopback_or_local_socket(host):
         _refuse("loopback-disposable route_class requires a loopback host")
     target = AuthorizedTarget(
         route_class=route_class,
         project_name=_require_str(target_raw, "project_name"),
-        project_ref=_require_str(target_raw, "project_ref"),
+        project_ref=project_ref,
         host=host,
         port=port_raw,
-        database=_require_str(target_raw, "database"),
-        user=_require_str(target_raw, "user"),
-        sslmode=_require_str(target_raw, "sslmode"),
+        database=database,
+        user=user,
+        sslmode=sslmode,
     )
     return CaptureAuthority(
         work_order_id=work_order_id,
@@ -364,6 +384,113 @@ def assert_authority_matches_this_package(
         _refuse("authority package_commit does not match git HEAD of this checkout")
 
 
+def _is_pooler_host(host: str) -> bool:
+    return host.lower().endswith(POOLER_HOST_SUFFIX) or POOLER_HOST_SUFFIX.lstrip(".") in host.lower()
+
+
+def expected_direct_postgres_host(project_ref: str) -> str:
+    return f"db.{project_ref}.supabase.co"
+
+
+def _refuse_continuity_ineligible_pooler_identity(
+    *,
+    host: str,
+    port: int,
+    user: str,
+    route_class: str,
+) -> None:
+    host_l = host.lower()
+    if route_class == ROUTE_CLASS_SESSION_POOLER:
+        _refuse(
+            "session-mode-pooler is continuity-ineligible after KIV-226 "
+            "(PQbackendPID != pg_backend_pid() on Supavisor Session Pooler)"
+        )
+    if (
+        host_l == HISTORICAL_KIV226_SESSION_POOLER_HOST.lower()
+        and port == HISTORICAL_KIV226_SESSION_POOLER_PORT
+    ):
+        _refuse("historical KIV-226 Shared Session Pooler target is continuity-ineligible")
+    if _is_pooler_host(host_l):
+        _refuse(
+            "Supavisor *.pooler.supabase.com hosts are continuity-ineligible under "
+            "operative d5d22306… after KIV-226"
+        )
+    if port == TRANSACTION_POOLER_PORT:
+        _refuse(
+            "transaction-mode / dedicated-pooler port 6543 is not an authorized A2 route"
+        )
+    if "." in user and user.lower().startswith("postgres."):
+        _refuse("Shared Pooler username form postgres.<ref> cannot authorize a direct-postgres route")
+
+
+def _assert_direct_postgres_route_policy(
+    *,
+    host: str,
+    port: int,
+    database: str,
+    user: str,
+    sslmode: str,
+    project_ref: str,
+) -> None:
+    if is_loopback_or_local_socket(host):
+        _refuse("direct-postgres route_class cannot bind a loopback host")
+    if port != DIRECT_POSTGRES_PORT:
+        _refuse("direct-postgres port must be 5432; other ports cannot silently match a pooler")
+    expected_host = expected_direct_postgres_host(project_ref)
+    if host.lower() != expected_host.lower():
+        _refuse(
+            "direct-postgres host/project_ref mismatch; expected db.<project_ref>.supabase.co"
+        )
+    if not DIRECT_DB_HOST_RE.fullmatch(host.lower()):
+        _refuse("direct-postgres host must be db.<project_ref>.supabase.co")
+    if user != DIRECT_POSTGRES_USER:
+        _refuse("direct-postgres user must be the official direct role postgres")
+    if database != DIRECT_POSTGRES_DATABASE:
+        _refuse("direct-postgres database must be postgres")
+    if sslmode != DIRECT_POSTGRES_SSLMODE:
+        _refuse("direct-postgres sslmode must be require")
+
+
+def later_executor_pre_auth_contract() -> dict[str, Any]:
+    """Operator contract for a later production capturer. Does not freeze DNS AAAA."""
+    from .constants import (
+        KIV228_FEASIBILITY_DIRECT_HOST,
+        KIV228_FEASIBILITY_DIRECT_PORT,
+        KIV228_FEASIBILITY_PROJECT_NAME,
+        KIV228_FEASIBILITY_PROJECT_REF,
+        KIV228_FEASIBILITY_REGION,
+    )
+
+    return {
+        "bind_identity": "hostname/project/port/database/user/sslmode — never a transient AAAA literal",
+        "kiv228_observed_aaaa_must_not_be_frozen": True,
+        "required_checks_before_authentication": [
+            "authoritative current direct host/project association",
+            "current DNS address family (A and AAAA recorded separately)",
+            "executor-host reachability for at least one currently supported address family",
+            "no unapproved paid/infrastructure change",
+        ],
+        "ipv4_only_executor_or_paid_ipv4_addon": (
+            "HOLD and return to Founder before any change"
+        ),
+        "kiv228_feasibility_receipt": {
+            "project_name": KIV228_FEASIBILITY_PROJECT_NAME,
+            "project_ref": KIV228_FEASIBILITY_PROJECT_REF,
+            "region": KIV228_FEASIBILITY_REGION,
+            "direct_host": KIV228_FEASIBILITY_DIRECT_HOST,
+            "direct_port": KIV228_FEASIBILITY_DIRECT_PORT,
+            "ipv6_characteristic": (
+                "current hostname may be IPv6-only; DNS may legitimately change"
+            ),
+            "aaaa_literal_frozen": False,
+        },
+        "governance_note": (
+            "These runtime fields do not create Linear/PM governance authority. "
+            "Only a separately released Linear work order does."
+        ),
+    }
+
+
 def assert_authorized_capture_target(conninfo: str, authority: CaptureAuthority) -> None:
     """Allow connection only to the exact non-secret target bound in authority.
 
@@ -388,16 +515,20 @@ def assert_authorized_capture_target(conninfo: str, authority: CaptureAuthority)
         _refuse("conninfo user does not match authorized_target.user")
     if identity.get("sslmode") != target.sslmode:
         _refuse("conninfo sslmode does not match authorized_target.sslmode")
+    _refuse_continuity_ineligible_pooler_identity(
+        host=host,
+        port=int(identity["port"]),
+        user=identity.get("user") or "",
+        route_class=target.route_class,
+    )
     if target.route_class == ROUTE_CLASS_LOOPBACK and not is_loopback_or_local_socket(host):
         _refuse("loopback authority cannot authorize a remote host")
-    if target.route_class == ROUTE_CLASS_SESSION_POOLER:
-        if is_loopback_or_local_socket(host):
-            _refuse("session-mode-pooler authority cannot bind loopback")
-        ref = target.project_ref.lower()
-        hay = f"{host} {identity.get('user') or ''}".lower()
-        if ref not in hay:
-            _refuse("authorized project_ref is not bound in conninfo user/host")
-        if DIRECT_DB_HOST_RE.fullmatch(host.lower()):
-            _refuse("direct db.<ref>.supabase.co host remains unauthorized")
-        if int(identity["port"]) == TRANSACTION_POOLER_PORT:
-            _refuse("transaction-mode pooler port remains unauthorized")
+    if target.route_class == ROUTE_CLASS_DIRECT_POSTGRES:
+        _assert_direct_postgres_route_policy(
+            host=host,
+            port=int(identity["port"]),
+            database=identity.get("database") or "",
+            user=identity.get("user") or "",
+            sslmode=identity.get("sslmode") or "",
+            project_ref=target.project_ref,
+        )

@@ -8,7 +8,9 @@ from .authority import (
     CaptureInvocation,
     assert_authority_matches_this_package,
     assert_invocation_matches_authority,
+    later_executor_pre_auth_contract,
 )
+from .constants import ROUTE_CLASS_DIRECT_POSTGRES
 from .driver import PersistentCaptureSession, driver_identity
 from .errors import CaptureAuthorityRefused, FailClosed, SequenceViolation
 from .evidence import write_capture_evidence
@@ -53,6 +55,11 @@ class AuthorizedCaptureRunner:
             "governance_disclaimer": authority.governance_disclaimer,
             "connection_attempted": False,
             "sql_attempted": False,
+            "later_executor_pre_auth_contract": (
+                later_executor_pre_auth_contract()
+                if authority.authorized_target.route_class == ROUTE_CLASS_DIRECT_POSTGRES
+                else None
+            ),
         }
         write_capture_evidence(dest, "capture_pre_auth.json", pre_auth)
 
