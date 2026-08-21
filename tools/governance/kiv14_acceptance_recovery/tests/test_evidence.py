@@ -25,6 +25,8 @@ def test_manifest_reproducible():
     assert manifest["hash_of_hashes"] == hash_of_hashes(manifest["statements"])
     assert manifest["production_supabase_auth_sql_count"] == 0
     assert manifest["not_section7_fixture_evidence"] is True
+    assert manifest["evidence_custody"]["completeness_requires_custody"] is True
+    assert manifest["evidence_custody"]["append_only_step_artifacts"] is True
 
 
 def test_catalog_includes_every_statement():

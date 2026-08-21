@@ -1,8 +1,9 @@
-# KIV-217 A2 PCSB query/driver package — KIV-246 consumed-object-boundary operator contract
+# KIV-217 A2 PCSB query/driver package — KIV-254 evidence-custody operator contract
 
-**Context:** `KIVO-A2-RECOVERY-CONSUMED-OBJECT-BOUNDARY-BUILDER-246`  
+**Context:** `KIVO-A2-RECOVERY-PCSB5-EVIDENCE-CUSTODY-BUILDER-254`  
 **Package id:** `KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE`  
-**Package version:** `0.1.9-kiv246-consumed-object-boundary-candidate`  
+**Package version:** `0.1.10-kiv254-evidence-custody-candidate`  
+**KIV-246 accepted parent (consumed-object boundary, PM-accepted/hash-pinned):** commit `5b29584c66a9b6e7179a6bba6ba3d4d0c05f79ad`  
 **KIV-242 blocked parent (consumed-PCSB registry, not hash-pinnable):** commit `718c61aa7a5f4b4731b10ec701e8ac48cb062c80`  
 **KIV-237 accepted parent (passfile/parser, PM-accepted/hash-pinned):** commit `a6e3d8aa27bb6f7a790d8f8c7ff76f9f572fcc9f`  
 **KIV-234 blocked parent (hermetic libpq/parser, not hash-pinnable):** commit `69f489c184fadfbe6b31f3b4d1b912cce3bb3508`  
@@ -13,9 +14,9 @@
 **KIV-220 accepted parent (unchanged SQL / hash-of-hashes):** commit `8cc7331aa19eb90f3cf5c7625e074ccd5c134638`  
 **KIV-217 published custody (unchanged grandparent object):** branch `claude/kiv-217-a2-pcsb-query-driver-package` commit `37836b0b3ec22c7d8190aa39168f21641c0067ff`
 
-**This document is the operator contract for the no-production candidate package plus the KIV-246 consumed-object-boundary remediation of blocked `718c61aa…`.** It is not KIV-14 acceptance, not PCSB-4 capture authority, not KIV-246 governance authority, and not §7 fixture evidence. Production statement SQL is byte-identical to exact `718c61aa…` / `a6e3d8aa…` / `69f489c1…` / `f9cd2625…` / `ff7978c6…` / `f260efd4…`. KIV-237/KIV-238 passfile/parser/destination/hermetic controls are unchanged. KIV-245 R1/R3/R4/R5/R6 scoped PASS findings remain evidence.
+**This document is the operator contract for the no-production candidate package plus the KIV-254 evidence-custody remediation of accepted `5b29584c…`.** It is not KIV-14 acceptance, not PCSB-5 capture authority, not KIV-254 governance authority, and not §7 fixture evidence. Production statement SQL is byte-identical to exact `5b29584c…` / `a6e3d8aa…` / `69f489c1…` / `f9cd2625…` / `ff7978c6…` / `f260efd4…`. KIV-237/KIV-238 passfile/parser/destination/hermetic controls and KIV-246/KIV-247 consumed-object boundary controls are unchanged except the consumed registry now includes PCSB-4. KIV-251 evidence is immutable and is not modified here.
 
-## Capture-binding seam (KIV-221 + KIV-224 + KIV-229 + KIV-231 + KIV-234 + KIV-237 + KIV-242 + KIV-246)
+## Capture-binding seam (KIV-221 + KIV-224 + KIV-229 + KIV-231 + KIV-234 + KIV-237 + KIV-242 + KIV-246 + KIV-254)
 
 Default behavior remains fail-closed and no-production:
 
@@ -29,18 +30,18 @@ The reviewed production-capable path is **disabled until** a later separately re
 2. matching explicit CLI invocation bindings (`--work-order`, `--pcsb`, `--evidence-dir`);
 3. a runtime-only `--conninfo-file` whose **effective** non-secret identity matches `authorized_target` after fail-closed canonicalization.
 
-Required authority bindings: work-order id, `PCSB-n` identity (not PCSB-1/2/3), this package id, exact package commit, live `package_manifest.json` SHA-256, live statement hash-of-hashes, authorized target non-secret identity, evidence directory, and the exact governance disclaimer that **possession of runtime parameters does not create Linear/PM authority**.
+Required authority bindings: work-order id, `PCSB-n` identity (not PCSB-1/2/3/4), this package id, exact package commit, live `package_manifest.json` SHA-256, live statement hash-of-hashes, authorized target non-secret identity, evidence directory, and the exact governance disclaimer that **possession of runtime parameters does not create Linear/PM authority**.
 
-### Consumed PCSB identities (KIV-242 + KIV-246)
+### Consumed PCSB identities (KIV-242 + KIV-246 + KIV-254)
 
 One canonical runtime guard, `assert_runtime_capture_identity_eligible`, is applied wherever a pre-built `CaptureAuthority` or `CaptureInvocation` can influence package binding, target binding, effective conninfo construction, or connection creation. It requires exact canonical PCSB syntax `^PCSB-[1-9][0-9]*$` with no strip/casefold/normalization, then refuses the authoritative runtime registry:
 
-* **consumed / permanently incomplete:** `PCSB-1`, `PCSB-2`, `PCSB-3`
-* **next unused, not authorized by this package:** `PCSB-4`
+* **consumed / permanently incomplete:** `PCSB-1`, `PCSB-2`, `PCSB-3`, `PCSB-4`
+* **next unused, not authorized by this package:** `PCSB-5`
 
 Covered connect-capable seams include `assert_authority_matches_this_package()`, `assert_authorized_capture_target()`, `bind_authorized_effective_conninfo()`, `assert_invocation_matches_authority()`, `AuthorizedCaptureRunner`, `PersistentCaptureSession.connect(authority=...)`, and the `authorized-capture` CLI. Hand-built objects cannot bypass the guard by skipping JSON parse/load.
 
-PCSB-3 was permanently consumed/incomplete by KIV-226. Rebinding any consumed identity is refused with permanently-incomplete/consumed semantics before `psycopg.connect`. Invocation `--pcsb` cannot bypass that registry. Alternative case/whitespace/formatting of `PCSB-3` cannot silently rebind it. Direct-object lowercase/mixed-case/padded/leading-zero/malformed identities fail closed. PCSB-4 is **not** encoded as consumed; this package still does **not** authorize a PCSB-4 capture.
+PCSB-3 was permanently consumed/incomplete by KIV-226. PCSB-4 was permanently consumed/incomplete after KIV-251 / KIV-253: the authorized production session completed through PS-TIME-END, but §5.3/§5.4 in-window per-PS custody was not captured, so PCSB-4 must never be retried, rewritten, split, upgraded, or designated. Rebinding any consumed identity is refused with permanently-incomplete/consumed semantics before `psycopg.connect`. Invocation `--pcsb` cannot bypass that registry. Alternative case/whitespace/formatting of a consumed identity cannot silently rebind it. Direct-object lowercase/mixed-case/padded/leading-zero/malformed identities fail closed. PCSB-5 is **not** encoded as consumed; this package still does **not** authorize a PCSB-5 capture.
 
 Package Git identity is **fail-closed before authentication** (unchanged from KIV-224):
 
@@ -52,7 +53,7 @@ Package Git identity is **fail-closed before authentication** (unchanged from KI
 * manifest SHA / hash-of-hashes remain independent additional bindings, not substitutes for commit identity;
 * a wrong or unavailable package commit never reaches `reviewed_psycopg_connect`.
 
-This package does **not** encode KIV-246 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
+This package does **not** encode KIV-254 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
 
 Target authorization is checked **before** `reviewed_psycopg_connect` and without SQL. Mismatched/missing/malformed authority refuses before authentication. There is no environment-only switch, monkey-patch, or `allow_remote` bypass.
 
@@ -179,10 +180,11 @@ It may be used later by a **separately authorized** capturer only after:
 1. KIV-220 independent PASS / PM hash-pin of exact parent `8cc7331…` (already recorded);
 2. KIV-225 independent PASS / PM hash-pin of exact `f260efd4…` package-commit binding (already recorded; continuity-ineligible on Session Pooler);
 3. KIV-238 independent PASS / PM hash-pin of exact `a6e3d8aa…` passfile/parser binding (already recorded);
-4. independent reviewer PASS / hash-pin of this KIV-246 successor consumed-object boundary (preserving the KIV-242 consumed registry, KIV-237/KIV-238 passfile/parser, KIV-234 hermetic inventory, KIV-231 destination binding, and KIV-229 direct-postgres route);
-5. a later, separately governed PCSB-n capture work order that supplies matching `CaptureAuthority` for `direct-postgres`.
+4. KIV-247 independent PASS / PM hash-pin of exact `5b29584c…` consumed-object boundary (already recorded);
+5. independent reviewer PASS / hash-pin of this KIV-254 successor evidence-custody package (preserving the KIV-246 consumed-object boundary with PCSB-4 added to the consumed registry, plus KIV-237/KIV-238 passfile/parser, KIV-234 hermetic inventory, KIV-231 destination binding, and KIV-229 direct-postgres route);
+6. a later, separately governed PCSB-n capture work order that supplies matching `CaptureAuthority` for `direct-postgres`.
 
-Until then: **zero** production/Supabase authentication and **zero** production SQL. This work order creates **no PCSB-4** authority.
+Until then: **zero** production/Supabase authentication and **zero** production SQL. This work order creates **no PCSB-5** authority.
 
 ## Driver identity (P1)
 
@@ -232,9 +234,19 @@ Revision-6 shipped forms are pinned by Revision-6 identity. They are sequenced a
 
 ## Evidence writer (P4)
 
-`python -m kiv14_pcsb manifest` writes deterministic `package_manifest.json` (sorted keys, no live timestamps). `hash_of_hashes` is SHA-256 of newline-joined `{id} {query_sha256|NO-SQL}` in capture order.
+`python -m kiv14_pcsb manifest` writes deterministic `package_manifest.json` (sorted keys, no live timestamps). `hash_of_hashes` is SHA-256 of newline-joined `{id} {query_sha256|NO-SQL}` in capture order. That value is the **pre-pinned query-text pin**; it is not captured artifact custody.
 
-Live preflight outputs may include timestamps/PIDs and are labeled **tooling validation only**. Evidence tooling does not write `supabase_migrations.schema_migrations` and does not mutate production.
+Live authorized capture writes, in the same runner process:
+
+1. one canonical redacted artifact file per underlying SQL/host step under `artifacts/{statement_id}.json` (append-only; overwrite is fail-closed);
+2. in-window host UTC `dispatch_ts` / `complete_ts` recorded around each step without SQL; PS-TIME SQL `window_ts` remains authoritative and is copied as `sql_window_ts`;
+3. SHA-256 / byte count / line count sidecars generated from the exact bytes written;
+4. pre-pinned `query_sha256` or explicit `NO-SQL` for host steps;
+5. the internal complete-PCSB digest list (`complete_pcsb_digest_list.json`) only when every required step artifact exists with valid custody and expected status. The list digest is SHA-256 of newline-joined `{statement_id} {artifact_sha256}` in `STATEMENTS` order.
+
+`capture_run.json` remains an operator summary. It is not a substitute for per-step custody. Procedural `complete` requires statement/status completeness, P-0-first / one-session continuity, every §5.3 logical PS row, in-window timestamps + query-hash mapping + SHA/byte/line custody, a verifying digest list, and no evidence-writer failure. Any evidence serialization/write/hash/list failure after authentication is permanently incomplete for that PCSB identity: stop, no retry/reconnect/second client/repair.
+
+Live preflight outputs may include timestamps/PIDs and are labeled **tooling validation only**. Evidence tooling does not write `supabase_migrations.schema_migrations` and does not mutate production. KIV-251 evidence bytes are not read or rewritten by this package.
 
 ## Local commands
 
@@ -282,7 +294,7 @@ The tooling-only `prove-direct-pid-equivalence` SQL (`SELECT pg_backend_pid() AS
 
 ## Terminal law
 
-KIV-246 completion does **not** authorize PCSB-4. Leave KIV-246 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
+KIV-254 completion does **not** authorize PCSB-5. Leave KIV-254 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
 
-READY line: `A2 ACCEPTANCE-RECOVERY CONSUMED-OBJECT BOUNDARY REMEDIATION READY FOR INDEPENDENT REVIEW`  
-HOLD line: `A2 ACCEPTANCE-RECOVERY CONSUMED-OBJECT BOUNDARY REMEDIATION HOLD`
+READY line: `A2 ACCEPTANCE-RECOVERY PCSB5 EVIDENCE-CUSTODY PACKAGE REMEDIATION READY FOR INDEPENDENT REVIEW`  
+HOLD line: `A2 ACCEPTANCE-RECOVERY PCSB5 EVIDENCE-CUSTODY PACKAGE REMEDIATION HOLD`

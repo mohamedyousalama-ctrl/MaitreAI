@@ -1,13 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Callable
 
 from .driver import DenialResult, PersistentCaptureSession
-from .errors import ContinuityFailure, FailClosed, P0GateFailure, SequenceViolation
+from .errors import ContinuityFailure, EvidenceCustodyFailure, FailClosed, P0GateFailure, SequenceViolation
 from .g2 import g2_v4_equivalent, g3_binding_ok
 from .p0 import evaluate_p0_row
 from .statements import Statement, STATEMENTS, package_root, statement_by_id
+
+
+ArtifactSink = Callable[[Statement, "StepResult"], None]
+
+
+def host_utc_now() -> str:
+    """In-runner UTC timestamp. Host clock only; never SQL."""
+    return (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
 
 
 @dataclass
@@ -20,6 +33,19 @@ class StepResult:
     detail: str | None = None
     sqlstate: str | None = None
     host_result: dict[str, Any] | None = None
+    dispatch_ts: str | None = None
+    complete_ts: str | None = None
+    sql_window_ts: str | None = None
+
+
+def _stamp(step: StepResult, dispatch_ts: str) -> StepResult:
+    step.dispatch_ts = dispatch_ts
+    step.complete_ts = host_utc_now()
+    if step.rows:
+        window = step.rows[0].get("window_ts")
+        if window is not None:
+            step.sql_window_ts = window.isoformat() if hasattr(window, "isoformat") else str(window)
+    return step
 
 
 def _as_bool(value: Any) -> bool:
@@ -51,25 +77,32 @@ def run_sql_statement(
     stmt: Statement,
     sql: str,
 ) -> StepResult:
+    dispatch_ts = host_utc_now()
     outcome = session.execute(
         sql,
         statement_id=stmt.id,
         expected_sqlstate=stmt.expected_sqlstate,
     )
     if isinstance(outcome, DenialResult):
-        return StepResult(
-            statement_id=stmt.id,
-            status="expected_denial",
-            n_rows=0,
-            sqlstate=outcome.sqlstate,
-            detail=outcome.message,
+        return _stamp(
+            StepResult(
+                statement_id=stmt.id,
+                status="expected_denial",
+                n_rows=0,
+                sqlstate=outcome.sqlstate,
+                detail=outcome.message,
+            ),
+            dispatch_ts,
         )
     rows = _rows_from_cursor(outcome)
-    return StepResult(
-        statement_id=stmt.id,
-        status="ok",
-        n_rows=len(rows),
-        rows=rows,
+    return _stamp(
+        StepResult(
+            statement_id=stmt.id,
+            status="ok",
+            n_rows=len(rows),
+            rows=rows,
+        ),
+        dispatch_ts,
     )
 
 
@@ -81,6 +114,7 @@ def run_p0(
     pkg = root or package_root()
     stmt = statement_by_id("P-0")
     sql = stmt.sql_text(pkg)
+    dispatch_ts = host_utc_now()
     outcome = session.execute(sql, statement_id="P-0")
     if isinstance(outcome, DenialResult):
         raise FailClosed("P-0 produced a denial instead of a row")
@@ -88,21 +122,38 @@ def run_p0(
     row = rows[0] if rows else None
     evaluate_p0_row(row, n_rows=len(rows))
     session.p0_passed = True
-    return StepResult(statement_id="P-0", status="pass", n_rows=1, rows=rows)
+    return _stamp(
+        StepResult(statement_id="P-0", status="pass", n_rows=1, rows=rows),
+        dispatch_ts,
+    )
+
+
+def _emit(sink: ArtifactSink | None, stmt: Statement, step: StepResult) -> None:
+    if sink is None:
+        return
+    if not step.dispatch_ts or not step.complete_ts:
+        raise EvidenceCustodyFailure(
+            f"{stmt.id} missing in-window host timestamps before artifact write"
+        )
+    sink(stmt, step)
 
 
 def run_full_sequence(
     session: PersistentCaptureSession,
     *,
     root: Any | None = None,
+    artifact_sink: ArtifactSink | None = None,
 ) -> list[StepResult]:
     """Capture sequence through PS-TIME end on one persistent connection.
 
     Caller must already have connected. P-0 is dispatched first by this function.
+    Host timestamps are recorded in this process around each step. Timestamp
+    collection does not use SQL.
     """
     pkg = root or package_root()
     results: list[StepResult] = []
     p0 = run_p0(session, root=pkg)
+    _emit(artifact_sink, statement_by_id("P-0"), p0)
     results.append(p0)
 
     g1_row: dict[str, Any] | None = None
@@ -112,39 +163,50 @@ def run_full_sequence(
         if stmt.id == "P-0":
             continue
         if stmt.sql_kind == "host":
+            dispatch_ts = host_utc_now()
             if stmt.id == "G2":
                 prosrc = None if g1_row is None else g1_row.get("prosrc")
                 host = g2_v4_equivalent(prosrc if isinstance(prosrc, str) else None)
-                results.append(
+                step = _stamp(
                     StepResult(
                         statement_id="G2",
                         status="host",
                         host_result=host,
-                    )
+                    ),
+                    dispatch_ts,
                 )
+                _emit(artifact_sink, stmt, step)
+                results.append(step)
                 continue
             if stmt.id == "G3":
                 uid_rows = None if g1_row is None else g1_row.get("uid_rows")
                 arg_list = None if g1_row is None else g1_row.get("arg_list")
                 host = g3_binding_ok(uid_rows, arg_list)
-                results.append(
+                step = _stamp(
                     StepResult(
                         statement_id="G3",
                         status="host",
                         host_result=host,
-                    )
+                    ),
+                    dispatch_ts,
                 )
+                _emit(artifact_sink, stmt, step)
+                results.append(step)
                 continue
             raise SequenceViolation(f"unhandled host step {stmt.id}")
 
         if stmt.skip_if == "ledger_not_readable" and ledger_not_readable(p8a_row):
-            results.append(
+            dispatch_ts = host_utc_now()
+            step = _stamp(
                 StepResult(
                     statement_id=stmt.id,
                     status="skipped",
                     skip_reason="ledger_not_readable (host-side; no SQL, no psql \\if)",
-                )
+                ),
+                dispatch_ts,
             )
+            _emit(artifact_sink, stmt, step)
+            results.append(step)
             continue
 
         sql = stmt.sql_text(pkg)
@@ -155,6 +217,7 @@ def run_full_sequence(
             g1_row = step.rows[0]
         if stmt.id == "PS-TIME-END":
             _reconcile_end(session, step)
+        _emit(artifact_sink, stmt, step)
         results.append(step)
     return results
 

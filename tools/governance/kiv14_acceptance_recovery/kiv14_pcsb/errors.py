@@ -25,6 +25,14 @@ class Hold(RuntimeError):
     """Lawful package HOLD — missing topology/prerequisite, not a workaround."""
 
 
+class EvidenceCustodyFailure(FailClosed):
+    """Evidence serialization, write, hash, or digest-list failure after authentication.
+
+    Ends the capture identity as permanently incomplete. No retry, reconnect,
+    second client, or later reconstruction.
+    """
+
+
 class CaptureAuthorityRefused(RuntimeError):
     """Raised before authentication when capture authority is missing or mismatched.
 

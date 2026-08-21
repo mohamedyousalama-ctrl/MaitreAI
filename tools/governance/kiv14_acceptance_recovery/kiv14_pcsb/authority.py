@@ -158,7 +158,7 @@ def assert_runtime_capture_identity_eligible(obj: object) -> None:
 
     Accepts a ``CaptureAuthority``, ``CaptureInvocation``, or raw PCSB identity
     string. Does not strip, casefold, or otherwise normalize. Malformed values
-    fail closed. PCSB-1/2/3 refuse as permanently incomplete/consumed. PCSB-4
+    fail closed. PCSB-1/2/3/4 refuse as permanently incomplete/consumed. PCSB-5
     may pass only this consumed-identity check; that does not create work-order
     or production authority.
     """
@@ -175,14 +175,14 @@ def assert_runtime_capture_identity_eligible(obj: object) -> None:
 
 
 def consumed_capture_identity_contract() -> dict[str, Any]:
-    """Hash-pinnable consumed/unused PCSB registry. Does not authorize PCSB-4."""
+    """Hash-pinnable consumed/unused PCSB registry. Does not authorize PCSB-5."""
     return {
         "consumed_pcsb_identities": list(CONSUMED_PCSB_IDENTITIES),
         "next_unused_pcsb_identity": NEXT_UNUSED_PCSB_IDENTITY,
         "next_unused_authorized_by_this_package": False,
         "governance_note": (
-            "PCSB-1/2/3 are permanently incomplete/consumed and cannot be rebound. "
-            "PCSB-4 is the next unused identity and is not authorized by this package."
+            "PCSB-1/2/3/4 are permanently incomplete/consumed and cannot be rebound. "
+            "PCSB-5 is the next unused identity and is not authorized by this package."
         ),
         "canonical_runtime_guard": "assert_runtime_capture_identity_eligible",
         "canonical_runtime_guard_applies_to_direct_objects": True,

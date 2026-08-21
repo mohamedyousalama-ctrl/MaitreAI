@@ -548,3 +548,25 @@ def verify_p0_pin(package_root_path: Path | None = None) -> None:
 
 def ordered_sql_statements() -> tuple[Statement, ...]:
     return tuple(s for s in STATEMENTS if s.sql_kind != "host")
+
+
+def required_ps_artifacts() -> tuple[str, ...]:
+    """§5.3 logical PS-* identities in first-seen capture order."""
+    seen: list[str] = []
+    for stmt in STATEMENTS:
+        if stmt.ps_artifact not in seen:
+            seen.append(stmt.ps_artifact)
+    return tuple(seen)
+
+
+def captured_query_sha256(stmt: Statement, package_root_path: Path) -> str:
+    """Pre-pinned query-text hash for captured artifact custody.
+
+    Host-only steps are explicit ``NO-SQL``. This does not change package
+    ``hash_of_hashes``, which remains the catalog query-text pin.
+    """
+    from .constants import HOST_QUERY_SHA256_MARKER
+
+    if stmt.sql_kind == "host" or stmt.origin == Origin.HOST or stmt.sql_relpath is None:
+        return HOST_QUERY_SHA256_MARKER
+    return stmt.sql_sha256(package_root_path)

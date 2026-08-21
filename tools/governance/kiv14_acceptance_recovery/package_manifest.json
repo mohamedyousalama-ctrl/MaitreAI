@@ -78,11 +78,12 @@
     "consumed_pcsb_identities": [
       "PCSB-1",
       "PCSB-2",
-      "PCSB-3"
+      "PCSB-3",
+      "PCSB-4"
     ],
-    "governance_note": "PCSB-1/2/3 are permanently incomplete/consumed and cannot be rebound. PCSB-4 is the next unused identity and is not authorized by this package.",
+    "governance_note": "PCSB-1/2/3/4 are permanently incomplete/consumed and cannot be rebound. PCSB-5 is the next unused identity and is not authorized by this package.",
     "next_unused_authorized_by_this_package": false,
-    "next_unused_pcsb_identity": "PCSB-4"
+    "next_unused_pcsb_identity": "PCSB-5"
   },
   "destination_binding": {
     "client_encoding_forced_at_libpq_boundary": true,
@@ -314,6 +315,72 @@
     "python_package": "psycopg[binary]",
     "python_package_version": "3.2.9"
   },
+  "evidence_custody": {
+    "append_only_step_artifacts": true,
+    "artifacts_subdir": "artifacts",
+    "combined_capture_run_json_is_not_custody_substitute": true,
+    "completeness_requires_custody": true,
+    "digest_algorithm": "sha256 of newline-joined '{statement_id} {artifact_sha256}' over STATEMENTS capture order, trailing newline",
+    "digest_list_filename": "complete_pcsb_digest_list.json",
+    "digest_list_schema": "kiv14-complete-pcsb-digest-list-v1",
+    "grouping": "one canonical redacted artifact file per underlying SQL/host step in STATEMENTS capture order; logical \u00a75.3 mapping is Statement.ps_artifact",
+    "host_query_sha256_marker": "NO-SQL",
+    "host_timestamps": "dispatch_ts and complete_ts recorded in the authorized runner process at execution time; timestamp collection does not use SQL",
+    "package_hash_of_hashes_is_query_text_pin_not_captured_artifact_custody": true,
+    "ps_time_sql_timestamps": "PS-TIME window_ts SQL values remain authoritative and are also copied onto the matching step artifact as sql_window_ts",
+    "required_ps_artifacts": [
+      "PS-0",
+      "PS-TIME",
+      "PS-P1",
+      "PS-P2",
+      "PS-P3",
+      "PS-P4",
+      "PS-P5",
+      "PS-P6",
+      "PS-P7",
+      "PS-P8",
+      "PS-LEDGER",
+      "PS-PF4",
+      "PS-G",
+      "PS-GRANT",
+      "PS-OWN",
+      "PS-ROLE",
+      "PS-COUNT",
+      "PS-BODY"
+    ],
+    "required_statement_ids": [
+      "P-0",
+      "PS-TIME-START",
+      "P-1",
+      "P-2",
+      "P-3",
+      "P-4",
+      "P-5",
+      "P-6",
+      "P-7",
+      "P-8a",
+      "P-8b",
+      "P-8c",
+      "PF-4a2",
+      "PF-4b2",
+      "PF-4b-detail",
+      "PF-4c",
+      "PF-4-USAGE",
+      "PF-4-SET-ROLE",
+      "G1",
+      "G2",
+      "G3",
+      "PS-GRANT-TABLE",
+      "PS-GRANT-COLUMN",
+      "PS-GRANT-FUNCTION",
+      "PS-OWN",
+      "PS-ROLE",
+      "PS-COUNT",
+      "PS-BODY",
+      "PS-TIME-END"
+    ],
+    "schema": "kiv14-pcsb-step-artifact-v1"
+  },
   "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
   "hash_of_hashes_inputs": "newline-joined '{id} {query_sha256|NO-SQL}' over capture order",
   "kiv217_published_custody": {
@@ -373,6 +440,13 @@
     "manifest_sha256": "ebe61d780bdef7e9f9f7ad03b3723fa3e64eea97084659a058a6dc57394b2003",
     "package_version": "0.1.8-kiv242-consumed-pcsb-candidate"
   },
+  "kiv246_accepted_parent": {
+    "commit": "5b29584c66a9b6e7179a6bba6ba3d4d0c05f79ad",
+    "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
+    "manifest_blob": "65603838efb95d5b36247a9ca479f42c71ae0b36",
+    "manifest_sha256": "c32e9ea5a8459a4ee2c6ef59e449629e65e8c5ec675fe3cbb3c4acf8c8b0633e",
+    "package_version": "0.1.9-kiv246-consumed-object-boundary-candidate"
+  },
   "not_production_evidence": true,
   "not_section7_fixture_evidence": true,
   "operative_procedure": {
@@ -381,9 +455,9 @@
     "path": "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md",
     "sha256": "48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a"
   },
-  "package_context": "KIVO-A2-RECOVERY-CONSUMED-OBJECT-BOUNDARY-BUILDER-246",
+  "package_context": "KIVO-A2-RECOVERY-PCSB5-EVIDENCE-CUSTODY-BUILDER-254",
   "package_id": "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE",
-  "package_version": "0.1.9-kiv246-consumed-object-boundary-candidate",
+  "package_version": "0.1.10-kiv254-evidence-custody-candidate",
   "platform_baseline": {
     "cli_tarball_asset": "supabase-postgres-v17.6.1.150-cli-darwin-arm64.tar.gz",
     "cli_tarball_sha256": "e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6",

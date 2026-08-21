@@ -35,6 +35,10 @@ from kiv14_pcsb.constants import (
     KIV242_BLOCKED_MANIFEST_BLOB,
     KIV242_BLOCKED_MANIFEST_SHA256,
     KIV242_BLOCKED_PACKAGE_VERSION,
+    KIV246_ACCEPTED_COMMIT,
+    KIV246_ACCEPTED_MANIFEST_BLOB,
+    KIV246_ACCEPTED_MANIFEST_SHA256,
+    KIV246_ACCEPTED_PACKAGE_VERSION,
     NEXT_UNUSED_PCSB_IDENTITY,
     PACKAGE_CONTEXT,
     PACKAGE_ID,
@@ -186,7 +190,20 @@ def test_pcsb3_authority_refuses_as_permanently_incomplete(tmp_path, monkeypatch
     assert reached == []
 
 
-def test_pcsb4_is_not_rejected_merely_as_consumed(tmp_path):
+def test_pcsb4_authority_refuses_as_consumed(tmp_path, monkeypatch):
+    reached: list[str] = []
+    monkeypatch.setattr(
+        "kiv14_pcsb.driver.reviewed_psycopg_connect",
+        lambda conninfo: reached.append(conninfo) or _FakeConn(),
+    )
+    with pytest.raises(CaptureAuthorityRefused, match=r"PCSB-4 is permanently incomplete/consumed"):
+        parse_capture_authority(
+            _authority_dict(dest=tmp_path / "ev", target=_target_loopback(), pcsb="PCSB-4")
+        )
+    assert reached == []
+
+
+def test_pcsb5_is_not_rejected_merely_as_consumed(tmp_path):
     authority = parse_capture_authority(
         _authority_dict(
             dest=tmp_path / "ev",
@@ -194,8 +211,9 @@ def test_pcsb4_is_not_rejected_merely_as_consumed(tmp_path):
             pcsb=NEXT_UNUSED_PCSB_IDENTITY,
         )
     )
-    assert authority.pcsb_identity == "PCSB-4"
-    assert "PCSB-4" not in CONSUMED_PCSB_IDENTITIES
+    assert authority.pcsb_identity == "PCSB-5"
+    assert "PCSB-5" not in CONSUMED_PCSB_IDENTITIES
+    assert "PCSB-4" in CONSUMED_PCSB_IDENTITIES
 
 
 def test_invocation_cannot_bypass_consumed_identity(tmp_path, monkeypatch):
@@ -260,8 +278,8 @@ def test_alternative_formatting_cannot_rebind_pcsb3(tmp_path):
 
 def test_manifest_and_operator_contract_declare_consumed_and_unused():
     contract = consumed_capture_identity_contract()
-    assert contract["consumed_pcsb_identities"] == ["PCSB-1", "PCSB-2", "PCSB-3"]
-    assert contract["next_unused_pcsb_identity"] == "PCSB-4"
+    assert contract["consumed_pcsb_identities"] == ["PCSB-1", "PCSB-2", "PCSB-3", "PCSB-4"]
+    assert contract["next_unused_pcsb_identity"] == "PCSB-5"
     assert contract["next_unused_authorized_by_this_package"] is False
     assert contract["canonical_runtime_guard"] == "assert_runtime_capture_identity_eligible"
     assert contract["canonical_runtime_guard_applies_to_direct_objects"] is True
@@ -269,8 +287,8 @@ def test_manifest_and_operator_contract_declare_consumed_and_unused():
     assert manifest["consumed_capture_identities"] == contract
     assert manifest["package_version"] == PACKAGE_VERSION
     assert manifest["package_context"] == PACKAGE_CONTEXT
-    assert PACKAGE_VERSION == "0.1.9-kiv246-consumed-object-boundary-candidate"
-    assert PACKAGE_CONTEXT == "KIVO-A2-RECOVERY-CONSUMED-OBJECT-BOUNDARY-BUILDER-246"
+    assert PACKAGE_VERSION == "0.1.10-kiv254-evidence-custody-candidate"
+    assert PACKAGE_CONTEXT == "KIVO-A2-RECOVERY-PCSB5-EVIDENCE-CUSTODY-BUILDER-254"
     assert manifest["kiv237_accepted_parent"] == {
         "commit": KIV237_ACCEPTED_COMMIT,
         "package_version": KIV237_ACCEPTED_PACKAGE_VERSION,
@@ -285,12 +303,19 @@ def test_manifest_and_operator_contract_declare_consumed_and_unused():
         "manifest_blob": KIV242_BLOCKED_MANIFEST_BLOB,
         "hash_of_hashes": KIV220_ACCEPTED_HASH_OF_HASHES,
     }
+    assert manifest["kiv246_accepted_parent"] == {
+        "commit": KIV246_ACCEPTED_COMMIT,
+        "package_version": KIV246_ACCEPTED_PACKAGE_VERSION,
+        "manifest_sha256": KIV246_ACCEPTED_MANIFEST_SHA256,
+        "manifest_blob": KIV246_ACCEPTED_MANIFEST_BLOB,
+        "hash_of_hashes": KIV220_ACCEPTED_HASH_OF_HASHES,
+    }
     text = OPERATOR_CONTRACT.read_text()
-    assert "PCSB-1" in text and "PCSB-2" in text and "PCSB-3" in text
+    assert "PCSB-1" in text and "PCSB-2" in text and "PCSB-3" in text and "PCSB-4" in text
     assert "permanently incomplete" in text
-    assert "**consumed / permanently incomplete:** `PCSB-1`, `PCSB-2`, `PCSB-3`" in text
-    assert "**next unused, not authorized by this package:** `PCSB-4`" in text
-    assert "no PCSB-4" in text
+    assert "**consumed / permanently incomplete:** `PCSB-1`, `PCSB-2`, `PCSB-3`, `PCSB-4`" in text
+    assert "**next unused, not authorized by this package:** `PCSB-5`" in text
+    assert "no PCSB-5" in text
     assert "assert_runtime_capture_identity_eligible" in text
 
 
@@ -412,10 +437,10 @@ def test_direct_object_malformed_identities_fail_closed(tmp_path, monkeypatch):
 def test_mismatched_consumed_and_unused_identities_refuse(tmp_path, monkeypatch):
     reached = _spy_actual_psycopg_connect(monkeypatch)
     dest = tmp_path / "ev-mismatch"
-    unused_auth = _hand_built_authority(dest=dest, pcsb="PCSB-4")
-    consumed_auth = _hand_built_authority(dest=dest, pcsb="PCSB-3")
-    unused_inv = CaptureInvocation("KIV-999", "PCSB-4", str(dest))
-    consumed_inv = CaptureInvocation("KIV-999", "PCSB-3", str(dest))
+    unused_auth = _hand_built_authority(dest=dest, pcsb="PCSB-5")
+    consumed_auth = _hand_built_authority(dest=dest, pcsb="PCSB-4")
+    unused_inv = CaptureInvocation("KIV-999", "PCSB-5", str(dest))
+    consumed_inv = CaptureInvocation("KIV-999", "PCSB-4", str(dest))
     with pytest.raises(CaptureAuthorityRefused, match=CONSUMED_REFUSAL):
         assert_invocation_matches_authority(consumed_auth, unused_inv)
     with pytest.raises(CaptureAuthorityRefused, match=CONSUMED_REFUSAL):
@@ -435,14 +460,14 @@ def test_mismatched_consumed_and_unused_identities_refuse(tmp_path, monkeypatch)
     assert reached == []
 
 
-def test_pcsb4_direct_object_is_not_rejected_merely_as_consumed(tmp_path, monkeypatch):
+def test_pcsb5_direct_object_is_not_rejected_merely_as_consumed(tmp_path, monkeypatch):
     reached = _spy_actual_psycopg_connect(monkeypatch)
-    dest = tmp_path / "ev-pcsb4"
-    authority = _hand_built_authority(dest=dest, pcsb="PCSB-4")
+    dest = tmp_path / "ev-pcsb5"
+    authority = _hand_built_authority(dest=dest, pcsb="PCSB-5")
     assert_runtime_capture_identity_eligible(authority)
-    assert_runtime_capture_identity_eligible("PCSB-4")
+    assert_runtime_capture_identity_eligible("PCSB-5")
     assert_authority_matches_this_package(authority)
-    mismatch = CaptureInvocation("KIV-1", "PCSB-4", str(dest))
+    mismatch = CaptureInvocation("KIV-1", "PCSB-5", str(dest))
     with pytest.raises(CaptureAuthorityRefused, match="work_order_id does not match"):
         assert_invocation_matches_authority(authority, mismatch)
     with pytest.raises(CaptureAuthorityRefused, match="work_order_id does not match"):
@@ -454,10 +479,12 @@ def test_pcsb4_direct_object_is_not_rejected_merely_as_consumed(tmp_path, monkey
     bound = bind_authorized_effective_conninfo(LOOPBACK_CONNINFO, authority)
     assert "127.0.0.1" in bound
     assert "client_encoding=UTF8" in bound
-    wrong_commit = _hand_built_authority(dest=dest, pcsb="PCSB-4", package_commit="0" * 40)
+    wrong_commit = _hand_built_authority(dest=dest, pcsb="PCSB-5", package_commit="0" * 40)
     with pytest.raises(CaptureAuthorityRefused, match="package_commit"):
         PersistentCaptureSession(LOOPBACK_CONNINFO, authority=wrong_commit).connect()
     assert reached == []
+    with pytest.raises(CaptureAuthorityRefused, match=CONSUMED_REFUSAL):
+        assert_runtime_capture_identity_eligible("PCSB-4")
 
 
 def test_cli_unused_authority_consumed_or_malformed_pcsb_refuses(tmp_path, monkeypatch):
