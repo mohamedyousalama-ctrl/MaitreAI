@@ -18,6 +18,8 @@ from .errors import ContinuityFailure, FailClosed, SequenceViolation
 from .safety import (
     assert_not_production_target,
     hermetic_libpq_environment,
+    keyword_conninfo_with_package_passfile,
+    package_controlled_passfile,
     parse_canonical_conninfo,
 )
 
@@ -46,19 +48,23 @@ def reviewed_psycopg_connect(conninfo: str) -> psycopg.Connection[Any]:
     Callers must already have passed ``assert_not_production_target`` or
     ``bind_authorized_effective_conninfo``. The factory re-parses, reconstructs
     keyword parameters from that canonical identity (always including
-    ``client_encoding=UTF8``), and strips every recognized libpq
-    environment/default source before ``psycopg.connect``. The original opaque
-    conninfo is never passed through to libpq.
+    ``client_encoding=UTF8``), strips every recognized libpq
+    environment/default source, and injects an empty package-controlled
+    passfile so libpq cannot fall back to ``~/.pgpass``. Operator-supplied
+    ``passfile=`` remains refused. The original opaque conninfo is never
+    passed through to libpq.
     """
     with hermetic_libpq_environment():
         identity = parse_canonical_conninfo(conninfo)
-        effective = identity.as_keyword_conninfo()
-        return psycopg.connect(
-            effective,
-            autocommit=True,
-            prepare_threshold=None,
-            row_factory=dict_row,
-        )
+        reconstructed = identity.as_keyword_conninfo()
+        with package_controlled_passfile() as passfile:
+            effective = keyword_conninfo_with_package_passfile(reconstructed, passfile)
+            return psycopg.connect(
+                effective,
+                autocommit=True,
+                prepare_threshold=None,
+                row_factory=dict_row,
+            )
 
 
 @dataclass(frozen=True)

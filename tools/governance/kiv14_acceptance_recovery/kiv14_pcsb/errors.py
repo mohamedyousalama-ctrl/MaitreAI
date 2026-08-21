@@ -37,6 +37,8 @@ class ConninfoDestinationRefused(CaptureAuthorityRefused):
 
     Covers URI query overrides, hostaddr, service/service-file indirection,
     libpq environment destination/session defaults, keyword percent-literal
-    reinterpretation, multi-host lists, duplicate identity keys, and
-    unix-socket / empty-host fallback. This is a pre-auth refusal.
+    reinterpretation, unquoted keyword backslash, percent-encoded URI host,
+    missing explicit password on direct-postgres, multi-host lists, duplicate
+    identity keys, and unix-socket / empty-host fallback. This is a pre-auth
+    refusal.
     """

@@ -1,8 +1,9 @@
-# KIV-217 A2 PCSB query/driver package — KIV-234 hermetic libpq / conninfo parser operator contract
+# KIV-217 A2 PCSB query/driver package — KIV-237 passfile / parser operator contract
 
-**Context:** `KIVO-A2-RECOVERY-LIBPQ-HERMETIC-PARSER-BUILDER-234`  
+**Context:** `KIVO-A2-RECOVERY-PASSFILE-PARSER-BUILDER-237`  
 **Package id:** `KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE`  
-**Package version:** `0.1.6-kiv234-libpq-hermetic-parser-candidate`  
+**Package version:** `0.1.7-kiv237-passfile-parser-candidate`  
+**KIV-234 blocked parent (hermetic libpq/parser, not hash-pinnable):** commit `69f489c184fadfbe6b31f3b4d1b912cce3bb3508`  
 **KIV-231 blocked parent (destination binding, not hash-pinnable):** commit `f9cd26252b0bf66748919ede5f0c8d1a2974b7cb`  
 **KIV-229 blocked parent (direct-postgres route, not hash-pinnable):** commit `ff7978c6e6a4054684ee81da0608c240768e9856`  
 **KIV-224 accepted parent (package-commit binding, continuity-ineligible on Session Pooler):** commit `f260efd4df4c377af4493fe58d94dd432c306136`  
@@ -10,9 +11,9 @@
 **KIV-220 accepted parent (unchanged SQL / hash-of-hashes):** commit `8cc7331aa19eb90f3cf5c7625e074ccd5c134638`  
 **KIV-217 published custody (unchanged grandparent object):** branch `claude/kiv-217-a2-pcsb-query-driver-package` commit `37836b0b3ec22c7d8190aa39168f21641c0067ff`
 
-**This document is the operator contract for the no-production candidate package plus the KIV-234 hermetic-libpq / keyword-parser remediation of exact blocked `f9cd2625…`.** It is not KIV-14 acceptance, not PCSB-4 capture authority, not KIV-234 governance authority, and not §7 fixture evidence. Production statement SQL is byte-identical to exact `f9cd2625…` / `ff7978c6…` / `f260efd4…`.
+**This document is the operator contract for the no-production candidate package plus the KIV-237 default-passfile / remaining-parser remediation of exact blocked `69f489c1…`.** It is not KIV-14 acceptance, not PCSB-4 capture authority, not KIV-237 governance authority, and not §7 fixture evidence. Production statement SQL is byte-identical to exact `69f489c1…` / `f9cd2625…` / `ff7978c6…` / `f260efd4…`.
 
-## Capture-binding seam (KIV-221 + KIV-224 + KIV-229 + KIV-231 + KIV-234)
+## Capture-binding seam (KIV-221 + KIV-224 + KIV-229 + KIV-231 + KIV-234 + KIV-237)
 
 Default behavior remains fail-closed and no-production:
 
@@ -38,17 +39,17 @@ Package Git identity is **fail-closed before authentication** (unchanged from KI
 * manifest SHA / hash-of-hashes remain independent additional bindings, not substitutes for commit identity;
 * a wrong or unavailable package commit never reaches `reviewed_psycopg_connect`.
 
-This package does **not** encode KIV-234 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
+This package does **not** encode KIV-237 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
 
 Target authorization is checked **before** `reviewed_psycopg_connect` and without SQL. Mismatched/missing/malformed authority refuses before authentication. There is no environment-only switch, monkey-patch, or `allow_remote` bypass.
 
-### Effective libpq destination binding (KIV-231, preserved) + hermetic startup / parser (KIV-234)
+### Effective libpq destination binding (KIV-231, preserved) + hermetic startup / parser (KIV-234, preserved) + passfile / remaining parser (KIV-237)
 
-KIV-230 BLOCKED `ff7978c6…` because authority validated a partial identity while `reviewed_psycopg_connect` passed the original opaque conninfo to libpq. KIV-231 reconstructed the authority-bound identity before the factory. KIV-232 then BLOCKED `f9cd2625…` because (R3) unstripped libpq environment/defaults could still change encoding/startup GUCs/application_name/password source after authority PASS, and (R4) keyword parsing applied URI percent-decoding and incomplete quote semantics.
+KIV-230 BLOCKED `ff7978c6…` because authority validated a partial identity while `reviewed_psycopg_connect` passed the original opaque conninfo to libpq. KIV-231 reconstructed the authority-bound identity before the factory. KIV-232 then BLOCKED `f9cd2625…` because (R3) unstripped libpq environment/defaults could still change encoding/startup GUCs/application_name/password source after authority PASS, and (R4) keyword parsing applied URI percent-decoding and incomplete quote semantics. KIV-234 closed the recognized `PG*` environment inventory and quoted-keyword grammar. KIV-236 then BLOCKED `69f489c1…` because (R3) libpq could still authenticate from default `~/.pgpass` after that env strip, and (R4) unquoted keyword backslash and percent-encoded URI host still silently disagreed with libpq.
 
-This successor keeps destination reconstruction and closes those holes.
+This successor keeps destination reconstruction and the KIV-234 environment-inventory PASS. It closes only the remaining KIV-236 holes.
 
-After authority PASS, the parameters passed to psycopg/libpq are **reconstructed from the same validated canonical identity**, always including explicit `client_encoding=UTF8`. The original opaque conninfo string is never the libpq input. Every recognized libpq environment/default source for the pinned libpq 170005 path is stripped for the connect call and restored afterward on success, refusal, and exception, without interpolating values into logs or errors.
+After authority PASS, the parameters passed to psycopg/libpq are **reconstructed from the same validated canonical identity**, always including explicit `client_encoding=UTF8`. The original opaque conninfo string is never the libpq input. Every recognized libpq environment/default source for the pinned libpq 170005 path is stripped for the connect call and restored afterward on success, refusal, and exception, without interpolating values into logs or errors. The factory then injects an empty package-controlled `passfile=` (0600, not the user's `~/.pgpass`) so libpq 170005 cannot fall back to the default filesystem passfile. Operator-supplied `passfile=` remains refused. Direct-postgres authority with no explicit in-memory password fails closed before the factory.
 
 **Permitted `authorized-capture` conninfo keys**
 
@@ -64,29 +65,37 @@ After authority PASS, the parameters passed to psycopg/libpq are **reconstructed
 
 URI form may supply the same identity via netloc/path plus query `sslmode` only. URI percent-decoding applies to URI userinfo/path/query only.
 
-**Keyword parser (KIV-232 R4)**
+**Keyword parser (KIV-232 R4 + KIV-236 R4)**
 
 * Keyword `%xx` sequences remain literal. `password=foo%40bar`, `host=127%2e0%2e0%2e1`, and `user=kiv%32%31%37` are not silently decoded.
 * Single-quoted keyword values follow libpq backslash-escape rules, or the parser fails closed before the factory. Double quotes are not a keyword quoting delimiter.
+* Unquoted keyword backslash is **refused** (fail-closed subset). libpq treats unquoted `\\X` as an escape; this package will not silently assign a different value.
 * Duplicate identity/alias keys and malformed quoting fail closed.
+* Percent-encoded URI hosts are **refused** (fail-closed subset). libpq percent-decodes the URI host; urllib hostname does not. The governed direct hostname does not require encoded host bytes. URI userinfo/path/query percent-decoding remains URI-only and is decoded once.
 
 **Refused before the factory (fail closed)**
 
 * URI query `hostaddr=` and URI query `host=` (cannot override netloc)
+* percent-encoded URI host
+* unquoted keyword backslash
 * keyword `hostaddr`
+* operator-supplied `passfile=`
 * `service=` / service-file indirection
 * recognized libpq environment/default sources (destination, secret/auth, startup/session GUCs including `PGCLIENTENCODING` / `PGOPTIONS` / `PGAPPNAME` / `PGPASSWORD`, SSL/GSS, connection behavior, and libpq search paths) — stripped for the connect call
+* default filesystem `~/.pgpass` — neutralized by a package-controlled empty passfile at the actual connect call; the user's real passfile is never opened
+* direct-postgres conninfo that omits an explicit in-memory password
 * multi-host / multi-port lists
 * duplicate identity-affecting keys
 * unix-socket or empty-host fallback
 * any unreviewed conninfo key
 * non-`UTF8` `client_encoding`
 
-A future reviewer **must** prove destination binding and hermetic startup behavior without touching the production endpoint:
+A future reviewer **must** prove destination binding, hermetic startup, default-passfile neutralization, and parser fail-closed behavior without touching the production endpoint:
 
 * adversarial live targets are loopback / reserved / fake only;
 * production-shaped strings are parser and factory-mock tests only — never DNS-resolved and never TCP-connected;
-* live session-startup SQL is disposable loopback PostgreSQL 17.6 only;
+* live session-startup SQL / password-auth proof is disposable loopback PostgreSQL 17.6 only;
+* default-passfile proofs may create a temporary HOME and synthetic `.pgpass` in disposable test space only — never open the user's real passfile;
 * production DNS / raw-TCP / authentication / SQL is neither required nor permitted for package review.
 
 This is process hardening inside the package/test contract. It does not change the operative recovery procedure.
@@ -156,7 +165,7 @@ It may be used later by a **separately authorized** capturer only after:
 
 1. KIV-220 independent PASS / PM hash-pin of exact parent `8cc7331…` (already recorded);
 2. KIV-225 independent PASS / PM hash-pin of exact `f260efd4…` package-commit binding (already recorded; continuity-ineligible on Session Pooler);
-3. independent reviewer PASS / hash-pin of this KIV-234 successor hermetic/parser binding (and of the KIV-231 destination binding / KIV-229 direct-postgres route it remediates);
+3. independent reviewer PASS / hash-pin of this KIV-237 successor passfile/parser binding (and of the KIV-234 hermetic inventory / KIV-231 destination binding / KIV-229 direct-postgres route it remediates);
 4. a later, separately governed PCSB-n capture work order that supplies matching `CaptureAuthority` for `direct-postgres`.
 
 Until then: **zero** production/Supabase authentication and **zero** production SQL. This work order creates **no PCSB-4** authority.
@@ -168,7 +177,7 @@ Until then: **zero** production/Supabase authentication and **zero** production 
 | Runtime | Python 3.13.x (3.11+ required) |
 | Package | `psycopg[binary]==3.2.9` |
 | Backend PID method | `psycopg.Connection.info.backend_pid` → libpq `PQbackendPID` (BackendKeyData). **No SQL.** |
-| Connect flags | `autocommit=True`, `prepare_threshold=None`, explicit reconstructed `client_encoding=UTF8` at the libpq boundary (not SET SQL; environment encoding cannot substitute) |
+| Connect flags | `autocommit=True`, `prepare_threshold=None`, explicit reconstructed `client_encoding=UTF8` at the libpq boundary (not SET SQL; environment encoding cannot substitute); empty package-controlled `passfile=` injected so default `~/.pgpass` cannot supply credentials |
 | Ineligible sole driver | raw interactive `psql` |
 
 The bundled libpq in `psycopg[binary]==3.2.9` reports `170005` (17.5) while talking to server **17.6**. That is recorded; it is not a reason to emit helper SQL before P-0.
@@ -253,13 +262,13 @@ No third Kivo bootstrap recipe. No dump shortcut. No ad-hoc DDL.
 
 Default conninfo is loopback only. Without a matching `CaptureAuthority`, the package refuses `supabase.co` / pooler hosts, project ref `zlighrbsjexrozrmuwpw`, any non-loopback host, and `allow_remote=True`. There is no production DSN, password, token, or `.pgpass` in this package. KIV-198/199 credentials must not be inspected or reused.
 
-The authorized seam canonicalizes conninfo, compares that non-secret identity to `authorized_target`, then reconstructs keyword parameters from the **authority-bound** identity before `psycopg.connect`, always with `client_encoding=UTF8`. Recognized libpq environment/default sources are stripped for that call and restored afterward. Keyword `%xx` is literal; URI percent-decoding is URI-only. Secrets must not appear in the authority JSON or in written evidence and must not be sourced from `PGPASSWORD` / passfile / service-file. Session Pooler / port 6543 / pooler username form cannot be authorized. Production statement SQL / hash-of-hashes remain exact `6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845`.
+The authorized seam canonicalizes conninfo, compares that non-secret identity to `authorized_target`, then reconstructs keyword parameters from the **authority-bound** identity before `psycopg.connect`, always with `client_encoding=UTF8`. Recognized libpq environment/default sources are stripped for that call and restored afterward. The factory injects an empty package-controlled passfile; operator `passfile=` is refused; direct-postgres requires an explicit in-memory password. Keyword `%xx` is literal; unquoted keyword backslash is refused; percent-encoded URI hosts are refused; URI percent-decoding is URI userinfo/path/query only. Secrets must not appear in the authority JSON or in written evidence and must not be sourced from `PGPASSWORD` / passfile / service-file. Session Pooler / port 6543 / pooler username form cannot be authorized. Production statement SQL / hash-of-hashes remain exact `6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845`.
 
 The tooling-only `prove-direct-pid-equivalence` SQL (`SELECT pg_backend_pid() AS sql_backend_pid`) is not in the production statement set and cannot enter `authorized-capture`.
 
 ## Terminal law
 
-KIV-234 completion does **not** authorize PCSB-4. Leave KIV-234 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
+KIV-237 completion does **not** authorize PCSB-4. Leave KIV-237 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
 
-READY line: `A2 ACCEPTANCE-RECOVERY LIBPQ HERMETIC/PARSER REMEDIATION READY FOR INDEPENDENT REVIEW`  
-HOLD line: `A2 ACCEPTANCE-RECOVERY LIBPQ HERMETIC/PARSER REMEDIATION HOLD`
+READY line: `A2 ACCEPTANCE-RECOVERY PASSFILE/PARSER REMEDIATION READY FOR INDEPENDENT REVIEW`  
+HOLD line: `A2 ACCEPTANCE-RECOVERY PASSFILE/PARSER REMEDIATION HOLD`

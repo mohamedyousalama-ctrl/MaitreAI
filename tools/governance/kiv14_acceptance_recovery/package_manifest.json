@@ -74,6 +74,8 @@
   },
   "destination_binding": {
     "client_encoding_forced_at_libpq_boundary": true,
+    "default_filesystem_passfile_neutralized": true,
+    "direct_postgres_requires_explicit_in_memory_secret": true,
     "effective_destination_equals_authority_identity": true,
     "environment_restored_after_success_and_failure": true,
     "governance_note": "These runtime fields do not create Linear/PM governance authority. Only a separately released Linear work order does.",
@@ -82,7 +84,8 @@
     "keyword_conninfo_parser": {
       "duplicate_keys": "fail closed",
       "grammar": "libpq keyword/value; URI percent-decoding is not applied",
-      "quoted_values": "single-quote with backslash escapes, or fail closed"
+      "quoted_values": "single-quote with backslash escapes, or fail closed",
+      "unquoted_backslash": "fail closed"
     },
     "kiv230_r2_closed": [
       "uri_query_hostaddr",
@@ -110,6 +113,16 @@
     "kiv232_r4_closed": [
       "keyword_percent_literals_not_uri_decoded",
       "quoted_backslash_keyword_values_match_libpq_or_fail_closed"
+    ],
+    "kiv236_r3_closed": [
+      "default_filesystem_passfile",
+      "PGPASSFILE",
+      "operator_supplied_passfile",
+      "direct_postgres_missing_explicit_secret"
+    ],
+    "kiv236_r4_closed": [
+      "unquoted_keyword_backslash_fail_closed",
+      "percent_encoded_uri_host_fail_closed"
     ],
     "libpq_environment_inventory": {
       "connection_behavior": [
@@ -167,6 +180,8 @@
       ]
     },
     "opaque_conninfo_never_passed_to_libpq": true,
+    "operator_supplied_passfile_refused": true,
+    "package_controlled_empty_passfile_injected_at_libpq_boundary": true,
     "permitted_authorized_capture_identity_keys": [
       "host",
       "port",
@@ -267,6 +282,7 @@
     ],
     "uri_conninfo_parser": {
       "percent_decoding": "URI userinfo/path/query only",
+      "percent_encoded_host": "fail closed",
       "query_host_or_hostaddr": "fail closed"
     }
   },
@@ -324,6 +340,13 @@
     "manifest_sha256": "2dd14b148c50de9b9acec58beabd17d803117a123c2efeed6786aa9dc0ef0d29",
     "package_version": "0.1.5-kiv231-conninfo-destination-binding-candidate"
   },
+  "kiv234_blocked_parent": {
+    "commit": "69f489c184fadfbe6b31f3b4d1b912cce3bb3508",
+    "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
+    "manifest_blob": "e841c3417c0819eb7a957d8cead3102e8d0d81fc",
+    "manifest_sha256": "df29c4a4735ea4e95a0053f04da805b849b23998940cfb6815abf2b5fe6ea344",
+    "package_version": "0.1.6-kiv234-libpq-hermetic-parser-candidate"
+  },
   "not_production_evidence": true,
   "not_section7_fixture_evidence": true,
   "operative_procedure": {
@@ -332,9 +355,9 @@
     "path": "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md",
     "sha256": "48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a"
   },
-  "package_context": "KIVO-A2-RECOVERY-LIBPQ-HERMETIC-PARSER-BUILDER-234",
+  "package_context": "KIVO-A2-RECOVERY-PASSFILE-PARSER-BUILDER-237",
   "package_id": "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE",
-  "package_version": "0.1.6-kiv234-libpq-hermetic-parser-candidate",
+  "package_version": "0.1.7-kiv237-passfile-parser-candidate",
   "platform_baseline": {
     "cli_tarball_asset": "supabase-postgres-v17.6.1.150-cli-darwin-arm64.tar.gz",
     "cli_tarball_sha256": "e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6",

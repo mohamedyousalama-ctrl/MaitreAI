@@ -176,6 +176,108 @@ def init_and_start(
     return cluster
 
 
+def init_and_start_password_auth(
+    *,
+    label: str,
+    password: str,
+    port: int | None = None,
+    prefix: Path | None = None,
+    base_dir: Path | None = None,
+) -> LocalCluster:
+    """Disposable loopback PostgreSQL 17.6 that requires a password (scram-sha-256).
+
+    Used only to prove default ``~/.pgpass`` cannot authenticate the reviewed
+    factory. The password stays in memory for this process; it is never logged.
+    """
+    prefix = assert_pg176_prefix(prefix)
+    port = port or unused_loopback_port()
+    base = base_dir or Path(f"/tmp/kivo-kiv217-pg176/runs/{label}-{port}")
+    if base.exists():
+        shutil.rmtree(base)
+    data_dir = base / "data"
+    socket_dir = base / "sock"
+    log_dir = data_dir / "log"
+    socket_dir.mkdir(parents=True)
+    pwfile = base / "initdb.pw"
+    pwfile.parent.mkdir(parents=True, exist_ok=True)
+    pwfile.write_text(password + "\n")
+    os.chmod(pwfile, 0o600)
+    initdb = prefix / "bin" / "initdb"
+    env = {
+        **os.environ,
+        "PATH": f"{prefix / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin",
+    }
+    try:
+        subprocess.check_call(
+            [
+                str(initdb),
+                "-D",
+                str(data_dir),
+                "--username=kiv217",
+                "--auth=scram-sha-256",
+                "--pwfile",
+                str(pwfile),
+                "--encoding=UTF8",
+                "--no-locale",
+                "--no-sync",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            env=env,
+        )
+    finally:
+        try:
+            pwfile.unlink()
+        except FileNotFoundError:
+            pass
+    conf = data_dir / "postgresql.conf"
+    extra = (
+        "\n"
+        "listen_addresses = '127.0.0.1'\n"
+        f"port = {port}\n"
+        f"unix_socket_directories = '{socket_dir}'\n"
+        "password_encryption = scram-sha-256\n"
+        "logging_collector = on\n"
+        "log_directory = 'log'\n"
+        "log_filename = 'postgresql.log'\n"
+        "log_statement = 'all'\n"
+        "log_connections = on\n"
+        "log_disconnections = on\n"
+        "log_line_prefix = '%m [%p] '\n"
+        "shared_preload_libraries = ''\n"
+    )
+    conf.write_text(conf.read_text() + extra)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.Popen(
+        [
+            str(prefix / "bin" / "postgres"),
+            "-D",
+            str(data_dir),
+            "-c",
+            "listen_addresses=127.0.0.1",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+    cluster = LocalCluster(
+        prefix=prefix,
+        data_dir=data_dir,
+        socket_dir=socket_dir,
+        port=port,
+        process=proc,
+        password=password,
+        bootstrap_user="kiv217",
+        platform_baseline=False,
+    )
+    try:
+        _wait_ready(cluster, user="kiv217", password=password)
+    except Exception:
+        stop_cluster(cluster)
+        raise
+    return cluster
+
+
 def _wait_ready(
     cluster: LocalCluster,
     timeout: float = 20.0,

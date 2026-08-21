@@ -17,7 +17,9 @@ from kiv14_pcsb.safety import parse_canonical_conninfo
 
 from test_capture_binding import (
     DIRECT_HOST,
-    EFFECTIVE_DIRECT_CONNINFO,
+    DIRECT_URI_EXPLICIT,
+    EFFECTIVE_DIRECT_CONNINFO_EXPLICIT,
+    SYNTHETIC_DIRECT_PASSWORD,
     _FakeConn,
     _authority_dict,
     _target_direct,
@@ -153,17 +155,26 @@ def test_runner_and_session_factory_receive_governed_utf8(tmp_path, monkeypatch)
     AuthorizedCaptureRunner().run(
         authority=authority,
         invocation=invocation,
-        conninfo=f"postgresql://postgres@{DIRECT_HOST}:5432/postgres?sslmode=require",
+        conninfo=DIRECT_URI_EXPLICIT,
     )
     session = PersistentCaptureSession(
-        f"host={DIRECT_HOST} port=5432 dbname=postgres user=postgres sslmode=require",
+        f"host={DIRECT_HOST} port=5432 dbname=postgres user=postgres "
+        f"password={SYNTHETIC_DIRECT_PASSWORD} sslmode=require",
         authority=authority,
     )
     session.connect()
     session.close()
     assert len(recorded) == 2
+    from psycopg.conninfo import conninfo_to_dict
+
+    expected = conninfo_to_dict(EFFECTIVE_DIRECT_CONNINFO_EXPLICIT)
     for item in recorded:
-        assert item["conninfo"] == EFFECTIVE_DIRECT_CONNINFO
+        got = conninfo_to_dict(item["conninfo"] or "")
+        for key in ("host", "port", "dbname", "user", "sslmode", "client_encoding", "password"):
+            assert got.get(key) == expected.get(key)
+        assert got.get("passfile")
+        assert os.path.basename(got["passfile"]) == "pgpass"
+        assert "kiv14-pcsb-passfile-" in (got["passfile"] or "")
         assert "client_encoding=UTF8" in (item["conninfo"] or "")
         for key in LIBPQ_HERMETIC_ENV_VARS:
             assert item[key] is None
@@ -180,14 +191,23 @@ def test_pgpassword_cannot_supply_or_override_secret(monkeypatch):
     assert recorded[0]["PGPASSWORD"] is None
     assert _ENV_TOKEN not in (recorded[0]["conninfo"] or "")
     assert "password=" not in (recorded[0]["conninfo"] or "")
+    from psycopg.conninfo import conninfo_to_dict
+
+    first = conninfo_to_dict(recorded[0]["conninfo"] or "")
+    assert first.get("passfile")
+    assert os.path.basename(first["passfile"]) == "pgpass"
+    assert "kiv14-pcsb-passfile-" in (first["passfile"] or "")
+    assert first.get("passfile") != os.path.expanduser("~/.pgpass")
 
     reviewed_psycopg_connect(
         "host=127.0.0.1 port=55432 dbname=postgres user=kiv217 "
         f"password={_EXPLICIT_TOKEN} sslmode=disable"
     )
     assert recorded[1]["PGPASSWORD"] is None
-    assert f"password={_EXPLICIT_TOKEN}" in (recorded[1]["conninfo"] or "")
+    second = conninfo_to_dict(recorded[1]["conninfo"] or "")
+    assert second.get("password") == _EXPLICIT_TOKEN
     assert _ENV_TOKEN not in (recorded[1]["conninfo"] or "")
+    assert second.get("passfile")
     assert os.environ.get("PGPASSWORD") == _ENV_TOKEN
 
 
@@ -237,6 +257,10 @@ def test_review_contract_records_hermetic_inventory():
     assert "PGPASSWORD" in live_names
     assert contract["governed_client_encoding"] == "UTF8"
     assert contract["hermetic_libpq_environment"] is True
+    assert contract["default_filesystem_passfile_neutralized"] is True
+    assert contract["direct_postgres_requires_explicit_in_memory_secret"] is True
+    assert contract["keyword_conninfo_parser"]["unquoted_backslash"] == "fail closed"
+    assert contract["uri_conninfo_parser"]["percent_encoded_host"] == "fail closed"
     inventory = contract["libpq_environment_inventory"]
     assert set(inventory["startup_session_gucs"]) >= {
         "PGCLIENTENCODING",

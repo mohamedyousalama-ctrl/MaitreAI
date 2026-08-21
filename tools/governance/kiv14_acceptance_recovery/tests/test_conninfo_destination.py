@@ -25,9 +25,12 @@ from kiv14_pcsb.safety import ProductionTargetRefused, parse_canonical_conninfo
 
 from test_capture_binding import (
     DIRECT_CONNINFO,
+    DIRECT_CONNINFO_EXPLICIT,
     DIRECT_HOST,
-    EFFECTIVE_DIRECT_CONNINFO,
+    DIRECT_URI_EXPLICIT,
+    EFFECTIVE_DIRECT_CONNINFO_EXPLICIT,
     POOLER_CONNINFO,
+    SYNTHETIC_DIRECT_PASSWORD,
     _FakeConn,
     _authority_dict,
     _target_direct,
@@ -106,20 +109,28 @@ def test_libpq_destination_environment_cannot_redirect_passing_authority(
     monkeypatch.setenv("PGOPTIONS", "-c search_path=pg_catalog -c default_transaction_read_only=on")
     monkeypatch.setenv("PGAPPNAME", "kiv232-adversary")
     monkeypatch.setenv("PGPASSWORD", "kiv234-env-only")
-    session = PersistentCaptureSession(DIRECT_CONNINFO, authority=authority)
+    session = PersistentCaptureSession(DIRECT_CONNINFO_EXPLICIT, authority=authority)
     session.connect()
     try:
         assert recorded, "reviewed factory must still reach psycopg.connect"
-        assert recorded[0]["conninfo"] == EFFECTIVE_DIRECT_CONNINFO
+        from psycopg.conninfo import conninfo_to_dict
+
+        got = conninfo_to_dict(recorded[0]["conninfo"] or "")
+        expected = conninfo_to_dict(EFFECTIVE_DIRECT_CONNINFO_EXPLICIT)
+        for key in ("host", "port", "dbname", "user", "sslmode", "client_encoding", "password"):
+            assert got.get(key) == expected.get(key)
+        assert got.get("passfile")
+        assert os.path.basename(got["passfile"]) == "pgpass"
+        assert "kiv14-pcsb-passfile-" in (got["passfile"] or "")
         for key in LIBPQ_HERMETIC_ENV_VARS:
             assert recorded[0][key] is None
-        identity = parse_canonical_conninfo(recorded[0]["conninfo"] or "")
-        assert identity.host == authority.authorized_target.host
-        assert identity.port == authority.authorized_target.port
-        assert identity.database == authority.authorized_target.database
-        assert identity.user == authority.authorized_target.user
-        assert identity.sslmode == authority.authorized_target.sslmode
-        assert identity.client_encoding == GOVERNED_CLIENT_ENCODING
+        assert got.get("host") == authority.authorized_target.host
+        assert int(got.get("port") or 0) == authority.authorized_target.port
+        assert got.get("dbname") == authority.authorized_target.database
+        assert got.get("user") == authority.authorized_target.user
+        assert got.get("sslmode") == authority.authorized_target.sslmode
+        assert got.get("client_encoding") == GOVERNED_CLIENT_ENCODING
+        assert got.get("password") == SYNTHETIC_DIRECT_PASSWORD
     finally:
         session.close()
 
@@ -186,9 +197,9 @@ def test_canonical_direct_identity_reaches_factory_equal_to_authority(
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
     payload = AuthorizedCaptureRunner().run(
-        authority=authority, invocation=invocation, conninfo=PRODUCTION_SHAPED_URI
+        authority=authority, invocation=invocation, conninfo=DIRECT_URI_EXPLICIT
     )
-    assert reached == [EFFECTIVE_DIRECT_CONNINFO]
+    assert reached == [EFFECTIVE_DIRECT_CONNINFO_EXPLICIT]
     parsed = parse_canonical_conninfo(reached[0])
     target = authority.authorized_target
     assert parsed.host == target.host
@@ -232,7 +243,9 @@ def test_no_retry_after_destination_bound_connect(tmp_path, monkeypatch):
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
     runner = AuthorizedCaptureRunner()
-    payload = runner.run(authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO)
+    payload = runner.run(
+        authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO_EXPLICIT
+    )
     assert payload["retry"] is False
     with pytest.raises(SequenceViolation, match="retry"):
         runner.run(authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO)
@@ -269,7 +282,19 @@ def test_reviewed_factory_reconstructs_before_psycopg(monkeypatch):
     conn = reviewed_psycopg_connect(
         "host=127.0.0.1 port=55432 dbname=postgres user=kiv217 sslmode=disable"
     )
-    assert recorded == [
-        "host=127.0.0.1 port=55432 dbname=postgres user=kiv217 sslmode=disable client_encoding=UTF8"
-    ]
+    from psycopg.conninfo import conninfo_to_dict
+
+    assert len(recorded) == 1
+    got = conninfo_to_dict(recorded[0])
+    assert got.get("host") == "127.0.0.1"
+    assert got.get("port") == "55432"
+    assert got.get("dbname") == "postgres"
+    assert got.get("user") == "kiv217"
+    assert got.get("sslmode") == "disable"
+    assert got.get("client_encoding") == "UTF8"
+    assert not got.get("password")
+    assert got.get("passfile")
+    assert os.path.basename(got["passfile"]) == "pgpass"
+    assert "kiv14-pcsb-passfile-" in (got["passfile"] or "")
+    assert "host=127.0.0.1" in recorded[0]
     assert conn.info.backend_pid == 4242

@@ -51,7 +51,19 @@ DIRECT_USER = "postgres"
 DIRECT_CONNINFO = (
     f"host={DIRECT_HOST} port=5432 dbname=postgres user={DIRECT_USER} sslmode=require"
 )
+SYNTHETIC_DIRECT_PASSWORD = "kiv237-explicit-synthetic-only"
+DIRECT_CONNINFO_EXPLICIT = (
+    f"{DIRECT_CONNINFO} password={SYNTHETIC_DIRECT_PASSWORD}"
+)
+DIRECT_URI_EXPLICIT = (
+    f"postgresql://{DIRECT_USER}:{SYNTHETIC_DIRECT_PASSWORD}@"
+    f"{DIRECT_HOST}:5432/postgres?sslmode=require"
+)
 EFFECTIVE_DIRECT_CONNINFO = DIRECT_CONNINFO + " client_encoding=UTF8"
+EFFECTIVE_DIRECT_CONNINFO_EXPLICIT = (
+    f"host={DIRECT_HOST} port=5432 dbname=postgres user={DIRECT_USER} "
+    f"password={SYNTHETIC_DIRECT_PASSWORD} sslmode=require client_encoding=UTF8"
+)
 
 
 def _pins():
@@ -221,10 +233,10 @@ def test_authorized_target_reaches_reviewed_factory_only_when_bound(tmp_path, mo
     with pytest.raises(ProductionTargetRefused):
         PersistentCaptureSession(POOLER_CONNINFO).connect()
     assert reached == []
-    session = PersistentCaptureSession(DIRECT_CONNINFO, authority=authority)
+    session = PersistentCaptureSession(DIRECT_CONNINFO_EXPLICIT, authority=authority)
     session.connect()
     try:
-        assert reached == [EFFECTIVE_DIRECT_CONNINFO]
+        assert reached == [EFFECTIVE_DIRECT_CONNINFO_EXPLICIT]
         assert session.pre_p0_backend_pid == 4242
         assert session.sql_log == []
     finally:
@@ -304,7 +316,9 @@ def test_runner_has_no_retry_path(tmp_path, monkeypatch):
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
     runner = AuthorizedCaptureRunner()
-    payload = runner.run(authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO)
+    payload = runner.run(
+        authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO_EXPLICIT
+    )
     assert payload["retry"] is False
     with pytest.raises(SequenceViolation, match="retry"):
         runner.run(authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO)
@@ -457,9 +471,9 @@ def test_normal_checkout_exact_commit_passes_package_identity(tmp_path, monkeypa
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
     AuthorizedCaptureRunner().run(
-        authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
+        authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO_EXPLICIT
     )
-    assert reached == [EFFECTIVE_DIRECT_CONNINFO]
+    assert reached == [EFFECTIVE_DIRECT_CONNINFO_EXPLICIT]
 
 
 def test_wrong_arbitrary_commit_never_reaches_factory(tmp_path, monkeypatch):
@@ -601,10 +615,10 @@ def test_detached_head_match_accepted_mismatch_refuses(tmp_path, monkeypatch):
     AuthorizedCaptureRunner().run(
         authority=matching,
         invocation=invocation,
-        conninfo=DIRECT_CONNINFO,
+        conninfo=DIRECT_CONNINFO_EXPLICIT,
         root=pkg,
     )
-    assert reached == [EFFECTIVE_DIRECT_CONNINFO]
+    assert reached == [EFFECTIVE_DIRECT_CONNINFO_EXPLICIT]
     reached.clear()
     mismatch = parse_capture_authority(
         _authority_dict(dest=dest / "b", target=_target_direct(), package_commit="b" * 40)
@@ -720,9 +734,9 @@ def test_correct_direct_postgres_reaches_factory_after_pre_connect_checks(tmp_pa
         authority.work_order_id, authority.pcsb_identity, authority.evidence_directory
     )
     payload = AuthorizedCaptureRunner().run(
-        authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
+        authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO_EXPLICIT
     )
-    assert reached == [EFFECTIVE_DIRECT_CONNINFO]
+    assert reached == [EFFECTIVE_DIRECT_CONNINFO_EXPLICIT]
     assert payload["retry"] is False
     pre_auth = dest / "capture_pre_auth.json"
     text = pre_auth.read_text()

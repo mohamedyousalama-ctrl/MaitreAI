@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator
@@ -177,6 +178,13 @@ def _split_keyword_tokens(text: str) -> list[tuple[str, str]]:
         else:
             value_start = index
             while index < n and text[index] not in _KEYWORD_WS:
+                if text[index] == "\\":
+                    _refuse_dest(
+                        "unquoted keyword backslash is refused; quote the value "
+                        "or omit the backslash"
+                    )
+                if text[index] == "\x00":
+                    _refuse_dest("keyword conninfo contains a NUL")
                 index += 1
             value = text[value_start:index]
         tokens.append((key, value))
@@ -241,8 +249,9 @@ def parse_canonical_conninfo(conninfo: str) -> CanonicalConninfo:
     """Fail-closed parser: identity must be explicit, unambiguous, and allowlisted.
 
     URI query may not override netloc. hostaddr, service, multi-host/port lists,
-    duplicate identity keys, unix sockets, and empty host are refused. The
-    returned identity is the only identity later passed to libpq.
+    duplicate identity keys, unix sockets, empty host, unquoted keyword
+    backslash, and percent-encoded URI hosts are refused. The returned identity
+    is the only identity later passed to libpq.
     """
     if not conninfo or not conninfo.strip():
         _refuse_dest("conninfo missing; authentication refused")
@@ -279,6 +288,7 @@ def _parse_uri_conninfo(text: str) -> CanonicalConninfo:
                 _refuse_dest(f"URI query key {key!r} is refused")
             _refuse_dest(f"URI query key {key!r} is not permitted")
         query[key] = raw_value
+    _refuse_percent_encoded_uri_host(parsed)
     host = parsed.hostname
     if host is None:
         _refuse_dest("URI netloc host is missing; unix-socket / empty-host fallback is refused")
@@ -313,6 +323,37 @@ def _parse_uri_conninfo(text: str) -> CanonicalConninfo:
         password=password,
         client_encoding=GOVERNED_CLIENT_ENCODING,
     )
+
+
+def _uri_netloc_host(parsed) -> str:
+    """Return the raw URI host from netloc, before urllib hostname decoding."""
+    netloc = parsed.netloc
+    if not netloc:
+        _refuse_dest("URI netloc host is missing; unix-socket / empty-host fallback is refused")
+    authority = netloc.rsplit("@", 1)[-1]
+    if authority.startswith("["):
+        close = authority.find("]")
+        if close < 0:
+            _refuse_dest("URI IPv6 host is malformed")
+        host = authority[1:close]
+        remainder = authority[close + 1 :]
+        if remainder and not remainder.startswith(":"):
+            _refuse_dest("URI IPv6 host is malformed")
+        return host
+    if ":" in authority:
+        return authority.rsplit(":", 1)[0]
+    return authority
+
+
+def _refuse_percent_encoded_uri_host(parsed) -> None:
+    """Fail closed on percent-encoded URI hosts rather than silently mismatch libpq.
+
+    libpq percent-decodes the URI host; urllib.parse.hostname does not match that
+    grammar. The governed direct hostname does not require encoded host bytes.
+    """
+    host = _uri_netloc_host(parsed)
+    if "%" in host:
+        _refuse_dest("percent-encoded URI host is refused")
 
 
 def _parse_keyword_conninfo(text: str) -> CanonicalConninfo:
@@ -356,6 +397,38 @@ def reconstruct_keyword_conninfo(
         client_encoding=GOVERNED_CLIENT_ENCODING,
     )
     return bound.as_keyword_conninfo()
+
+
+@contextmanager
+def package_controlled_passfile() -> Iterator[str]:
+    """Yield an empty 0600 passfile that is not the user's ``~/.pgpass``.
+
+    libpq 170005 still substitutes ``~/.pgpass`` when password is empty and
+    neither ``passfile=`` nor ``PGPASSFILE`` is set. Operator-supplied
+    ``passfile=`` remains refused. The factory injects this package-owned empty
+    file for the connect call only. The real user passfile is never opened.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="kiv14-pcsb-passfile-")
+    os.chmod(tmpdir, 0o700)
+    path = os.path.join(tmpdir, "pgpass")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.close(fd)
+        yield path
+    finally:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        try:
+            os.rmdir(tmpdir)
+        except OSError:
+            pass
+
+
+def keyword_conninfo_with_package_passfile(keyword_conninfo: str, passfile_path: str) -> str:
+    """Append the package-controlled passfile to already-reconstructed keyword conninfo."""
+    return f"{keyword_conninfo} passfile={_keyword_value(passfile_path)}"
 
 
 @contextmanager

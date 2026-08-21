@@ -522,15 +522,21 @@ def destination_binding_review_contract() -> dict[str, Any]:
             "environment / passfile / service-file defaults; never logged, "
             "hashed, or evidenced"
         ),
+        "default_filesystem_passfile_neutralized": True,
+        "package_controlled_empty_passfile_injected_at_libpq_boundary": True,
+        "operator_supplied_passfile_refused": True,
+        "direct_postgres_requires_explicit_in_memory_secret": True,
         "refused_conninfo_keys": list(CONNINFO_REFUSED_KEYS),
         "keyword_conninfo_parser": {
             "grammar": "libpq keyword/value; URI percent-decoding is not applied",
             "quoted_values": "single-quote with backslash escapes, or fail closed",
+            "unquoted_backslash": "fail closed",
             "duplicate_keys": "fail closed",
         },
         "uri_conninfo_parser": {
             "percent_decoding": "URI userinfo/path/query only",
             "query_host_or_hostaddr": "fail closed",
+            "percent_encoded_host": "fail closed",
         },
         "libpq_environment_inventory": {
             class_name: _evidence_safe_env_names(names)
@@ -577,6 +583,16 @@ def destination_binding_review_contract() -> dict[str, Any]:
         "kiv232_r4_closed": [
             "keyword_percent_literals_not_uri_decoded",
             "quoted_backslash_keyword_values_match_libpq_or_fail_closed",
+        ],
+        "kiv236_r3_closed": [
+            "default_filesystem_passfile",
+            "PGPASSFILE",
+            "operator_supplied_passfile",
+            "direct_postgres_missing_explicit_secret",
+        ],
+        "kiv236_r4_closed": [
+            "unquoted_keyword_backslash_fail_closed",
+            "percent_encoded_uri_host_fail_closed",
         ],
         "governance_note": (
             "These runtime fields do not create Linear/PM governance authority. "
@@ -654,4 +670,9 @@ def assert_authorized_capture_target(
             sslmode=identity.get("sslmode") or "",
             project_ref=target.project_ref,
         )
+        if parsed.password is None or parsed.password == "":
+            _refuse(
+                "direct-postgres capture requires an explicit in-memory password; "
+                "default filesystem passfile is not a credential source"
+            )
     return parsed
