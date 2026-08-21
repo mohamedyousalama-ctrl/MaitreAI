@@ -8,6 +8,7 @@ from .authority import (
     CaptureInvocation,
     assert_authority_matches_this_package,
     assert_invocation_matches_authority,
+    assert_runtime_capture_identity_eligible,
     destination_binding_review_contract,
     later_executor_pre_auth_contract,
 )
@@ -40,6 +41,8 @@ class AuthorizedCaptureRunner:
         if self._started:
             raise SequenceViolation("same-work-order retry/restart is forbidden")
         self._started = True
+        assert_runtime_capture_identity_eligible(authority)
+        assert_runtime_capture_identity_eligible(invocation)
         assert_invocation_matches_authority(authority, invocation)
         assert_authority_matches_this_package(authority, root=root)
         dest = Path(authority.evidence_directory)

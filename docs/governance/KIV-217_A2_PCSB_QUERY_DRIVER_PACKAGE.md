@@ -1,8 +1,9 @@
-# KIV-217 A2 PCSB query/driver package — KIV-242 consumed-PCSB operator contract
+# KIV-217 A2 PCSB query/driver package — KIV-246 consumed-object-boundary operator contract
 
-**Context:** `KIVO-A2-RECOVERY-CONSUMED-PCSB-BUILDER-242`  
+**Context:** `KIVO-A2-RECOVERY-CONSUMED-OBJECT-BOUNDARY-BUILDER-246`  
 **Package id:** `KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE`  
-**Package version:** `0.1.8-kiv242-consumed-pcsb-candidate`  
+**Package version:** `0.1.9-kiv246-consumed-object-boundary-candidate`  
+**KIV-242 blocked parent (consumed-PCSB registry, not hash-pinnable):** commit `718c61aa7a5f4b4731b10ec701e8ac48cb062c80`  
 **KIV-237 accepted parent (passfile/parser, PM-accepted/hash-pinned):** commit `a6e3d8aa27bb6f7a790d8f8c7ff76f9f572fcc9f`  
 **KIV-234 blocked parent (hermetic libpq/parser, not hash-pinnable):** commit `69f489c184fadfbe6b31f3b4d1b912cce3bb3508`  
 **KIV-231 blocked parent (destination binding, not hash-pinnable):** commit `f9cd26252b0bf66748919ede5f0c8d1a2974b7cb`  
@@ -12,9 +13,9 @@
 **KIV-220 accepted parent (unchanged SQL / hash-of-hashes):** commit `8cc7331aa19eb90f3cf5c7625e074ccd5c134638`  
 **KIV-217 published custody (unchanged grandparent object):** branch `claude/kiv-217-a2-pcsb-query-driver-package` commit `37836b0b3ec22c7d8190aa39168f21641c0067ff`
 
-**This document is the operator contract for the no-production candidate package plus the KIV-242 consumed-PCSB registry remediation of exact accepted `a6e3d8aa…`.** It is not KIV-14 acceptance, not PCSB-4 capture authority, not KIV-242 governance authority, and not §7 fixture evidence. Production statement SQL is byte-identical to exact `a6e3d8aa…` / `69f489c1…` / `f9cd2625…` / `ff7978c6…` / `f260efd4…`. KIV-237/KIV-238 passfile/parser/destination/hermetic controls are unchanged.
+**This document is the operator contract for the no-production candidate package plus the KIV-246 consumed-object-boundary remediation of blocked `718c61aa…`.** It is not KIV-14 acceptance, not PCSB-4 capture authority, not KIV-246 governance authority, and not §7 fixture evidence. Production statement SQL is byte-identical to exact `718c61aa…` / `a6e3d8aa…` / `69f489c1…` / `f9cd2625…` / `ff7978c6…` / `f260efd4…`. KIV-237/KIV-238 passfile/parser/destination/hermetic controls are unchanged. KIV-245 R1/R3/R4/R5/R6 scoped PASS findings remain evidence.
 
-## Capture-binding seam (KIV-221 + KIV-224 + KIV-229 + KIV-231 + KIV-234 + KIV-237 + KIV-242)
+## Capture-binding seam (KIV-221 + KIV-224 + KIV-229 + KIV-231 + KIV-234 + KIV-237 + KIV-242 + KIV-246)
 
 Default behavior remains fail-closed and no-production:
 
@@ -30,14 +31,16 @@ The reviewed production-capable path is **disabled until** a later separately re
 
 Required authority bindings: work-order id, `PCSB-n` identity (not PCSB-1/2/3), this package id, exact package commit, live `package_manifest.json` SHA-256, live statement hash-of-hashes, authorized target non-secret identity, evidence directory, and the exact governance disclaimer that **possession of runtime parameters does not create Linear/PM authority**.
 
-### Consumed PCSB identities (KIV-242)
+### Consumed PCSB identities (KIV-242 + KIV-246)
 
-`parse_capture_authority()` and invocation matching fail closed on the authoritative runtime registry:
+One canonical runtime guard, `assert_runtime_capture_identity_eligible`, is applied wherever a pre-built `CaptureAuthority` or `CaptureInvocation` can influence package binding, target binding, effective conninfo construction, or connection creation. It requires exact canonical PCSB syntax `^PCSB-[1-9][0-9]*$` with no strip/casefold/normalization, then refuses the authoritative runtime registry:
 
 * **consumed / permanently incomplete:** `PCSB-1`, `PCSB-2`, `PCSB-3`
 * **next unused, not authorized by this package:** `PCSB-4`
 
-PCSB-3 was permanently consumed/incomplete by KIV-226. Rebinding any consumed identity is refused with permanently-incomplete/consumed semantics before `reviewed_psycopg_connect`. Invocation `--pcsb` cannot bypass that registry. Alternative case/whitespace/formatting of `PCSB-3` cannot silently rebind it. PCSB-4 is **not** encoded as consumed; this package still does **not** authorize a PCSB-4 capture.
+Covered connect-capable seams include `assert_authority_matches_this_package()`, `assert_authorized_capture_target()`, `bind_authorized_effective_conninfo()`, `assert_invocation_matches_authority()`, `AuthorizedCaptureRunner`, `PersistentCaptureSession.connect(authority=...)`, and the `authorized-capture` CLI. Hand-built objects cannot bypass the guard by skipping JSON parse/load.
+
+PCSB-3 was permanently consumed/incomplete by KIV-226. Rebinding any consumed identity is refused with permanently-incomplete/consumed semantics before `psycopg.connect`. Invocation `--pcsb` cannot bypass that registry. Alternative case/whitespace/formatting of `PCSB-3` cannot silently rebind it. Direct-object lowercase/mixed-case/padded/leading-zero/malformed identities fail closed. PCSB-4 is **not** encoded as consumed; this package still does **not** authorize a PCSB-4 capture.
 
 Package Git identity is **fail-closed before authentication** (unchanged from KIV-224):
 
@@ -49,7 +52,7 @@ Package Git identity is **fail-closed before authentication** (unchanged from KI
 * manifest SHA / hash-of-hashes remain independent additional bindings, not substitutes for commit identity;
 * a wrong or unavailable package commit never reaches `reviewed_psycopg_connect`.
 
-This package does **not** encode KIV-242 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
+This package does **not** encode KIV-246 as capture/governance authority. Only a later separately released Linear capture work order creates capture authority.
 
 Target authorization is checked **before** `reviewed_psycopg_connect` and without SQL. Mismatched/missing/malformed authority refuses before authentication. There is no environment-only switch, monkey-patch, or `allow_remote` bypass.
 
@@ -176,7 +179,7 @@ It may be used later by a **separately authorized** capturer only after:
 1. KIV-220 independent PASS / PM hash-pin of exact parent `8cc7331…` (already recorded);
 2. KIV-225 independent PASS / PM hash-pin of exact `f260efd4…` package-commit binding (already recorded; continuity-ineligible on Session Pooler);
 3. KIV-238 independent PASS / PM hash-pin of exact `a6e3d8aa…` passfile/parser binding (already recorded);
-4. independent reviewer PASS / hash-pin of this KIV-242 successor consumed-PCSB registry (preserving the KIV-237/KIV-238 passfile/parser, KIV-234 hermetic inventory, KIV-231 destination binding, and KIV-229 direct-postgres route);
+4. independent reviewer PASS / hash-pin of this KIV-246 successor consumed-object boundary (preserving the KIV-242 consumed registry, KIV-237/KIV-238 passfile/parser, KIV-234 hermetic inventory, KIV-231 destination binding, and KIV-229 direct-postgres route);
 5. a later, separately governed PCSB-n capture work order that supplies matching `CaptureAuthority` for `direct-postgres`.
 
 Until then: **zero** production/Supabase authentication and **zero** production SQL. This work order creates **no PCSB-4** authority.
@@ -279,7 +282,7 @@ The tooling-only `prove-direct-pid-equivalence` SQL (`SELECT pg_backend_pid() AS
 
 ## Terminal law
 
-KIV-242 completion does **not** authorize PCSB-4. Leave KIV-242 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
+KIV-246 completion does **not** authorize PCSB-4. Leave KIV-246 In Progress for PM intake. Do not self-review. Do not create the independent reviewer issue from this gate.
 
-READY line: `A2 ACCEPTANCE-RECOVERY CONSUMED-PCSB BINDING REMEDIATION READY FOR INDEPENDENT REVIEW`  
-HOLD line: `A2 ACCEPTANCE-RECOVERY CONSUMED-PCSB BINDING REMEDIATION HOLD`
+READY line: `A2 ACCEPTANCE-RECOVERY CONSUMED-OBJECT BOUNDARY REMEDIATION READY FOR INDEPENDENT REVIEW`  
+HOLD line: `A2 ACCEPTANCE-RECOVERY CONSUMED-OBJECT BOUNDARY REMEDIATION HOLD`

@@ -73,6 +73,8 @@
     ]
   },
   "consumed_capture_identities": {
+    "canonical_runtime_guard": "assert_runtime_capture_identity_eligible",
+    "canonical_runtime_guard_applies_to_direct_objects": true,
     "consumed_pcsb_identities": [
       "PCSB-1",
       "PCSB-2",
@@ -364,6 +366,13 @@
     "manifest_sha256": "354a0ebc954a903f94a851fcf612fc454364696d45730e46a5c6932002616203",
     "package_version": "0.1.7-kiv237-passfile-parser-candidate"
   },
+  "kiv242_blocked_parent": {
+    "commit": "718c61aa7a5f4b4731b10ec701e8ac48cb062c80",
+    "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
+    "manifest_blob": "0751935ddf3725b3323721b57c220b15e2432e3a",
+    "manifest_sha256": "ebe61d780bdef7e9f9f7ad03b3723fa3e64eea97084659a058a6dc57394b2003",
+    "package_version": "0.1.8-kiv242-consumed-pcsb-candidate"
+  },
   "not_production_evidence": true,
   "not_section7_fixture_evidence": true,
   "operative_procedure": {
@@ -372,9 +381,9 @@
     "path": "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md",
     "sha256": "48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a"
   },
-  "package_context": "KIVO-A2-RECOVERY-CONSUMED-PCSB-BUILDER-242",
+  "package_context": "KIVO-A2-RECOVERY-CONSUMED-OBJECT-BOUNDARY-BUILDER-246",
   "package_id": "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE",
-  "package_version": "0.1.8-kiv242-consumed-pcsb-candidate",
+  "package_version": "0.1.9-kiv246-consumed-object-boundary-candidate",
   "platform_baseline": {
     "cli_tarball_asset": "supabase-postgres-v17.6.1.150-cli-darwin-arm64.tar.gz",
     "cli_tarball_sha256": "e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6",

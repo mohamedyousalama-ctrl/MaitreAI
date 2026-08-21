@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 from .authority import (
     CaptureAuthority,
     assert_authority_matches_this_package,
+    assert_runtime_capture_identity_eligible,
     bind_authorized_effective_conninfo,
 )
 from .constants import BACKEND_PID_METHOD, DRIVER_NAME, DRIVER_VERSION
@@ -100,6 +101,7 @@ class PersistentCaptureSession:
             assert_not_production_target(self.conninfo)
             effective = parse_canonical_conninfo(self.conninfo).as_keyword_conninfo()
         else:
+            assert_runtime_capture_identity_eligible(self.authority)
             assert_authority_matches_this_package(self.authority, root=root)
             effective = bind_authorized_effective_conninfo(self.conninfo, self.authority)
         conn = reviewed_psycopg_connect(effective)

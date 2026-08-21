@@ -153,7 +153,21 @@ def _refuse(message: str) -> NoReturn:
     raise CaptureAuthorityRefused(message)
 
 
-def assert_pcsb_identity_not_consumed(pcsb_identity: str) -> None:
+def assert_runtime_capture_identity_eligible(obj: object) -> None:
+    """Canonical runtime eligibility guard for pre-built capture identities.
+
+    Accepts a ``CaptureAuthority``, ``CaptureInvocation``, or raw PCSB identity
+    string. Does not strip, casefold, or otherwise normalize. Malformed values
+    fail closed. PCSB-1/2/3 refuse as permanently incomplete/consumed. PCSB-4
+    may pass only this consumed-identity check; that does not create work-order
+    or production authority.
+    """
+    if isinstance(obj, (CaptureAuthority, CaptureInvocation)):
+        pcsb_identity = obj.pcsb_identity
+    else:
+        pcsb_identity = obj
+    if not isinstance(pcsb_identity, str) or not PCSB_RE.fullmatch(pcsb_identity):
+        _refuse(f"malformed pcsb_identity {pcsb_identity!r}")
     if pcsb_identity in CONSUMED_PCSB_IDENTITIES:
         _refuse(
             f"{pcsb_identity} is permanently incomplete/consumed and cannot be rebound"
@@ -170,6 +184,8 @@ def consumed_capture_identity_contract() -> dict[str, Any]:
             "PCSB-1/2/3 are permanently incomplete/consumed and cannot be rebound. "
             "PCSB-4 is the next unused identity and is not authorized by this package."
         ),
+        "canonical_runtime_guard": "assert_runtime_capture_identity_eligible",
+        "canonical_runtime_guard_applies_to_direct_objects": True,
     }
 
 
@@ -204,9 +220,7 @@ def parse_capture_authority(payload: Mapping[str, Any]) -> CaptureAuthority:
     if not WORK_ORDER_RE.fullmatch(work_order_id):
         _refuse(f"malformed work_order_id {work_order_id!r}")
     pcsb_identity = _require_str(payload, "pcsb_identity")
-    if not PCSB_RE.fullmatch(pcsb_identity):
-        _refuse(f"malformed pcsb_identity {pcsb_identity!r}")
-    assert_pcsb_identity_not_consumed(pcsb_identity)
+    assert_runtime_capture_identity_eligible(pcsb_identity)
     package_commit = _require_str(payload, "package_commit").lower()
     if not COMMIT_RE.fullmatch(package_commit):
         _refuse("package_commit must be a 40-character lowercase git SHA")
@@ -300,8 +314,8 @@ def assert_invocation_matches_authority(
     authority: CaptureAuthority,
     invocation: CaptureInvocation,
 ) -> None:
-    assert_pcsb_identity_not_consumed(authority.pcsb_identity)
-    assert_pcsb_identity_not_consumed(invocation.pcsb_identity)
+    assert_runtime_capture_identity_eligible(authority)
+    assert_runtime_capture_identity_eligible(invocation)
     if invocation.work_order_id != authority.work_order_id:
         _refuse("invocation work_order_id does not match authority document")
     if invocation.pcsb_identity != authority.pcsb_identity:
@@ -406,6 +420,7 @@ def assert_authority_matches_this_package(
     *,
     root: Path | None = None,
 ) -> None:
+    assert_runtime_capture_identity_eligible(authority)
     pins = live_package_pins(root)
     if authority.package_id != pins["package_id"]:
         _refuse("authority package_id does not match this package")
@@ -631,6 +646,7 @@ def bind_authorized_effective_conninfo(conninfo: str, authority: CaptureAuthorit
     the parsed input and is never written to evidence. client_encoding is
     always UTF8 at the libpq boundary.
     """
+    assert_runtime_capture_identity_eligible(authority)
     parsed = assert_authorized_capture_target(conninfo, authority)
     target = authority.authorized_target
     return reconstruct_keyword_conninfo(
@@ -653,6 +669,7 @@ def assert_authorized_capture_target(
     parsed canonical identity so callers can reconstruct effective libpq
     parameters from the same validated identity.
     """
+    assert_runtime_capture_identity_eligible(authority)
     if not conninfo or not conninfo.strip():
         _refuse("conninfo missing; authentication refused")
     try:

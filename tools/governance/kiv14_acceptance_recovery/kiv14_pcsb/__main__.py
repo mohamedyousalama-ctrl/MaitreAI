@@ -5,7 +5,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .authority import CaptureInvocation, load_capture_authority
+from .authority import (
+    CaptureInvocation,
+    assert_runtime_capture_identity_eligible,
+    load_capture_authority,
+)
 from .capture_binding import AuthorizedCaptureRunner
 from .direct_pid_equivalence import prove_direct_pid_equivalence
 from .errors import CaptureAuthorityRefused, ContinuityFailure, FailClosed, Hold, SequenceViolation
@@ -62,6 +66,8 @@ def cmd_authorized_capture(args: argparse.Namespace) -> int:
             pcsb_identity=args.pcsb,
             evidence_directory=args.evidence_dir,
         )
+        assert_runtime_capture_identity_eligible(authority)
+        assert_runtime_capture_identity_eligible(invocation)
         conninfo = Path(args.conninfo_file).read_text()
         payload = AuthorizedCaptureRunner().run(
             authority=authority,
