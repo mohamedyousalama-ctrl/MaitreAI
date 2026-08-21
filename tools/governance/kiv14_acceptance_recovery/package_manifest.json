@@ -72,6 +72,16 @@
       "G1"
     ]
   },
+  "consumed_capture_identities": {
+    "consumed_pcsb_identities": [
+      "PCSB-1",
+      "PCSB-2",
+      "PCSB-3"
+    ],
+    "governance_note": "PCSB-1/2/3 are permanently incomplete/consumed and cannot be rebound. PCSB-4 is the next unused identity and is not authorized by this package.",
+    "next_unused_authorized_by_this_package": false,
+    "next_unused_pcsb_identity": "PCSB-4"
+  },
   "destination_binding": {
     "client_encoding_forced_at_libpq_boundary": true,
     "default_filesystem_passfile_neutralized": true,
@@ -347,6 +357,13 @@
     "manifest_sha256": "df29c4a4735ea4e95a0053f04da805b849b23998940cfb6815abf2b5fe6ea344",
     "package_version": "0.1.6-kiv234-libpq-hermetic-parser-candidate"
   },
+  "kiv237_accepted_parent": {
+    "commit": "a6e3d8aa27bb6f7a790d8f8c7ff76f9f572fcc9f",
+    "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
+    "manifest_blob": "6eb66455b93d7b53440dccf84be225f5a6739b3e",
+    "manifest_sha256": "354a0ebc954a903f94a851fcf612fc454364696d45730e46a5c6932002616203",
+    "package_version": "0.1.7-kiv237-passfile-parser-candidate"
+  },
   "not_production_evidence": true,
   "not_section7_fixture_evidence": true,
   "operative_procedure": {
@@ -355,9 +372,9 @@
     "path": "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md",
     "sha256": "48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a"
   },
-  "package_context": "KIVO-A2-RECOVERY-PASSFILE-PARSER-BUILDER-237",
+  "package_context": "KIVO-A2-RECOVERY-CONSUMED-PCSB-BUILDER-242",
   "package_id": "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE",
-  "package_version": "0.1.7-kiv237-passfile-parser-candidate",
+  "package_version": "0.1.8-kiv242-consumed-pcsb-candidate",
   "platform_baseline": {
     "cli_tarball_asset": "supabase-postgres-v17.6.1.150-cli-darwin-arm64.tar.gz",
     "cli_tarball_sha256": "e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6",

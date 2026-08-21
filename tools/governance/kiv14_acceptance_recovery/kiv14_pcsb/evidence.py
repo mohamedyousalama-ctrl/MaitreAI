@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from .authority import destination_binding_review_contract
+from .authority import consumed_capture_identity_contract, destination_binding_review_contract
 from .constants import (
     ACCEPTED_REPAIRED_BODY_MD5,
     BACKEND_PID_METHOD,
@@ -40,6 +40,10 @@ from .constants import (
     KIV234_BLOCKED_MANIFEST_BLOB,
     KIV234_BLOCKED_MANIFEST_SHA256,
     KIV234_BLOCKED_PACKAGE_VERSION,
+    KIV237_ACCEPTED_COMMIT,
+    KIV237_ACCEPTED_MANIFEST_BLOB,
+    KIV237_ACCEPTED_MANIFEST_SHA256,
+    KIV237_ACCEPTED_PACKAGE_VERSION,
     OPERATIVE_PROCEDURE_BLOB,
     OPERATIVE_PROCEDURE_COMMIT,
     OPERATIVE_PROCEDURE_PATH,
@@ -203,6 +207,14 @@ def build_package_manifest(root: Path | None = None) -> dict[str, Any]:
             "manifest_blob": KIV234_BLOCKED_MANIFEST_BLOB,
             "hash_of_hashes": KIV220_ACCEPTED_HASH_OF_HASHES,
         },
+        "kiv237_accepted_parent": {
+            "commit": KIV237_ACCEPTED_COMMIT,
+            "package_version": KIV237_ACCEPTED_PACKAGE_VERSION,
+            "manifest_sha256": KIV237_ACCEPTED_MANIFEST_SHA256,
+            "manifest_blob": KIV237_ACCEPTED_MANIFEST_BLOB,
+            "hash_of_hashes": KIV220_ACCEPTED_HASH_OF_HASHES,
+        },
+        "consumed_capture_identities": consumed_capture_identity_contract(),
         "destination_binding": destination_binding_review_contract(),
         "operative_procedure": {
             "commit": OPERATIVE_PROCEDURE_COMMIT,

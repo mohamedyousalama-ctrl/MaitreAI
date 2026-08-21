@@ -25,6 +25,7 @@ from .constants import (
     HISTORICAL_KIV226_SESSION_POOLER_PORT,
     LIBPQ_ENV_INVENTORY,
     LIBPQ_HERMETIC_ENV_VARS,
+    NEXT_UNUSED_PCSB_IDENTITY,
     PACKAGE_ID,
     POOLER_HOST_SUFFIX,
     ROUTE_CLASS_DIRECT_POSTGRES,
@@ -152,6 +153,26 @@ def _refuse(message: str) -> NoReturn:
     raise CaptureAuthorityRefused(message)
 
 
+def assert_pcsb_identity_not_consumed(pcsb_identity: str) -> None:
+    if pcsb_identity in CONSUMED_PCSB_IDENTITIES:
+        _refuse(
+            f"{pcsb_identity} is permanently incomplete/consumed and cannot be rebound"
+        )
+
+
+def consumed_capture_identity_contract() -> dict[str, Any]:
+    """Hash-pinnable consumed/unused PCSB registry. Does not authorize PCSB-4."""
+    return {
+        "consumed_pcsb_identities": list(CONSUMED_PCSB_IDENTITIES),
+        "next_unused_pcsb_identity": NEXT_UNUSED_PCSB_IDENTITY,
+        "next_unused_authorized_by_this_package": False,
+        "governance_note": (
+            "PCSB-1/2/3 are permanently incomplete/consumed and cannot be rebound. "
+            "PCSB-4 is the next unused identity and is not authorized by this package."
+        ),
+    }
+
+
 def _require_str(payload: Mapping[str, Any], key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -185,8 +206,7 @@ def parse_capture_authority(payload: Mapping[str, Any]) -> CaptureAuthority:
     pcsb_identity = _require_str(payload, "pcsb_identity")
     if not PCSB_RE.fullmatch(pcsb_identity):
         _refuse(f"malformed pcsb_identity {pcsb_identity!r}")
-    if pcsb_identity in CONSUMED_PCSB_IDENTITIES:
-        _refuse(f"{pcsb_identity} is permanently incomplete/consumed and cannot be rebound")
+    assert_pcsb_identity_not_consumed(pcsb_identity)
     package_commit = _require_str(payload, "package_commit").lower()
     if not COMMIT_RE.fullmatch(package_commit):
         _refuse("package_commit must be a 40-character lowercase git SHA")
@@ -280,6 +300,8 @@ def assert_invocation_matches_authority(
     authority: CaptureAuthority,
     invocation: CaptureInvocation,
 ) -> None:
+    assert_pcsb_identity_not_consumed(authority.pcsb_identity)
+    assert_pcsb_identity_not_consumed(invocation.pcsb_identity)
     if invocation.work_order_id != authority.work_order_id:
         _refuse("invocation work_order_id does not match authority document")
     if invocation.pcsb_identity != authority.pcsb_identity:
