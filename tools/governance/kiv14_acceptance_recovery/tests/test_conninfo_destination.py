@@ -13,8 +13,9 @@ from kiv14_pcsb.authority import (
 )
 from kiv14_pcsb.capture_binding import AuthorizedCaptureRunner
 from kiv14_pcsb.constants import (
+    GOVERNED_CLIENT_ENCODING,
     KIV220_ACCEPTED_HASH_OF_HASHES,
-    LIBPQ_DESTINATION_ENV_VARS,
+    LIBPQ_HERMETIC_ENV_VARS,
     PACKAGE_ID,
 )
 from kiv14_pcsb.driver import PersistentCaptureSession, reviewed_psycopg_connect
@@ -25,6 +26,7 @@ from kiv14_pcsb.safety import ProductionTargetRefused, parse_canonical_conninfo
 from test_capture_binding import (
     DIRECT_CONNINFO,
     DIRECT_HOST,
+    EFFECTIVE_DIRECT_CONNINFO,
     POOLER_CONNINFO,
     _FakeConn,
     _authority_dict,
@@ -85,7 +87,7 @@ def test_libpq_destination_environment_cannot_redirect_passing_authority(
         recorded.append(
             {
                 "conninfo": conninfo,
-                **{key: os.environ.get(key) for key in LIBPQ_DESTINATION_ENV_VARS},
+                **{key: os.environ.get(key) for key in LIBPQ_HERMETIC_ENV_VARS},
             }
         )
         return _FakeConn()
@@ -100,12 +102,16 @@ def test_libpq_destination_environment_cannot_redirect_passing_authority(
     monkeypatch.setenv("PGUSER", "other")
     monkeypatch.setenv("PGSERVICE", "evil")
     monkeypatch.setenv("PGSERVICEFILE", str(tmp_path / "pg_service.conf"))
+    monkeypatch.setenv("PGCLIENTENCODING", "SQL_ASCII")
+    monkeypatch.setenv("PGOPTIONS", "-c search_path=pg_catalog -c default_transaction_read_only=on")
+    monkeypatch.setenv("PGAPPNAME", "kiv232-adversary")
+    monkeypatch.setenv("PGPASSWORD", "kiv234-env-only")
     session = PersistentCaptureSession(DIRECT_CONNINFO, authority=authority)
     session.connect()
     try:
         assert recorded, "reviewed factory must still reach psycopg.connect"
-        assert recorded[0]["conninfo"] == DIRECT_CONNINFO
-        for key in LIBPQ_DESTINATION_ENV_VARS:
+        assert recorded[0]["conninfo"] == EFFECTIVE_DIRECT_CONNINFO
+        for key in LIBPQ_HERMETIC_ENV_VARS:
             assert recorded[0][key] is None
         identity = parse_canonical_conninfo(recorded[0]["conninfo"] or "")
         assert identity.host == authority.authorized_target.host
@@ -113,6 +119,7 @@ def test_libpq_destination_environment_cannot_redirect_passing_authority(
         assert identity.database == authority.authorized_target.database
         assert identity.user == authority.authorized_target.user
         assert identity.sslmode == authority.authorized_target.sslmode
+        assert identity.client_encoding == GOVERNED_CLIENT_ENCODING
     finally:
         session.close()
 
@@ -181,7 +188,7 @@ def test_canonical_direct_identity_reaches_factory_equal_to_authority(
     payload = AuthorizedCaptureRunner().run(
         authority=authority, invocation=invocation, conninfo=PRODUCTION_SHAPED_URI
     )
-    assert reached == [DIRECT_CONNINFO]
+    assert reached == [EFFECTIVE_DIRECT_CONNINFO]
     parsed = parse_canonical_conninfo(reached[0])
     target = authority.authorized_target
     assert parsed.host == target.host
@@ -263,6 +270,6 @@ def test_reviewed_factory_reconstructs_before_psycopg(monkeypatch):
         "host=127.0.0.1 port=55432 dbname=postgres user=kiv217 sslmode=disable"
     )
     assert recorded == [
-        "host=127.0.0.1 port=55432 dbname=postgres user=kiv217 sslmode=disable"
+        "host=127.0.0.1 port=55432 dbname=postgres user=kiv217 sslmode=disable client_encoding=UTF8"
     ]
     assert conn.info.backend_pid == 4242

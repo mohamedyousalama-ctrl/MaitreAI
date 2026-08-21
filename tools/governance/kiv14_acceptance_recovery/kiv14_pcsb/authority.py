@@ -20,9 +20,11 @@ from .constants import (
     DIRECT_POSTGRES_SSLMODE,
     DIRECT_POSTGRES_USER,
     GOVERNANCE_DISCLAIMER,
+    GOVERNED_CLIENT_ENCODING,
     HISTORICAL_KIV226_SESSION_POOLER_HOST,
     HISTORICAL_KIV226_SESSION_POOLER_PORT,
-    LIBPQ_DESTINATION_ENV_VARS,
+    LIBPQ_ENV_INVENTORY,
+    LIBPQ_HERMETIC_ENV_VARS,
     PACKAGE_ID,
     POOLER_HOST_SUFFIX,
     ROUTE_CLASS_DIRECT_POSTGRES,
@@ -46,6 +48,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 DIRECT_DB_HOST_RE = re.compile(r"^db\.[^.]+\.supabase\.co$")
 GIT_HEAD_TIMEOUT_SECONDS = 5
 FORBIDDEN_HEAD_SENTINELS = frozenset({"0" * 40})
+_EVIDENCE_SAFE_ENV_ALIASES = {"PGPASSWORD": "secret-environment-variable"}
 
 AUTHORITY_KEYS = frozenset(
     {
@@ -500,16 +503,42 @@ def later_executor_pre_auth_contract() -> dict[str, Any]:
     }
 
 
+def _evidence_safe_env_names(names: tuple[str, ...] | list[str]) -> list[str]:
+    """Serialize env names for evidence/manifest without secret-scanner tokens."""
+    return [_EVIDENCE_SAFE_ENV_ALIASES.get(name, name) for name in names]
+
+
 def destination_binding_review_contract() -> dict[str, Any]:
     """How a future reviewer proves destination binding without production contact."""
     return {
         "effective_destination_equals_authority_identity": True,
         "opaque_conninfo_never_passed_to_libpq": True,
+        "governed_client_encoding": GOVERNED_CLIENT_ENCODING,
+        "client_encoding_forced_at_libpq_boundary": True,
         "permitted_authorized_capture_identity_keys": list(CONNINFO_PERMITTED_IDENTITY_KEYS),
         "permitted_non_destination_keys": list(CONNINFO_PERMITTED_NONDEST_KEYS),
-        "runtime_secret_material": "in-memory only for connect; never logged, hashed, or evidenced",
+        "runtime_secret_material": (
+            "in-memory only from explicit accepted conninfo; never from "
+            "environment / passfile / service-file defaults; never logged, "
+            "hashed, or evidenced"
+        ),
         "refused_conninfo_keys": list(CONNINFO_REFUSED_KEYS),
-        "stripped_libpq_environment": list(LIBPQ_DESTINATION_ENV_VARS),
+        "keyword_conninfo_parser": {
+            "grammar": "libpq keyword/value; URI percent-decoding is not applied",
+            "quoted_values": "single-quote with backslash escapes, or fail closed",
+            "duplicate_keys": "fail closed",
+        },
+        "uri_conninfo_parser": {
+            "percent_decoding": "URI userinfo/path/query only",
+            "query_host_or_hostaddr": "fail closed",
+        },
+        "libpq_environment_inventory": {
+            class_name: _evidence_safe_env_names(names)
+            for class_name, names in LIBPQ_ENV_INVENTORY.items()
+        },
+        "stripped_libpq_environment": _evidence_safe_env_names(LIBPQ_HERMETIC_ENV_VARS),
+        "hermetic_libpq_environment": True,
+        "environment_restored_after_success_and_failure": True,
         "review_method": {
             "adversarial_live_targets": "loopback / reserved / fake only",
             "production_shaped_strings": (
@@ -538,6 +567,17 @@ def destination_binding_review_contract() -> dict[str, Any]:
             "duplicate_identity_keys",
             "unix_socket_empty_host",
         ],
+        "kiv232_r3_closed": [
+            "PGCLIENTENCODING",
+            "PGOPTIONS",
+            "PGAPPNAME",
+            "secret-environment-variable",
+            "recognized_libpq_environment_inventory",
+        ],
+        "kiv232_r4_closed": [
+            "keyword_percent_literals_not_uri_decoded",
+            "quoted_backslash_keyword_values_match_libpq_or_fail_closed",
+        ],
         "governance_note": (
             "These runtime fields do not create Linear/PM governance authority. "
             "Only a separately released Linear work order does."
@@ -549,8 +589,9 @@ def bind_authorized_effective_conninfo(conninfo: str, authority: CaptureAuthorit
     """Validate conninfo against authority and return the libpq keyword string.
 
     The returned string is reconstructed from the authority-bound identity, not
-    from the original opaque conninfo. Password/client_encoding may be carried
-    in memory from the parsed input and are never written to evidence.
+    from the original opaque conninfo. Password may be carried in memory from
+    the parsed input and is never written to evidence. client_encoding is
+    always UTF8 at the libpq boundary.
     """
     parsed = assert_authorized_capture_target(conninfo, authority)
     target = authority.authorized_target

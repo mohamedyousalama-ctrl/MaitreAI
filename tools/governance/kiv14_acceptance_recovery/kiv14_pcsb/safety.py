@@ -9,7 +9,8 @@ from urllib.parse import parse_qsl, unquote, urlparse
 from .constants import (
     CONNINFO_PERMITTED_KEYS,
     CONNINFO_REFUSED_KEYS,
-    LIBPQ_DESTINATION_ENV_VARS,
+    GOVERNED_CLIENT_ENCODING,
+    LIBPQ_HERMETIC_ENV_VARS,
     PRODUCTION_HOST_MARKERS,
     PRODUCTION_PROJECT_REF,
 )
@@ -28,6 +29,7 @@ _URI_SCHEMES = frozenset({"postgres", "postgresql"})
 _PERMITTED_KEY_SET = frozenset(CONNINFO_PERMITTED_KEYS)
 _REFUSED_KEY_SET = frozenset(CONNINFO_REFUSED_KEYS)
 _URI_ALLOWED_QUERY_KEYS = frozenset({"sslmode"})
+_KEYWORD_WS = frozenset(" \t\r\n")
 
 
 @dataclass(frozen=True)
@@ -66,8 +68,7 @@ class CanonicalConninfo:
         if self.password is not None:
             parts.append(f"password={_keyword_value(self.password)}")
         parts.append(f"sslmode={_keyword_value(self.sslmode)}")
-        if self.client_encoding is not None:
-            parts.append(f"client_encoding={_keyword_value(self.client_encoding)}")
+        parts.append(f"client_encoding={_keyword_value(GOVERNED_CLIENT_ENCODING)}")
         return " ".join(parts)
 
 
@@ -76,7 +77,7 @@ def _refuse_dest(message: str) -> None:
 
 
 def _keyword_value(value: str) -> str:
-    if any(ch in value for ch in " \t\n'\"\\"):
+    if value == "" or any(ch in value for ch in " \t\n'\"\\"):
         escaped = value.replace("\\", "\\\\").replace("'", "\\'")
         return f"'{escaped}'"
     return value
@@ -109,21 +110,85 @@ def _parse_port(raw: str, *, where: str) -> int:
     return port
 
 
+def _skip_keyword_ws(text: str, index: int) -> int:
+    while index < len(text) and text[index] in _KEYWORD_WS:
+        index += 1
+    return index
+
+
+def _parse_quoted_keyword_value(text: str, index: int) -> tuple[str, int]:
+    """Parse a single-quoted libpq keyword value starting after the opening quote.
+
+    libpq treats ``\\X`` as literal ``X`` inside quotes. Keyword values are not
+    URI-percent-decoded. Unmatched quotes fail closed. The value is never
+    interpolated into the refusal message.
+    """
+    chars: list[str] = []
+    n = len(text)
+    while index < n:
+        ch = text[index]
+        if ch == "\\":
+            if index + 1 >= n:
+                _refuse_dest("keyword conninfo has an unmatched quoted value")
+            chars.append(text[index + 1])
+            index += 2
+            continue
+        if ch == "'":
+            index += 1
+            if index < n and text[index] not in _KEYWORD_WS:
+                _refuse_dest("keyword conninfo has an unmatched quoted value")
+            return "".join(chars), index
+        if ch == "\x00":
+            _refuse_dest("keyword conninfo contains a NUL")
+        chars.append(ch)
+        index += 1
+    _refuse_dest("keyword conninfo has an unmatched quoted value")
+    raise AssertionError("unreachable")
+
+
 def _split_keyword_tokens(text: str) -> list[tuple[str, str]]:
+    """Split keyword conninfo using libpq keyword grammar, not URI grammar.
+
+    Percent-encoded bytes remain literal. Only single-quote quoting is
+    recognized. Double quotes are ordinary unquoted characters.
+    """
+    if "\x00" in text:
+        _refuse_dest("keyword conninfo contains a NUL")
     tokens: list[tuple[str, str]] = []
-    for part in text.replace("\n", " ").split():
-        if "=" not in part:
-            _refuse_dest("keyword conninfo contains a token that is not key=value")
-        key, value = part.split("=", 1)
-        key = key.strip()
+    index = 0
+    n = len(text)
+    while True:
+        index = _skip_keyword_ws(text, index)
+        if index >= n:
+            break
+        key_start = index
+        while index < n and text[index] not in _KEYWORD_WS and text[index] != "=":
+            index += 1
+        key = text[key_start:index]
         if not key:
             _refuse_dest("keyword conninfo contains an empty key")
-        if value.startswith("'") or value.startswith('"'):
-            if len(value) < 2 or value[-1] != value[0]:
-                _refuse_dest("keyword conninfo has an unmatched quoted value")
-            value = value[1:-1]
-        tokens.append((key, unquote(value)))
+        index = _skip_keyword_ws(text, index)
+        if index >= n or text[index] != "=":
+            _refuse_dest("keyword conninfo contains a token that is not key=value")
+        index += 1
+        index = _skip_keyword_ws(text, index)
+        if index < n and text[index] == "'":
+            value, index = _parse_quoted_keyword_value(text, index + 1)
+        else:
+            value_start = index
+            while index < n and text[index] not in _KEYWORD_WS:
+                index += 1
+            value = text[value_start:index]
+        tokens.append((key, value))
     return tokens
+
+
+def _governed_client_encoding(raw: str | None) -> str:
+    if raw is None or raw == "":
+        return GOVERNED_CLIENT_ENCODING
+    if raw.upper() != GOVERNED_CLIENT_ENCODING:
+        _refuse_dest("client_encoding must be UTF8; environment encoding is not a substitute")
+    return GOVERNED_CLIENT_ENCODING
 
 
 def _canonical_from_fields(fields: dict[str, str], *, default_port: int | None) -> CanonicalConninfo:
@@ -160,7 +225,7 @@ def _canonical_from_fields(fields: dict[str, str], *, default_port: int | None) 
     if not sslmode:
         _refuse_dest("conninfo sslmode must be explicit; environment sslmode is not a substitute")
     password = fields.get("password")
-    client_encoding = fields.get("client_encoding")
+    client_encoding = _governed_client_encoding(fields.get("client_encoding"))
     return CanonicalConninfo(
         host=host,
         port=port,
@@ -213,7 +278,7 @@ def _parse_uri_conninfo(text: str) -> CanonicalConninfo:
             if key in _REFUSED_KEY_SET or key not in _PERMITTED_KEY_SET:
                 _refuse_dest(f"URI query key {key!r} is refused")
             _refuse_dest(f"URI query key {key!r} is not permitted")
-        query[key] = unquote(raw_value)
+        query[key] = raw_value
     host = parsed.hostname
     if host is None:
         _refuse_dest("URI netloc host is missing; unix-socket / empty-host fallback is refused")
@@ -246,7 +311,7 @@ def _parse_uri_conninfo(text: str) -> CanonicalConninfo:
         user=user,
         sslmode=sslmode,
         password=password,
-        client_encoding=None,
+        client_encoding=GOVERNED_CLIENT_ENCODING,
     )
 
 
@@ -277,8 +342,9 @@ def reconstruct_keyword_conninfo(
 ) -> str:
     """Build the exact keyword conninfo later passed to libpq.
 
-    Identity fields may be taken from the authority-bound target. Password and
-    client_encoding, if present, stay in memory only for the connect call.
+    Identity fields may be taken from the authority-bound target. Password, if
+    present, stays in memory only for the connect call. client_encoding is
+    always reconstructed as UTF8.
     """
     bound = CanonicalConninfo(
         host=host if host is not None else identity.host,
@@ -287,22 +353,33 @@ def reconstruct_keyword_conninfo(
         user=user if user is not None else identity.user,
         sslmode=sslmode if sslmode is not None else identity.sslmode,
         password=identity.password,
-        client_encoding=identity.client_encoding,
+        client_encoding=GOVERNED_CLIENT_ENCODING,
     )
     return bound.as_keyword_conninfo()
 
 
 @contextmanager
-def cleared_libpq_destination_environment() -> Iterator[None]:
-    """Remove libpq destination/identity environment for the connect call only."""
+def hermetic_libpq_environment() -> Iterator[None]:
+    """Remove recognized libpq environment/default sources for one connect call.
+
+    Values are restored after success, refusal, and exception. Secret values are
+    never interpolated into logs or exception messages.
+    """
     saved: dict[str, str] = {}
-    for key in LIBPQ_DESTINATION_ENV_VARS:
+    for key in LIBPQ_HERMETIC_ENV_VARS:
         if key in os.environ:
             saved[key] = os.environ.pop(key)
     try:
         yield
     finally:
+        for key in LIBPQ_HERMETIC_ENV_VARS:
+            os.environ.pop(key, None)
         os.environ.update(saved)
+
+
+def cleared_libpq_destination_environment() -> Iterator[None]:
+    """Historical name: hermetic strip of every recognized libpq env default."""
+    return hermetic_libpq_environment()
 
 
 def is_loopback_or_local_socket(host: str | None) -> bool:

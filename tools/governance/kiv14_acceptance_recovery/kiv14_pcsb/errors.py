@@ -36,6 +36,7 @@ class ConninfoDestinationRefused(CaptureAuthorityRefused):
     """Raised before authentication when conninfo destination/identity is ambiguous.
 
     Covers URI query overrides, hostaddr, service/service-file indirection,
-    libpq environment destination defaults, multi-host lists, duplicate identity
-    keys, and unix-socket / empty-host fallback. This is a pre-auth refusal.
+    libpq environment destination/session defaults, keyword percent-literal
+    reinterpretation, multi-host lists, duplicate identity keys, and
+    unix-socket / empty-host fallback. This is a pre-auth refusal.
     """

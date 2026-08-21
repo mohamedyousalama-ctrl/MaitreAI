@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 PACKAGE_ID = "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE"
-PACKAGE_VERSION = "0.1.5-kiv231-conninfo-destination-binding-candidate"
-PACKAGE_CONTEXT = "KIVO-A2-RECOVERY-CONNINFO-DESTINATION-BUILDER-231"
+PACKAGE_VERSION = "0.1.6-kiv234-libpq-hermetic-parser-candidate"
+PACKAGE_CONTEXT = "KIVO-A2-RECOVERY-LIBPQ-HERMETIC-PARSER-BUILDER-234"
 KIV217_PUBLISHED_COMMIT = "37836b0b3ec22c7d8190aa39168f21641c0067ff"
 KIV217_PUBLISHED_BRANCH = "claude/kiv-217-a2-pcsb-query-driver-package"
 KIV220_ACCEPTED_COMMIT = "8cc7331aa19eb90f3cf5c7625e074ccd5c134638"
@@ -30,6 +30,12 @@ KIV229_BLOCKED_MANIFEST_SHA256 = (
     "82d2def8b7e87a027f800ee3f8c06809fca3289ea15ffb77759a4cdf1ed3100b"
 )
 KIV229_BLOCKED_MANIFEST_BLOB = "0bab6db8cb26a625c2dc01a6cf656700840980cf"
+KIV231_BLOCKED_COMMIT = "f9cd26252b0bf66748919ede5f0c8d1a2974b7cb"
+KIV231_BLOCKED_PACKAGE_VERSION = "0.1.5-kiv231-conninfo-destination-binding-candidate"
+KIV231_BLOCKED_MANIFEST_SHA256 = (
+    "2dd14b148c50de9b9acec58beabd17d803117a123c2efeed6786aa9dc0ef0d29"
+)
+KIV231_BLOCKED_MANIFEST_BLOB = "c9320183366a764144fa4adc891ef843b96f93b3"
 
 OPERATIVE_PROCEDURE_COMMIT = "d5d223068e8033c7c72e65ba9b26154264b5c764"
 OPERATIVE_PROCEDURE_PATH = "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md"
@@ -112,9 +118,14 @@ KIV231_VERDICT_READY = (
     "A2 ACCEPTANCE-RECOVERY CONNINFO DESTINATION-BINDING REMEDIATION READY FOR INDEPENDENT REVIEW"
 )
 KIV231_VERDICT_HOLD = "A2 ACCEPTANCE-RECOVERY CONNINFO DESTINATION-BINDING REMEDIATION HOLD"
+KIV234_VERDICT_READY = (
+    "A2 ACCEPTANCE-RECOVERY LIBPQ HERMETIC/PARSER REMEDIATION READY FOR INDEPENDENT REVIEW"
+)
+KIV234_VERDICT_HOLD = "A2 ACCEPTANCE-RECOVERY LIBPQ HERMETIC/PARSER REMEDIATION HOLD"
 
 # Identity keys permitted on authorized-capture after canonicalization.
-# password may exist in memory only; client_encoding is non-destination.
+# password may exist in memory only; client_encoding is forced UTF8.
+GOVERNED_CLIENT_ENCODING = "UTF8"
 CONNINFO_PERMITTED_IDENTITY_KEYS = ("host", "port", "dbname", "user", "sslmode")
 CONNINFO_PERMITTED_SECRET_KEYS = ("password",)
 CONNINFO_PERMITTED_NONDEST_KEYS = ("client_encoding",)
@@ -131,12 +142,23 @@ CONNINFO_REFUSED_KEYS = (
     "target_session_attrs",
     "load_balance_hosts",
     "requiressl",
+    "require_auth",
+    "requirepeer",
+    "sslnegotiation",
+    "sslcompression",
+    "sslcertmode",
     "sslrootcert",
     "sslcert",
     "sslkey",
     "sslcrl",
+    "sslcrldir",
+    "sslsni",
+    "ssl_min_protocol_version",
+    "ssl_max_protocol_version",
     "krbsrvname",
     "gssencmode",
+    "gsslib",
+    "gssdelegation",
     "replication",
     "options",
     "fallback_application_name",
@@ -149,22 +171,71 @@ CONNINFO_REFUSED_KEYS = (
     "tcp_user_timeout",
     "client_min_messages",
 )
-LIBPQ_DESTINATION_ENV_VARS = (
-    "PGHOST",
-    "PGHOSTADDR",
-    "PGPORT",
-    "PGDATABASE",
-    "PGUSER",
-    "PGSERVICE",
-    "PGSERVICEFILE",
-    "PGSYSCONFDIR",
-    "PGPASSFILE",
-    "PGSSLMODE",
-    "PGREQUIRESSL",
-    "PGCHANNELBINDING",
-    "PGTARGETSESSIONATTRS",
-    "PGLOADBALANCEHOSTS",
+# Pinned psycopg[binary]==3.2.9 ships libpq 170005 (PostgreSQL 17). Inventory
+# follows PostgreSQL 17 libpq environment-variable documentation, plus
+# historical PGREALM. Every listed name is stripped for the reviewed connect.
+LIBPQ_ENV_INVENTORY: dict[str, tuple[str, ...]] = {
+    "destination_identity": (
+        "PGHOST",
+        "PGHOSTADDR",
+        "PGPORT",
+        "PGDATABASE",
+        "PGUSER",
+        "PGSERVICE",
+        "PGSERVICEFILE",
+        "PGSYSCONFDIR",
+    ),
+    "secret_or_auth_source": (
+        "PGPASSWORD",
+        "PGPASSFILE",
+        "PGREQUIREAUTH",
+        "PGREQUIREPEER",
+        "PGREALM",
+    ),
+    "startup_session_gucs": (
+        "PGCLIENTENCODING",
+        "PGOPTIONS",
+        "PGAPPNAME",
+        "PGDATESTYLE",
+        "PGTZ",
+        "PGGEQO",
+    ),
+    "ssl_gss": (
+        "PGSSLMODE",
+        "PGREQUIRESSL",
+        "PGSSLNEGOTIATION",
+        "PGSSLCOMPRESSION",
+        "PGSSLCERT",
+        "PGSSLKEY",
+        "PGSSLCERTMODE",
+        "PGSSLROOTCERT",
+        "PGSSLCRL",
+        "PGSSLCRLDIR",
+        "PGSSLSNI",
+        "PGSSLMINPROTOCOLVERSION",
+        "PGSSLMAXPROTOCOLVERSION",
+        "PGCHANNELBINDING",
+        "PGGSSENCMODE",
+        "PGKRBSRVNAME",
+        "PGGSSLIB",
+        "PGGSSDELEGATION",
+    ),
+    "connection_behavior": (
+        "PGCONNECT_TIMEOUT",
+        "PGTARGETSESSIONATTRS",
+        "PGLOADBALANCEHOSTS",
+    ),
+    "libpq_search_paths": (
+        "PGLOCALEDIR",
+    ),
+}
+LIBPQ_HERMETIC_ENV_VARS = tuple(
+    name
+    for group in LIBPQ_ENV_INVENTORY.values()
+    for name in group
 )
+# Historical alias: destination-only stripping was insufficient (KIV-232 R3).
+LIBPQ_DESTINATION_ENV_VARS = LIBPQ_HERMETIC_ENV_VARS
 
 CAPTURE_COMMAND_DEFAULT = (
     "Default `capture` remains REFUSED. Authorized capture requires a matching "

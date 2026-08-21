@@ -73,8 +73,17 @@
     ]
   },
   "destination_binding": {
+    "client_encoding_forced_at_libpq_boundary": true,
     "effective_destination_equals_authority_identity": true,
+    "environment_restored_after_success_and_failure": true,
     "governance_note": "These runtime fields do not create Linear/PM governance authority. Only a separately released Linear work order does.",
+    "governed_client_encoding": "UTF8",
+    "hermetic_libpq_environment": true,
+    "keyword_conninfo_parser": {
+      "duplicate_keys": "fail closed",
+      "grammar": "libpq keyword/value; URI percent-decoding is not applied",
+      "quoted_values": "single-quote with backslash escapes, or fail closed"
+    },
     "kiv230_r2_closed": [
       "uri_query_hostaddr",
       "uri_query_host_override_of_netloc",
@@ -91,6 +100,72 @@
       "duplicate_identity_keys",
       "unix_socket_empty_host"
     ],
+    "kiv232_r3_closed": [
+      "PGCLIENTENCODING",
+      "PGOPTIONS",
+      "PGAPPNAME",
+      "secret-environment-variable",
+      "recognized_libpq_environment_inventory"
+    ],
+    "kiv232_r4_closed": [
+      "keyword_percent_literals_not_uri_decoded",
+      "quoted_backslash_keyword_values_match_libpq_or_fail_closed"
+    ],
+    "libpq_environment_inventory": {
+      "connection_behavior": [
+        "PGCONNECT_TIMEOUT",
+        "PGTARGETSESSIONATTRS",
+        "PGLOADBALANCEHOSTS"
+      ],
+      "destination_identity": [
+        "PGHOST",
+        "PGHOSTADDR",
+        "PGPORT",
+        "PGDATABASE",
+        "PGUSER",
+        "PGSERVICE",
+        "PGSERVICEFILE",
+        "PGSYSCONFDIR"
+      ],
+      "libpq_search_paths": [
+        "PGLOCALEDIR"
+      ],
+      "secret_or_auth_source": [
+        "secret-environment-variable",
+        "PGPASSFILE",
+        "PGREQUIREAUTH",
+        "PGREQUIREPEER",
+        "PGREALM"
+      ],
+      "ssl_gss": [
+        "PGSSLMODE",
+        "PGREQUIRESSL",
+        "PGSSLNEGOTIATION",
+        "PGSSLCOMPRESSION",
+        "PGSSLCERT",
+        "PGSSLKEY",
+        "PGSSLCERTMODE",
+        "PGSSLROOTCERT",
+        "PGSSLCRL",
+        "PGSSLCRLDIR",
+        "PGSSLSNI",
+        "PGSSLMINPROTOCOLVERSION",
+        "PGSSLMAXPROTOCOLVERSION",
+        "PGCHANNELBINDING",
+        "PGGSSENCMODE",
+        "PGKRBSRVNAME",
+        "PGGSSLIB",
+        "PGGSSDELEGATION"
+      ],
+      "startup_session_gucs": [
+        "PGCLIENTENCODING",
+        "PGOPTIONS",
+        "PGAPPNAME",
+        "PGDATESTYLE",
+        "PGTZ",
+        "PGGEQO"
+      ]
+    },
     "opaque_conninfo_never_passed_to_libpq": true,
     "permitted_authorized_capture_identity_keys": [
       "host",
@@ -110,12 +185,23 @@
       "target_session_attrs",
       "load_balance_hosts",
       "requiressl",
+      "require_auth",
+      "requirepeer",
+      "sslnegotiation",
+      "sslcompression",
+      "sslcertmode",
       "sslrootcert",
       "sslcert",
       "sslkey",
       "sslcrl",
+      "sslcrldir",
+      "sslsni",
+      "ssl_min_protocol_version",
+      "ssl_max_protocol_version",
       "krbsrvname",
       "gssencmode",
+      "gsslib",
+      "gssdelegation",
       "replication",
       "options",
       "fallback_application_name",
@@ -135,7 +221,7 @@
       "production_dns_tcp_auth_sql_required": false,
       "production_shaped_strings": "parser and factory-mock tests only; never DNS-resolve or TCP-connect"
     },
-    "runtime_secret_material": "in-memory only for connect; never logged, hashed, or evidenced",
+    "runtime_secret_material": "in-memory only from explicit accepted conninfo; never from environment / passfile / service-file defaults; never logged, hashed, or evidenced",
     "stripped_libpq_environment": [
       "PGHOST",
       "PGHOSTADDR",
@@ -145,20 +231,51 @@
       "PGSERVICE",
       "PGSERVICEFILE",
       "PGSYSCONFDIR",
+      "secret-environment-variable",
       "PGPASSFILE",
+      "PGREQUIREAUTH",
+      "PGREQUIREPEER",
+      "PGREALM",
+      "PGCLIENTENCODING",
+      "PGOPTIONS",
+      "PGAPPNAME",
+      "PGDATESTYLE",
+      "PGTZ",
+      "PGGEQO",
       "PGSSLMODE",
       "PGREQUIRESSL",
+      "PGSSLNEGOTIATION",
+      "PGSSLCOMPRESSION",
+      "PGSSLCERT",
+      "PGSSLKEY",
+      "PGSSLCERTMODE",
+      "PGSSLROOTCERT",
+      "PGSSLCRL",
+      "PGSSLCRLDIR",
+      "PGSSLSNI",
+      "PGSSLMINPROTOCOLVERSION",
+      "PGSSLMAXPROTOCOLVERSION",
       "PGCHANNELBINDING",
+      "PGGSSENCMODE",
+      "PGKRBSRVNAME",
+      "PGGSSLIB",
+      "PGGSSDELEGATION",
+      "PGCONNECT_TIMEOUT",
       "PGTARGETSESSIONATTRS",
-      "PGLOADBALANCEHOSTS"
-    ]
+      "PGLOADBALANCEHOSTS",
+      "PGLOCALEDIR"
+    ],
+    "uri_conninfo_parser": {
+      "percent_decoding": "URI userinfo/path/query only",
+      "query_host_or_hostaddr": "fail closed"
+    }
   },
   "driver": {
     "autocommit": true,
     "backend_pid_method": "psycopg.Connection.info.backend_pid -> libpq PQbackendPID (BackendKeyData; no SQL)",
     "bundled_libpq_note": "psycopg[binary]==3.2.9 ships libpq 170005 (17.5) talking to server 17.6; backend PID is still PQbackendPID / BackendKeyData, not SQL",
     "bundled_libpq_version_num": 170005,
-    "client_encoding": "UTF8 via startup packet / conninfo (not SET SQL)",
+    "client_encoding": "UTF8 via explicit reconstructed conninfo / startup packet (not SET SQL)",
     "driver_name": "psycopg",
     "driver_package": "psycopg[binary]",
     "driver_version": "3.2.9",
@@ -200,6 +317,13 @@
     "manifest_sha256": "82d2def8b7e87a027f800ee3f8c06809fca3289ea15ffb77759a4cdf1ed3100b",
     "package_version": "0.1.4-kiv229-direct-postgres-route-candidate"
   },
+  "kiv231_blocked_parent": {
+    "commit": "f9cd26252b0bf66748919ede5f0c8d1a2974b7cb",
+    "hash_of_hashes": "6aa459bc0b31e13f6ff62cdc1aa51c73ca481da30db8928d0d303c4377d5f845",
+    "manifest_blob": "c9320183366a764144fa4adc891ef843b96f93b3",
+    "manifest_sha256": "2dd14b148c50de9b9acec58beabd17d803117a123c2efeed6786aa9dc0ef0d29",
+    "package_version": "0.1.5-kiv231-conninfo-destination-binding-candidate"
+  },
   "not_production_evidence": true,
   "not_section7_fixture_evidence": true,
   "operative_procedure": {
@@ -208,9 +332,9 @@
     "path": "docs/governance/KIV-14_A2_ACCEPTANCE_RECOVERY_PROCEDURE.md",
     "sha256": "48864cbcefb62b13bb61296933d655dffbf171ca10dad1b7dbb91342bff5cd8a"
   },
-  "package_context": "KIVO-A2-RECOVERY-CONNINFO-DESTINATION-BUILDER-231",
+  "package_context": "KIVO-A2-RECOVERY-LIBPQ-HERMETIC-PARSER-BUILDER-234",
   "package_id": "KIV-217-A2-PCSB-QUERY-DRIVER-PACKAGE",
-  "package_version": "0.1.5-kiv231-conninfo-destination-binding-candidate",
+  "package_version": "0.1.6-kiv234-libpq-hermetic-parser-candidate",
   "platform_baseline": {
     "cli_tarball_asset": "supabase-postgres-v17.6.1.150-cli-darwin-arm64.tar.gz",
     "cli_tarball_sha256": "e8586bfa2ba41fba390378ff2183e1bf3781208d7ff31223859a8331888c7ec6",

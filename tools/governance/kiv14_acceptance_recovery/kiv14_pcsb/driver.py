@@ -17,7 +17,7 @@ from .constants import BACKEND_PID_METHOD, DRIVER_NAME, DRIVER_VERSION
 from .errors import ContinuityFailure, FailClosed, SequenceViolation
 from .safety import (
     assert_not_production_target,
-    cleared_libpq_destination_environment,
+    hermetic_libpq_environment,
     parse_canonical_conninfo,
 )
 
@@ -36,7 +36,7 @@ def driver_identity() -> dict[str, Any]:
         "backend_pid_method": BACKEND_PID_METHOD,
         "autocommit": True,
         "prepare_threshold": None,
-        "client_encoding": "UTF8 via startup packet / conninfo (not SET SQL)",
+        "client_encoding": "UTF8 via explicit reconstructed conninfo / startup packet (not SET SQL)",
     }
 
 
@@ -45,13 +45,14 @@ def reviewed_psycopg_connect(conninfo: str) -> psycopg.Connection[Any]:
 
     Callers must already have passed ``assert_not_production_target`` or
     ``bind_authorized_effective_conninfo``. The factory re-parses, reconstructs
-    keyword parameters from that canonical identity, and strips libpq
-    destination/identity environment variables before ``psycopg.connect``.
-    The original opaque conninfo is never passed through to libpq.
+    keyword parameters from that canonical identity (always including
+    ``client_encoding=UTF8``), and strips every recognized libpq
+    environment/default source before ``psycopg.connect``. The original opaque
+    conninfo is never passed through to libpq.
     """
-    identity = parse_canonical_conninfo(conninfo)
-    effective = identity.as_keyword_conninfo()
-    with cleared_libpq_destination_environment():
+    with hermetic_libpq_environment():
+        identity = parse_canonical_conninfo(conninfo)
+        effective = identity.as_keyword_conninfo()
         return psycopg.connect(
             effective,
             autocommit=True,

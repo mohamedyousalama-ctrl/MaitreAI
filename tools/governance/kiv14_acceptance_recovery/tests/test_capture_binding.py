@@ -51,6 +51,7 @@ DIRECT_USER = "postgres"
 DIRECT_CONNINFO = (
     f"host={DIRECT_HOST} port=5432 dbname=postgres user={DIRECT_USER} sslmode=require"
 )
+EFFECTIVE_DIRECT_CONNINFO = DIRECT_CONNINFO + " client_encoding=UTF8"
 
 
 def _pins():
@@ -223,7 +224,7 @@ def test_authorized_target_reaches_reviewed_factory_only_when_bound(tmp_path, mo
     session = PersistentCaptureSession(DIRECT_CONNINFO, authority=authority)
     session.connect()
     try:
-        assert reached == [DIRECT_CONNINFO]
+        assert reached == [EFFECTIVE_DIRECT_CONNINFO]
         assert session.pre_p0_backend_pid == 4242
         assert session.sql_log == []
     finally:
@@ -458,7 +459,7 @@ def test_normal_checkout_exact_commit_passes_package_identity(tmp_path, monkeypa
     AuthorizedCaptureRunner().run(
         authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
     )
-    assert reached == [DIRECT_CONNINFO]
+    assert reached == [EFFECTIVE_DIRECT_CONNINFO]
 
 
 def test_wrong_arbitrary_commit_never_reaches_factory(tmp_path, monkeypatch):
@@ -603,7 +604,7 @@ def test_detached_head_match_accepted_mismatch_refuses(tmp_path, monkeypatch):
         conninfo=DIRECT_CONNINFO,
         root=pkg,
     )
-    assert reached == [DIRECT_CONNINFO]
+    assert reached == [EFFECTIVE_DIRECT_CONNINFO]
     reached.clear()
     mismatch = parse_capture_authority(
         _authority_dict(dest=dest / "b", target=_target_direct(), package_commit="b" * 40)
@@ -721,7 +722,7 @@ def test_correct_direct_postgres_reaches_factory_after_pre_connect_checks(tmp_pa
     payload = AuthorizedCaptureRunner().run(
         authority=authority, invocation=invocation, conninfo=DIRECT_CONNINFO
     )
-    assert reached == [DIRECT_CONNINFO]
+    assert reached == [EFFECTIVE_DIRECT_CONNINFO]
     assert payload["retry"] is False
     pre_auth = dest / "capture_pre_auth.json"
     text = pre_auth.read_text()
