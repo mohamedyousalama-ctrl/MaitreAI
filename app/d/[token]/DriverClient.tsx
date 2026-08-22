@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Navigation, Phone, CheckCircle2, Truck, PackageCheck, AlertTriangle, Loader2 } from "lucide-react";
+import { MapPin, Navigation, Phone, MessageCircle, StickyNote, CheckCircle2, Truck, PackageCheck, AlertTriangle, Loader2 } from "lucide-react";
 
 interface OrderInfo {
   orderNumber: string | null;
@@ -18,6 +18,8 @@ interface OrderInfo {
   lat: number | null;
   lng: number | null;
   customerPhone: string | null;
+  /** Operator's free-text reference/note for this job (optional). */
+  note?: string | null;
 }
 
 const STEPS: { key: string; label: string; icon: typeof Truck }[] = [
@@ -99,7 +101,12 @@ export function DriverClient({ token, status: initial, order }: { token: string;
     : order.address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.address)}`
     : null;
-  const waHref = order.customerPhone ? `https://wa.me/${order.customerPhone.replace(/[^\d]/g, "")}` : null;
+  // Two DISTINCT contact actions. These used to be one button labelled «اتصال»
+  // that actually opened WhatsApp — a driver who needed to phone the customer at
+  // the door had no way to. tel: dials, wa.me messages.
+  const phoneDigits = order.customerPhone ? order.customerPhone.replace(/[^\d]/g, "") : "";
+  const callHref = phoneDigits ? `tel:+${phoneDigits}` : null;
+  const waHref = phoneDigits ? `https://wa.me/${phoneDigits}` : null;
 
   if (status === "delivered") {
     return (
@@ -134,18 +141,31 @@ export function DriverClient({ token, status: initial, order }: { token: string;
               <span className="flex-1">{order.address}</span>
             </div>
           )}
-          <div className="flex gap-2">
-            {mapsHref && (
-              <a href={mapsHref} target="_blank" rel="noopener noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#2a211b] hover:bg-[#faf6ef]">
-                <Navigation className="h-4 w-4 text-[#b5502e]" /> فتح الخريطة
-              </a>
-            )}
-            {waHref && (
-              <a href={waHref} target="_blank" rel="noopener noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#2a211b] hover:bg-[#faf6ef]">
-                <Phone className="h-4 w-4 text-[#3c7a52]" /> اتصال بالعميل
-              </a>
-            )}
-          </div>
+          {order.note && (
+            <div className="flex items-start gap-2 rounded-lg bg-[#fbf7f0] px-3 py-2 text-sm text-[#6a5c4e]">
+              <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-[#b5502e]" />
+              <span className="flex-1">{order.note}</span>
+            </div>
+          )}
+          {mapsHref && (
+            <a href={mapsHref} target="_blank" rel="noopener noreferrer" className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#2a211b] hover:bg-[#faf6ef]">
+              <Navigation className="h-4 w-4 text-[#b5502e]" /> فتح الخريطة والتوجيه
+            </a>
+          )}
+          {(callHref || waHref) && (
+            <div className="flex gap-2">
+              {callHref && (
+                <a href={callHref} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#2a211b] hover:bg-[#faf6ef]">
+                  <Phone className="h-4 w-4 text-[#3c7a52]" /> اتصال بالعميل
+                </a>
+              )}
+              {waHref && (
+                <a href={waHref} target="_blank" rel="noopener noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#e4d8c8] px-3 py-2 text-xs font-semibold text-[#2a211b] hover:bg-[#faf6ef]">
+                  <MessageCircle className="h-4 w-4 text-[#3c7a52]" /> واتساب العميل
+                </a>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

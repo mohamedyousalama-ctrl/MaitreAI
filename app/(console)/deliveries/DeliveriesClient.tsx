@@ -9,18 +9,39 @@
 // ============================================================================
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRole } from "@/lib/use-role";
 import { useDispatchStore } from "@/lib/dispatch-store";
 import { runActionOutcome } from "@/lib/console-toast";
-import { Truck, Plus, Loader2, Link2, Check, Layers, Sparkles } from "lucide-react";
+import { Truck, Plus, Loader2, Link2, Check, Layers, Sparkles, MapPin, Navigation, Satellite } from "lucide-react";
+import { Num } from "@/components/kivo";
+
+// Reuses the storefront's Leaflet pin picker (client-only) so the operator drops a
+// REAL destination pin instead of typing coordinates. ssr:false — react-leaflet
+// cannot render on the server.
+const LocationPicker = dynamic(() => import("@/components/storefront/LocationPicker"), { ssr: false });
 
 interface Driver { id: string; name: string; phone: string; vehicle: string | null; active: boolean }
+interface DeliveryLocation { lat: number; lng: number; recorded_at: string; ageMs: number; fresh: boolean }
 interface Delivery {
   id: string;
   status: string;
   driver_id: string | null;
   drivers: { name: string; phone: string } | null;
-  orders: { order_number: string | null; total: number | null; currency: string | null; address: string | null } | null;
+  orders: { order_number: string | null; total: number | null; currency: string | null; address: string | null; lat: number | null; lng: number | null; notes: string | null } | null;
+  latestLocation?: DeliveryLocation | null;
+}
+
+/** Human "last seen" for a driver's shared point. Freshness is computed server-side
+ *  (locationFreshness); this only renders it. The age is composed in JSX with <Num>
+ *  (never interpolated into the Arabic string) so digits don't reorder under RTL. */
+function freshnessLabel(loc: DeliveryLocation | null | undefined): { node: React.ReactNode; color: string } {
+  if (!loc) return { node: <>لا توجد مشاركة موقع</>, color: "var(--kv-muted)" };
+  if (loc.fresh) return { node: <>الموقع مباشر الآن</>, color: "#1d6f8e" };
+  const mins = Math.floor(loc.ageMs / 60000);
+  if (mins < 1) return { node: <>آخر موقع قبل <Num>{Math.floor(loc.ageMs / 1000)}</Num> ثانية</>, color: "#9a6a14" };
+  if (mins < 60) return { node: <>آخر موقع قبل <Num>{mins}</Num> دقيقة</>, color: "#9a6a14" };
+  return { node: <>آخر موقع قبل <Num>{Math.floor(mins / 60)}</Num> ساعة</>, color: "var(--kv-red)" };
 }
 
 const STATUS_AR: Record<string, string> = {
@@ -68,6 +89,13 @@ export function DeliveriesClient() {
   const [links, setLinks] = useState<Record<string, { driverLink: string; customerLink: string; whatsapp: string }>>({});
   const [form, setForm] = useState({ name: "", phone: "", vehicle: "" });
   const [adding, setAdding] = useState(false);
+
+  // Day 1 — operator-typed delivery job (no upstream order).
+  const EMPTY_JOB = { customerPhone: "", customerName: "", address: "", codAmount: "", reference: "" };
+  const [job, setJob] = useState(EMPTY_JOB);
+  const [jobPin, setJobPin] = useState<{ lat: number; lng: number } | null>(null);
+  const [pinOpen, setPinOpen] = useState(false);
+  const [creatingJob, setCreatingJob] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", phone: "", vehicle: "" });
   const [savingEdit, setSavingEdit] = useState(false);
@@ -91,6 +119,17 @@ export function DeliveriesClient() {
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // LIVE TRACKING REFRESH. The store's realtime channel watches deliveries/drivers,
+  // NOT delivery_locations — and freshness ages with wall-clock time anyway — so a
+  // driver's moving pin would otherwise sit frozen on this page. Poll while (and
+  // only while) something is actually in progress; idle boards stay quiet.
+  const hasActive = deliveries.some((d) => ["assigned", "picked_up", "on_the_way"].includes(d.status));
+  useEffect(() => {
+    if (!hasActive) return;
+    const t = setInterval(() => { void loadDeliveries(); }, 15000);
+    return () => clearInterval(t);
+  }, [hasActive, loadDeliveries]);
 
   const toggleRunPick = (id: string) =>
     setRunSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length >= 3 ? prev : [...prev, id]));
@@ -157,6 +196,44 @@ export function DeliveriesClient() {
       return { state: "info" as const, message: "الإسناد تم — لينك واتساب متخطّى. شاركه مع السائق يدويًا." };
     });
     setAssigning(null);
+  }
+
+  // Day 1 — create a delivery job by hand. On success the job lands in the list
+  // below as `pending`, where the existing driver-assign control takes over.
+  const JOB_ERR_AR: Record<string, string> = {
+    phone_required: "رقم هاتف العميل مطلوب.",
+    phone_invalid: "رقم الهاتف غير صالح — تأكد من الرقم.",
+    destination_required: "أدخل العنوان أو حدّد الموقع على الخريطة.",
+    bad_coords: "الموقع المحدد غير صالح.",
+    bad_amount: "قيمة التحصيل غير صالحة.",
+  };
+  async function createJob() {
+    if (!job.customerPhone.trim() || creatingJob) return;
+    setCreatingJob(true);
+    await runActionOutcome("جارٍ إنشاء طلب التوصيل…", async () => {
+      const r = await fetch("/api/deliveries/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...job, lat: jobPin?.lat ?? null, lng: jobPin?.lng ?? null }),
+      });
+      const j = (await r.json().catch(() => ({}))) as { error?: string; orderNumber?: string };
+      if (!r.ok) {
+        // Every input rejection has an actionable Arabic message; anything else is
+        // ours, not the operator's, so it gets a plain message and a console trace
+        // (no code interpolated into Arabic copy — it would reorder under RTL).
+        if (!JOB_ERR_AR[String(j.error)]) console.error("[deliveries] manual job failed", r.status, j.error);
+        const msg = JOB_ERR_AR[String(j.error)] ?? "تعذّر إنشاء الطلب — حاول مرة أخرى.";
+        return { state: "failed" as const, message: msg, retry: true };
+      }
+      setJob(EMPTY_JOB); // reset ONLY on real success
+      setJobPin(null);
+      await loadDeliveries();
+      // The order number is NOT interpolated here (toasts are plain strings and a
+      // number inside Arabic copy reorders under RTL) — the new job shows it in the
+      // list below, where it renders in its own field.
+      return { state: "success" as const, message: "تم إنشاء طلب التوصيل — عيّن مندوباً الآن." };
+    });
+    setCreatingJob(false);
   }
 
   async function addDriver() {
@@ -230,6 +307,96 @@ export function DeliveriesClient() {
           <p style={{ fontSize: 12.5, fontWeight: 600, color: "var(--kv-muted)", marginTop: 4 }}>إدارة المندوبين وتعيين الطلبات</p>
         </div>
       </div>
+
+      {/* Day 1 — operator creates a delivery job by hand (no upstream order). */}
+      <div className="mb-5 p-4" style={cardStyle}>
+        <p className="mb-3 flex items-center gap-1.5 text-sm font-bold" style={{ color: "var(--kv-text)" }}>
+          <Plus size={15} style={{ color: "var(--kv-primary)" }} /> طلب توصيل جديد
+        </p>
+        <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
+          <input
+            value={job.customerPhone}
+            onChange={(e) => setJob({ ...job, customerPhone: e.target.value })}
+            placeholder="رقم هاتف العميل *"
+            inputMode="tel"
+            className="px-3 py-2 text-sm"
+            style={fieldStyle}
+          />
+          <input
+            value={job.customerName}
+            onChange={(e) => setJob({ ...job, customerName: e.target.value })}
+            placeholder="اسم العميل (اختياري)"
+            className="px-3 py-2 text-sm"
+            style={fieldStyle}
+          />
+          <input
+            value={job.address}
+            onChange={(e) => setJob({ ...job, address: e.target.value })}
+            placeholder="العنوان"
+            className="px-3 py-2 text-sm"
+            style={fieldStyle}
+          />
+          <input
+            value={job.codAmount}
+            onChange={(e) => setJob({ ...job, codAmount: e.target.value })}
+            placeholder="التحصيل عند الاستلام (اتركه فارغاً إن لم يوجد)"
+            inputMode="decimal"
+            className="px-3 py-2 text-sm"
+            style={fieldStyle}
+          />
+          <input
+            value={job.reference}
+            onChange={(e) => setJob({ ...job, reference: e.target.value })}
+            placeholder="مرجع / ملاحظة للمندوب (اختياري)"
+            className="px-3 py-2 text-sm"
+            style={fieldStyle}
+          />
+          <button
+            type="button"
+            onClick={() => setPinOpen(true)}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold"
+            style={{ ...fieldStyle, color: jobPin ? "var(--kv-deep)" : "var(--kv-muted)", borderColor: jobPin ? "var(--kv-primary)" : "var(--kv-border)" }}
+          >
+            <MapPin size={15} style={{ color: "var(--kv-primary)" }} />
+            {jobPin ? (
+              <>تم تحديد الموقع <Num>{`${jobPin.lat.toFixed(4)}, ${jobPin.lng.toFixed(4)}`}</Num></>
+            ) : (
+              "حدّد الموقع على الخريطة"
+            )}
+          </button>
+        </div>
+        <div className="mt-3 flex items-center gap-3 flex-wrap">
+          <button
+            onClick={createJob}
+            disabled={creatingJob || !job.customerPhone.trim() || (!job.address.trim() && !jobPin)}
+            className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
+            style={{ background: "var(--kv-grad-brand)" }}
+          >
+            {creatingJob ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} إنشاء الطلب
+          </button>
+          <span className="text-[11px]" style={{ color: "var(--kv-muted)" }}>
+            مطلوب: رقم الهاتف + (العنوان أو الموقع على الخريطة).
+          </span>
+          {jobPin && (
+            <button type="button" onClick={() => setJobPin(null)} className="text-[11px] font-semibold underline" style={{ color: "var(--kv-muted)" }}>
+              إزالة الموقع
+            </button>
+          )}
+        </div>
+      </div>
+
+      {pinOpen && (
+        <LocationPicker
+          initial={jobPin}
+          onClose={() => setPinOpen(false)}
+          onConfirm={(r) => {
+            setJobPin({ lat: r.lat, lng: r.lng });
+            // Only fill the address when the operator hasn't typed one themselves.
+            setJob((j) => (j.address.trim() ? j : { ...j, address: r.address }));
+            setPinOpen(false);
+          }}
+        />
+      )}
 
       {runsEnabled && (() => {
         const pending = deliveries.filter((d) => d.status === "pending");
@@ -341,6 +508,34 @@ export function DeliveriesClient() {
                       <span>{d.orders?.total != null ? `${d.orders.total} ${d.orders.currency}` : ""}</span>
                       {d.drivers?.name && <span>المندوب: {d.drivers.name}</span>}
                     </div>
+                    {d.orders?.notes && (
+                      <p className="mt-1 text-xs" style={{ color: "var(--kv-muted)" }}>ملاحظة: {d.orders.notes}</p>
+                    )}
+
+                    {/* Driver location + how fresh it is. A stale point is SHOWN
+                        (with its age), never hidden — "no sharing" and "shared 6
+                        minutes ago" are different operational facts. */}
+                    {["assigned", "picked_up", "on_the_way"].includes(d.status) && (() => {
+                      const f = freshnessLabel(d.latestLocation);
+                      const loc = d.latestLocation;
+                      return (
+                        <div className="mt-2 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]" style={{ background: "var(--kv-card-soft)" }}>
+                          <Satellite size={13} style={{ color: f.color }} />
+                          <span style={{ color: f.color, fontWeight: 600 }}>{f.node}</span>
+                          {loc && (
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 font-semibold underline"
+                              style={{ color: "var(--kv-deep)" }}
+                            >
+                              <Navigation size={12} /> عرض على الخريطة
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {canAssign && (
                       <div className="mt-3 flex items-center gap-2">

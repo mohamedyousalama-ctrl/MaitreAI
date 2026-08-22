@@ -51,6 +51,8 @@ export default async function DriverPage({ params }: { params: { token: string }
           lat: typeof o.lat === "number" ? o.lat : null,
           lng: typeof o.lng === "number" ? o.lng : null,
           customerPhone: (o.customerPhone as string) ?? null,
+          // Operator's reference/note for this job (Day 1 manual dispatch).
+          note: (o.notes as string) ?? null,
         }}
       />
     </Shell>

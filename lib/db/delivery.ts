@@ -206,12 +206,29 @@ export async function updateDriver(
 
 // --- operator deliveries list (+ latest location for in-progress) ------------
 const IN_PROGRESS = ["assigned", "picked_up", "on_the_way"];
-const LOCATION_FRESH_MS = 30 * 1000;
+export const LOCATION_FRESH_MS = 30 * 1000;
+
+/**
+ * Freshness verdict for the operator's live view.
+ *
+ * The point itself is ALWAYS returned when one exists — staleness is reported, not
+ * hidden. (This previously nulled anything older than LOCATION_FRESH_MS, which made
+ * a driver who closed the page look identical to a driver who never shared at all;
+ * the operator could not tell "no GPS" from "GPS 6 minutes old".) `fresh` marks a
+ * point still inside the live window, `ageMs` lets the UI say how old it is.
+ */
+export function locationFreshness(
+  recordedAt: string,
+  now: number = Date.now()
+): { ageMs: number; fresh: boolean } {
+  const ageMs = Math.max(0, now - new Date(recordedAt).getTime());
+  return { ageMs, fresh: ageMs < LOCATION_FRESH_MS };
+}
 
 export async function listDeliveries(db: SupabaseClient, restaurantId: string) {
   const { data } = await db
     .from("deliveries")
-    .select("id,status,driver_id,assigned_at,picked_up_at,delivered_at,created_at,drivers(name,phone),orders(order_number,total,currency,address,fulfillment)")
+    .select("id,status,driver_id,assigned_at,picked_up_at,delivered_at,created_at,drivers(name,phone),orders(order_number,total,currency,address,lat,lng,notes,fulfillment)")
     .eq("restaurant_id", restaurantId)
     .order("created_at", { ascending: false })
     .limit(100);
@@ -231,7 +248,8 @@ export async function listDeliveries(db: SupabaseClient, restaurantId: string) {
     }
     for (const r of rows) {
       const l = latest.get(r.id as string);
-      r.latestLocation = l && Date.now() - new Date(l.recorded_at).getTime() < LOCATION_FRESH_MS ? l : null;
+      // Report the point AND its age — never drop a stale one (see locationFreshness).
+      r.latestLocation = l ? { ...l, ...locationFreshness(l.recorded_at) } : null;
     }
   }
   return rows;
@@ -241,7 +259,7 @@ export async function listDeliveries(db: SupabaseClient, restaurantId: string) {
 async function loadOrderSummary(admin: SupabaseClient, orderId: string) {
   const { data: o } = await admin
     .from("orders")
-    .select("order_number,items,total,currency,address,lat,lng,zone_id,fulfillment,conversation_id,customer_id,restaurant_id")
+    .select("order_number,items,total,currency,address,lat,lng,zone_id,fulfillment,conversation_id,customer_id,restaurant_id,notes")
     .eq("id", orderId)
     .single();
   if (!o) return null;

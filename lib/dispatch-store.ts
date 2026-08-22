@@ -24,12 +24,22 @@ export interface DispatchDriver {
   vehicle: string | null;
   active: boolean;
 }
+/** Latest shared driver point + server-computed freshness (see locationFreshness). */
+export interface DispatchLocation {
+  lat: number;
+  lng: number;
+  recorded_at: string;
+  ageMs: number;
+  fresh: boolean;
+}
 export interface DispatchDelivery {
   id: string;
   status: string;
   driver_id: string | null;
   drivers: { name: string; phone: string } | null;
-  orders: { order_number: string | null; total: number | null; currency: string | null; address: string | null } | null;
+  orders: { order_number: string | null; total: number | null; currency: string | null; address: string | null; lat: number | null; lng: number | null; notes: string | null } | null;
+  /** Present for in-progress deliveries only; null when the driver never shared. */
+  latestLocation?: DispatchLocation | null;
 }
 
 interface DispatchState {
