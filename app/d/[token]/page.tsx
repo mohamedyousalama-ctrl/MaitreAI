@@ -6,12 +6,21 @@
 
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getDeliveryByDriverToken, isExpired } from "@/lib/db/delivery";
+import { getDeliveryByDriverToken } from "@/lib/db/delivery";
+import { driverTerminalState, driverTerminalPanel, type TerminalTone } from "@/lib/delivery/driver-terminal-state";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 import { DriverClient } from "./DriverClient";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Frame colours per register — green belongs to `success` and nothing else.
+// NOT exported: a Next.js page module may only export its reserved fields.
+const TERMINAL_TONE: Record<TerminalTone, { border: string; bg: string }> = {
+  success: { border: "#cde3d4", bg: "#f0f7f2" },
+  problem: { border: "#e7c9bf", bg: "#fbeee9" },
+  neutral: { border: "#e4d8c8", bg: "#f4ece1" },
+};
 
 export default async function DriverPage({ params }: { params: { token: string } }) {
   if (!ENABLE_DELIVERY_TRACKING) notFound();
@@ -24,14 +33,21 @@ export default async function DriverPage({ params }: { params: { token: string }
   }
   const d = data.delivery as Record<string, unknown>;
   const o = (data.order ?? {}) as Record<string, unknown>;
-  const done = isExpired(d as { expires_at?: string | null; status?: string });
+  // D1: a no-longer-actionable link must say WHICH outcome it reached. `failed`
+  // in particular must never inherit the delivered panel's green/checkmark
+  // treatment. `!== "active"` is exactly the old isExpired() gate — proven in
+  // scripts/test-delivery-problem-path.test.ts — so nothing about WHEN the link
+  // closes has changed, only what it reports.
+  const terminal = driverTerminalState(d as { expires_at?: string | null; status?: string });
+  const panel = driverTerminalPanel(terminal);
 
-  if (done) {
+  if (panel) {
+    const tone = TERMINAL_TONE[panel.tone];
     return (
       <Shell>
-        <div className="rounded-2xl border border-[#cde3d4] bg-[#f0f7f2] p-5 text-center">
-          <p className="text-lg font-bold text-[#2a211b]">تم إنهاء هذا التوصيل ✅</p>
-          <p className="mt-1 text-sm text-[#6a5c4e]">شكراً لك. هذا الرابط لم يعد فعّالاً.</p>
+        <div className="rounded-2xl border p-5 text-center" style={{ borderColor: tone.border, background: tone.bg }}>
+          <p className="text-lg font-bold text-[#2a211b]">{panel.title}</p>
+          <p className="mt-1 text-sm text-[#6a5c4e]">{panel.body}</p>
         </div>
       </Shell>
     );

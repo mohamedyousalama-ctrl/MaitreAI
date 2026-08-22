@@ -8,6 +8,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MapPin, Navigation, Phone, MessageCircle, StickyNote, CheckCircle2, Truck, PackageCheck, AlertTriangle, Loader2 } from "lucide-react";
+import { driverTerminalState, driverTerminalPanel, type TerminalTone } from "@/lib/delivery/driver-terminal-state";
+
+/** Frame + icon colours per register. Green/✓ belong to `success` alone. */
+const TONE: Record<TerminalTone, { border: string; bg: string; icon: string }> = {
+  success: { border: "#cde3d4", bg: "#f0f7f2", icon: "#3c7a52" },
+  problem: { border: "#e7c9bf", bg: "#fbeee9", icon: "#a8432a" },
+  neutral: { border: "#e4d8c8", bg: "#f4ece1", icon: "#9b8b7c" },
+};
 
 interface OrderInfo {
   orderNumber: string | null;
@@ -35,17 +43,25 @@ export function DriverClient({ token, status: initial, order }: { token: string;
   const [gpsOn, setGpsOn] = useState(false);
   const [gpsErr, setGpsErr] = useState<string | null>(null);
   const [lastPing, setLastPing] = useState<number | null>(null);
+  const [postErr, setPostErr] = useState<string | null>(null);
   const watchRef = useRef<number | null>(null);
 
   async function post(next: string) {
     setBusy(next);
+    setPostErr(null);
     try {
       const res = await fetch(`/api/delivery/${token}/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: next }),
       });
+      // D1: the driver must never be left guessing. On success the state change
+      // swaps in a terminal panel below; on failure say so out loud instead of
+      // silently re-enabling the button, which reads as "nothing happened".
       if (res.ok) setStatus(next);
+      else setPostErr("تعذّر حفظ التحديث. تأكد من الاتصال وحاول مرة أخرى.");
+    } catch {
+      setPostErr("تعذّر حفظ التحديث. تأكد من الاتصال وحاول مرة أخرى.");
     } finally {
       setBusy(null);
     }
@@ -108,12 +124,22 @@ export function DriverClient({ token, status: initial, order }: { token: string;
   const callHref = phoneDigits ? `tel:+${phoneDigits}` : null;
   const waHref = phoneDigits ? `https://wa.me/${phoneDigits}` : null;
 
-  if (status === "delivered") {
+  // D1 — IMMEDIATE, VISIBLE confirmation. Pressing «مشكلة في التوصيل» sets the
+  // status to `failed`, which lands here and swaps the whole surface for a
+  // problem-recorded panel; the driver no longer has to infer what happened from
+  // a button greying out. Only `delivered` gets the checkmark and green frame —
+  // the tone/success flags come from the shared pure module, so `failed` cannot
+  // accidentally inherit success semantics.
+  const terminal = driverTerminalState({ status });
+  const panel = driverTerminalPanel(terminal);
+  if (panel) {
+    const tone = TONE[panel.tone];
+    const Icon = panel.success ? CheckCircle2 : AlertTriangle;
     return (
-      <div className="rounded-2xl border border-[#cde3d4] bg-[#f0f7f2] p-5 text-center">
-        <CheckCircle2 className="mx-auto h-10 w-10 text-[#3c7a52]" />
-        <p className="mt-2 text-lg font-bold text-[#2a211b]">تم التوصيل ✅</p>
-        <p className="mt-1 text-sm text-[#6a5c4e]">شكراً لك! انتهى هذا التوصيل.</p>
+      <div className="rounded-2xl border p-5 text-center" style={{ borderColor: tone.border, background: tone.bg }}>
+        <Icon className="mx-auto h-10 w-10" style={{ color: tone.icon }} />
+        <p className="mt-2 text-lg font-bold text-[#2a211b]">{panel.title}</p>
+        <p className="mt-1 text-sm text-[#6a5c4e]">{panel.body}</p>
       </div>
     );
   }
@@ -202,6 +228,9 @@ export function DriverClient({ token, status: initial, order }: { token: string;
         >
           <AlertTriangle className="h-4 w-4" /> مشكلة في التوصيل
         </button>
+        {postErr && (
+          <p className="rounded-lg bg-[#fbeee9] px-3 py-2 text-center text-xs font-semibold text-[#a8432a]">{postErr}</p>
+        )}
       </div>
 
       {/* GPS sharing toggle */}
