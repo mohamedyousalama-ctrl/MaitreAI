@@ -16,6 +16,9 @@ concurrency:
 
 jobs:
   validate:
+    # The trusted router may surface as the originating owner or as github-actions[bot]
+    # when it emits repository_dispatch with GITHUB_TOKEN. No other dispatch actor is valid.
+    if: github.actor == 'mohamedyousalama-ctrl' || github.actor == 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -142,6 +145,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: "github-actions[bot]"
           prompt: |
             You are exactly the Kivo V1 BUILDER for task ${{ needs.validate.outputs.task_id }}.
             Read docs/governance/KIVO-V1-AUTOMATION-RELAY-PROTOCOL.md first.
@@ -226,6 +230,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: "github-actions[bot]"
           prompt: |
             You are exactly the Kivo V1 ${{ needs.validate.outputs.role }} for task
             ${{ needs.validate.outputs.task_id }}. You are a fresh independent execution.
@@ -294,6 +299,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: "github-actions[bot]"
           prompt: |
             You are exactly Kivo V1 PM-SCRIBE for ${{ needs.validate.outputs.task_id }}.
             GitHub is the temporary PM mirror while Linear is unavailable. You have no
