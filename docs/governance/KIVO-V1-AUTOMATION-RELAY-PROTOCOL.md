@@ -53,15 +53,23 @@ repository default branch:
    - exact `kivo-v1-relay` label required;
    - exact task prefix/provider/status required;
    - contains **no Anthropic or Linear secret-bearing step**;
-   - claims the immutable task id, then emits one `repository_dispatch` event.
+   - claims the immutable task id, then emits one `repository_dispatch` event with the
+     repository `GITHUB_TOKEN`.
 
 2. **`kivo-v1-relay-dispatch.yml` — isolated role worker**
    - event: `repository_dispatch` type `kivo-v1-relay`;
+   - accepts dispatch actor only as `mohamedyousalama-ctrl` or `github-actions[bot]`;
    - re-fetches the source comment by numeric comment id and verifies that it is on #577,
      authored by `mohamedyousalama-ctrl`, and byte-equal to the dispatched task body;
    - refuses a task id with an existing terminal handback;
    - runs exactly one role in a fresh GitHub runner / fresh Claude session;
-   - applies role-specific GitHub permissions and role-specific Claude `--allowedTools`.
+   - applies role-specific GitHub permissions and role-specific Claude `--allowedTools`;
+   - when the dispatch actor is `github-actions[bot]`, passes only that exact bot through
+     Anthropic's `allowed_bots` input; wildcard bot access is forbidden.
+
+GitHub currently documents `repository_dispatch` as an exception that **does** start a new
+workflow when emitted with the repository `GITHUB_TOKEN`, which is why the router can stay
+free of a PAT or extra app private key.
 
 The router writes a `ROUTER-CLAIM` before dispatch. A claimed id is not dispatched again.
 If dispatch fails after claim, the task fails closed; recovery requires PM intake and a new
@@ -132,7 +140,9 @@ The ingress router therefore requires all of the following **before dispatch**:
 
 Router/worker comments cannot retrigger the router because they are not owner-authored PM
 task headers. The worker re-verifies the original owner-authored comment from GitHub before
-model authentication is used.
+model authentication is used. If GitHub attributes the repository dispatch to
+`github-actions[bot]`, only that exact bot is allow-listed for the Claude action; no `*`
+allow-list is permitted.
 
 ---
 
@@ -200,11 +210,11 @@ After the handback, stop at `PM_INTAKE_REQUIRED`.
 
 ---
 
-## 9 — Current official Anthropic references used for this candidate
+## 9 — Current official references used for this candidate
 
 Verified during the 24 Aug 2026 correction:
 
-- Claude Code GitHub Actions documentation:  
+- Anthropic — Claude Code GitHub Actions:  
   `https://code.claude.com/docs/en/github-actions`
   - GitHub workflow + model authentication are both required for `@claude` operation;
   - automation mode uses a `prompt` input;
@@ -213,16 +223,21 @@ Verified during the 24 Aug 2026 correction:
   - credentials belong in GitHub Secrets; least-privilege workflow permissions are
     recommended.
 
-- Anthropic Claude Code Action custom automations:  
+- Anthropic — Claude Code Action custom automations:  
   `https://github.com/anthropics/claude-code-action/blob/main/docs/custom-automations.md`
   - lists `repository_dispatch` as supported;
   - lists `workflow_dispatch` as coming soon in that event-support matrix.
 
-- Anthropic Claude Code Action usage/configuration reference:  
+- Anthropic — Claude Code Action usage/configuration reference:  
   `https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md`
   - documents `track_progress`, `allowed_bots`, `allowed_non_write_users`, authentication
     inputs, and the migration from deprecated `allowed_tools` to
     `claude_args --allowedTools`.
+
+- GitHub — Triggering a workflow / `GITHUB_TOKEN`:  
+  `https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow`
+  - documents that `workflow_dispatch` and `repository_dispatch` are exceptions that always
+    create workflow runs even when the originating operation uses `GITHUB_TOKEN`.
 
 Where these sources differ in general wording, this candidate chooses the explicitly listed
 supported dispatch path (`repository_dispatch`) and the narrower documented security
