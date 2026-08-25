@@ -1,7 +1,8 @@
 // ============================================================================
 // Kivo Delivery Network — Cairo Pilot surface copy (PURE).
 // Explicit Pilot marker; no misleading demo/test-only wording on the operator
-// deliveries surface. Day-2 ONLINE/OFFLINE presence is out of scope.
+// deliveries surface. Day-2 presence is shown as ONLINE/OFFLINE + freshness,
+// distinct from roster active/inactive.
 // ============================================================================
 
 export const PILOT_MARKER = "Pilot";

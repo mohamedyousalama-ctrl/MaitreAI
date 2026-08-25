@@ -17,16 +17,16 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
 // Routes that must stay reachable without a session. "/" and "/contact" are the
 // public landing/legal pages (no login wall — platform reviewers must see them).
 // "/order" is the public customer storefront (/order/[slug]).
-// "/d" (driver page), "/t" (customer tracking), and "/mizan" (hosted MIZAN
-// reviewer panel) are token-scoped public pages — the per-URL token IS the auth,
-// so they must be reachable without a session. Each still flag-gates + 404s an
-// unknown token in the page itself; this only stops the auth middleware from
-// bouncing a tokened reviewer to /login.
+// "/d" (driver page), "/t" (customer tracking), "/p" (Day-2 driver presence),
+// and "/mizan" (hosted MIZAN reviewer panel) are token-scoped public pages —
+// the per-URL token IS the auth, so they must be reachable without a session.
+// Each still flag-gates + 404s an unknown token in the page itself; this only
+// stops the auth middleware from bouncing a tokened reviewer to /login.
 // "/c/login" is console_v2's login (the whole /c group is env-gated, so this only
 // exists where console_v2 is deployed); without it a signed-out user is bounced to
 // the OLD /login and the new magic-link page is unreachable. Only /c/login is
 // public — every other /c route stays protected.
-const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/c/login", "/auth", "/checkout", "/order", "/api", "/d", "/t", "/mizan"];
+const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/c/login", "/auth", "/checkout", "/order", "/api", "/d", "/p", "/t", "/mizan"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));

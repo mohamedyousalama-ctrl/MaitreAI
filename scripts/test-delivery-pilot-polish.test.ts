@@ -82,6 +82,7 @@ const ok = (n: string, cond: boolean) => { if (cond) pass++; else { fail++; cons
   ok("redaction strips the token", !isTokenBearingUrl(redacted));
   ok("redaction keeps the /d/ prefix", redacted.includes("/d/[redacted]"));
   eq("customer token is also stripped", redactDeliveryUrl("https://host/t/zzzzzzzzzzzzzzzzzzzzzzzz"), "https://host/t/[redacted]");
+  eq("presence token is also stripped", redactDeliveryUrl("https://host/p/zzzzzzzzzzzzzzzzzzzzzzzz"), "https://host/p/[redacted]");
   ok("wa.me href carries the link for the operator share action", whatsappShareHref(raw).startsWith("https://wa.me/?text="));
   ok("skipped WhatsApp copy does NOT say وضع تجريبي", !whatsappDispatchLabel("skipped").includes("وضع تجريبي"));
   ok("failed WhatsApp copy tells the operator to copy/share", whatsappDispatchLabel("failed").includes("انسخ"));

@@ -151,18 +151,34 @@ export async function markDeliveryDelivered(admin: SupabaseClient, restaurantId:
 export async function listDrivers(db: SupabaseClient, restaurantId: string) {
   const { data } = await db
     .from("drivers")
-    .select("id,name,phone,vehicle,active,created_at")
+    .select("id,name,phone,vehicle,active,created_at,presence_status,presence_lat,presence_lng,presence_recorded_at,presence_last_seen_at")
     .eq("restaurant_id", restaurantId)
     .order("active", { ascending: false })
     .order("created_at", { ascending: false });
-  return data ?? [];
+  return ((data ?? []) as Record<string, unknown>[]).map((d) => ({
+    id: d.id,
+    name: d.name,
+    phone: d.phone,
+    vehicle: d.vehicle,
+    active: d.active,
+    created_at: d.created_at,
+    // Presence is independent of roster `active` and of any delivery job.
+    // Token is intentionally omitted from the list payload.
+    presence: {
+      status: d.presence_status === "online" ? "online" : "offline",
+      lat: typeof d.presence_lat === "number" ? d.presence_lat : null,
+      lng: typeof d.presence_lng === "number" ? d.presence_lng : null,
+      recordedAt: typeof d.presence_recorded_at === "string" ? d.presence_recorded_at : null,
+      lastSeenAt: typeof d.presence_last_seen_at === "string" ? d.presence_last_seen_at : null,
+    },
+  }));
 }
 
 export async function addDriver(_db: SupabaseClient, restaurantId: string, input: { name: string; phone: string; vehicle?: string | null }) {
   const admin = requireDeliveryAdmin();
   const { data, error } = await admin
     .from("drivers")
-    .insert({ restaurant_id: restaurantId, name: input.name.trim(), phone: input.phone.trim(), vehicle: input.vehicle?.trim() || null })
+    .insert({ restaurant_id: restaurantId, name: input.name.trim(), phone: input.phone.trim(), vehicle: input.vehicle?.trim() || null, presence_token: token(), presence_status: "offline" })
     .select("id,name,phone,vehicle,active,created_at")
     .single();
   if (error) throw error;

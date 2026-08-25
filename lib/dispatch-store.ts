@@ -17,12 +17,21 @@ import { createClient } from "./supabase/client";
 import { subscribeDispatch } from "./db/dispatch-realtime";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+export interface DispatchDriverPresence {
+  status: "online" | "offline";
+  lat: number | null;
+  lng: number | null;
+  recordedAt: string | null;
+  lastSeenAt: string | null;
+}
 export interface DispatchDriver {
   id: string;
   name: string;
   phone: string;
   vehicle: string | null;
   active: boolean;
+  /** Day-2 explicit ONLINE/OFFLINE + last-seen. Independent of a delivery job. */
+  presence?: DispatchDriverPresence;
 }
 /** Latest shared driver point + server-computed freshness (see locationFreshness). */
 export interface DispatchLocation {

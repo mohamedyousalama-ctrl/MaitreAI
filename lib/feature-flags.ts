@@ -29,8 +29,9 @@ export const CONSOLE_V2 =
   process.env.NEXT_PUBLIC_CONSOLE_V2 === "true";
 
 // ENABLE_DELIVERY_TRACKING — the delivery dispatch + driver flow + customer
-// tracking module (drivers, deliveries, /d/<token> driver page, /t/<token>
-// tracking page, operator deliveries view). ON by default: the «التوصيل» nav
+// tracking module (drivers, deliveries, /d/<token> driver page, /p/<token>
+// presence page, /t/<token> tracking page, operator deliveries view). ON by
+// default: the «التوصيل» nav
 // item and /deliveries page render for managers (manual driver assignment +
 // end-of-shift cash settlement; no live GPS map). Set the env var explicitly to
 // "false" (and redeploy) to make the whole module inert again. Client + server.

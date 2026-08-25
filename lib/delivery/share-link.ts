@@ -6,7 +6,7 @@
 // monospace URL. The raw URL stays in memory for clipboard / wa.me only.
 // ============================================================================
 
-const TOKEN_PATH = /(\/d\/r\/|\/d\/|\/t\/)[A-Za-z0-9_-]+/g;
+const TOKEN_PATH = /(\/d\/r\/|\/d\/|\/t\/|\/p\/)[A-Za-z0-9_-]+/g;
 
 /** Strip token path segments so a URL can be named in logs/handback. */
 export function redactDeliveryUrl(url: string): string {
@@ -14,7 +14,7 @@ export function redactDeliveryUrl(url: string): string {
 }
 
 export function isTokenBearingUrl(url: string): boolean {
-  return /\/(?:d\/r|d|t)\/[A-Za-z0-9_-]{8,}/.test(url);
+  return /\/(?:d\/r|d|t|p)\/[A-Za-z0-9_-]{8,}/.test(url);
 }
 
 /** WhatsApp share deep-link. The token stays in the href, never in surrounding UI copy. */

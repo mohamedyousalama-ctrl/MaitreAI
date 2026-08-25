@@ -31,13 +31,21 @@ import {
   PILOT_MARKER_AR,
 } from "@/lib/delivery/pilot-surface";
 import { formatDriverChoice, rosterSelectHint, rosterSummary } from "@/lib/delivery/driver-roster";
+import { classifyPresence, presenceOperatorChipAr, type PresenceSnapshot } from "@/lib/delivery/driver-presence";
 
 // Reuses the storefront's Leaflet pin picker (client-only) so the operator drops a
 // REAL destination pin instead of typing coordinates. ssr:false — react-leaflet
 // cannot render on the server.
 const LocationPicker = dynamic(() => import("@/components/storefront/LocationPicker"), { ssr: false });
 
-interface Driver { id: string; name: string; phone: string; vehicle: string | null; active: boolean }
+interface Driver {
+  id: string;
+  name: string;
+  phone: string;
+  vehicle: string | null;
+  active: boolean;
+  presence?: PresenceSnapshot;
+}
 interface DeliveryLocation { lat: number; lng: number; recorded_at: string; ageMs: number; fresh: boolean }
 interface Delivery {
   id: string;
@@ -146,6 +154,7 @@ export function DeliveriesClient() {
   // to a minute of lag: pull immediately on visibility/focus, and poll every 4s
   // while a job is in progress in a visible tab. Failures surface as stale/error.
   const hasActive = deliveries.some((d) => isInProgressStatus(d.status));
+  const hasOnlinePresence = drivers.some((d) => d.presence?.status === "online");
   const refreshHealth = classifyRefreshHealth({
     now,
     lastOkAt,
@@ -153,10 +162,10 @@ export function DeliveriesClient() {
     hasInProgress: hasActive,
   });
   useEffect(() => {
-    if (!hasActive && !lastError) return;
+    if (!hasActive && !hasOnlinePresence && !lastError) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [hasActive, lastError]);
+  }, [hasActive, hasOnlinePresence, lastError]);
   useEffect(() => {
     const pull = () => { void loadDeliveries(); };
     const onVisible = () => { if (document.visibilityState === "visible") pull(); };
@@ -175,6 +184,52 @@ export function DeliveriesClient() {
       window.removeEventListener("focus", pull);
     };
   }, [hasActive, loadDeliveries]);
+
+  // Day 2 — presence freshness lives on `drivers` (not delivery_locations).
+  // Poll the roster while any driver is ONLINE so last-seen ages into stale
+  // without waiting for a delivery job. Delivery poll above is unchanged.
+  useEffect(() => {
+    if (!hasOnlinePresence) return;
+    const pull = () => { void loadDrivers(); };
+    const onVisible = () => { if (document.visibilityState === "visible") pull(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", pull);
+    const t = setInterval(pull, VISIBLE_POLL_MS);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", pull);
+    };
+  }, [hasOnlinePresence, loadDrivers]);
+
+  function driverPresenceKind(d: Driver) {
+    return classifyPresence(d.presence, now).kind;
+  }
+
+  async function copyPresenceLink(driverId: string) {
+    await runActionOutcome("جارٍ تجهيز رابط التواجد…", async () => {
+      let r: Response;
+      try {
+        r = await fetch(`/api/drivers/${driverId}/presence-link`, { method: "POST" });
+      } catch {
+        return { state: "failed" as const, message: OPERATOR_NETWORK_ERROR_AR, retry: true };
+      }
+      const j = (await r.json().catch(() => ({}))) as { presenceLink?: string; error?: string };
+      if (!r.ok || !j.presenceLink) {
+        return { state: "failed" as const, message: "تعذّر تجهيز رابط التواجد.", retry: true };
+      }
+      try {
+        await navigator.clipboard.writeText(j.presenceLink);
+        setCopied(`presence-${driverId}`);
+        setCopyHint(null);
+        window.setTimeout(() => setCopied((cur) => (cur === `presence-${driverId}` ? null : cur)), 2000);
+        return { state: "success" as const, message: "تم نسخ رابط التواجد — لا يُعرض الرمز على الشاشة." };
+      } catch {
+        setCopyHint(CLIPBOARD_BLOCKED_AR);
+        return { state: "info" as const, message: CLIPBOARD_BLOCKED_AR };
+      }
+    });
+  }
 
   async function copyPrivateLink(key: string, url: string) {
     try {
@@ -572,7 +627,7 @@ export function DeliveriesClient() {
               <select value={runDriver} onChange={(e) => setRunDriver(e.target.value)} className="flex-1 px-2 py-1.5 text-sm" style={fieldStyle}>
                 <option value="">اختر مندوباً للرحلة…</option>
                 {activeDrivers.map((dr, i) => (
-                  <option key={dr.id} value={dr.id}>{formatDriverChoice(dr, i + 1)}</option>
+                  <option key={dr.id} value={dr.id}>{formatDriverChoice(dr, i + 1)} · {presenceOperatorChipAr(driverPresenceKind(dr))}</option>
                 ))}
               </select>
               <button
@@ -684,7 +739,7 @@ export function DeliveriesClient() {
                           >
                             <option value="">اختر مندوباً يدوياً…</option>
                             {activeDrivers.map((dr, i) => (
-                              <option key={dr.id} value={dr.id}>{formatDriverChoice(dr, i + 1)}</option>
+                              <option key={dr.id} value={dr.id}>{formatDriverChoice(dr, i + 1)} · {presenceOperatorChipAr(driverPresenceKind(dr))}</option>
                             ))}
                           </select>
                           <button
@@ -785,13 +840,19 @@ export function DeliveriesClient() {
                       </div>
                     ) : (
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div data-testid={`operator-driver-presence-${d.id}`}>
                           <p className="text-sm font-semibold" style={d.active ? { color: "var(--kv-text)" } : { color: "var(--kv-faint)", textDecoration: "line-through" }}>{d.name}</p>
                           <p className="text-xs" style={{ color: "var(--kv-muted)" }}>{d.phone}{d.vehicle ? ` · ${d.vehicle}` : ""} · {d.active ? "نشط" : "غير نشط"}</p>
+                          <p className="mt-1 text-[11px] font-semibold" data-testid="operator-presence-chip" style={{ color: driverPresenceKind(d) === "offline" ? "var(--kv-muted)" : driverPresenceKind(d) === "online_stale" ? "#9a6a14" : "#1d6f8e" }}>
+                            {presenceOperatorChipAr(driverPresenceKind(d))}
+                          </p>
                         </div>
                         {/* mutating controls — manager-only (server: PATCH /api/drivers/[id] is manager-gated) */}
                         {isManager && (
                           <div className="flex flex-none items-center gap-1.5">
+                            <button onClick={() => void copyPresenceLink(d.id)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>
+                              {copied === `presence-${d.id}` ? "تم النسخ" : "رابط التواجد"}
+                            </button>
                             <button onClick={() => startEdit(d)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition" style={{ borderColor: "var(--kv-border)", color: "var(--kv-muted)" }}>
                               تعديل
                             </button>
