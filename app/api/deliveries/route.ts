@@ -52,5 +52,8 @@ export async function GET() {
   }
 
   const deliveries = await listDeliveries(supabase, tenant.restaurantId);
-  return NextResponse.json({ deliveries });
+  return NextResponse.json(
+    { deliveries },
+    { headers: { "Cache-Control": "no-store, max-age=0" } },
+  );
 }

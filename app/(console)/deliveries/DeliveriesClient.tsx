@@ -13,8 +13,24 @@ import dynamic from "next/dynamic";
 import { useRole } from "@/lib/use-role";
 import { useDispatchStore } from "@/lib/dispatch-store";
 import { runActionOutcome } from "@/lib/console-toast";
-import { Truck, Plus, Loader2, Link2, Check, Layers, Sparkles, MapPin, Navigation, Satellite } from "lucide-react";
+import { Truck, Plus, Loader2, Link2, Check, Layers, Sparkles, MapPin, Navigation, Satellite, Copy, MessageCircle, RefreshCw } from "lucide-react";
 import { Num } from "@/components/kivo";
+import {
+  VISIBLE_POLL_MS,
+  classifyRefreshHealth,
+  isInProgressStatus,
+  tickLocation,
+} from "@/lib/delivery/operator-refresh";
+import { whatsappDispatchLabel, whatsappShareHref } from "@/lib/delivery/share-link";
+import {
+  CLIPBOARD_BLOCKED_AR,
+  OPERATOR_NETWORK_ERROR_AR,
+  OPERATOR_REFRESH_ERROR_AR,
+  OPERATOR_REFRESH_STALE_AR,
+  PILOT_MARKER,
+  PILOT_MARKER_AR,
+} from "@/lib/delivery/pilot-surface";
+import { formatDriverChoice, rosterSelectHint, rosterSummary } from "@/lib/delivery/driver-roster";
 
 // Reuses the storefront's Leaflet pin picker (client-only) so the operator drops a
 // REAL destination pin instead of typing coordinates. ssr:false — react-leaflet
@@ -84,6 +100,8 @@ export function DeliveriesClient() {
   const loading = !loaded;
   const loadDeliveries = useDispatchStore((s) => s.loadDeliveries);
   const loadDrivers = useDispatchStore((s) => s.loadDrivers);
+  const lastOkAt = useDispatchStore((s) => s.lastOkAt);
+  const lastError = useDispatchStore((s) => s.lastError);
   const [assigning, setAssigning] = useState<string | null>(null);
   const [pick, setPick] = useState<Record<string, string>>({});
   const [links, setLinks] = useState<Record<string, { driverLink: string; customerLink: string; whatsapp: string }>>({});
@@ -99,6 +117,9 @@ export function DeliveriesClient() {
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", phone: "", vehicle: "" });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [copyHint, setCopyHint] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   // WO-DELIVERY-D2 — run assembly (flag-gated on delivery_runs). OFF → the whole
   // panel is hidden and this surface is byte-identical to today's single assign.
@@ -120,16 +141,51 @@ export function DeliveriesClient() {
     return () => { alive = false; };
   }, []);
 
-  // LIVE TRACKING REFRESH. The store's realtime channel watches deliveries/drivers,
-  // NOT delivery_locations — and freshness ages with wall-clock time anyway — so a
-  // driver's moving pin would otherwise sit frozen on this page. Poll while (and
-  // only while) something is actually in progress; idle boards stay quiet.
-  const hasActive = deliveries.some((d) => ["assigned", "picked_up", "on_the_way"].includes(d.status));
+  // LIVE TRACKING REFRESH. Realtime covers deliveries/drivers, not GPS pings.
+  // Hidden-tab timer throttle (~1/min in Chromium) is why the field loop saw up
+  // to a minute of lag: pull immediately on visibility/focus, and poll every 4s
+  // while a job is in progress in a visible tab. Failures surface as stale/error.
+  const hasActive = deliveries.some((d) => isInProgressStatus(d.status));
+  const refreshHealth = classifyRefreshHealth({
+    now,
+    lastOkAt,
+    lastError,
+    hasInProgress: hasActive,
+  });
   useEffect(() => {
-    if (!hasActive) return;
-    const t = setInterval(() => { void loadDeliveries(); }, 15000);
+    if (!hasActive && !lastError) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
+  }, [hasActive, lastError]);
+  useEffect(() => {
+    const pull = () => { void loadDeliveries(); };
+    const onVisible = () => { if (document.visibilityState === "visible") pull(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", pull);
+    if (!hasActive) {
+      return () => {
+        document.removeEventListener("visibilitychange", onVisible);
+        window.removeEventListener("focus", pull);
+      };
+    }
+    const t = setInterval(pull, VISIBLE_POLL_MS);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", pull);
+    };
   }, [hasActive, loadDeliveries]);
+
+  async function copyPrivateLink(key: string, url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(key);
+      setCopyHint(null);
+      window.setTimeout(() => setCopied((cur) => (cur === key ? null : cur)), 2000);
+    } catch {
+      setCopyHint(CLIPBOARD_BLOCKED_AR);
+    }
+  }
 
   const toggleRunPick = (id: string) =>
     setRunSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length >= 3 ? prev : [...prev, id]));
@@ -149,11 +205,16 @@ export function DeliveriesClient() {
     if (!runDriver || runSel.length < 2) return;
     setRunBusy(true);
     await runActionOutcome("جارٍ إنشاء الرحلة…", async () => {
-      const r = await fetch("/api/deliveries/assign-run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ driverId: runDriver, deliveryIds: runSel }),
-      });
+      let r: Response;
+      try {
+        r = await fetch("/api/deliveries/assign-run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ driverId: runDriver, deliveryIds: runSel }),
+        });
+      } catch {
+        return { state: "failed" as const, message: OPERATOR_NETWORK_ERROR_AR, retry: true };
+      }
       const j = (await r.json().catch(() => ({}))) as { error?: string; whatsapp?: string; runLink?: string };
       if (!r.ok) {
         const msg = j.error === "run_cap_exceeded" ? "الحد الأقصى ٣ طلبات في الرحلة." : `تعذّر إنشاء الرحلة: ${j.error ?? `HTTP ${r.status}`}`;
@@ -178,11 +239,16 @@ export function DeliveriesClient() {
     if (!driverId) return;
     setAssigning(deliveryId);
     await runActionOutcome("جارٍ الإسناد…", async () => {
-      const r = await fetch(`/api/deliveries/${deliveryId}/assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ driverId }),
-      });
+      let r: Response;
+      try {
+        r = await fetch(`/api/deliveries/${deliveryId}/assign`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ driverId }),
+        });
+      } catch {
+        return { state: "failed" as const, message: OPERATOR_NETWORK_ERROR_AR, retry: true };
+      }
       const j = (await r.json().catch(() => ({}))) as { driverLink?: string; customerLink?: string; whatsapp?: string; error?: string };
       if (!r.ok) {
         return { state: "failed" as const, message: `تعذّر الإسناد: ${j.error ?? `HTTP ${r.status}`}`, retry: true };
@@ -211,11 +277,16 @@ export function DeliveriesClient() {
     if (!job.customerPhone.trim() || creatingJob) return;
     setCreatingJob(true);
     await runActionOutcome("جارٍ إنشاء طلب التوصيل…", async () => {
-      const r = await fetch("/api/deliveries/manual", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...job, lat: jobPin?.lat ?? null, lng: jobPin?.lng ?? null }),
-      });
+      let r: Response;
+      try {
+        r = await fetch("/api/deliveries/manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...job, lat: jobPin?.lat ?? null, lng: jobPin?.lng ?? null }),
+        });
+      } catch {
+        return { state: "failed" as const, message: OPERATOR_NETWORK_ERROR_AR, retry: true };
+      }
       const j = (await r.json().catch(() => ({}))) as { error?: string; orderNumber?: string };
       if (!r.ok) {
         // Every input rejection has an actionable Arabic message; anything else is
@@ -240,11 +311,16 @@ export function DeliveriesClient() {
     if (!form.name.trim() || !form.phone.trim()) return;
     setAdding(true);
     await runActionOutcome("جارٍ إضافة المندوب…", async () => {
-      const r = await fetch("/api/drivers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+      let r: Response;
+      try {
+        r = await fetch("/api/drivers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+      } catch {
+        return { state: "failed" as const, message: OPERATOR_NETWORK_ERROR_AR, retry: true };
+      }
       if (!r.ok) {
         const j = (await r.json().catch(() => ({}))) as { message?: string; error?: string };
         return { state: "failed" as const, message: `تعذّر إضافة المندوب: ${j.message ?? j.error ?? `HTTP ${r.status}`}`, retry: true };
@@ -259,7 +335,12 @@ export function DeliveriesClient() {
   async function toggleDriver(d: Driver) {
     // No optimistic flip — loadDrivers reflects the TRUE state only on success.
     await runActionOutcome(d.active ? "جارٍ إيقاف المندوب…" : "جارٍ تفعيل المندوب…", async () => {
-      const r = await fetch(`/api/drivers/${d.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !d.active }) });
+      let r: Response;
+      try {
+        r = await fetch(`/api/drivers/${d.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !d.active }) });
+      } catch {
+        return { state: "failed" as const, message: OPERATOR_NETWORK_ERROR_AR, retry: true };
+      }
       if (!r.ok) {
         const j = (await r.json().catch(() => ({}))) as { message?: string; error?: string };
         return { state: "failed" as const, message: `تعذّر تحديث حالة المندوب: ${j.message ?? j.error ?? `HTTP ${r.status}`}`, retry: true };
@@ -277,11 +358,16 @@ export function DeliveriesClient() {
     if (!editForm.name.trim() || !editForm.phone.trim() || savingEdit) return;
     setSavingEdit(true);
     await runActionOutcome("جارٍ حفظ التعديل…", async () => {
-      const r = await fetch(`/api/drivers/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editForm.name, phone: editForm.phone, vehicle: editForm.vehicle }),
-      });
+      let r: Response;
+      try {
+        r = await fetch(`/api/drivers/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: editForm.name, phone: editForm.phone, vehicle: editForm.vehicle }),
+        });
+      } catch {
+        return { state: "failed" as const, message: OPERATOR_NETWORK_ERROR_AR, retry: true };
+      }
       if (!r.ok) {
         const j = (await r.json().catch(() => ({}))) as { message?: string; error?: string };
         return { state: "failed" as const, message: `تعذّر حفظ التعديل: ${j.message ?? j.error ?? `HTTP ${r.status}`}`, retry: true };
@@ -294,6 +380,7 @@ export function DeliveriesClient() {
   }
 
   const activeDrivers = drivers.filter((d) => d.active);
+  const roster = rosterSummary(drivers);
 
   return (
     <div dir="rtl" style={{ maxWidth: 1320, margin: "0 auto", color: "var(--kv-text)" }}>
@@ -302,16 +389,43 @@ export function DeliveriesClient() {
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 11px", borderRadius: 99, background: "var(--kv-primary-tint)", color: "var(--kv-deep)", fontSize: 11, fontWeight: 800 }}>
           <Truck size={13} /> التوصيل
         </span>
+        <span
+          data-testid="pilot-marker"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 11px", borderRadius: 99, background: "rgba(216,151,43,.16)", color: "#9a6a14", fontSize: 11, fontWeight: 800 }}
+        >
+          {PILOT_MARKER}
+        </span>
         <div style={{ width: "100%" }}>
           <h1 style={{ fontSize: 24, fontWeight: 800, margin: "8px 0 0" }}>التوصيل</h1>
-          <p style={{ fontSize: 12.5, fontWeight: 600, color: "var(--kv-muted)", marginTop: 4 }}>إدارة المندوبين وتعيين الطلبات</p>
+          <p style={{ fontSize: 12.5, fontWeight: 600, color: "var(--kv-muted)", marginTop: 4 }}>{PILOT_MARKER_AR} — إدخال يدوي وتعيين مندوب من القائمة</p>
         </div>
       </div>
+
+      {(refreshHealth === "stale" || refreshHealth === "error") && (
+        <div
+          className="mb-4 flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold"
+          style={{
+            background: refreshHealth === "error" ? "rgba(192,73,47,.10)" : "rgba(216,151,43,.14)",
+            color: refreshHealth === "error" ? "var(--kv-red)" : "#9a6a14",
+            border: "1px solid var(--kv-border)",
+          }}
+        >
+          <span>{refreshHealth === "error" ? OPERATOR_REFRESH_ERROR_AR : OPERATOR_REFRESH_STALE_AR}</span>
+          <button
+            type="button"
+            onClick={() => { void loadDeliveries(); }}
+            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1"
+            style={{ ...fieldStyle, color: "var(--kv-deep)" }}
+          >
+            <RefreshCw size={12} /> تحديث الآن
+          </button>
+        </div>
+      )}
 
       {/* Day 1 — operator creates a delivery job by hand (no upstream order). */}
       <div className="mb-5 p-4" style={cardStyle}>
         <p className="mb-3 flex items-center gap-1.5 text-sm font-bold" style={{ color: "var(--kv-text)" }}>
-          <Plus size={15} style={{ color: "var(--kv-primary)" }} /> طلب توصيل جديد
+          <Plus size={15} style={{ color: "var(--kv-primary)" }} /> طلب توصيل جديد — إدخال يدوي
         </p>
         <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}>
           <input
@@ -457,8 +571,8 @@ export function DeliveriesClient() {
             <div className="mt-3 flex items-center gap-2">
               <select value={runDriver} onChange={(e) => setRunDriver(e.target.value)} className="flex-1 px-2 py-1.5 text-sm" style={fieldStyle}>
                 <option value="">اختر مندوباً للرحلة…</option>
-                {activeDrivers.map((dr) => (
-                  <option key={dr.id} value={dr.id}>{dr.name} — {dr.phone}</option>
+                {activeDrivers.map((dr, i) => (
+                  <option key={dr.id} value={dr.id}>{formatDriverChoice(dr, i + 1)}</option>
                 ))}
               </select>
               <button
@@ -472,9 +586,30 @@ export function DeliveriesClient() {
             </div>
 
             {runResult && (
-              <div className="mt-3 space-y-1 rounded-lg p-2 text-[11px]" style={{ background: "var(--kv-card-soft)", color: "var(--kv-muted)" }}>
-                <p className="flex items-center gap-1"><Link2 className="h-3 w-3" /> رابط الرحلة (للسائق): <span className="truncate font-mono">{runResult.runLink}</span></p>
-                <p>الإرسال عبر واتساب: {runResult.whatsapp === "sent" ? "تم ✅" : runResult.whatsapp === "skipped" ? "وضع تجريبي (لم يُرسل) — شارك اللينك يدويًا" : "فشل الإرسال — شارك اللينك يدويًا"}</p>
+              <div className="mt-3 space-y-2 rounded-lg p-2 text-[11px]" style={{ background: "var(--kv-card-soft)", color: "var(--kv-muted)" }}>
+                <p className="flex items-center gap-1 font-semibold" style={{ color: "var(--kv-text)" }}>
+                  <Link2 className="h-3 w-3" /> رابط الرحلة جاهز — لا يُعرض الرمز على الشاشة
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void copyPrivateLink("run", runResult.runLink)}
+                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-semibold"
+                    style={fieldStyle}
+                  >
+                    <Copy className="h-3 w-3" /> {copied === "run" ? "تم النسخ" : "نسخ رابط الرحلة"}
+                  </button>
+                  <a
+                    href={whatsappShareHref(runResult.runLink)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-semibold"
+                    style={fieldStyle}
+                  >
+                    <MessageCircle className="h-3 w-3" /> مشاركة واتساب
+                  </a>
+                </div>
+                <p>واتساب: {whatsappDispatchLabel(runResult.whatsapp)}</p>
               </div>
             )}
           </div>
@@ -515,9 +650,9 @@ export function DeliveriesClient() {
                     {/* Driver location + how fresh it is. A stale point is SHOWN
                         (with its age), never hidden — "no sharing" and "shared 6
                         minutes ago" are different operational facts. */}
-                    {["assigned", "picked_up", "on_the_way"].includes(d.status) && (() => {
-                      const f = freshnessLabel(d.latestLocation);
-                      const loc = d.latestLocation;
+                    {isInProgressStatus(d.status) && (() => {
+                      const loc = tickLocation(d.latestLocation, now);
+                      const f = freshnessLabel(loc);
                       return (
                         <div className="mt-2 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]" style={{ background: "var(--kv-card-soft)" }}>
                           <Satellite size={13} style={{ color: f.color }} />
@@ -538,35 +673,67 @@ export function DeliveriesClient() {
                     })()}
 
                     {canAssign && (
-                      <div className="mt-3 flex items-center gap-2">
-                        <select
-                          value={pick[d.id] ?? ""}
-                          onChange={(e) => setPick((x) => ({ ...x, [d.id]: e.target.value }))}
-                          className="flex-1 px-2 py-1.5 text-sm"
-                          style={fieldStyle}
-                        >
-                          <option value="">اختر مندوباً…</option>
-                          {activeDrivers.map((dr) => (
-                            <option key={dr.id} value={dr.id}>{dr.name} — {dr.phone}</option>
-                          ))}
-                        </select>
-                        <button
-                          disabled={!pick[d.id] || assigning === d.id}
-                          onClick={() => assign(d.id)}
-                          className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
-                          style={{ background: "var(--kv-grad-brand)" }}
-                        >
-                          {assigning === d.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                          {d.status === "assigned" ? "إعادة تعيين" : "تعيين"}
-                        </button>
+                      <div className="mt-3 space-y-1.5">
+                        <p className="text-[11px]" style={{ color: "var(--kv-muted)" }}>{rosterSelectHint(activeDrivers.length)}</p>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={pick[d.id] ?? ""}
+                            onChange={(e) => setPick((x) => ({ ...x, [d.id]: e.target.value }))}
+                            className="flex-1 px-2 py-1.5 text-sm"
+                            style={fieldStyle}
+                          >
+                            <option value="">اختر مندوباً يدوياً…</option>
+                            {activeDrivers.map((dr, i) => (
+                              <option key={dr.id} value={dr.id}>{formatDriverChoice(dr, i + 1)}</option>
+                            ))}
+                          </select>
+                          <button
+                            disabled={!pick[d.id] || assigning === d.id}
+                            onClick={() => assign(d.id)}
+                            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
+                            style={{ background: "var(--kv-grad-brand)" }}
+                          >
+                            {assigning === d.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                            {d.status === "assigned" ? "إعادة تعيين" : "تعيين"}
+                          </button>
+                        </div>
                       </div>
                     )}
 
                     {links[d.id] && (
-                      <div className="mt-2 space-y-1 rounded-lg p-2 text-[11px]" style={{ background: "var(--kv-card-soft)", color: "var(--kv-muted)" }}>
-                        <p className="flex items-center gap-1"><Link2 className="h-3 w-3" /> رابط المندوب: <span className="truncate font-mono">{links[d.id].driverLink}</span></p>
-                        <p className="flex items-center gap-1"><Link2 className="h-3 w-3" /> رابط العميل: <span className="truncate font-mono">{links[d.id].customerLink}</span></p>
-                        <p>الإرسال عبر واتساب: {links[d.id].whatsapp === "sent" ? "تم ✅" : links[d.id].whatsapp === "skipped" ? "وضع تجريبي (لم يُرسل)" : "فشل الإرسال"}</p>
+                      <div className="mt-2 space-y-2 rounded-lg p-2 text-[11px]" style={{ background: "var(--kv-card-soft)", color: "var(--kv-muted)" }}>
+                        <p className="flex items-center gap-1 font-semibold" style={{ color: "var(--kv-text)" }}>
+                          <Link2 className="h-3 w-3" /> رابط المندوب جاهز — لا يُعرض الرمز على الشاشة
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => void copyPrivateLink(`driver-${d.id}`, links[d.id].driverLink)}
+                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-semibold"
+                            style={fieldStyle}
+                          >
+                            <Copy className="h-3 w-3" /> {copied === `driver-${d.id}` ? "تم النسخ" : "نسخ رابط المندوب"}
+                          </button>
+                          <a
+                            href={whatsappShareHref(links[d.id].driverLink)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-semibold"
+                            style={fieldStyle}
+                          >
+                            <MessageCircle className="h-3 w-3" /> مشاركة واتساب
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => void copyPrivateLink(`cust-${d.id}`, links[d.id].customerLink)}
+                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-semibold"
+                            style={fieldStyle}
+                          >
+                            <Copy className="h-3 w-3" /> {copied === `cust-${d.id}` ? "تم النسخ" : "نسخ رابط العميل"}
+                          </button>
+                        </div>
+                        <p>{whatsappDispatchLabel(links[d.id].whatsapp)}</p>
+                        {copyHint && <p style={{ color: "var(--kv-red)" }}>{copyHint}</p>}
                       </div>
                     )}
                   </div>
@@ -594,7 +761,9 @@ export function DeliveriesClient() {
           )}
 
           <div className="p-0" style={cardStyle}>
-            <p className="p-4 text-sm font-bold" style={{ color: "var(--kv-text)", borderBottom: "1px solid var(--kv-border)" }}>المندوبون</p>
+            <p className="p-4 text-sm font-bold" style={{ color: "var(--kv-text)", borderBottom: "1px solid var(--kv-border)" }}>
+              المندوبون — {roster.activeCount} نشط / {roster.inactiveCount} غير نشط
+            </p>
             {drivers.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm" style={{ color: "var(--kv-muted)" }}>لا يوجد مندوبون بعد.</p>
             ) : (
@@ -618,7 +787,7 @@ export function DeliveriesClient() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-semibold" style={d.active ? { color: "var(--kv-text)" } : { color: "var(--kv-faint)", textDecoration: "line-through" }}>{d.name}</p>
-                          <p className="text-xs" style={{ color: "var(--kv-muted)" }}>{d.phone}{d.vehicle ? ` · ${d.vehicle}` : ""}</p>
+                          <p className="text-xs" style={{ color: "var(--kv-muted)" }}>{d.phone}{d.vehicle ? ` · ${d.vehicle}` : ""} · {d.active ? "نشط" : "غير نشط"}</p>
                         </div>
                         {/* mutating controls — manager-only (server: PATCH /api/drivers/[id] is manager-gated) */}
                         {isManager && (

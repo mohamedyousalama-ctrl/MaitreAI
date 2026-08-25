@@ -83,14 +83,19 @@ export function DriverClient({ token, status: initial, order }: { token: string;
     watchRef.current = navigator.geolocation.watchPosition(
       async (pos) => {
         try {
-          await fetch(`/api/delivery/${token}/location`, {
+          const res = await fetch(`/api/delivery/${token}/location`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
           });
-          setLastPing(Date.now());
+          if (res.ok) {
+            setLastPing(Date.now());
+            setGpsErr(null);
+          } else {
+            setGpsErr("تعذّر إرسال الموقع. تحقق من الاتصال — سنواصل المحاولة.");
+          }
         } catch {
-          /* transient — keep trying */
+          setGpsErr("تعذّر إرسال الموقع. تحقق من الاتصال — سنواصل المحاولة.");
         }
       },
       (err) => {
@@ -247,7 +252,7 @@ export function DriverClient({ token, status: initial, order }: { token: string;
           </button>
         </label>
         <p className="mt-2 text-xs text-[#9b8b7c]">
-          يُشارَك موقعك مع العميل فقط أثناء فتح هذه الصفحة وتفعيل الزر. عند إغلاق الصفحة أو إيقاف الزر تتوقّف المشاركة.
+          يُشارَك موقعك مع المطعم أثناء فتح هذه الصفحة وتفعيل الزر. عند إغلاق الصفحة أو إيقاف الزر تتوقّف المشاركة.
         </p>
         {gpsOn && (
           <p className="mt-1 text-xs text-[#3c7a52]">

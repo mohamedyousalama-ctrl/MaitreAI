@@ -11,6 +11,7 @@ import { listDrivers, addDriver } from "@/lib/db/delivery";
 import { ENABLE_DELIVERY_TRACKING } from "@/lib/feature-flags";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   if (!ENABLE_DELIVERY_TRACKING) return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -20,7 +21,10 @@ export async function GET() {
   if (!gate.ok) return gate.response;
   const tenant = gate.tenant;
   const drivers = await listDrivers(supabase, tenant.restaurantId);
-  return NextResponse.json({ drivers });
+  return NextResponse.json(
+    { drivers },
+    { headers: { "Cache-Control": "no-store, max-age=0" } },
+  );
 }
 
 export async function POST(req: Request) {

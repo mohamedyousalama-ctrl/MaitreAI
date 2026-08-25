@@ -46,6 +46,10 @@ interface DispatchState {
   deliveries: DispatchDelivery[];
   drivers: DispatchDriver[];
   loaded: boolean;
+  /** Wall-clock of the last successful /api/deliveries pull. Null until one succeeds. */
+  lastOkAt: number | null;
+  /** Last pull failure. Cleared on the next successful pull. Never logged with payloads. */
+  lastError: "network" | "http" | null;
 
   _sb: SupabaseClient | null;
   _rid: string | null;
@@ -68,6 +72,8 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   deliveries: [],
   drivers: [],
   loaded: false,
+  lastOkAt: null,
+  lastError: null,
 
   _sb: null,
   _rid: null,
@@ -87,7 +93,17 @@ export const useDispatchStore = create<DispatchState>((set, get) => ({
   loadDeliveries: async () => {
     try {
       const r = await fetch("/api/deliveries", { cache: "no-store" });
-      if (r.ok) set({ deliveries: ((await r.json()).deliveries ?? []) as DispatchDelivery[] });
+      if (r.ok) {
+        set({
+          deliveries: ((await r.json()).deliveries ?? []) as DispatchDelivery[],
+          lastOkAt: Date.now(),
+          lastError: null,
+        });
+      } else {
+        set({ lastError: "http" });
+      }
+    } catch {
+      set({ lastError: "network" });
     } finally {
       set({ loaded: true });
     }

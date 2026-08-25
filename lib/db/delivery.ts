@@ -345,8 +345,9 @@ export async function assignDriver(
       sendWhatsAppText({ to: String(driver.phone), text: body })
     );
     whatsapp = res.status;
-  } catch (e) {
-    console.error("[delivery] driver link send error", e);
+  } catch {
+    // Do not log the thrown value: WhatsApp payloads include the private driver URL.
+    console.error("[delivery] driver link send failed");
     whatsapp = "failed";
   }
 
