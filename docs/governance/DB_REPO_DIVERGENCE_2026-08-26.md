@@ -49,14 +49,23 @@ migration in the repo was applied, or that an applied migration existed in the r
   and this directory.
 - `0108` has a ledger row recording that it is applied and where its source lives.
 
-## The one thing still open
+## The last gap — now closed
 
-**`0108`'s SQL is not in the repository.** It is in PR #571, which is open and has
-no human approval. Until that merges, anyone reading this repo cannot see the
-definition of the control plane their code must call.
+**`0108`'s SQL was not in the repository.** It lived only in PR #571.
 
-Merging #571 carries no runtime risk — its migrations are already live — but it
-is a branch decision, not a technical one, and is left to the owner.
+**PR #571 was merged on 2026-08-26** (`main` → `67c2a48`). `supabase/migrations/`
+now contains both `0107_kiv12_m0_constraint_prestage.sql` and
+`0108_kiv13_m1_additive_scope1.sql`, so the definition of the control plane the
+application must call is finally readable in the repository that calls it.
+
+One caveat worth recording, because the PR description raises it and merging did
+not settle it: the repository's own record said `0108` was never applied
+("the failed production attempt rolled back completely"), while production holds
+every object `0108` defines. Both cannot be true. Merging restored **source
+custody**; it did not prove these bytes are the bytes production runs. The
+objects match by name, signature and behaviour as observed on 2026-08-26 — that
+is strong evidence, not a byte-level proof. If a byte-level comparison matters
+for a future audit, it is still outstanding.
 
 ## Rule going forward
 
