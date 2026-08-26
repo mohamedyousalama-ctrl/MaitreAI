@@ -19,7 +19,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Printer, MessageCircle, X, FlaskConical, ClipboardList } from "lucide-react";
+import { ArrowLeft, Printer, MessageCircle, X, FlaskConical, ClipboardList, CreditCard } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useOrderStore } from "@/lib/order-store";
 import { useConversationStore } from "@/lib/conversation-store";
@@ -135,6 +135,23 @@ export default function OrdersPage() {
 
   const [tab, setTab] = useState<"all" | "active" | "late">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // WO-PAYLINK-UI — is electronic payment on for THIS tenant? Read from the one
+  // place that already answers it (GET /api/settings/flags, tenant-scoped) rather
+  // than inventing a second source. The server is still the real gate: POST
+  // /api/payments/psp/create returns 403 psp_disabled regardless of what the UI
+  // renders. This only decides whether showing the control would be misleading.
+  const [pspEnabled, setPspEnabled] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/settings/flags", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { flags?: Record<string, unknown> } | null) => {
+        if (alive) setPspEnabled(d?.flags?.psp_payments === true);
+      })
+      .catch(() => { /* leave the control hidden — never block the page on this */ });
+    return () => { alive = false; };
+  }, []);
   // deeplink: /orders?o=<id> pre-selects that order (from Conversations/Customers)
   const deepRef = useRef(false);
   const deepId = useRef<string | null>(null);
@@ -337,6 +354,63 @@ export default function OrdersPage() {
         return { state: "failed", message: "تعذّر إرسال الإيصال", retry: true };
       });
     }
+  };
+
+  // WO-PAYLINK-UI — create the Moyasar pay link for an order and send it to the
+  // customer on WhatsApp. This is the ONLY caller of POST /api/payments/psp/create
+  // in the product; before it existed the engine was reachable by nothing.
+  //
+  // Every documented failure of that route is mapped to a real sentence. A generic
+  // "something went wrong" on a MONEY action is not acceptable: the operator has to
+  // know whether to retry, wait, or stop. The route's own contract is the source of
+  // this list — 403 feature-off, 409 conflict/retry, 400 client/order, 502 upstream.
+  const createPayLink = async (o: LocalOrder) => {
+    await runActionOutcome("جارٍ إنشاء رابط الدفع…", async () => {
+      const res = await fetch("/api/payments/psp/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: o.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+
+      if (res.ok && data.ok === true) {
+        void reloadOrders();
+        // sendPayLink is best-effort by design — a send failure must never fail link
+        // creation. So report the two cases apart; an operator who thinks the
+        // customer got a link that never arrived is worse off than one who knows.
+        if (data.messaged === true) return { state: "success", message: "تم إنشاء الرابط وإرساله للعميل على واتساب" };
+        if (data.reused === true) return { state: "info", message: "في رابط سارٍ بالفعل لهذا الطلب — لم تُرسل رسالة جديدة" };
+        return { state: "info", message: "تم إنشاء الرابط، لكن لم تُرسل رسالة واتساب — ابعته للعميل يدويًا" };
+      }
+
+      const code = String(data.error ?? "");
+      const MESSAGES: Record<string, { state: "failed" | "info"; message: string; retry?: boolean }> = {
+        psp_disabled:       { state: "info",   message: "الدفع الإلكتروني غير مُفعّل لهذا المطعم" },
+        order_already_paid: { state: "info",   message: "الطلب مدفوع بالفعل" },
+        session_pending:    { state: "info",   message: "في رابط قيد الإنشاء — جرّب بعد ثوانٍ" },
+        safety_hold_active: { state: "failed", message: "الطلب موقوف لدواعي السلامة — لا يمكن تحصيله الآن" },
+        order_not_found:    { state: "failed", message: "الطلب غير موجود" },
+        order_tenant_mismatch: { state: "failed", message: "الطلب لا يخص هذا المطعم" },
+        amount_invalid:     { state: "failed", message: "إجمالي الطلب غير صالح للدفع" },
+        amount_nonpositive: { state: "failed", message: "إجمالي الطلب صفر — لا يمكن إنشاء رابط دفع" },
+        unauthorized:       { state: "failed", message: "انتهت الجلسة — سجّل الدخول من جديد" },
+        not_configured:     { state: "failed", message: "الدفع غير مهيّأ على الخادم" },
+      };
+      const known = MESSAGES[code];
+      if (known) return known;
+      // Anything else is an upstream/provider fault (502) — retryable, and the
+      // provider's own rejection detail is surfaced because it is what makes a
+      // failed charge diagnosable at all.
+      //
+      // The detail is the PROVIDER's text, so it is Latin while the sentence around
+      // it is Arabic. Dropped in raw it reorders under RTL and the operator reads a
+      // scrambled error. U+2068 FIRST STRONG ISOLATE / U+2069 POP DIRECTIONAL
+      // ISOLATE fence it off — the plain-string equivalent of <Bdi>, which is what
+      // local-rules/no-arabic-name-number-interpolation exists to enforce.
+      const raw = typeof data.detail === "string" ? data.detail.trim() : "";
+      const detail = raw ? " — ⁨" + raw + "⁩" : "";
+      return { state: "failed", message: "تعذّر إنشاء رابط الدفع" + detail, retry: true };
+    });
   };
 
   // UI4 — manager-only: mark/unmark an order as a test. Server-set only
@@ -550,7 +624,7 @@ export default function OrdersPage() {
 
         {/* DRAWER */}
         <div style={{ background: "var(--kv-card)", border: "1px solid var(--kv-border)", borderRadius: 16, boxShadow: "var(--kv-shadow-card)", overflow: "hidden", position: "sticky", top: 0 }}>
-          {selected ? <OrderDrawer key={selected.id} o={selected} escalated={isEscalated(selected)} onAdvance={advance} blockedNoDriver={noDriverBlock === selected.id} isManager={isManager} onMarkTest={markTest} onMarkPos={markPos} /> : (
+          {selected ? <OrderDrawer key={selected.id} o={selected} escalated={isEscalated(selected)} onAdvance={advance} blockedNoDriver={noDriverBlock === selected.id} isManager={isManager} onMarkTest={markTest} onMarkPos={markPos} pspEnabled={pspEnabled} onPayLink={createPayLink} /> : (
             <div style={{ padding: "56px 18px", textAlign: "center", color: "var(--kv-faint)", fontSize: 13, fontWeight: 600 }}>اختر طلب لعرض تفاصيله</div>
           )}
         </div>
@@ -901,7 +975,7 @@ function DriverAssign({ o }: { o: LocalOrder }) {
 }
 
 const RANK: Record<string, number> = { pending_confirmation: 0, pending_payment: 0, paid: 1, preparing: 2, ready: 3, out_for_delivery: 4, delivered: 5 };
-function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMarkTest, onMarkPos }: { o: LocalOrder; escalated: boolean; onAdvance: (o: LocalOrder) => void; blockedNoDriver?: boolean; isManager: boolean; onMarkTest: (o: LocalOrder, isTest: boolean) => void; onMarkPos: (o: LocalOrder, status: "entered" | "sent_to_kitchen", reference?: string) => void }) {
+function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMarkTest, onMarkPos, pspEnabled, onPayLink }: { o: LocalOrder; escalated: boolean; onAdvance: (o: LocalOrder) => void; blockedNoDriver?: boolean; isManager: boolean; onMarkTest: (o: LocalOrder, isTest: boolean) => void; onMarkPos: (o: LocalOrder, status: "entered" | "sent_to_kitchen", reference?: string) => void; pspEnabled: boolean; onPayLink: (o: LocalOrder) => void }) {
   const posStatus: PosStatus = o.posStatus ?? "not_entered";
   const [posRef, setPosRef] = useState(o.posReference ?? "");
   const m = statusMeta(o.orderStatus);
@@ -1076,6 +1150,18 @@ function OrderDrawer({ o, escalated, onAdvance, blockedNoDriver, isManager, onMa
           <div style={{ height: 44, borderRadius: 12, background: "var(--kv-card-soft)", color: "var(--kv-faint)", fontSize: 13, fontWeight: 700, display: "grid", placeItems: "center" }}>
             {cancelled ? "ملغي" : "تمّ التسليم"}
           </div>
+        )}
+        {/* WO-PAYLINK-UI — the pay-link control. Shown only when electronic payment
+            is ON for this tenant and the order is still owed: a button that always
+            answers "not enabled" is noise. The server re-checks the flag either way.
+            Cancelled and already-paid orders never show it. */}
+        {pspEnabled && !cancelled && o.paymentStatus !== "paid" && (
+          <button
+            onClick={() => onPayLink(o)}
+            style={{ height: 42, borderRadius: 12, border: "1px solid rgba(14,159,110,.35)", background: "rgba(14,159,110,.08)", color: "#0a8a5f", fontSize: 12.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+          >
+            <CreditCard size={15} /> إرسال رابط الدفع للعميل
+          </button>
         )}
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={() => printTicket(o.id)} style={{ flex: 1, height: 40, borderRadius: 12, border: "1px solid var(--kv-border)", background: "var(--kv-card)", color: "var(--kv-muted)", fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
