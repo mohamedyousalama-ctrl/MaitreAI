@@ -168,6 +168,22 @@ export default function ShiftControlPage() {
   // "Last sync" = the last time the live data actually moved (a real signal, not a fake countdown).
   useEffect(() => { setLastSyncAt(Date.now()); }, [orders, conversations]);
 
+  // WO-PAYLINK-UI — is electronic payment on for THIS tenant? Read from the one
+  // endpoint that already answers it (GET /api/settings/flags) rather than adding a
+  // second source of truth. The server re-checks the flag on every create, so this
+  // only decides whether rendering the control would be misleading.
+  const [pspEnabled, setPspEnabled] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/settings/flags", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { flags?: Record<string, unknown> } | null) => {
+        if (alive) setPspEnabled(d?.flags?.psp_payments === true);
+      })
+      .catch(() => { /* leave the control hidden — never block the shift screen */ });
+    return () => { alive = false; };
+  }, []);
+
   // Actor membership (for claims) + my user id (for "accepted by you").
   useEffect(() => {
     if (dataState === "DEMO") { setActor({ memberId: null, ready: true }); return; }
@@ -464,6 +480,7 @@ export default function ShiftControlPage() {
                 order={selected}
                 hasSafety={!!selected.conversationId && safetyConvIds.has(selected.conversationId)}
                 onViewConversation={selected.conversationId ? () => { const o = selected; setWaOrder(o); } : undefined}
+                pspEnabled={pspEnabled}
               />
             </div>
           ) : (
@@ -493,6 +510,7 @@ export default function ShiftControlPage() {
         hasSafety={!!selected?.conversationId && safetyConvIds.has(selected.conversationId)}
         onClose={() => setSelected(null)}
         onViewConversation={() => { const o = selected; setSelected(null); setWaOrder(o); }}
+        pspEnabled={pspEnabled}
       />
       <WaThreadDrawer order={waOrder} onClose={() => setWaOrder(null)} />
       <StopSheet

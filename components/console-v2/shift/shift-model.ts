@@ -395,3 +395,66 @@ export function isForbiddenSafetyResolution(text: string): boolean {
   const s = (text ?? "").trim();
   return FORBIDDEN_SAFETY_RESOLUTION.some((w) => s.includes(w));
 }
+
+// ---------------------------------------------------------------------------
+// WO-PAYLINK-UI — pay-link outcome resolution. PURE, TOTAL, and the single place
+// that decides what an operator is told after asking for a payment link.
+//
+// The route (POST /api/payments/psp/create) answers with a documented error set;
+// this maps every member of it to a dictionary key, so no money action can ever
+// surface a bare «حصل خطأ». `retry` is true only where retrying can actually
+// change the answer — a feature that is off, an order already paid, or an amount
+// that is invalid will not fix itself, and offering a retry there is a lie.
+//
+// Split out of the component so it is unit-testable without a DB or a browser,
+// the same discipline as the rest of this model.
+// ---------------------------------------------------------------------------
+
+export type PayLinkTone = "ok" | "info" | "bad";
+
+export interface PayLinkOutcome {
+  /** Dictionary key — never a literal string. */
+  key: string;
+  tone: PayLinkTone;
+  /** Whether offering "retry" is honest for this outcome. */
+  retry: boolean;
+}
+
+/**
+ * Resolve the operator-facing outcome of a pay-link attempt.
+ *
+ * @param ok      the route reported success (HTTP ok AND body.ok === true)
+ * @param error   body.error when not ok
+ * @param flags   messaged/reused from a successful response
+ */
+export function payLinkOutcome(
+  ok: boolean,
+  error: string | null | undefined,
+  flags: { messaged?: boolean; reused?: boolean } = {}
+): PayLinkOutcome {
+  if (ok) {
+    // A reused session deliberately sends no new message: the "valid 15 minutes"
+    // line would be false partway through an unchanged, provider-hard expiry.
+    if (flags.reused) return { key: "shift.pay.reused", tone: "info", retry: false };
+    if (flags.messaged) return { key: "shift.pay.sent", tone: "ok", retry: false };
+    // Link exists but the WhatsApp send failed. sendPayLink is best-effort by
+    // design, and an operator who believes a link was delivered when it was not
+    // is worse off than one who is told to send it by hand.
+    return { key: "shift.pay.created", tone: "info", retry: false };
+  }
+
+  switch (error) {
+    case "psp_disabled":          return { key: "shift.pay.off",          tone: "info", retry: false };
+    case "order_already_paid":    return { key: "shift.pay.alreadyPaid",  tone: "info", retry: false };
+    case "session_pending":       return { key: "shift.pay.pending",      tone: "info", retry: true };
+    case "safety_hold_active":    return { key: "shift.pay.safetyHold",   tone: "bad",  retry: false };
+    case "order_not_found":       return { key: "shift.pay.notFound",     tone: "bad",  retry: false };
+    case "order_tenant_mismatch": return { key: "shift.pay.tenant",       tone: "bad",  retry: false };
+    case "amount_invalid":
+    case "amount_nonpositive":    return { key: "shift.pay.amount",       tone: "bad",  retry: false };
+    case "unauthorized":          return { key: "shift.pay.session",      tone: "bad",  retry: false };
+    // Everything else is an upstream/provider fault (502) or an unknown code —
+    // both are worth one more attempt.
+    default:                      return { key: "shift.pay.upstream",     tone: "bad",  retry: true };
+  }
+}

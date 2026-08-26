@@ -17,6 +17,7 @@ import {
   isAcceptable,
   isAcceptedToday,
   isPaymentBlocked,
+  payLinkOutcome,
   isAddressBlocked,
   serverTotal,
   sortActNow,
@@ -397,4 +398,64 @@ test("safety handback — release is allowed ONLY from the 'recorded' state", ()
   assert.equal(safetyHandbackAllowed("unclaimed"), false);
   assert.equal(safetyHandbackAllowed("in_review"), false);
   assert.equal(safetyHandbackAllowed("recorded"), true);
+});
+
+// ── WO-PAYLINK-UI — pay-link outcome resolution ────────────────────────────
+// The whole point of this resolver is that a MONEY action never says «حصل خطأ».
+// So the test asserts total coverage of the route's documented error set, and —
+// just as importantly — that `retry` is offered ONLY where retrying can change
+// the answer. Offering retry on "already paid" or "feature off" would be a lie.
+
+test("pay-link — a sent link, a link that could not be messaged, and a reused link are three DIFFERENT answers", () => {
+  assert.deepEqual(payLinkOutcome(true, null, { messaged: true }),
+    { key: "shift.pay.sent", tone: "ok", retry: false });
+  // sendPayLink is best-effort: the link exists but the customer has nothing.
+  assert.deepEqual(payLinkOutcome(true, null, { messaged: false }),
+    { key: "shift.pay.created", tone: "info", retry: false });
+  // A reused session deliberately sends no new message.
+  assert.deepEqual(payLinkOutcome(true, null, { reused: true, messaged: false }),
+    { key: "shift.pay.reused", tone: "info", retry: false });
+  // reused wins over messaged — a reuse must never claim a fresh send.
+  assert.equal(payLinkOutcome(true, null, { reused: true, messaged: true }).key, "shift.pay.reused");
+});
+
+test("pay-link — EVERY documented route error maps to its own key, never a generic one", () => {
+  const cases: Array<[string, string]> = [
+    ["psp_disabled", "shift.pay.off"],
+    ["order_already_paid", "shift.pay.alreadyPaid"],
+    ["session_pending", "shift.pay.pending"],
+    ["safety_hold_active", "shift.pay.safetyHold"],
+    ["order_not_found", "shift.pay.notFound"],
+    ["order_tenant_mismatch", "shift.pay.tenant"],
+    ["amount_invalid", "shift.pay.amount"],
+    ["amount_nonpositive", "shift.pay.amount"],
+    ["unauthorized", "shift.pay.session"],
+  ];
+  for (const [error, key] of cases) {
+    assert.equal(payLinkOutcome(false, error).key, key, `${error} must map to ${key}`);
+  }
+  // No two distinct failures collapse onto the generic upstream message.
+  const keys = cases.map(([, k]) => k);
+  assert.equal(keys.includes("shift.pay.upstream"), false);
+});
+
+test("pay-link — retry is offered ONLY where retrying can change the answer", () => {
+  // Transient: worth another attempt.
+  assert.equal(payLinkOutcome(false, "session_pending").retry, true);
+  assert.equal(payLinkOutcome(false, "unknown_code_from_a_future_route").retry, true);
+  assert.equal(payLinkOutcome(false, null).retry, true); // 502 / transport fault
+  // Terminal: retrying cannot help, so offering it would mislead.
+  for (const e of ["psp_disabled", "order_already_paid", "safety_hold_active",
+                   "order_not_found", "order_tenant_mismatch", "amount_invalid",
+                   "amount_nonpositive", "unauthorized"]) {
+    assert.equal(payLinkOutcome(false, e).retry, false, `${e} must not offer retry`);
+  }
+});
+
+test("pay-link — a safety hold is 'bad' but is NOT the only bad; ops failures never claim safety red", () => {
+  // The screen paints tone 'bad' amber; --red is reserved for an active safety
+  // hold elsewhere. This asserts the resolver keeps safety in its own message.
+  assert.equal(payLinkOutcome(false, "safety_hold_active").key, "shift.pay.safetyHold");
+  assert.equal(payLinkOutcome(false, "order_not_found").tone, "bad");
+  assert.notEqual(payLinkOutcome(false, "order_not_found").key, "shift.pay.safetyHold");
 });

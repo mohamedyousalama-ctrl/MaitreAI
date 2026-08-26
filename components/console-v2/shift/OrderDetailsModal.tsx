@@ -9,13 +9,95 @@
 // order's WhatsApp thread. Reused as a modal on phone and inline on the tablet split.
 // ============================================================================
 
-import { Receipt, MessageCircle } from "lucide-react";
+import { useState } from "react";
+import { Receipt, MessageCircle, CreditCard } from "lucide-react";
 import { MiniModal, SectionHeader } from "@/components/console-v2/kit";
 import { useT } from "@/lib/i18n/lang";
+import type { DictKey } from "@/lib/i18n/dictionary";
 import { Bdi, Num, Phone } from "@/components/kivo";
 import { AcceptanceChip, SafetyMark } from "./shift-ui";
-import { shiftOrderState } from "./shift-model";
+import { shiftOrderState, payLinkOutcome, type PayLinkOutcome } from "./shift-model";
 import type { LocalOrder } from "@/lib/types";
+
+// ---------------------------------------------------------------------------
+// WO-PAYLINK-UI — the pay-link control. Before this, POST /api/payments/psp/create
+// had NO caller anywhere in the product: the Moyasar engine was complete and
+// reachable only by pasting fetch() into a browser console.
+//
+// Shown only when payment is on for this tenant and the order is still owed. The
+// server re-checks the flag regardless — this only decides whether rendering the
+// control would be misleading.
+//
+// The outcome renders INLINE rather than as a toast. A toast disappears in three
+// seconds; a failed money action is exactly the thing an operator needs to still
+// be on screen while they decide what to do. Every branch is a designed state
+// resolved by the pure payLinkOutcome() — never a bare «حصل خطأ».
+// ---------------------------------------------------------------------------
+function PayLinkAction({ order }: { order: LocalOrder }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<PayLinkOutcome | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setOutcome(null);
+    try {
+      const res = await fetch("/api/payments/psp/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const ok = res.ok && data.ok === true;
+      setOutcome(payLinkOutcome(ok, typeof data.error === "string" ? data.error : null, {
+        messaged: data.messaged === true,
+        reused: data.reused === true,
+      }));
+    } catch {
+      // A thrown fetch is a transport fault — the same honest answer as a 502.
+      setOutcome(payLinkOutcome(false, null));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const TONE: Record<PayLinkOutcome["tone"], { fg: string; bg: string; bd: string }> = {
+    ok:   { fg: "#8ce8c4", bg: "rgba(46,204,154,.12)", bd: "rgba(46,204,154,.34)" },
+    info: { fg: "#a9c6ff", bg: "rgba(75,139,255,.12)", bd: "rgba(75,139,255,.30)" },
+    // Ops failure is amber, never --red: red is reserved for an active safety hold.
+    bad:  { fg: "#f0c479", bg: "rgba(232,180,90,.12)", bd: "rgba(232,180,90,.34)" },
+  };
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <button
+        onClick={run}
+        disabled={busy}
+        style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid rgba(46,204,154,.34)", background: "rgba(46,204,154,.12)", color: "#8ce8c4", fontFamily: "var(--kvx-font-ar)", fontSize: 15, fontWeight: 800, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+      >
+        <CreditCard size={16} /> {busy ? t("shift.pay.sending" as DictKey) : t("shift.pay.send" as DictKey)}
+      </button>
+
+      {outcome && (
+        <div
+          role="status"
+          style={{ marginTop: 9, borderRadius: 11, border: `1px solid ${TONE[outcome.tone].bd}`, background: TONE[outcome.tone].bg, color: TONE[outcome.tone].fg, padding: "9px 12px", fontSize: 13, fontWeight: 700, lineHeight: 1.6, display: "flex", alignItems: "center", gap: 10 }}
+        >
+          <span style={{ flex: 1 }}>{t(outcome.key as DictKey)}</span>
+          {outcome.retry && (
+            <button
+              onClick={run}
+              disabled={busy}
+              style={{ border: 0, background: "transparent", color: "inherit", fontFamily: "var(--kvx-font-ar)", fontSize: 12.5, fontWeight: 900, textDecoration: "underline", cursor: "pointer" }}
+            >
+              {t("shift.pay.retry" as DictKey)}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -27,7 +109,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 /** Shared body — rendered inside a modal (phone) or inline (tablet split). */
-export function OrderDetailBody({ order, onViewConversation, hasSafety }: { order: LocalOrder; onViewConversation?: () => void; hasSafety?: boolean }) {
+export function OrderDetailBody({ order, onViewConversation, hasSafety, pspEnabled }: { order: LocalOrder; onViewConversation?: () => void; hasSafety?: boolean; pspEnabled?: boolean }) {
   const t = useT();
   const state = shiftOrderState({
     id: order.id,
@@ -83,6 +165,11 @@ export function OrderDetailBody({ order, onViewConversation, hasSafety }: { orde
       <Row label={t("shift.od.fulfillment")}>{order.fulfillmentType === "pickup" ? t("shift.od.pickup") : t("shift.od.deliveryType")}</Row>
       {order.deliveryAddress && <Row label={t("shift.od.address")}><Bdi>{order.deliveryAddress}</Bdi></Row>}
 
+      {/* Owed + payment enabled → the operator can ask the customer to pay now. */}
+      {pspEnabled && order.paymentStatus !== "paid" && order.orderStatus !== "cancelled" && (
+        <PayLinkAction order={order} />
+      )}
+
       {order.conversationId && onViewConversation && (
         <button
           onClick={onViewConversation}
@@ -95,7 +182,7 @@ export function OrderDetailBody({ order, onViewConversation, hasSafety }: { orde
   );
 }
 
-export function OrderDetailsModal({ order, onClose, onViewConversation, hasSafety }: { order: LocalOrder | null; onClose: () => void; onViewConversation?: () => void; hasSafety?: boolean }) {
+export function OrderDetailsModal({ order, onClose, onViewConversation, hasSafety, pspEnabled }: { order: LocalOrder | null; onClose: () => void; onViewConversation?: () => void; hasSafety?: boolean; pspEnabled?: boolean }) {
   const t = useT();
   if (!order) return null;
   return (
@@ -112,7 +199,7 @@ export function OrderDetailsModal({ order, onClose, onViewConversation, hasSafet
             </button>
           }
         />
-        <OrderDetailBody order={order} onViewConversation={onViewConversation} hasSafety={hasSafety} />
+        <OrderDetailBody order={order} onViewConversation={onViewConversation} hasSafety={hasSafety} pspEnabled={pspEnabled} />
       </div>
     </MiniModal>
   );
