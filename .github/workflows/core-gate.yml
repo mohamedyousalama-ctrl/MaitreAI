@@ -1,0 +1,101 @@
+# ============================================================================
+# MaitreAI — Core gate
+#
+# WHY THIS FILE EXISTS
+# ────────────────────
+# Before this workflow, a pull request that did not touch one of the nine paths
+# listed in `agent-eval.yml` ran exactly TWO checks: the Playwright specs in
+# `ui-stacking.yml`. No typecheck, no lint, no unit tests. That covered roughly
+# a third of the tracked files — a change to the ordering page, the console, or
+# lib/orders merged with no static analysis at all.
+#
+# This workflow has NO path filter. It runs on every pull request.
+#
+# It does not replace `agent-eval.yml`; that one stays as the deep agent-path
+# eval. This is the floor that applies to everything.
+#
+# STATE OF THE THREE CHECKS (measured 2026-08-26 on main @ 14ace390)
+# ──────────────────────────────────────────────────────────────────
+#   npx tsc --noEmit   → exit 0. Blocking below.
+#   npm run lint       → exit 0, 456 warnings. Blocking below.
+#                        (It exited 1 until 2026-08-26: `.eslintrc.json` did not
+#                        register the `@typescript-eslint` plugin, so the inline
+#                        `eslint-disable @typescript-eslint/...` comments in 48
+#                        source files each raised "Definition for rule ... was
+#                        not found". The plugin was installed all along, via
+#                        eslint-config-next. Adding it to `plugins` fixed it.)
+#   npm run test:unit  → 105 of 112 files pass. NOT blocking yet — see below.
+#
+# THE SEVEN FAILING FILES
+# ───────────────────────
+# All seven fail on structural "WIRE" assertions — tests that assert the source
+# has a given shape, which drifted when the code was refactored. Each is a
+# single assertion inside an otherwise-passing file (e.g. 23 passed, 1 failed).
+# None of them is among the 27 files `agent-eval.yml` runs, which is exactly why
+# CI has stayed green while the suite was broken.
+#
+#   scripts/proof-race-last-manager.test.ts   LEG3: last_manager → 409 not 502
+#   scripts/proof-voice-quality.test.ts       WIRE(d): voice branch ordering
+#   scripts/proof-voice-precision.test.ts     WIRE: assent-exit under safety guard
+#   scripts/proof-deepgram-adapter.test.ts    WIRE: STT_ADAPTER=deepgram select
+#   scripts/proof-answer-first.test.ts        (non-zero exit, no assertion label)
+#   scripts/proof-media-proxy.test.ts         FAIL: console photo via media proxy
+#   scripts/proof-console-batch-a.test.ts     FR-003/004/005 transcript + send path
+#
+# TO MAKE THE SUITE BLOCKING: fix those seven, then delete the
+# `continue-on-error: true` line from the `unit` job. That is the whole change.
+# Nothing here is skipped, disabled or quarantined — the full 112-file suite
+# runs on every pull request and its failures are visible on every run.
+# ============================================================================
+
+name: Core gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: core-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Typecheck + lint (blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+  unit:
+    name: Unit suite — 112 files (reporting)
+    runs-on: ubuntu-latest
+    # Not blocking yet: 7 of 112 files fail on drifted structural assertions.
+    # They are named in the header above. Delete this line once they are fixed.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Unit suite
+        run: npm run test:unit
