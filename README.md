@@ -175,3 +175,5 @@ See [`ROADMAP.md`](./ROADMAP.md) for the sprint-by-sprint engineering log.
 - Privacy Policy: [getkivo.io/privacy](https://getkivo.io/privacy)
 - Terms of Service: [getkivo.io/terms](https://getkivo.io/terms)
 - Data Deletion: [getkivo.io/data-deletion](https://getkivo.io/data-deletion)
+- Contact: info@getkivo.io
+- Kivo is a product of City Baker LLC — CR No. 216565 — Cairo, Egypt
