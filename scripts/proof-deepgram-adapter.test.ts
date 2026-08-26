@@ -89,7 +89,17 @@ const MENU = ["ستربس دجاج", "بروست", "بطاطس", "كومبو ك�
 // ══ LEG 6 — WIRING: env-selectable, NO default change; pricing; type ═════════
 {
   const idx = read("lib/ai/stt/index.ts");
-  ok("WIRE: STT_ADAPTER=deepgram selects the deepgram adapter", /if \(sel === "deepgram"\) return deepgramSttAdapter;/.test(idx));
+  // Re-pinned 2026-08-26. Selection was split into two stages — STT_ADAPTER resolves
+  // to a NAME, then the name resolves to an ADAPTER — so the old single-expression
+  // regex no longer matched. Asserting BOTH stages is stricter than the original:
+  // breaking either half now fails, where before only the fused form was checked.
+  ok("WIRE: STT_ADAPTER=deepgram resolves to the deepgram adapter NAME",
+    /if \(sel === "deepgram"\) return "deepgram";/.test(idx));
+  ok("WIRE: STT_ADAPTER=deepgram selects the deepgram adapter",
+    /if \(name === "deepgram"\) return deepgramSttAdapter;/.test(idx));
+  // Explicit-only: deepgram must never be picked by key-presence auto-selection.
+  ok("WIRE: deepgram stays EXPLICIT-ONLY (never auto-selected from a key)",
+    !/DEEPGRAM_API_KEY\)\s*return "deepgram"/.test(idx));
   ok("WIRE: deepgram is EXPLICIT-ONLY — never in the auto-fallback chain (no default change)",
     !/GROQ_API_KEY\) return deepgramSttAdapter/.test(idx) && !/DEEPGRAM_API_KEY\) return deepgramSttAdapter/.test(idx));
   ok("WIRE: SttAdapterName includes deepgram", /"mock" \| "openai" \| "groq" \| "deepgram"/.test(read("lib/ai/stt/types.ts")));

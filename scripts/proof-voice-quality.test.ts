@@ -103,9 +103,17 @@ const MENU = ["برجر دجاج", "شاورما", "بطاطس", "بيبسي"];
   ok("WIRE(d): SAFETY-FIRST — only when NO allergen/emergency signal fired",
     /!combinedAllergenHit\.fired &&\s*!companionEmergency\.fired/.test(ct));
   // WO-VOICE-LADDER replaced the binary guard: the voice ladder branch precedes the cascade.
+  // Re-pinned 2026-08-26. The cascade branch gained `&& !allergySimpleOn`, so the
+  // literal indexOf target no longer existed and returned -1 — which made the
+  // ordering comparison silently false rather than reporting a real change.
+  // Matching the branch by regex keeps the assertion about ORDERING (what this
+  // test is for) instead of about the exact condition list, which belongs to the
+  // allergen tests. Both indices are asserted > -1 so a vanished anchor fails
+  // loudly instead of quietly inverting the comparison.
+  const voiceAt = ct.indexOf('if (voiceLadder.action === "retype")');
+  const cascadeAt = ct.search(/\} else if \(combinedAllergenHit\.fired && !companionOn/);
   ok("WIRE(d): the voice branch precedes the allergen/companion cascade (first)",
-    ct.indexOf('if (voiceLadder.action === "retype")') < ct.indexOf("} else if (combinedAllergenHit.fired && !companionOn)") &&
-    ct.indexOf('if (voiceLadder.action === "retype")') > 0);
+    voiceAt > 0 && cascadeAt > 0 && voiceAt < cascadeAt);
   ok("WIRE(d): the retype path sends the deterministic garble outcome (no LLM)", /result = voiceGarbleResult\(dialect, initialDraft, ctx\.profile\.currency, voiceLadder\.reason\)/.test(ct));
 }
 

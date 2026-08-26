@@ -44,8 +44,31 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.er
 // ══ LEG 3 — the route maps the trigger exception → 409 (never 502) ═══════════
 {
   const r = read("app/api/members/[id]/route.ts");
-  ok("LEG3: the trigger's last_manager exception maps to 409, not update_failed 502",
-    /if \(error\.message\?\.includes\("last_manager"\) \|\| error\.code === "23514"\)[\s\S]*?"last_manager"[\s\S]*?status: 409/.test(r));
+  // Re-pinned 2026-08-26. The route was refactored — the inline
+  //   if (error.message?.includes("last_manager") || error.code === "23514")
+  // became the named helper isLastManagerError(). The BEHAVIOUR is unchanged, so
+  // this asserts the behaviour rather than the old expression's exact shape:
+  //   (a) the detection still recognises BOTH signals, the message and 23514, and
+  //   (b) the catch block still maps a recognised error to 409 last_manager.
+  // Both halves are required, so deleting either the detection or the mapping
+  // still fails this test — it was re-pointed, not relaxed.
+  ok("LEG3: last_manager detection still keys on BOTH the message and SQLSTATE 23514",
+    /function isLastManagerError[\s\S]*?includes\("last_manager"\)[\s\S]*?code === "23514"[\s\S]*?\n\}/.test(r));
+
+  // COUNT the mapping sites, do not pattern-match across them. The route has TWO
+  // catch blocks that must map this exception (the role change and the delete),
+  // and a regex spanning `catch (error) … status: 409` matches even when the
+  // first block is deleted, because it simply runs on to the second. Counting is
+  // the only form that fails when either site is removed — verified by mutation:
+  // deleting one block takes this from 2 to 1 and the assertion fails.
+  // The span is BOUNDED (…{0,240}?…) so a match cannot run past its own block
+  // into the next one — that unbounded run is exactly what made the previous
+  // version of this assertion survive deletion of a guard.
+  const guardSites = r.match(/if \(isLastManagerError\(error\)\) \{[\s\S]{0,240}?status: 409/g) ?? [];
+  ok("LEG3: BOTH catch sites map the trigger's exception to 409 (2 guard blocks present)",
+    guardSites.length === 2);
+  ok("LEG3: every last_manager guard names the last_manager error code",
+    guardSites.length > 0 && guardSites.every((b) => /"last_manager"/.test(b)));
   ok("LEG3: the friendly pre-check (409 last_manager on count ≤ 1) is still there for UX",
     /if \(\(count \?\? 0\) <= 1\)[\s\S]*?"last_manager"[\s\S]*?status: 409/.test(r));
 }

@@ -157,7 +157,7 @@ claimed all of the above gated every merge, which was not true):
 |---|---|---|
 | `tsc --noEmit` | every PR (`core-gate.yml`) | yes |
 | `npm run lint` | every PR (`core-gate.yml`) | yes |
-| `npm run test:unit` | every PR (`core-gate.yml`) | **not yet** — 7 of 114 files fail on drifted structural assertions, named in that workflow's header |
+| `npm run test:unit` | every PR (`core-gate.yml`) | **not yet** — 2 of 114 files fail, both reporting a real console-v2 gap (not drifted assertions). See that workflow's header. |
 | 27 agent-path tests + `next build` | only PRs touching `lib/ai`, `lib/messaging`, `lib/db`, the WhatsApp/agent routes (`agent-eval.yml` path filter) | yes, when it fires |
 | 2 Playwright specs | every PR (`ui-stacking.yml`) | yes |
 

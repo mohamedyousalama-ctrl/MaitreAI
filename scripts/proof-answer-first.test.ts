@@ -45,8 +45,21 @@ ok("C: customer-turn passes answerFirstDirective into respond()",
 // WO-COST-1 — the directive now rides the UNCACHED system tail (after the cache
 // breakpoint), not inline in the cached static block. Same instruction to the model,
 // re-layered so a firing directive no longer forces a full cache write.
+// Re-pinned 2026-08-26. The inline array literal was extracted to a named const
+// (`baseSystemTailParts`), so a regex requiring `composeSystemTail([ … ` no longer
+// matched. The delivery path is unchanged; it is now asserted as its three real
+// links, each of which must hold:
+//   1. the directive is one of the tail parts,
+//   2. those parts are composed into systemTail, and
+//   3. systemTail is handed to the adapter separately from the cached systemStatic.
+// Breaking any link fails. This is stricter than the original single regex, which
+// checked only that the directive appeared near composeSystemTail.
+const tailParts = /const baseSystemTailParts = \[[\s\S]{0,400}?\];/.exec(rp)?.[0] ?? "";
 ok("C: respond() delivers answerFirstDirective via the uncached system tail",
-  /composeSystemTail\(\[[\s\S]{0,240}?input\.answerFirstDirective/.test(rp) && /systemTail: systemTail \|\| undefined/.test(rp));
+  tailParts.length > 0 &&
+  /input\.answerFirstDirective/.test(tailParts) &&
+  /composeSystemTail\(baseSystemTailParts\)/.test(rp) &&
+  /system: systemStatic, systemTail: systemTail \|\| undefined/.test(rp));
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} answer-first: ${pass}/${pass + fail} passed`);
 if (fail > 0) process.exit(1);

@@ -122,8 +122,19 @@ const top = (t: string) => resolveVoiceCandidates(t, { menuItemNames: MENU })[0]
     /const assentExit = voiceGuardOn && isVoiceAssent\(input\.userMessage\) && wasVoiceLadderConfirm\(lastAssistant\);/.test(ct));
   ok("WIRE: assentExit skips the ladder (forces ACT on the confirmed content)",
     /voiceGuardOn && !assentExit/.test(ct));
+  // Re-pinned 2026-08-26. The guard did not weaken — it gained a THIRD safety
+  // signal (`!calmEmergency.fired`), so the old regex, which required the block to
+  // terminate immediately after `!companionEmergency.fired;`, no longer matched.
+  // Asserting each negated signal INDEPENDENTLY inside the voiceGuardOn block is
+  // both truer and stricter: dropping any one of the three now fails, and adding a
+  // fourth does not spuriously break this test again.
+  const guardBlock = /const voiceGuardOn =[\s\S]{0,400}?;/.exec(ct)?.[0] ?? "";
   ok("WIRE: the assent-exit stays under the safety-first guard (no allergen/emergency bypass)",
-    /voiceGuardOn =\s*[\s\S]*?!combinedAllergenHit\.fired &&\s*!companionEmergency\.fired;/.test(ct));
+    guardBlock.length > 0 &&
+    /!combinedAllergenHit\.fired/.test(guardBlock) &&
+    /!companionEmergency\.fired/.test(guardBlock) &&
+    /!calmEmergency\.fired/.test(guardBlock) &&
+    /input\.isVoiceTranscript === true/.test(guardBlock));
 }
 
 console.log(`\nWO-VOICE-PRECISION PROOF: ${pass} passed, ${fail} failed`);

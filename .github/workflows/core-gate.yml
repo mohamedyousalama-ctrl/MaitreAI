@@ -24,23 +24,36 @@
 #                        source files each raised "Definition for rule ... was
 #                        not found". The plugin was installed all along, via
 #                        eslint-config-next. Adding it to `plugins` fixed it.)
-#   npm run test:unit  → 107 of 114 files pass. NOT blocking yet — see below.
+#   npm run test:unit  → 112 of 114 files pass. NOT blocking yet — see below.
 #
-# THE SEVEN FAILING FILES
-# ───────────────────────
-# All seven fail on structural "WIRE" assertions — tests that assert the source
-# has a given shape, which drifted when the code was refactored. Each is a
-# single assertion inside an otherwise-passing file (e.g. 23 passed, 1 failed).
-# None of them is among the 27 files `agent-eval.yml` runs, which is exactly why
-# CI has stayed green while the suite was broken.
+# THE TWO REMAINING FAILURES — ONE ROOT CAUSE, AND IT IS A REAL PRODUCT GAP
+# ────────────────────────────────────────────────────────────────────────
+# Five assertions across proof-media-proxy and proof-console-batch-a read
+# app/(console-v2)/c/(app)/conversations/page.tsx and assert a full-transcript
+# surface: an inbound photo thumbnail, sendFailureMessageKey on the send path,
+# conversationBucket counting, and a stick-to-bottom scroll handler.
 #
-#   scripts/proof-race-last-manager.test.ts   LEG3: last_manager → 409 not 502
-#   scripts/proof-voice-quality.test.ts       WIRE(d): voice branch ordering
-#   scripts/proof-voice-precision.test.ts     WIRE: assent-exit under safety guard
-#   scripts/proof-deepgram-adapter.test.ts    WIRE: STT_ADAPTER=deepgram select
-#   scripts/proof-answer-first.test.ts        (non-zero exit, no assertion label)
-#   scripts/proof-media-proxy.test.ts         FAIL: console photo via media proxy
-#   scripts/proof-console-batch-a.test.ts     FR-003/004/005 transcript + send path
+# PR #540 ("Build console takeover queue", af8d8fa) rebuilt that page as a
+# takeover QUEUE — a 4-message view-only preview with a locked composer. None of
+# those four capabilities is on it any more. They were not deleted from the
+# product: sendFailureMessageKey lives in lib/console-v2/send-failure.ts,
+# conversationBucket in lib/console-v2/display-state.ts, and stickToBottom /
+# onScroll in the classic components/conversations/ChatWindow.tsx.
+#
+# The media one is different and worse. e9ae364 (WO-MEDIA-PROXY, PR #444) added
+# the inbound-photo thumbnail to that page; af8d8fa removed it along with the
+# PhotoThumb component. app/api/console/media/[messageId] — a session-authed,
+# tenant-scoped proxy built precisely so inbound customer photos render — now has
+# NO CALLER anywhere in app/ or components/. Customers send photos; no operator
+# surface displays them. The i18n keys conv.media.photo / .photoOutbound are
+# orphaned too. Restoring it needs a data-layer change as well: ChatMessage
+# carries `metadata`, but nothing maps the row's meta.image through to it.
+#
+# These five are therefore NOT stale assertions and are NOT being re-pointed.
+# Whether the takeover queue should regain a transcript (and photos) is a product
+# decision. The tests are left FAILING on purpose, because they are reporting a
+# true gap — silencing them is exactly the weakening docs/governance/
+# REVIEW_AND_AUDIT.md forbids.
 #
 # TO MAKE THE SUITE BLOCKING: fix those seven, then delete the
 # `continue-on-error: true` line from the `unit` job. That is the whole change.
@@ -93,8 +106,9 @@ jobs:
   unit:
     name: Unit suite — 114 files (reporting)
     runs-on: ubuntu-latest
-    # Not blocking yet: 7 of 114 files fail on drifted structural assertions.
-    # They are named in the header above. Delete this line once they are fixed.
+    # Not blocking yet: 2 of 114 files fail — both reporting a REAL product gap
+    # (the console-v2 conversations rebuild), not drifted assertions. See the header.
+    # Delete this line once that gap is closed.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
