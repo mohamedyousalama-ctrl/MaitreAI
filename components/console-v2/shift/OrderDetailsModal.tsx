@@ -165,9 +165,16 @@ export function OrderDetailBody({ order, onViewConversation, hasSafety, pspEnabl
       <Row label={t("shift.od.fulfillment")}>{order.fulfillmentType === "pickup" ? t("shift.od.pickup") : t("shift.od.deliveryType")}</Row>
       {order.deliveryAddress && <Row label={t("shift.od.address")}><Bdi>{order.deliveryAddress}</Bdi></Row>}
 
-      {/* Owed + payment enabled → the operator can ask the customer to pay now. */}
+      {/* Owed + payment enabled → the operator can ask the customer to pay now.
+          `key` is load-bearing, not decoration. Selection moves order A → order B
+          directly (no intervening null), so without it React reuses this instance
+          and its outcome banner survives the switch: an operator who sent a link
+          for #1041 then opens #1042 would see «تم إرساله للعميل» under #1042 and
+          believe a link went out. Worse mid-flight — #1041's result would land
+          attributed to #1042. Keying to the order id remounts per order, so a
+          payment result can only ever belong to the order it was requested for. */}
       {pspEnabled && order.paymentStatus !== "paid" && order.orderStatus !== "cancelled" && (
-        <PayLinkAction order={order} />
+        <PayLinkAction key={order.id} order={order} />
       )}
 
       {order.conversationId && onViewConversation && (

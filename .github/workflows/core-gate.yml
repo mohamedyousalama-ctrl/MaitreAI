@@ -24,7 +24,7 @@
 #                        source files each raised "Definition for rule ... was
 #                        not found". The plugin was installed all along, via
 #                        eslint-config-next. Adding it to `plugins` fixed it.)
-#   npm run test:unit  → 105 of 112 files pass. NOT blocking yet — see below.
+#   npm run test:unit  → 107 of 114 files pass. NOT blocking yet — see below.
 #
 # THE SEVEN FAILING FILES
 # ───────────────────────
@@ -44,8 +44,18 @@
 #
 # TO MAKE THE SUITE BLOCKING: fix those seven, then delete the
 # `continue-on-error: true` line from the `unit` job. That is the whole change.
-# Nothing here is skipped, disabled or quarantined — the full 112-file suite
-# runs on every pull request and its failures are visible on every run.
+#
+# CORRECTION (audited 26 Aug, after this file was first written). The original
+# text here claimed "the full suite runs on every pull request and its failures
+# are visible on every run". That was FALSE IN EFFECT. `test:unit` was a single
+# `&&` chain of 113 commands, and command #8 fails — so the chain exited there
+# and 105 files never executed, in CI or locally. Nothing was marked skipped;
+# the chain SHAPE quarantined 93% of the suite, and `continue-on-error` then
+# swallowed the exit code. Every count taken by running it was a count of 8 files.
+#
+# `test:unit` is now `node scripts/run-unit-suite.mjs`, which runs every file in
+# scripts/unit-suite.json regardless of failures, prints a real tally, and exits
+# non-zero if any failed. The claim above is now true.
 # ============================================================================
 
 name: Core gate
@@ -81,9 +91,9 @@ jobs:
         run: npm run lint
 
   unit:
-    name: Unit suite — 112 files (reporting)
+    name: Unit suite — 114 files (reporting)
     runs-on: ubuntu-latest
-    # Not blocking yet: 7 of 112 files fail on drifted structural assertions.
+    # Not blocking yet: 7 of 114 files fail on drifted structural assertions.
     # They are named in the header above. Delete this line once they are fixed.
     continue-on-error: true
     steps:

@@ -255,6 +255,28 @@ async function currentOwner(
   return snapshot?.assignedMemberId ?? null;
 }
 
+/**
+ * The acting member could not be established by kv_control_assert_actor (KIV12).
+ *
+ * Distinct from ClaimLostError because it is NOT a race and retrying never helps:
+ * the member is not a member of this tenant, lacks the manager role for a
+ * manager-only operation, or — the case that will actually bite — has no open
+ * `member_identity_versions` row. Nothing in the application creates that row, so
+ * a member provisioned without one is permanently unable to claim anything.
+ * Typed so a route can answer "your account is not set up to take conversations"
+ * instead of a 502 carrying a raw Postgres message.
+ */
+export class ClaimActorError extends Error {
+  readonly conversationId: string;
+  readonly detail: string;
+  constructor(conversationId: string, detail: string) {
+    super(`[conversation-control] actor not permitted for ${conversationId}: ${detail}`);
+    this.name = "ClaimActorError";
+    this.conversationId = conversationId;
+    this.detail = detail;
+  }
+}
+
 /** Typed loser of an atomic claim — carries who currently owns the conversation. */
 export class ClaimLostError extends Error {
   readonly conversationId: string;
@@ -400,11 +422,35 @@ export async function claimConversation(
   });
 
   if (error) {
-    // KIV15 — the conversation is held by another member. The one failure that is
-    // an expected outcome rather than a fault, so it keeps its typed error.
-    if (kivCode(error) === "KIV15") {
+    const code = kivCode(error);
+
+    // Outcomes, not faults. All three mean "the conversation moved under you"
+    // between the caller's snapshot and the RPC, and all three used to be a 0-row
+    // return from the removed control_claim — i.e. a ClaimLostError and a 409 that
+    // told the console to refresh.
+    //
+    //   KIV15 — held by another member.
+    //   KIV14 — illegal transition for a claim. The pure canClaim guard above
+    //           already rejects every non-race ineligible state, so reaching here
+    //           means the state changed after the snapshot (a teammate closed or
+    //           handed back the conversation mid-click).
+    //   KIV11 — the row is no longer visible for this tenant, same shape.
+    //
+    // Without this, a lost race surfaces as 502 "claim_failed" — a hard error for
+    // what is a normal, expected concurrency outcome.
+    if (code === "KIV15" || code === "KIV14" || code === "KIV11") {
       throw new ClaimLostError(conversationId, await currentOwner(client, conversationId, restaurantId, current));
     }
+
+    // KIV12 — the actor failed kv_control_assert_actor. In practice this is almost
+    // always "no open member_identity_versions row", which nothing in the app
+    // creates: a member provisioned without one can never claim, on any
+    // conversation, forever. Rethrowing raw gives them a 502 with a Postgres
+    // string in it. Surfacing a typed error lets the routes say something true.
+    if (code === "KIV12") {
+      throw new ClaimActorError(conversationId, String((error as { message?: unknown }).message ?? "KIV12"));
+    }
+
     throw error;
   }
 

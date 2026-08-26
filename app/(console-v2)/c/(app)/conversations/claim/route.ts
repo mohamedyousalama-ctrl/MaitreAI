@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createUserClient } from "@/lib/supabase/server";
-import { ClaimLostError, claimConversation, type ControlMode } from "@/lib/console/conversation-control";
+import { ClaimActorError, ClaimLostError, claimConversation, type ControlMode } from "@/lib/console/conversation-control";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -135,6 +135,12 @@ export async function POST(req: Request) {
         { error: "already_claimed", ownerId: error.currentOwnerMemberId, ownerName },
         { status: 409 },
       );
+    }
+    // KIV12 — the actor itself is not permitted (not a member, wrong role, or no
+    // open member_identity_versions row). Not a fault of this request and not
+    // retryable, so 403 with a stable code rather than a 502 carrying raw SQL.
+    if (error instanceof ClaimActorError) {
+      return NextResponse.json({ error: "actor_not_permitted" }, { status: 403 });
     }
     return NextResponse.json(
       { error: "claim_failed", detail: error instanceof Error ? error.message : String(error) },

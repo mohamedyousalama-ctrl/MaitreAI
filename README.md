@@ -144,7 +144,7 @@ For WhatsApp live mode, set all `WHATSAPP_*` env vars. See `docs/WHATSAPP_GO_LIV
 ## Tests + build
 
 ```bash
-npm run test:unit    # 112 test files (allergen, ownership, phone, stuck, retry, …)
+npm run test:unit    # 114 test files — runs ALL of them and reports a real tally
 npx tsc --noEmit     # type check
 npm run lint         # eslint + the local RTL/Supabase rules
 npm run build        # production build (offline-safe — uses local fonts)
@@ -157,14 +157,18 @@ claimed all of the above gated every merge, which was not true):
 |---|---|---|
 | `tsc --noEmit` | every PR (`core-gate.yml`) | yes |
 | `npm run lint` | every PR (`core-gate.yml`) | yes |
-| `npm run test:unit` | every PR (`core-gate.yml`) | **not yet** — 7 of 112 files fail on drifted structural assertions, named in that workflow's header |
+| `npm run test:unit` | every PR (`core-gate.yml`) | **not yet** — 7 of 114 files fail on drifted structural assertions, named in that workflow's header |
 | 27 agent-path tests + `next build` | only PRs touching `lib/ai`, `lib/messaging`, `lib/db`, the WhatsApp/agent routes (`agent-eval.yml` path filter) | yes, when it fires |
 | 2 Playwright specs | every PR (`ui-stacking.yml`) | yes |
 
-`npm run test:unit` is a hand-maintained list of 112 explicit file paths, not a
-glob — a new `*.test.ts` file is **not** picked up until it is added to that
-script. The repository contains 200 test files in total; 88 are named by no
-runner at all.
+`npm run test:unit` runs `scripts/run-unit-suite.mjs` over the hand-maintained
+manifest in `scripts/unit-suite.json` — **not** a glob. A new `*.test.ts` file is
+not picked up until it is added there. The repository contains **198** test files;
+**84** are named by no runner at all.
+
+It used to be a single `&&` chain, which stopped at the first failure and left
+most of the suite unexecuted. The runner executes every entry regardless, prints
+a per-file result and a true tally, and exits non-zero if any failed.
 
 ---
 

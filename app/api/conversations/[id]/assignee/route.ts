@@ -28,7 +28,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAuditEvent } from "@/lib/db/audit";
 import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
 import { createClient as createUserClient } from "@/lib/supabase/server";
-import { ClaimLostError, claimConversation, type ControlMode } from "@/lib/console/conversation-control";
+import { ClaimActorError, ClaimLostError, claimConversation, type ControlMode } from "@/lib/console/conversation-control";
 
 export const runtime = "nodejs";
 
@@ -152,6 +152,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     });
     return NextResponse.json({ ok: true, assignedMemberId: result.assignedMemberId ?? me, ownershipState: result.mode, controlEpoch: result.epoch });
   } catch (error) {
+    // Same split as the console-v2 route: an impermissible ACTOR is a 403 with a
+    // stable code, not a 502 that reads as a server fault.
+    if (error instanceof ClaimActorError) {
+      return NextResponse.json({ error: "actor_not_permitted" }, { status: 403 });
+    }
     if (!(error instanceof ClaimLostError)) {
       return NextResponse.json({ error: "update_failed" }, { status: 502 });
     }
