@@ -10,9 +10,34 @@
 //   • canTransition(from, to)    → the legal-transition law (superset-consistent with
 //                                  lib/db/ownership.ts for the five legacy modes).
 //   • applyTransition / claim / release / reassign / escalateToHold — the data layer,
-//     each a single atomic RPC (migration 0099) that bumps control_epoch and appends a
-//     conversation_assignment_events row via DB triggers, with the real actor supplied
-//     by transaction-local GUCs.
+//     each a single atomic RPC that bumps control_epoch and appends a
+//     conversation_assignment_events row via DB triggers.
+//
+// ⚠ STATE OF THE DATA LAYER — read before wiring anything new to this module.
+//
+// Migration 0108 replaced the control plane: the control_* functions this module was
+// written against were removed from the database and superseded by the kv_control_*
+// family, which resolves the acting member from the JWT subject rather than from a
+// call parameter. Verified against production 2026-08-26.
+//
+//   claimConversation  → PORTED. Calls kv_control_claim. REQUIRES A USER-SCOPED
+//                        CLIENT: the actor is request.jwt.claim.sub, and EXECUTE is
+//                        granted to `authenticated` only — service_role is refused.
+//                        This is the only wrapper with production callers.
+//
+//   applyTransition, escalateToHold, releaseToAI, managerReassign
+//                      → NOT PORTED. They still name control_apply_transition,
+//                        control_escalate_to_hold, control_release_to_ai and
+//                        control_reassign, none of which exist any more. Each will
+//                        fail with PGRST202 if called. They have NO production
+//                        callers today (verified across app/, lib/, components/) —
+//                        only tests reach them. DO NOT wire a route to one of these
+//                        until it is ported; porting is not a rename, because
+//                        kv_control_reassign and kv_control_release_hold require the
+//                        manager role and accept a narrower set of source states.
+//
+// The pure half of this module — authorityFor, canTransition, canHandBack,
+// deriveAssignmentEventType — is unaffected and remains the tested contract.
 //
 // PURE first: authorityFor, canTransition, canHandBack, and deriveAssignmentEventType
 // are pure and total (exhaustive over the mode enum) so they are unit-testable without
@@ -30,6 +55,7 @@ import {
   AUTHORITY_BY_STATE,
   isLegalTransition,
   assertLegalTransition,
+  canClaim,
   type OwnershipState,
   type ReplyAuthority,
 } from "../conversation-control/model";
@@ -171,6 +197,64 @@ export interface TransitionResult {
   assignedMemberId?: string | null;
 }
 
+/**
+ * kv_control_result — the composite type every kv_control_* function returns
+ * (migration 0108). Exactly one row, never a set. Only the fields this module
+ * consumes are typed here; the composite carries 19 columns in total.
+ */
+type KvControlResult = {
+  conversation_id: string;
+  to_mode: string;
+  epoch_after: number | string;
+  actor_member_id: string | null;
+  changed?: boolean;
+  replayed?: boolean;
+};
+
+function kvResult(conversationId: string, data: unknown): KvControlResult | null {
+  const row = Array.isArray(data) ? data[0] : data;
+  return (row as KvControlResult) ?? null;
+}
+
+/**
+ * The kv_control_* functions raise bare `raise exception`, so every failure
+ * arrives as SQLSTATE P0001 with the KIVnn token carried in the MESSAGE TEXT.
+ * The code must therefore be read off the message, not off `error.code`.
+ */
+function kivCode(error: unknown): string | null {
+  const message = (error as { message?: unknown } | null)?.message;
+  if (typeof message !== "string") return null;
+  return /\bKIV(\d{2})\b/.exec(message)?.[0] ?? null;
+}
+
+/**
+ * Who holds the conversation right now, for the loser's typed error. Prefers a
+ * fresh read — the caller's snapshot was taken before the race and may name the
+ * previous owner — and falls back to that snapshot when the read is unavailable
+ * (a user-scoped client sees the row only through RLS). Never throws: this runs on
+ * a path that is already failing, and a missing name must not mask a ClaimLostError.
+ */
+async function currentOwner(
+  client: SupabaseClient,
+  conversationId: string,
+  restaurantId: string,
+  snapshot?: { assignedMemberId: string | null }
+): Promise<string | null> {
+  try {
+    const { data } = await client
+      .from("conversations")
+      .select("assigned_member_id")
+      .eq("id", conversationId)
+      .eq("restaurant_id", restaurantId)
+      .maybeSingle();
+    const owner = (data as { assigned_member_id?: string | null } | null)?.assigned_member_id ?? null;
+    if (owner) return owner;
+  } catch {
+    // fall through to the snapshot
+  }
+  return snapshot?.assignedMemberId ?? null;
+}
+
 /** Typed loser of an atomic claim — carries who currently owns the conversation. */
 export class ClaimLostError extends Error {
   readonly conversationId: string;
@@ -274,27 +358,66 @@ export async function escalateToHold(
  */
 export async function claimConversation(
   client: SupabaseClient,
-  args: { conversationId: string; restaurantId: string; memberId: string }
+  args: {
+    conversationId: string;
+    restaurantId: string;
+    memberId: string;
+    /**
+     * The conversation row as the caller has ALREADY read it. Supply it — both
+     * production callers do, from the snapshot they take for their epoch check.
+     *
+     * It is what preserves the anti-steal rule. The removed control_claim carried
+     * `and (assigned_member_id is null or assigned_member_id = p_member_id)` in its
+     * WHERE, so claiming a teammate-owned HUMAN_IDLE or SYSTEM_HOLD row returned 0
+     * rows. kv_control_claim has NO such predicate — it protects only HUMAN_ACTIVE
+     * (KIV15). Without this guard a second operator silently takes a colleague's
+     * conversation, which is exactly what the assignee route promises never happens.
+     *
+     * The guard is `canClaim`, the same pure mirror the console renders from, so
+     * button state and server decision cannot disagree.
+     */
+    current?: { ownershipState: ControlMode | null; assignedMemberId: string | null };
+  }
 ): Promise<TransitionResult> {
-  const { conversationId, restaurantId, memberId } = args;
-  const { data, error } = await client.rpc("control_claim", {
-    p_conversation_id: conversationId,
-    p_restaurant_id: restaurantId,
-    p_member_id: memberId,
-  });
-  if (error) throw error;
-  const row = firstRow(data);
-  if (row) return toResult(conversationId, row); // won (or idempotent re-claim by same member)
+  const { conversationId, restaurantId, memberId, current } = args;
 
-  // 0 rows — lost the race or not claimable. Read the current owner for the typed error.
-  const { data: cur } = await client
-    .from("conversations")
-    .select("assigned_member_id")
-    .eq("id", conversationId)
-    .eq("restaurant_id", restaurantId)
-    .maybeSingle();
-  const ownerId = (cur as { assigned_member_id?: string | null } | null)?.assigned_member_id ?? null;
-  throw new ClaimLostError(conversationId, ownerId);
+  // Pure eligibility gate. Best-effort by construction: it closes the ordinary
+  // teammate-owned case, not a genuine race between this read and the RPC. Closing
+  // that residual window needs the predicate back inside kv_control_claim.
+  if (current && !canClaim({ ownershipState: current.ownershipState, assignedMemberId: current.assignedMemberId }, memberId)) {
+    throw new ClaimLostError(conversationId, current.assignedMemberId ?? null);
+  }
+
+  // kv_control_claim derives the acting member from the JWT subject
+  // (request.jwt.claim.sub) via kv_control_assert_actor — it does NOT take a member
+  // id. `client` MUST therefore be a user-scoped client. A service-role client has
+  // no JWT subject and is not granted EXECUTE, so it fails twice over.
+  const { data, error } = await client.rpc("kv_control_claim", {
+    p_conversation_id: conversationId,
+    p_expected_restaurant_id: restaurantId,
+    p_operation_id: crypto.randomUUID(),
+    p_reason: "console claim",
+  });
+
+  if (error) {
+    // KIV15 — the conversation is held by another member. The one failure that is
+    // an expected outcome rather than a fault, so it keeps its typed error.
+    if (kivCode(error) === "KIV15") {
+      throw new ClaimLostError(conversationId, await currentOwner(client, conversationId, restaurantId, current));
+    }
+    throw error;
+  }
+
+  const row = kvResult(conversationId, data);
+  if (!row) throw new Error(`[conversation-control] claimConversation: conversation ${conversationId} not found`);
+
+  // On a claim the actor becomes the assignee; the composite reports the actor.
+  return {
+    conversationId,
+    mode: row.to_mode as ControlMode,
+    epoch: Number(row.epoch_after),
+    assignedMemberId: row.actor_member_id ?? memberId,
+  };
 }
 
 /**

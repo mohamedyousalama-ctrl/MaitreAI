@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ClaimLostError, claimConversation } from "@/lib/console/conversation-control";
+import { createClient as createUserClient } from "@/lib/supabase/server";
+import { ClaimLostError, claimConversation, type ControlMode } from "@/lib/console/conversation-control";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -103,11 +104,22 @@ export async function POST(req: Request) {
     });
   }
 
+  // kv_control_claim resolves the acting member from the JWT subject and grants
+  // EXECUTE to `authenticated` only, so the claim goes through the caller's own
+  // session. `admin` stays for the reads above and the auth.admin lookup below,
+  // both of which genuinely need service_role.
+  const asUser = createUserClient();
+  if (!asUser) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+
   try {
-    const result = await claimConversation(admin, {
+    const result = await claimConversation(asUser, {
       conversationId,
       restaurantId: tenant.restaurantId,
       memberId: me,
+      current: {
+        ownershipState: (snapshot.ownership_state as ControlMode | null) ?? null,
+        assignedMemberId: snapshot.assigned_member_id,
+      },
     });
     return NextResponse.json({
       ok: true,

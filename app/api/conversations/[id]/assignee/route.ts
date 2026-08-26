@@ -27,7 +27,8 @@ import { requireTenant } from "@/lib/db/require-tenant";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAuditEvent } from "@/lib/db/audit";
 import { DatabaseOperationError, mustWrite } from "@/lib/db/checked";
-import { ClaimLostError, claimConversation } from "@/lib/console/conversation-control";
+import { createClient as createUserClient } from "@/lib/supabase/server";
+import { ClaimLostError, claimConversation, type ControlMode } from "@/lib/console/conversation-control";
 
 export const runtime = "nodejs";
 
@@ -125,14 +126,29 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ ok: true, assignedMemberId: me, ownershipState: "HUMAN_ACTIVE", controlEpoch: Number(current.control_epoch ?? 0) });
   }
 
-  // ATOMIC CLAIM — migration 0099's control_claim RPC performs the conditional
-  // ownership transition, bumps control_epoch, and lets the DB trigger append the
-  // assignment event. No ownership column is written directly in this claim path.
+  // ATOMIC CLAIM — migration 0108's kv_control_claim performs the ownership
+  // transition, bumps control_epoch, and lets the DB trigger append the assignment
+  // event. No ownership column is written directly in this claim path.
+  //
+  // It runs through the caller's own session: the acting member is resolved from the
+  // JWT subject, and EXECUTE is granted to `authenticated` only. `admin` stays for
+  // the reads above and the auth.admin name lookup below.
+  //
+  // `current` is passed so the pure canClaim guard runs before the RPC —
+  // kv_control_claim, unlike the control_claim it replaced, does not itself refuse a
+  // teammate-owned HUMAN_IDLE or SYSTEM_HOLD row.
+  const asUser = createUserClient();
+  if (!asUser) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+
   try {
-    const result = await claimConversation(admin, {
+    const result = await claimConversation(asUser, {
       conversationId: params.id,
       restaurantId: tenant.restaurantId,
       memberId: me,
+      current: {
+        ownershipState: (current.ownership_state as ControlMode | null) ?? null,
+        assignedMemberId: current.assigned_member_id,
+      },
     });
     return NextResponse.json({ ok: true, assignedMemberId: result.assignedMemberId ?? me, ownershipState: result.mode, controlEpoch: result.epoch });
   } catch (error) {

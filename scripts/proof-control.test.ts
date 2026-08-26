@@ -63,10 +63,48 @@ function makeDb(seed: Array<Record<string, unknown>>) {
   }
 
   const CLAIMABLE = ["AI_ACTIVE", "HOLD_UNCLAIMED", "HUMAN_IDLE", "SYSTEM_HOLD"];
+
+  // The acting member. kv_control_claim (migration 0108) takes NO member-id
+  // parameter — it resolves the actor from the JWT subject. A user-scoped client is
+  // therefore bound to one member, which is what `.as(memberId)` below models. The
+  // default exists only so the blocks that do not care about identity stay readable.
+  let actingMember: string | null = "m-default";
+
   const rpc = async (name: string, p: Record<string, unknown>) => {
     const id = p.p_conversation_id as string;
     const row = convs.get(id);
     if (!row) return { data: [], error: null };
+
+    // A faithful stand-in for the production kv_control_claim. Modelled from the
+    // live function body, INCLUDING the gap: it protects HUMAN_ACTIVE (KIV15) and
+    // nothing else, so a teammate-owned HUMAN_IDLE or SYSTEM_HOLD row is claimable
+    // at the database level. The removed control_claim carried
+    //   and (assigned_member_id is null or assigned_member_id = p_member_id)
+    // in its WHERE and so refused it. C8/C9 below pin both halves of that.
+    //
+    // Errors are returned the way PostgREST surfaces them: a bare `raise exception`
+    // arrives as SQLSTATE P0001 with the KIVnn token only in the message text.
+    if (name === "kv_control_claim") {
+      const kiv = (code: string, msg: string) => ({ data: null, error: { code: "P0001", message: `${code} ${msg}` } });
+      const actor = actingMember;
+      if (row.restaurant_id !== p.p_expected_restaurant_id) return kiv("KIV11", "conversation not found for tenant");
+
+      const state = row.ownership_state as string;
+      const assignee = (row.assigned_member_id ?? null) as string | null;
+
+      // Idempotent re-claim by the same member: no write, no event, no epoch bump.
+      if (state === "HUMAN_ACTIVE" && row.owner === "human" && assignee !== null && assignee === actor) {
+        return { data: { conversation_id: id, to_mode: state, epoch_after: row.control_epoch, actor_member_id: actor, changed: false, replayed: true }, error: null };
+      }
+      if (state === "HUMAN_ACTIVE" && assignee !== null) return kiv("KIV15", "claim lost - held by another member");
+      if (state === "HUMAN_ACTIVE") return kiv("KIV14", "illegal transition - HUMAN_ACTIVE is not a claim source");
+      if (!CLAIMABLE.includes(state)) return kiv("KIV14", `illegal transition from ${state} for claim`);
+
+      const next = { ...row, assigned_member_id: actor, ownership_state: "HUMAN_ACTIVE", owner: "human", status: "تم التحويل لموظف" };
+      fire(row, next, { actor, type: "CLAIMED" });
+      convs.set(id, next);
+      return { data: { conversation_id: id, to_mode: next.ownership_state, epoch_after: next.control_epoch, actor_member_id: actor, changed: true, replayed: false }, error: null };
+    }
     const ret = (r: Record<string, unknown>) => ({ data: [{ id: r.id, ownership_state: r.ownership_state, control_epoch: r.control_epoch, assigned_member_id: r.assigned_member_id ?? null }], error: null });
     if (name === "control_apply_transition") {
       const next = { ...row, ownership_state: p.p_to_mode, owner: (p.p_owner as string) ?? row.owner, status: (p.p_status as string) ?? row.status };
@@ -121,7 +159,14 @@ function makeDb(seed: Array<Record<string, unknown>>) {
     };
     return b;
   };
-  return { _convs: convs, _events: events, _signals: signals, rpc, from } as unknown as import("@supabase/supabase-js").SupabaseClient & { _convs: Map<string, Record<string, unknown>>; _events: Record<string, unknown>[]; _signals: Record<string, unknown>[] };
+  // `.as(memberId)` — a client carrying that member's JWT. Same underlying store,
+  // different actor, exactly as two operators hitting the same row would be.
+  const base = { _convs: convs, _events: events, _signals: signals, rpc, from };
+  const as = (memberId: string) => {
+    const bound = { ...base, rpc: async (name: string, p: Record<string, unknown>) => { actingMember = memberId; return rpc(name, p); }, as };
+    return bound as unknown as import("@supabase/supabase-js").SupabaseClient;
+  };
+  return { ...base, as } as unknown as import("@supabase/supabase-js").SupabaseClient & { _convs: Map<string, Record<string, unknown>>; _events: Record<string, unknown>[]; _signals: Record<string, unknown>[]; as: (memberId: string) => import("@supabase/supabase-js").SupabaseClient };
 }
 
 const RID = "rest-1";
@@ -179,9 +224,11 @@ const RID = "rest-1";
 // ══ C — atomic claim: double-winner race ═════════════════════════════════════════════
 {
   const db = makeDb([{ id: "c1", restaurant_id: RID, ownership_state: "HOLD_UNCLAIMED", owner: "human", control_epoch: 3, assigned_member_id: null }]);
+  const asAlice = (db as unknown as { as: (m: string) => typeof db }).as("m-alice");
+  const asBob = (db as unknown as { as: (m: string) => typeof db }).as("m-bob");
   const results = await Promise.allSettled([
-    claimConversation(db, { conversationId: "c1", restaurantId: RID, memberId: "m-alice" }),
-    claimConversation(db, { conversationId: "c1", restaurantId: RID, memberId: "m-bob" }),
+    claimConversation(asAlice, { conversationId: "c1", restaurantId: RID, memberId: "m-alice" }),
+    claimConversation(asBob, { conversationId: "c1", restaurantId: RID, memberId: "m-bob" }),
   ]);
   const winners = results.filter((r) => r.status === "fulfilled");
   const losers = results.filter((r) => r.status === "rejected");
@@ -193,6 +240,38 @@ const RID = "rest-1";
   ok("C5: the loser's error names the current owner", (losers[0] as PromiseRejectedResult).reason.currentOwnerMemberId === winner.assignedMemberId);
   ok("C6: exactly ONE CLAIMED audit row was written for the race", db._events.filter((e) => e.event_type === "CLAIMED" && e.conversation_id === "c1").length === 1);
   ok("C7: the claim bumped the epoch (3 → 4)", winner.epoch === 4);
+
+  // ── C8/C9 — the anti-steal rule, pinned on BOTH sides of the boundary. ──────────
+  // Migration 0108 dropped the ownership predicate that control_claim carried, so
+  // the database alone no longer refuses a teammate-owned idle row. The wrapper
+  // restores the rule via the pure canClaim guard. If someone later puts the
+  // predicate back into kv_control_claim, C8 fails and says so — it is a statement
+  // about the database's behaviour, not a licence for it.
+  {
+    const owned = makeDb([{ id: "c1b", restaurant_id: RID, ownership_state: "HUMAN_IDLE", owner: "human", control_epoch: 7, assigned_member_id: "m-alice" }]);
+    const bob = (owned as unknown as { as: (m: string) => typeof owned }).as("m-bob");
+
+    // Without the snapshot the guard cannot run, and the DB lets Bob take it.
+    const stolen = await claimConversation(bob, { conversationId: "c1b", restaurantId: RID, memberId: "m-bob" });
+    ok("C8: kv_control_claim ALONE does not refuse a teammate-owned HUMAN_IDLE row (0108 dropped the predicate)",
+      stolen.mode === "HUMAN_ACTIVE" && stolen.assignedMemberId === "m-bob");
+
+    // With the snapshot the caller supplies, canClaim refuses it before any write.
+    const owned2 = makeDb([{ id: "c1c", restaurant_id: RID, ownership_state: "HUMAN_IDLE", owner: "human", control_epoch: 7, assigned_member_id: "m-alice" }]);
+    const bob2 = (owned2 as unknown as { as: (m: string) => typeof owned2 }).as("m-bob");
+    let refused: unknown = null;
+    try {
+      await claimConversation(bob2, {
+        conversationId: "c1c", restaurantId: RID, memberId: "m-bob",
+        current: { ownershipState: "HUMAN_IDLE", assignedMemberId: "m-alice" },
+      });
+    } catch (e) { refused = e; }
+    ok("C9: with `current` supplied the wrapper refuses it — ClaimLostError naming the real owner",
+      refused instanceof ClaimLostError && (refused as ClaimLostError).currentOwnerMemberId === "m-alice");
+    ok("C10: the refused claim wrote NOTHING — no event, no epoch bump",
+      (owned2 as unknown as { _events: unknown[] })._events.length === 0 &&
+      ((owned2 as unknown as { _convs: Map<string, Record<string, unknown>> })._convs.get("c1c")!.control_epoch === 7));
+  }
 }
 
 // ══ D — control_epoch SEND GATE: stale sender blocked, nothing transmitted ════════════
