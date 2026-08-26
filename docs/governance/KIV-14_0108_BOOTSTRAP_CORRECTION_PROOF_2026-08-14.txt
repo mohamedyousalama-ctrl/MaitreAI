@@ -1,0 +1,1069 @@
+==============================================================================
+KIV-13 / CTRL-04 — M-1 ADDITIVE SCOPE-1 — DISPOSABLE POSTGRESQL PROOF
+==============================================================================
+--- PROVENANCE ---
+  repository            : /home/user/MaitreAI
+  git branch            : fix/kiv14-0108-transactional-bootstrap
+  git HEAD              : d772ff449418076799ca78a388231c33f4a7f9b1
+  git tree state        : clean
+  proof script          : scripts/proof-kiv13-m1-disposable-pg.py
+  proof script sha256   : 3309f9cc06fa87861130d08bb10d814c905a28e0319eab826b7ab1422135addd
+  M-0 migration         : supabase/migrations/0107_kiv12_m0_constraint_prestage.sql
+  M-0 bytes / sha256    : 4096 / 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6
+  M-0 expected sha256   : 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6  match=YES
+  M-1 migration         : supabase/migrations/0108_kiv13_m1_additive_scope1.sql
+  M-1 bytes             : 87489
+  M-1 sha256            : 8b3aa745f8e60178ebda7a9101fc4d654e252b8d27372924434d00345d59090c
+  M-1 git blob          : 6f38ae7f10560efeadd32dfd7d36ccd417cedaf6
+  M-0 git blob          : d492d2e58fee28c93fd84ec71081dc71c81fce0b
+  M-0 blob@HEAD         : d492d2e58fee28c93fd84ec71081dc71c81fce0b
+--- ENVIRONMENT ---
+  class                 : DISPOSABLE LOCAL — created by this script, destroyed at the end
+  PGDATA                : /var/lib/postgresql/kiv77_7465_914b51003d
+  port / socket         : 42071 / /var/tmp/kiv77_7465_914b51003d   (listen_addresses='' — no TCP listener)
+  database              : kivo_m1
+  production contact    : NONE — no production host, credential or network egress
+  scaffolding           : auth.uid()/auth.users and the Supabase roles anon,
+                          authenticated, service_role are DISPOSABLE TEST SCAFFOLDING
+                          standing in for Supabase-provided primitives. They are NOT
+                          production proof of PostgREST behaviour.
+
+--- PROVISION DISPOSABLE CLUSTER ---
+  initdb                : OK
+  pg_ctl start          : OK
+  server version        : PostgreSQL 17.11 (Ubuntu 17.11-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+  execution role        : kv_exec  super=false createrole=true inherit=true   (NON-SUPERUSER — migrations run as this role)
+
+--- BASELINE: governed pre-M0 schema (0001/0002/0024/0028/0032/0099 shape) ---
+  baseline built
+  seeded: members N=4, one conversation, one legacy A1 row
+
+--- R. HISTORICAL 0108 UNDER THE GOVERNED NON-SUPERUSER EXECUTOR ---
+  [PASS] executor mirrors Supabase postgres (non-superuser, CREATEROLE)
+         expected: rolsuper=false rolcreaterole=true rolinherit=true
+         actual:   rolsuper=false rolcreaterole=true rolinherit=true
+  [PASS] PUBLIC supplies no schema CREATE shortcut
+         expected: f
+         actual:   f
+  [PASS] kivo_control_owner does not exist before any application
+         expected: 0
+         actual:   0
+  [PASS] historical accepted 0108 recovered at its accepted SHA-256
+         expected: 8a435974b1b302223548b4aeadfa84ee0a11918a301d8698f7774a49f757a107
+         actual:   8a435974b1b302223548b4aeadfa84ee0a11918a301d8698f7774a49f757a107
+  [PASS] 0107 applies as the non-superuser executor
+         expected: True
+         actual:   True
+  [PASS] historical 0108 FAILS as the non-superuser executor
+         expected: True
+         actual:   True
+  [PASS] ...for the expected reason: cannot SET ROLE kivo_control_owner
+         expected: True
+         actual:   True
+  [PASS] historical 0108 rolled back completely: no role survives
+         expected: 0
+         actual:   0
+  [PASS] historical 0108 rolled back completely: no M-1 table survives
+         expected: 0
+         actual:   0
+
+--- R2. FAILURE INJECTION -> COMPLETE ROLLBACK ---
+  [PASS] injection after bootstrap privilege creation: migration fails
+         expected: True
+         actual:   True
+  [PASS] injection after bootstrap privilege creation: no role survives
+         expected: 0
+         actual:   0
+  [PASS] injection after bootstrap privilege creation: no membership survives
+         expected: NONE
+         actual:   NONE
+  [PASS] injection after bootstrap privilege creation: no M-1 object survives
+         expected: 0
+         actual:   0
+  [PASS] injection after bootstrap privilege creation: no A1 column survives
+         expected: 0
+         actual:   0
+  [PASS] injection after the first ownership transfer: migration fails
+         expected: True
+         actual:   True
+  [PASS] injection after the first ownership transfer: no role survives
+         expected: 0
+         actual:   0
+  [PASS] injection after the first ownership transfer: no membership survives
+         expected: NONE
+         actual:   NONE
+  [PASS] injection after the first ownership transfer: no M-1 object survives
+         expected: 0
+         actual:   0
+  [PASS] injection after the first ownership transfer: no A1 column survives
+         expected: 0
+         actual:   0
+
+--- R3. HOSTILE STARTING STATES -> SAFE ABORT + COMPLETE ROLLBACK ---
+  [PASS] W2 fixture: PUBLIC granted CREATE on schema public
+         expected: True
+         actual:   True
+  [PASS] W2 fixture: PUBLIC really holds schema CREATE
+         expected: t
+         actual:   t
+  [PASS] W2 migration ABORTS when PUBLIC holds schema CREATE
+         expected: True
+         actual:   True
+  [PASS] W2 abort is the governed fail-closed cleanup check, not an incidental error
+         expected: True
+         actual:   True
+  [PASS] W2: no kivo_control_owner role survives
+         expected: 0
+         actual:   0
+  [PASS] W2: no M-1 object survives
+         expected: 0
+         actual:   0
+  [PASS] W2: no A1 column survives
+         expected: 0
+         actual:   0
+  [PASS] W1 fixture: a non-superuser (kv_exec) recorded a membership
+         expected: True
+         actual:   True
+  [PASS] W1 fixture: at least one membership has a non-superuser grantor
+         expected: True
+         actual:   True
+  [PASS] W1 migration ABORTS on an unexpected membership state
+         expected: True
+         actual:   True
+  [PASS] W1 abort is a governed KIV77 cleanup check
+         expected: True
+         actual:   True
+  [PASS] W1: no M-1 object survives the abort
+         expected: 0
+         actual:   0
+  [PASS] W1: the migration's bootstrap SET/INHERIT grant did not survive the abort
+         expected: 0
+         actual:   0
+  [PASS] W1 the migration's final safety check verifies the surviving grantor is a superuser
+         expected: True
+         actual:   True
+
+--- R4. KIV-87 Q3: MANDATORY WHOLE-FILE TRANSACTION WRAPPER ---
+  [PASS] Q3 statement-by-statement: the injected failure aborts the run
+         expected: True
+         actual:   True
+  [PASS] Q3 statement-by-statement: the role SURVIVES — the wrapper is MANDATORY
+         expected: 1
+         actual:   1
+  [PASS] Q3 statement-by-statement: a usable SET/INHERIT bootstrap grant also survives
+         expected: 1
+         actual:   1
+  [PASS] Q3 with the wrapper: the identical failure aborts
+         expected: True
+         actual:   True
+  [PASS] Q3 with the wrapper: NO role survives
+         expected: 0
+         actual:   0
+  [PASS] Q3 with the wrapper: NO membership survives
+         expected: NONE
+         actual:   NONE
+  [PASS] CORRECTED 0108 succeeds on the identical non-superuser fixture
+         expected: True
+         actual:   True
+  [PASS] corrected 0108 leaves exactly the one permitted membership
+         expected: True
+         actual:   True
+
+--- APPLY 0107 (M-0), then 0108 (M-1), verbatim ---
+  0107 first application : APPLIED CLEANLY  (as kv_exec, single transaction)
+  0108 first application : APPLIED CLEANLY
+
+--- A. ADDITIVE LAW (Revision 14 §15.4 M-1) ---
+  [PASS] no privilege removed from any pre-existing principal
+         expected: anon:conversation_assignment_events:DELETE,anon:conversation_assignment_events:INSERT,anon:conversation_assignment_events:REFERENCES,anon:conversation_assignment_events:SELECT,anon:conversation_assignment_events:TRIGGER,anon:conversation_assignment_events:TRUNCATE,anon:conversation_assignment_events:UPDATE,anon:conversations:INSERT,anon:conversations:SELECT,anon:conversations:UPDATE,anon:customers:SELECT,anon:members:SELECT,anon:messages:SELECT,anon:restaurants:SELECT,authenticated:conversation_assignment_events:DELETE,authenticated:conversation_assignment_events:INSERT,authenticated:conversation_assignment_events:REFERENCES,authenticated:conversation_assignment_events:SELECT,authenticated:conversation_assignment_events:TRIGGER,authenticated:conversation_assignment_events:TRUNCATE,authenticated:conversation_assignment_events:UPDATE,authenticated:conversations:INSERT,authenticated:conversations:SELECT,authenticated:conversations:UPDATE,authenticated:customers:SELECT,authenticated:members:SELECT,authenticated:messages:SELECT,authenticated:restaurants:SELECT,service_role:conversation_assignment_events:DELETE,service_role:conversation_assignment_events:INSERT,service_role:conversation_assignment_events:REFERENCES,service_role:conversation_assignment_events:SELECT,service_role:conversation_assignment_events:TRIGGER,service_role:conversation_assignment_events:TRUNCATE,service_role:conversation_assignment_events:UPDATE,service_role:conversations:INSERT,service_role:conversations:SELECT,service_role:conversations:UPDATE,service_role:customers:SELECT,service_role:members:SELECT,service_role:messages:SELECT,service_role:restaurants:SELECT
+         actual:   anon:conversation_assignment_events:DELETE,anon:conversation_assignment_events:INSERT,anon:conversation_assignment_events:REFERENCES,anon:conversation_assignment_events:SELECT,anon:conversation_assignment_events:TRIGGER,anon:conversation_assignment_events:TRUNCATE,anon:conversation_assignment_events:UPDATE,anon:conversations:INSERT,anon:conversations:SELECT,anon:conversations:UPDATE,anon:customers:SELECT,anon:members:SELECT,anon:messages:SELECT,anon:restaurants:SELECT,authenticated:conversation_assignment_events:DELETE,authenticated:conversation_assignment_events:INSERT,authenticated:conversation_assignment_events:REFERENCES,authenticated:conversation_assignment_events:SELECT,authenticated:conversation_assignment_events:TRIGGER,authenticated:conversation_assignment_events:TRUNCATE,authenticated:conversation_assignment_events:UPDATE,authenticated:conversations:INSERT,authenticated:conversations:SELECT,authenticated:conversations:UPDATE,authenticated:customers:SELECT,authenticated:member_identity_versions:SELECT,authenticated:members:SELECT,authenticated:messages:SELECT,authenticated:restaurants:SELECT,service_role:conversation_assignment_events:DELETE,service_role:conversation_assignment_events:INSERT,service_role:conversation_assignment_events:REFERENCES,service_role:conversation_assignment_events:SELECT,service_role:conversation_assignment_events:TRIGGER,service_role:conversation_assignment_events:TRUNCATE,service_role:conversation_assignment_events:UPDATE,service_role:conversations:INSERT,service_role:conversations:SELECT,service_role:conversations:UPDATE,service_role:customers:SELECT,service_role:members:SELECT,service_role:messages:SELECT,service_role:restaurants:SELECT
+  [PASS] no EXISTING object owner changed
+         expected: []
+         actual:   []
+  [PASS] no EXISTING table RLS enable/force changed
+         expected: []
+         actual:   []
+  [PASS] no trigger added to an EXISTING table
+         expected: []
+         actual:   []
+  [PASS] no EXISTING trigger dropped
+         expected: []
+         actual:   []
+  [PASS] A1 pre-existing rows preserve every old-column value
+         expected: 204c79e9a1adee9a4daddcc79f582886
+         actual:   204c79e9a1adee9a4daddcc79f582886
+  [PASS] public.members not mutated
+         expected: e5d5eda5c4956e0c44c988f883c4e005
+         actual:   e5d5eda5c4956e0c44c988f883c4e005
+  [PASS] all eight A1 additions are NULLABLE
+         expected: none
+         actual:   none
+  [PASS] A1 column count 11 + 8 = 19
+         expected: 19
+         actual:   19
+  [PASS] no A1 hardening constraint added (A1-1..A1-10 are M-5)
+         expected: none
+         actual:   none
+  [PASS] legacy A1 nine-column insert still succeeds unchanged
+         expected: accepted
+         actual:   accepted
+
+--- B. ROLE AND MEMBERSHIP (R1, R2, R19) ---
+  [PASS] R1 kivo_control_owner attributes (login,super,bypassrls,createdb,createrole)
+         expected: false,false,false,false,false
+         actual:   false,false,false,false,false
+  [PASS] R19 kivo_control_owner is a member of no role
+         expected: 0
+         actual:   0
+  [PASS] R2 at most the one PostgreSQL-mandated membership, carrying neither SET nor INHERIT
+         expected: True
+         actual:   True
+  [PASS] authenticated/service_role remain disjoint (E32)
+         expected: 0
+         actual:   0
+
+--- C. OWNERSHIP, RLS AND POLICY (R3, R4, R10) ---
+  [PASS] R3 control_operations owner = kivo_control_owner
+         expected: kivo_control_owner
+         actual:   kivo_control_owner
+  [PASS] R4 control_operations RLS enabled AND forced
+         expected: true,true
+         actual:   true,true
+  [PASS] R3 conversation_audit_failures owner = kivo_control_owner
+         expected: kivo_control_owner
+         actual:   kivo_control_owner
+  [PASS] R4 conversation_audit_failures RLS enabled AND forced
+         expected: true,true
+         actual:   true,true
+  [PASS] R3 member_identity_versions owner = kivo_control_owner
+         expected: kivo_control_owner
+         actual:   kivo_control_owner
+  [PASS] R4 member_identity_versions RLS enabled AND forced
+         expected: true,true
+         actual:   true,true
+  [PASS] R3 A1 owner unchanged before M-5 (still the baseline owner)
+         expected: kv_exec
+         actual:   kv_exec
+  [PASS] A1 RLS still NOT forced before M-5
+         expected: false
+         actual:   false
+  [PASS] R10 no UPDATE/DELETE policy on A0, A1 or A2
+         expected: none
+         actual:   none
+  [PASS] R10 MIV has exactly one owner UPDATE policy
+         expected: 1
+         actual:   1
+  [PASS] R10 MIV has no DELETE policy
+         expected: 0
+         actual:   0
+  [PASS] the seven preserved owner policies exist
+         expected: a1_control_owner_ins,a1_control_owner_sel,conversations_control_owner_rw,customers_control_owner_sel,members_control_owner_sel,messages_control_owner_sel,restaurants_control_owner_sel
+         actual:   a1_control_owner_ins,a1_control_owner_sel,conversations_control_owner_rw,customers_control_owner_sel,members_control_owner_sel,messages_control_owner_sel,restaurants_control_owner_sel
+
+--- D. NEW-OWNER PRIVILEGE (R7, R8, adjudication §2D) ---
+  [PASS] R7 USAGE on schema public
+         expected: true
+         actual:   true
+  [PASS] R7 USAGE on schema auth
+         expected: true
+         actual:   true
+  [PASS] R7 USAGE on schema extensions
+         expected: true
+         actual:   true
+  [PASS] R8 EXECUTE on extensions.digest
+         expected: true
+         actual:   true
+  [PASS] messages SELECT on exactly three identity columns
+         expected: conversation_id,id,restaurant_id
+         actual:   conversation_id,id,restaurant_id
+  [PASS] conversations INSERT on exactly the eight granted columns
+         expected: channel,customer_id,id,is_safety_hold,owner,ownership_state,restaurant_id,status
+         actual:   channel,customer_id,id,is_safety_hold,owner,ownership_state,restaurant_id,status
+  [PASS] conversations UPDATE on exactly the nine granted columns
+         expected: allergy_note,assigned_member_id,escalation_reason,handover_note,is_safety_hold,owner,ownership_state,status,updated_at
+         actual:   allergy_note,assigned_member_id,escalation_reason,handover_note,is_safety_hold,owner,ownership_state,status,updated_at
+  [PASS] control_epoch NOT granted (trigger sets it)
+         expected: 0
+         actual:   0
+
+--- E. CONTROL FUNCTIONS (R9, R15, PR80 SCOPE-1 branch) ---
+  [PASS] exactly sixteen SCOPE-1 control functions
+         expected: 16
+         actual:   16
+  [PASS] EXACT F1..F16 inventory and signatures
+         expected: ['kv_control_assert_actor(uuid,text,boolean)', 'kv_control_claim(uuid,uuid,uuid,text)', 'kv_control_clear_stale_assignee(uuid,uuid,uuid,text)', 'kv_control_close(uuid,uuid,uuid,text,text)', 'kv_control_create_conversation(uuid,uuid,uuid,text)', 'kv_control_create_safety_conversation(uuid,uuid,uuid,text,uuid,text,text,text)', 'kv_control_escalate(uuid,uuid,uuid,boolean,text,text)', 'kv_control_reassign(uuid,uuid,uuid,uuid,text)', 'kv_control_release_hold(uuid,uuid,uuid,text,text)', 'kv_control_return_to_kivo(uuid,uuid,uuid,text)', 'kv_control_set_human_idle(uuid,uuid,uuid,text)', 'kv_control_transition(uuid,uuid,uuid,text,text,boolean,uuid,text,text,uuid,text,text,text,text)', 'kv_sys_control_create_conversation(uuid,uuid,uuid,text)', 'kv_sys_control_escalate(uuid,uuid,uuid,boolean,text,text)', 'kv_sys_control_reopen_closed(uuid,uuid,uuid,uuid,text)', 'kv_sys_control_timeout_return(uuid,uuid,uuid,bigint,boolean,integer,text,timestamp with time zone,text)']
+         actual:   ['kv_control_assert_actor(uuid,text,boolean)', 'kv_control_claim(uuid,uuid,uuid,text)', 'kv_control_clear_stale_assignee(uuid,uuid,uuid,text)', 'kv_control_close(uuid,uuid,uuid,text,text)', 'kv_control_create_conversation(uuid,uuid,uuid,text)', 'kv_control_create_safety_conversation(uuid,uuid,uuid,text,uuid,text,text,text)', 'kv_control_escalate(uuid,uuid,uuid,boolean,text,text)', 'kv_control_reassign(uuid,uuid,uuid,uuid,text)', 'kv_control_release_hold(uuid,uuid,uuid,text,text)', 'kv_control_return_to_kivo(uuid,uuid,uuid,text)', 'kv_control_set_human_idle(uuid,uuid,uuid,text)', 'kv_control_transition(uuid,uuid,uuid,text,text,boolean,uuid,text,text,uuid,text,text,text,text)', 'kv_sys_control_create_conversation(uuid,uuid,uuid,text)', 'kv_sys_control_escalate(uuid,uuid,uuid,boolean,text,text)', 'kv_sys_control_reopen_closed(uuid,uuid,uuid,uuid,text)', 'kv_sys_control_timeout_return(uuid,uuid,uuid,bigint,boolean,integer,text,timestamp with time zone,text)']
+  [PASS] no function missing from the exact set
+         expected: []
+         actual:   []
+  [PASS] no function beyond the exact set
+         expected: []
+         actual:   []
+  [PASS] R9 every control/trigger function: SECURITY DEFINER, owner, search_path=''
+         expected: none
+         actual:   none
+  [PASS] no control function has a DEFAULT parameter
+         expected: none
+         actual:   none
+  [PASS] no F17/F18/F19 and no kv_legacy_assignment_bridge function
+         expected: none
+         actual:   none
+  [PASS] SA1 kv_control_create_conversation -> authenticated only
+         expected: authenticated
+         actual:   authenticated
+  [PASS] SA1 kv_control_claim -> authenticated only
+         expected: authenticated
+         actual:   authenticated
+  [PASS] SA1 kv_control_reassign -> authenticated only
+         expected: authenticated
+         actual:   authenticated
+  [PASS] SA1 kv_control_return_to_kivo -> authenticated only
+         expected: authenticated
+         actual:   authenticated
+  [PASS] SA1 kv_control_release_hold -> authenticated only
+         expected: authenticated
+         actual:   authenticated
+  [PASS] SA1 kv_control_clear_stale_assignee -> authenticated only
+         expected: authenticated
+         actual:   authenticated
+  [PASS] SA1 kv_control_close -> authenticated only
+         expected: authenticated
+         actual:   authenticated
+  [PASS] SA1 kv_control_set_human_idle -> authenticated only
+         expected: authenticated
+         actual:   authenticated
+  [PASS] SA1 kv_control_escalate -> authenticated only
+         expected: authenticated
+         actual:   authenticated
+  [PASS] SA1 kv_sys_control_create_conversation -> service_role only
+         expected: service_role
+         actual:   service_role
+  [PASS] SA1 kv_sys_control_escalate -> service_role only
+         expected: service_role
+         actual:   service_role
+  [PASS] SA1 kv_sys_control_reopen_closed -> service_role only
+         expected: service_role
+         actual:   service_role
+  [PASS] SA1 kv_sys_control_timeout_return -> service_role only
+         expected: service_role
+         actual:   service_role
+  [PASS] SA1 kv_control_create_safety_conversation -> service_role only
+         expected: service_role
+         actual:   service_role
+  [PASS] F15/F16 kv_control_transition has zero EXECUTE grantees beyond the owner
+         expected: none
+         actual:   none
+  [PASS] F15/F16 kv_control_assert_actor has zero EXECUTE grantees beyond the owner
+         expected: none
+         actual:   none
+  [PASS] nothing granted to anon or PUBLIC
+         expected: none
+         actual:   none
+
+--- F. COLUMN RESOLUTION (PF11 / R11) ---
+  [PASS] every granted column resolves
+         expected: none
+         actual:   none
+  [PASS] no voice-budget drift column entered the grant set
+         expected: none
+         actual:   none
+
+--- G. MESSAGE READ PATH (R12 applicable M-1 branch) ---
+  [PASS] owner can resolve the known identity triple
+         expected: True
+         actual:   True
+  [PASS] owner selecting messages.text is refused
+         expected: raises permission denied
+         actual:   raised permission denied
+
+--- H. A0 / A2 EVIDENCE KEYS (R16 applicable M-1 branch) ---
+  [PASS] exactly one UNIQUE (restaurant_id, operation_id), on A0
+         expected: control_operations
+         actual:   control_operations
+  [PASS] ux_a0_evidence_core has the exact nine-column order
+         expected: True
+         actual:   True
+  [PASS] fk_a2_parent_core: FK, VALID, deferrable, initially deferred
+         expected: f,true,true,true
+         actual:   f,true,true,true
+  [PASS] fk_a1_parent_core NOT created in M-1 (deferred to M-5)
+         expected: 0
+         actual:   0
+  [PASS] control_operations carries the five-column MIV identity key
+         expected: 1
+         actual:   1
+  [PASS] conversation_audit_failures carries the five-column MIV identity key
+         expected: 1
+         actual:   1
+
+--- I. MIV (R17, population-relative — NOT the historical 18) ---
+  [PASS] exactly N=4 MIV rows after initialization
+         expected: 4
+         actual:   4
+  [PASS] exactly N open versions
+         expected: 4
+         actual:   4
+  [PASS] no member has zero or multiple open versions
+         expected: 0
+         actual:   0
+  [PASS] every open tuple equals the member's current identity tuple
+         expected: 4
+         actual:   4
+  [PASS] initialization writes version = 1 for every member
+         expected: 4
+         actual:   4
+  [PASS] ux_miv_open_version is a PARTIAL UNIQUE index
+         expected: true,true
+         actual:   true,true
+  [PASS] ux_miv_open_version is an index, not a constraint
+         expected: 0
+         actual:   0
+  [PASS] the three MIV immutability triggers exist
+         expected: tg_miv_close_only,tg_miv_no_delete,tg_miv_no_truncate
+         actual:   tg_miv_close_only,tg_miv_no_delete,tg_miv_no_truncate
+  [PASS] illegal MIV update rejected KIV18
+         expected: raises KIV18
+         actual:   raised KIV18
+  [PASS] MIV DELETE rejected
+         expected: raises KIV18
+         actual:   raised KIV18
+  [PASS] MIV TRUNCATE rejected (FK from A0/A2 fires before tg_miv_no_truncate)
+         expected: True
+         actual:   True
+  [PASS] duplicate open version rejected by ux_miv_open_version
+         expected: raises ux_miv_open_version
+         actual:   raised ux_miv_open_version
+  [PASS] closing an open version is the one permitted MIV update
+         expected: accepted
+         actual:   accepted
+  [PASS] public.members still unchanged after MIV work
+         expected: e5d5eda5c4956e0c44c988f883c4e005
+         actual:   e5d5eda5c4956e0c44c988f883c4e005
+  [PASS] tg_members_identity_version NOT created in M-1 (M-2 only)
+         expected: 0
+         actual:   0
+
+--- J. EXISTING CALLER SAFETY (PR65 / RB1 applicable M-1 branch) ---
+  [PASS] anon retains all seven A1 privileges
+         expected: 7
+         actual:   7
+  [PASS] authenticated retains all seven A1 privileges
+         expected: 7
+         actual:   7
+  [PASS] service_role retains all seven A1 privileges
+         expected: 7
+         actual:   7
+  [PASS] audit writer remains in its pre-M-2 form (not SECURITY DEFINER, owner unchanged)
+         expected: false,kv_exec
+         actual:   false,kv_exec
+  [PASS] trg_log_assignment_event untouched
+         expected: 1
+         actual:   1
+
+--- K. SCOPE SEPARATION (PR81 SCOPE-1 branch) ---
+  [PASS] no A3 control_alert_intents table
+         expected: none
+         actual:   none
+  [PASS] no ux_a3_pending_per_epoch
+         expected: none
+         actual:   none
+  [PASS] no SCOPE-2 circular keys
+         expected: none
+         actual:   none
+  [PASS] A0-18 SCOPE-1 NULL-only alert-intent guard present and VALID
+         expected: 1
+         actual:   1
+
+--- M. END-TO-END GOVERNED OPERATION (exercises F3 -> F15 -> F16, A0 + A1) ---
+  [PASS] F3 kv_control_claim as authenticated member applies
+         expected: applied
+         actual:   applied
+  [PASS] exactly one A0 row written by the operation
+         expected: 1
+         actual:   1
+  [PASS] A0 row shape: applied/changed/event/audit_id/member
+         expected: applied,true,event,true,member
+         actual:   applied,true,event,true,member
+  [PASS] A0 epoch_after = epoch_before + 1
+         expected: 0,1
+         actual:   0,1
+  [PASS] exactly one canonical A1 CLAIMED row
+         expected: 1
+         actual:   1
+  [PASS] A0.audit_id resolves to the A1 row sharing its transition_id
+         expected: 1
+         actual:   1
+  [PASS] conversation advanced to HUMAN_ACTIVE with epoch bumped
+         expected: HUMAN_ACTIVE,human,1
+         actual:   HUMAN_ACTIVE,human,1
+  [PASS] D5 replay returns replayed=true
+         expected: t
+         actual:   t
+  [PASS] D5 replay wrote no second A0 row
+         expected: 1
+         actual:   1
+  [PASS] D5 different fingerprint on the same operation_id raises KIV19
+         expected: raises KIV19
+         actual:   raised KIV19
+  [PASS] D6 complete target-state no-op yields operation_status=noop
+         expected: noop
+         actual:   noop
+  [PASS] A0 noop row: unchanged/none/null audit/equal epochs/equal modes
+         expected: false,none,true,true,true
+         actual:   false,none,true,true,true
+  [PASS] no A1 row written for the no-op
+         expected: 1
+         actual:   1
+  [PASS] F15 is not directly invocable by authenticated (internal, zero grantees)
+         expected: raises permission denied
+         actual:   raised permission denied
+
+--- N. A2 EVIDENCE PATH (fk_a2_parent_core + tg_a2_parent_guard) ---
+  [PASS] a well-formed A0(failure) + A2 pair commits
+         expected: accepted
+         actual:   accepted
+  [PASS] exactly one A2 row
+         expected: 1
+         actual:   1
+  [PASS] A2 with a mismatched attempted_event_type is refused by tg_a2_parent_guard
+         expected: raises KIV20
+         actual:   raised KIV20
+
+--- L. TRIGGER INVENTORY AT THE M-1 BOUNDARY ---
+  [PASS] conversations trigger set unchanged (exactly three)
+         expected: trg_bump_control_epoch,trg_log_assignment_event,trg_touch_conversations
+         actual:   trg_bump_control_epoch,trg_log_assignment_event,trg_touch_conversations
+  [PASS] A0 carries its four evidence triggers (adjudication §2A)
+         expected: tg_a0_audit_exclusivity,tg_a0_no_delete,tg_a0_no_truncate,tg_a0_no_update
+         actual:   tg_a0_audit_exclusivity,tg_a0_no_delete,tg_a0_no_truncate,tg_a0_no_update
+  [PASS] A2 carries its four evidence triggers (adjudication §2A)
+         expected: tg_a2_no_delete,tg_a2_no_truncate,tg_a2_no_update,tg_a2_parent_guard
+         actual:   tg_a2_no_delete,tg_a2_no_truncate,tg_a2_no_update,tg_a2_parent_guard
+  [PASS] A1 evidence triggers NOT created in M-1 (M-5 only)
+         expected: none
+         actual:   none
+  [PASS] A0 is populated, so the immutability tests below are not vacuous
+         expected: True
+         actual:   True
+  [PASS] A0 UPDATE rejected KIV18
+         expected: raises KIV18
+         actual:   raised KIV18
+  [PASS] A0 DELETE rejected KIV18
+         expected: raises KIV18
+         actual:   raised KIV18
+  [PASS] A2 UPDATE rejected KIV18
+         expected: raises KIV18
+         actual:   raised KIV18
+  [PASS] A2 DELETE rejected KIV18
+         expected: raises KIV18
+         actual:   raised KIV18
+
+--- O. CLAIMABILITY: CLAIMABLE_FROM is exactly AI_ACTIVE, HOLD_UNCLAIMED, HUMAN_IDLE, SYSTEM_HOLD ---
+  [PASS] claim from AI_ACTIVE applies (D7 source)
+         expected: applied
+         actual:   applied
+  [PASS] claim from HOLD_UNCLAIMED applies (D7 source)
+         expected: applied
+         actual:   applied
+  [PASS] claim from HUMAN_IDLE applies (D7 source)
+         expected: applied
+         actual:   applied
+  [PASS] claim from SYSTEM_HOLD applies (D7 source)
+         expected: applied
+         actual:   applied
+  [PASS] claim from SYSTEM_HOLD preserves is_safety_hold = true
+         expected: true
+         actual:   true
+  [PASS] HUMAN_ACTIVE assigned to the claiming member = idempotent D6 noop
+         expected: noop
+         actual:   noop
+  [PASS] HUMAN_ACTIVE with a NULL assignee is NOT claimable (KIV14)
+         expected: raises KIV14
+         actual:   raised KIV14
+  [PASS] unassigned HUMAN_ACTIVE claim attempt mutated nothing
+         expected: HUMAN_ACTIVE|human|~|false|AI نشط|0
+         actual:   HUMAN_ACTIVE|human|~|false|AI نشط|0
+  [PASS] unassigned HUMAN_ACTIVE claim attempt wrote no A0 row
+         expected: 8
+         actual:   8
+  [PASS] HUMAN_ACTIVE assigned to another member is NOT claimable (KIV15)
+         expected: raises KIV15
+         actual:   raised KIV15
+  [PASS] other-assignee claim attempt mutated nothing
+         expected: HUMAN_ACTIVE|human|33333333-0000-0000-0000-000000000001|false|AI نشط|0
+         actual:   HUMAN_ACTIVE|human|33333333-0000-0000-0000-000000000001|false|AI نشط|0
+  [PASS] other-assignee claim attempt wrote no A0 row
+         expected: 8
+         actual:   8
+
+--- P. F5 / F8 / F9 ACTOR AUTHORIZATION (Revision 14 §7.4, §7.7, §7.8) ---
+  [PASS] F5 unrelated ordinary member is refused (KIV12)
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F5 current assignee succeeds
+         expected: applied
+         actual:   applied
+  [PASS] F5 manager succeeds
+         expected: applied
+         actual:   applied
+  [PASS] F8 unrelated ordinary member refused on a human-owned shape (KIV12)
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F8 current assignee succeeds on a human-owned shape
+         expected: applied
+         actual:   applied
+  [PASS] F8 ordinary member refused on an AI-owned / unassigned shape (KIV12)
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F8 manager succeeds where manager authority is required
+         expected: applied
+         actual:   applied
+  [PASS] F9 unrelated ordinary member is refused (KIV12)
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F9 current assignee passes authorization (fails only on the A1 event_type blocker)
+         expected: True
+         actual:   True
+  [PASS] F9 manager passes authorization (fails only on the A1 event_type blocker)
+         expected: True
+         actual:   True
+
+--- Q. SB4 PRESENTATION STATUS WRITE-THROUGH (Revision 14 §8.2) ---
+  [PASS] SB4 claim -> HUMAN_ACTIVE writes the governed status despite a stale prior value
+         expected: HUMAN_ACTIVE|موظف يتابع
+         actual:   HUMAN_ACTIVE|موظف يتابع
+  [PASS] SB4 return_to_kivo -> AI_ACTIVE writes the governed status despite a stale prior value
+         expected: AI_ACTIVE|AI نشط
+         actual:   AI_ACTIVE|AI نشط
+  [PASS] SB4 close -> CLOSED writes the governed status despite a stale prior value
+         expected: CLOSED|مغلقة
+         actual:   CLOSED|مغلقة
+  [PASS] SB4 escalate safety -> SYSTEM_HOLD writes the governed status despite a stale prior value
+         expected: SYSTEM_HOLD|يحتاج تدخل موظف
+         actual:   SYSTEM_HOLD|يحتاج تدخل موظف
+  [PASS] SB4 escalate non-safety -> HOLD_UNCLAIMED writes the governed status despite a stale prior value
+         expected: HOLD_UNCLAIMED|يحتاج تدخل موظف
+         actual:   HOLD_UNCLAIMED|يحتاج تدخل موظف
+  [PASS] SB5 no-op outcome recognised
+         expected: noop
+         actual:   noop
+  [PASS] SB5 no-op writes NOTHING to conversations (stale status untouched)
+         expected: HUMAN_ACTIVE|human|33333333-0000-0000-0000-000000000002|false|a stale presentation value|0
+         actual:   HUMAN_ACTIVE|human|33333333-0000-0000-0000-000000000002|false|a stale presentation value|0
+  [PASS] SB5 alerted outcome does not occur in SCOPE-1
+         expected: 0
+         actual:   0
+
+--- R. F14 L2 ORDER: A0 replay BEFORE row re-read / create-or-adopt (§3 L2) ---
+  [PASS] F14 first call creates and applies
+         expected: applied
+         actual:   applied
+  [PASS] F14 applied row is SYSTEM_HOLD + hold + مراجعة حساسية
+         expected: SYSTEM_HOLD|true|مراجعة حساسية
+         actual:   SYSTEM_HOLD|true|مراجعة حساسية
+  [PASS] F14 same-fingerprint replay returns the recorded result
+         expected: t
+         actual:   t
+  [PASS] F14 replay mutated no conversation
+         expected: SYSTEM_HOLD|human|~|true|مراجعة حساسية|1
+         actual:   SYSTEM_HOLD|human|~|true|مراجعة حساسية|1
+  [PASS] F14 replay wrote no second A0 row
+         expected: 19
+         actual:   19
+  [PASS] F14 replay created no conversation
+         expected: 21
+         actual:   21
+  [PASS] F14 replay is honoured before any re-read/create/adopt
+         expected: applied
+         actual:   applied
+  [PASS] F14 different fingerprint on the same operation_id remains KIV19
+         expected: raises KIV19
+         actual:   raised KIV19
+
+--- S. TENANT RESOLUTION: one generic KIV11 for every non-creation entry point ---
+  [PASS] F3  claim: nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F4  reassign: nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F5  return_to_kivo: nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F6  release_hold: nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F7  clear_stale_assignee: nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F8  close: nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F9  set_human_idle: nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F11 escalate (member): nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F10 escalate (system): nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F12 reopen_closed: nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+  [PASS] F13 timeout_return: nonexistent and wrong-tenant give the SAME generic KIV11
+         expected: ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+         actual:   ['KIV11 tenant or conversation identity did not resolve', 'KIV11 tenant or conversation identity did not resolve']
+
+--- T. OPERATIONS BLOCKED BY THE LIVE 8-VALUE A1 CHECK, PROVEN UNDER A1-2 ---
+    SUPPLEMENTARY FIXTURE. The A1 event_type CHECK here carries Revision 14 A1-2's
+    THIRTEEN governed values, which M-5 installs. Migration 0108 does NOT widen the
+    live CHECK and this fixture is not evidence that it does. Its only purpose is to
+    prove that the five operations blocked by the 8-value CHECK are otherwise correct.
+  [PASS] A1-2 fixture actually differs from the faithful 0099 fixture
+         expected: True
+         actual:   True
+  [PASS] 0107 + 0108 apply cleanly on the A1-2 fixture
+         expected: True
+         actual:   True
+  [PASS] F9  set_human_idle applies under A1-2
+         expected: applied
+         actual:   applied
+  [PASS] F9  set_human_idle SB4 status -> HUMAN_IDLE
+         expected: HUMAN_IDLE|تم التحويل لموظف
+         actual:   HUMAN_IDLE|تم التحويل لموظف
+  [PASS] F9  set_human_idle emits A1 event IDLE
+         expected: IDLE
+         actual:   IDLE
+  [PASS] F6  release_hold applies under A1-2
+         expected: applied
+         actual:   applied
+  [PASS] F6  release_hold SB4 status -> AI_ACTIVE
+         expected: AI_ACTIVE|AI نشط
+         actual:   AI_ACTIVE|AI نشط
+  [PASS] F6  release_hold emits A1 event HOLD_RELEASED
+         expected: HOLD_RELEASED
+         actual:   HOLD_RELEASED
+  [PASS] F7  clear_stale_assignee applies under A1-2
+         expected: applied
+         actual:   applied
+  [PASS] F7  clear_stale_assignee SB4 status -> AI_ACTIVE
+         expected: AI_ACTIVE|AI نشط
+         actual:   AI_ACTIVE|AI نشط
+  [PASS] F7  clear_stale_assignee emits A1 event STALE_ASSIGNEE_CLEARED
+         expected: STALE_ASSIGNEE_CLEARED
+         actual:   STALE_ASSIGNEE_CLEARED
+  [PASS] F12 reopen_closed applies under A1-2
+         expected: applied
+         actual:   applied
+  [PASS] F12 reopen_closed SB4 status -> AI_ACTIVE
+         expected: AI_ACTIVE|AI نشط
+         actual:   AI_ACTIVE|AI نشط
+  [PASS] F12 reopen_closed emits A1 event REOPENED
+         expected: REOPENED
+         actual:   REOPENED
+  [PASS] F13 timeout_return applies under A1-2
+         expected: applied
+         actual:   applied
+  [PASS] F13 SB4 status -> AI_ACTIVE
+         expected: AI_ACTIVE|AI نشط
+         actual:   AI_ACTIVE|AI نشط
+  [PASS] F13 emits A1 event TIMEOUT_RETURNED
+         expected: TIMEOUT_RETURNED
+         actual:   TIMEOUT_RETURNED
+  [PASS] F13 same-fingerprint replay returns the recorded result
+         expected: t
+         actual:   t
+  [PASS] F13 replay resolved WITHOUT re-reading the conversation (epoch has since changed)
+         expected: True
+         actual:   True
+  [PASS] F13 same-fingerprint replay survives a later configuration change
+         expected: t
+         actual:   t
+  [PASS] F13 changed expected_epoch alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 changed expected_handoff_enabled alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 changed expected_idle_minutes alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 changed expected_idle_action alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 changed expected_updated_at alone -> KIV19
+         expected: KIV19
+         actual:   KIV19
+  [PASS] F13 replays and KIV19 rejections wrote no additional A0 row
+         expected: 5
+         actual:   5
+  [PASS] F13 A0 stores exactly the OUTER canonical §16.2 identity of the original request
+         expected: db4b5eff7338f958a9aac13105c9552dc13e722b2c699ffb4fdb589d80e9ea8b
+         actual:   db4b5eff7338f958a9aac13105c9552dc13e722b2c699ffb4fdb589d80e9ea8b
+  [PASS] F13 stored identity is NOT derived from post-validation mutable state
+         expected: True
+         actual:   True
+  [PASS] F13 exact retry replays after BOTH conversation and configuration drift
+         expected: t
+         actual:   t
+  [PASS] F13 stored identity unchanged by that drift
+         expected: db4b5eff7338f958a9aac13105c9552dc13e722b2c699ffb4fdb589d80e9ea8b
+         actual:   db4b5eff7338f958a9aac13105c9552dc13e722b2c699ffb4fdb589d80e9ea8b
+  [PASS] F13 stale configuration is refused KIV21
+         expected: True
+         actual:   True
+  [PASS] PRE-R3 BLOCKER: the live A1 CHECK omits exactly these five governed events
+         expected: ['HOLD_RELEASED', 'REOPENED', 'IDLE', 'TIMEOUT_RETURNED', 'STALE_ASSIGNEE_CLEARED']
+         actual:   ['HOLD_RELEASED', 'REOPENED', 'IDLE', 'TIMEOUT_RETURNED', 'STALE_ASSIGNEE_CLEARED']
+  [PASS] 0108 did NOT widen the live A1 CHECK (M-5 owns A1-2)
+         expected: 0
+         actual:   0
+
+--- U. AUTHORIZATION IS D2 AND CANNOT BE SKIPPED BY A D6 NO-OP ---
+  [PASS] F5 return_to_kivo: unauthorized member refused even though already at target
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F5 return_to_kivo: unauthorized already-target attempt mutated nothing
+         expected: AI_ACTIVE|ai|~|false|AI نشط|0
+         actual:   AI_ACTIVE|ai|~|false|AI نشط|0
+  [PASS] F5 return_to_kivo: unauthorized already-target attempt wrote no A0 row
+         expected: 19
+         actual:   19
+  [PASS] F5 return_to_kivo: unauthorized already-target attempt wrote no A0 NOOP row
+         expected: 3
+         actual:   3
+  [PASS] F5 return_to_kivo: manager still receives the legitimate no-op
+         expected: noop
+         actual:   noop
+  [PASS] F8 close: unauthorized member refused even though already at target
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F8 close: unauthorized already-target attempt mutated nothing
+         expected: CLOSED|human|33333333-0000-0000-0000-000000000002|false|AI نشط|0
+         actual:   CLOSED|human|33333333-0000-0000-0000-000000000002|false|AI نشط|0
+  [PASS] F8 close: unauthorized already-target attempt wrote no A0 row
+         expected: 20
+         actual:   20
+  [PASS] F8 close: unauthorized already-target attempt wrote no A0 NOOP row
+         expected: 4
+         actual:   4
+  [PASS] F8 close: manager still receives the legitimate no-op
+         expected: noop
+         actual:   noop
+  [PASS] F9 set_human_idle: unauthorized member refused even though already at target
+         expected: raises KIV12
+         actual:   raised KIV12
+  [PASS] F9 set_human_idle: unauthorized already-target attempt mutated nothing
+         expected: HUMAN_IDLE|human|33333333-0000-0000-0000-000000000002|false|AI نشط|0
+         actual:   HUMAN_IDLE|human|33333333-0000-0000-0000-000000000002|false|AI نشط|0
+  [PASS] F9 set_human_idle: unauthorized already-target attempt wrote no A0 row
+         expected: 21
+         actual:   21
+  [PASS] F9 set_human_idle: unauthorized already-target attempt wrote no A0 NOOP row
+         expected: 5
+         actual:   5
+  [PASS] F9 set_human_idle: manager still receives the legitimate no-op
+         expected: noop
+         actual:   noop
+
+--- V. F14: replay decided BEFORE any conversation re-read / create / adopt ---
+  [PASS] F14 original call applies
+         expected: applied
+         actual:   applied
+  [PASS] F14 changed customer_id on the same operation_id -> KIV19 (not KIV26)
+         expected: raises KIV19
+         actual:   raised KIV19
+  [PASS] F14 changed channel on the same operation_id -> KIV19 (not KIV26)
+         expected: raises KIV19
+         actual:   raised KIV19
+  [PASS] F14 rejected replays mutated no conversation
+         expected: SYSTEM_HOLD|human|~|true|مراجعة حساسية|1
+         actual:   SYSTEM_HOLD|human|~|true|مراجعة حساسية|1
+  [PASS] F14 rejected replays wrote no A0 row
+         expected: 23
+         actual:   23
+  [PASS] F14 rejected replays created/adopted no conversation
+         expected: 26
+         actual:   26
+  [PASS] F14 same-fingerprint replay returns the recorded result after external mutation
+         expected: t
+         actual:   t
+  [PASS] F14 same-fingerprint replay wrote no second A0 row
+         expected: 23
+         actual:   23
+
+--- W. F13: replay decided BEFORE configuration re-read; five expected inputs ---
+  [PASS] F13 original call is blocked only by the A1 event_type pre-R3 blocker
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_epoch does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_handoff_enabled does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_idle_minutes does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_idle_action does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 changed expected_updated_at does not replay the original operation
+         expected: True
+         actual:   True
+  [PASS] F13 aborted attempts recorded no A0 row
+         expected: 0
+         actual:   0
+
+--- X. NFC CANONICALIZATION OF GOVERNED FINGERPRINT TEXT (§16.2) ---
+  [PASS] normalize(...,NFC) is available and canonically equates the two forms
+         expected: true
+         actual:   true
+  [PASS] the two forms are NOT byte-equal before normalization
+         expected: false
+         actual:   false
+  [PASS] NFC: original escalate with COMPOSED text applies
+         expected: applied
+         actual:   applied
+  [PASS] NFC: canonically equivalent DECOMPOSED text replays as the same fingerprint
+         expected: t
+         actual:   t
+  [PASS] NFC: a materially different normalized value on the same operation_id -> KIV19
+         expected: raises KIV19
+         actual:   raised KIV19
+  [PASS] NFC: exactly one A0 row across the composed/decomposed/different attempts
+         expected: 1
+         actual:   1
+
+--- Y. CONCURRENCY: real second session, actual lock behaviour ---
+  [PASS] Y1 control: with no competing lock F13 proceeds to the transition (no timeout)
+         expected: True
+         actual:   True
+  [PASS] Y1 F13 BLOCKS on the conversation row lock, so it locks before deciding
+         expected: True
+         actual:   True
+  [PASS] Y1 the blocked timeout wrote no A0 row
+         expected: 0
+         actual:   0
+  [PASS] Y2 caller B's fresh human claim applies
+         expected: applied
+         actual:   applied
+  [PASS] Y2 stale timeout is refused KIV21 after the fresh claim
+         expected: True
+         actual:   True
+  [PASS] Y2 fresh human ownership was NOT overwritten
+         expected: HUMAN_ACTIVE|human|33333333-0000-0000-0000-000000000002|false|موظف يتابع|1
+         actual:   HUMAN_ACTIVE|human|33333333-0000-0000-0000-000000000002|false|موظف يتابع|1
+  [PASS] Y2 conversation remains HUMAN_ACTIVE with its assignee
+         expected: HUMAN_ACTIVE|33333333-0000-0000-0000-000000000002
+         actual:   HUMAN_ACTIVE|33333333-0000-0000-0000-000000000002
+  [PASS] Y2 the stale timeout wrote no A0 row
+         expected: 25
+         actual:   25
+  [PASS] Y3 F14 applies
+         expected: applied
+         actual:   applied
+  [PASS] Y3 A0 stores exactly F14's outer canonical §16.2 identity
+         expected: fed6558d63b13f019c8c8eb3d8d596f3310b61711d6c53d8c42ee3f43090cb30
+         actual:   fed6558d63b13f019c8c8eb3d8d596f3310b61711d6c53d8c42ee3f43090cb30
+  [PASS] Y3 exact F14 retry replays after state drift (no spurious KIV19)
+         expected: t
+         actual:   t
+  [PASS] Y3 stored identity did not drift
+         expected: fed6558d63b13f019c8c8eb3d8d596f3310b61711d6c53d8c42ee3f43090cb30
+         actual:   fed6558d63b13f019c8c8eb3d8d596f3310b61711d6c53d8c42ee3f43090cb30
+
+--- Z. KIV-77: BOOTSTRAP CLEANUP AND FINAL PRIVILEGE STATE ---
+  [PASS] exactly ONE membership survives on kivo_control_owner
+         expected: 1
+         actual:   1
+  [PASS] the surviving membership is the PostgreSQL-mandated automatic record (ADMIN TRUE / SET FALSE / INHERIT FALSE)
+         expected: True
+         actual:   True
+  [PASS] its grantor is the bootstrap superuser
+         expected: true
+         actual:   true
+  [PASS] NO surviving membership carries SET or INHERIT
+         expected: 0
+         actual:   0
+  [PASS] executor can NO LONGER 'SET ROLE kivo_control_owner'
+         expected: True
+         actual:   True
+  [PASS] bootstrap-only schema CREATE was removed
+         expected: f
+         actual:   f
+  [PASS] the governed schema USAGE grant is retained
+         expected: t
+         actual:   t
+  [PASS] executor inherits NO object permission from kivo_control_owner
+         expected: none
+         actual:   none
+  [PASS] MIV / A0 / A2 are owned by kivo_control_owner
+         expected: kivo_control_owner
+         actual:   kivo_control_owner
+  [PASS] kv_control_result is owned by kivo_control_owner
+         expected: kivo_control_owner
+         actual:   kivo_control_owner
+  [PASS] all governed functions are owned by kivo_control_owner
+         expected: kivo_control_owner
+         actual:   kivo_control_owner
+  [PASS] kivo_control_owner attributes are exactly as governed
+         expected: login=false super=false bypassrls=false createdb=false createrole=false inherit=false repl=false
+         actual:   login=false super=false bypassrls=false createdb=false createrole=false inherit=false repl=false
+  [PASS] public.members identity fingerprint unchanged by the corrected migration
+         expected: e5d5eda5c4956e0c44c988f883c4e005
+         actual:   e5d5eda5c4956e0c44c988f883c4e005
+  [PASS] public.members count unchanged
+         expected: 4
+         actual:   4
+  [PASS] MIV missing/extra/duplicate-open/identity-mismatch/non-version-1 all zero (measured against the contemporaneous population at application time)
+         expected: 0/0/0/0/0
+         actual:   0/0/0/0/0
+
+--- Q. KIV-87: FILE MODES, MANDATORY TRANSACTION RUNNER, PREFLIGHT RECORD ---
+  [PASS] Q1 run directory is 0700
+         expected: 0o700
+         actual:   0o700
+  [PASS] Q1 EVERY task-created SQL file is 0600 and owned by postgres (4 files checked, incl. historical_0108.sql)
+         expected: none
+         actual:   none
+  [PASS] Q1 historical_0108.sql was actually created by this run
+         expected: True
+         actual:   True
+  [PASS] Q3 the governed applier uses the whole-file transaction wrapper
+         expected: True
+         actual:   True
+  [PASS] Q3 0108 carries no top-level BEGIN/COMMIT of its own (it relies on the runner)
+         expected: True
+         actual:   True
+  [PASS] Q3 0108 header records the mandatory transaction runner as fail-closed
+         expected: True
+         actual:   True
+  [PASS] Q4 0108 header records the mandatory Founder-authorized SELECT-only PUBLIC-CREATE preflight before any future production application
+         expected: True
+         actual:   True
+
+--- IDEMPOTENCE: SECOND APPLICATION of 0108 ---
+  0108 second application: APPLIED CLEANLY
+  [PASS] second application succeeds without error
+         expected: True
+         actual:   True
+  [PASS] still exactly sixteen control functions after re-run
+         expected: 16
+         actual:   16
+  [PASS] MIV not re-initialized on re-run
+         expected: 4
+         actual:   4
+
+==============================================================================
+TOTAL 315 assertions — PASS 315 — FAIL 0
+==============================================================================
+
+--- TEARDOWN: destroy every task-owned artifact (KIV-77 W4) ---
+  run tag               : kiv77_7465_914b51003d
+  cluster / PGDATA      : REMOVED
+  run dir (socket + temp/injected SQL): REMOVED
+  task-owned processes  : NONE
+  leftovers             : NONE
+  production touched    : NO
