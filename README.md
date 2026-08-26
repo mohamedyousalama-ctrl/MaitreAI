@@ -36,7 +36,7 @@ The product starts with WhatsApp AI ordering (the wedge) and grows into a full R
 | Human takeover + return-to-AI | Real (ownership state machine) |
 | COD cash ledger + settlement | Real (manager-gated routes) |
 | Order engine (cart → confirm → persist) | Real |
-| Delivery dispatch + driver token link | Real (flag-gated: `ENABLE_DELIVERY_TRACKING=false`) |
+| Delivery dispatch + driver token link | Real (flag-gated: `NEXT_PUBLIC_ENABLE_DELIVERY_TRACKING`, **ON** by default) |
 | Customer tracking page | Real (flag-gated) |
 | Operator console (7 pages) | Real — Login, Dashboard, Orders, Conversations, Insights, Customers, Settings |
 | Self-serve onboarding backend | Real — WhatsApp Embedded Signup, menu ingestion, go-live gate |
@@ -50,12 +50,20 @@ The product starts with WhatsApp AI ordering (the wedge) and grows into a full R
 
 ## What is behind a feature flag 🚩
 
-| Feature | Flag | Default |
-|---|---|---|
-| Allergen symptom detection | `allergen_symptom_detection` (per-tenant) | OFF |
-| Deterministic allergen safety | `deterministic_allergen_safety` (per-tenant) | OFF |
-| Delivery tracking + dispatch | `ENABLE_DELIVERY_TRACKING` (env) | OFF |
-| Handoff timeout / auto-return | `handoff_timeout` (per-tenant) | OFF |
+> **Env flag names are exact.** Every environment flag below is prefixed
+> `NEXT_PUBLIC_`. Setting the unprefixed name has **no effect** — the code reads
+> only the prefixed variable (`lib/feature-flags.ts`). All env flags require a
+> redeploy to take effect.
+
+| Feature | Flag | Default | Enable / disable |
+|---|---|---|---|
+| Allergen symptom detection | `allergen_symptom_detection` (per-tenant) | OFF | per-tenant record |
+| Deterministic allergen safety | `deterministic_allergen_safety` (per-tenant) | OFF | per-tenant record |
+| Handoff timeout / auto-return | `handoff_timeout` (per-tenant) | OFF | per-tenant record |
+| Delivery tracking + dispatch | `NEXT_PUBLIC_ENABLE_DELIVERY_TRACKING` (env) | **ON** | set to exactly `"false"` to disable |
+| Operator console v2 | `NEXT_PUBLIC_CONSOLE_V2` (env) | OFF | set to exactly `"true"` to enable |
+| MIZAN reviewer surface | `NEXT_PUBLIC_ENABLE_MIZAN_PANEL` (env) | OFF | set to exactly `"true"` to enable |
+| In-app admin chat console | `NEXT_PUBLIC_ENABLE_ADMIN_CHAT_CONSOLE` (env) | OFF | set to exactly `"true"` to enable |
 
 ---
 
@@ -167,5 +175,3 @@ See [`ROADMAP.md`](./ROADMAP.md) for the sprint-by-sprint engineering log.
 - Privacy Policy: [getkivo.io/privacy](https://getkivo.io/privacy)
 - Terms of Service: [getkivo.io/terms](https://getkivo.io/terms)
 - Data Deletion: [getkivo.io/data-deletion](https://getkivo.io/data-deletion)
-- Contact: info@getkivo.io
-- Kivo is a product of City Baker LLC — CR No. 216565 — Cairo, Egypt
