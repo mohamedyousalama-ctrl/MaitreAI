@@ -1,0 +1,232 @@
+==============================================================================
+KIV-12 / CTRL-03 — M-0 CONSTRAINT PRE-STAGE — DISPOSABLE POSTGRESQL PROOF
+==============================================================================
+--- PROVENANCE ---
+  repository          : /home/user/MaitreAI
+  git branch          : feat/kiv12-m0-constraint-prestage
+  git HEAD            : 0a869cac86e98e8f2d1742407a0b49073f93514a
+  git tree state      : DIRTY (uncommitted changes present)
+  proof script        : scripts/proof-kiv12-m0-disposable-pg.py
+  proof script sha256 : 49a533999aa70382747b13dced1f4581d81f5897ce3c9e130bc54dc647cca2a6
+  migration path      : supabase/migrations/0107_kiv12_m0_constraint_prestage.sql
+  migration bytes     : 4096
+  migration sha256    : 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6
+  migration git blob  : d492d2e58fee28c93fd84ec71081dc71c81fce0b
+  migration blob@HEAD : d492d2e58fee28c93fd84ec71081dc71c81fce0b
+  expected sha256     : 3c40c6280b99d6f8a78c5081054b25d3438d47f205f2646c66796e4adefc74a6
+  sha256 match        : YES
+--- ENVIRONMENT ---
+  class               : DISPOSABLE LOCAL — created by this script, destroyed at the end
+  PGDATA              : /var/lib/postgresql/kiv12_m0_proof
+  port                : 55432   (unix socket dir /tmp; listen_addresses='' — no TCP listener)
+  database            : kivo_m0
+  production contact  : NONE — no production host, credential or network egress is used
+
+--- PROVISION DISPOSABLE CLUSTER ---
+  initdb              : OK
+  pg_ctl start        : OK
+  server version      : PostgreSQL 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+
+--- BASELINE: governed pre-M0 shape of public.conversations ---
+  sources: 0001_init (id/restaurant_id/channel), 0028 (is_safety_hold), 0032 (ownership_state + CHECK)
+  baseline built
+  seeded rows: 6   data fingerprint: 65f35434b91c44b8328fa734802d7bab
+  pre-M0 catalog: {'tables': '4', 'functions': '0', 'triggers': '0', 'policies': '0', 'roles': '15', 'indexes': '4'}
+
+--- FIRST APPLICATION of 0107 (verbatim repository file) ---
+  result: APPLIED CLEANLY (exit 0)
+  psql output: DO
+DO
+DO
+  post-M0 catalog: {'tables': '4', 'functions': '0', 'triggers': '0', 'policies': '0', 'roles': '15', 'indexes': '5'}
+
+--- CONSTRAINT CATALOG READ-BACK (pg_constraint) ---
+    conversations_assigned_member_id_fkey | contype=f | convalidated=true | FOREIGN KEY (assigned_member_id) REFERENCES members(id) ON DELETE SET NULL
+    conversations_channel_v1_check | contype=c | convalidated=true | CHECK ((channel = ANY (ARRAY['whatsapp'::text, 'website'::text])))
+    conversations_customer_id_fkey | contype=f | convalidated=true | FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+    conversations_ownership_state_check | contype=c | convalidated=true | CHECK ((ownership_state = ANY (ARRAY['AI_ACTIVE'::text, 'HUMAN_ACTIVE'::text, 'HUMAN_IDLE'::text, 'SYSTEM_HOLD'::text, 'CLOSED'::text])))
+    conversations_pkey | contype=p | convalidated=true | PRIMARY KEY (id)
+    conversations_restaurant_id_fkey | contype=f | convalidated=true | FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
+    conversations_restaurant_id_id_key | contype=u | convalidated=true | UNIQUE (restaurant_id, id)
+    conversations_safety_state_check | contype=c | convalidated=true | CHECK (((is_safety_hold = false) OR (ownership_state = ANY (ARRAY['SYSTEM_HOLD'::text, 'HUMAN_ACTIVE'::text, 'HUMAN_IDLE'::text]))))
+
+--- INDEX READ-BACK (pg_indexes) ---
+    conversations_pkey | CREATE UNIQUE INDEX conversations_pkey ON public.conversations USING btree (id)
+    conversations_restaurant_id_id_key | CREATE UNIQUE INDEX conversations_restaurant_id_id_key ON public.conversations USING btree (restaurant_id, id)
+
+--- PROOF 1: the three constraints exist with their exact names ---
+  [PASS] conversations_restaurant_id_id_key exists (contype u)
+         expected: u
+         actual:   u
+  [PASS] conversations_channel_v1_check exists (contype c)
+         expected: c
+         actual:   c
+  [PASS] conversations_safety_state_check exists (contype c)
+         expected: c
+         actual:   c
+
+--- PROOF 2: UNIQUE covers exactly (restaurant_id, id) ---
+  [PASS] UNIQUE column list, in order
+         expected: restaurant_id,id
+         actual:   restaurant_id,id
+  [PASS] UNIQUE covers exactly 2 columns
+         expected: 2
+         actual:   2
+
+--- PROOF 3: all three constraints are VALID ---
+  [PASS] constraints NOT validated
+         expected: none
+         actual:   none
+  [PASS] M-0 constraints marked VALID
+         expected: 3
+         actual:   3
+
+--- PROOF 4: channel CHECK permits whatsapp and website ---
+  [PASS] channel 'whatsapp' accepted
+         expected: accepted
+         actual:   accepted
+  [PASS] channel 'website' accepted
+         expected: accepted
+         actual:   accepted
+  [PASS] channel default ('whatsapp') accepted
+         expected: accepted
+         actual:   accepted
+
+--- PROOF 5: channel CHECK rejects every disallowed value ---
+  [PASS] channel 'instagram' rejected
+         expected: rejected by conversations_channel_v1_check
+         actual:   rejected by conversations_channel_v1_check
+  [PASS] channel 'facebook' rejected
+         expected: rejected by conversations_channel_v1_check
+         actual:   rejected by conversations_channel_v1_check
+  [PASS] channel 'google' rejected
+         expected: rejected by conversations_channel_v1_check
+         actual:   rejected by conversations_channel_v1_check
+  [PASS] channel 'voice' rejected
+         expected: rejected by conversations_channel_v1_check
+         actual:   rejected by conversations_channel_v1_check
+  [PASS] channel 'console_command' rejected
+         expected: rejected by conversations_channel_v1_check
+         actual:   rejected by conversations_channel_v1_check
+  [PASS] channel '' rejected
+         expected: rejected by conversations_channel_v1_check
+         actual:   rejected by conversations_channel_v1_check
+  [PASS] channel 'WHATSAPP' rejected
+         expected: rejected by conversations_channel_v1_check
+         actual:   rejected by conversations_channel_v1_check
+
+--- PROOF 6: safety-state CHECK permits the governed valid held states ---
+  [PASS] is_safety_hold=true with SYSTEM_HOLD accepted
+         expected: accepted
+         actual:   accepted
+  [PASS] is_safety_hold=true with HUMAN_ACTIVE accepted
+         expected: accepted
+         actual:   accepted
+  [PASS] is_safety_hold=true with HUMAN_IDLE accepted
+         expected: accepted
+         actual:   accepted
+
+--- PROOF 7: safety-state CHECK rejects invalid held states ---
+  [PASS] is_safety_hold=true with AI_ACTIVE rejected
+         expected: rejected by conversations_safety_state_check
+         actual:   rejected by conversations_safety_state_check
+  [PASS] is_safety_hold=true with CLOSED rejected
+         expected: rejected by conversations_safety_state_check
+         actual:   rejected by conversations_safety_state_check
+
+--- PROOF 8: unheld rows remain unconstrained by state ---
+  [PASS] is_safety_hold=false with AI_ACTIVE accepted
+         expected: accepted
+         actual:   accepted
+  [PASS] is_safety_hold=false with HUMAN_ACTIVE accepted
+         expected: accepted
+         actual:   accepted
+  [PASS] is_safety_hold=false with HUMAN_IDLE accepted
+         expected: accepted
+         actual:   accepted
+  [PASS] is_safety_hold=false with SYSTEM_HOLD accepted
+         expected: accepted
+         actual:   accepted
+  [PASS] is_safety_hold=false with CLOSED accepted
+         expected: accepted
+         actual:   accepted
+
+--- PROOF 9: pre-existing valid rows survived unchanged ---
+  [PASS] seeded-row fingerprint unchanged by M-0
+         expected: 65f35434b91c44b8328fa734802d7bab
+         actual:   65f35434b91c44b8328fa734802d7bab
+  [PASS] seeded row count unchanged
+         expected: 6
+         actual:   6
+
+--- PROOF 10: M-0 introduced no M1/M2 material ---
+  [PASS] public tables count unchanged by 0107
+         expected: 4
+         actual:   4
+  [PASS] public functions count unchanged by 0107
+         expected: 0
+         actual:   0
+  [PASS] public triggers count unchanged by 0107
+         expected: 0
+         actual:   0
+  [PASS] public policies count unchanged by 0107
+         expected: 0
+         actual:   0
+  [PASS] public roles count unchanged by 0107
+         expected: 15
+         actual:   15
+  [PASS] public indexes: exactly +1 (the UNIQUE constraint's backing index)
+         expected: 5
+         actual:   5
+  [PASS] only index added is the UNIQUE constraint's own
+         expected: conversations_restaurant_id_id_key
+         actual:   conversations_restaurant_id_id_key
+
+--- PROOF 11: 0107 performs no data remediation ---
+  [PASS] migration body contains no `update` statement
+         expected: 0
+         actual:   0
+  [PASS] migration body contains no `delete` statement
+         expected: 0
+         actual:   0
+  [PASS] migration body contains no `insert` statement
+         expected: 0
+         actual:   0
+  [PASS] migration body contains no `truncate` statement
+         expected: 0
+         actual:   0
+  [PASS] migration body contains no `drop` statement
+         expected: 0
+         actual:   0
+
+--- PROOF 12: idempotent re-application (SECOND APPLICATION of 0107) ---
+  second application result: APPLIED CLEANLY (exit 0)
+  psql output: DO
+DO
+DO
+  [PASS] second application succeeds without error
+         expected: True
+         actual:   True
+  [PASS] still exactly 3 M-0 constraints after re-run
+         expected: 3
+         actual:   3
+
+--- PROOF 13: pre-existing invariants not weakened ---
+  [PASS] 0032 ownership_state CHECK still present and VALID
+         expected: 1
+         actual:   1
+  [PASS] unknown ownership_state still rejected by 0032
+         expected: rejected by conversations_ownership_state_check
+         actual:   rejected by conversations_ownership_state_check
+  [PASS] primary key on id still present
+         expected: 1
+         actual:   1
+
+==============================================================================
+TOTAL 46 assertions — PASS 46 — FAIL 0
+==============================================================================
+
+--- TEARDOWN: destroy the disposable cluster ---
+  pg_ctl stop + rm -rf /var/lib/postgresql/kiv12_m0_proof
+  cluster removed     : YES
+  production touched  : NO
