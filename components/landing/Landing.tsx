@@ -14,7 +14,7 @@ import Link from "next/link";
 import { KivoMark, KivoWordmark } from "@/components/brand/KivoLogo";
 import { IntroReveal } from "@/components/brand/IntroReveal";
 import { HeroDemo } from "./HeroDemo";
-import { COPY, FACTS, DEMO_WA_LINK, BOOK_CALL_LINK, APP_ONBOARDING, APP_LOGIN, NEEDS_REAL_DATA, type Lang, type Country } from "./copy";
+import { COPY, FACTS, CONTACT_LINK, NEEDS_REAL_DATA, type Lang, type Country } from "./copy";
 
 const SCOPED_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&display=swap');
@@ -59,8 +59,6 @@ const pill = (light?: boolean): React.CSSProperties => ({ display: "inline-flex"
 const navLink: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,.82)", textDecoration: "none" };
 const toggleBtn = (on: boolean): React.CSSProperties => ({ height: 28, padding: "0 11px", borderRadius: 8, border: "1px solid rgba(255,255,255,.22)", background: on ? "#fff" : "transparent", color: on ? "#0a8a5f" : "rgba(255,255,255,.85)", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" });
 
-const waProps = { target: "_blank", rel: "noopener noreferrer" as const };
-
 export function Landing() {
   const [lang, setLang] = useState<Lang>("ar");
   const [country, setCountry] = useState<Country>("eg");
@@ -81,7 +79,6 @@ export function Landing() {
             <a className="nl" href="#how" style={navLink}>{c.nav.how}</a>
             <a className="nl" href="#brain" style={navLink}>{c.nav.brain}</a>
             <a className="nl" href="#safety" style={navLink}>{c.nav.safety}</a>
-            <Link className="nl" href={APP_LOGIN} style={navLink}>{c.nav.login}</Link>
           </div>
           {/* language + country toggles */}
           <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 8 }}>
@@ -90,7 +87,7 @@ export function Landing() {
               <button onClick={() => setCountry("eg")} style={toggleBtn(country === "eg")}>{c.countryToggle.eg}</button>
               <button onClick={() => setCountry("ksa")} style={toggleBtn(country === "ksa")}>{c.countryToggle.ksa}</button>
             </div>
-            <a href={DEMO_WA_LINK} {...waProps} className="cta" style={{ height: 38, padding: "0 15px", borderRadius: 10, background: "#fff", color: "#0a8a5f", fontSize: 12.5, fontWeight: 800, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>{c.nav.start}</a>
+            <a href={CONTACT_LINK} className="cta" style={{ height: 38, padding: "0 15px", borderRadius: 10, background: "#fff", color: "#0a8a5f", fontSize: 12.5, fontWeight: 800, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>{c.nav.start}</a>
           </div>
         </nav>
 
@@ -104,8 +101,7 @@ export function Landing() {
             </h1>
             <p style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,.85)", lineHeight: 1.75, margin: "20px 0 0", maxWidth: 500 }}>{c.hero.wedge}</p>
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 28, flexWrap: "wrap" }}>
-              <a href={DEMO_WA_LINK} {...waProps} className="cta" style={{ height: 52, padding: "0 24px", borderRadius: 14, background: "#fff", color: "#0a8a5f", fontSize: 15, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", boxShadow: "0 20px 40px -18px rgba(0,0,0,.5)" }}>{c.hero.ctaPrimary}<Arrow /></a>
-              <a href={BOOK_CALL_LINK} style={{ height: 52, padding: "0 22px", borderRadius: 14, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.22)", color: "#fff", fontSize: 15, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 9, textDecoration: "none" }}>{c.hero.ctaSecondary}</a>
+              <a href={CONTACT_LINK} className="cta" style={{ height: 52, padding: "0 24px", borderRadius: 14, background: "#fff", color: "#0a8a5f", fontSize: 15, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 10, textDecoration: "none", boxShadow: "0 20px 40px -18px rgba(0,0,0,.5)" }}>{c.hero.ctaPrimary}<Arrow /></a>
             </div>
             <p style={{ fontSize: 12.5, color: "rgba(255,255,255,.7)", fontWeight: 600, marginTop: 20, display: "flex", alignItems: "center", gap: 8 }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7ef0c4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 3 4 6v6c0 4 3 6.5 8 9 5-2.5 8-5 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" /></svg>
@@ -235,8 +231,7 @@ export function Landing() {
           <h2 style={{ fontSize: 32, fontWeight: 800, margin: "16px 0 0" }}>{c.cta.title}</h2>
           <p style={{ fontSize: 15, color: "rgba(255,255,255,.85)", fontWeight: 600, margin: "12px auto 0", maxWidth: 460, lineHeight: 1.7 }}>{c.cta.body}</p>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 26, flexWrap: "wrap" }}>
-            <a href={DEMO_WA_LINK} {...waProps} className="cta" style={{ height: 52, padding: "0 26px", borderRadius: 14, background: "#fff", color: "#0a8a5f", fontSize: 15, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 9, textDecoration: "none", boxShadow: "0 20px 40px -18px rgba(0,0,0,.4)" }}>{c.cta.primary}<Arrow /></a>
-            <a href={BOOK_CALL_LINK} style={{ height: 52, padding: "0 24px", borderRadius: 14, background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.24)", color: "#fff", fontSize: 15, fontWeight: 800, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>{c.cta.secondary}</a>
+            <a href={CONTACT_LINK} className="cta" style={{ height: 52, padding: "0 26px", borderRadius: 14, background: "#fff", color: "#0a8a5f", fontSize: 15, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 9, textDecoration: "none", boxShadow: "0 20px 40px -18px rgba(0,0,0,.4)" }}>{c.cta.primary}<Arrow /></a>
           </div>
         </div>
       </section>

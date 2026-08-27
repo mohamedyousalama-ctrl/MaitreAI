@@ -20,8 +20,23 @@ export const NEEDS_REAL_DATA = { ar: "[بيانات حقيقية مطلوبة]",
 // Build-adjacent dependencies (brief §4/§8) — placeholders until Mohamed provisions
 // the demo tenant + number and a booking calendar. Kept as named constants so the
 // swap is a one-line change and greppable.
-export const DEMO_WA_LINK = "https://wa.me/000000000000"; // TODO(demo-tenant): real demo number
-export const BOOK_CALL_LINK = "#book"; // TODO(booking): real calendar link
+// The ONLY real contact destination that exists. Every CTA on this page points
+// here. It replaced two dead links that shipped to production:
+//   DEMO_WA_LINK  = "https://wa.me/000000000000"  — a placeholder number
+//   BOOK_CALL_LINK = "#book"                       — an anchor with no section
+// Between them they were the nav CTA, both hero CTAs and both closing CTAs, so
+// every call to action on the public homepage did nothing. Restore a WhatsApp or
+// calendar CTA only when a real number / calendar exists.
+export const CONTACT_EMAIL = "info@getkivo.io";
+export const CONTACT_LINK = `mailto:${CONTACT_EMAIL}`;
+
+// Kept exported but DELIBERATELY NOT LINKED from this marketing page. Kivo is sold
+// as a custom implementation project — there is no self-serve signup, so a login or
+// "start" CTA sends the wrong message and was removed 2026-08-27.
+//
+// The ROUTES themselves stay live and must not be deleted: /login is the real
+// Supabase magic-link auth for console.wesayachicken.com, a working restaurant on
+// this same deployment. Removing it locks that operator out of their own console.
 export const APP_ONBOARDING = "/onboarding";
 export const APP_LOGIN = "/login";
 
@@ -76,13 +91,13 @@ export const COPY: Record<Lang, Copy> = {
     dir: "rtl",
     langToggle: "EN",
     countryToggle: { eg: "مصر", ksa: "السعودية" },
-    nav: { how: "إزاي بيشتغل", brain: "أكتر من شات بوت", safety: "الأمان والثقة", login: "دخول", start: "ابدأ" },
+    nav: { how: "إزاي بيشتغل", brain: "أكتر من شات بوت", safety: "الأمان والثقة", login: "دخول", start: "تواصل معنا" },
     hero: {
       badge: "وكيل واتساب لمطاعمك",
       h1: ["كريم بياخد طلباتك", "على واتساب،", "ويوريك ليه العملاء", "بيشتروا أو لأ."],
       wedge:
         "كريم ياخد طلباتك على واتساب، يخدم عملاءك، ويوريك ليه العملاء بيشتروا أو مبيشتروش — وبعدين يساعدك تحسّن المبيعات والمنيو والعروض.",
-      ctaPrimary: "جرّب كريم على واتساب",
+      ctaPrimary: "تواصل معنا",
       ctaSecondary: "احجز مكالمة",
       trust: "بيشتغل جنب الكاشير عندك — من غير أسعار مخترعة ولا أصناف وهمية.",
     },
@@ -139,7 +154,7 @@ export const COPY: Record<Lang, Copy> = {
     cta: {
       title: "خلّي كريم يرد على عميلك الجاي",
       body: "جرّبه بنفسك على واتساب — كريم بياخد طلب تجريبي في دقيقة. الديمو هو العرض.",
-      primary: "جرّب كريم على واتساب",
+      primary: "تواصل معنا",
       secondary: "احجز مكالمة",
     },
     footer: {
@@ -153,13 +168,13 @@ export const COPY: Record<Lang, Copy> = {
     dir: "rtl",
     langToggle: "ع",
     countryToggle: { eg: "Egypt", ksa: "Saudi Arabia" },
-    nav: { how: "How it works", brain: "Beyond the chatbot", safety: "Safety & trust", login: "Log in", start: "Start" },
+    nav: { how: "How it works", brain: "Beyond the chatbot", safety: "Safety & trust", login: "Log in", start: "Contact us" },
     hero: {
       badge: "The WhatsApp agent for your restaurant",
       h1: ["Karim takes your orders", "on WhatsApp —", "and shows you why", "customers buy or don't."],
       wedge:
         "Karim takes your orders on WhatsApp, serves your customers, and shows you why they buy or don't — then helps you improve sales, menu, and offers.",
-      ctaPrimary: "Try Karim on WhatsApp",
+      ctaPrimary: "Contact us",
       ctaSecondary: "Book a call",
       trust: "Works alongside your POS — with no invented prices or availability.",
     },
@@ -216,7 +231,7 @@ export const COPY: Record<Lang, Copy> = {
     cta: {
       title: "Let Karim answer your next customer",
       body: "Try it yourself on WhatsApp — Karim takes a demo order in a minute. The demo is the pitch.",
-      primary: "Try Karim on WhatsApp",
+      primary: "Contact us",
       secondary: "Book a call",
     },
     footer: {
