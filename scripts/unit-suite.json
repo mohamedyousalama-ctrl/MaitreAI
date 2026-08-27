@@ -114,5 +114,6 @@
   "node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types --test components/console-v2/shift/shift-model.test.ts",
   "node --conditions=react-server --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-control.test.ts",
   "node --experimental-strip-types scripts/proof-order-number-atomic.test.ts",
-  "node --experimental-strip-types scripts/proof-definer-grant-hygiene.test.ts"
+  "node --experimental-strip-types scripts/proof-definer-grant-hygiene.test.ts",
+  "node --experimental-strip-types scripts/proof-storefront-safety-hold-rollback.test.ts"
 ]

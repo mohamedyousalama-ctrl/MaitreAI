@@ -287,7 +287,38 @@ export async function POST(req: NextRequest) {
     )
     .select("id, order_number, total, subtotal, delivery_fee, tax_amount, tax_rate, currency");
 
-  if (error) return bad("تعذر إنشاء الطلب. حاول مرة أخرى.", 500);
+  if (error) {
+    // The order did not persist. The early idempotency check above keys on the
+    // ORDER row, which now does not exist — so a client retry would fall straight
+    // through and create ANOTHER SYSTEM_HOLD conversation for the same basket,
+    // leaving the operator a pile of duplicate allergy holds for one customer.
+    // Compensate: drop the hold we just opened. Its message goes with it
+    // (messages_conversation_id_fkey is ON DELETE CASCADE).
+    if (safetyConversationId) {
+      const { error: cleanupErr } = await admin
+        .from("conversations")
+        .delete()
+        .eq("id", safetyConversationId)
+        .eq("restaurant_id", restaurantId);
+      if (cleanupErr) {
+        console.error(
+          "[storefront/orders] order insert failed AND the safety hold could not be rolled back — " +
+            "conversation is orphaned and needs manual review",
+          { conversationId: safetyConversationId, restaurantId, cleanupErr },
+        );
+      }
+    }
+    // This was invisible server-side: `bad` does not log, so a failed order
+    // looked identical to a validation rejection.
+    console.error("[storefront/orders] order upsert failed", {
+      restaurantId,
+      orderId: id,
+      orderNumber,
+      code: (error as { code?: string }).code,
+      message: error.message,
+    });
+    return bad("تعذر إنشاء الطلب. حاول مرة أخرى.", 500);
+  }
 
   // DLV1 — every delivery order gets a pending delivery row so it appears in
   // التوصيل and can be assigned a driver (R3b then lets it be delivered). Same
