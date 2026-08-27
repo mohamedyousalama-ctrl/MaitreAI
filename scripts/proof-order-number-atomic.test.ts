@@ -71,6 +71,31 @@ ok("the RPC call is wrapped so an injected client without .rpc cannot bypass the
 ok("the fallback scan does not swallow its own error",
   /error:\s*scanError/.test(fn) && /if \(scanError\)/.test(fn));
 
+// ── an idempotent retry must not burn a number ─────────────────────────────
+// Both callers upsert with onConflict:"id", ignoreDuplicates:true — so a retry
+// inserts nothing. The OLD allocator was a stateless scan, so a wasted call cost
+// nothing. The atomic counter permanently increments, so every retry burned a
+// number and left a visible gap in the sequence operators reconcile COD against.
+// Both callers must therefore check by `id` BEFORE allocating.
+const persist = read("lib/db/orders-create.ts");
+const store = read("app/api/storefront/orders/route.ts");
+
+const idCheckAt = persist.indexOf('.eq("id", id)');
+const allocAt = persist.indexOf("await nextOrderNumber(");
+ok("(whatsapp) the id-keyed idempotency check runs BEFORE the allocation",
+  idCheckAt > 0 && allocAt > 0 && idCheckAt < allocAt);
+ok("(whatsapp) the id check is tenant-scoped",
+  /\.eq\("id", id\)\s*\n\s*\.eq\("restaurant_id", restaurantId\)/.test(persist));
+
+const sIdCheckAt = store.indexOf('.eq("id", id)');
+const sAllocAt = store.indexOf("await nextOrderNumber(");
+ok("(storefront) the id-keyed idempotency check runs BEFORE the allocation",
+  sIdCheckAt > 0 && sAllocAt > 0 && sIdCheckAt < sAllocAt);
+// It used to be gated on allergenHit.fired, so a NORMAL retry skipped it entirely
+// and burned a number every time.
+ok("(storefront) the idempotency check is no longer gated on the allergen path",
+  !/if \(allergenHit\.fired\) \{\s*\n\s*const \{ data: existing/.test(store));
+
 // ── the counter cannot fall behind the table (0115 + 0116) ─────────────────
 const heal = stmts(read("supabase/migrations/0115_order_counter_self_heal.sql"));
 const drift = stmts(read("supabase/migrations/0116_order_counter_cannot_drift.sql"));
@@ -110,6 +135,22 @@ ok("allocation is a single atomic INSERT … ON CONFLICT DO UPDATE",
   /insert into public\.order_number_counters[\s\S]*?on conflict \(restaurant_id\) do update[\s\S]*?returning/.test(mig));
 ok("0113 adds the unique backstop index on (restaurant_id, order_number)",
   /create unique index if not exists orders_restaurant_order_number_key[\s\S]*?\(restaurant_id, order_number\)/.test(mig));
+
+// 0117 replaced 0113's index. order_number is `text NOT NULL`, so 0113's
+// `where order_number is not null` was always true — and a PARTIAL index cannot
+// serve as an ON CONFLICT arbiter unless the statement repeats the predicate, so
+// it silently foreclosed `on conflict (restaurant_id, order_number)`. 0117 builds
+// the total index BEFORE dropping the partial one, so the table is never without
+// a uniqueness backstop.
+const idx = stmts(read("supabase/migrations/0117_order_number_index_total_not_partial.sql"));
+ok("0117 creates a TOTAL unique index (no WHERE predicate)",
+  /create unique index if not exists orders_restaurant_order_number_uniq\s*\n?\s*on public\.orders \(restaurant_id, order_number\);/.test(idx));
+ok("0117 does not reintroduce a partial predicate", !/\bwhere\b/i.test(idx));
+ok("0117 builds the new index BEFORE dropping the old one (never unprotected)",
+  idx.indexOf("create unique index") >= 0 &&
+  idx.indexOf("drop index") > idx.indexOf("create unique index"));
+ok("0117 drops the superseded partial index",
+  /drop index if exists public\.orders_restaurant_order_number_key;/.test(idx));
 ok("the counter table is RLS-enabled (service-role only, no browser reads)",
   /alter table public\.order_number_counters enable row level security/.test(mig));
 // ── the allocator is reachable ONLY from the server ─────────────────────────

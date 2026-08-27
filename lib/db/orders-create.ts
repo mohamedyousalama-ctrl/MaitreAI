@@ -257,6 +257,25 @@ export async function persistOrderFromDraft(
     return { created: false, orderId: dup.id as string, orderNumber: (dup.order_number as string) ?? null };
   }
 
+  // Idempotency check on the key the UPSERT actually dedupes on. The guard above
+  // is a content fingerprint over recent orders; the upsert keys on `id`. A
+  // webhook redelivery resolves to the same `id`, so it can miss the fingerprint
+  // guard and still insert nothing — after allocating a number.
+  //
+  // That matters now in a way it did not before. The old allocator was a stateless
+  // scan, so a wasted call cost nothing. next_order_number PERMANENTLY increments
+  // a counter, so every redelivery burns a number and leaves a visible gap in a
+  // field operators reconcile COD against.
+  const { data: byId } = await admin
+    .from("orders")
+    .select("id, order_number")
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (byId) {
+    return { created: false, orderId: byId.id as string, orderNumber: (byId.order_number as string) ?? null };
+  }
+
   const orderNumber = await nextOrderNumber(admin, restaurantId);
 
   // WO-COMPANION-W1-CORE (§1a.2, kitchen-ticket INVARIANT): copy the FULL session

@@ -203,9 +203,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(body, allergenHit.fired ? { status: 202 } : undefined);
   };
 
-  // For allergen-triggering submissions, avoid orphaning a second SYSTEM_HOLD
-  // conversation on an idempotent retry of the same checkout window.
-  if (allergenHit.fired) {
+  // Idempotent retry of the same checkout window. This used to run only for
+  // allergen-triggering submissions, to avoid orphaning a second SYSTEM_HOLD
+  // conversation. It now runs for EVERY submission, because the retry costs
+  // something else too: the upsert below keys on `id` and ignores duplicates, so
+  // a retry inserted nothing — but only after calling nextOrderNumber.
+  //
+  // The old allocator was a stateless scan, so a wasted call cost nothing. The
+  // atomic counter (0113) permanently increments, so every retry burned a number
+  // and left a visible gap in the sequence operators reconcile COD against.
+  {
     const { data: existing, error: existingErr } = await admin
       .from("orders")
       .select("id, order_number, total, subtotal, delivery_fee, tax_amount, tax_rate, currency")
