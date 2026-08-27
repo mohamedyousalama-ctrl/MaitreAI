@@ -117,5 +117,6 @@
   "node --experimental-strip-types scripts/proof-definer-grant-hygiene.test.ts",
   "node --experimental-strip-types scripts/proof-storefront-safety-hold-rollback.test.ts",
   "node --experimental-strip-types scripts/proof-unported-control-wrappers.test.ts",
-  "node --experimental-strip-types scripts/proof-landing-no-login-cta.test.ts"
+  "node --experimental-strip-types scripts/proof-landing-no-login-cta.test.ts",
+  "node --experimental-strip-types scripts/proof-cutover-capability.test.ts"
 ]
