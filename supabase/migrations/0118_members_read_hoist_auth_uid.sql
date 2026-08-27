@@ -1,0 +1,35 @@
+-- 0118 — stop re-evaluating auth.uid() per row in the members_read policy.
+-- APPLIED to production 2026-08-27 via Supabase apply_migration.
+--
+-- members_read was:
+--   using ((user_id = auth.uid()) OR is_manager_of(restaurant_id))
+--
+-- A bare auth.uid() in a policy is re-evaluated FOR EVERY ROW scanned. Wrapping
+-- it in a scalar subquery lets the planner hoist it into an InitPlan and evaluate
+-- it once per statement. auth.uid() is STABLE, so the value cannot change within
+-- a statement and the result set is identical. This is Supabase's own documented
+-- remedy for the auth_rls_initplan lint.
+--
+-- This matters more than one lint suggests. public.members is the ROOT of tenant
+-- isolation: is_member_of() and is_manager_of() both read it, and nearly every
+-- RLS policy in the schema calls one of those. A per-row cost here multiplies
+-- across the whole database.
+--
+-- is_manager_of(restaurant_id) is NOT hoisted and must not be — it takes a column
+-- argument, so it is genuinely per-row. It is STABLE and SECURITY DEFINER, so
+-- Postgres can still cache repeated calls with the same argument.
+--
+-- ALTER POLICY (not DROP + CREATE) so the table is never, even briefly, without
+-- this policy. Nothing else about the policy changes: same name, same command,
+-- same PERMISSIVE, same roles, same WITH CHECK (none).
+--
+-- Behaviour verified identical before and after against four real identities:
+--   anon                 -> 0 rows  / 0 tenants
+--   operator (own row)   -> 1 row   / 1 tenant
+--   manager (own tenant) -> 3 rows  / 1 tenant
+--   manager of 5 + operator in a 6th -> 12 rows / 6 tenants
+-- The last one exercises BOTH sides of the OR, which is what makes it a real
+-- test rather than a smoke test.
+
+alter policy members_read on public.members
+  using ((user_id = (select auth.uid())) or is_manager_of(restaurant_id));
