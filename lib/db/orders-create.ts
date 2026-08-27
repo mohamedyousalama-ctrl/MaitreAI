@@ -60,22 +60,57 @@ export function basketContentKey(args: { items: FingerprintItem[]; fulfillment: 
  *      apart. 0113 adds the atomic counter AND the unique index as a backstop.
  *   2. O(n). A full tenant scan per order creation. Now constant time.
  *
- * The scan is KEPT as a fallback for one reason only: an environment where 0113
- * has not been applied (a fresh local database, a preview branch). Losing order
- * creation entirely there would be a worse failure than a rare duplicate, and the
- * unique index — where it exists — still refuses an actual collision. The
- * fallback is logged so it is never silently the normal path.
+ * The scan is KEPT for exactly ONE case: an environment where 0113 has not been
+ * applied (a fresh local database, a preview branch). There, no unique index
+ * exists either, so the scan behaves as it always did.
+ *
+ * It is deliberately NOT used for a transient RPC error, which an earlier version
+ * of this function did. Where 0113 IS applied, a fallback number is worse than no
+ * number: the scan does not advance the counter, so the number it returns can
+ * already exist, and the unique index then refuses the INSERT — the order is not
+ * persisted at all and the customer gets no confirmation. A fallback that turns a
+ * retryable blip into a lost order buys nothing. So: missing function → scan;
+ * anything else → throw, and let the caller's existing retry path handle it.
  */
+
+/** Postgres/PostgREST codes meaning "this function does not exist here". */
+const RPC_MISSING = new Set(["42883", "PGRST202"]);
+
 export async function nextOrderNumber(admin: SupabaseClient, restaurantId: string): Promise<string> {
-  const { data, error } = await admin.rpc("next_order_number", { p_restaurant_id: restaurantId });
+  // Wrapped: the admin client is an injected seam in tests, and a double without
+  // a .rpc method would otherwise throw straight past this whole function.
+  let data: unknown = null;
+  let error: { message?: string; code?: string } | null = null;
+  try {
+    ({ data, error } = await admin.rpc("next_order_number", { p_restaurant_id: restaurantId }));
+  } catch (e) {
+    error = { message: e instanceof Error ? e.message : String(e), code: "42883" };
+  }
+
   if (!error && data != null) return String(data);
 
+  if (error && !RPC_MISSING.has(String(error.code))) {
+    // 0113 is applied and the allocator failed for some other reason. Falling
+    // back here would hand out a number the unique index will reject.
+    throw new Error(
+      `[orders] next_order_number failed (${error.code ?? "no code"}): ${error.message ?? "unknown"}`,
+    );
+  }
+
   console.warn(
-    "[orders] next_order_number RPC unavailable — falling back to the non-atomic scan. " +
+    "[orders] next_order_number RPC is absent — falling back to the non-atomic scan. " +
       "Apply migration 0113_atomic_order_numbers.",
     error?.message ?? "no row returned",
   );
-  const { data: rows } = await admin.from("orders").select("order_number").eq("restaurant_id", restaurantId);
+  const { data: rows, error: scanError } = await admin
+    .from("orders")
+    .select("order_number")
+    .eq("restaurant_id", restaurantId);
+  if (scanError) {
+    // Silently treating a failed scan as "no orders" returns 1001 for a tenant
+    // that certainly already has it.
+    throw new Error(`[orders] order-number fallback scan failed: ${scanError.message}`);
+  }
   let max = 1000;
   for (const r of (rows ?? []) as { order_number: string }[]) {
     const n = parseInt(String(r.order_number).replace(/\D/g, ""), 10);

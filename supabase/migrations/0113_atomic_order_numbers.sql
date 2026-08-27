@@ -1,5 +1,5 @@
 -- 0113 — atomic per-tenant order numbers
--- APPLIED to production 2026-08-26 via Supabase apply_migration.
+-- APPLIED to production 2026-08-27 via Supabase apply_migration (version 20260827040047).
 --
 -- ⚠ SUPERSEDED IN PART BY 0114. The grant block at the bottom of this file is
 -- NOT sufficient on Supabase: `revoke … from public` leaves the default
