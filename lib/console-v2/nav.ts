@@ -84,7 +84,12 @@ export const RAIL_ITEMS: RailItem[] = [
   // MAIN — the live operating surfaces. Shift + Conversations are the OPERATION
   // surfaces an operator may reach; Outcomes is manager-only.
   { key: "live-shift", labelKey: "nav.liveShift", icon: Radio, section: "main", href: "/c/shift", ready: true, managerOnly: false },
-  { key: "conversations", labelKey: "nav.conversations", icon: MessagesSquare, section: "main", href: "/c/conversations", ready: true, managerOnly: false },
+  // Points at the CLASSIC page, not /c/conversations. The /c surface is a triage
+  // queue: it can show the queue and claim a thread, but it has no composer at all
+  // (zero inputs, never calls addHumanMessage), so an operator sent there cannot
+  // reply to a customer. The classic page carries the composer, takeover and
+  // return-to-Karim. See KEEP_LEGACY in cutover.ts.
+  { key: "conversations", labelKey: "nav.conversations", icon: MessagesSquare, section: "main", href: "/conversations", ready: true, managerOnly: false, legacySurface: true },
   { key: "outcomes", labelKey: "nav.outcomes", icon: Target, section: "main", href: "/c/outcomes", ready: true, managerOnly: true },
   // ── Classic surfaces console_v2 does not replace (see cutover.ts). These render
   // rather than folding, so the rail must link them or they are URL-only.

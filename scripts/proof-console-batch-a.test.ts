@@ -46,16 +46,53 @@ const dict = read("lib/i18n/dictionary.ts");
 check("FR-005: dictionary carries the honest 24h line (فصحى)", /"conv\.sendError\.outside24h":\s*"مرّ أكثر من ٢٤ ساعة/.test(dict));
 check("FR-005: dictionary carries the 24h line in EN too", /"conv\.sendError\.outside24h":\s*"[^"]*24 hours/.test(dict));
 
-// --- FR-005 wiring: the console surfaces the honest message on a failed send -----
-const convPage = read("app/(console-v2)/c/(app)/conversations/page.tsx");
-check("(FR-005) the send path routes the wire code through sendFailureMessageKey", /sendFailureMessageKey\(/.test(convPage));
+// --- FR-003/004/005 wiring: assert against the surface that CAN reply ------------
+// These three were red for months against app/(console-v2)/c/(app)/conversations,
+// and they could never have gone green there: that page is a triage QUEUE. It has
+// zero inputs, zero textareas, never calls addHumanMessage, and its composer is a
+// permanent lock. There is no send path to wire a failure message into, and its
+// 4-message preview has no transcript to keep scrolled.
+//
+// The surface operators actually reply on is the CLASSIC page — which is why
+// /conversations is in KEEP_LEGACY (cutover.ts). Folding it to /c meant an
+// operator on console_v2 could not reply to a customer at all.
+const convPage = read("app/(console)/conversations/page.tsx");
 
-// --- FR-004 wiring: the page tallies via the shared bucket (all human = gate) ----
+// FR-005 — a reply that never left says so, in the honest words for WHY.
+check("(FR-005) the send path routes the WIRE CODE through sendFailureMessageKey",
+  /sendFailureMessageKey\(res\.code\)/.test(convPage));
+// The outcome must actually be awaited; the old signature was `=> void`, so the
+// wire result was discarded and a failed send vanished silently.
+check("(FR-005) the send outcome is awaited, not discarded", /const res = await onSend\(/.test(convPage));
+// Extract the !res.ok BRANCH exactly, rather than searching a window after it:
+// a generous span ran on into the catch block, which has its own setDraft(text),
+// so deleting the restore from the branch left this green. (Mutation test.)
+const failBranch = /if \(res && !res\.ok\) \{([\s\S]*?)\n {6}\}/.exec(convPage)?.[1] ?? "";
+check("(FR-005) the failure branch was found at all", failBranch.length > 0);
+check("(FR-005) a failed send restores the operator's text", /setDraft\(text\)/.test(failBranch));
+check("(FR-005) the failure branch sets the mapped message", /setSendError\(/.test(failBranch));
+
+// FR-004 — count with the shared bucket. ownView has no HOLD_UNCLAIMED or
+// AI_RESUME_PENDING case, so unclaimed conversations were counted as "safe with
+// Karim" — the opposite of the truth.
 check("(FR-004) the page counts via conversationBucket", /conversationBucket\(/.test(convPage));
 
-// --- FR-003 (source): the v2 transcript sticks to bottom, doesn't yank history ---
+// FR-003 — sticking to the bottom only when parked there.
 check("(FR-003) transcript tracks a stickToBottom ref", /stickToBottom/.test(convPage));
+// The ref existing proves nothing; the GUARD is what stops the yank.
+check("(FR-003) auto-scroll is guarded by that ref, not unconditional",
+  /if \(!stickToBottom\.current\) return;/.test(convPage));
 check("(FR-003) transcript has an onScroll handler + a scroll ref", /onScroll=/.test(convPage) && /scrollHeight - .*clientHeight/.test(convPage));
+
+// --- the v2 queue must NOT quietly become the reply surface ---------------------
+// If someone adds a composer to /c/conversations later, this is the reminder to
+// take /conversations back out of KEEP_LEGACY rather than leaving two reply paths.
+const v2Queue = read("app/(console-v2)/c/(app)/conversations/page.tsx");
+const cutover = read("lib/console-v2/cutover.ts")
+  .split("\n").filter((l) => !l.trimStart().startsWith("//")).join("\n");
+const v2CanReply = /addHumanMessage|<textarea/.test(v2Queue);
+check("(cutover) /conversations renders the classic page while the /c queue cannot reply",
+  v2CanReply || /"\/conversations",/.test(cutover));
 
 // --- FR-010 (source): no bare hardcoded diff arrow left in the approvals diff ----
 const approvals = read("app/(console-v2)/c/(app)/(manager)/approvals/page.tsx");

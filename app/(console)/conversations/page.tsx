@@ -27,6 +27,9 @@
 // ============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useT } from "@/lib/i18n/lang";
+import { sendFailureMessageKey } from "@/lib/console-v2/send-failure";
+import { conversationBucket } from "@/lib/console-v2/display-state";
 import Link from "next/link";
 import { Search, ArrowLeft, Send, AlertTriangle, Lock, UserPlus, CornerUpLeft, UserCheck, Megaphone } from "lucide-react";
 import { useConversationStore } from "@/lib/conversation-store";
@@ -189,7 +192,22 @@ export default function ConversationsPage() {
   };
 
   const needIntervention = hydrated ? countEscalations(conversations) : 0;
-  const aiSafe = hydrated ? conversations.filter((c) => ownView(c) === "AI" && !resolveHold(c)).length : 0;
+  // FR-004 — count with the SHARED bucket, not the local ownView.
+  // ownView has no case for HOLD_UNCLAIMED or AI_RESUME_PENDING, so both fell to
+  // its default and were classified by the legacy `owner` flag. A conversation
+  // sitting unclaimed, waiting for a human, was therefore counted here as "safe
+  // with Karim" — the number told the operator the opposite of the truth.
+  // conversationBucket routes both to "gate" and is unit-tested in
+  // lib/console-v2/display-state.test.ts.
+  const aiSafe = hydrated
+    ? conversations.filter(
+        (c) =>
+          conversationBucket(
+            c.ownershipState ?? (c.owner === "human" ? "HUMAN_ACTIVE" : "AI_ACTIVE"),
+            resolveHold(c),
+          ) === "karim",
+      ).length
+    : 0;
 
   return (
     <div style={{ maxWidth: 1400, margin: "0 auto", color: "var(--kv-text)" }}>
@@ -309,10 +327,42 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
   c: Conversation;
   onTakeover: (id: string) => void;
   onReturn: (id: string, note?: string) => void;
-  onSend: (id: string, text: string) => void;
+  // FR-005 — the wire outcome, not void. addHumanMessage returns the
+  // /api/whatsapp/send code, and discarding it is why a failed reply used to
+  // vanish silently: the draft cleared and nothing said the message never left.
+  onSend: (id: string, text: string) => Promise<{ ok: boolean; code?: string } | null> | void;
   latestOrder: ReturnType<ReturnType<typeof useOrderStore.getState>["getLatestOrderByConversation"]> | undefined;
 }) {
   const [draft, setDraft] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const tr = useT();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // FR-003 — is the operator parked near the bottom? If they have scrolled up
+  // to read history, a new realtime message must NOT yank them back down.
+  // Without this the transcript jumped on every inbound message, which on a busy
+  // thread makes reading what the customer said earlier effectively impossible.
+  const stickToBottom = useRef(true);
+
+  const onThreadScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
+  // Switching conversations → jump to the latest instantly, and re-arm sticking.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    stickToBottom.current = true;
+  }, [c.id]);
+
+  // New message / typing → auto-scroll ONLY if they were already at the bottom.
+  useEffect(() => {
+    if (!stickToBottom.current) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [c.messages.length, c.aiTyping]);
   // MO3 — ephemeral operator presence for THIS conversation (realtime, no DB).
   // Advisory only; never gates actions (MO2's claim is the authority).
   const { others, setTyping } = useConversationPresence(c.id);
@@ -324,11 +374,30 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
   const reason = c.escalationReason || (hold ? "تعليق أمان · حساسية" : isEscalated(c) ? "محتاجة تدخّل" : "");
   const orderNo = latestOrder?.orderNumber;
 
-  const submit = () => {
-    const t = draft.trim();
-    if (!t || !humanOwns) return;
-    onSend(c.id, t);
+  const submit = async () => {
+    const text = draft.trim();
+    if (!text || !humanOwns || sending) return;
+    setSending(true);
+    setSendError(null);
+    // Clear optimistically — the store echoes the message into the thread.
     setDraft("");
+    try {
+      const res = await onSend(c.id, text);
+      // null => no wire attempt (demo mode / no persisted row); nothing to report.
+      if (res && !res.ok) {
+        // FR-005 — outside the WhatsApp 24-hour customer-care window a free-form
+        // reply is not allowed at all, so "try again" is a lie. sendFailureMessageKey
+        // maps the wire code to the honest line and keeps that mapping in one
+        // unit-tested place instead of drifting from the route's contract.
+        setSendError(tr(sendFailureMessageKey(res.code)));
+        setDraft(text); // give the operator their text back — it never left.
+      }
+    } catch {
+      setSendError(tr(sendFailureMessageKey(null)));
+      setDraft(text);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -363,7 +432,7 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
       </div>
 
       {/* messages */}
-      <div className="kv-scroll" style={{ overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 11, background: "linear-gradient(180deg,rgba(244,248,246,.5),rgba(255,255,255,.2))" }}>
+      <div ref={scrollRef} onScroll={onThreadScroll} className="kv-scroll" style={{ overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 11, background: "linear-gradient(180deg,rgba(244,248,246,.5),rgba(255,255,255,.2))" }}>
         {c.messages.map((m) => {
           if (m.sender === "system") {
             const urgent = ALLERGY_RE.test(m.text) || /صعّد|تحويل|تصعيد/.test(m.text);
@@ -397,10 +466,22 @@ function Thread({ c, onTakeover, onReturn, onSend, latestOrder }: {
       {/* composer */}
       <div style={{ padding: "11px 14px", borderTop: "1px solid #eef2f0", background: "rgba(255,255,255,.6)" }}>
         {humanOwns ? (
+          <>
+          {/* FR-005 — a reply that never left the building says so, in the
+              honest words for WHY. Outside the 24h window this is not a
+              "try again" situation, so it must not read like one. Amber, not
+              red: the send failed, nothing is broken. */}
+          {sendError && (
+            <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 11px", borderRadius: 10, border: "1px solid rgba(176,122,10,.35)", background: "rgba(176,122,10,.08)" }}>
+              <AlertTriangle size={14} color="#b07a0a" aria-hidden />
+              <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: "#8a5f08" }}>{sendError}</span>
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 12, border: "1px solid var(--kv-border)", background: "#fff", padding: "7px 9px 7px 13px" }}>
             <input value={draft} onChange={(e) => { setDraft(e.target.value); setTyping(true); }} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="اكتب ردّ الفريق… كريم متوقّف عن الرد لحد ما تحلّ التصعيد أو ترجّعها له" style={{ flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: "var(--kv-text)" }} />
-            <button onClick={submit} aria-label="إرسال" style={{ width: 32, height: 32, borderRadius: 10, border: 0, background: "var(--kv-primary)", color: "#fff", display: "grid", placeItems: "center", cursor: "pointer", flex: "none" }}><Send size={15} /></button>
+            <button onClick={submit} disabled={sending} aria-label="إرسال" style={{ width: 32, height: 32, borderRadius: 10, border: 0, background: "var(--kv-primary)", color: "#fff", display: "grid", placeItems: "center", cursor: sending ? "default" : "pointer", opacity: sending ? 0.6 : 1, flex: "none" }}><Send size={15} /></button>
           </div>
+          </>
         ) : view === "HOLD" ? (
           // SYSTEM_HOLD → composer locked; Karim is silent. Release ONLY by a
           // deliberate action (take over to reply, or return-to-AI via the chooser).

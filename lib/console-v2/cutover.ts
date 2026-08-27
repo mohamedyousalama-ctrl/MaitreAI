@@ -38,11 +38,18 @@ const KEEP_LEGACY: ReadonlySet<string> = new Set([
   "/deliveries", // /c/deliveries exists but is a 156-line read-only board; the
                  // classic page (450 lines) is the one with driver management,
                  // driver + customer links, and reassignment.
+  "/conversations", // /c/conversations is a triage QUEUE, not a conversation. It has
+                 // zero inputs, zero textareas and never calls addHumanMessage — its
+                 // composer is a permanent lock reading "الكتابة معطّلة في وضع العرض
+                 // فقط", because there is no non-view-only mode. Folding /conversations
+                 // to it meant an operator on console_v2 could see the queue, claim a
+                 // thread, read the last four messages — and could not reply to a
+                 // customer at all. The classic page (741 lines) is the one with the
+                 // composer, takeover and return-to-Karim.
 ]);
 
 /** Legacy paths where a real /c surface replaces the classic page. */
 const EXACT: Readonly<Record<string, string>> = {
-  "/conversations": "/c/conversations",
   "/customers": "/c/customers",
   "/settings": "/c/settings",
   "/menu": "/c/knowledge",

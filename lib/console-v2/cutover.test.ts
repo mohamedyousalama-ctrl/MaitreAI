@@ -9,7 +9,6 @@ import assert from "node:assert/strict";
 import { mapLegacyToConsoleV2 } from "./cutover.ts";
 
 test("leaf names line up 1:1", () => {
-  assert.equal(mapLegacyToConsoleV2("/conversations"), "/c/conversations");
   assert.equal(mapLegacyToConsoleV2("/customers"), "/c/customers");
   assert.equal(mapLegacyToConsoleV2("/settings"), "/c/settings");
   assert.equal(mapLegacyToConsoleV2("/team"), "/c/team");
@@ -31,7 +30,7 @@ test("pages console_v2 does not replace RENDER — they are never folded away", 
   // and no driver management. Folding them did not keep an operator in console_v2,
   // it took the capability away — Wesaya had real cash and no screen to settle it.
   // null means "render the legacy page".
-  for (const p of ["/orders", "/dashboard", "/cod", "/cod/close", "/deliveries"]) {
+  for (const p of ["/orders", "/dashboard", "/cod", "/cod/close", "/deliveries", "/conversations"]) {
     assert.equal(mapLegacyToConsoleV2(p), null, `${p} must render, not redirect`);
   }
   // Trailing slashes must resolve the same way.
