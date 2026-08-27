@@ -18,3 +18,19 @@ export function resolveConsoleMediaId(meta: unknown): string | null {
   const id = (image as Record<string, unknown>).id;
   return typeof id === "string" && id.trim() ? id.trim() : null;
 }
+
+/**
+ * The customer's caption for a photo, for use as the image's alt text.
+ *
+ * Alt text and not a visible label: the caption is customer-authored, so it is
+ * rendered by React as a text node and never as markup. Returns "" when absent,
+ * so the caller can fall back to a generic Arabic description rather than
+ * shipping an unlabelled image to a screen reader.
+ */
+export function photoCaption(meta: unknown): string {
+  if (!meta || typeof meta !== "object") return "";
+  const image = (meta as Record<string, unknown>).image;
+  if (!image || typeof image !== "object") return "";
+  const caption = (image as Record<string, unknown>).caption;
+  return typeof caption === "string" ? caption.trim() : "";
+}

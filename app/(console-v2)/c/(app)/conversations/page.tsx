@@ -8,6 +8,7 @@ import { useOrderStore } from "@/lib/order-store";
 import { useHasHydrated } from "@/lib/store";
 import { membersNameMap, useMembersStore } from "@/lib/members-store";
 import { Bdi, Phone } from "@/components/kivo";
+import { photoCaption, resolveConsoleMediaId } from "@/lib/console-v2/console-media-id";
 import type { Conversation, LocalOrder, MessageSender } from "@/lib/types";
 
 type QueueSegment = "held" | "mine" | "all" | "safety";
@@ -600,9 +601,27 @@ export default function ConversationsPage() {
             <div style={threadBody}>
               {viewOnly.conv.messages.slice(-4).map((msg) => {
                 const outbound = msg.sender !== "customer";
+                // WO-MEDIA-PROXY — a customer photo carries a WhatsApp media-id with
+                // no public URL, so it can only be fetched through the session-authed,
+                // tenant-scoped proxy. Until this was wired, an inbound photo rendered
+                // as "رسالة بدون نص" and the operator had no way to see what the
+                // customer actually sent — which for an allergy or a wrong-item photo
+                // is the whole message.
+                const photoId = resolveConsoleMediaId(msg.metadata);
                 return (
                   <div key={msg.id} style={{ ...bubble, ...(outbound ? outboundBubble : inboundBubble) }}>
-                    <Bdi>{msg.text || "رسالة بدون نص"}</Bdi>
+                    {photoId && (
+                      /* eslint-disable-next-line @next/next/no-img-element -- the proxy streams
+                         bytes from WhatsApp behind a session check; next/image would need a
+                         public, statically-known origin and would defeat that. */
+                      <img
+                        src={`/api/console/media/${encodeURIComponent(msg.id)}`}
+                        alt={photoCaption(msg.metadata) || "صورة من العميل"}
+                        style={photoBubbleImage}
+                        loading="lazy"
+                      />
+                    )}
+                    {(msg.text || !photoId) && <Bdi>{msg.text || "رسالة بدون نص"}</Bdi>}
                     <div style={bubbleTime}>{msg.time}{messageAuthor(msg.sender)}</div>
                   </div>
                 );
@@ -1387,6 +1406,17 @@ const outboundBubble: CSSProperties = {
   background: "#DFF3EB",
   border: "1px solid #C4E7D8",
   borderBottomRightRadius: 4,
+};
+
+const photoBubbleImage: CSSProperties = {
+  display: "block",
+  width: "100%",
+  maxWidth: 260,
+  maxHeight: 320,
+  objectFit: "cover",
+  borderRadius: 10,
+  marginBottom: 6,
+  background: "var(--surface-2)",
 };
 
 const bubbleTime: CSSProperties = {
