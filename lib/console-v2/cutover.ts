@@ -21,10 +21,21 @@ const EXACT: Readonly<Record<string, string>> = {
   "/menu": "/c/knowledge",
   "/team": "/c/team",
   "/insights": "/c/insights",
-  // No dedicated /c surface yet — fold to the operating home (Live Shift).
+  // Cash has no /c surface at all — console_v2's scope law ends at confirmed
+  // order + kitchen handoff, so these genuinely fold to the operating home. A
+  // flag-on tenant therefore has NO cash-settlement screen; that is a product
+  // gap, recorded here so the fold is not mistaken for a routing accident.
   "/cod": "/c/shift",
   "/cod/close": "/c/shift",
-  "/deliveries": "/c/shift",
+  // Deliveries DOES have a /c surface — app/(console-v2)/c/(app)/(manager)/
+  // deliveries, which lib/console-v2/nav.ts already links as `ready: true`. This
+  // entry used to fold to /c/shift under a "no dedicated /c surface yet" comment
+  // that went stale when that page was built, so anyone following a legacy
+  // /deliveries link landed on Live Shift instead of the board their own nav
+  // points at. The target is manager-only, and the (manager) layout is the
+  // authoritative role gate — an `operation` member is redirected there before
+  // the page renders, so this mapping cannot expose a manager surface.
+  "/deliveries": "/c/deliveries",
 };
 
 /** Map a legacy (console) pathname to its console_v2 (/c) target. */
