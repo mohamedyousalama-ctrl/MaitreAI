@@ -46,11 +46,38 @@ export function basketContentKey(args: { items: FingerprintItem[]; fulfillment: 
   return createHash("sha256").update(norm).digest("hex");
 }
 
-/** Best-effort next human-friendly order number for the tenant (pilot scale). */
+/**
+ * The next human-friendly order number for the tenant — allocated ATOMICALLY by
+ * the database (migration 0113).
+ *
+ * The previous implementation read EVERY order row for the tenant, took the
+ * numeric max and returned max+1. Two defects, both now closed:
+ *
+ *   1. RACE. Read-then-write with no lock: two orders created in the same instant
+ *      read the same max and took the same number — and there was no unique
+ *      constraint on (restaurant_id, order_number), so BOTH persisted. Two
+ *      customers, one order number, and no way for the operator to tell them
+ *      apart. 0113 adds the atomic counter AND the unique index as a backstop.
+ *   2. O(n). A full tenant scan per order creation. Now constant time.
+ *
+ * The scan is KEPT as a fallback for one reason only: an environment where 0113
+ * has not been applied (a fresh local database, a preview branch). Losing order
+ * creation entirely there would be a worse failure than a rare duplicate, and the
+ * unique index — where it exists — still refuses an actual collision. The
+ * fallback is logged so it is never silently the normal path.
+ */
 export async function nextOrderNumber(admin: SupabaseClient, restaurantId: string): Promise<string> {
-  const { data } = await admin.from("orders").select("order_number").eq("restaurant_id", restaurantId);
+  const { data, error } = await admin.rpc("next_order_number", { p_restaurant_id: restaurantId });
+  if (!error && data != null) return String(data);
+
+  console.warn(
+    "[orders] next_order_number RPC unavailable — falling back to the non-atomic scan. " +
+      "Apply migration 0113_atomic_order_numbers.",
+    error?.message ?? "no row returned",
+  );
+  const { data: rows } = await admin.from("orders").select("order_number").eq("restaurant_id", restaurantId);
   let max = 1000;
-  for (const r of (data ?? []) as { order_number: string }[]) {
+  for (const r of (rows ?? []) as { order_number: string }[]) {
     const n = parseInt(String(r.order_number).replace(/\D/g, ""), 10);
     if (!Number.isNaN(n) && n > max) max = n;
   }
