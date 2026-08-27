@@ -22,6 +22,8 @@ export const DICTIONARY = {
     // nav — legacy + console_v2 one-rail items
     "nav.conversations": "المحادثات",
     "nav.orders": "الطلبات",
+    "nav.cash": "الكاش والتحصيل",
+    "nav.dashboard": "لوحة التشغيل",
     "nav.customers": "العملاء",
     "nav.settings": "الإعدادات",
     "nav.liveShift": "الوردية المباشرة",
@@ -1208,6 +1210,8 @@ export const DICTIONARY = {
   en: {
     "nav.conversations": "Conversations",
     "nav.orders": "Orders",
+    "nav.cash": "Cash & collection",
+    "nav.dashboard": "Operations board",
     "nav.customers": "Customers",
     "nav.settings": "Settings",
     "nav.liveShift": "Live Shift",

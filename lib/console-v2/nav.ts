@@ -34,6 +34,9 @@ import {
   UserCog,
   Rocket,
   Truck,
+  ClipboardList,
+  Banknote,
+  LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 import type { DictKey } from "@/lib/i18n/dictionary";
@@ -58,6 +61,12 @@ export interface RailItem {
    *  on (delivery_runs OR delivery_geo_routing). Absent on every existing item, so the
    *  rail is byte-identical for a tenant without those flags. */
   requiresDeliveryModule?: boolean;
+  /** This entry links to a CLASSIC (console) page that console_v2 does not replace.
+   *  lib/console-v2/cutover.ts renders those instead of folding them, so the href is
+   *  a legacy path on purpose — without these rows the pages are reachable only by
+   *  typing a URL. Rendered with the same affordance as any other row; the shell
+   *  differs because the destination is the classic console. */
+  legacySurface?: boolean;
 }
 
 /** Section header dictionary keys, in render order (MAIN → MODULES → CRM → ADMIN). */
@@ -77,6 +86,10 @@ export const RAIL_ITEMS: RailItem[] = [
   { key: "live-shift", labelKey: "nav.liveShift", icon: Radio, section: "main", href: "/c/shift", ready: true, managerOnly: false },
   { key: "conversations", labelKey: "nav.conversations", icon: MessagesSquare, section: "main", href: "/c/conversations", ready: true, managerOnly: false },
   { key: "outcomes", labelKey: "nav.outcomes", icon: Target, section: "main", href: "/c/outcomes", ready: true, managerOnly: true },
+  // ── Classic surfaces console_v2 does not replace (see cutover.ts). These render
+  // rather than folding, so the rail must link them or they are URL-only.
+  { key: "orders", labelKey: "nav.orders", icon: ClipboardList, section: "main", href: "/orders", ready: true, managerOnly: false, legacySurface: true },
+  { key: "cash", labelKey: "nav.cash", icon: Banknote, section: "main", href: "/cod", ready: true, managerOnly: true, legacySurface: true },
   // MODULES — supporting tools (manager-only)
   { key: "knowledge", labelKey: "nav.knowledge", icon: BookOpen, section: "modules", href: "/c/knowledge", ready: true, managerOnly: true },
   { key: "insights", labelKey: "nav.insights", icon: BarChart3, section: "modules", href: "/c/insights", ready: true, managerOnly: true },
@@ -88,13 +101,17 @@ export const RAIL_ITEMS: RailItem[] = [
   // WO-DELIVERY-D3 — the التوصيل runs board. Flag-gated (requiresDeliveryModule): shown
   // ONLY when the tenant has delivery_runs or delivery_geo_routing on; otherwise absent
   // → the rail is byte-identical to today for every other tenant.
-  { key: "deliveries", labelKey: "nav.deliveries", icon: Truck, section: "modules", href: "/c/deliveries", ready: true, managerOnly: true, requiresDeliveryModule: true },
+  // Points at the CLASSIC board, not /c/deliveries: the classic page (450 lines) has
+  // create-delivery, add-driver, map pin, driver + customer tracking links and
+  // reassignment; the /c board (156 lines) is read-only and has none of them.
+  { key: "deliveries", labelKey: "nav.deliveries", icon: Truck, section: "modules", href: "/deliveries", ready: true, managerOnly: true, requiresDeliveryModule: true, legacySurface: true },
   // CRM — customer relationships (manager-only)
   { key: "customers", labelKey: "nav.customers", icon: Users, section: "crm", href: "/c/customers", ready: true, managerOnly: true },
   // ADMIN — configuration + people (manager-only)
   { key: "settings", labelKey: "nav.settings", icon: Settings, section: "admin", href: "/c/settings", ready: true, managerOnly: true },
   { key: "team", labelKey: "nav.team", icon: UserCog, section: "admin", href: "/c/team", ready: true, managerOnly: true },
   { key: "onboarding", labelKey: "nav.onboarding", icon: Rocket, section: "admin", href: "/c/onboarding", ready: true, managerOnly: true },
+  { key: "dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard, section: "admin", href: "/dashboard", ready: true, managerOnly: true, legacySurface: true },
 ];
 
 export type ConsoleRole = "manager" | "operation";

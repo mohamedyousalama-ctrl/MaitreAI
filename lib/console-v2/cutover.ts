@@ -1,48 +1,72 @@
 // ============================================================================
-// console_v2 — CUTOVER-1 legacy→/c path mapping (pure). A console_v2 flag-ON tenant
-// is redirected from every legacy (console) page to its /c equivalent by the old
-// console layout; this is the single source of truth for that mapping.
+// console_v2 — CUTOVER-1 legacy→/c path mapping (pure). The single source of
+// truth for what the old console layout does with a console_v2 flag-ON tenant.
 //
-// Design: leaf names line up (/conversations ↔ /c/conversations), with a few
-// deliberate folds (/orders + /dashboard → the /c home is Live Shift; /menu →
-// Knowledge). The kitchen-ticket route keeps its dynamic id. Anything unmapped
-// falls to `/c`, which itself forwards to /c/shift — so a flag-on tenant is NEVER
-// stranded on a legacy page, even for a route we didn't enumerate.
+// THE RULE (revised 2026-08-26): a legacy page is folded to /c ONLY when a real
+// /c surface replaces it. Where none exists, the legacy page RENDERS — it is not
+// bounced to an unrelated screen.
+//
+// The original design folded everything, so "never stranded on a legacy page"
+// was achieved by sending operators somewhere that could not do their job:
+// /orders (1,202 lines — the order book, drawer, POS hand-off, driver assign,
+// pay link), /cod + /cod/close (cash capture and shift close) and /deliveries
+// (450 lines — create delivery, add driver, map pin, driver + tracking links,
+// reassign) all landed on Live Shift, which is an exception-triage queue and
+// carries none of that. The tenant was not stranded; they were stranded
+// somewhere else. Wesaya has real cash flowing through it and had no screen to
+// settle a driver.
+//
+// So KEEP_LEGACY below is not a to-do list. It is the set of pages where the
+// classic console is still the product, and folding them loses capability.
+//
+// Anything unmapped and not in KEEP_LEGACY still falls to `/c`, so an unknown
+// legacy route is never a dead end.
 //
 // Pure so the redirect and its test share one source of truth.
 // ============================================================================
 
+/**
+ * Legacy paths that must RENDER, not redirect: no /c surface replaces them.
+ * Removing an entry here silently removes an operator capability — check that a
+ * real /c equivalent exists first, and update cutover.test.ts, which pins this.
+ */
+const KEEP_LEGACY: ReadonlySet<string> = new Set([
+  "/orders",     // the order book. /c/shift is a triage queue, not a replacement.
+  "/dashboard",  // no /c equivalent; Live Shift answers a different question.
+  "/cod",        // cash capture — console_v2 has no cash surface at all.
+  "/cod/close",  // shift close — same.
+  "/deliveries", // /c/deliveries exists but is a 156-line read-only board; the
+                 // classic page (450 lines) is the one with driver management,
+                 // driver + customer links, and reassignment.
+]);
+
+/** Legacy paths where a real /c surface replaces the classic page. */
 const EXACT: Readonly<Record<string, string>> = {
-  "/dashboard": "/c/shift",
-  "/orders": "/c/shift",
   "/conversations": "/c/conversations",
   "/customers": "/c/customers",
   "/settings": "/c/settings",
   "/menu": "/c/knowledge",
   "/team": "/c/team",
   "/insights": "/c/insights",
-  // Cash has no /c surface at all — console_v2's scope law ends at confirmed
-  // order + kitchen handoff, so these genuinely fold to the operating home. A
-  // flag-on tenant therefore has NO cash-settlement screen; that is a product
-  // gap, recorded here so the fold is not mistaken for a routing accident.
-  "/cod": "/c/shift",
-  "/cod/close": "/c/shift",
-  // Deliveries DOES have a /c surface — app/(console-v2)/c/(app)/(manager)/
-  // deliveries, which lib/console-v2/nav.ts already links as `ready: true`. This
-  // entry used to fold to /c/shift under a "no dedicated /c surface yet" comment
-  // that went stale when that page was built, so anyone following a legacy
-  // /deliveries link landed on Live Shift instead of the board their own nav
-  // points at. The target is manager-only, and the (manager) layout is the
-  // authoritative role gate — an `operation` member is redirected there before
-  // the page renders, so this mapping cannot expose a manager surface.
-  "/deliveries": "/c/deliveries",
 };
 
-/** Map a legacy (console) pathname to its console_v2 (/c) target. */
-export function mapLegacyToConsoleV2(pathname: string): string {
+/**
+ * Map a legacy (console) pathname to its console_v2 (/c) target.
+ *
+ * @returns the /c path to redirect to, or `null` to RENDER the legacy page.
+ */
+export function mapLegacyToConsoleV2(pathname: string): string | null {
   const clean = (pathname || "").replace(/\/+$/, "") || "/";
+  if (KEEP_LEGACY.has(clean)) return null;
   // Kitchen ticket keeps its order id: /orders/<id>/ticket → /c/orders/<id>/ticket.
+  // This one DOES have a /c surface and stays folded, even though /orders itself
+  // no longer does — the ticket is a standalone print view, not the order book.
   const ticket = clean.match(/^\/orders\/([^/]+)\/ticket$/);
   if (ticket) return `/c/orders/${ticket[1]}/ticket`;
   return EXACT[clean] ?? "/c";
+}
+
+/** True when this legacy path renders instead of redirecting. */
+export function rendersLegacy(pathname: string): boolean {
+  return mapLegacyToConsoleV2(pathname) === null;
 }

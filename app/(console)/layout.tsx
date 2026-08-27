@@ -39,7 +39,14 @@ export default async function ConsoleGroupLayout({ children }: { children: React
       if (enabled) {
         // Path-preserving bounce to /c (middleware stamps the pathname; layouts
         // can't read it otherwise). Unmapped paths fold to /c → /c/shift.
-        redirect(mapLegacyToConsoleV2(headers().get("x-kivo-pathname") ?? ""));
+        //
+        // A null target means this legacy page has no /c replacement and must
+        // RENDER — /orders, /dashboard, /cod, /cod/close, /deliveries. Folding
+        // those sent operators to Live Shift, which cannot do the job: no order
+        // book, no cash capture or shift close, no driver management. See
+        // lib/console-v2/cutover.ts for why each is on that list.
+        const target = mapLegacyToConsoleV2(headers().get("x-kivo-pathname") ?? "");
+        if (target) redirect(target);
       }
     }
   }

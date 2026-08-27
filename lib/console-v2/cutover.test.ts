@@ -17,20 +17,29 @@ test("leaf names line up 1:1", () => {
 });
 
 test("deliberate folds", () => {
-  assert.equal(mapLegacyToConsoleV2("/dashboard"), "/c/shift"); // home → Live Shift
-  assert.equal(mapLegacyToConsoleV2("/orders"), "/c/shift");    // orders folded into shift
-  assert.equal(mapLegacyToConsoleV2("/menu"), "/c/knowledge");  // menu lives in Knowledge
-  // Cash has no /c surface — console_v2's scope law stops at confirmed order +
-  // kitchen handoff. These folds are correct, and they are also the reason a
-  // flag-on tenant has no cash-settlement screen at all.
-  assert.equal(mapLegacyToConsoleV2("/cod"), "/c/shift");
-  assert.equal(mapLegacyToConsoleV2("/cod/close"), "/c/shift");
-  // Deliveries is DIFFERENT: /c/deliveries exists and nav.ts links it as ready.
-  // This previously asserted "/c/shift", which pinned a real routing bug in
-  // place — the fold's "no dedicated /c surface yet" comment went stale when
-  // that page shipped, so a legacy /deliveries link landed on Live Shift
-  // instead of the board the tenant's own nav points at. Corrected 2026-08-26.
-  assert.equal(mapLegacyToConsoleV2("/deliveries"), "/c/deliveries");
+  // The one fold whose leaf name does NOT line up: menu is served by Knowledge.
+  // (The 1:1 leaf mappings are covered by the test above; asserting them twice
+  // would look like coverage without adding any.)
+  assert.equal(mapLegacyToConsoleV2("/menu"), "/c/knowledge");
+  // An unmapped legacy route is never a dead end — it still falls to /c.
+  assert.equal(mapLegacyToConsoleV2("/some-route-we-never-enumerated"), "/c");
+});
+
+test("pages console_v2 does not replace RENDER — they are never folded away", () => {
+  // Revised 2026-08-26. These previously folded to /c/shift, which is an
+  // exception-triage queue: it has no order book, no cash capture or shift close,
+  // and no driver management. Folding them did not keep an operator in console_v2,
+  // it took the capability away — Wesaya had real cash and no screen to settle it.
+  // null means "render the legacy page".
+  for (const p of ["/orders", "/dashboard", "/cod", "/cod/close", "/deliveries"]) {
+    assert.equal(mapLegacyToConsoleV2(p), null, `${p} must render, not redirect`);
+  }
+  // Trailing slashes must resolve the same way.
+  assert.equal(mapLegacyToConsoleV2("/orders/"), null);
+  assert.equal(mapLegacyToConsoleV2("/cod/close/"), null);
+  // The kitchen ticket is a standalone print view and DOES have a /c surface, so it
+  // still folds even though /orders itself no longer does.
+  assert.equal(mapLegacyToConsoleV2("/orders/abc-123/ticket"), "/c/orders/abc-123/ticket");
 });
 
 test("a legacy fold never points at a /c route that does not exist", () => {
@@ -45,6 +54,7 @@ test("a legacy fold never points at a /c route that does not exist", () => {
                         "/settings", "/menu", "/team", "/insights", "/cod",
                         "/cod/close", "/deliveries", "/unmapped-thing"]) {
     const target = mapLegacyToConsoleV2(legacy);
+    if (target === null) continue; // renders the legacy page — nothing to validate
     assert.ok(REAL_C_ROUTES.has(target), `${legacy} maps to ${target}, which is not a real /c route`);
   }
 });
