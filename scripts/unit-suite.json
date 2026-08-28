@@ -203,5 +203,6 @@
   "node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-emergency-override.test.ts",
   "node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-public-demo-hardening.test.ts",
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-allergy-note-durability.test.ts",
-  "node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-khalid-runtime-guards.test.ts"
+  "node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-khalid-runtime-guards.test.ts",
+  "node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-saudi-dialect-purity.test.ts"
 ]

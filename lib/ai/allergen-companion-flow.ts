@@ -214,7 +214,7 @@ export function repairBannedAllergyReply(text: string, dialect: string): string 
 export function recoveryReply(dialect: string): string {
   return dialect === "egyptian"
     ? "آسف على تأخّر الفريق 🙏 وصلك حد من الفريق؟ لو لسه ما وصلكش، أقدر أنبّه الفريق تاني الحين، وأقدر أكمّل معاك أنا لو تحب — تحب أعمل إيه؟"
-    : "آسف على تأخّر الفريق 🙏 وصلك أحد من الفريق؟ إذا لسا ما وصلك، أقدر أنبّه الفريق مرة ثانية الحين، وأقدر أكمّل معك أنا لو تحب — وش تفضّل؟";
+    : "آسف على تأخّر الفريق 🙏 وصلك أحد من الفريق؟ إذا لين الحين ما وصلك، أقدر أنبّه الفريق مرة ثانية الحين، وأقدر أكمّل معك أنا لو تحب — وش تفضّل؟";
 }
 
 // The two recovery choices, offered as tappable buttons alongside recoveryReply().
