@@ -75,6 +75,8 @@ import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
 // WO-KHALID-STEP2: dialect-leakage QUALITY linter (observability only — NOT the safety
 // gate). Separate lane from allergen-gate/safety-hold/escalation; never blocks a turn.
 import { findLeakage } from "@/lib/ai/personas/khalid-dialect-linter.mjs";
+// WO-KHALID-BRAIN-3 — the forbidden-claim list had no runtime importer before this.
+import { findForbiddenClaims } from "@/lib/ai/personas/khalid-forbidden-claims.mjs";
 import { detectCallbackRequest } from "@/lib/ai/callback-trigger";
 // WO-LIVE6-DUP-ORDER-AWARENESS — deterministic "refers to an order I already placed"
 // detector + Arabic-Indic order-number rendering for the recap. Consulted ONLY when the
@@ -1877,9 +1879,53 @@ export async function runCustomerTurn(
           `[khalid:dialect-leakage] conv=${conversationId} ${leak.hits.length} hit(s): ` +
             leak.hits.map((h) => `${h.marker}(${h.category})`).join(", ")
         );
+        // PERSIST IT. console.warn is invisible in practice — nobody reads a lambda log,
+        // so the leakage rate this module exists to MEASURE has never actually been
+        // measured. A signal row is queryable.
+        result.signals.push({
+          type: "guard",
+          detail: {
+            guard: "dialect_leakage",
+            hits: leak.hits.map((h) => ({ marker: h.marker, category: h.category })),
+          },
+        });
       }
     } catch {
       /* observability must never affect a turn */
+    }
+  }
+
+  // WO-KHALID-BRAIN-3 — FORBIDDEN-CLAIM DETECTION AT RUNTIME.
+  //
+  // khalid-forbidden-claims.mjs defines 8 classes of thing Khalid must never assert.
+  // Until now it had NO runtime importer at all — it was read only by the CI eval
+  // harness and two unit tests. So seven of the eight (everything except allergen
+  // safety, which respond.ts guards separately) were prompt text and nothing more: a
+  // guaranteed delivery time, a medical claim, an invented discount, a request for card
+  // data, a false "payment received", an attack on another restaurant, or a claim to be
+  // human all reached the customer with nothing checking.
+  //
+  // THIS IS DETECTION, NOT PREVENTION — said plainly so nobody mistakes it for a fix.
+  // The reply still goes out. The CAUSE of each class is fixed at the prompt layer (the
+  // personhood rule and the promo rule landed in WO-KHALID-BRAIN-2); this is the backstop
+  // that tells us when the prompt failed. Rewriting a reply mid-flight is a bigger change
+  // that needs its own evidence that it does not break good replies — price-truth.ts is
+  // the precedent for how to do it, and it earned that by measuring first.
+  if (result.reply) {
+    try {
+      const claims = findForbiddenClaims(result.reply);
+      if (claims.length) {
+        console.error(
+          `[khalid:forbidden-claim] conv=${conversationId} ${claims.length}: ` +
+            claims.map((c) => c.id).join(", ")
+        );
+        result.signals.push({
+          type: "guard",
+          detail: { guard: "forbidden_claim", ids: claims.map((c) => c.id) },
+        });
+      }
+    } catch {
+      /* a detector fault must never break a customer turn */
     }
   }
 
