@@ -443,14 +443,17 @@ function companionEmergencyResult(
   decision: CompanionDecision,
   dialect: string,
   initialDraft: OrderDraft | null,
-  currency: string
+  currency: string,
+  // See emergencyReply: the staff alert is gated on conversationId, which is null on a
+  // demo turn, so the "I alerted the team" half of that reply would be a lie.
+  demoRun = false
 ): RespondResult {
   // WO-SAFETY-MODEL-V3 (§5): an ACTIVE emergency NO LONGER holds. Karim STAYS with the
   // urgent-guidance line (advise emergency services, never reassurance) and fires a LOUD
   // staff alert — silence during a medical emergency was the worst possible behavior.
   const reason = `طوارئ حساسية نشطة${decision.emergencyLabel ? ` (${decision.emergencyLabel})` : ""} — بُلّغ الفريق فوراً؛ لا تجميد، كريم يكمل بإرشاد الطوارئ`;
   return {
-    reply: emergencyReply(dialect),
+    reply: emergencyReply(dialect, demoRun),
     draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
     escalate: false,
     escalationReason: null,
@@ -485,11 +488,16 @@ function calmHoldResult(
   dialect: string,
   initialDraft: OrderDraft | null,
   currency: string,
-  source: CalmHoldSource
+  source: CalmHoldSource,
+  // Unreachable on the public demo today — calm-hold needs the `allergy_calm_hold`
+  // flag, which the demo tenant does not have and which the seed proof asserts is
+  // never seeded true. Threaded anyway so that enabling that flag later cannot
+  // silently reintroduce the "I alerted the team" lie on a demo turn.
+  demoRun = false
 ): RespondResult {
   const emergency = decision.path === "emergency";
   return {
-    reply: emergency ? emergencyReply(dialect) : calmHoldReply(dialect),
+    reply: emergency ? emergencyReply(dialect, demoRun) : calmHoldReply(dialect),
     draft: initialDraft ? structuredClone(initialDraft) : emptyDraft(currency),
     escalate: false,
     escalationReason: null,
@@ -1390,7 +1398,7 @@ export async function runCustomerTurn(
     // notify_without_hold staff alert — silence during a medical emergency was judged
     // the worst possible outcome, and freezing the thread produces silence.
     const emergencyDecision = decideCompanionAction(input.userMessage, sessionAllergyNote, allergenDecisionHint);
-    result = companionEmergencyResult(emergencyDecision, dialect, initialDraft, ctx.profile.currency);
+    result = companionEmergencyResult(emergencyDecision, dialect, initialDraft, ctx.profile.currency, input.demoRun === true);
     // KEEP THE PROMISE HERE TOO — and this is the case that needs it most.
     //
     // This branch was added above the deterministic gate to stop an active emergency
@@ -1426,7 +1434,7 @@ export async function runCustomerTurn(
     ctx.sessionAllergyNote = companionDecision.note;
     const source: CalmHoldSource = companionDecision.path === "emergency" ? "emergency" : holdSource;
     await enterCalmAllergyHold(admin, { restaurantId, conversationId, decision: companionDecision, source });
-    result = calmHoldResult(companionDecision, dialect, initialDraft, ctx.profile.currency, source);
+    result = calmHoldResult(companionDecision, dialect, initialDraft, ctx.profile.currency, source, input.demoRun === true);
   } else if (combinedAllergenHit.fired && !companionOn && !allergySimpleOn) {
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
     result = forcedAllergenSafetyResult(
@@ -1459,7 +1467,7 @@ export async function runCustomerTurn(
     companionDecision = decideCompanionAction(input.userMessage, sessionAllergyNote, allergenDecisionHint);
     if (companionDecision.path === "emergency") {
       // ACTIVE emergency → deterministic escalate, SYSTEM_HOLD, emergency-class.
-      result = companionEmergencyResult(companionDecision, dialect, initialDraft, ctx.profile.currency);
+      result = companionEmergencyResult(companionDecision, dialect, initialDraft, ctx.profile.currency, input.demoRun === true);
     } else {
       // §1a mention → keep talking. Carry the freshly-merged union note into the
       // prompt so the model's recap/checkpoint read the FULL session union.

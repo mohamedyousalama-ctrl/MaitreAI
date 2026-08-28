@@ -337,6 +337,33 @@ ok("the gate still offers the human OR continue choice on a demo turn",
   /أوصلك بموظف يتأكد لك/.test(turn));
 ok("the flag-OFF gate call site passes the demo flag", /input\.demoRun === true/.test(turn));
 
+// THE EMERGENCY PATH. «بلّغت الفريق فوراً» ("I alerted the team immediately") is true on a
+// real conversation and FALSE on a demo turn, where recordCriticalAlert is gated on a
+// conversationId that is null. Telling someone describing an ACTIVE medical emergency
+// that help has been summoned when it has not is the worst sentence this system could
+// produce. Fixing only the deterministic gate left this one behind.
+const flow = codeOf("lib/ai/allergen-companion-flow.ts");
+ok("emergencyReply takes a demoRun flag", /export function emergencyReply\(dialect: string, demoRun = false\)/.test(flow));
+ok("the 'I alerted the team' claim is dropped on a demo turn", /if \(demoRun\) \{[\s\S]{0,400}\}/.test(flow));
+// Scoped to the demoRun BLOCK ONLY. A window regex spanning past it matched the
+// real-tenant branch's copy of the same phrase, so gutting the demo advice survived.
+const demoBlock = /if \(demoRun\) \{([\s\S]*?)\n  \}/.exec(flow)?.[1] ?? "";
+ok("the demoRun branch was located", demoBlock.length > 0);
+ok("the demo variant still tells them to call emergency services",
+  demoBlock.includes("الإسعاف/الطوارئ"));
+ok("the demo variant still names the symptoms that mean 'call now'",
+  demoBlock.includes("صعوبة في التنفس") && demoBlock.includes("تورم"));
+ok("the demo variant does NOT claim the team was alerted",
+  !demoBlock.includes("بلّغت الفريق"));
+ok("the real-tenant wording is unchanged (live clients must not be touched)",
+  /return dialect === "egyptian"\s*\n\s*\? "بلّغت الفريق فوراً/.test(flow));
+for (const fn of ["companionEmergencyResult", "calmHoldResult"]) {
+  ok(`${fn} threads demoRun through to the reply`,
+    new RegExp(`function ${fn}\\([\\s\\S]{0,700}demoRun = false`).test(turn));
+}
+ok("every emergencyReply call in customer-turn passes the flag",
+  (turn.match(/emergencyReply\(dialect\)/g) ?? []).length === 0);
+
 // ── 15. THE SEED MUST NOT SILENTLY DISARM THE DEMO ───────────────────────────
 // The seed upserts on the primary key, so whatever it writes REPLACES the live
 // tenant's flags. It used to write `khalid_persona: false` while the demo runs it

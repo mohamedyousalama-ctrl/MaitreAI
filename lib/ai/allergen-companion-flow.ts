@@ -109,7 +109,21 @@ export function decideCompanionAction(
 // §5 EMERGENCY reply — the fixed line. Staff alerted, NEVER reassurance
 // («كل شيء بيكون تمام» is banned by spec §5). Never certifies safety.
 // ---------------------------------------------------------------------------
-export function emergencyReply(dialect: string): string {
+export function emergencyReply(dialect: string, demoRun = false): string {
+  // «بلّغت الفريق فوراً» — "I alerted the team immediately" — is TRUE on a real
+  // conversation and FALSE on a public demo turn, where conversationId is null and
+  // recordCriticalAlert is therefore skipped. Telling someone describing an active
+  // medical emergency that help has been summoned when it has not is the single worst
+  // sentence this system could produce, so the CLAIM is dropped on a demo turn.
+  //
+  // Everything after it — the urgent-guidance line — is the part that could actually
+  // help someone, and is kept verbatim in both cases. On a demo turn the advice to call
+  // emergency services becomes the WHOLE message, which is the correct emphasis anyway.
+  if (demoRun) {
+    return dialect === "egyptian"
+      ? "🚨 لو فيه صعوبة في التنفس أو تورم أو أعراض قوية، اتصل بالإسعاف/الطوارئ دلوقتي. أنا معاك."
+      : "🚨 إذا فيه صعوبة في التنفس أو تورم أو أعراض قوية، تواصل مع الإسعاف/الطوارئ الآن. أنا معك.";
+  }
   return dialect === "egyptian"
     ? "بلّغت الفريق فوراً 🚨 لو فيه صعوبة في التنفس أو تورم أو أعراض قوية، اتصل بالإسعاف/الطوارئ دلوقتي. أنا معاك."
     : "بلّغت الفريق فوراً 🚨 إذا فيه صعوبة في التنفس أو تورم أو أعراض قوية، تواصل مع الإسعاف/الطوارئ الآن. أنا معك.";
