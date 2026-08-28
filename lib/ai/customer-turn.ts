@@ -300,16 +300,25 @@ function forcedAllergenSafetyResult(
   initialDraft: OrderDraft | null,
   currency: string,
   source: "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" | "memory_allergy_gate" = "allergen_gate",
-  netReason: string | null = null
+  netReason: string | null = null,
+  // PUBLIC DEMO. On a demo turn there is no conversation, so the kitchen note is not
+  // written and no staff alert fires — the two things the sentence below promises.
+  // Claiming them to a stranger who just disclosed an allergy is the worst kind of
+  // false comfort, so the CLAIM is dropped while the SAFETY SUBSTANCE (I noticed, I
+  // cannot vouch for suitability myself, continue or take a human) is kept intact.
+  demoRun = false
 ): RespondResult {
   const t = term && term !== "الحساسية" ? `«${term}»` : "الحساسية";
   // WO-SAFETY-MODEL-V3 — NOTIFY-WITHOUT-HOLD: honest line + kitchen note + choices +
   // CONTINUE. NEVER promises a transfer (staff are alerted; the customer chooses). The
   // conversation stays AI_ACTIVE; a human is offered but never forced.
+  const recorded = demoRun
+    ? { eg: "", sa: "" }
+    : { eg: " — سجّلت الملاحظة للمطبخ ونبّهت الفريق", sa: " — سجّلت الملاحظة للمطبخ ونبّهت الفريق" };
   const reply =
     dialect === "egyptian"
-      ? `خدت بالي إنك ذكرت ${t} 🙏 صحتك تهمّنا — سجّلت الملاحظة للمطبخ ونبّهت الفريق. مش هقدر أأكد ملاءمة الأصناف من نفسي، بس نقدر نكمّل والملاحظة واضحة، أو أوصلك بموظف يتأكد لك — تحب إيه؟`
-      : `خذت بالي إنك ذكرت ${t} 🙏 صحتك تهمّنا — سجّلت الملاحظة للمطبخ ونبّهت الفريق. ما أقدر أأكد ملاءمة الأصناف من نفسي، بس نقدر نكمّل والملاحظة واضحة، أو أوصلك بموظف يتأكد لك — وش تحب؟`;
+      ? `خدت بالي إنك ذكرت ${t} 🙏 صحتك تهمّنا${recorded.eg}. مش هقدر أأكد ملاءمة الأصناف من نفسي، بس نقدر نكمّل والملاحظة واضحة، أو أوصلك بموظف يتأكد لك — تحب إيه؟`
+      : `خذت بالي إنك ذكرت ${t} 🙏 صحتك تهمّنا${recorded.sa}. ما أقدر أأكد ملاءمة الأصناف من نفسي، بس نقدر نكمّل والملاحظة واضحة، أو أوصلك بموظف يتأكد لك — وش تحب؟`;
   const reason = `سلامة الحساسية (بوابة حتمية): العميل ذكر تجنّب/مشكلة مع ${term ?? "الطعام"} — نُبّه الفريق؛ لا تجميد، كريم يكمل مع ملاحظة واضحة`;
   return {
     reply,
@@ -1422,7 +1431,8 @@ export async function runCustomerTurn(
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
     result = forcedAllergenSafetyResult(
       combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency,
-      holdSource, holdSource === "phonetic_safety_net" ? phoneticHit.reason : null
+      holdSource, holdSource === "phonetic_safety_net" ? phoneticHit.reason : null,
+      input.demoRun === true
     );
     // KEEP THE PROMISE. The frozen reply above tells the customer «سجّلت الملاحظة للمطبخ»
     // ("I recorded the note for the kitchen"), but on THIS branch nothing used to persist

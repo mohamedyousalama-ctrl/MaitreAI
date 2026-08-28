@@ -199,30 +199,65 @@ for (const t of ["demo_usage_counters", "demo_controls"]) {
   ok(`${t} has RLS enabled`, new RegExp(`alter table public\\.${t} enable row level security`).test(mig));
 }
 
-// ── 12. THE VOICE ROUTE — same controls, plus two audio only needs ─────────
+// ── 12. THE VOICE ROUTE — same controls, plus what audio specifically needs ────
+// These assertions were rewritten after an audit showed the first version was regex
+// theatre: it counted identifier occurrences and matched string literals, and would
+// have passed on a route that did not work. Where a control is an ORDERING property,
+// the ordering is now asserted; where a claim is about behaviour elsewhere in the
+// tree, the assertion follows it there instead of matching a word in this file.
 const voice = codeOf("app/api/demo/voice/route.ts");
+const iVoice = (needle: string) => voice.indexOf(needle);
+
 ok("the voice route gates on host in-handler too", /isDemoHost\(\s*req\.headers\.get\("host"\)\s*\)/.test(voice));
 ok("it uses the same durable spend guard", /rpc\("kv_demo_try_consume"/.test(voice));
 ok("the guard fails closed here too", /if\s*\(guardErr\s*\|\|\s*!guard\)[\s\S]{0,200}status:\s*503/.test(voice));
 ok("the tenant is pinned, never from the request", /restaurantId:\s*DEMO_RESTAURANT_ID/.test(voice));
 ok("no visitor audio or transcript is persisted", /demoRun:\s*true/.test(voice));
 ok("the transcript is length-capped like typed text", /\.slice\(0,\s*DEMO_MAX_CHARS\)/.test(voice));
+assertPayloadAllowlist("voice", voice);
 
-// STT bills per MINUTE — audio is a sharper spend lever than text.
-ok("audio has a hard size ceiling", /DEMO_MAX_AUDIO_BYTES/.test(voice));
-ok("the size is checked on the DECLARED length before reading the body",
-  /content-length[\s\S]{0,160}DEMO_MAX_AUDIO_BYTES/.test(voice));
-ok("and AGAIN on what actually arrived (content-length is a hint, not a promise)",
-  (voice.match(/DEMO_MAX_AUDIO_BYTES/g) ?? []).length >= 3);
+// SIZE. STT bills per MINUTE, so audio is a sharper spend lever than text.
 ok("the ceiling is a real, sane number",
   DEMO_MAX_AUDIO_BYTES > 0 && DEMO_MAX_AUDIO_BYTES <= 10 * 1024 * 1024);
+// A missing, non-numeric or duplicated Content-Length must FAIL, not slip through:
+// Number(null) is 0 and Number("abc") is NaN, and both compare false against a ceiling.
+ok("a declared length is REQUIRED (chunked/absent cannot bypass the ceiling)",
+  /\/\^\\d\+\$\/\.test\(rawLen/.test(voice) && /status:\s*411/.test(voice));
+ok("a non-numeric declared length is refused rather than defaulting to 0",
+  /Number\.isFinite\(declared\)/.test(voice));
+ok("the declared-length check runs BEFORE the body is read",
+  iVoice("content-length") < iVoice("formData()") && iVoice("status: 411") < iVoice("formData()"));
+ok("what actually arrived is checked too (a declared length is a hint, not a promise)",
+  /buf\.length\s*>\s*DEMO_MAX_AUDIO_BYTES/.test(voice));
 
-// The mock adapter returns a FIXED invented Arabic sentence. On a public demo it
-// would show Khalid "understanding" something the visitor never said.
+// NEVER MOCK — and checked HERE, not delegated. assertMockSttAllowed permits the mock
+// whenever NODE_ENV !== "production" (localhost is an allowlisted demo host), so relying
+// on it alone rendered a FABRICATED sentence as the visitor's own words under `npm run dev`.
+ok("the route refuses the mock adapter itself, not via the env-dependent guard",
+  /getSttAdapter\(\)\.name === "mock"/.test(voice));
+ok("the mock refusal happens BEFORE any transcription", iVoice('=== "mock"') < iVoice("transcribeAudioBytes("));
 ok("a transcription failure is surfaced honestly, never faked", /error:\s*"stt_unavailable"/.test(voice));
+
+// SPEND VISIBILITY. lib/monitoring/sweep.ts sums agent_runs.cost_usd for the daily
+// alert. On a voice turn STT is the dominant cost; dropping it blinds the only spend
+// monitor that exists, on the one surface anyone can call.
+ok("the STT cost is recorded to agent_runs", /trigger:\s*"voice"[\s\S]{0,220}cost_usd:\s*sttCost\.costUsd/.test(voice));
+ok("the cost write is CHECKED (a zero-row write must not pass silently)",
+  /mustWrite[\s\S]{0,400}exactRows:\s*1/.test(voice));
+ok("the accounting write still withholds the visitor's words",
+  /trigger:\s*"voice",\s*\n\s*input:\s*null,\s*\n\s*output:\s*null,/.test(voice));
+ok("failing to record spend refuses the turn rather than continuing blind",
+  /spend accounting failed[\s\S]{0,160}status:\s*503/.test(voice));
+
+// CONTEXT. The voice path was stateless while the typed path was not.
+ok("voice turns carry the conversation history, not a hardcoded empty array",
+  /history,/.test(voice) && !/history:\s*\[\]/.test(voice));
+ok("that history goes through the SAME cap as typed turns", /capDemoHistory/.test(voice));
+
+ok("the guard runs BEFORE the model call here too",
+  iVoice("kv_demo_try_consume") < iVoice("runCustomerTurn("));
 ok("the confidence signal reaches the fail-closed phonetic safety net",
   /sttConfidence/.test(voice) && /isVoiceTranscript:\s*true/.test(voice));
-assertPayloadAllowlist("voice", voice);
 
 // The shared byte-based entry point must keep the mock guard.
 const vlib = codeOf("lib/messaging/voice.ts");
@@ -231,6 +266,72 @@ ok("transcribeAudioBytes exists and asserts against the mock adapter",
   /assertMockSttAllowed\("transcribeAudioBytes"\)/.test(vlib));
 ok("the original WhatsApp entry point is untouched",
   /export async function transcribeWhatsAppVoice\(/.test(vlib) && /downloadWhatsAppMedia\(mediaId\)/.test(vlib));
+
+// ── 13. THE CLIENT — the public page had NO coverage at all ───────────────────
+const phone = codeOf("app/demo/DemoPhone.tsx");
+const page = codeOf("app/demo/page.tsx");
+
+ok("the page gates on host server-side and 404s", /isDemoHost/.test(page) && /notFound\(\)/.test(page));
+ok("the page is not indexable", /index:\s*false/.test(page));
+
+// G0-R: the demo must not be able to reach provider VOICE GENERATION.
+for (const [label, src] of [["client", phone], ["voice route", voice], ["page", page]] as const) {
+  ok(`the ${label} cannot reach a TTS path`, !/lib\/ai\/tts|elevenlabs|ElevenLabs|speechSynthesis|\/api\/tts/.test(src));
+}
+ok("the call screen does not fake a connected call (no running duration)",
+  !/setSecs|callDuration/.test(phone));
+
+// THE MICROPHONE. getUserMedia is awaited, so a release during the permission prompt
+// arrives before the recorder exists; and the mic BUTTON is unmounted the moment
+// recording starts, so a release handler bound to it can never fire.
+ok("a cancel token guards the await window", /wantRec/.test(phone));
+ok("a release that beats the permission prompt hands the microphone back",
+  /if\s*\(!wantRec\.current[\s\S]{0,140}getTracks\(\)\.forEach/.test(phone));
+ok("release is listened for on the WINDOW, not on the button that unmounts",
+  /window\.addEventListener\("pointerup"/.test(phone));
+ok("pointercancel is handled (a phone call or system gesture mid-recording)",
+  /window\.addEventListener\("pointercancel"/.test(phone));
+ok("a throw from mr.stop() cannot skip the track teardown",
+  /finally\s*\{[\s\S]{0,160}getTracks\(\)\.forEach\(\(t\) => t\.stop\(\)\)/.test(phone));
+ok("unmounting stops the timer and releases the microphone",
+  /mounted\.current = false;[\s\S]{0,400}getTracks\(\)\.forEach\(\(t\) => t\.stop\(\)\)/.test(phone));
+
+// Hydration: clock() in a useState initializer renders UTC on the server and local
+// time in the browser, which tears down and re-renders the whole root.
+ok("the greeting timestamp is not computed during render",
+  !/text: GREETING, at: clock\(\)/.test(phone));
+
+// Honest failure surfaces. Scoped to the VOICE error branch specifically: the text
+// branch already handles demo_unavailable, so a whole-file `includes` check passed
+// even with the voice branch's handling deleted. (Caught by mutation N13.)
+// Anchored on the voice response type, which only the voice handler declares.
+const vStart = phone.indexOf("transcript?: string;");
+const voiceBranch = vStart < 0 ? "" : phone.slice(vStart, vStart + 1400);
+ok("the voice error branch was located", voiceBranch.length > 0);
+for (const code of ["demo_unavailable", "audio_too_large", "rate_limited", "stt_unavailable", "stt_empty"]) {
+  ok(`the VOICE branch explains \`${code}\` rather than saying "try again"`, voiceBranch.includes(code));
+}
+// The kill switch must not be described as something retrying will fix.
+ok("a stopped demo is not reported to voice users as a retryable hiccup",
+  /demo_unavailable[\s\S]{0,120}موقوفة/.test(phone));
+
+// The animations referenced a keyframe name that has never existed.
+const css = readFileSync(resolve(ROOT, "app/globals.css"), "utf8");
+for (const kf of ["demoDot", "demoPulse"]) {
+  ok(`@keyframes ${kf} is actually defined`, new RegExp(`@keyframes ${kf}\\b`).test(css));
+  ok(`the client references ${kf}`, phone.includes(kf));
+}
+ok("no animation references the undefined bare `kv` keyframe", !/animation:\s*"kv\s/.test(phone));
+
+// ── 14. THE DEMO MUST NOT PROMISE WHAT IT CANNOT DO ───────────────────────────
+// On a demo turn conversationId is null, so the kitchen note is never written and no
+// staff alert fires. The deterministic gate's reply used to claim both.
+ok("the allergen gate takes a demoRun flag", /demoRun = false\n\): RespondResult/.test(turn));
+ok("the 'I logged it for the kitchen and alerted the team' claim is dropped on a demo turn",
+  /const recorded = demoRun\s*\n?\s*\?\s*\{ eg: "", sa: "" \}/.test(turn));
+ok("the gate still offers the human OR continue choice on a demo turn",
+  /أوصلك بموظف يتأكد لك/.test(turn));
+ok("the flag-OFF gate call site passes the demo flag", /input\.demoRun === true/.test(turn));
 
 console.log(`\nPUBLIC-DEMO HARDENING PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

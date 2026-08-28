@@ -8,6 +8,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DEMO_MAX_AUDIO_BYTES, DEMO_MAX_RECORD_SECONDS } from "@/lib/demo/config";
 
 type Msg = {
   id: number;
@@ -26,8 +27,12 @@ const GREETING =
   "هلا والله، أنا خالد من مطعم الديرة 👋\nوش تحب تطلب اليوم؟ تقدر تكتب لي أو ترسل لي ملاحظة صوتية.";
 
 export default function DemoPhone() {
+  // The greeting's timestamp is filled on the client only. Computing it in the
+  // initializer renders UTC on the server and Riyadh in the browser, which fails
+  // hydration and makes React re-render the entire root — a visible blank-then-repaint
+  // on a phone, on the first screen a prospect sees.
   const [msgs, setMsgs] = useState<Msg[]>([
-    { id: 0, from: "khalid", kind: "text", text: GREETING, at: clock() },
+    { id: 0, from: "khalid", kind: "text", text: GREETING, at: "" },
   ]);
   const [draft, setDraft] = useState("");
   const [typing, setTyping] = useState(false);
@@ -35,12 +40,31 @@ export default function DemoPhone() {
   const [recording, setRecording] = useState(false);
   const [recSecs, setRecSecs] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [armed, setArmed] = useState(false);
+  const [slideCancel, setSlideCancel] = useState(false);
 
   const nextId = useRef(1);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // CANCEL TOKEN. getUserMedia is awaited, so the permission prompt opens a window
+  // where the user has already released the button before `recorder.current` exists.
+  // Without this, stopRec no-ops, the recorder then starts, and the MIC STAYS OPEN
+  // FOREVER. That is the single most likely first interaction on a public page.
+  const wantRec = useRef(false);
+  const mounted = useRef(true);
+  // The composer swaps to the recording bar the instant recording starts, which
+  // UNMOUNTS the mic button — so onPointerUp bound to that button can never fire.
+  // Release is therefore listened for on the WINDOW while armed, which also means
+  // a release anywhere on the screen still sends, exactly like WhatsApp.
+  const pressX = useRef<number | null>(null);
+  // startRec's interval needs stopRec, which is declared after it.
+  const stopRecRef = useRef<((cancelled?: boolean) => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    setMsgs((prev) => (prev[0] && !prev[0].at ? [{ ...prev[0], at: clock() }, ...prev.slice(1)] : prev));
+  }, []);
 
   // Stick to the bottom on new messages, the way a chat app does.
   useEffect(() => {
@@ -108,9 +132,26 @@ export default function DemoPhone() {
 
   // ── hold-to-record, exactly as WhatsApp does it ──────────────────────────
   const startRec = useCallback(async () => {
-    if (recording || typing) return;
+    if (recording) return;
+    if (typing) { setNotice("خلّني أكمّل ردي الأول 🙏"); return; }
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setNotice("متصفحك ما يدعم التسجيل هنا 🙏 اكتب لي بدالها.");
+      return;
+    }
+    if (typeof MediaRecorder === "undefined") {
+      setNotice("متصفحك ما يدعم تسجيل الصوت 🙏 اكتب لي بدالها.");
+      return;
+    }
+    wantRec.current = true;
+    let stream: MediaStream | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Released the button (or unmounted) while the permission prompt was open —
+      // hand the microphone straight back instead of starting a recording nobody can stop.
+      if (!wantRec.current || !mounted.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       const mr = new MediaRecorder(stream);
       chunks.current = [];
       mr.ondataavailable = (e) => { if (e.data.size) chunks.current.push(e.data); };
@@ -118,37 +159,87 @@ export default function DemoPhone() {
       recorder.current = mr;
       setRecording(true);
       setRecSecs(0);
-      recTimer.current = setInterval(() => setRecSecs((s) => s + 1), 1000);
-    } catch {
-      setNotice("ما قدرنا نفتح المايك 🙏 تأكد من الإذن.");
+      recTimer.current = setInterval(() => {
+        setRecSecs((n) => {
+          // AUTO-STOP. STT bills per minute, so the cheapest place to bound the clip is
+          // before it is ever uploaded. Also stops a forgotten hold from running forever.
+          if (n + 1 >= DEMO_MAX_RECORD_SECONDS) {
+            setArmed(false);
+            queueMicrotask(() => void stopRecRef.current?.(false));
+          }
+          return n + 1;
+        });
+      }, 1000);
+    } catch (err) {
+      // Always return the microphone, whatever failed after we were granted it.
+      stream?.getTracks().forEach((t) => t.stop());
+      wantRec.current = false;
+      const name = err instanceof Error ? err.name : "";
+      setNotice(
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "ما أعطيتنا إذن المايك 🙏 فعّله من إعدادات المتصفح أو اكتب لي."
+          : name === "NotFoundError"
+            ? "ما لقينا مايك في جهازك 🙏 اكتب لي بدالها."
+            : "ما قدرنا نفتح المايك 🙏 اكتب لي بدالها.",
+      );
     }
   }, [recording, typing]);
 
   const stopRec = useCallback(
     async (cancelled?: boolean) => {
+      // Clear the token FIRST — an in-flight startRec must see this even when
+      // there is no recorder to stop yet.
+      wantRec.current = false;
       const mr = recorder.current;
       if (!mr) return;
       if (recTimer.current) { clearInterval(recTimer.current); recTimer.current = null; }
       const seconds = recSecs;
       setRecording(false);
       setRecSecs(0);
-      await new Promise<void>((resolve) => {
-        mr.onstop = () => resolve();
-        mr.stop();
-      });
-      mr.stream.getTracks().forEach((t) => t.stop());
-      recorder.current = null;
-      if (cancelled || seconds < 1) return;
+      // mr.stop() throws InvalidStateError when the recorder is already inactive
+      // (permission revoked mid-recording, track ended). The throw must NOT skip
+      // the track teardown below, or the microphone stays live.
+      try {
+        await new Promise<void>((resolve) => {
+          mr.onstop = () => resolve();
+          try { mr.stop(); } catch { resolve(); }
+        });
+      } finally {
+        mr.stream.getTracks().forEach((t) => t.stop());
+        recorder.current = null;
+      }
+      if (cancelled) return;
+      if (seconds < 1) {
+        // A tap rather than a hold. Say so — silently dropping it reads as a broken button.
+        setNotice("اضغط مطوّلاً على المايك وتكلّم 🎙️");
+        return;
+      }
 
       const blob = new Blob(chunks.current, { type: mr.mimeType || "audio/webm" });
+      chunks.current = [];
+      if (blob.size > DEMO_MAX_AUDIO_BYTES) {
+        // Checked here too: uploading it anyway would consume a durable guard slot
+        // just to be told 413, i.e. the visitor burns quota to be told to try again.
+        setNotice("المقطع طويل على التجربة 🙏 سجّل أقصر شوي.");
+        return;
+      }
       setTyping(true);
       setNotice(null);
       try {
-        const res = await fetch("/api/demo/voice", {
-          method: "POST",
-          headers: { "Content-Type": blob.type },
-          body: blob,
-        });
+        // multipart so the clip carries the on-screen history: without it the voice
+        // path was stateless while the typed path was not, and a spoken follow-up
+        // («وزيدها لبن») reached Khalid with no memory of what was being ordered.
+        const fd = new FormData();
+        fd.append("audio", blob, "note.webm");
+        fd.append(
+          "history",
+          JSON.stringify(
+            msgs
+              .filter((m) => m.kind === "text" || m.from === "me")
+              .map((m) => ({ role: m.from === "me" ? "user" : "assistant", content: m.text })),
+          ),
+        );
+        const res = await fetch("/api/demo/voice", { method: "POST", body: fd });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean; transcript?: string; reply?: string; error?: string;
         };
@@ -156,9 +247,17 @@ export default function DemoPhone() {
           setNotice(
             data.error === "stt_unavailable"
               ? "الملاحظات الصوتية مو جاهزة بالتجربة الحين 🙏 اكتب لي بدالها."
-              : data.error === "rate_limited"
-                ? "وصلنا الحد الأقصى للتجربة الحين 🙏"
-                : "ما قدرنا نسمع المقطع 🙏 جرّب مرة ثانية.",
+              : data.error === "demo_unavailable"
+                // The Founder's kill switch. Telling them to "try again" here would
+                // be a lie that never resolves.
+                ? "التجربة موقوفة مؤقتاً 🙏"
+                : data.error === "audio_too_large"
+                  ? "المقطع طويل على التجربة 🙏 سجّل أقصر شوي."
+                  : data.error === "rate_limited"
+                    ? "وصلنا الحد الأقصى للتجربة الحين 🙏"
+                    : data.error === "stt_empty"
+                      ? "ما سمعنا كلام واضح 🙏 جرّب مرة ثانية."
+                      : "ما قدرنا نسمع المقطع 🙏 جرّب مرة ثانية.",
           );
           return;
         }
@@ -171,8 +270,58 @@ export default function DemoPhone() {
         setTyping(false);
       }
     },
-    [recSecs, push],
+    [recSecs, push, msgs],
   );
+
+  useEffect(() => { stopRecRef.current = stopRec; }, [stopRec]);
+
+  // RELEASE-TO-SEND, and slide-left-to-cancel, listened for on the window.
+  // Bound here rather than on the mic button because that button is unmounted by
+  // the recording swap; this also covers the window while the browser's permission
+  // prompt is open, when no recorder exists yet.
+  useEffect(() => {
+    if (!armed) return;
+    const CANCEL_PX = 80; // RTL: dragging LEFT, away from the mic, cancels.
+    const move = (e: PointerEvent) => {
+      if (pressX.current === null) return;
+      setSlideCancel(pressX.current - e.clientX > CANCEL_PX);
+    };
+    const up = (e: PointerEvent) => {
+      const cancelled = pressX.current !== null && pressX.current - e.clientX > CANCEL_PX;
+      setArmed(false); setSlideCancel(false); pressX.current = null;
+      void stopRec(cancelled);
+    };
+    const cancel = () => {
+      // pointercancel fires on an incoming call, a system gesture, a scroll steal.
+      // Without this the microphone stays open on a phone until the visitor notices.
+      setArmed(false); setSlideCancel(false); pressX.current = null;
+      void stopRec(true);
+    };
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("pointermove", move);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("pointermove", move);
+    };
+  }, [armed, stopRec]);
+
+  // Leaving the page mid-recording must not leave the microphone open.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      wantRec.current = false;
+      if (recTimer.current) { clearInterval(recTimer.current); recTimer.current = null; }
+      const mr = recorder.current;
+      if (mr) {
+        try { mr.stop(); } catch { /* already inactive */ }
+        mr.stream.getTracks().forEach((t) => t.stop());
+        recorder.current = null;
+      }
+    };
+  }, []);
 
   const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -221,7 +370,9 @@ export default function DemoPhone() {
               <button style={S.trash} onClick={() => void stopRec(true)} aria-label="إلغاء">🗑</button>
               <span style={S.recDot} aria-hidden />
               <span style={S.recTime}>{mmss(recSecs)}</span>
-              <span style={S.recHint}>اسحب للإلغاء — ارفع إصبعك للإرسال</span>
+              <span style={{ ...S.recHint, ...(slideCancel ? { color: "#f15c6d", fontWeight: 700 } : null) }}>
+                {slideCancel ? "ارفع إصبعك للإلغاء" : "اسحب لليسار للإلغاء — ارفع إصبعك للإرسال"}
+              </span>
               <button style={S.sendBtn} onClick={() => void stopRec(false)} aria-label="إرسال">
                 <SendIcon />
               </button>
@@ -246,11 +397,17 @@ export default function DemoPhone() {
               ) : (
                 <button
                   style={S.sendBtn}
-                  onMouseDown={() => void startRec()}
-                  onMouseUp={() => void stopRec(false)}
-                  onMouseLeave={() => recording && void stopRec(true)}
-                  onTouchStart={(e) => { e.preventDefault(); void startRec(); }}
-                  onTouchEnd={(e) => { e.preventDefault(); void stopRec(false); }}
+                  // ONE pointer handler for mouse, touch and pen. Only the PRESS is
+                  // bound here — release is on the window (this button unmounts the
+                  // moment recording starts), which is also why there is no
+                  // onMouseLeave cancel: drifting off a 42px button should not
+                  // silently discard what someone just said.
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    pressX.current = e.clientX;
+                    setArmed(true);
+                    void startRec();
+                  }}
                   aria-label="اضغط مع الاستمرار للتسجيل"
                 >
                   <MicIcon />
@@ -298,23 +455,21 @@ function Bubble({ m, mmss }: { m: Msg; mmss: (s: number) => string }) {
 }
 
 function CallScreen({ onEnd }: { onEnd: () => void }) {
-  const [secs, setSecs] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setSecs((s) => s + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
+  // NO RUNNING TIMER. A counting call duration is the universal signal that a call
+  // connected — nothing connects here, and a demo that fakes a live call in front of
+  // a prospect is the one thing this page must not do. It says what it is instead.
+  //
+  // The note also no longer dates the missing half against an internal approval:
+  // a prospect should not be told which sign-off the product is waiting on.
   return (
     <div style={S.call}>
       <div style={S.callAvatar} aria-hidden>خ</div>
       <div style={S.callName}>خالد — مطعم الديرة</div>
-      <div style={S.callStatus}>
-        {`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`}
-      </div>
+      <div style={S.callStatus}>المكالمة الصوتية غير مفعّلة في التجربة</div>
       <p style={S.callNote}>
-        المكالمات الصوتية قيد التجهيز — خالد يفهم الملاحظات الصوتية الحين، والرد بالصوت
-        قادم بعد اعتماد الصوت الجديد.
+        خالد يفهم الملاحظات الصوتية الحين — سجّل ملاحظة من زر المايك وبيرد عليك.
       </p>
-      <button style={S.hangup} onClick={onEnd} aria-label="إنهاء المكالمة">
+      <button style={S.hangup} onClick={onEnd} aria-label="إغلاق">
         <PhoneIcon />
       </button>
     </div>
@@ -336,7 +491,9 @@ const MicIcon = () => (
   </svg>
 );
 const SendIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+  // scaleX(-1): the glyph points right; in an RTL thread the send arrow points LEFT.
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden
+       style={{ transform: "scaleX(-1)" }}>
     <path d="M2 21l21-9L2 3v7l15 2-15 2v7z" />
   </svg>
 );
@@ -383,7 +540,7 @@ const S: Record<string, React.CSSProperties> = {
   voiceTime: { fontSize: 11, color: "#8696a0" },
   typing: { display: "flex", gap: 4, alignItems: "center", padding: "10px 12px" },
   dot: { width: 6, height: 6, borderRadius: "50%", background: "#8696a0", display: "block",
-    animation: "kv 1.2s infinite" },
+    animation: "demoDot 1.2s infinite" },
   notice: { margin: "8px auto", width: "fit-content", maxWidth: "88%", textAlign: "center",
     background: "#3b2a1a", color: "#ffd279", fontSize: 12.5, padding: "8px 12px", borderRadius: 8 },
   composer: { display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
@@ -397,7 +554,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 22, padding: "6px 10px", color: "#e9edef" },
   trash: { background: "none", border: 0, fontSize: 17, cursor: "pointer" },
   recDot: { width: 9, height: 9, borderRadius: "50%", background: "#f15c6d",
-    animation: "kv 1s infinite", display: "block" },
+    animation: "demoPulse 1s infinite", display: "block" },
   recTime: { fontSize: 13, fontVariantNumeric: "tabular-nums" },
   recHint: { fontSize: 11, color: "#8696a0", flex: 1, textAlign: "center" },
   call: { position: "absolute", inset: 0, background: "#111b21", display: "flex",

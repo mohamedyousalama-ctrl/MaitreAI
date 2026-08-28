@@ -446,3 +446,21 @@ body {
   .kvx-scrim,.kvx-drawer,.kvx-modal,.kvx-toast{ animation:none !important; }
   .kvx-ring .kvx-fg{ transition:none; }
 }
+
+/* WO-DEMO-UI — the public WhatsApp-style demo phone (app/demo/DemoPhone.tsx).
+   That component styles itself inline, but @keyframes cannot live in an inline
+   style object, so the two it needs are defined here. They were originally
+   written as `animation: kv ...`, and no bare `kv` keyframe has ever existed —
+   the typing dots rendered as three static circles and the recording dot never
+   pulsed. Named with a demo prefix so they cannot collide with the kv-* set. */
+@keyframes demoDot {
+  0%, 60%, 100% { transform: translateY(0); opacity: .45 }
+  30%           { transform: translateY(-4px); opacity: 1 }
+}
+@keyframes demoPulse {
+  0%, 100% { transform: scale(1); opacity: 1 }
+  50%      { transform: scale(1.35); opacity: .35 }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="demoDot"], [style*="demoPulse"] { animation: none !important; }
+}
