@@ -30,58 +30,123 @@ const ok = (label: string, cond: boolean) => {
   else { fail++; console.log(`  ✗   ${label}`); }
 };
 
-// Files carrying customer-facing dialect conditionals.
+// Files carrying customer-facing Saudi copy.
 const FILES = [
   "lib/ai/allergen-companion-flow.ts",
   "lib/ai/turn-contract.ts",
   "lib/ai/customer-turn.ts",
   "lib/ai/allergy-simple.ts",
   "lib/ai/allergy-calm-hold.ts",
+  "lib/ai/dialect.ts",
 ];
 
+// EXTRA markers. The project linter's Egyptian list is 26 entries and misses the ones
+// that actually leaked: it contains none of these, and returned ok=true on every
+// Egyptian string in allergy-calm-hold.ts's Saudi path. A clean findLeakage() is NOT
+// evidence of Saudi-ness, so this proof adds its own list on top.
+const EXTRA_EGYPTIAN: Array<[RegExp, string]> = [
+  [/(?:^|[\s،.])مش(?=[\s،.]|$)/, "مش"],
+  [/(?:^|[\s،.])لسه(?=[\s،.]|$)/, "لسه"],
+  [/(?:^|[\s،.])حابب(?=[\s،.]|$)/, "حابب"],
+  [/لحد ما/, "لحد ما"],
+  [/يا فندم|حضرتك/, "فندم/حضرتك"],
+  [/(?:^|[\s،.])ه(?:يتواصل|يرد|يتأكد|رجعلك|نكمل|جيب|بعتلك)/, "ه-future"],
+  [/(?:^|[\s،.])دي(?=[\s،.]|$)/, "دي"],
+  [/معاك(?=[\s،.]|$)/, "معاك"],
+];
+// MSA slippage the corpus itself bans (prompt.ts: never أريد/سوف/سـ/يرجى/لطفاً).
+const EXTRA_MSA: Array<[RegExp, string]> = [
+  [/(?:^|[\s،.])(?:سوف|أريد|يُرجى|يرجى|لطفاً)(?=[\s،.]|$)/, "MSA word"],
+  [/(?:^|[\s،.])س(?:نحل|يصلك|نتواصل|نعوض|نرجع|يتصل)/, "MSA سـ future"],
+];
+
+function offend(text: string): string[] {
+  const hits: string[] = [];
+  const leak = findLeakage(text);
+  if (!leak.ok) hits.push(...leak.hits.map((h) => `${h.marker}(${h.category})`));
+  for (const [re, label] of EXTRA_EGYPTIAN) if (re.test(text)) hits.push(`${label}(egyptian)`);
+  for (const [re, label] of EXTRA_MSA) if (re.test(text)) hits.push(`${label}(msa)`);
+  return hits;
+}
+
 /**
- * Extract the NON-Egyptian side of every dialect ternary.
+ * Every Saudi-side string in a file.
  *
- * Both shapes occur in this codebase:
- *   dialect === "egyptian" ? "<eg>" : "<sa>"      → the Saudi string follows the colon
- *   eg ? "<eg>" : "<sa>"                           → same, abbreviated
- * Only string literals are considered; a ternary over identifiers is skipped rather
- * than guessed at.
+ * THE FIRST VERSION OF THIS EXTRACTOR WAS BACKWARDS and reported a false all-clear.
+ * It only understood `dialect === "egyptian" ? EG : SA`, so on the equally common
+ * `dialect === "saudi" ? SA : EG` it took the `:` branch — the EGYPTIAN string — and
+ * linted that as if it were Saudi, while never checking the real Saudi one. It also
+ * only looked at ternaries, so allergy-calm-hold.ts — whose Saudi copy lives in an
+ * object literal and which carried SIX Egyptian strings including the banned «يا فندم» —
+ * contributed zero branches and the suite still printed "0 offenders".
+ *
+ * Handles all three shapes now: both ternary polarities, and `saudi: { … }` /
+ * `saudi: "…"` object-literal blocks.
  */
-function saudiBranches(path: string): Array<{ line: number; text: string }> {
+function saudiStrings(path: string): Array<{ line: number; text: string }> {
   const out: Array<{ line: number; text: string }> = [];
-  const src = readFileSync(resolve(ROOT, path), "utf8");
-  const lines = src.split("\n");
-  const joined = lines.map((l, i) => ({ l, i }));
-  for (const { l, i } of joined) {
+  const lines = readFileSync(resolve(ROOT, path), "utf8").split("\n");
+  const isComment = (l: string) => {
     const t = l.trimStart();
-    if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) continue;
-    // ternary fully on one line
-    const inline = l.match(/(?:dialect === "egyptian"|(?:^|[^A-Za-z])eg)\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"/);
-    if (inline) { out.push({ line: i + 1, text: inline[2] }); continue; }
-    // multi-line: a lone `: "…"` continuation directly after a `? "…"`
-    const cont = l.match(/^\s*:\s*"([^"]+)"/);
-    if (cont) {
-      const prev = lines[i - 1] ?? "";
-      if (/\?\s*"/.test(prev) || /"\s*$/.test(prev)) out.push({ line: i + 1, text: cont[1] });
-    }
+    return t.startsWith("//") || t.startsWith("*") || t.startsWith("/*");
+  };
+
+  // (a)+(b) TERNARIES, both polarities, single- or multi-line.
+  //
+  // Polarity is decided by the CONDITION, never by branch position — that was the
+  // original bug. `dialect === "saudi" ? A : B` yields A; `dialect === "egyptian" ? A : B`
+  // (and the abbreviated `eg ? A : B`) yields B. A window of the condition line plus the
+  // next three is joined so a ternary wrapped across lines is read the same way.
+  for (let i = 0; i < lines.length; i++) {
+    if (isComment(lines[i])) continue;
+    const isSaudiFirst = /dialect === "saudi"\s*$|dialect === "saudi"\s*\?/.test(lines[i]);
+    const isEgFirst = /dialect === "egyptian"\s*$|dialect === "egyptian"\s*\?|(?:^|[^A-Za-z])eg\s*\?/.test(lines[i]);
+    if (!isSaudiFirst && !isEgFirst) continue;
+    const window = [lines[i], lines[i + 1] ?? "", lines[i + 2] ?? "", lines[i + 3] ?? ""].join("\n");
+    const m = window.match(/\?\s*"([^"]+)"[\s\S]{0,40}?:\s*"([^"]+)"/);
+    if (!m) continue;
+    out.push({ line: i + 1, text: isSaudiFirst ? m[1] : m[2] });
   }
-  return out;
+
+  // (c) object-literal Saudi blocks: `saudi: {` … `}` and `saudi: "…"`.
+  let depth = -1;
+  lines.forEach((l, i) => {
+    if (isComment(l)) return;
+    if (depth < 0 && /^\s*saudi:\s*\{/.test(l)) { depth = 0; return; }
+    if (depth >= 0) {
+      depth += (l.match(/\{/g) ?? []).length - (l.match(/\}/g) ?? []).length;
+      for (const m of l.matchAll(/"([^"]*[؀-ۿ][^"]*)"/g)) out.push({ line: i + 1, text: m[1] });
+      // TEMPLATE LITERALS TOO. The Saudi phone line is an arrow function returning a
+      // backtick string — `لو تحب تتواصل مباشرة: ${p}` — so a double-quote-only scan
+      // missed it, and a mutation putting the Egyptian «حابب» back survived.
+      for (const m of l.matchAll(/`([^`]*[؀-ۿ][^`]*)`/g)) out.push({ line: i + 1, text: m[1] });
+      if (depth < 0) depth = -1;
+      return;
+    }
+    const inline = l.match(/^\s*saudi:\s*"([^"]*[؀-ۿ][^"]*)"/);
+    if (inline) out.push({ line: i + 1, text: inline[1] });
+  });
+
+  // de-dupe
+  const seen = new Set<string>();
+  return out.filter((o) => { const k = `${o.line}|${o.text}`; if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
 let checked = 0;
 const offenders: string[] = [];
 for (const f of FILES) {
-  for (const { line, text } of saudiBranches(f)) {
+  for (const { line, text } of saudiStrings(f)) {
     checked++;
-    const leak = findLeakage(text);
-    if (!leak.ok) {
-      offenders.push(`${f}:${line} [${leak.hits.map((h) => `${h.marker}(${h.category})`).join(", ")}] ${text.slice(0, 70)}`);
-    }
+    const hits = offend(text);
+    if (hits.length) offenders.push(`${f}:${line} [${hits.join(", ")}] ${text.slice(0, 70)}`);
   }
 }
 
-ok(`the extractor actually found Saudi branches to check (found ${checked})`, checked >= 12);
+ok(`the extractor found Saudi strings to check (found ${checked})`, checked >= 25);
+// The file that carried SIX Egyptian strings contributed ZERO before — its copy lives
+// in an object literal, not a ternary, so the first extractor never opened it.
+ok("allergy-calm-hold.ts is actually covered (it was silently skipped before)",
+  saudiStrings("lib/ai/allergy-calm-hold.ts").length >= 5);
 ok("no SAUDI branch contains an Egyptian / Levantine / Iraqi marker", offenders.length === 0);
 for (const o of offenders) console.log(`      ${o}`);
 

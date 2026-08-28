@@ -212,7 +212,7 @@ async function getOrCreateOwner() {
     { id: ITEM.laban, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "لبن بارد", description: "يقطع دسم الرز والمشوي — بارد وحامض خفيف.", price: 6, available: true, ingredients: ["لبن"], allergens: ["لبن"] },
     { id: ITEM.gahwa, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "قهوة عربية", description: "قهوة فاتحة بالهيل والزعفران — ما تكمل إلا مع التمر.", price: 8, available: true, ingredients: ["قهوة", "هيل", "زعفران"], allergens: [] },
     { id: ITEM.tamr, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "تمر سكري", description: "سكري ذهبي هشّ وحلو — رفيق فنجال القهوة.", price: 12, available: true, ingredients: ["تمر"], allergens: [] },
-    { id: ITEM.luqaimat, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "لقيمات", description: "كور ذهبية مقلية، مقرمشة من برّا وطرية من جوّا، مغموسة بالقطر وتجيك سخنة.", price: 18, available: true, ingredients: ["دقيق", "دبس"], allergens: ["قمح"] },
+    { id: ITEM.luqaimat, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "لقيمات", description: "كور ذهبية مقلية، مقرمشة من برّا وطرية من جوّا، مغموسة بالقطر وتجيك سخنة.", price: 18, available: true, ingredients: ["دقيق", "قطر"], allergens: ["قمح"] },
   ]);
 
   // 7) Item↔modifier links (kabsa laham → extra nuts; kabsa dajaj → daggus).
