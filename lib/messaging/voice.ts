@@ -14,6 +14,35 @@ import { buildSttPromptVocab } from "@/lib/ai/voice-quality";
 
 export const VOICE_STT_UNAVAILABLE_TRANSCRIPT = "[رسالة صوتية — التفريغ الصوتي غير متاح حاليًا]";
 
+/**
+ * Transcribe audio the caller already holds, rather than a WhatsApp media id.
+ *
+ * `transcribeWhatsAppVoice` is media-id bound: it calls `downloadWhatsAppMedia`
+ * first. A browser recording has BYTES, not an id, so the public demo could not
+ * use it. Everything below the download was already byte-based and unchanged —
+ * this is that half, extracted, so both callers share one STT path and one guard.
+ *
+ * The mock guard is kept deliberately: `lib/ai/stt/mock.ts` returns a FIXED
+ * invented Arabic sentence, so a mock transcript would make the agent appear to
+ * understand someone who said something entirely different. Failing loudly is the
+ * only honest behaviour on a public surface.
+ */
+export async function transcribeAudioBytes(
+  bytes: Buffer,
+  mimeHint?: string,
+  menuItemNames?: Array<string | null | undefined>,
+  priorityTerms?: Array<string | null | undefined>
+): Promise<SttResult> {
+  const adapter = getSttAdapter();
+  if (adapter.name === "mock") assertMockSttAllowed("transcribeAudioBytes");
+  const prompt = buildSttPromptVocab(menuItemNames ?? [], 200, priorityTerms);
+  return adapter.transcribe(bytes, {
+    mimeType: mimeHint || "audio/ogg",
+    languageHint: "ar",
+    prompt: prompt || undefined,
+  });
+}
+
 export async function transcribeWhatsAppVoice(
   mediaId: string,
   mimeHint?: string,

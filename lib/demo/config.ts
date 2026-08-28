@@ -41,6 +41,15 @@ export const DEMO_WINDOW_MS = 60 * 60 * 1000;
  */
 export const DEMO_GLOBAL_DAILY_TURNS = 2000;
 
+/**
+ * Hard ceiling on an uploaded voice note.
+ *
+ * STT bills per MINUTE of audio, so this is a sharper spend lever than the text
+ * cap: an hour-long upload costs roughly 360x a normal 10-second note. 2 MB of
+ * opus is comfortably over a minute of speech — far more than any real order.
+ */
+export const DEMO_MAX_AUDIO_BYTES = 2 * 1024 * 1024;
+
 /** UTC day bucket for the global cap: `global:YYYY-MM-DD`. */
 export function globalBucket(now: Date = new Date()): string {
   return `global:${now.toISOString().slice(0, 10)}`;

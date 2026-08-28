@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   isDemoHost, DEMO_RESTAURANT_ID, DEMO_MAX_CHARS, DEMO_MAX_HISTORY,
-  DEMO_GLOBAL_DAILY_TURNS, DEMO_PER_IP_TURNS, globalBucket, ipBucket,
+  DEMO_GLOBAL_DAILY_TURNS, DEMO_PER_IP_TURNS, DEMO_MAX_AUDIO_BYTES, globalBucket, ipBucket,
 } from "../lib/demo/config.ts";
 
 const ROOT = process.cwd();
@@ -79,15 +79,23 @@ ok("persistReply is false", /persistReply:\s*false/.test(route));
 
 // ── 6. THE RESPONSE IS AN ALLOWLIST ────────────────────────────────────────
 // CustomerTurnOutcome carries the raw tenant flag JSON and our unit economics.
-const payload = /return NextResponse\.json\(\{\s*\n\s*ok: true[\s\S]*?\}\);/.exec(route)?.[0] ?? "";
-ok("the success payload was found", payload.length > 0);
-for (const leak of ["features", "costUsd", "usage", "agentRunId", "tier", "latencyMs", "perception", "draft", "toolNames"]) {
-  ok(`the response never returns \`${leak}\``, !new RegExp(`(?<![A-Za-z0-9_])${leak}\\s*:`).test(payload));
+// Both public routes return from the same CustomerTurnOutcome, so both need the
+// SAME allowlist — asserted by one function called twice. (A hand-rolled second
+// check on the voice route let a mutation returning `model: out.model` survive;
+// this is that gap closed.)
+const LEAKS = ["features", "costUsd", "usage", "agentRunId", "tier", "latencyMs", "perception", "draft", "toolNames"];
+function assertPayloadAllowlist(label: string, src: string) {
+  const payload = /return NextResponse\.json\(\{\s*\n\s*ok: true[\s\S]*?\}\);/.exec(src)?.[0] ?? "";
+  ok(`${label}: the success payload was found`, payload.length > 0);
+  for (const leak of LEAKS) {
+    ok(`${label}: the response never returns \`${leak}\``, !new RegExp(`(?<![A-Za-z0-9_])${leak}\\s*:`).test(payload));
+  }
+  ok(`${label}: \`model\` is not returned raw — only the derived allergenGate boolean`,
+    !/(?<![A-Za-z0-9_])model:/.test(payload) && /allergenGate:\s*out\.model === "deterministic_allergen_gate"/.test(payload));
+  ok(`${label}: the error path does not leak the underlying exception text`,
+    !/detail:\s*e instanceof Error/.test(src));
 }
-ok("`model` is not returned raw — only the derived allergenGate boolean",
-  !/\bmodel:\s*out\.model/.test(payload) && /allergenGate:\s*out\.model === "deterministic_allergen_gate"/.test(payload));
-ok("the error path does not leak the underlying exception text",
-  !/detail:\s*e instanceof Error/.test(route));
+assertPayloadAllowlist("turn", route);
 
 // ── 7. no user-controlled path segment ─────────────────────────────────────
 // A trailing [param] would let `.../x.png` skip middleware entirely.
@@ -190,6 +198,39 @@ for (const t of ["demo_usage_counters", "demo_controls"]) {
     new RegExp(`revoke all on table public\\.${t}\\s+from anon, authenticated;`).test(mig));
   ok(`${t} has RLS enabled`, new RegExp(`alter table public\\.${t} enable row level security`).test(mig));
 }
+
+// ── 12. THE VOICE ROUTE — same controls, plus two audio only needs ─────────
+const voice = codeOf("app/api/demo/voice/route.ts");
+ok("the voice route gates on host in-handler too", /isDemoHost\(\s*req\.headers\.get\("host"\)\s*\)/.test(voice));
+ok("it uses the same durable spend guard", /rpc\("kv_demo_try_consume"/.test(voice));
+ok("the guard fails closed here too", /if\s*\(guardErr\s*\|\|\s*!guard\)[\s\S]{0,200}status:\s*503/.test(voice));
+ok("the tenant is pinned, never from the request", /restaurantId:\s*DEMO_RESTAURANT_ID/.test(voice));
+ok("no visitor audio or transcript is persisted", /demoRun:\s*true/.test(voice));
+ok("the transcript is length-capped like typed text", /\.slice\(0,\s*DEMO_MAX_CHARS\)/.test(voice));
+
+// STT bills per MINUTE — audio is a sharper spend lever than text.
+ok("audio has a hard size ceiling", /DEMO_MAX_AUDIO_BYTES/.test(voice));
+ok("the size is checked on the DECLARED length before reading the body",
+  /content-length[\s\S]{0,160}DEMO_MAX_AUDIO_BYTES/.test(voice));
+ok("and AGAIN on what actually arrived (content-length is a hint, not a promise)",
+  (voice.match(/DEMO_MAX_AUDIO_BYTES/g) ?? []).length >= 3);
+ok("the ceiling is a real, sane number",
+  DEMO_MAX_AUDIO_BYTES > 0 && DEMO_MAX_AUDIO_BYTES <= 10 * 1024 * 1024);
+
+// The mock adapter returns a FIXED invented Arabic sentence. On a public demo it
+// would show Khalid "understanding" something the visitor never said.
+ok("a transcription failure is surfaced honestly, never faked", /error:\s*"stt_unavailable"/.test(voice));
+ok("the confidence signal reaches the fail-closed phonetic safety net",
+  /sttConfidence/.test(voice) && /isVoiceTranscript:\s*true/.test(voice));
+assertPayloadAllowlist("voice", voice);
+
+// The shared byte-based entry point must keep the mock guard.
+const vlib = codeOf("lib/messaging/voice.ts");
+ok("transcribeAudioBytes exists and asserts against the mock adapter",
+  /export async function transcribeAudioBytes\(/.test(vlib) &&
+  /assertMockSttAllowed\("transcribeAudioBytes"\)/.test(vlib));
+ok("the original WhatsApp entry point is untouched",
+  /export async function transcribeWhatsAppVoice\(/.test(vlib) && /downloadWhatsAppMedia\(mediaId\)/.test(vlib));
 
 console.log(`\nPUBLIC-DEMO HARDENING PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
