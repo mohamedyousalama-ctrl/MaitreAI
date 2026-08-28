@@ -76,6 +76,80 @@ export const DEMO_MAX_AUDIO_BYTES = 512 * 1024;
 /** Longest recording the client will make before stopping itself, in seconds. */
 export const DEMO_MAX_RECORD_SECONDS = 60;
 
+// ───────────────────────────────────────────────────────────────────────────
+// WO-KHALID-ORDER — the EPHEMERAL DEMO ORDER SESSION.
+//
+// The demo could not close an order. A visitor built a basket, confirmed, chose
+// delivery, gave an address, tapped pay — and got «أجهّز لك الطلب؟» six times in a
+// row with no order number, in three separate conversations of a 50-conversation
+// live run. The cause was not the model: both demo routes passed
+// `conversationId: null`, customer-turn.ts guards its draft reload with
+// `if (conversationId)`, so `initialDraft` was ALWAYS null and every turn started
+// from `emptyDraft()`. The basket was never state — only what the model could
+// re-derive from a transcript capped at DEMO_MAX_HISTORY turns.
+//
+// So the demo now gets a conversation of its own. Three properties make that safe:
+//
+//   1. IT IS THE DEMO TENANT'S, ALWAYS. The id the client sends is validated
+//      server-side against BOTH restaurant_id AND channel before it is used
+//      (lib/demo/session.ts). A visitor cannot name another tenant's conversation.
+//   2. IT IS MARKED. `channel = 'demo'` is what separates a demo session from a
+//      real WhatsApp thread everywhere downstream, including in the validator.
+//   3. IT EXPIRES. Sessions older than the TTL — and the demo orders attached to
+//      them — are swept, so a stranger's address does not accumulate forever.
+//
+// `demoRun: true` is INDEPENDENT of all of this and stays on: it is what keeps the
+// visitor's verbatim words out of agent_runs and conversation_signals, and what
+// keeps every staff-facing side effect (alerts, ownership flips, staff messages)
+// switched off now that a conversation id exists.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * The `conversations.channel` value every demo session row carries.
+ *
+ * This is a SAFETY MARKER, not a label. It is the second half of the validator's
+ * `restaurant_id AND channel` check, so even an id belonging to the demo tenant's
+ * own future WhatsApp traffic can never be adopted as a demo session — and it is
+ * what the TTL sweep matches on, so the sweep can never delete a real conversation.
+ */
+export const DEMO_SESSION_CHANNEL = "demo";
+
+/**
+ * `orders.source` for an order placed through the public demo.
+ *
+ * NEVER "whatsapp". A demo order is also stamped `is_test = true` (migration 0044),
+ * so it is excluded from revenue and order-count reporting the same way a rehearsal
+ * order is. Two markers, not one, because they are read by different things.
+ */
+export const DEMO_ORDER_SOURCE = "demo";
+
+/**
+ * How long a demo session lives before it is swept, and the longest a visitor can
+ * pause mid-basket and still come back to it.
+ *
+ * Six hours is far longer than any demo and short enough that a stranger's typed
+ * delivery address is not kept indefinitely. The session row, its messages (which
+ * carry the basket in `meta.draft`) and the demo orders attached to it are all
+ * removed together — see sweepExpiredDemoSessions.
+ */
+export const DEMO_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Rows removed per sweep pass — bounds the work one visitor's first turn pays for. */
+export const DEMO_SWEEP_BATCH = 200;
+
+/**
+ * Canonical UUID shape. The demo session id arrives from a PUBLIC client, and
+ * PostgREST answers a malformed uuid with a 22P02 error rather than an empty
+ * result — so the shape is checked in JS BEFORE it is ever put in a query, and
+ * anything that fails is treated as "no session" (a fresh one is minted).
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True for a canonical UUID string. Pure; never throws on hostile input. */
+export function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_RE.test(value.trim());
+}
+
 /** UTC day bucket for the global cap: `global:YYYY-MM-DD`. */
 export function globalBucket(now: Date = new Date()): string {
   return `global:${now.toISOString().slice(0, 10)}`;

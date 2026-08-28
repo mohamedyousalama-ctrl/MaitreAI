@@ -35,6 +35,21 @@
 //    that could name its own restaurantId could drive the Brain against a real
 //    tenant's menu and bill it to them.
 //
+// 4. THE SESSION ID IS RESOLVED, NEVER TRUSTED (WO-KHALID-ORDER). This route now
+//    accepts a `conversationId` so the basket survives a turn — without it the agent
+//    could not close an order at all, and a live 50-conversation run caught it asking
+//    «أجهّز لك الطلب؟» six times in a row and never producing an order number. But that
+//    id comes from a public page's sessionStorage, so it is looked up with the tenant
+//    AND the channel pinned (lib/demo/session.ts). An id belonging to anything else
+//    does not resolve; a fresh session is minted and the visitor never learns whether
+//    the id they guessed exists.
+//
+//    Having a conversation id also REARMED every side effect that was previously off
+//    only because the id was null — including recordCriticalAlert, which emails and
+//    WhatsApps the Founder. Those are now gated on `demoRun` inside customer-turn.ts
+//    (`staffFacingConversationId`), which is why `demoRun: true` below is not optional
+//    and is not redundant with anything.
+//
 // The host check is IN THIS HANDLER, not middleware, on purpose: the middleware
 // matcher skips any path ending .svg/.png/.jpg/.gif/.webp/.ico, so a middleware-only
 // gate is bypassable by suffix. This route also deliberately has NO trailing
@@ -50,6 +65,8 @@ import {
   DEMO_RESTAURANT_ID, DEMO_MAX_CHARS, DEMO_MAX_HISTORY, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS,
   DEMO_GLOBAL_DAILY_TURNS, globalBucket, ipBucket,
 } from "@/lib/demo/config";
+import { resolveDemoSession } from "@/lib/demo/session";
+import { closeDemoOrder } from "@/lib/demo/order";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export const runtime = "nodejs";
@@ -93,7 +110,9 @@ export async function POST(req: Request) {
   //   - `demo_controls.enabled`, read on every turn, so the demo can be stopped in
   //     seconds by flipping one boolean — no redeploy, no env change, no build.
   // Fails CLOSED: if the guard itself errors we refuse the turn rather than spend.
-  const body = (await req.json().catch(() => ({}))) as { text?: unknown; history?: unknown };
+  const body = (await req.json().catch(() => ({}))) as {
+    text?: unknown; history?: unknown; conversationId?: unknown;
+  };
   // LENGTH cap, not just a count cap. This is the control that bounds spend.
   const text = String(body.text ?? "").trim().slice(0, DEMO_MAX_CHARS);
   if (!text) return NextResponse.json({ error: "bad_request" }, { status: 400 });
@@ -143,18 +162,57 @@ export async function POST(req: Request) {
     );
   }
 
+  // THE EPHEMERAL ORDER SESSION. The id below is attacker-controlled — it comes from
+  // the visitor's own sessionStorage — and is NEVER used as given: resolveDemoSession
+  // resolves it against the database with `restaurant_id = DEMO_RESTAURANT_ID` AND
+  // `channel = 'demo'`, so another tenant's conversation id simply does not resolve and
+  // a fresh session is minted instead. It returns null when the database cannot give us
+  // a session at all, in which case this turn runs exactly as the demo ran before the
+  // session existed: stateless, and still a working demo.
+  const session = await resolveDemoSession(admin, body.conversationId);
+  const conversationId = session?.conversationId ?? null;
+
   try {
     const out = await runCustomerTurn(admin, {
       restaurantId: DEMO_RESTAURANT_ID, // pinned; never from the request
-      conversationId: null,             // ephemeral — no customer conversation, nothing sent
+      // Tenant-validated above. This is what makes the basket survive a turn — without
+      // it customer-turn's draft reload is skipped and the agent asks «أجهّز لك الطلب؟»
+      // forever because, from its side, the basket was empty every single time.
+      conversationId,
       history,
       userMessage: text,
-      persistReply: false,
+      // TRUE now, and only for the draft. The row it writes is OUR reply plus
+      // `meta.draft` — the basket. The visitor's own message is still never persisted as
+      // a message row, which also keeps the demo tenant out of the monitor's
+      // `delivery_silence` check (it needs a recent INBOUND row to become eligible, and
+      // that alert WhatsApps the Founder).
+      persistReply: true,
+      // UNCHANGED AND INDEPENDENT OF THE ABOVE. This is now the ONLY demo switch:
+      // agent_runs.input/.output stay null, conversation_signals is skipped entirely,
+      // and every staff-facing side effect in customer-turn.ts is gated on it rather
+      // than on the conversation id.
       demoRun: true,          // do not keep a stranger's words; keep the cost row
     });
+
+    // THE CLOSE. A finalized draft becomes a real orders row with a real order number
+    // from the atomic allocator, stamped `is_test` + `source:"demo"`, and the honest
+    // "this is a demo, nothing was charged" line is appended to what the visitor sees.
+    // Never throws; a no-op unless this turn actually finalized a basket.
+    const closed = await closeDemoOrder(admin, {
+      conversationId,
+      draft: out.draft,
+      agentRunId: out.agentRunId,
+      reply: out.reply,
+    });
+
     return NextResponse.json({
       ok: true,
-      reply: out.reply,
+      // The session id goes back so the client can hold it for the next turn. Safe to
+      // return: it is the id of a row that belongs to this visitor's own demo session
+      // and to nothing else, and presenting it back is the only way the basket persists.
+      conversationId,
+      reply: closed.reply,
+      orderNumber: closed.orderNumber,
       escalate: out.escalate,
       escalationReason: out.escalationReason,
       // The deterministic allergen gate stamps this exact model id when it fires.
