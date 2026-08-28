@@ -38,6 +38,12 @@ const FILES = [
   "lib/ai/allergy-simple.ts",
   "lib/ai/allergy-calm-hold.ts",
   "lib/ai/dialect.ts",
+  // Added after a live run caught this file returning EGYPTIAN on a Saudi tenant: its
+  // careful-line took a `dialect` argument and discarded it, commented "dialect-agnostic
+  // by design". Six files was never the right list — see the note above FILES.
+  "lib/ai/disease-diet-guard.ts",
+  "lib/ai/respond.ts",
+  "lib/messaging/respond-and-send.ts",
 ];
 
 // EXTRA markers. The project linter's Egyptian list is 26 entries and misses the ones

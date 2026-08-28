@@ -373,8 +373,23 @@ ok("the real-tenant branch still states the team was alerted (true off-demo)",
   /بلّغت الفريق فوراً/.test(flow));
 ok("the real-tenant branch also uses the imperative and the number",
   /اتصل بالإسعاف 997[\s\S]{0,120}بلّغت الفريق فوراً/.test(flow));
-ok("no branch anywhere still uses the corporate «تواصل مع» for an emergency",
-  !/تواصل مع الإسعاف/.test(flow));
+ok("no emergency branch in this file uses the corporate «تواصل مع»",
+  !/تواصل مع الإسعاف/.test(flow) && !/تواصل مع الطوارئ/.test(flow));
+
+// A COUNTRY-SPECIFIC NUMBER MUST NEVER CROSS DIALECTS. 997 is the SAUDI Red Crescent
+// number; Egypt's ambulance is 123. A previous version put 997 in BOTH branches, so an
+// Egyptian customer describing anaphylaxis was handed a number that does not reach an
+// ambulance where they live — rendered ٩٩٧ in their own digits. Extract each branch and
+// assert 997 appears in the Saudi one and NOWHERE else in the file.
+const egEmergency = [...flow.matchAll(/\?\s*"(🚨[^"]+)"/g)].map((m) => m[1]);
+const saEmergency = [...flow.matchAll(/:\s*"(🚨[^"]+)"/g)].map((m) => m[1]);
+ok("both emergency branches were located", egEmergency.length >= 2 && saEmergency.length >= 2);
+ok("the SAUDI branches carry 997", saEmergency.every((t) => t.includes("997")));
+ok("NO Egyptian branch carries the Saudi number 997", egEmergency.every((t) => !t.includes("997")));
+ok("no Egyptian branch carries any other bare emergency number either",
+  egEmergency.every((t) => !/\b\d{3}\b/.test(t)));
+ok("both branches still lead with the imperative «اتصل بالإسعاف»",
+  [...egEmergency, ...saEmergency].every((t) => t.includes("اتصل بالإسعاف")));
 for (const fn of ["companionEmergencyResult", "calmHoldResult"]) {
   ok(`${fn} threads demoRun through to the reply`,
     new RegExp(`function ${fn}\\([\\s\\S]{0,700}demoRun = false`).test(turn));

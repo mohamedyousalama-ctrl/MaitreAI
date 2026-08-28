@@ -275,7 +275,11 @@ function safeNonMenuReply(dialect: string): string {
 function safeConfirmReply(dialect: string): string {
   return dialect === "egyptian"
     ? "لسه ما أكدتش الطلب؛ لازم أبنيه وأحسب الإجمالي من السيستم الأول. تحب أراجعه معاك؟"
-    : "لسه ما أكدت الطلب؛ لازم أبنيه وأحسب الإجمالي من السيستم أول. تحب أراجعه معك؟";
+    // Was «لسه … من السيستم». Two faults in one Saudi line: «لسه» is Egyptian (Najdi is
+    // «لين الحين»), and «السيستم» is on prompt.ts:369's BANNED WORDS list — the machinery
+    // vocabulary a host must never use to a guest. Found by the dialect scan once it was
+    // pointed at this file; it had been shipping to Saudi customers.
+    : "لين الحين ما أكدت الطلب؛ لازم أرتّبه وأحسب الإجمالي أول. تحب أراجعه معك؟";
 }
 
 // Allergen-safety guard reply (Fix 3) — ESCALATING variant: a genuine allergy/

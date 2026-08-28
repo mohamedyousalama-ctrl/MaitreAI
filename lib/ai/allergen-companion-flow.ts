@@ -136,13 +136,29 @@ export function emergencyReply(dialect: string, demoRun = false): string {
   // «الإسعاف» alone, not «الإسعاف/الطوارئ» — a slash forces a frightened person to
   // parse an either/or. And not «الهلال الأحمر»: it is the correct organisation, but
   // under stress people dial numbers and say "ambulance", not organisation names.
+  // THE NUMBER IS COUNTRY-SPECIFIC AND MUST NEVER BE SHARED ACROSS DIALECTS.
+  //
+  // A previous version of this function put 997 — the SAUDI Red Crescent number — into
+  // BOTH branches. Egypt's ambulance is 123. So an Egyptian customer describing
+  // anaphylaxis was handed a number that does not reach an ambulance in their country,
+  // rendered in Arabic-Indic digits as ٩٩٧ by formatCustomerVisibleText, presented as
+  // theirs. That shipped live. It is the single most dangerous defect this file has had.
+  //
+  // The Egyptian branch therefore carries NO number until the correct one is confirmed
+  // by the Founder. «اتصل بالإسعاف» with no digits is what it said before and is safe;
+  // a wrong number is worse than none, because it is dialled and it fails. The
+  // structural improvements — imperative verb, instruction FIRST, no slash — are kept
+  // for both, because those helped and carried no country assumption.
+  //
+  // Adding Egypt's 123 is a one-line follow-up that needs an explicit confirmation, not
+  // my recall. I got this wrong once already.
   if (demoRun) {
     return dialect === "egyptian"
-      ? "🚨 اتصل بالإسعاف 997 حالاً لو فيه صعوبة في التنفس أو تورم. أنا معاك."
+      ? "🚨 اتصل بالإسعاف حالاً لو فيه صعوبة في التنفس أو تورم. أنا معاك."
       : "🚨 اتصل بالإسعاف 997 الحين إذا فيه ضيق تنفس أو تورم. أنا معك.";
   }
   return dialect === "egyptian"
-    ? "🚨 اتصل بالإسعاف 997 حالاً لو فيه صعوبة في التنفس أو تورم. بلّغت الفريق فوراً وأنا معاك."
+    ? "🚨 اتصل بالإسعاف حالاً لو فيه صعوبة في التنفس أو تورم. بلّغت الفريق فوراً وأنا معاك."
     : "🚨 اتصل بالإسعاف 997 الحين إذا فيه ضيق تنفس أو تورم. بلّغت الفريق فوراً وأنا معك.";
 }
 

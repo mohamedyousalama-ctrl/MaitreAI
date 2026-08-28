@@ -38,7 +38,15 @@ export function assertsDiseaseDietClaim(reply: string): boolean {
 }
 
 /** The honest careful replacement — hands health/allergy suitability to a human.
- *  Dialect-agnostic by design (single founder-authored line). */
-export function diseaseDietCarefulLine(_dialect?: string | null): string {
-  return "في مواضيع الصحة والحساسية بنفضّل حد من الفريق يأكدلك بنفسه 🙏 أحوّلك لحد من الفريق؟";
+ *
+ *  IT WAS NEVER DIALECT-AGNOSTIC — it was EGYPTIAN. The old comment said "dialect-agnostic
+ *  by design (single founder-authored line)" and the line reads «بنفضّل حد من الفريق
+ *  يأكدلك» — the b-imperfect «بنفضّل», «حد» (Najdi: أحد), and «يأكدلك». The parameter was
+ *  accepted and discarded, so a Riyadh customer asking «عندكم مشروب دايت؟» got an Egyptian
+ *  health escalation. Caught in a live 50-conversation run, byte-identical in two
+ *  unrelated conversations. */
+export function diseaseDietCarefulLine(dialect?: string | null): string {
+  return String(dialect) === "saudi"
+    ? "في مواضيع الصحة والحساسية أفضّل أحد من الفريق يتأكد لك بنفسه 🙏 أوصلك فيه؟"
+    : "في مواضيع الصحة والحساسية بنفضّل حد من الفريق يأكدلك بنفسه 🙏 أحوّلك لحد من الفريق؟";
 }
