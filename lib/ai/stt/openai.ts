@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { SttAdapter } from "./types";
+import { sttUploadFilename } from "./types";
 import { sttCostUsd } from "./pricing";
 
 export const openaiSttAdapter: SttAdapter = {
@@ -21,7 +22,8 @@ export const openaiSttAdapter: SttAdapter = {
     const model = process.env.OPENAI_STT_MODEL || "whisper-1";
 
     const fd = new FormData();
-    fd.append("file", new Blob([new Uint8Array(audio)], { type: opts?.mimeType || "audio/ogg" }), "audio.ogg");
+    fd.append("file", new Blob([new Uint8Array(audio)], { type: opts?.mimeType || "audio/ogg" }),
+      sttUploadFilename(opts?.mimeType));
     fd.append("model", model);
     fd.append("response_format", model === "whisper-1" ? "verbose_json" : "json");
     // WO-VOICE-QUALITY (a) — pass language explicitly, defaulting to Arabic.

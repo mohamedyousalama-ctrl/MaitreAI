@@ -51,6 +51,9 @@ export function isGoldenMessage(messageId: string): boolean {
 /** Map a mime type to a file extension for the object key (ogg/opus is the WA default). */
 export function extForMime(mime: string | null | undefined): string {
   const m = String(mime ?? "").toLowerCase();
+  // webm BEFORE opus: `audio/webm;codecs=opus` contains "opus" but WebM and Ogg
+  // are different containers, so matching the codec would mislabel the object.
+  if (m.includes("webm")) return "webm";
   if (m.includes("ogg") || m.includes("opus")) return "ogg";
   if (m.includes("mpeg") || m.includes("mp3")) return "mp3";
   if (m.includes("mp4") || m.includes("m4a") || m.includes("aac")) return "m4a";

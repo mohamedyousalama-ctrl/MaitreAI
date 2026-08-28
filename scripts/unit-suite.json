@@ -119,5 +119,6 @@
   "node --experimental-strip-types scripts/proof-unported-control-wrappers.test.ts",
   "node --experimental-strip-types scripts/proof-landing-no-login-cta.test.ts",
   "node --experimental-strip-types scripts/proof-cutover-capability.test.ts",
-  "node --experimental-strip-types scripts/proof-members-rls-initplan.test.ts"
+  "node --experimental-strip-types scripts/proof-members-rls-initplan.test.ts",
+  "node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-stt-upload-filename.test.ts"
 ]

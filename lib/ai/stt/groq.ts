@@ -6,6 +6,7 @@
 // ============================================================================
 
 import type { SttAdapter } from "./types";
+import { sttUploadFilename } from "./types";
 import { sttCostUsd } from "./pricing";
 
 // WO-VOICE-QUALITY (c) — derive a [0,1] confidence from Whisper verbose_json segments,
@@ -35,7 +36,8 @@ export const groqSttAdapter: SttAdapter = {
     const model = process.env.GROQ_STT_MODEL || "whisper-large-v3-turbo";
 
     const fd = new FormData();
-    fd.append("file", new Blob([new Uint8Array(audio)], { type: opts?.mimeType || "audio/ogg" }), "audio.ogg");
+    fd.append("file", new Blob([new Uint8Array(audio)], { type: opts?.mimeType || "audio/ogg" }),
+      sttUploadFilename(opts?.mimeType));
     fd.append("model", model);
     fd.append("response_format", "verbose_json");
     // WO-VOICE-QUALITY (a) — pass the language explicitly; default to Arabic when the

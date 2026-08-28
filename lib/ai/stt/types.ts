@@ -41,3 +41,37 @@ export interface SttAdapter {
   name: SttAdapterName;
   transcribe(audio: Buffer, opts?: SttTranscribeOptions): Promise<SttResult>;
 }
+
+/**
+ * The multipart filename to send with a transcription upload.
+ *
+ * WHY THIS EXISTS: OpenAI's and Groq's transcription endpoints select their
+ * decoder from the FILENAME EXTENSION, not the Content-Type. Both adapters used
+ * to hardcode "audio.ogg" while passing the real mime through as the blob type.
+ * That was accidentally correct for the only source we had — WhatsApp genuinely
+ * sends Ogg (adapters/whatsapp.ts defaults `audio/ogg`) — and silently wrong for
+ * any other source. A browser MediaRecorder emits `audio/webm;codecs=opus` on
+ * Chrome/Firefox and `audio/mp4` on Safari/iOS; both would be uploaded as
+ * `.ogg` and rejected with a 400 "Invalid file format".
+ *
+ * NOT shared with `extForMime` in lib/voice/golden-archive.ts even though both
+ * map mime → extension. That one names an ARCHIVE STORAGE OBJECT, where "bin" is
+ * a perfectly good fallback for something unrecognised. Here an unrecognised
+ * extension makes the provider reject the request, so the fallback must be a
+ * container the provider accepts — and it must stay "ogg" so WhatsApp traffic is
+ * byte-identical to before this fix. Same mapping, genuinely different failure
+ * modes; merging them would force one of the two fallbacks to be wrong.
+ */
+export function sttUploadFilename(mime: string | null | undefined): string {
+  const m = String(mime ?? "").toLowerCase();
+  // webm FIRST: `audio/webm;codecs=opus` also contains "opus", and Ogg and WebM
+  // are different containers — matching on the codec would mislabel it.
+  if (m.includes("webm")) return "audio.webm";
+  if (m.includes("mp4") || m.includes("m4a") || m.includes("aac")) return "audio.m4a";
+  if (m.includes("wav")) return "audio.wav";
+  if (m.includes("mpeg") || m.includes("mp3")) return "audio.mp3";
+  if (m.includes("flac")) return "audio.flac";
+  if (m.includes("amr")) return "audio.amr";
+  // ogg/opus and anything unrecognised: keep the pre-fix behaviour exactly.
+  return "audio.ogg";
+}
