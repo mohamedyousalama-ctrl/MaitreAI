@@ -9,7 +9,8 @@ import type { Branch, DeliveryArea, LocalOrderItem, MenuItem, Modifier } from "@
 import { routeDeliveryPin, type RoutableBranch, type RoutableZone } from "./delivery/geo";
 
 export type PricingFulfillment = "pickup" | "delivery";
-export type PricingTaxMode = "inclusive" | "added" | string;
+export { asPricingTaxMode, type PricingTaxMode } from "./pricing-tax-mode";
+import type { PricingTaxMode } from "./pricing-tax-mode";
 
 export interface PricingLineInput {
   itemId: string;

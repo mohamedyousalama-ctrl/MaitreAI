@@ -373,6 +373,9 @@ const finalizedDraft: OrderDraft = {
   const db = orderFixture();
   const out = await closeDemoOrder(db, {
     conversationId: UUID_A, draft: finalizedDraft, agentRunId: "run-1", reply: "تمام، أجهّز لك الطلب.",
+    // The demo tenant is `dialect: "saudi"` → digitStyle "western". Without this the
+    // appended confirmation was the one string on the demo path nobody formatted.
+    dialect: "saudi",
   });
   const order = db.rows("orders")[0];
 
@@ -430,6 +433,7 @@ const finalizedDraft: OrderDraft = {
   } as unknown as Parameters<typeof closeDemoOrder>[0];
   const out = await closeDemoOrder(broken, {
     conversationId: UUID_A, draft: finalizedDraft, agentRunId: "run-2", reply: "تمام، سجّلت طلبك ✅",
+    dialect: "saudi",
   });
   ok("4a: a failed persist does NOT throw the demo turn away", typeof out.reply === "string");
   ok("4a: it returns no order number rather than inventing one", out.orderNumber === null);
@@ -440,17 +444,37 @@ const finalizedDraft: OrderDraft = {
   // A turn that did not finalize anything must be a pure no-op.
   const db2 = orderFixture();
   const noop = await closeDemoOrder(db2, {
-    conversationId: UUID_A, draft: { ...finalizedDraft, finalized: false } as OrderDraft, agentRunId: null, reply: "وش تحب تطلب؟",
+    conversationId: UUID_A, draft: { ...finalizedDraft, finalized: false } as OrderDraft, agentRunId: null, reply: "وش تحب تطلب؟", dialect: "saudi",
   });
   ok("4c: an unfinalized draft writes nothing and leaves the reply untouched",
     db2.rows("orders").length === 0 && noop.reply === "وش تحب تطلب؟" && noop.orderNumber === null);
 
   const db3 = orderFixture();
   const nosession = await closeDemoOrder(db3, {
-    conversationId: null, draft: finalizedDraft, agentRunId: null, reply: "خلاص",
+    conversationId: null, draft: finalizedDraft, agentRunId: null, reply: "خلاص", dialect: "saudi",
   });
   ok("4c: no session (the stateless fallback) writes no order either",
     db3.rows("orders").length === 0 && nosession.orderNumber === null);
+
+  // THE APPENDED LINE FOLLOWS THE TENANT. `demoOrderConfirmation` used to call
+  // toArabicDigits() itself, forcing «برقم #١٠٠١» on a tenant whose profile declares
+  // digitStyle:"western" — seen live on order #1001. The number is now the route's
+  // formatter's decision, driven by `dialect`, so both directions are pinned here.
+  {
+    const dbW = orderFixture();
+    const western = await closeDemoOrder(dbW, {
+      conversationId: UUID_A, draft: finalizedDraft, agentRunId: "run-3", reply: "تمام", dialect: "saudi",
+    });
+    ok("4e: a western-digit tenant sees the order number in ASCII",
+      !!western.orderNumber && western.reply.includes(`#${western.orderNumber}`) && !/[٠-٩]/.test(western.reply));
+
+    const dbA = orderFixture();
+    const arabic = await closeDemoOrder(dbA, {
+      conversationId: UUID_A, draft: finalizedDraft, agentRunId: "run-4", reply: "تمام", dialect: "egyptian",
+    });
+    ok("4e: an arabic-indic tenant sees the SAME number in Arabic-Indic",
+      !!arabic.orderNumber && !/#[0-9]/.test(arabic.reply) && /#[٠-٩]+/.test(arabic.reply));
+  }
 
   // The customer-facing copy is Saudi, because the demo tenant is.
   ok("4d: the demo's own copy passes the project's dialect linter",

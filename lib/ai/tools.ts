@@ -9,6 +9,7 @@
 
 import type { Branch, DeliveryArea, MenuItem, Modifier } from "../types";
 import { recomputeOrderPricing } from "@/lib/order-pricing";
+import type { PricingTaxMode } from "@/lib/pricing-tax-mode";
 import type { PaymentConfig } from "@/lib/payments/config";
 import type { LlmToolDef } from "./llm/types";
 import { optionValueOnly } from "@/lib/util/customer-visible-format";
@@ -133,7 +134,7 @@ export interface ToolContext {
   /** Image messages to send after the text/interactive reply. */
   photoRequests: PhotoRequest[];
   /** Tax mode + rate (Sprint 10). "added" → a VAT line; "inclusive" → no change. */
-  taxMode: string;
+  taxMode: PricingTaxMode;
   taxRate: number;
   /** Per-tenant payment config (F1.2/F1.6). Gates which methods Karim offers — VF
    *  Cash is offered ONLY when paymentConfig.vodafone_cash.enabled. */

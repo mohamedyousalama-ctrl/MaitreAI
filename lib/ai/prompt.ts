@@ -46,6 +46,8 @@ import { buildKsaEncyclopediaBlock, shouldInjectEncyclopedia } from "@/lib/ai/pe
 // always-escalate block, preserved BYTE-IDENTICAL (snapshot-gated).
 import { legacyAllergyBlock, companionAllergyBlock } from "@/lib/ai/prompt-allergy";
 import { crossContactLabelAr, hasAllergenEscalationMarker } from "@/lib/ai/allergen-prep-vocab";
+import type { PricingTaxMode } from "@/lib/pricing-tax-mode";
+import { digitStyleForDialect } from "@/lib/util/customer-visible-format";
 
 export interface BrainContext {
   profile: Pick<RestaurantProfile, "name" | "currency" | "timezone" | "businessType">;
@@ -71,7 +73,7 @@ export interface BrainContext {
   /** Per-tenant customer-facing host name (persona). Falls back per dialect. */
   personaName?: string;
   /** Tax mode + rate (Sprint 10): "added" adds a VAT line; "inclusive" = no change. */
-  taxMode?: string;
+  taxMode?: PricingTaxMode;
   taxRate?: number;
   /** Per-tenant payment config (F1.2/F1.6): gates the payment methods Karim offers. */
   paymentConfig?: PaymentConfig;
@@ -189,20 +191,58 @@ export interface BrainContext {
 
 // --- Issue-B B1: authoritative «current order» block --------------------------
 const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-/** Render digits as Arabic-Indic so the block matches Karim's own writing. */
-function toAr(n: number | string): string {
-  return String(n).replace(/[0-9]/g, (d) => AR_DIGITS[Number(d)]);
+/** Render digits in the TENANT's style, so the authoritative block matches the voice the
+ *  same prompt asks for two rules further down.
+ *
+ *  This was an unconditional `toAr`, commented "so the block matches KARIM's own
+ *  writing" — Karim is the Egyptian persona, and the function predates Khalid. The
+ *  effect on a Saudi tenant was that the model was handed «- ٢× كبسة دجاج — ٧٠ ر.س» as
+ *  GROUND TRUTH and then told, in the same prompt, to «Write numbers and money using
+ *  Western digits». It copied what it was shown. That is the upstream half of the
+ *  Arabic-Indic digits seen live on demo order #1001. */
+function digitsForDialect(dialect: string): (n: number | string) => string {
+  if (digitStyleForDialect(dialect) !== "arabic-indic") return (n) => String(n);
+  return (n) => String(n).replace(/[0-9]/g, (d) => AR_DIGITS[Number(d)]);
 }
+
+/** The block's own prose, per dialect.
+ *
+ *  Every one of these strings used to be Cairene ONLY — «متعيدش»، «هيظهر»، «لسه
+ *  ماتحددش» — and this block is injected into the system prompt on EVERY stateful turn.
+ *  A Saudi tenant's model was therefore reading its authoritative order state in
+ *  Egyptian and answering in kind. */
+const ORDER_BLOCK_COPY: Record<"saudi" | "egyptian", {
+  header: string; empty: string; addressPending: string; fulfillmentPending: string;
+}> = {
+  saudi: {
+    header: "## الطلب الحالي (المصدر الموثوق — اقرأه، لا تعيد بناءه من المحادثة)",
+    empty: "لا يوجد طلب تحت التجهيز حالياً — السلة فاضية. أول ما العميل يضيف صنف يظهر هنا.",
+    addressPending: "\nعنوان التوصيل: ما تحدد بعد — اطلب العنوان من العميل واستخدم set_delivery_address",
+    fulfillmentPending: "الاستلام: ما تحدد بعد",
+  },
+  egyptian: {
+    header: "## الطلب الحالي (المصدر الموثوق — اقرأه، متعيدش بناءه من المحادثة)",
+    empty: "لا يوجد طلب تحت التجهيز حالياً — السلة فاضية. أول ما العميل يضيف صنف هيظهر هنا.",
+    addressPending: "\nعنوان التوصيل: لسه ماتحددش — اطلب العنوان من العميل واستخدم set_delivery_address",
+    fulfillmentPending: "الاستلام: لسه ماتحددش",
+  },
+};
 
 /** Compact, authoritative current-order block built ENTIRELY from the stored
  *  draft (never the chat). Sent every turn when stateful_orders is on, so it is
  *  kept short. An empty draft renders an explicit "nothing being built" note so
  *  the model never infers a phantom cart from the conversation. B1 surfaces the
  *  BUILDING draft only (committed-order surfacing is B2). */
-function currentOrderBlock(draft: OrderDraft | null | undefined, currency: string): string {
-  const header = "## الطلب الحالي (المصدر الموثوق — اقرأه، متعيدش بناءه من المحادثة)";
+function currentOrderBlock(
+  draft: OrderDraft | null | undefined,
+  currency: string,
+  dialect: string
+): string {
+  const copy = ORDER_BLOCK_COPY[dialect === "saudi" ? "saudi" : "egyptian"];
+  const toAr = digitsForDialect(dialect);
+  const header = copy.header;
   if (!draft || !draft.lines.length) {
-    return `\n\n${header}\nلا يوجد طلب تحت التجهيز حالياً — السلة فاضية. أول ما العميل يضيف صنف هيظهر هنا.`;
+    return `\n\n${header}\n${copy.empty}`;
   }
   const lines = draft.lines
     .map((l) => {
@@ -217,10 +257,10 @@ function currentOrderBlock(draft: OrderDraft | null | undefined, currency: strin
     .join("\n");
   const ful =
     draft.fulfillment === "delivery"
-      ? `الاستلام: توصيل${draft.deliveryZone ? `/${draft.deliveryZone}` : ""}${draft.deliveryFee ? ` (رسوم ${toAr(draft.deliveryFee)} ${currency})` : ""}${draft.address ? `\nعنوان التوصيل: ${draft.address}` : "\nعنوان التوصيل: لسه ماتحددش — اطلب العنوان من العميل واستخدم set_delivery_address"}`
+      ? `الاستلام: توصيل${draft.deliveryZone ? `/${draft.deliveryZone}` : ""}${draft.deliveryFee ? ` (رسوم ${toAr(draft.deliveryFee)} ${currency})` : ""}${draft.address ? `\nعنوان التوصيل: ${draft.address}` : copy.addressPending}`
       : draft.fulfillment === "pickup"
         ? "الاستلام: من الفرع"
-        : "الاستلام: لسه ماتحددش";
+        : copy.fulfillmentPending;
   return `\n\n${header}\n${lines}\n${ful}\nالإجمالي حتى الآن: ${toAr(draft.total)} ${currency}`;
 }
 
@@ -492,7 +532,7 @@ Don't reply in one uniform shape. Let LENGTH + TONE track the turn — and NEVER
 - FACTS STAY ATOMIC — recap, any price/total/delivery-fee, the allergy note, payment instructions, and the final confirmation are ONE clean COMPLETE message each. Cadence NEVER shortens, warms-up, splits, or alters them. This is the hard line; the truth/recap/allergy rules above always win over brevity.
 
 ## Building orders` : `
-## Building orders`}${ctx.statefulOrders && canOrder ? currentOrderBlock(ctx.currentDraft, currency) : ""}
+## Building orders`}${ctx.statefulOrders && canOrder ? currentOrderBlock(ctx.currentDraft, currency, ctx.dialect) : ""}
 ${
   canOrder
     ? `${ctx.statefulOrders ? `- STATE IS GROUND TRUTH: the «الطلب الحالي» block above is the authoritative current order — READ it. To change the order, use the tools to ADD / REMOVE / SET only the DELTA the customer just asked for. NEVER reconstruct the whole order from the conversation, and NEVER call clear_order to "rebuild" it (clear_order is ONLY for an explicit «ابدأ من جديد / الغِ كل ده»). The items shown in the block are already in the cart — don't re-add them.

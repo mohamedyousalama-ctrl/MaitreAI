@@ -59,6 +59,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
+import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
 import { rateLimit } from "@/lib/rate-limit";
 import { isDemoHost } from "@/lib/demo/config";
 import {
@@ -202,7 +203,8 @@ export async function POST(req: Request) {
       conversationId,
       draft: out.draft,
       agentRunId: out.agentRunId,
-      reply: out.reply,
+      reply: formatCustomerVisibleText(out.reply, out.dialect),
+      dialect: out.dialect,
     });
 
     return NextResponse.json({
@@ -228,7 +230,15 @@ export async function POST(req: Request) {
       // Safe to return: titles, prices and captions come from the tenant's own menu and
       // are customer-visible by construction on WhatsApp. It carries no tenant flags, no
       // cost, no model identity — the allowlist above still holds for those.
-      presentation: out.presentation,
+      // FORMAT IT THE WAY WHATSAPP DOES. formatCustomerVisibleText was called only in
+      // respond-and-send.ts, so the demo shipped the model's RAW output: no digit
+      // normalisation and no bold sanitisation. The Saudi profile declares
+      // digitStyle:"western" and the live demo was answering «الإجمالي: ٧٠.١٥ ر.س»
+      // and «برقم #١٠٠١» in Arabic-Indic — the digit style the tenant bans.
+      // The presentation carries prices in its row descriptions, so it needs the same pass.
+      presentation: out.presentation
+        ? formatCustomerVisiblePresentation(out.presentation, out.dialect)
+        : out.presentation,
       photoRequests: out.photoRequests,
     });
   } catch (e) {

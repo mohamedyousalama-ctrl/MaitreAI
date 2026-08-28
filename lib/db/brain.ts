@@ -8,6 +8,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { canonicalToArLabel } from "@/lib/ai/allergen-vocab";
 import { subscribeWithReload } from "@/lib/realtime/resubscribe";
+import { asPricingTaxMode, type PricingTaxMode } from "@/lib/pricing-tax-mode";
 import type {
   Branch,
   DeliveryArea,
@@ -48,7 +49,7 @@ export interface BrainData {
   faqs: FaqItem[];
   promotions: OperatorPromotion[];
   policies: Policies;
-  taxMode: string;
+  taxMode: PricingTaxMode;
   taxRate: number;
 }
 
@@ -272,7 +273,7 @@ export async function loadBrain(supabase: SupabaseClient, restaurantId: string):
 
   return {
     profile: toProfile(restaurant.data as RestaurantRow),
-    taxMode: String((restaurant.data as RestaurantRow).tax_mode ?? "inclusive"),
+    taxMode: asPricingTaxMode((restaurant.data as RestaurantRow).tax_mode),
     taxRate: Number((restaurant.data as RestaurantRow).tax_rate ?? 0),
     branches: ((branches.data ?? []) as BranchRow[]).map(toBranch),
     menuCategories: ((categories.data ?? []) as MenuCategoryRow[]).map((c) => ({

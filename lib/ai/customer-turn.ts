@@ -84,6 +84,7 @@ import { detectCallbackRequest } from "@/lib/ai/callback-trigger";
 // dup_order_awareness flag is ON and a registered order exists this conversation.
 import { refersToRegisteredOrder } from "@/lib/ai/order-reference";
 import { toArabicDigits } from "@/lib/util/arabic-digits";
+import { digitStyleForDialect } from "@/lib/util/customer-visible-format";
 import { perceiveTurnWithUsage, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
@@ -101,6 +102,7 @@ import {
   hasCapShadowViolation,
   logCapShadowViolation,
 } from "@/lib/ai/call-observability";
+import { asPricingTaxMode } from "@/lib/order-pricing";
 
 /** Typed error so callers can map to the right HTTP status / timeline note. */
 export class CustomerTurnError extends Error {
@@ -188,6 +190,10 @@ export interface CustomerTurnOutcome {
   agentRunId: string | null;
   /** Id of the persisted AI reply message row (null when not persisted). */
   replyMessageId: string | null;
+  /** The tenant's dialect. Exposed so a caller can apply formatCustomerVisibleText —
+   *  the demo routes had no way to know it and so shipped the model's raw output,
+   *  Arabic-Indic digits and all, on a tenant whose profile declares `western`. */
+  dialect: string;
   /** Karim Pro P1: tier + feature flags — let the send path gate the finalize-report emit. */
   tier: Tier | "standard";
   features: Record<string, unknown> | null;
@@ -409,13 +415,20 @@ interface RegisteredOrderRef {
  *  resolve to THAT order (never re-finalize a duplicate — live #1009→#1010). Non-escalating,
  *  draft untouched (NOT finalized → the persist path never runs). The SAFETY-FIRST gate in
  *  the dispatch chain guarantees no allergen/emergency/human-request signal was present. */
+/** Render a figure in the TENANT's digit style. Two sites here hardcoded
+ *  `toArabicDigits`, so a Saudi tenant — digitStyle:"western" per lib/ai/dialect.ts —
+ *  was told «طلبك رقم #١٠٠١» in the digit style its own profile bans. */
+function tenantDigits(dialect: string, v: number | string): string {
+  return digitStyleForDialect(dialect) === "arabic-indic" ? toArabicDigits(v) : String(v);
+}
+
 function dupOrderRecapResult(
   order: RegisteredOrderRef,
   dialect: string,
   initialDraft: OrderDraft | null,
   currency: string
 ): RespondResult {
-  const num = toArabicDigits(order.orderNumber);
+  const num = tenantDigits(dialect, order.orderNumber);
   const openDoor =
     dialect === "egyptian" ? "ولو حابب تطلب حاجة جديدة قولّي 😊" : "ولو تحب تطلب شي جديد قول لي 😊";
   const reply = `طلبك رقم #${num} مسجّل بالفعل ✅\n${order.itemsSummary}\n${order.statusLabel}\n${openDoor}`;
@@ -1013,7 +1026,7 @@ export async function runCustomerTurn(
     autoAccept: !!row.auto_accept_orders,
     handoverNote,
     personaName: (row.agent_persona_name as string | null) ?? undefined,
-    taxMode: String(row.tax_mode ?? "inclusive"),
+    taxMode: asPricingTaxMode(row.tax_mode),
     taxRate: Number(row.tax_rate ?? 0),
     // F1.2/F1.6 — per-tenant payment config (gates which methods Karim offers).
     // WO-T1-PAYMENTS: sourced from the single resolver (flag-off = legacy, identical).
@@ -1289,7 +1302,7 @@ export async function runCustomerTurn(
         const lines = Array.isArray(row2.items) ? (row2.items as { name?: string; quantity?: number }[]) : [];
         const itemsSummary =
           lines
-            .map((l) => `${toArabicDigits(Number(l.quantity ?? 1))}× ${String(l.name ?? "").trim()}`.trim())
+            .map((l) => `${tenantDigits(dialect, Number(l.quantity ?? 1))}× ${String(l.name ?? "").trim()}`.trim())
             .filter((s) => s && !s.endsWith("× "))
             .join("، ") || "طلبك المسجّل";
         const statusLabel =
@@ -2073,6 +2086,7 @@ export async function runCustomerTurn(
     latencyMs,
     agentRunId: (run?.id as string) ?? null,
     replyMessageId,
+    dialect,
     tier: tenantTier,
     features: tenantFeatures,
     perception,

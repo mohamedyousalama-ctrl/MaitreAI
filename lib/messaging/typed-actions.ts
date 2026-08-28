@@ -30,6 +30,7 @@ import {
   RECOVERY_CHOICE_REALERT,
 } from "@/lib/ai/allergen-companion-flow";
 import { FIXED_INTERACTIVE_CONTROLS } from "./interactive-router";
+import { asPricingTaxMode, type PricingTaxMode } from "@/lib/order-pricing";
 
 type ActiveMenuItem = Awaited<ReturnType<typeof loadBrain>>["menuItems"][number];
 
@@ -316,7 +317,7 @@ function buildToolContext(args: {
   brain: Awaited<ReturnType<typeof loadBrain>>;
   draft: OrderDraft;
   features: Record<string, unknown> | null;
-  taxMode: string;
+  taxMode: PricingTaxMode;
   taxRate: number;
   paymentConfig: ToolContext["paymentConfig"];
   /** KIV-304 — the tenant dialect. `select_item` relays add_to_order's tool result to
@@ -484,7 +485,7 @@ export async function handleTypedInteractiveAction(
     brain,
     draft,
     features,
-    taxMode: String(restaurant.tax_mode ?? "inclusive"),
+    taxMode: asPricingTaxMode(restaurant.tax_mode),
     taxRate: Number(restaurant.tax_rate ?? 0),
     paymentConfig: payments.config,
     dialect,
@@ -632,7 +633,7 @@ export async function handleTypedQuantityFill(
     brain,
     draft,
     features,
-    taxMode: String(restaurant.tax_mode ?? "inclusive"),
+    taxMode: asPricingTaxMode(restaurant.tax_mode),
     taxRate: Number(restaurant.tax_rate ?? 0),
     paymentConfig: payments.config,
     dialect,

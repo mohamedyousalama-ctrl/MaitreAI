@@ -116,6 +116,55 @@ const NUMBER_WORDS = new Map<string, number>([
   ["تسع عشر", 19],
   ["عشرين", 20],
   ["عشرون", 20],
+  // DUAL-FORM COUNTERS. Khalid literally asks «كم حبة تبي؟», and the natural Arabic
+  // answer to that is the dual — «حبتين» — not a numeral. These were absent, so the most
+  // idiomatic possible reply to our own question fell through to the model.
+  ["حبتين", 2],
+  ["حبتان", 2],
+  ["قطعتين", 2],
+  ["صحنين", 2],
+  ["طبقين", 2],
+  ["علبتين", 2],
+]);
+
+/** Politeness and emphasis words that carry no quantity of their own.
+ *
+ *  «وحده بس» — "just one" — is the single most common way a Gulf or Egyptian customer
+ *  answers a quantity question, and it was parsing as null because the map is keyed on a
+ *  whole normalized string and «وحده بس» is two tokens. Stripping a CLOSED list keeps the
+ *  parser's deliberate strictness: «٣ كاديا» still returns null, because a dish name is
+ *  not on any list here. */
+const FILLER_WORDS = new Set<string>([
+  "بس",
+  "فقط",
+  "لو سمحت",
+  "لو سمحتي",
+  "من فضلك",
+  "من فضلكم",
+  "يا ريت",
+  "ياريت",
+  "تكفي",
+  "الله يعافيك",
+  "شكرا",
+  "كفايه",
+  "please",
+  "pls",
+]);
+
+/** Counter nouns that may sit beside the number without changing it: «حبة واحدة»,
+ *  «٢ صحن». Deliberately closed, for the same reason as FILLER_WORDS. */
+const COUNTER_WORDS = new Set<string>([
+  "حبه",
+  "حبات",
+  "قطعه",
+  "قطع",
+  "صحن",
+  "صحون",
+  "طبق",
+  "اطباق",
+  "علبه",
+  "علب",
+  "نفر",
 ]);
 
 function normalizeDigits(text: string): string {
@@ -139,9 +188,35 @@ function normalizeArabicText(text: string): string {
   return normalizeArabicToken(text).toLowerCase();
 }
 
+/** Drop the closed filler/counter vocabulary, so a bare quantity wearing politeness
+ *  still reads as bare. Multi-word entries («لو سمحت») are removed as phrases first, then
+ *  the remaining single tokens are filtered. Anything NOT on the lists survives, which is
+ *  what keeps «٣ كاديا» a non-answer. */
+function stripQuantityFillers(text: string): string {
+  let out = text;
+  for (const phrase of [...FILLER_WORDS].filter((w) => w.includes(" "))) {
+    out = out.split(phrase).join(" ");
+  }
+  return out
+    .split(/\s+/)
+    .filter((word) => word && !FILLER_WORDS.has(word) && !COUNTER_WORDS.has(word))
+    .join(" ")
+    .trim();
+}
+
 export function parseBareQuantityAnswer(input: string | null | undefined): number | null {
   const token = normalizeArabicToken(String(input ?? ""));
   if (!token) return null;
+  const direct = resolveQuantityToken(token);
+  if (direct !== null) return direct;
+  // Second pass, only after a literal read failed, so nothing that already parses can
+  // change meaning: «واحد بس» → «واحد», «٢ حبة» → «٢», «حبة واحدة» → «واحده».
+  const stripped = stripQuantityFillers(normalizeArabicText(token));
+  if (!stripped || stripped === normalizeArabicText(token)) return null;
+  return resolveQuantityToken(stripped);
+}
+
+function resolveQuantityToken(token: string): number | null {
   if (/^\d{1,2}$/.test(token)) {
     const n = Number(token);
     return Number.isInteger(n) && n >= 1 && n <= 20 ? n : null;

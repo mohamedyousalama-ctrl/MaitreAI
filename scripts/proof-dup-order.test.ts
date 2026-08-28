@@ -51,9 +51,16 @@ ok("D: SAFETY-FIRST — the intercept is disqualified by an allergen / emergency
 ok("D: the intercept branch sits AFTER the companion/safety branches, before the normal-turn else",
   ct.indexOf("dupOrderIntercept && registeredOrder") > ct.indexOf("} else if (enterCompanion) {") &&
   ct.indexOf("dupOrderIntercept && registeredOrder") < ct.indexOf("// Normal turn. In companion mode"));
+// The digit assertion used to pin the literal `toArabicDigits`, which pinned a BUG: the
+// order number was rendered Arabic-Indic for every tenant, including Saudi ones whose
+// dialect profile declares digitStyle:"western". It now pins the tenant-aware renderer,
+// so a revert to the hardcode fails here.
 ok("D: the recap resolves to the registered order and does NOT finalize (deterministic, no LLM)",
-  /function dupOrderRecapResult[\s\S]{0,600}?toArabicDigits[\s\S]{0,300}?مسجّل بالفعل/.test(ct) &&
+  /function dupOrderRecapResult[\s\S]{0,600}?tenantDigits\(dialect,[\s\S]{0,300}?مسجّل بالفعل/.test(ct) &&
   /stopReason: "dup_order_reference"/.test(ct));
+ok("D: the recap's order number follows the TENANT's digit style, not a hardcode",
+  /function tenantDigits\([\s\S]{0,300}?digitStyleForDialect\(dialect\) === "arabic-indic"/.test(ct) &&
+  !/const num = toArabicDigits\(/.test(ct));
 ok("D: the recap keeps an open door for a genuinely new order",
   /تطلب حاجة جديدة|تطلب شي جديد/.test(ct));
 

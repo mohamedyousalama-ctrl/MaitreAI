@@ -1,5 +1,5 @@
 import { dialectProfile } from "@/lib/ai/dialect";
-import { toArabicDigits } from "@/lib/util/arabic-digits";
+import { arabicToAscii, toArabicDigits } from "@/lib/util/arabic-digits";
 
 export type CustomerDigitStyle = "western" | "arabic-indic";
 
@@ -39,32 +39,58 @@ export function sanitizeWhatsAppBold(text: string): string {
   return out;
 }
 
-export function formatCustomerVisibleNumbers(
-  text: string,
-  digitStyle: CustomerDigitStyle,
-  opts: { preserveQuotedText?: boolean } = {}
-): string {
-  if (digitStyle !== "arabic-indic") return String(text);
-  if (opts.preserveQuotedText === false) return toArabicDigits(text);
-
+/** Apply `convert` to every character that is NOT inside a quoted run.
+ *
+ *  Quoted text is the customer's own words being read back to them, so its figures are
+ *  left exactly as they were typed in either direction. Shared by both digit styles so
+ *  the two directions cannot drift apart. */
+function convertOutsideQuotes(text: string, convert: (ch: string) => string): string {
+  // The apostrophe is deliberately NOT a quote character. It used to be, and «don't»
+  // — or any Arabic transliteration carrying one — opened a "quoted run" that never
+  // closed, silently disabling normalisation for the whole rest of the message.
+  const quotePairs: Record<string, string> = { "«": "»", "\"": "\"", "“": "”" };
+  const chars = [...String(text)];
   let out = "";
   let quoteEnd: string | null = null;
-  const quotePairs: Record<string, string> = { "«": "»", "\"": "\"", "'": "'", "“": "”" };
-  for (const ch of String(text)) {
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i] as string;
     if (quoteEnd) {
       out += ch;
       if (ch === quoteEnd) quoteEnd = null;
       continue;
     }
     const end = quotePairs[ch];
-    if (end) {
+    // FAIL CLOSED, NOT OPEN. A quote only protects a run that actually CLOSES. Before,
+    // a single unmatched opener — one stray « or " anywhere in the model's prose — left
+    // every figure after it in the wrong digit style, with no error and no sign.
+    if (end && chars.indexOf(end, i + 1) !== -1) {
       quoteEnd = end;
       out += ch;
       continue;
     }
-    out += toArabicDigits(ch);
+    out += convert(ch);
   }
   return out;
+}
+
+/** Render every figure in `text` in the tenant's declared digit style — BOTH WAYS.
+ *
+ *  This used to be one-way: `western` returned the text untouched, on the assumption
+ *  that ASCII digits were the only thing that could arrive. They are not. The model
+ *  writes Arabic prose and freely emits Arabic-Indic digits inside it, so a tenant whose
+ *  profile declares digitStyle:"western" was being answered «الإجمالي: ٧٠.١٥ ر.س» — seen live on demo
+ *  order #1001. A digit style the tenant bans is a bug in either direction, so `western`
+ *  now normalizes Arabic-Indic (and Persian) digits to ASCII rather than passing them
+ *  through. `arabicToAscii` also folds the Arabic decimal separator ٫ to "." and drops
+ *  the thousands separator ٬, which is what a Western-digit reader expects to see. */
+export function formatCustomerVisibleNumbers(
+  text: string,
+  digitStyle: CustomerDigitStyle,
+  opts: { preserveQuotedText?: boolean } = {}
+): string {
+  const convert = digitStyle === "arabic-indic" ? toArabicDigits : arabicToAscii;
+  if (opts.preserveQuotedText === false) return convert(String(text));
+  return convertOutsideQuotes(String(text), convert);
 }
 
 export function formatCustomerVisibleText(text: string, dialect: string | null | undefined): string {

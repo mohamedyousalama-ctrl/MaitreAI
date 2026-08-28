@@ -142,6 +142,13 @@ function layout(width: ReceiptWidth) {
 export function buildReceiptSvg(d: ReceiptData, width: ReceiptWidth = "standard"): { svg: string; width: number } {
   const { W, s, PAD, tRight, tLeft, tMid, rule } = layout(width);
   const digitStyle = d.digitStyle ?? "western";
+  // `f` renders every figure on the ticket in the TENANT's digit style — including
+  // figures inside TENANT-AUTHORED names, which is deliberate and pinned by
+  // scripts/proof-polish.test.ts:163 («فيليه سوبريم 15» → «فيليه سوبريم ١٥» on an
+  // Arabic-Indic tenant). Now that formatCustomerVisibleNumbers is symmetric, the same
+  // rule finally applies in the Western direction too, which it silently did not before.
+  // CUSTOMER-authored fields stay out of it — notes, address, name, phone and driver are
+  // never passed through `f`, because those are the customer's own words, not ours.
   const f = (s: number | string) => formatDigits(s, digitStyle);
   const parts: string[] = [];
   let y = s(80);
@@ -221,6 +228,13 @@ const SOURCE_AR: Record<string, string> = { whatsapp: "واتساب", web: "ال
 export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "standard"): { svg: string; width: number } {
   const { W, s, PAD, tRight, tLeft, tMid, rule } = layout(width);
   const digitStyle = d.digitStyle ?? "western";
+  // `f` renders every figure on the ticket in the TENANT's digit style — including
+  // figures inside TENANT-AUTHORED names, which is deliberate and pinned by
+  // scripts/proof-polish.test.ts:163 («فيليه سوبريم 15» → «فيليه سوبريم ١٥» on an
+  // Arabic-Indic tenant). Now that formatCustomerVisibleNumbers is symmetric, the same
+  // rule finally applies in the Western direction too, which it silently did not before.
+  // CUSTOMER-authored fields stay out of it — notes, address, name, phone and driver are
+  // never passed through `f`, because those are the customer's own words, not ours.
   const f = (s: number | string) => formatDigits(s, digitStyle);
   const LEFT = PAD;
   const CW = W - 2 * PAD;
@@ -251,7 +265,7 @@ export function buildKitchenTicketSvg(d: ReceiptData, width: ReceiptWidth = "sta
 
   let y = s(48);
   // 1. Restaurant + branch + print timestamp (small, top).
-  parts.push(tRight(y, f(d.restaurantName || ""), 22, "#000", 700));
+  parts.push(tRight(y, f(d.restaurantName), 22, "#000", 700));
   if (d.branchName) parts.push(tLeft(y, f(d.branchName), 18, "#444"));
   y += s(24);
   parts.push(tRight(y, `طُبع: ${fmtDate(undefined, digitStyle)}`, 16, "#666"));

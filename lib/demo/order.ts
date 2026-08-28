@@ -33,7 +33,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OrderDraft } from "@/lib/ai/tools";
 import { persistOrderFromDraft } from "@/lib/db/orders-create";
-import { toArabicDigits } from "@/lib/util/arabic-digits";
+import { formatCustomerVisibleText } from "@/lib/util/customer-visible-format";
 import { DEMO_RESTAURANT_ID } from "./config";
 
 /** What the visitor is told once the order really exists. Pure.
@@ -43,9 +43,15 @@ import { DEMO_RESTAURANT_ID } from "./config";
  *  into the Arabic run under RTL (the same reason `local-rules/no-arabic-name-number-
  *  interpolation` exists). */
 export function demoOrderConfirmation(orderNumber: string): string {
+  // DIGITS ARE NOT THIS FUNCTION'S DECISION. This used to call toArabicDigits() here,
+  // which forced Arabic-Indic — «برقم #١٠٠١» — on a tenant whose own dialect profile
+  // declares digitStyle:"western" (lib/ai/dialect.ts: the saudi profile). Seen live on
+  // order #1001. The route now runs the whole reply through formatCustomerVisibleText,
+  // exactly as the WhatsApp path does, so the digit style follows the tenant instead of
+  // being hardcoded in one string.
   return (
     "✅ سجّلت طلبك التجريبي برقم #" +
-    toArabicDigits(orderNumber) +
+    orderNumber +
     "\nهذي تجربة — ما تم سحب أي مبلغ، وما راح يجهّز المطعم شي. " +
     "في الاستخدام الحقيقي يوصل الطلب للمطبخ على طول ويجيك تأكيد."
   );
@@ -84,9 +90,15 @@ export async function closeDemoOrder(
     draft: OrderDraft;
     agentRunId: string | null;
     reply: string;
+    /** The tenant's dialect, so the appended line gets the SAME digit-style pass the
+     *  reply already got in the route. Without it the confirmation was the one string on
+     *  the demo path nobody formatted, which is how «برقم #١٠٠١» reached a
+     *  digitStyle:"western" tenant. */
+    dialect: string | null | undefined;
   }
 ): Promise<DemoOrderOutcome> {
-  const { conversationId, draft, reply } = args;
+  const { conversationId, draft, reply, dialect } = args;
+  const line = (text: string) => formatCustomerVisibleText(text, dialect);
   if (!conversationId || draft.finalized !== true || !draft.lines.length) {
     return { reply, orderNumber: null };
   }
@@ -103,14 +115,14 @@ export async function closeDemoOrder(
     // `created: false` with a number is the idempotent path (a double-tap, or the same
     // basket re-confirmed inside the 120s window). The order is real either way, so the
     // visitor still gets the true number rather than a second, different one.
-    if (!persisted.orderNumber) return { reply: joinLine(reply, demoOrderFailure()), orderNumber: null };
+    if (!persisted.orderNumber) return { reply: joinLine(reply, line(demoOrderFailure())), orderNumber: null };
     return {
-      reply: joinLine(reply, demoOrderConfirmation(persisted.orderNumber)),
+      reply: joinLine(reply, line(demoOrderConfirmation(persisted.orderNumber))),
       orderNumber: persisted.orderNumber,
     };
   } catch (e) {
     console.error("[demo] order persist failed", e);
-    return { reply: joinLine(reply, demoOrderFailure()), orderNumber: null };
+    return { reply: joinLine(reply, line(demoOrderFailure())), orderNumber: null };
   }
 }
 

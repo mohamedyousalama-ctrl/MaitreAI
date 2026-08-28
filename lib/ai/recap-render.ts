@@ -19,7 +19,7 @@
 
 import type { OrderDraft, DraftLine } from "./tools";
 import { toArabicDigits } from "@/lib/util/arabic-digits";
-import { optionValueOnly } from "@/lib/util/customer-visible-format";
+import { digitStyleForDialect, optionValueOnly } from "@/lib/util/customer-visible-format";
 
 /** Recap phase. "readback" is the pre-confirmation order readback that ends with
  *  «أجهّزلك الطلب؟». "confirmed" heads the registered-order recap (no readback ask).
@@ -36,7 +36,18 @@ export interface RecapOptions {
   trailer?: string;
 }
 
-const ar = (v: number | string): string => toArabicDigits(v);
+/** The recap's digit renderer for ONE tenant.
+ *
+ *  This was `const ar = (v) => toArabicDigits(v)` — Arabic-Indic hardcoded for EVERY
+ *  tenant, even though `RecapOptions` has carried `dialect` the whole time. It is the
+ *  reason live demo order #1001 read «الإجمالي: ٧٠.١٥ ر.س» on a tenant whose profile
+ *  declares digitStyle:"western". The output-edge formatter in the routes is a backstop;
+ *  THIS is where the wrong digits were being written, so this is where it is fixed. */
+function digitsFor(dialect: string): (v: number | string) => string {
+  return digitStyleForDialect(dialect) === "arabic-indic"
+    ? (v) => toArabicDigits(v)
+    : (v) => String(v);
+}
 
 /** The option text for one draft line (variant + choices + modifiers), value-only. */
 function lineOptions(l: DraftLine): string[] {
@@ -47,8 +58,9 @@ function lineOptions(l: DraftLine): string[] {
   ];
 }
 
-/** One recap line: «٢× بيتزا (وسط، جبنة زيادة) — ٣٩٠ ج.م» — Arabic-Indic throughout. */
-function recapLine(l: DraftLine, currency: string): string {
+/** One recap line: «٢× بيتزا (وسط، جبنة زيادة) — ٣٩٠ ج.م» on an Arabic-Indic tenant;
+ *  «2× كبسة — 70 ر.س» on a Western-digit one. The digit style is the tenant's. */
+function recapLine(l: DraftLine, currency: string, ar: (v: number | string) => string): string {
   const opts = lineOptions(l);
   const optText = opts.length ? ` (${opts.join("، ")})` : "";
   return `${ar(l.quantity)}× ${l.name}${optText} — ${ar(l.lineTotal)} ${currency}`;
@@ -71,8 +83,8 @@ function allergyLine(note: string | null | undefined): string | null {
 }
 
 /**
- * Render the deterministic recap BLOCK from the draft. Every figure is Arabic-Indic
- * and copied from the (already-priced) draft — no arithmetic here. The structure is
+ * Render the deterministic recap BLOCK from the draft. Every figure is copied from the
+ * (already-priced) draft — no arithmetic here — and rendered in the DIALECT'S digit style. The structure is
  * identical on every turn:
  *   [confirmed header]
  *   {qty}× {name} ({options}) — {lineTotal} {currency}          (one per line)
@@ -86,12 +98,13 @@ function allergyLine(note: string | null | undefined): string | null {
 export function renderDraftRecap(draft: OrderDraft, opts: RecapOptions): string {
   const phase: RecapPhase = opts.phase ?? "readback";
   const cur = draft.currency;
+  const ar = digitsFor(opts.dialect);
   if (!draft.lines.length) return "السلة فارغة.";
 
   const parts: string[] = [];
   if (phase === "confirmed") parts.push(recapConfirmedHeader());
 
-  for (const l of draft.lines) parts.push(recapLine(l, cur));
+  for (const l of draft.lines) parts.push(recapLine(l, cur, ar));
 
   if (draft.fulfillment === "delivery" && draft.deliveryFee) {
     parts.push(`رسوم التوصيل: ${ar(draft.deliveryFee)} ${cur}`);

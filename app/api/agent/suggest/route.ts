@@ -20,6 +20,7 @@ import type { BrainContext } from "@/lib/ai/prompt";
 import type { Tier } from "@/lib/tenant/tier";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 import type { AiToneConfig } from "@/lib/types";
+import { asPricingTaxMode } from "@/lib/order-pricing";
 
 export const runtime = "nodejs";
 
@@ -125,7 +126,7 @@ export async function POST(req: Request) {
     autoAccept: !!row.auto_accept_orders,
     handoverNote,
     personaName: (row.agent_persona_name as string | null) ?? undefined,
-    taxMode: String(row.tax_mode ?? "inclusive"),
+    taxMode: asPricingTaxMode(row.tax_mode),
     taxRate: Number(row.tax_rate ?? 0),
     tier: (row.tier as Tier | null) ?? "standard",
   };

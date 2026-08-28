@@ -39,6 +39,30 @@ eq("compound text is not bare quantity", parseBareQuantityAnswer("٣ كاديا"
 eq("out-of-scope 21 passes through", parseBareQuantityAnswer("21"), null);
 eq("unknown qty id passes through", quantityFromInteractiveId("qty:100"), null);
 
+// FILLERS AND COUNTERS. «وحده بس» — "just one" — is the most common spoken answer to a
+// quantity question and used to return null, so the basket stayed empty and the agent
+// asked again. The closed filler/counter lists must not widen into "strip any token":
+// the null cases below are the fence that proves they did not.
+eq("«وحده بس» resolves", parseBareQuantityAnswer("وحده بس"), 1);
+eq("«واحدة بس» resolves", parseBareQuantityAnswer("واحدة بس"), 1);
+eq("«بس واحد» resolves (filler first)", parseBareQuantityAnswer("بس واحد"), 1);
+eq("«اتنين بس» resolves", parseBareQuantityAnswer("اتنين بس"), 2);
+eq("«٢ بس» resolves", parseBareQuantityAnswer("٢ بس"), 2);
+eq("«واحدة فقط» resolves", parseBareQuantityAnswer("واحدة فقط"), 1);
+eq("«واحدة لو سمحت» resolves (multi-word filler)", parseBareQuantityAnswer("واحدة لو سمحت"), 1);
+eq("«تكفى واحد» resolves (Saudi politeness)", parseBareQuantityAnswer("تكفى واحد"), 1);
+// Khalid asks «كم حبة تبي؟»; the idiomatic answer is the dual, not a numeral.
+eq("dual «حبتين» resolves", parseBareQuantityAnswer("حبتين"), 2);
+eq("dual «طبقين» resolves", parseBareQuantityAnswer("طبقين"), 2);
+eq("counter «حبة واحدة» resolves", parseBareQuantityAnswer("حبة واحدة"), 1);
+eq("counter «٣ حبات» resolves", parseBareQuantityAnswer("٣ حبات"), 3);
+eq("counter «صحن واحد» resolves", parseBareQuantityAnswer("صحن واحد"), 1);
+// THE FENCE. A dish name is not a filler; a filler alone is not a quantity.
+eq("«بس» alone is not a quantity", parseBareQuantityAnswer("بس"), null);
+eq("«حبة» alone is not a quantity", parseBareQuantityAnswer("حبة"), null);
+eq("«واحد كبسة» is still compound", parseBareQuantityAnswer("واحد كبسة"), null);
+eq("«٣ كاديا» is still compound", parseBareQuantityAnswer("٣ كاديا"), null);
+
 const qtyPresentation = {
   kind: "buttons",
   buttons: [
