@@ -133,8 +133,13 @@ async function run() {
     resume.includes("runWithTenantWhatsAppCreds(") && resume.includes("respondAndSendWhatsApp(admin, tenant.restaurantId, params.id)"));
 
   const receipt = readFileSync(join(ROOT, "app/api/orders/[id]/send-receipt/route.ts"), "utf8");
+  // REPAIR (stale source-shape pin): sendReceiptToCustomer gained a third
+  // `memberId` argument, so the exact-string match on the 2-arg call went stale.
+  // The invariant under proof is the WRAPPING, not the arity — match the call with
+  // any trailing args. Unwrapping the call still fails this assertion.
   check("(B) receipt wraps sendReceiptToCustomer in runWithTenantWhatsAppCreds",
-    receipt.includes("runWithTenantWhatsAppCreds(") && receipt.includes("sendReceiptToCustomer(supabase, params.id)"));
+    receipt.includes("runWithTenantWhatsAppCreds(") &&
+    /runWithTenantWhatsAppCreds\([\s\S]{0,200}?sendReceiptToCustomer\(supabase, params\.id\s*[,)]/.test(receipt));
 
   // Driver-dispatch sends (delivery.ts:286 driver link, :409 customer track link)
   // wrapped with the SAME helper — so they inherit the (A) runtime proofs:

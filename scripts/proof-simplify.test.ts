@@ -249,7 +249,16 @@ ok("W2: BrainContext carries the optional allergySimple flag", /allergySimple\?:
 ok("W3: customer-turn derives the flag and sets brain.allergySimple", /allergySimpleOn = isFeatureExplicitlyEnabled\("allergy_simple", tenantFeatures\)/.test(ct) && /allergySimple: allergySimpleOn/.test(ct));
 ok("W4 (PART A): the deflect branch precedes the calm-hold + legacy escalation branches", ct.indexOf("allergySimpleDeflect && allergySimpleDecision") > 0 && ct.indexOf("allergySimpleDeflect && allergySimpleDecision") < ct.indexOf("} else if (calmHoldCandidate)"));
 ok("W5 (PART A): the calm-hold / companion / legacy escalation branches are bypassed under the flag", /calmHoldOn && !allergySimpleOn/.test(ct) && /companionOn && !allergySimpleOn/.test(ct) && /combinedAllergenHit\.fired && !companionOn && !allergySimpleOn/.test(ct));
-ok("W6 (PART A): the customer-memory allergy READ is bypassed under the flag", /memoryAllergyGateOn && !allergySimpleOn/.test(ct));
+// REPAIR (stale source-shape pin): the bypass was refactored from a single
+// `memoryAllergyGateOn && !allergySimpleOn` conjunction into a nested `if`
+// (customer-turn.ts: `if (memoryAllergyGateOn && ...) { if (!allergySimpleOn) {`).
+// Behaviour is unchanged, so we pin the BEHAVIOUR structurally instead of the old
+// literal: the customer_memory READ must be guarded by !allergySimpleOn. Removing
+// that guard still fails this assertion.
+const memReadIdx = ct.indexOf('.from("customer_memory")');
+const memGateIdx = memReadIdx > 0 ? ct.lastIndexOf("memoryAllergyGateOn", memReadIdx) : -1;
+ok("W6 (PART A): the customer-memory allergy READ is bypassed under the flag",
+  memReadIdx > 0 && memGateIdx > 0 && /!allergySimpleOn/.test(ct.slice(memGateIdx, memReadIdx)));
 ok("W7 (PART A): the safety-bridge injection is bypassed under the flag", /!isFeatureExplicitlyEnabled\("allergy_simple", features\)/.test(ras));
 ok("W8 (PART A): the session-scoped canonical ticket note is written under the flag", /buildTicketAllergyNote\(/.test(ct) && /allergy_note: ticketNote/.test(ct));
 ok("W9 (PART B): the loader uses the deterministic lifecycle decision", /decideDraftLifecycle\(\{/.test(ct) && /isExplicitResetIntent\(input\.userMessage\)/.test(ct));

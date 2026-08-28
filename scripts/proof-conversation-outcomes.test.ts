@@ -222,7 +222,13 @@ async function run() {
   const idxClose = route.indexOf('setOwnershipState(admin, params.id, "CLOSED"');
   const idxEmit = route.indexOf("emitConversationOutcome(admin");
   check("(H) close transition committed BEFORE emit", idxClose > 0 && idxEmit > idxClose);
-  check("(H) member-auth (getServerTenant) like sibling routes", route.includes("getServerTenant"));
+  // REPAIR (stale source-shape pin): the close route now authenticates via
+  // requireTenant() — the repo-standard wrapper that itself resolves the session
+  // with getServerTenant() and additionally applies tenantGate + sameOriginGate.
+  // The member-auth invariant is unchanged (and strictly stronger), so accept the
+  // wrapper as well as a direct call. A route with NO tenant gate still fails.
+  check("(H) member-auth (getServerTenant/requireTenant) like sibling routes",
+    route.includes("getServerTenant") || route.includes("requireTenant"));
 
   console.log(`\nCONVERSATION-OUTCOMES PROOF: ${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
