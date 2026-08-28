@@ -26,7 +26,7 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
 // exists where console_v2 is deployed); without it a signed-out user is bounced to
 // the OLD /login and the new magic-link page is unreachable. Only /c/login is
 // public — every other /c route stays protected.
-const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/c/login", "/auth", "/checkout", "/order", "/api", "/d", "/t", "/mizan"];
+const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/c/login", "/auth", "/checkout", "/order", "/api", "/d", "/t", "/mizan", "/demo"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
