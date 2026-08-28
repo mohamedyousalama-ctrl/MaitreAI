@@ -21,6 +21,7 @@ import { recomputeOrderPricing } from "@/lib/order-pricing";
 import { recordCriticalAlert } from "@/lib/alerts/record";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { loadResolvedPaymentMethods, offeredMethods, recordPaymentSnapshot } from "@/lib/payments/resolve";
+import { isUndefinedColumnError } from "@/lib/db/checked";
 
 /** Deterministic UUID from a string (stable id ⇒ idempotent insert). */
 export function uuidFromHash(input: string): string {
@@ -285,16 +286,36 @@ export async function persistOrderFromDraft(
   // we DON'T add the field to the insert, so a pre-0080/flag-off tenant is byte-
   // identical. A non-empty note only exists when the companion flow wrote it (⇒ 0080
   // applied ⇒ the orders column exists), so the insert never errors on the column.
+  // CHECKED + TENANT-PINNED: supabase-js RETURNS { error } (it does NOT throw), so the
+  // old try/catch could never observe a failure — a rejected read silently produced an
+  // empty note and the field was dropped from the insert, i.e. a kitchen ticket with no
+  // allergen banner and nothing anywhere saying so. Now the error is inspected: a missing
+  // 0080 column stays inert (the documented deploy-safe path), a genuinely-failed or
+  // wrong-tenant read is LOGGED loudly. Deliberately NOT fatal — throwing here would flip
+  // the conversation to a human and refuse the order (see the persist-error handler in
+  // respond-and-send), which is an escalation-behaviour change this fix does not make.
   let allergyNote = "";
-  try {
-    const { data: convNote } = await admin
-      .from("conversations")
-      .select("allergy_note")
-      .eq("id", conversationId)
-      .maybeSingle();
+  const { data: convNote, error: convNoteError } = await admin
+    .from("conversations")
+    .select("allergy_note")
+    .eq("id", conversationId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (convNoteError) {
+    if (!isUndefinedColumnError(convNoteError)) {
+      console.error(
+        "[allergy] orders_create.read_session_allergy_note FAILED — order may ship without its allergen banner",
+        { restaurantId, conversationId },
+        convNoteError
+      );
+    }
+  } else if (!convNote) {
+    console.error(
+      "[allergy] orders_create.read_session_allergy_note found no conversation for this tenant",
+      { restaurantId, conversationId }
+    );
+  } else {
     allergyNote = ((convNote as { allergy_note?: string | null } | null)?.allergy_note ?? "").trim();
-  } catch {
-    /* column absent (0080 not applied) → inert */
   }
 
   const { data, error } = await admin

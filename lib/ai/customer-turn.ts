@@ -65,6 +65,7 @@ import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { decideVoiceLadder, garbledVoiceReply, confirmVoiceReply, isVoiceAssent, wasVoiceLadderConfirm } from "@/lib/ai/voice-quality";
 import { resolveVoiceCandidates, expectedAnswerClass, type VoiceCandidate } from "@/lib/ai/voice-aliases";
 import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
+import { isUndefinedColumnError, mustWrite } from "@/lib/db/checked";
 import { recordAllergyEvent, buildBannedPhraseBlockAudit } from "@/lib/db/allergy-audit";
 import { asksForMenuLink, asksToSeeMedia, buildAnswerFirstDirective } from "@/lib/ai/media-intent";
 import { CONVERSATION_MEDIA_BUDGET } from "@/lib/messaging/media-guard";
@@ -234,6 +235,47 @@ function isOpenDraft(value: unknown): value is OrderDraft {
   if (!value || typeof value !== "object") return false;
   const draft = value as Partial<OrderDraft>;
   return Array.isArray(draft.lines) && draft.lines.length > 0 && draft.finalized !== true;
+}
+
+/** The ONE writer of `conversations.allergy_note` on the customer-turn path.
+ *
+ *  `allergy_note` is a SAFETY field: order-create copies it onto the order row and the
+ *  kitchen ticket renders it as the allergen banner. supabase-js RETURNS `{ error }` —
+ *  it does NOT throw — so the old bare `await admin.from("conversations").update(...)`
+ *  wrapped in try/catch could not fail visibly: a rejected write, a zero-row write, or a
+ *  conversation belonging to another tenant all looked exactly like success.
+ *
+ *  So: `mustWrite({ exactRows: 1 })` (the same helper/shape already used in
+ *  lib/db/allergy-companion-effects.ts) turns both failure modes into a throw, and the
+ *  write is TENANT-PINNED so it can never touch another restaurant's conversation.
+ *  DEPLOY-SAFE is preserved: a missing 0080 column (42703) stays inert exactly as before;
+ *  every OTHER failure is logged instead of swallowed. Never throws — a customer turn is
+ *  never broken by this write. Returns true only on a confirmed one-row write. */
+async function writeConversationAllergyNote(
+  admin: SupabaseClient,
+  restaurantId: string,
+  conversationId: string,
+  patch: { allergy_note: string | null },
+  context: string
+): Promise<boolean> {
+  try {
+    await mustWrite<{ id: string }>(
+      admin
+        .from("conversations")
+        .update(patch)
+        .eq("id", conversationId)
+        .eq("restaurant_id", restaurantId)
+        .select("id"),
+      context,
+      { exactRows: 1 }
+    );
+    return true;
+  } catch (e) {
+    if (!isUndefinedColumnError(e)) {
+      console.error(`[allergy] ${context} FAILED — kitchen note not persisted`, { restaurantId, conversationId }, e);
+    }
+    return false;
+  }
 }
 
 function isRule6ReadNotUnderstoodClarify(result: RespondResult): boolean {
@@ -736,11 +778,10 @@ export async function runCustomerTurn(
     sessionExpiredForTurn = freshness.expirePendingQuestion || draftResetIntent;
     clearLegacyResiduesThisTurn = freshness.clearLegacyResidues;
     if (freshness.clearAllergyNote) {
-      try {
-        await admin.from("conversations").update({ allergy_note: null }).eq("id", conversationId);
-      } catch {
-        /* column absent (pre-0080) → best-effort */
-      }
+      await writeConversationAllergyNote(
+        admin, restaurantId, conversationId, { allergy_note: null },
+        "customer_turn.expire_stale_allergy_note"
+      );
       allergyContextExpiredThisTurn = true;
     }
   }
@@ -1364,6 +1405,24 @@ export async function runCustomerTurn(
       combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency,
       holdSource, holdSource === "phonetic_safety_net" ? phoneticHit.reason : null
     );
+    // KEEP THE PROMISE. The frozen reply above tells the customer «سجّلت الملاحظة للمطبخ»
+    // ("I recorded the note for the kitchen"), but on THIS branch nothing used to persist
+    // it: companionDecision stays null → applyCompanionSideEffects never runs, and the
+    // allergy_simple ticket write below is flag-gated OFF. order-create then copied an
+    // EMPTY conversations.allergy_note and the kitchen ticket carried no allergen at all.
+    // Write the SAME session-scoped canonical note the allergy_simple path writes — same
+    // pure helpers, same format, no new note shape — so the durable record matches what
+    // the agent already said. Reply text, signals and escalation behaviour are untouched;
+    // the terms are session-scoped (history + this turn), never from customer memory.
+    if (conversationId) {
+      const gateTicketNote = buildTicketAllergyNote(
+        collectConversationAllergenTerms(input.history, input.userMessage)
+      );
+      await writeConversationAllergyNote(
+        admin, restaurantId, conversationId, { allergy_note: gateTicketNote },
+        "customer_turn.forced_allergen_gate_ticket_note"
+      );
+    }
   } else if (enterCompanion) {
     // FLAG ON — companion path. decideCompanionAction checks the emergency detector
     // FIRST (wins), else it's a §1a mention. The gate's term (if any) is passed as the
@@ -1432,11 +1491,10 @@ export async function runCustomerTurn(
   if (allergySimpleOn && allergySimpleDecision) {
     if (allergyRetracted) {
       if (conversationId) {
-        try {
-          await admin.from("conversations").update({ allergy_note: null }).eq("id", conversationId);
-        } catch {
-          /* column absent (pre-0080) → best-effort */
-        }
+        await writeConversationAllergyNote(
+          admin, restaurantId, conversationId, { allergy_note: null },
+          "customer_turn.clear_retracted_allergy_note"
+        );
       }
       const ack = allergyRetractionAck(dialect);
       const base = result.reply.trim();
@@ -1457,11 +1515,10 @@ export async function runCustomerTurn(
         const ticketNote = buildTicketAllergyNote(
           collectConversationAllergenTerms(input.history, input.userMessage)
         );
-        try {
-          await admin.from("conversations").update({ allergy_note: ticketNote }).eq("id", conversationId);
-        } catch {
-          /* column absent (pre-0080) → the ticket floor is best-effort, never breaks the turn */
-        }
+        await writeConversationAllergyNote(
+          admin, restaurantId, conversationId, { allergy_note: ticketNote },
+          "customer_turn.write_ticket_note"
+        );
       }
     }
   }

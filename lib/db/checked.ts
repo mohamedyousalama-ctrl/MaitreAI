@@ -43,6 +43,27 @@ export class DatabaseOperationError extends Error {
   }
 }
 
+/**
+ * True for a Postgres/PostgREST "column does not exist" rejection (42703) — the
+ * DEPLOY-SAFE signal that a PREPARE-ONLY migration has not been applied yet.
+ * Accepts a raw `{ code, message }` error shape OR a `DatabaseOperationError`
+ * thrown by the helpers below, so a caller can wrap a write in `mustWrite` and
+ * still keep the "column absent → inert" branch while surfacing every OTHER
+ * failure instead of swallowing it. Pure.
+ */
+export function isUndefinedColumnError(error: unknown): boolean {
+  const pgError =
+    error instanceof DatabaseOperationError
+      ? (error.pgError as { code?: string | null; message?: string } | null)
+      : error && typeof error === "object"
+        ? (error as { code?: string | null; message?: string })
+        : null;
+  if (!pgError) return false;
+  if (pgError.code === "42703") return true;
+  const message = String(pgError.message ?? "").toLowerCase();
+  return message.includes("column") && message.includes("does not exist");
+}
+
 async function resolveQuery<T>(
   query: CheckedQuery<T>,
   context: string,

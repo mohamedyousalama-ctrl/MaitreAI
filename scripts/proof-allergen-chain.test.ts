@@ -351,7 +351,9 @@ const db = new FakeSupabase({
     payment_config: null,
     dialect: "egyptian",
   }],
-  conversations: [{ id: CONVERSATION_ID, allergy_note: conversationNote, is_safety_hold: false, ownership_state: "AI_ACTIVE" }],
+  // restaurant_id is `not null` on public.conversations (0001_init) — the fixture carries
+  // it so the TENANT-PINNED session-note read in orders-create resolves like production.
+  conversations: [{ id: CONVERSATION_ID, restaurant_id: RESTAURANT_ID, allergy_note: conversationNote, is_safety_hold: false, ownership_state: "AI_ACTIVE" }],
   customers: [{ id: CUSTOMER_ID, name: "عميل اختبار", phone: "+201000000000" }],
   branches: [],
   menu_categories: [{ id: CATEGORY_ID, restaurant_id: RESTAURANT_ID, name: "رئيسي", sort: 0 }],

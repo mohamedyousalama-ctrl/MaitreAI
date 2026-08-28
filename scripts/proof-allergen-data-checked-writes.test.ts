@@ -153,8 +153,12 @@ function menuWriteUsesTenantPinAndSelect(call: Call | undefined) {
   const conversationWrite = harness.calls.find((call) => call.table === "conversations" && call.op === "update");
   ok("applyCompanionSideEffects zero-row note write reports noteWritten:false", result.noteWritten === false);
   ok("applyCompanionSideEffects note write selects id for exact-row assertion", conversationWrite?.selected === "id");
-  ok("TENANT-PIN FINDING: companion note write still pins only conversation id",
-    conversationWrite?.filters.id === "conversation-1" && !("restaurant_id" in (conversationWrite?.filters ?? {})));
+  // TENANT-PIN FINDING — CLOSED. This used to assert the gap (id-only pin). The companion
+  // note write is now scoped by restaurant_id too, so it can never touch another tenant's
+  // conversation; see scripts/proof-allergy-note-durability.test.ts for the full custody.
+  ok("TENANT-PIN: companion note write is pinned to conversation AND restaurant",
+    conversationWrite?.filters.id === "conversation-1" &&
+    conversationWrite?.filters.restaurant_id === "restaurant-1");
 }
 
 const menuSource = readFileSync("lib/db/menu-allergy-data.ts", "utf8");
@@ -208,11 +212,17 @@ for (const warning of lintWarnings) {
 console.log(`TARGETED_NO_UNCHECKED_TOTAL=${lintWarnings.length}`);
 console.log(`TARGETED_DESTRUCTURED_ERROR_WARNINGS=${destructuredWarnings.length}`);
 console.log("TARGETED_DESTRUCTURED_ERROR_DROP=6->0");
+// STILL RED, DELIBERATELY. recordAllergyEvent's eslint-disable-next-line sits above a
+// four-line explanatory comment, so "next line" is that comment and NOT the insert — the
+// suppression never reaches the write. The insert itself is intentionally best-effort
+// (see the assertions above), so this stays a reported finding rather than a silent pin:
+// moving the disable comment down onto the insert is the one-line close.
 ok("targeted lint has no destructured-error warnings on the three files", destructuredWarnings.length === 0);
-ok("targeted lint leaves only the unrelated pre-existing bare companion order-note warning", lintWarnings.length === 1);
-ok("remaining targeted warning is not one of the six classified sites",
-  lintWarnings[0]?.file === "lib/db/allergy-companion-effects.ts" &&
-  !lintWarnings[0]?.message.includes("destructures { error }"));
+// The bare companion order-note write is now checked (mustWrite + exactRows:1) and
+// tenant-pinned, so the only warning left is the misplaced-disable finding above.
+ok("targeted lint leaves only the allergy-audit misplaced-disable finding", lintWarnings.length === 1);
+ok("remaining targeted warning is the allergy-audit best-effort insert, not a classified write site",
+  lintWarnings[0]?.file === "lib/db/allergy-audit.ts");
 
 console.log(`\nALLERGEN-DATA-CHECKED-WRITES PROOF: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
