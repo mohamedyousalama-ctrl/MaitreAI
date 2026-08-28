@@ -1382,6 +1382,25 @@ export async function runCustomerTurn(
     // the worst possible outcome, and freezing the thread produces silence.
     const emergencyDecision = decideCompanionAction(input.userMessage, sessionAllergyNote, allergenDecisionHint);
     result = companionEmergencyResult(emergencyDecision, dialect, initialDraft, ctx.profile.currency);
+    // KEEP THE PROMISE HERE TOO — and this is the case that needs it most.
+    //
+    // This branch was added above the deterministic gate to stop an active emergency
+    // being answered with the menu. But the gate below is where the kitchen-ticket note
+    // gets written, so intercepting the turn here silently took the note away from the
+    // ONE case where the kitchen most needs it: a customer describing anaphylaxis got a
+    // loud staff alert and a ticket carrying no allergen at all.
+    //
+    // Neither fix caused this on its own; the combination did. Same canonical helpers,
+    // same session-scoped terms, same format as every other branch.
+    if (conversationId) {
+      const emergencyTicketNote = buildTicketAllergyNote(
+        collectConversationAllergenTerms(input.history, input.userMessage)
+      );
+      await writeConversationAllergyNote(
+        admin, restaurantId, conversationId, { allergy_note: emergencyTicketNote },
+        "customer_turn.emergency_override_ticket_note"
+      );
+    }
   } else if (allergySimpleDeflect && allergySimpleDecision) {
     // WO-SIMPLIFY (PART A) — simple posture, FIRST allergy/disease mention: deflect to the menu +
     // offer a human. No hold, no escalation, no allergy-memory write. The kitchen-ticket canonical

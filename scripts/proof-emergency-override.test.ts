@@ -89,5 +89,32 @@ ok("companionEmergencyResult still emits a notify_without_hold staff alert",
 ok("companionEmergencyResult still does not freeze the thread (escalate: false, per §5)",
   /escalate:\s*false/.test(handler));
 
+// ── 6. THE INTERACTION — the emergency branch must ALSO write the kitchen note ──
+// This is a regression neither fix caused alone. The deterministic gate below writes
+// the session kitchen-ticket note; putting an emergency branch ABOVE it intercepts the
+// turn before that write, which silently removed the note from the one case where the
+// kitchen most needs it — a customer describing anaphylaxis got a loud staff alert and
+// a ticket carrying no allergen at all.
+//
+// Pinned by POSITION as well as presence: the assertion below requires the write to be
+// inside the emergency branch, not merely somewhere in the file, because "somewhere in
+// the file" was true throughout the entire life of the bug.
+const emergencyBranch = posEmergency > 0 ? src.slice(posEmergency, posDeflect) : "";
+ok("the emergency branch writes the kitchen-ticket note",
+  /writeConversationAllergyNote\(/.test(emergencyBranch));
+ok("it uses the SAME canonical helpers as every other branch (no new note shape)",
+  /buildTicketAllergyNote\(\s*\n?\s*collectConversationAllergenTerms\(/.test(emergencyBranch));
+ok("the note is session-scoped — history plus this turn, never customer memory",
+  /collectConversationAllergenTerms\(input\.history,\s*input\.userMessage\)/.test(emergencyBranch));
+ok("the write is guarded on there being a conversation to write to",
+  /if\s*\(conversationId\)/.test(emergencyBranch));
+
+// The gate below must keep its own write — the emergency branch adds to it, never
+// replaces it, and a refactor that moved the write up here would break the gate.
+const gateStart = src.indexOf("} else if (combinedAllergenHit.fired && !companionOn && !allergySimpleOn) {");
+const gateEnd = src.indexOf("} else if (enterCompanion) {");
+const gateBranch = gateStart > 0 && gateEnd > gateStart ? src.slice(gateStart, gateEnd) : "";
+ok("the deterministic gate still writes its own note", /writeConversationAllergyNote\(/.test(gateBranch));
+
 console.log(`\nEMERGENCY-OVERRIDE PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

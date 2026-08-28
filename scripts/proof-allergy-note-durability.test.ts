@@ -94,10 +94,21 @@ const oc = read("lib/db/orders-create.ts");
   ok("B4: no bare unchecked conversations.allergy_note write remains",
     bareWrites.length === 0 && inlineBare.length === 0);
 
-  // All four note writes (stale-context expiry, retraction clear, allergy_simple ticket
-  // note, and the flag-OFF gate note) go through the one writer.
+  // Every note write goes through the one checked writer. This is a CENSUS, deliberately:
+  // a count catches a NEW write site added later that bypasses the writer, which a
+  // presence check never would. Update the number when a site is genuinely added — and
+  // only after confirming the new site is checked and tenant-pinned.
+  //
+  // The five sites: stale-context expiry, retraction clear, the allergy_simple ticket
+  // note, the flag-OFF deterministic gate note, and the emergency-override note.
+  //
+  // The fifth was added after this proof was written, and this assertion caught it —
+  // working exactly as intended. The emergency-override branch sits ABOVE the
+  // deterministic gate, so it intercepted the turn before the gate's note write and
+  // silently removed the kitchen note from the one case that needs it most: a customer
+  // describing anaphylaxis. Neither change caused that alone; the combination did.
   const callSites = ct.match(/writeConversationAllergyNote\(\s*\n?\s*admin,/g) ?? [];
-  ok("B5: all four note writes go through the checked writer", callSites.length === 4);
+  ok("B5: all five note writes go through the checked writer", callSites.length === 5);
   ok("B5: the allergy_simple ticket-note call site is preserved verbatim",
     /\{ allergy_note: ticketNote \}/.test(ct));
 }
