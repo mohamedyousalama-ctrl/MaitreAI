@@ -31,6 +31,27 @@ export const DEMO_PER_IP_TURNS = 20;
 export const DEMO_WINDOW_MS = 60 * 60 * 1000;
 
 /**
+ * THE CAP THAT PROTECTS THE CARD — a global daily ceiling, enforced in the database.
+ *
+ * A per-IP limit alone is defeated by any number of source addresses, so the global
+ * ceiling is the real control and the per-IP one is courtesy. Measured turns on the
+ * demo tenant cost ~$0.0021, so 2,000 turns bounds a worst day at roughly $4. That is
+ * also far more conversation than a successful demo will ever see: if this cap is ever
+ * genuinely reached by real interest, that is a good problem and a deliberate raise.
+ */
+export const DEMO_GLOBAL_DAILY_TURNS = 2000;
+
+/** UTC day bucket for the global cap: `global:YYYY-MM-DD`. */
+export function globalBucket(now: Date = new Date()): string {
+  return `global:${now.toISOString().slice(0, 10)}`;
+}
+
+/** UTC hour bucket for the per-IP cap: `ip:<addr>:YYYY-MM-DDTHH`. */
+export function ipBucket(ip: string, now: Date = new Date()): string {
+  return `ip:${ip}:${now.toISOString().slice(0, 13)}`;
+}
+
+/**
  * Hosts the demo answers on. Anything else 404s.
  *
  * `www.getkivo.io` is already a production domain on the Vercel project and is

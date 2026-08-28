@@ -26,6 +26,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   isDemoHost, DEMO_RESTAURANT_ID, DEMO_MAX_CHARS, DEMO_MAX_HISTORY,
+  DEMO_GLOBAL_DAILY_TURNS, DEMO_PER_IP_TURNS, globalBucket, ipBucket,
 } from "../lib/demo/config.ts";
 
 const ROOT = process.cwd();
@@ -136,6 +137,59 @@ ok("conversation_signals (which carries the matched allergen term) is skipped on
 // The flag must be OPT-IN: normal tenant traffic keeps writing exactly as before.
 ok("demoRun is opt-in — nothing defaults it to true",
   !/demoRun\s*=\s*true/.test(turn) && !/demoRun\s*\?\?\s*true/.test(turn));
+
+// ── 10. THE DURABLE CAP ────────────────────────────────────────────────────
+// Everything else is a speed bump. lib/rate-limit is a process-local Map that
+// resets on cold start and is not shared across lambdas, so on serverless an
+// attacker gets roughly (limit x warm instances). The database guard (migration
+// 0119) is the only thing that actually bounds spend.
+ok("the route calls the durable guard", /rpc\("kv_demo_try_consume"/.test(route));
+ok("the guard runs BEFORE the model call",
+  route.indexOf("kv_demo_try_consume") < route.indexOf("runCustomerTurn("));
+ok("the guard FAILS CLOSED — a guard error refuses the turn, it does not spend",
+  /if\s*\(guardErr\s*\|\|\s*!guard\)[\s\S]{0,200}status:\s*503/.test(route));
+ok("a denied turn is refused", /if\s*\(!guard\.allowed\)/.test(route));
+ok("a deliberately stopped demo is distinguishable from a quota trip",
+  /guard\.reason === "disabled"/.test(route));
+ok("the response never leaks the counts back to the caller",
+  !/global_turns/.test(/return NextResponse\.json\(\s*\{ error: stopped[\s\S]*?\);/.exec(route)?.[0] ?? ""));
+
+// Both ceilings must be real, and the global one must be the binding constraint —
+// a per-IP limit alone is defeated by any number of source addresses.
+ok("a global daily ceiling exists and is a sane number",
+  Number.isInteger(DEMO_GLOBAL_DAILY_TURNS) && DEMO_GLOBAL_DAILY_TURNS > 0 && DEMO_GLOBAL_DAILY_TURNS <= 100_000);
+ok("both ceilings are passed to the guard",
+  /p_global_limit:\s*DEMO_GLOBAL_DAILY_TURNS/.test(route) && /p_ip_limit:\s*DEMO_PER_IP_TURNS/.test(route));
+ok("the per-IP ceiling is tighter than the global one", DEMO_PER_IP_TURNS < DEMO_GLOBAL_DAILY_TURNS);
+
+// Bucket keys decide WHEN a cap resets, so they are behaviour, not formatting.
+const t1 = new Date("2026-08-28T14:31:00Z");
+const t2 = new Date("2026-08-28T14:59:59Z");
+const t3 = new Date("2026-08-28T15:00:00Z");
+const t4 = new Date("2026-08-29T00:00:00Z");
+ok("the global bucket is per UTC DAY", globalBucket(t1) === "global:2026-08-28" && globalBucket(t3) === "global:2026-08-28");
+ok("the global bucket rolls at UTC midnight", globalBucket(t4) === "global:2026-08-29");
+ok("the ip bucket is per UTC HOUR and includes the address",
+  ipBucket("1.2.3.4", t1) === "ip:1.2.3.4:2026-08-28T14");
+ok("the ip bucket holds across the hour", ipBucket("1.2.3.4", t1) === ipBucket("1.2.3.4", t2));
+ok("the ip bucket rolls at the hour", ipBucket("1.2.3.4", t2) !== ipBucket("1.2.3.4", t3));
+ok("different addresses get different buckets", ipBucket("1.2.3.4", t1) !== ipBucket("1.2.3.5", t1));
+
+// ── 11. the migration's grants use the CORRECT idiom ───────────────────────
+// 0113 revoked from PUBLIC only. That looked exclusive and was not: Supabase's
+// default privileges grant EXECUTE on new public functions DIRECTLY to anon and
+// authenticated, so revoking from PUBLIC never touches them. It shipped as a live
+// hole and 0114 closed it. Both revokes are required; neither implies the other.
+const mig = codeOf("supabase/migrations/0119_demo_spend_guard.sql");
+ok("the guard function is revoked from PUBLIC", /revoke all on function public\.kv_demo_try_consume[^;]*from public;/.test(mig));
+ok("the guard function is ALSO revoked from anon AND authenticated (the 0113 trap)",
+  /revoke all on function public\.kv_demo_try_consume[^;]*from anon, authenticated;/.test(mig));
+ok("only service_role is granted execute", /grant execute on function public\.kv_demo_try_consume[^;]*to service_role;/.test(mig));
+for (const t of ["demo_usage_counters", "demo_controls"]) {
+  ok(`${t} is revoked from anon AND authenticated (RLS does not gate TRUNCATE)`,
+    new RegExp(`revoke all on table public\\.${t}\\s+from anon, authenticated;`).test(mig));
+  ok(`${t} has RLS enabled`, new RegExp(`alter table public\\.${t} enable row level security`).test(mig));
+}
 
 console.log(`\nPUBLIC-DEMO HARDENING PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

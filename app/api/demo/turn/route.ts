@@ -39,7 +39,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { rateLimit } from "@/lib/rate-limit";
 import { isDemoHost } from "@/lib/demo/config";
-import { DEMO_RESTAURANT_ID, DEMO_MAX_CHARS, DEMO_MAX_HISTORY, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS } from "@/lib/demo/config";
+import {
+  DEMO_RESTAURANT_ID, DEMO_MAX_CHARS, DEMO_MAX_HISTORY, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS,
+  DEMO_GLOBAL_DAILY_TURNS, globalBucket, ipBucket,
+} from "@/lib/demo/config";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export const runtime = "nodejs";
@@ -70,6 +73,37 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+
+  // THE DURABLE CAP. Everything above this point is a speed bump; this is the control.
+  // Two ceilings and a kill switch, all in one atomic call (migration 0119):
+  //   - a GLOBAL daily ceiling, which is what actually protects the card — a per-IP
+  //     limit alone is defeated by any number of source addresses;
+  //   - a per-IP hourly ceiling, shared across lambdas unlike the Map above;
+  //   - `demo_controls.enabled`, read on every turn, so the demo can be stopped in
+  //     seconds by flipping one boolean — no redeploy, no env change, no build.
+  // Fails CLOSED: if the guard itself errors we refuse the turn rather than spend.
+  const ip = clientIp(req);
+  const { data: guard, error: guardErr } = await admin
+    .rpc("kv_demo_try_consume", {
+      p_ip_bucket: ipBucket(ip),
+      p_global_bucket: globalBucket(),
+      p_ip_limit: DEMO_PER_IP_TURNS,
+      p_global_limit: DEMO_GLOBAL_DAILY_TURNS,
+    })
+    .maybeSingle<{ allowed: boolean; reason: string | null; global_turns: number }>();
+
+  if (guardErr || !guard) {
+    console.error("[demo] spend guard unavailable — refusing the turn", guardErr?.message);
+    return NextResponse.json({ error: "demo_unavailable" }, { status: 503 });
+  }
+  if (!guard.allowed) {
+    // 503 for a deliberately stopped demo, 429 for a quota. Never leak the counts.
+    const stopped = guard.reason === "disabled";
+    return NextResponse.json(
+      { error: stopped ? "demo_unavailable" : "rate_limited" },
+      { status: stopped ? 503 : 429 },
+    );
+  }
 
   const body = (await req.json().catch(() => ({}))) as { text?: unknown; history?: unknown };
   // LENGTH cap, not just a count cap. This is the control that bounds spend.
