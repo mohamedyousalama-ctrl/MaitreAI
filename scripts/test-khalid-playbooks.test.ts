@@ -20,8 +20,8 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.lo
 const REGIONS = ["najd", "hijaz", "asir", "eastern"] as const;
 
 // ── 1) forbidden-claims list well-formed ────────────────────────────────────
-ok("7 forbidden-claim classes", FORBIDDEN_CLAIMS.length === 7);
-ok("expected ids present", ["allergen_safety", "guaranteed_delivery", "medical_suitability", "invented_discount", "competitor_attack", "card_data_request", "payment_status_claim"].every((id) => FORBIDDEN_CLAIM_IDS.includes(id)));
+ok("8 forbidden-claim classes", FORBIDDEN_CLAIMS.length === 8);
+ok("expected ids present", ["allergen_safety", "guaranteed_delivery", "medical_suitability", "invented_discount", "competitor_attack", "card_data_request", "payment_status_claim", "false_personhood"].every((id) => FORBIDDEN_CLAIM_IDS.includes(id)));
 ok("every entry well-formed", FORBIDDEN_CLAIMS.every((c) => c.id && c.label && c.re instanceof RegExp && typeof c.evalAssert === "boolean" && c.rationale));
 
 // ── 1b) detector FIRES on known-bad strings (so the guarantee is real) ───────
@@ -93,6 +93,22 @@ ok("24-hour window respected", /24-HOUR WINDOW RESPECT/.test(p));
 ok("split-recap / facts atomic", /SPLIT-RECAP PATTERN/.test(p) && /FACTS atomic|facts atomic/i.test(p));
 ok("has forbidden-claims section", /Forbidden claims/.test(p));
 ok("region flavour varies (asir vs najd)", buildKhalidPlaybooks({ region: "asir" }) !== buildKhalidPlaybooks({ region: "najd" }));
+
+// WO-KHALID-BRAIN-2 — the 8th class. The prompt used to COMMAND the claim it detects,
+// and on the live demo Khalid answered «إنت بوت ولا إنسان؟» with «مضيف حقيقي».
+// The honest denial MUST stay silent — that is the reply the new prompt asks for.
+for (const t of ["أنا خالد، مضيف حقيقي من مطعم الديرة", "أنا إنسان مثلك", "I'm a real human", "أنا مو بوت"]) {
+  ok(`false personhood detected: «${t}»`,
+    findForbiddenClaims(t).some((h) => h.id === "false_personhood"));
+}
+for (const t of [
+  "أنا خالد، مساعد مطعم الديرة — أرد عليك وأجهّز طلبك",
+  "أنا مو إنسان، أنا مساعد المطعم",
+  "هلا والله، وش تحب تطلب؟",
+]) {
+  ok(`honest / ordinary reply is NOT flagged: «${t}»`,
+    !findForbiddenClaims(t).some((h) => h.id === "false_personhood"));
+}
 
 console.log(`\nKHALID-PLAYBOOKS UNIT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -198,15 +198,21 @@ async function getOrCreateOwner() {
 
   // 6) Menu items — real Saudi staples, real ر.س prices. kabsa laham carries a real
   //    nut allergen (garnish); laban/jareesh carry dairy/gluten — real menu truth.
+  // Descriptions are DELIBERATELY backed by each item's own `ingredients` array below —
+  // khalid.ts:361 orders him to sell on "honest sensory truth from the item's OWN data
+  // (never a stat you can't back)", and prompt.ts:273 only surfaces a description if one
+  // exists. All 8 were empty, so he was ordered to sell with nothing to sell on. No
+  // claim here goes beyond the ingredients: no "الأكثر طلباً" (the data carries no order
+  // volume), no superlatives, no health claims.
   await upsert("menu_items", [
-    { id: ITEM.kabsaDajaj, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "كبسة دجاج", price: 32, available: true, ingredients: ["أرز", "دجاج", "بهارات كبسة"], allergens: [] },
-    { id: ITEM.kabsaLaham, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "كبسة لحم", price: 55, available: true, ingredients: ["أرز", "لحم", "بهارات كبسة", "لوز", "زبيب"], allergens: ["مكسرات"] },
-    { id: ITEM.mandiDajaj, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "مندي دجاج", price: 30, available: true, ingredients: ["أرز", "دجاج مدخّن"], allergens: [] },
-    { id: ITEM.jareesh, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "جريش", price: 28, available: true, ingredients: ["قمح مجروش", "لبن", "بصل"], allergens: ["قمح", "لبن"] },
-    { id: ITEM.laban, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "لبن بارد", price: 6, available: true, ingredients: ["لبن"], allergens: ["لبن"] },
-    { id: ITEM.gahwa, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "قهوة عربية", price: 8, available: true, ingredients: ["قهوة", "هيل", "زعفران"], allergens: [] },
-    { id: ITEM.tamr, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "تمر سكري", price: 12, available: true, ingredients: ["تمر"], allergens: [] },
-    { id: ITEM.luqaimat, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "لقيمات", price: 18, available: true, ingredients: ["دقيق", "دبس"], allergens: ["قمح"] },
+    { id: ITEM.kabsaDajaj, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "كبسة دجاج", description: "أرز مبهّر ببهارات الكبسة مع دجاج، طبق المائدة السعودية الأشهر.", price: 32, available: true, ingredients: ["أرز", "دجاج", "بهارات كبسة"], allergens: [] },
+    { id: ITEM.kabsaLaham, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "كبسة لحم", description: "أرز ببهارات الكبسة مع لحم، ومزيّن باللوز والزبيب.", price: 55, available: true, ingredients: ["أرز", "لحم", "بهارات كبسة", "لوز", "زبيب"], allergens: ["مكسرات"] },
+    { id: ITEM.mandiDajaj, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "مندي دجاج", description: "دجاج مدخّن على أرز — نكهة الدخان هي المميّزة فيه.", price: 30, available: true, ingredients: ["أرز", "دجاج مدخّن"], allergens: [] },
+    { id: ITEM.jareesh, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "جريش", description: "قمح مجروش مطبوخ باللبن والبصل، طبق نجدي دافئ ومشبع.", price: 28, available: true, ingredients: ["قمح مجروش", "لبن", "بصل"], allergens: ["قمح", "لبن"] },
+    { id: ITEM.laban, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "لبن بارد", description: "لبن بارد يقطع دسم الرز والمشوي.", price: 6, available: true, ingredients: ["لبن"], allergens: ["لبن"] },
+    { id: ITEM.gahwa, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "قهوة عربية", description: "قهوة فاتحة بالهيل والزعفران — تنفع مع التمر.", price: 8, available: true, ingredients: ["قهوة", "هيل", "زعفران"], allergens: [] },
+    { id: ITEM.tamr, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "تمر سكري", description: "تمر سكري، حلا خفيف يمشي مع القهوة.", price: 12, available: true, ingredients: ["تمر"], allergens: [] },
+    { id: ITEM.luqaimat, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "لقيمات", description: "عجين مقلي مقرمش من برّا وطري من جوّا، مغموس بالدبس.", price: 18, available: true, ingredients: ["دقيق", "دبس"], allergens: ["قمح"] },
   ]);
 
   // 7) Item↔modifier links (kabsa laham → extra nuts; kabsa dajaj → daggus).
@@ -230,7 +236,7 @@ async function getOrCreateOwner() {
       restaurant_id: RESTAURANT_ID,
       name: "عرض الافتتاح",
       type: "percent_off",
-      config: { scopeType: "all", scopeLabel: "كل الطلبات", amount: 15, caption: "خصم ١٥٪ على أول طلب من مطعم الديرة" },
+      config: { scopeType: "all", scopeLabel: "كل الطلبات", amount: 15, caption: "خصم ١٥٪ على أول طلب — بكود AHLAN15" },
       code: "AHLAN15",
       schedule: { start: "2020-01-01T00:00:00.000Z", end: "2030-01-01T00:00:00.000Z" },
       state: "active",
@@ -240,7 +246,7 @@ async function getOrCreateOwner() {
   // 10) Policies + FAQs (mada/COD payment, Riyadh delivery).
   await upsert("policies", [
     { id: POLICY.delivery, restaurant_id: RESTAURANT_ID, key: "delivery", text: "التوصيل خلال ٤٥ دقيقة داخل حي العليا. رسوم التوصيل ١٢ ر.س والحد الأدنى للطلب ٣٠ ر.س." },
-    { id: POLICY.payment, restaurant_id: RESTAURANT_ID, key: "payment", text: "الدفع بمدى أو نقداً عند الاستلام متاح حالياً. الأسعار شاملة ضريبة القيمة المضافة ١٥٪." },
+    { id: POLICY.payment, restaurant_id: RESTAURANT_ID, key: "payment", text: "الدفع بمدى أو نقداً عند الاستلام متاح حالياً. أسعار المنيو لا تشمل ضريبة القيمة المضافة ١٥٪ — تُضاف الضريبة على الإجمالي عند الطلب." },
   ]);
   await upsert("faqs", [
     { id: FAQ.hours, restaurant_id: RESTAURANT_ID, question: "وش أوقات العمل؟", answer: "نفتح يومياً من ١١ صباحاً حتى ١ بعد منتصف الليل.", active: true },
