@@ -196,6 +196,18 @@ export async function POST(req: Request) {
       reply: out.reply,
       escalate: out.escalate,
       allergenGate: out.model === "deterministic_allergen_gate",
+      // THE INTERACTIVE PAYLOAD. Omitting this is why the demo answered «ايش المنيو» with
+      // «اختار من التصنيفات» and no categories on screen: present_menu builds the real
+      // list into ctx.presentation and tells the model it was rendered, WhatsApp renders
+      // it at respond-and-send.ts, and this handler was dropping it. Every tap-first
+      // affordance in the product — category list, item list, quantity, confirm/cancel,
+      // payment methods, dish photos — was invisible here.
+      //
+      // Safe to return: titles, prices and captions come from the tenant's own menu and
+      // are customer-visible by construction on WhatsApp. It carries no tenant flags, no
+      // cost, no model identity — the allowlist above still holds for those.
+      presentation: out.presentation,
+      photoRequests: out.photoRequests,
     });
   } catch (e) {
     if (e instanceof CustomerTurnError && e.code === "restaurant_not_found") {

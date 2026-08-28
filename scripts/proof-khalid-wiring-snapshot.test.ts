@@ -5,10 +5,16 @@
 // Regenerate the golden (ONLY from pre-change code): GEN_GOLDEN=1 <same command>
 //
 // The permanent guarantee: for a flag-OFF tenant, buildCustomerAgentSystemPrompt
-// produces a prompt BYTE-IDENTICAL to the pre-wiring golden — so the Khalid wiring
-// can NEVER perturb Karim's live prompt (the path Wesaya's real conversations run
-// through) while khalid_persona is OFF. Flag ON appends the persona overlay +
-// playbooks at the end ONLY (proven additive by startsWith).
+// produces a prompt BYTE-IDENTICAL to the golden — so the Khalid persona layer can
+// NEVER perturb the base prompt while khalid_persona is OFF. Flag ON appends the
+// persona overlay + playbooks at the end ONLY (proven additive by startsWith).
+//
+// CORRECTION: this header used to claim the golden protects "Karim's live prompt (the
+// path Wesaya's real conversations run through)". It never did — the fixture is built
+// with dialect:"saudi" (line ~24 below) and Wesaya is dialect:"egyptian", so Karim's
+// prompt has never been covered by this gate at all. The invariant this file really
+// proves is: the PERSONA FLAG is additive on the SAUDI prompt. Egyptian coverage would
+// need its own fixture.
 // ============================================================================
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";

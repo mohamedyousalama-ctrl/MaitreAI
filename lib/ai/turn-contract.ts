@@ -58,6 +58,17 @@ export type NextStepKind = "pending_question" | "draft_recap" | "handoff";
 
 export interface TurnContractInput {
   text: string;
+  /** WO-PRESENT-NEXTSTEP — this turn carries an interactive presentation (a category
+   *  list, item list, quantity/confirm/payment buttons). THE PRESENTATION IS THE NEXT
+   *  STEP: the customer's next move is a tap, not an answer to a question.
+   *
+   *  Without this the contract saw a warm sentence with no «؟», judged it a dead end, and
+   *  glued «خلّني أوصلك بأحد من الفريق يكمّل معك 🙏» underneath — so asking «ايش المنيو»
+   *  produced a tappable menu WITH an offer to fetch a human stapled to it. prompt.ts:512
+   *  explicitly instructs the model to write exactly such an opener («تفضّل، هذي قائمتنا 👇»),
+   *  so the engine was punishing the sentence it asked for. It also broke the engine's own
+   *  honesty law (prompt.ts:463): never claim a transfer without calling escalate_to_human. */
+  hasPresentation?: boolean;
   dialect: string;
   draft: OrderDraft;
   /** The turn's pending deterministic question (from the ask-back settle), if any. */
@@ -148,6 +159,8 @@ export function enforceTurnContract(input: TurnContractInput): TurnContractResul
     hasQuestion(text) ||
     containsRenderedRecap(text) ||
     hasHandoffLine(text) ||
+    // An attached list/buttons IS the next step — see hasPresentation above.
+    input.hasPresentation === true ||
     input.escalated === true;
 
   if (satisfied) return { text, appended: false, kind: null, futurePromise };

@@ -10,11 +10,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEMO_MAX_AUDIO_BYTES, DEMO_MAX_RECORD_SECONDS } from "@/lib/demo/config";
 
+/** The interactive payload the Brain attaches to a turn — the same shape WhatsApp
+ *  renders as a tappable list or button row (lib/ai/tools.ts). The demo dropped this
+ *  entirely, which is why «ايش المنيو» produced «اختار من التصنيفات» with no categories
+ *  visible: the list was built every turn and thrown away before it reached the screen. */
+export type Presentation =
+  | { kind: "buttons"; header?: string; buttons: { id: string; title: string }[] }
+  | {
+      kind: "list";
+      button: string;
+      header?: string;
+      sections: { title?: string; rows: { id: string; title: string; description?: string }[] }[];
+    };
+
 type Msg = {
   id: number;
   from: "me" | "khalid";
   kind: "text" | "voice";
   text: string;
+  /** Tappable options rendered under the bubble, WhatsApp-style. */
+  presentation?: Presentation | null;
   /** Voice notes render as a WhatsApp-style player rather than a bubble of text. */
   seconds?: number;
   at: string;
@@ -100,7 +115,7 @@ export default function DemoPhone() {
           body: JSON.stringify({ text, history }),
         });
         const data = (await res.json().catch(() => ({}))) as {
-          ok?: boolean; reply?: string; error?: string;
+          ok?: boolean; reply?: string; error?: string; presentation?: Presentation | null;
         };
         if (!res.ok || !data.ok) {
           setNotice(
@@ -112,7 +127,12 @@ export default function DemoPhone() {
           );
           return;
         }
-        push({ from: "khalid", kind: "text", text: String(data.reply ?? "") });
+        push({
+          from: "khalid",
+          kind: "text",
+          text: String(data.reply ?? ""),
+          presentation: data.presentation ?? null,
+        });
       } catch {
         setNotice("ما قدرنا نوصل للخدمة 🙏 تأكد من الاتصال.");
       } finally {
@@ -129,6 +149,15 @@ export default function DemoPhone() {
     setDraft("");
     void send(t);
   }, [draft, typing, send]);
+
+  /** A tapped option becomes an ordinary customer message. WhatsApp posts the row id
+   *  back through interactive-router; the demo has no such router, so it sends the
+   *  visible TITLE — which the Brain understands anyway, because a customer typing
+   *  «كبسة لحم» is the case it is built for. */
+  const onPick = useCallback((label: string) => {
+    if (typing) return;
+    void send(label);
+  }, [typing, send]);
 
   // ── hold-to-record, exactly as WhatsApp does it ──────────────────────────
   const startRec = useCallback(async () => {
@@ -242,6 +271,7 @@ export default function DemoPhone() {
         const res = await fetch("/api/demo/voice", { method: "POST", body: fd });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean; transcript?: string; reply?: string; error?: string;
+          presentation?: Presentation | null;
         };
         if (!res.ok || !data.ok) {
           setNotice(
@@ -263,7 +293,12 @@ export default function DemoPhone() {
         }
         // Show the voice note the way WhatsApp does — a player, with what we heard.
         push({ from: "me", kind: "voice", text: String(data.transcript ?? ""), seconds });
-        push({ from: "khalid", kind: "text", text: String(data.reply ?? "") });
+        push({
+          from: "khalid",
+          kind: "text",
+          text: String(data.reply ?? ""),
+          presentation: data.presentation ?? null,
+        });
       } catch {
         setNotice("ما قدرنا نوصل للخدمة 🙏");
       } finally {
@@ -351,7 +386,7 @@ export default function DemoPhone() {
             تجربة توضيحية — الأسعار والأصناف افتراضية، وما فيه طلب حقيقي أو دفع.
           </div>
           {msgs.map((m) => (
-            <Bubble key={m.id} m={m} mmss={mmss} />
+            <Bubble key={m.id} m={m} mmss={mmss} onPick={onPick} />
           ))}
           {typing && (
             <div style={{ ...S.row, justifyContent: "flex-start" }}>
@@ -428,10 +463,12 @@ export default function DemoPhone() {
 
 /* ── pieces ──────────────────────────────────────────────────────────────── */
 
-function Bubble({ m, mmss }: { m: Msg; mmss: (s: number) => string }) {
+function Bubble({
+  m, mmss, onPick,
+}: { m: Msg; mmss: (s: number) => string; onPick: (label: string) => void }) {
   const mine = m.from === "me";
   return (
-    <div style={{ ...S.row, justifyContent: mine ? "flex-end" : "flex-start" }}>
+    <div style={{ ...S.row, justifyContent: mine ? "flex-end" : "flex-start", flexWrap: "wrap" }}>
       <div style={{ ...S.bubble, ...(mine ? S.mine : S.theirs) }}>
         {m.kind === "voice" ? (
           <div style={S.voice}>
@@ -450,6 +487,30 @@ function Bubble({ m, mmss }: { m: Msg; mmss: (s: number) => string }) {
           {mine && <span style={S.ticks} aria-label="تم التسليم">✓✓</span>}
         </div>
       </div>
+      {m.presentation ? <Options p={m.presentation} onPick={onPick} /> : null}
+    </div>
+  );
+}
+
+/** The tappable half of a turn. WhatsApp renders these as a native list sheet or a
+ *  button row; here they are chips under the bubble. Tapping sends the row's TITLE as
+ *  the next message — the same text a customer would have typed — so the Brain reads it
+ *  through its normal path with no demo-only routing. */
+function Options({ p, onPick }: { p: Presentation; onPick: (label: string) => void }) {
+  const items: { id: string; title: string; description?: string }[] =
+    p.kind === "buttons"
+      ? p.buttons
+      : p.sections.flatMap((sec) => sec.rows);
+  if (!items.length) return null;
+  return (
+    <div style={S.options}>
+      {p.kind === "list" && p.button ? <div style={S.optionsHead}>{p.button}</div> : null}
+      {items.map((it) => (
+        <button key={it.id} style={S.option} onClick={() => onPick(it.title)}>
+          <span style={S.optionTitle}>{it.title}</span>
+          {it.description ? <span style={S.optionDesc}>{it.description}</span> : null}
+        </button>
+      ))}
     </div>
   );
 }
@@ -502,6 +563,16 @@ const SendIcon = () => (
 const WA = { green: "#005c4b", header: "#202c33", bg: "#0b141a", theirs: "#202c33", accent: "#00a884" };
 
 const S: Record<string, React.CSSProperties> = {
+  options: { display: "flex", flexWrap: "wrap", gap: 6, width: "100%", margin: "6px 2px 2px", justifyContent: "flex-start" },
+  optionsHead: { width: "100%", fontSize: 11, color: "#8696a0", padding: "0 2px 2px" },
+  option: {
+    display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1,
+    background: "#202c33", color: "#e9edef", border: "1px solid #2a3942",
+    borderRadius: 14, padding: "8px 12px", font: "inherit", fontSize: 14,
+    cursor: "pointer", textAlign: "start", maxWidth: "100%",
+  },
+  optionTitle: { fontWeight: 600 },
+  optionDesc: { fontSize: 11, color: "#8696a0" },
   stage: { minHeight: "100dvh", background: "#0a0f13", display: "flex", flexDirection: "column",
     alignItems: "center", justifyContent: "center", padding: "16px 12px", gap: 12,
     fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif" },

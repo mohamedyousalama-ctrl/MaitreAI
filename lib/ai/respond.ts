@@ -1012,6 +1012,8 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
       escalated: !!ctx.escalation,
       previousOutbound: lastAssistantText(input.history),
       socialClosing: isSocialClosingTurn(input.userMessage),
+      // The list/buttons this turn attached ARE the next step — the customer taps.
+      hasPresentation: !!ctx.presentation,
     });
     for (const s of composed.signals) ctx.signals.push(s);
     text = composed.text;

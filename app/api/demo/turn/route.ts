@@ -22,7 +22,14 @@
 // 2. THE RESPONSE IS AN ALLOWLIST, NOT THE OUTCOME. CustomerTurnOutcome carries
 //    `features` (the raw tenant flag JSON), `costUsd`, `usage`, `model`, `tier`
 //    and `agentRunId`. Returning it wholesale would publish our unit economics on
-//    a sales page. Only the five fields below leave this handler.
+//    a sales page. Only the named fields below leave this handler — an ALLOWLIST, so a
+//    new field on the outcome is never published by accident.
+//
+//    It is a positive list, which means it can also FAIL BY OMISSION: `presentation`
+//    and `photoRequests` were missing, so the interactive menu the Brain built every
+//    turn was silently discarded and Khalid pointed at categories nobody could see.
+//    proof-public-demo-hardening now asserts both directions — what must never leave,
+//    and what must always be forwarded.
 //
 // 3. THE TENANT IS PINNED SERVER-SIDE and never read from the request. A client
 //    that could name its own restaurantId could drive the Brain against a real
@@ -153,6 +160,18 @@ export async function POST(req: Request) {
       // The deterministic allergen gate stamps this exact model id when it fires.
       // Derived here so `model` itself never leaves the handler.
       allergenGate: out.model === "deterministic_allergen_gate",
+      // THE INTERACTIVE PAYLOAD. Omitting this is why the demo answered «ايش المنيو» with
+      // «اختار من التصنيفات» and no categories on screen: present_menu builds the real
+      // list into ctx.presentation and tells the model it was rendered, WhatsApp renders
+      // it at respond-and-send.ts, and this handler was dropping it. Every tap-first
+      // affordance in the product — category list, item list, quantity, confirm/cancel,
+      // payment methods, dish photos — was invisible here.
+      //
+      // Safe to return: titles, prices and captions come from the tenant's own menu and
+      // are customer-visible by construction on WhatsApp. It carries no tenant flags, no
+      // cost, no model identity — the allowlist above still holds for those.
+      presentation: out.presentation,
+      photoRequests: out.photoRequests,
     });
   } catch (e) {
     if (e instanceof CustomerTurnError && e.code === "restaurant_not_found") {

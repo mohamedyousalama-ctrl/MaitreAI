@@ -34,6 +34,8 @@ import {
 } from "./delivery-readiness";
 
 export interface ComposeInput {
+  /** Passed through to the turn contract: an interactive list/buttons is a next step. */
+  hasPresentation?: boolean;
   /** The cleaned model core after every content guard (money/safety/non-menu/scrub) has run. */
   core: string;
   draft: OrderDraft;
@@ -151,6 +153,7 @@ export function composeFinalReply(input: ComposeInput): ComposeResult {
       allergyNote: input.allergyNote,
       previousOutbound: input.previousOutbound,
       socialClosing: input.socialClosing,
+      hasPresentation: input.hasPresentation,
     });
     if (contract.appended) {
       text = contract.text;
