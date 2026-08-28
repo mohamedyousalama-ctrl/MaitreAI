@@ -350,13 +350,31 @@ ok("the 'I alerted the team' claim is dropped on a demo turn", /if \(demoRun\) \
 const demoBlock = /if \(demoRun\) \{([\s\S]*?)\n  \}/.exec(flow)?.[1] ?? "";
 ok("the demoRun branch was located", demoBlock.length > 0);
 ok("the demo variant still tells them to call emergency services",
-  demoBlock.includes("الإسعاف/الطوارئ"));
+  demoBlock.includes("الإسعاف"));
+// A native review flagged «تواصل مع» (get in touch with — a department verb) in the
+// SAUDI branch where the Egyptian branch already had the imperative. In an emergency
+// the verb is «اتصل بـ», and a number beats an abstraction for a shaking hand.
+ok("it uses the IMPERATIVE «اتصل بـ», not the corporate «تواصل مع»",
+  demoBlock.includes("اتصل بالإسعاف") && !demoBlock.includes("تواصل مع"));
+ok("it gives the ambulance NUMBER, in Western digits per the KSA rule",
+  /اتصل بالإسعاف 997/.test(demoBlock));
 ok("the demo variant still names the symptoms that mean 'call now'",
-  demoBlock.includes("صعوبة في التنفس") && demoBlock.includes("تورم"));
+  demoBlock.includes("تنفس") && demoBlock.includes("تورم"));
+// Word order is safety: a frightened person reads the first few words, so the
+// INSTRUCTION must precede the symptom list, not follow it as a condition.
+ok("the instruction LEADS — it is not buried behind a conditional",
+  demoBlock.indexOf("اتصل بالإسعاف") < demoBlock.indexOf("تورم"));
 ok("the demo variant does NOT claim the team was alerted",
   !demoBlock.includes("بلّغت الفريق"));
-ok("the real-tenant wording is unchanged (live clients must not be touched)",
-  /return dialect === "egyptian"\s*\n\s*\? "بلّغت الفريق فوراً/.test(flow));
+// The real-tenant branch keeps the staff-alert claim (there it is TRUE) — and it must
+// carry the same corrected instruction, since a live customer's emergency is no less
+// urgent than a demo visitor's.
+ok("the real-tenant branch still states the team was alerted (true off-demo)",
+  /بلّغت الفريق فوراً/.test(flow));
+ok("the real-tenant branch also uses the imperative and the number",
+  /اتصل بالإسعاف 997[\s\S]{0,120}بلّغت الفريق فوراً/.test(flow));
+ok("no branch anywhere still uses the corporate «تواصل مع» for an emergency",
+  !/تواصل مع الإسعاف/.test(flow));
 for (const fn of ["companionEmergencyResult", "calmHoldResult"]) {
   ok(`${fn} threads demoRun through to the reply`,
     new RegExp(`function ${fn}\\([\\s\\S]{0,700}demoRun = false`).test(turn));

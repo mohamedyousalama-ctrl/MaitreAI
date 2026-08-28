@@ -205,14 +205,14 @@ async function getOrCreateOwner() {
   // claim here goes beyond the ingredients: no "الأكثر طلباً" (the data carries no order
   // volume), no superlatives, no health claims.
   await upsert("menu_items", [
-    { id: ITEM.kabsaDajaj, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "كبسة دجاج", description: "أرز مبهّر ببهارات الكبسة مع دجاج، طبق المائدة السعودية الأشهر.", price: 32, available: true, ingredients: ["أرز", "دجاج", "بهارات كبسة"], allergens: [] },
-    { id: ITEM.kabsaLaham, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "كبسة لحم", description: "أرز ببهارات الكبسة مع لحم، ومزيّن باللوز والزبيب.", price: 55, available: true, ingredients: ["أرز", "لحم", "بهارات كبسة", "لوز", "زبيب"], allergens: ["مكسرات"] },
-    { id: ITEM.mandiDajaj, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "مندي دجاج", description: "دجاج مدخّن على أرز — نكهة الدخان هي المميّزة فيه.", price: 30, available: true, ingredients: ["أرز", "دجاج مدخّن"], allergens: [] },
-    { id: ITEM.jareesh, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "جريش", description: "قمح مجروش مطبوخ باللبن والبصل، طبق نجدي دافئ ومشبع.", price: 28, available: true, ingredients: ["قمح مجروش", "لبن", "بصل"], allergens: ["قمح", "لبن"] },
-    { id: ITEM.laban, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "لبن بارد", description: "لبن بارد يقطع دسم الرز والمشوي.", price: 6, available: true, ingredients: ["لبن"], allergens: ["لبن"] },
-    { id: ITEM.gahwa, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "قهوة عربية", description: "قهوة فاتحة بالهيل والزعفران — تنفع مع التمر.", price: 8, available: true, ingredients: ["قهوة", "هيل", "زعفران"], allergens: [] },
-    { id: ITEM.tamr, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "تمر سكري", description: "تمر سكري، حلا خفيف يمشي مع القهوة.", price: 12, available: true, ingredients: ["تمر"], allergens: [] },
-    { id: ITEM.luqaimat, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "لقيمات", description: "عجين مقلي مقرمش من برّا وطري من جوّا، مغموس بالدبس.", price: 18, available: true, ingredients: ["دقيق", "دبس"], allergens: ["قمح"] },
+    { id: ITEM.kabsaDajaj, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "كبسة دجاج", description: "رز مطبوخ بمرق الدجاج وبهار الكبسة واللومي، وفوقه دجاج طري يفكّ من العظم.", price: 32, available: true, ingredients: ["أرز", "دجاج", "بهارات كبسة"], allergens: [] },
+    { id: ITEM.kabsaLaham, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "كبسة لحم", description: "رز بهار الكبسة مع لحم غنم طري يفكّ من العظم، مزيّن بلوز محمّص وزبيب.", price: 55, available: true, ingredients: ["أرز", "لحم", "بهارات كبسة", "لوز", "زبيب"], allergens: ["مكسرات"] },
+    { id: ITEM.mandiDajaj, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "مندي دجاج", description: "دجاج ينطبخ بالتنور على الحطب لين يفكّ من العظم، وتحته رز شارب من مرقه.", price: 30, available: true, ingredients: ["أرز", "دجاج"], allergens: [] },
+    { id: ITEM.jareesh, restaurant_id: RESTAURANT_ID, category_id: CAT.mains, name: "جريش", description: "قمح مجروش يُطبخ على مهل باللبن لين يصير كريمي، وفوقه بصل محمّر — أكلة نجدية دافئة ومشبعة.", price: 28, available: true, ingredients: ["قمح مجروش", "لبن", "بصل"], allergens: ["قمح", "لبن"] },
+    { id: ITEM.laban, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "لبن بارد", description: "يقطع دسم الرز والمشوي — بارد وحامض خفيف.", price: 6, available: true, ingredients: ["لبن"], allergens: ["لبن"] },
+    { id: ITEM.gahwa, restaurant_id: RESTAURANT_ID, category_id: CAT.drinks, name: "قهوة عربية", description: "قهوة فاتحة بالهيل والزعفران — ما تكمل إلا مع التمر.", price: 8, available: true, ingredients: ["قهوة", "هيل", "زعفران"], allergens: [] },
+    { id: ITEM.tamr, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "تمر سكري", description: "سكري ذهبي هشّ وحلو — رفيق فنجال القهوة.", price: 12, available: true, ingredients: ["تمر"], allergens: [] },
+    { id: ITEM.luqaimat, restaurant_id: RESTAURANT_ID, category_id: CAT.sweets, name: "لقيمات", description: "كور ذهبية مقلية، مقرمشة من برّا وطرية من جوّا، مغموسة بالقطر وتجيك سخنة.", price: 18, available: true, ingredients: ["دقيق", "دبس"], allergens: ["قمح"] },
   ]);
 
   // 7) Item↔modifier links (kabsa laham → extra nuts; kabsa dajaj → daggus).

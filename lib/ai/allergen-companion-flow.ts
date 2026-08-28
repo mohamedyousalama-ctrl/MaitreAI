@@ -119,14 +119,31 @@ export function emergencyReply(dialect: string, demoRun = false): string {
   // Everything after it — the urgent-guidance line — is the part that could actually
   // help someone, and is kept verbatim in both cases. On a demo turn the advice to call
   // emergency services becomes the WHOLE message, which is the correct emphasis anyway.
+  // WORD ORDER IS SAFETY HERE. A frightened person reads the first few words. The
+  // instruction now leads; the symptom list follows it. It used to be the other way
+  // round, so the first thing someone read was a hypothesis.
+  //
+  // «اتصل بـ», NOT «تواصل مع». A native review flagged the Saudi branch: «تواصل مع»
+  // means "get in touch with" — the verb for contacting a department. In an emergency
+  // the verb is «اتصل بـ». The EGYPTIAN branch already had it right and the Saudi one
+  // had been softened into corporate register.
+  //
+  // 997 is the Saudi Red Crescent ambulance number, nationwide. A number beats an
+  // abstraction for a shaking hand. Deliberately NOT 911: it is the unified number in
+  // some regions and extending, but not confirmed universal — 997 carries no such risk.
+  // Western digits per the KSA rule in khalid.ts (digitStyle: "western").
+  //
+  // «الإسعاف» alone, not «الإسعاف/الطوارئ» — a slash forces a frightened person to
+  // parse an either/or. And not «الهلال الأحمر»: it is the correct organisation, but
+  // under stress people dial numbers and say "ambulance", not organisation names.
   if (demoRun) {
     return dialect === "egyptian"
-      ? "🚨 لو فيه صعوبة في التنفس أو تورم أو أعراض قوية، اتصل بالإسعاف/الطوارئ دلوقتي. أنا معاك."
-      : "🚨 إذا فيه صعوبة في التنفس أو تورم أو أعراض قوية، تواصل مع الإسعاف/الطوارئ الآن. أنا معك.";
+      ? "🚨 اتصل بالإسعاف 997 حالاً لو فيه صعوبة في التنفس أو تورم. أنا معاك."
+      : "🚨 اتصل بالإسعاف 997 الحين إذا فيه ضيق تنفس أو تورم. أنا معك.";
   }
   return dialect === "egyptian"
-    ? "بلّغت الفريق فوراً 🚨 لو فيه صعوبة في التنفس أو تورم أو أعراض قوية، اتصل بالإسعاف/الطوارئ دلوقتي. أنا معاك."
-    : "بلّغت الفريق فوراً 🚨 إذا فيه صعوبة في التنفس أو تورم أو أعراض قوية، تواصل مع الإسعاف/الطوارئ الآن. أنا معك.";
+    ? "🚨 اتصل بالإسعاف 997 حالاً لو فيه صعوبة في التنفس أو تورم. بلّغت الفريق فوراً وأنا معاك."
+    : "🚨 اتصل بالإسعاف 997 الحين إذا فيه ضيق تنفس أو تورم. بلّغت الفريق فوراً وأنا معك.";
 }
 
 // §0 rewrite — the safe reply that REPLACES any companion output caught asserting
