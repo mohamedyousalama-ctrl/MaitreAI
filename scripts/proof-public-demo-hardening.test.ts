@@ -234,7 +234,11 @@ ok("what actually arrived is checked too (a declared length is a hint, not a pro
 // whenever NODE_ENV !== "production" (localhost is an allowlisted demo host), so relying
 // on it alone rendered a FABRICATED sentence as the visitor's own words under `npm run dev`.
 ok("the route refuses the mock adapter itself, not via the env-dependent guard",
-  /getSttAdapter\(\)\.name === "mock"/.test(voice));
+  /resolveSttAdapterName\(\) === "mock"/.test(voice));
+// getSttAdapter() calls assertMockSttAllowed internally and THROWS in production, so
+// reading .name on it outside a try/catch turns a misconfigured prod env into an
+// uncaught 500 rather than the honest 503. The pure resolver must be used.
+ok("the mock check uses the PURE resolver, which cannot throw", !/getSttAdapter\(\)/.test(voice));
 ok("the mock refusal happens BEFORE any transcription", iVoice('=== "mock"') < iVoice("transcribeAudioBytes("));
 ok("a transcription failure is surfaced honestly, never faked", /error:\s*"stt_unavailable"/.test(voice));
 

@@ -23,7 +23,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
-import { getSttAdapter } from "@/lib/ai/stt";
+import { resolveSttAdapterName } from "@/lib/ai/stt";
 import { mustWrite } from "@/lib/db/checked";
 import { rateLimit } from "@/lib/rate-limit";
 import {
@@ -69,7 +69,13 @@ export async function POST(req: Request) {
   }
 
   // Refuse the fabricating adapter before spending a guard slot on it.
-  if (getSttAdapter().name === "mock") {
+  //
+  // resolveSttAdapterName, NOT getSttAdapter: the latter calls assertMockSttAllowed
+  // internally and THROWS when the adapter resolves to mock in production, so testing
+  // `getSttAdapter().name` outside a try/catch turned a misconfigured production
+  // environment into an uncaught 500 instead of the honest 503 below. The resolver is
+  // pure and never throws.
+  if (resolveSttAdapterName() === "mock") {
     console.error("[demo/voice] mock STT adapter selected — refusing to fabricate a transcript");
     return NextResponse.json({ error: "stt_unavailable" }, { status: 503 });
   }
