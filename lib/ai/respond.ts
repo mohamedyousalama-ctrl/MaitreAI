@@ -93,11 +93,12 @@ import { isCustomerSafeText } from "./outbound-register";
 import {
   emptyDraft,
   executeTool,
-  NON_ORDER_TOOLS,
-  orderToolsForDelivery,
+  nonOrderToolsForTenant,
+  orderToolsForTenant,
   type OrderDraft,
   type Presentation,
   type PhotoRequest,
+  type ToolCatalogOptions,
   type ToolContext,
   type ToolSignal,
 } from "./tools";
@@ -412,6 +413,10 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     taxRate: input.brain.taxRate ?? 0,
     paymentConfig: input.brain.paymentConfig ?? DEFAULT_PAYMENT_CONFIG,
     demoRun: input.demoRun === true,
+    // KIV-304 — the tool layer had no dialect at all, so a Saudi tenant got Cairene tool
+    // results (which the model relays verbatim). Threaded exactly like demoRun above;
+    // tools.ts defaults to Egyptian, so an unset/legacy dialect is byte-identical.
+    dialect: input.brain.dialect,
     resendReceipt: false,
     sessionAllergyNote: input.brain.sessionAllergyNote,
     // WO-LIVE5-CONFIRM-GATE — whether THIS turn's customer message is an explicit order
@@ -425,7 +430,13 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   };
 
   const canOrder = modeAllowsOrders(input.brain.mode) && input.brain.isOpen;
-  const tools = canOrder ? orderToolsForDelivery(geoRouting, addressFlowV2) : NON_ORDER_TOOLS;
+  // KIV-304 — the tool DEFINITIONS are re-sent on every request, so they carry the same
+  // dialect leak as the results, and `set_payment_method` advertised فودافون كاش (an
+  // Egyptian wallet) with a hardcoded enum regardless of the tenant's payment_config.
+  const toolCatalog: ToolCatalogOptions = { dialect: input.brain.dialect, paymentConfig: ctx.paymentConfig };
+  const tools = canOrder
+    ? orderToolsForTenant(geoRouting, addressFlowV2, toolCatalog)
+    : nonOrderToolsForTenant(toolCatalog);
 
   // WO-FINISH-LINE (PART C) — BULK THRESHOLD. A single request implying > 8 items
   // (a party order like «٢٠ بيتزا … حفله») is NOT a tool-building job — it drove the

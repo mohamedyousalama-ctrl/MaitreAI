@@ -319,6 +319,10 @@ function buildToolContext(args: {
   taxMode: string;
   taxRate: number;
   paymentConfig: ToolContext["paymentConfig"];
+  /** KIV-304 — the tenant dialect. `select_item` relays add_to_order's tool result to
+   *  the customer verbatim (replyKey "add_more" carries `out.content`), so an unset
+   *  dialect here would answer a Saudi guest in Cairene. Optional → Egyptian default. */
+  dialect?: string | null;
 }): ToolContext {
   return {
     menuCategories: args.brain.menuCategories,
@@ -335,6 +339,7 @@ function buildToolContext(args: {
     taxMode: args.taxMode,
     taxRate: args.taxRate,
     paymentConfig: args.paymentConfig,
+    dialect: args.dialect,
     resendReceipt: false,
     userConfirmed: false,
     explicitHuman: false,
@@ -482,6 +487,7 @@ export async function handleTypedInteractiveAction(
     taxMode: String(restaurant.tax_mode ?? "inclusive"),
     taxRate: Number(restaurant.tax_rate ?? 0),
     paymentConfig: payments.config,
+    dialect,
   });
   const applied = applyTypedAction(ctx, command);
   const action = applied.action;
@@ -629,6 +635,7 @@ export async function handleTypedQuantityFill(
     taxMode: String(restaurant.tax_mode ?? "inclusive"),
     taxRate: Number(restaurant.tax_rate ?? 0),
     paymentConfig: payments.config,
+    dialect,
   });
   const id = `qty:${qty}`;
   const applied = applyTypedAction(ctx, { kind: "choose_quantity", action: "qty", id, quantity: qty });
