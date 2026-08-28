@@ -59,7 +59,25 @@ const eq = (label: string, actual: unknown, expected: unknown) => {
 // sha256 of the canonical Egyptian corpus (see buildCorpus). Taken from the code as
 // it shipped BEFORE this WO. Do not "update" it to make a change pass — if it moves,
 // a live Egyptian tenant's copy moved with it.
-const EGYPTIAN_CORPUS_SHA = "dd1813df7209256b7a1acef5515c77ae4d81378fe578e64d3d25a898802e88e2";
+// THE PIN MOVED ONCE, DELIBERATELY, AND HERE IS WHY.
+//
+// Original pin (the pre-dialect-fix corpus):
+//   dd1813df7209256b7a1acef5515c77ae4d81378fe578e64d3d25a898802e88e2
+// It survived the entire tools.ts dialect rewrite untouched, which is what proved the
+// Saudi branching changed nothing a live Egyptian tenant sees.
+//
+// It then moved for exactly ONE line, and the diff was checked before re-pinning:
+//   -  هذا ملخّص الطلب (تجربة — ما ينحفظ طلب فعلي).
+//   +  تم تسجيل الطلب كطلب تجريبي (بدون دفع فعلي). لا تذكر رقم الطلب — يُضاف تلقائياً.
+//
+// That is the `ctx.demoRun` branch of finalize_draft, not a live-tenant string. It said
+// "no real order is saved", which was true when written and became the OPPOSITE of the
+// truth once WO-KHALID-ORDER made demo turns persist a real (is_test) order. No tenant
+// with demoRun false — Wesaya included — can reach it.
+//
+// If this ever fails again: dump both corpora (DUMP=/tmp/a.txt on each checkout) and
+// diff them BEFORE re-pinning. A pin updated without reading the diff is not a pin.
+const EGYPTIAN_CORPUS_SHA = "2159858e9e28931b4aaa6275f3f06154369964ec2ff4031e76f9c6740188a81c";
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 const menuItem = (over: Partial<MenuItem> & { id: string; name: string; price: number }): MenuItem => ({
@@ -319,7 +337,7 @@ if (process.env.DUMP) writeFileSync(process.env.DUMP, egyptianCorpus);
 console.log(`\nEGYPTIAN CORPUS SHA256: ${egyptianSha}  (${egyptianCorpus.length} chars)\n`);
 
 console.log("── 1. Egyptian byte-identity (Wesaya is live) ──");
-eq("the Egyptian corpus still hashes to the pre-fix pin", egyptianSha, EGYPTIAN_CORPUS_SHA);
+eq("the Egyptian corpus still hashes to its pin (see the note at the top)", egyptianSha, EGYPTIAN_CORPUS_SHA);
 eq("dialect omitted === dialect:\"egyptian\"", sha(buildCorpus({ dialect: "egyptian" })), egyptianSha);
 eq("dialect:null falls back to Egyptian", sha(buildCorpus({ dialect: null })), egyptianSha);
 eq("an unknown dialect falls back to Egyptian", sha(buildCorpus({ dialect: "cairo" })), egyptianSha);
