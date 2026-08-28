@@ -9,7 +9,7 @@
 // KSA config (reactivation, per docs/KIVO_SAUDIZATION_ROADMAP.md KSA-0):
 //   dialect='saudi' · currency='ر.س' · country='SA' · timezone='Asia/Riyadh'
 //   tax_mode='added' · tax_rate=15.00 (KSA VAT)
-//   feature_flags={ khalid_persona:false, khalid_region:'najd' }  ← flag DEFAULT OFF;
+//   feature_flags = the public demo's real 20-flag set (khalid_persona ON);
 //     region is prompt-level config (NO schema change — jsonb; see
 //     docs/KHALID_PERSONA_WIRING.md). agent_mode='test' so it is never a live client.
 //
@@ -123,12 +123,48 @@ async function getOrCreateOwner() {
   const owner = await getOrCreateOwner();
   console.log(`owner: ${owner.id} (${owner.created ? "created" : "existing"}) <${OWNER_EMAIL}>`);
 
-  // 2) Restaurant — Saudi/ر.س/SA/Riyadh + KSA VAT 15% + khalid_persona flag OFF.
+  // 2) Restaurant — Saudi/ر.س/SA/Riyadh + KSA VAT 15% + the PUBLIC DEMO's real flag set.
+  //
+  // This used to seed `{ khalid_persona: false }` while the live demo tenant runs it
+  // TRUE, and the upsert is keyed on the primary key — so re-running this script
+  // silently switched Khalid off and the public page at /demo started answering as the
+  // default agent wearing his name, mid-pitch, with no error anywhere. The seed now
+  // writes exactly what the demo depends on.
+  //
+  // DELIBERATELY ABSENT, and they must stay absent:
+  //   voice_notes   — the outbound ElevenLabs TTS path. G0-R forbids provider voice
+  //                   generation and customer exposure; the demo must not be able to
+  //                   emit a generated voice.
+  //   psp_payments  — real money. Nothing on a public page may reach a live PSP.
+  //   allergy_simple / allergy_calm_hold / allergy_companion_mode — held OFF on purpose
+  //                   so the flag-OFF deterministic gate fires and the visitor sees the
+  //                   escalate-to-human OR continue choice the Founder specified.
   await upsert("restaurants", [
     {
       id: RESTAURANT_ID,
       name: "مطعم الديرة (تجريبي)",
-      feature_flags: { khalid_persona: false, khalid_region: "najd" },
+      feature_flags: {
+        khalid_persona: true,
+        khalid_region: "najd",
+        goal_logic: true,
+        perception: true,
+        finish_line: true,
+        answer_first: true,
+        kitchen_ticket: true,
+        customer_memory: true,
+        stateful_orders: true,
+        ksa_encyclopedia: true,
+        price_truth_guard: true,
+        action_claim_guard: true,
+        media_turn_trigger: true,
+        voice_garble_guard: true,
+        dup_order_awareness: true,
+        memory_allergy_gate: true,
+        typed_quantity_fill: true,
+        typed_interactive_actions: true,
+        allergen_symptom_detection: true,
+        deterministic_allergen_safety: true,
+      },
       agent_mode: "test",
       is_open: true,
       dialect: "saudi",
@@ -219,7 +255,7 @@ async function getOrCreateOwner() {
   console.log("\n=== DEMO-KSA seeded ===");
   console.log(`restaurant_id : ${RESTAURANT_ID}`);
   console.log(`name          : مطعم الديرة (تجريبي)`);
-  console.log(`flags         : { khalid_persona:false, khalid_region:'najd' }  (persona flag OFF)`);
+  console.log(`flags         : 20 demo flags, khalid_persona ON (no voice_notes, no psp_payments)`);
   console.log(`agent_mode    : test   ·   dialect: saudi   ·   currency: ر.س   ·   VAT: added 15%`);
   console.log(`owner         : ${owner.id} <${OWNER_EMAIL}>`);
   console.log(`inventory     : ${cats} categories · ${items} items · ${mods} modifiers · ${branches} branch · ${zones} zone · ${promos} promo · ${pols} policies · ${faqs} faqs`);

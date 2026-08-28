@@ -333,5 +333,26 @@ ok("the gate still offers the human OR continue choice on a demo turn",
   /أوصلك بموظف يتأكد لك/.test(turn));
 ok("the flag-OFF gate call site passes the demo flag", /input\.demoRun === true/.test(turn));
 
+// ── 15. THE SEED MUST NOT SILENTLY DISARM THE DEMO ───────────────────────────
+// The seed upserts on the primary key, so whatever it writes REPLACES the live
+// tenant's flags. It used to write `khalid_persona: false` while the demo runs it
+// true — re-running it would have switched Khalid off on the public page with no
+// error anywhere, and config.ts's own comment would have become false.
+const seed = codeOf("scripts/seed-demo-ksa-tenant.mjs");
+// RAW, not codeOf: the claim being checked lives in a doc comment, and codeOf strips
+// comments (it must — the prose in this very file names the fields it bans).
+const cfgRaw = readFileSync(resolve(ROOT, "lib/demo/config.ts"), "utf8");
+ok("the seed targets the same pinned tenant the routes use", seed.includes(DEMO_RESTAURANT_ID));
+ok("the seed enables khalid_persona, as config.ts claims", /khalid_persona:\s*true/.test(seed));
+ok("config.ts still claims the persona is on (the two must agree)", /`khalid_persona`\s*on/.test(cfgRaw));
+ok("the seed keeps the Saudi dialect the persona depends on", /dialect:\s*"saudi"/.test(seed));
+// G0-R and real money: these must never be seeded onto a public tenant.
+ok("the seed does NOT enable voice_notes (the outbound TTS path — G0-R)", !/voice_notes:\s*true/.test(seed));
+ok("the seed does NOT enable psp_payments (real money on a public page)", !/psp_payments:\s*true/.test(seed));
+// Held off deliberately so the flag-OFF deterministic gate fires the two-option wording.
+for (const f of ["allergy_simple", "allergy_calm_hold", "allergy_companion_mode"]) {
+  ok(`the seed does NOT enable ${f} (the deterministic gate must fire)`, !new RegExp(`${f}:\\s*true`).test(seed));
+}
+
 console.log(`\nPUBLIC-DEMO HARDENING PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
