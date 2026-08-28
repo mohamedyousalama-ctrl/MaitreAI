@@ -34,6 +34,13 @@ function contentStringHits(source: string, re: RegExp): string[] {
   const patterns = [
     /content:\s*`([\s\S]*?)`/g,
     /content:\s*"([\s\S]*?)"/g,
+    // KIV-304 — tool results are dialect-conditional now (`content: sa ? <najdi> : <egyptian>`),
+    // so the customer-facing string no longer sits directly after `content:`. Without this
+    // third pattern the whole jargon check went quietly to ZERO hits — it would have passed
+    // any amount of new jargon, as long as the jargon lived inside a dialect conditional.
+    // The capture is the WHOLE ternary, so one conditional is one hit and both dialect arms
+    // are searched.
+    /content:\s*sa\s*\?\s*([\s\S]*?),\n/g,
   ];
   for (const pattern of patterns) {
     for (const m of source.matchAll(pattern)) {
@@ -47,10 +54,14 @@ function contentStringHits(source: string, re: RegExp): string[] {
 // not direct customer replies. The direct-send finalize fast path stays jargon-clean.
 const allToolContentJargonHits = contentStringHits(tools, TECH_JARGON_RE);
 ok(
-  "tools jargon hits are only the two Karim guardrail instructions",
+  "tools jargon hits are only the two Karim guardrail instructions (both dialect arms)",
   allToolContentJargonHits.length === 2 &&
     allToolContentJargonHits.some((x) => x.includes("ده طبيعي، مش عطل تقني")) &&
-    allToolContentJargonHits.some((x) => x.includes("مفيش أي عطل تقني"))
+    allToolContentJargonHits.some((x) => x.includes("مفيش أي عطل تقني")) &&
+    // KIV-304 — each guardrail is now one Najdi arm + one Cairene arm; both must be here,
+    // and no THIRD jargon string may have crept in alongside them.
+    allToolContentJargonHits.some((x) => x.includes("هذا طبيعي، مو عطل تقني")) &&
+    allToolContentJargonHits.some((x) => x.includes("ما فيه أي عطل تقني"))
 );
 ok("guardrail detector regex remains in place", tools.includes("const FABRICATED_TECH_ERROR_RE"));
 ok("direct customer-visible finalize tool output has no technical-jargon wording",

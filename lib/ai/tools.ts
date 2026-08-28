@@ -145,6 +145,15 @@ export interface ToolContext {
    *  orders row — are all skipped. The tools must not claim them. Optional and default
    *  false so every real tenant is byte-identical. */
   demoRun?: boolean;
+  /** KIV-304 — the tenant's dialect (restaurants.dialect: "saudi" | "egyptian").
+   *  Every deterministic string this module returns used to be CAIRENE with no
+   *  branching at all, and the model relays tool results verbatim (production
+   *  agent_runs carried 14 verbatim copies of the photo-missing line), so a Saudi
+   *  tenant was answered in Egyptian by the tool layer even though the prompt, the
+   *  persona overlay and the allergy hold were all already Najdi.
+   *  OPTIONAL and defaulting to EGYPTIAN — exactly like `demoRun` above — so every
+   *  existing tenant and every legacy/unit-test caller stays byte-identical. */
+  dialect?: string | null;
   /** Running kitchen-readable allergy note, e.g. «⚠️ حساسية: بيض». */
   sessionAllergyNote?: string | null;
   /** WO-LIVE5-CONFIRM-GATE — whether THIS turn's triggering customer message is an
@@ -194,6 +203,26 @@ const SECTION_TITLE_MAX = 24;
 
 function truncate(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
+}
+
+// --- dialect resolution (KIV-304) -------------------------------------------
+// Same two-key shape as lib/ai/allergy-calm-hold.ts and lib/ai/respond.ts's
+// safe*Reply helpers: EGYPTIAN is the default, so an absent / null / legacy /
+// unknown dialect resolves exactly as it does today and Wesaya (a live Egyptian
+// tenant) is untouched. Only the literal "saudi" opens the Najdi branch.
+//
+// CONVENTION IN THIS FILE: every dialect conditional is written `sa ? <najdi> : <egyptian>`
+// so the Saudi branch is always the FIRST arm — scripts/proof-tools-dialect.test.ts
+// lints it, and the Egyptian arm is the byte-frozen live copy.
+export type ToolDialect = "egyptian" | "saudi";
+
+/** Resolve a (possibly null/legacy/unknown) dialect value. Egyptian default. */
+export function toolDialect(dialect: string | null | undefined): ToolDialect {
+  return dialect === "saudi" ? "saudi" : "egyptian";
+}
+
+function isSaudiCtx(ctx: Pick<ToolContext, "dialect">): boolean {
+  return toolDialect(ctx.dialect) === "saudi";
 }
 
 /**
@@ -472,6 +501,140 @@ export function orderToolsForDelivery(geoRouting: boolean, addressFlowV2: boolea
   });
 }
 
+// --- tenant-aware tool catalog (KIV-304) ------------------------------------
+// The tool DEFINITIONS are re-sent to the model on EVERY request, so their Arabic
+// carries the same leakage risk as a tool RESULT: a Cairene example teaches Cairene
+// phrasing, and `set_payment_method` advertised فودافون كاش — an EGYPTIAN wallet — to
+// every tenant, Saudi ones included, with a hardcoded ["cod","vodafone_cash"] enum
+// that ignored `payment_config` entirely.
+//
+// Both fixes are OPT-IN via ToolCatalogOptions: with no options the catalog is
+// returned untouched (ORDER_TOOLS by reference when the flags are off), so every
+// existing caller and snapshot is byte-identical.
+
+export interface ToolCatalogOptions {
+  /** Tenant dialect (restaurants.dialect). Absent/unknown → Egyptian, unchanged. */
+  dialect?: string | null;
+  /** Tenant payment config. Absent → the payment tools are left exactly as shipped. */
+  paymentConfig?: PaymentConfig;
+}
+
+/** Arabic fragments inside the model-facing DESCRIPTIONS, as [shipped-Egyptian, Najdi].
+ *  Applied ONLY for a Saudi tenant, so the Egyptian catalog stays byte-for-byte the
+ *  string that ships today. A plain replace (not a rebuilt description) is deliberate:
+ *  the flag variants above rewrite whole descriptions, and this must survive whichever
+ *  variant is live without duplicating it. */
+const SAUDI_DESCRIPTION_REWRITES: ReadonlyArray<readonly [string, string]> = [
+  // add_to_order — the restated-total examples were Cairene; a Najdi guest says
+  // «حبتين» / «خلها ٣» / «زد وحدة ثانية».
+  ["(«سندوتشين» = 2، «خليها ٣»)", "(«حبتين» = 2، «خلها ٣»)"],
+  ["«زود واحد كمان» (one more)", "«زد وحدة ثانية» (one more)"],
+  // set_delivery_address + finalize_draft — a Saudi address is given by الحي (district).
+  ["(منطقة + شارع + علامة مميزة)", "(الحي + الشارع + علامة مميزة)"],
+  // clear_order — «كل ده» is Cairene; «ألغِ كل شي» is the Najdi restart.
+  ["«الغِ كل ده»", "«ألغِ كل شي»"],
+  // resend_receipt — «فين» / «ابعتلي» / «ما جاش» are all Cairene.
+  [
+    "(«فين الايصال»، «ابعتلي الإيصال»، «الفاتورة»، «ما جاش الإيصال»)",
+    "(«وين الفاتورة»، «أرسل لي الإيصال»، «الفاتورة»، «ما وصلني الإيصال»)",
+  ],
+];
+
+function applySaudiDescription(description: string): string {
+  let out = description;
+  for (const [eg, sa] of SAUDI_DESCRIPTION_REWRITES) out = out.split(eg).join(sa);
+  return out;
+}
+
+/** The methods `set_payment_method` may legally be handed, derived from the tenant's
+ *  config — the SAME gate the executor already applies (cfg.vodafone_cash.enabled), so
+ *  the schema can no longer advertise a method the executor would refuse. A tenant with
+ *  everything switched off still takes cash at the counter, so the enum is never empty. */
+export function offeredToolPaymentMethods(cfg: PaymentConfig): string[] {
+  const out: string[] = [];
+  if (cfg.cod_enabled) out.push("cod");
+  if (cfg.vodafone_cash.enabled) out.push("vodafone_cash");
+  return out.length ? out : ["cod"];
+}
+
+function presentPaymentMethodsDescription(cfg: PaymentConfig): string {
+  // VF Cash ON → the shipped description, byte-for-byte.
+  if (cfg.vodafone_cash.enabled) {
+    return (
+      "Show the payment-method buttons available for THIS order (built from the restaurant's payment config + fulfillment): " +
+      "الدفع عند الاستلام (COD) and فودافون كاش when enabled; for pickup, فودافون كاش (prepay) vs الدفع عند الاستلام من الفرع. " +
+      "Use when collecting how the customer will pay."
+    );
+  }
+  return (
+    "Show the payment-method buttons available for THIS order (built from the restaurant's payment config + fulfillment). " +
+    "This restaurant has NO wallet or transfer method enabled: الدفع عند الاستلام is the only method — never name, offer, or " +
+    "promise any other. Use when collecting how the customer will pay."
+  );
+}
+
+function setPaymentMethodDescription(cfg: PaymentConfig): string {
+  // VF Cash ON → the shipped description, byte-for-byte.
+  if (cfg.vodafone_cash.enabled) {
+    return (
+      "Record the customer's chosen payment method on the order. method=\"cod\" (الدفع عند الاستلام / counter cash) " +
+      "or \"vodafone_cash\" (ONLY when offered/enabled). For vodafone_cash it returns the transfer number + amount + " +
+      "instructions to show the customer; the order stays UNPAID until an operator confirms — NEVER tell the customer " +
+      "the payment was received."
+    );
+  }
+  return (
+    "Record the customer's chosen payment method on the order. method=\"cod\" (الدفع عند الاستلام / counter cash) is the " +
+    "ONLY method this restaurant offers — no wallet or transfer method is enabled, so never name, offer, or promise one."
+  );
+}
+
+function paymentSchema(cfg: PaymentConfig): Record<string, unknown> {
+  return {
+    type: "object",
+    properties: { method: { type: "string", enum: offeredToolPaymentMethods(cfg) } },
+    required: ["method"],
+    additionalProperties: false,
+  };
+}
+
+/** Apply the tenant's dialect + payment config to a tool catalog. No options that
+ *  change anything → the SAME array reference back (snapshot-safe). */
+function localizeToolCatalog(tools: LlmToolDef[], opts: ToolCatalogOptions | undefined): LlmToolDef[] {
+  if (!opts) return tools;
+  const saudi = toolDialect(opts.dialect) === "saudi";
+  const cfg = opts.paymentConfig;
+  if (!saudi && !cfg) return tools;
+  return tools.map((t) => {
+    let next = t;
+    if (cfg && t.name === "set_payment_method") {
+      next = { ...next, description: setPaymentMethodDescription(cfg), input_schema: paymentSchema(cfg) };
+    } else if (cfg && t.name === "present_payment_methods") {
+      next = { ...next, description: presentPaymentMethodsDescription(cfg) };
+    }
+    if (saudi) {
+      const description = applySaudiDescription(next.description);
+      if (description !== next.description) next = { ...next, description };
+    }
+    return next;
+  });
+}
+
+/** The order-tool catalog for a tenant: delivery/geo flags first (unchanged), then the
+ *  tenant's dialect + payment config. `opts` omitted → identical to before, by reference. */
+export function orderToolsForTenant(
+  geoRouting: boolean,
+  addressFlowV2: boolean,
+  opts?: ToolCatalogOptions
+): LlmToolDef[] {
+  return localizeToolCatalog(orderToolsForDelivery(geoRouting, addressFlowV2), opts);
+}
+
+/** The closed / non-order subset for a tenant. `opts` omitted → NON_ORDER_TOOLS itself. */
+export function nonOrderToolsForTenant(opts?: ToolCatalogOptions): LlmToolDef[] {
+  return localizeToolCatalog(NON_ORDER_TOOLS, opts);
+}
+
 // --- helpers ----------------------------------------------------------------
 function norm(s: string): string {
   return s
@@ -517,23 +680,37 @@ function lineKey(l: { itemId: string; variant?: DraftVariant; choices: DraftChoi
 /** Convert a KNOWN delivery-pricing throw into a graceful, data-sourced customer
  *  message (so كريم relays it instead of crashing to agent_error). Returns null
  *  for any unrecognized error so the caller re-throws (still surfaced, via Fix B).
- *  The min-order value + zone facts come from the real zone data — never invented. */
-function deliveryNotice(err: unknown, ctx: ToolContext): string | null {
+ *  The min-order value + zone facts come from the real zone data — never invented.
+ *
+ *  EXPORTED for scripts/proof-tools-dialect.test.ts: the branch-mismatch notice is not
+ *  reachable through executeTool today (recompute() never passes a branchId to the
+ *  pricer, so `delivery_zone_branch_mismatch` can't be thrown from here), and a dialect
+ *  branch nothing can lint is a dialect branch that rots. Pure — no behavior change. */
+export function deliveryNotice(err: unknown, ctx: ToolContext): string | null {
   const msg = err instanceof Error ? err.message : String(err);
   const cur = ctx.draft.currency;
+  const sa = isSaudiCtx(ctx);
   if (msg.startsWith("delivery_min_order:")) {
     const zoneName = msg.slice("delivery_min_order:".length);
     const zone = ctx.deliveryAreas.find((z) => z.name === zoneName);
     const min = zone ? Number(zone.minOrder) : 0;
-    return `الحد الأدنى لطلب التوصيل لـ${zoneName} هو ${min} ${cur}. تحب تزوّد الطلب شوية ونكمّل؟`;
+    return sa
+      ? `الحد الأدنى لطلب التوصيل لـ${zoneName} هو ${min} ${cur}. تحب تزيد الطلب شوي ونكمّل؟`
+      : `الحد الأدنى لطلب التوصيل لـ${zoneName} هو ${min} ${cur}. تحب تزوّد الطلب شوية ونكمّل؟`;
   }
   if (msg.startsWith("delivery_zone_invalid:")) {
     const z = msg.slice("delivery_zone_invalid:".length);
-    return `للأسف ${z} مش ضمن مناطق التوصيل المتاحة دلوقتي 🙏 تحب استلام من الفرع، ولا أقولك المناطق اللي بنوصّلها؟`;
+    // The delivery-zone refusal. Najdi «ما تدخل ضمن … الحين» — the phrase-bank's own
+    // «معذرة، هذي المنطقة ما تدخل في التوصيل» — never «مش … دلوقتي».
+    return sa
+      ? `للأسف ${z} ما تدخل ضمن مناطق التوصيل الحين 🙏 تحب استلام من الفرع، ولا أقول لك المناطق اللي نوصّل لها؟`
+      : `للأسف ${z} مش ضمن مناطق التوصيل المتاحة دلوقتي 🙏 تحب استلام من الفرع، ولا أقولك المناطق اللي بنوصّلها؟`;
   }
   if (msg.startsWith("delivery_zone_branch_mismatch:")) {
     const z = msg.slice("delivery_zone_branch_mismatch:".length);
-    return `منطقة ${z} بتتبع فرع تاني 🙏 نظبط الفرع المناسب، ولا تحب استلام من الفرع؟`;
+    return sa
+      ? `منطقة ${z} تتبع فرع ثاني 🙏 نظبط الفرع المناسب، ولا تحب استلام من الفرع؟`
+      : `منطقة ${z} بتتبع فرع تاني 🙏 نظبط الفرع المناسب، ولا تحب استلام من الفرع؟`;
   }
   return null;
 }
@@ -630,6 +807,9 @@ export function executeTool(
   ctx: ToolContext
 ): ToolResult {
   const d = ctx.draft;
+  // KIV-304 — Egyptian is the default (see ToolContext.dialect); `sa` is true ONLY for a
+  // tenant whose dialect is "saudi". Every conditional below reads `sa ? <najdi> : <egyptian>`.
+  const sa = isSaudiCtx(ctx);
   switch (name) {
     case "send_item_photos": {
       const requestedNames = Array.isArray(input.item_names) ? (input.item_names as unknown[]).map(String).filter((x) => x.trim()) : [];
@@ -645,8 +825,13 @@ export function executeTool(
       if (!withPhotos.length) {
         const missing = requestedNames.length ? ` لـ«${requestedNames[0]}»` : "";
         ctx.signals.push({ type: "missing_data", detail: { reason: "photo_missing", requested: requestedNames, category } });
+        // KIV-304's loudest leak: no demo item carries an image_url, so EVERY photo
+        // request lands here. Najdi: «ما لقيت … الحين», and the dative stays SEPARATED
+        // («أعرض لك» / «أرشّح لك»), never the Cairene joined «أعرضلك» / «أرشحلك».
         return {
-          content: `للأسف مش لاقي صورة${missing} دلوقتي. أقدر أعرضلك المنيو أو أرشحلك أقرب صنف متاح.`,
+          content: sa
+            ? `للأسف ما لقيت صورة${missing} الحين. أقدر أعرض لك المنيو أو أرشّح لك أقرب صنف متوفر.`
+            : `للأسف مش لاقي صورة${missing} دلوقتي. أقدر أعرضلك المنيو أو أرشحلك أقرب صنف متاح.`,
           isError: true,
         };
       }
@@ -659,8 +844,15 @@ export function executeTool(
           caption: photoCaption(item, d.currency),
         }))
       );
-      const suffix = unique.length > withPhotos.length || selected.length > withPhotos.length ? " وبعتلك كام صورة بدل ما أزحم الشات." : ".";
-      return { content: `تمام، هبعتلك ${withPhotos.length === 1 ? "الصورة" : `${withPhotos.length} صور`}${suffix}` };
+      const trimmed = unique.length > withPhotos.length || selected.length > withPhotos.length;
+      const suffix = trimmed
+        ? sa
+          ? " وأرسلت لك كم صورة بدل ما أزحم الشات."
+          : " وبعتلك كام صورة بدل ما أزحم الشات."
+        : ".";
+      const shots = withPhotos.length === 1 ? "الصورة" : `${withPhotos.length} صور`;
+      // Najdi has no «هـ» future: «أرسل لك», not «هبعتلك».
+      return { content: sa ? `تمام، أرسل لك ${shots}${suffix}` : `تمام، هبعتلك ${shots}${suffix}` };
     }
     case "add_to_order": {
       const itemId = typeof input.item_id === "string" ? input.item_id.trim() : "";
@@ -761,9 +953,15 @@ export function executeTool(
         ];
         const realLine = realOpts.length
           ? `اختيارات «${item.name}» الحقيقية: ${realOpts.join(" — ")}.`
-          : `«${item.name}» مالهوش اختيارات مذاق أو صوص — يتسجّل كما هو.`;
+          : sa
+            ? `«${item.name}» ما له اختيارات مذاق أو صوص — يتسجّل كما هو.`
+            : `«${item.name}» مالهوش اختيارات مذاق أو صوص — يتسجّل كما هو.`;
+        // The invalid-option line. Najdi negates a noun/adjective with «مو», never «مش»,
+        // and the prohibitive is «لا تصعّد», never the Cairene «متصعّدش».
         return {
-          content: `«${remainingChoices[0]}» مش من اختيارات «${item.name}» (ده طبيعي، مش عطل تقني). ${realLine} اعرض على العميل اختياراته الحقيقية وكمّل الطلب — متصعّدش لهذا السبب.`,
+          content: sa
+            ? `«${remainingChoices[0]}» مو من اختيارات «${item.name}» (هذا طبيعي، مو عطل تقني). ${realLine} اعرض على العميل اختياراته الحقيقية وكمّل الطلب — لا تصعّد لهذا السبب.`
+            : `«${remainingChoices[0]}» مش من اختيارات «${item.name}» (ده طبيعي، مش عطل تقني). ${realLine} اعرض على العميل اختياراته الحقيقية وكمّل الطلب — متصعّدش لهذا السبب.`,
           isError: true,
         };
       }
@@ -813,7 +1011,11 @@ export function executeTool(
       // Reset the in-progress draft to empty (items + fulfillment) — a true "start
       // over". Re-ask fulfillment later as needed. Never touches a finalized order.
       ctx.draft = emptyDraft(d.currency);
-      return { content: "تمام، مسحت الطلب ونبدأ من جديد. تحب تطلب إيه؟" };
+      return {
+        content: sa
+          ? "تمام، مسحت الطلب ونبدأ من جديد. وش تحب تطلب؟"
+          : "تمام، مسحت الطلب ونبدأ من جديد. تحب تطلب إيه؟",
+      };
     }
     case "resend_receipt": {
       ctx.resendReceipt = true;
@@ -960,10 +1162,24 @@ export function executeTool(
               question: match.question,
             },
           });
+          const zoneList = match.candidates.map((candidate) => `«${candidate.zone.name}»`).join("، ");
+          // KIV-304 — `match.question` is built in lib/delivery/address.ts as «قريب من إيه — …؟»,
+          // which is Cairene, and this directive tells the model to ask it VERBATIM. Rather
+          // than reach into another module, the Saudi branch builds the same one-question
+          // shape in Najdi («قريب من وش») from the same candidate names. The Egyptian branch
+          // still relays match.question byte-for-byte.
+          const zoneNames = match.candidates.map((candidate) => candidate.zone.name);
+          const saudiList =
+            zoneNames.length <= 2
+              ? zoneNames.join(" ولا ")
+              : `${zoneNames.slice(0, -1).join("، ")} ولا ${zoneNames[zoneNames.length - 1]}`;
+          const saudiQuestion = `قريب من وش — ${saudiList}؟`;
           return {
-            content:
-              `العنوان ممكن يطابق أكثر من منطقة: ${match.candidates.map((candidate) => `«${candidate.zone.name}»`).join("، ")}. ` +
-              `اسأل العميل سؤال واحد بالصيغة دي: «${match.question}». لا تطلب لوكيشن ولا تقول إنه مطلوب لحساب الرسوم.`,
+            content: sa
+              ? `العنوان ممكن ينطبق على أكثر من منطقة: ${zoneList}. ` +
+                `اسأل العميل سؤال واحد بالصيغة هذي: «${saudiQuestion}». لا تطلب موقع ولا تقول إنه مطلوب لحساب الرسوم.`
+              : `العنوان ممكن يطابق أكثر من منطقة: ${zoneList}. ` +
+                `اسأل العميل سؤال واحد بالصيغة دي: «${match.question}». لا تطلب لوكيشن ولا تقول إنه مطلوب لحساب الرسوم.`,
             isError: true,
           };
         }
@@ -985,11 +1201,15 @@ export function executeTool(
           if (ctx.geoRouting) d.branchId = fallback.branchId ?? null;
           const notice = d.lines.length ? recompute(ctx) : null;
           if (notice) return { content: notice };
+          // Najdi: «لين» (not «لحد ما»), «يرسل الموقع» (not «يبعت اللوكيشن»), «الحي».
           return {
-            content:
-              `العنوان مش مطابق بثقة لأي منطقة مسمّاة. استخدم «${fallback.name}» كرسوم مبدئية فقط: ` +
-              `${d.deliveryFee} ${d.currency} لحد ما نحدد منطقة العميل. ` +
-              "اعرض عليه اختيارين: يبعت اللوكيشن من المشبك 📎 أو يقول أقرب منطقة/علامة مميزة. لا تقول إن اللوكيشن مطلوب.",
+            content: sa
+              ? `العنوان ما ينطبق بثقة على أي منطقة مسمّاة. استخدم «${fallback.name}» كرسوم مبدئية فقط: ` +
+                `${d.deliveryFee} ${d.currency} لين نحدد منطقة العميل. ` +
+                "اعرض عليه خيارين: يرسل الموقع من المشبك 📎 أو يقول أقرب حي/علامة مميزة. لا تقول إن الموقع مطلوب."
+              : `العنوان مش مطابق بثقة لأي منطقة مسمّاة. استخدم «${fallback.name}» كرسوم مبدئية فقط: ` +
+                `${d.deliveryFee} ${d.currency} لحد ما نحدد منطقة العميل. ` +
+                "اعرض عليه اختيارين: يبعت اللوكيشن من المشبك 📎 أو يقول أقرب منطقة/علامة مميزة. لا تقول إن اللوكيشن مطلوب.",
           };
         }
         d.deliveryZone = null;
@@ -997,8 +1217,9 @@ export function executeTool(
         clearPersistedZone(d);
         if (ctx.geoRouting) d.branchId = null;
         return {
-          content:
-            "العنوان مش مطابق بثقة لأي منطقة مسمّاة، ومفيش منطقة عامة مفعّلة. اعرض على العميل اختيارين: يبعت اللوكيشن من المشبك 📎 أو يقول أقرب منطقة/علامة مميزة. لا تقول إن اللوكيشن مطلوب.",
+          content: sa
+            ? "العنوان ما ينطبق بثقة على أي منطقة مسمّاة، وما فيه منطقة عامة مفعّلة. اعرض على العميل خيارين: يرسل الموقع من المشبك 📎 أو يقول أقرب حي/علامة مميزة. لا تقول إن الموقع مطلوب."
+            : "العنوان مش مطابق بثقة لأي منطقة مسمّاة، ومفيش منطقة عامة مفعّلة. اعرض على العميل اختيارين: يبعت اللوكيشن من المشبك 📎 أو يقول أقرب منطقة/علامة مميزة. لا تقول إن اللوكيشن مطلوب.",
           isError: true,
         };
       }
@@ -1018,16 +1239,26 @@ export function executeTool(
       // (unit tests) keeps the legacy behavior — the live path always sets it.
       if (ctx.userConfirmed === false) {
         ctx.signals.push({ type: "missing_data", detail: { reason: "finalize_without_confirmation" } });
+        // Najdi: «لين الحين» (not «لسه»), «ما أكّد» (not «ما أكّدش»), «مو» (not «مش»),
+        // «قبل لا» (not «قبل ما»).
         return {
-          content:
-            "لسه العميل ما أكّدش الطلب صراحةً — رسالته الأخيرة مش تأكيد. اقرأ عليه ملخص الطلب واطلب تأكيد صريح (زي «أكد» أو «تمام») قبل ما تسجّل الطلب.",
+          content: sa
+            ? "لين الحين العميل ما أكّد الطلب صراحةً — رسالته الأخيرة مو تأكيد. اقرأ عليه ملخص الطلب واطلب تأكيد صريح (مثل «أكد» أو «تمام») قبل لا تسجّل الطلب."
+            : "لسه العميل ما أكّدش الطلب صراحةً — رسالته الأخيرة مش تأكيد. اقرأ عليه ملخص الطلب واطلب تأكيد صريح (زي «أكد» أو «تمام») قبل ما تسجّل الطلب.",
           isError: true,
         };
       }
       if (!d.lines.length) return { content: "لا يمكن تأكيد طلب فارغ.", isError: true };
       if (!d.fulfillment) return { content: "لا يمكن تأكيد الطلب قبل اختيار الاستلام أو التوصيل.", isError: true };
       if (d.fulfillment === "delivery" && !d.address?.trim()) {
-        return { content: "لم يتم تسجيل عنوان التوصيل. اطلب من العميل العنوان الكامل (المنطقة + الشارع + علامة مميزة) ثم استدعِ set_delivery_address.", isError: true };
+        // A Saudi address is given by الحي (district), matching the set_delivery_address
+        // tool description and the Najdi phrase bank's «الحي والشارع لو تكرمت».
+        return {
+          content: sa
+            ? "لم يتم تسجيل عنوان التوصيل. اطلب من العميل العنوان الكامل (الحي + الشارع + علامة مميزة) ثم استدعِ set_delivery_address."
+            : "لم يتم تسجيل عنوان التوصيل. اطلب من العميل العنوان الكامل (المنطقة + الشارع + علامة مميزة) ثم استدعِ set_delivery_address.",
+          isError: true,
+        };
       }
       {
         // Real-time 86ing guard: never finalize an order containing an item that has
@@ -1081,9 +1312,11 @@ export function executeTool(
       // human request) don't use this wording and pass through unchanged.
       if (FABRICATED_TECH_ERROR_RE.test(reason)) {
         ctx.signals.push({ type: "blocked_escalation", detail: { reason } });
+        // Najdi: «ما فيه» (not «مفيش»), «مو» (not «مش»).
         return {
-          content:
-            "مفيش أي عطل تقني. لو العميل طلب اختيار مش متاح لصنف، اعرض اختيارات الصنف الحقيقية وكمّل الطلب. التصعيد للشكاوى أو طلب المبالغ أو طلب موظف بشري أو الشك في الحساسية — مش لهذا.",
+          content: sa
+            ? "ما فيه أي عطل تقني. لو العميل طلب اختيار مو متاح لصنف، اعرض اختيارات الصنف الحقيقية وكمّل الطلب. التصعيد للشكاوى أو طلب المبالغ أو طلب موظف بشري أو الشك في الحساسية — مو لهذا."
+            : "مفيش أي عطل تقني. لو العميل طلب اختيار مش متاح لصنف، اعرض اختيارات الصنف الحقيقية وكمّل الطلب. التصعيد للشكاوى أو طلب المبالغ أو طلب موظف بشري أو الشك في الحساسية — مش لهذا.",
           isError: true,
         };
       }
@@ -1098,6 +1331,20 @@ export function executeTool(
         // respond-and-send, which a demo turn never reaches. Claiming it would be the
         // same false promise the allergy paths were just cleared of, and this is the
         // branch the Founder's own escalate-to-human option lands on.
+        //
+        // KIV-304 — the ESCALATION CONFIRMATION. «وهيردّوا» is the Egyptian هـ-future;
+        // Najdi is the bare present «ويردّون», exactly as dialect.ts's saudi escalation
+        // anchor already says. The two dialects are kept as SEPARATE demoRun ternaries
+        // (not one nested expression) so the demo-honesty proofs that read this source
+        // — proof-safety-model-v3 and proof-public-demo-hardening — still read a literal
+        // `ctx.demoRun ? "<demo>" : "<real>"` pair on each side.
+        if (sa) {
+          return {
+            content: ctx.demoRun
+              ? "في التجربة ما أقدر أحوّلك لموظف فعلي 🙏 بس في الاستخدام الحقيقي تنتقل المحادثة لفريق المطعم على طول."
+              : "حوّلت محادثتك لفريق المطعم، ويردّون عليك في أقرب وقت 🙏",
+          };
+        }
         return {
           content: ctx.demoRun
             ? "في التجربة ما أقدر أحوّلك لموظف فعلي 🙏 بس في الاستخدام الحقيقي تنتقل المحادثة لفريق المطعم فوراً."
@@ -1107,6 +1354,18 @@ export function executeTool(
       ctx.signals.push({ type: "notify_without_hold", detail: { reason, source: "model_tool" } });
       // conversation_signals is skipped and recordCriticalAlert is gated on a
       // conversationId that is null, so on a demo turn nobody is notified.
+      //
+      // KIV-304 — «خذت بالي» is a Cairene idiom and «قولي» is the joined Cairene
+      // imperative; Najdi is «أخذت ملاحظتك» and the separated «قل لي» (the same «قل لي»
+      // the typed-interactive Saudi strings already use). Kept as two demoRun ternaries
+      // for the same source-reading proofs noted on the transfer branch above.
+      if (sa) {
+        return {
+          content: ctx.demoRun
+            ? "أخذت ملاحظتك 🙏 في الاستخدام الحقيقي ينبّه فريق المطعم ويتابعها. نكمّل مع بعض؟"
+            : "سجّلت ملاحظتك ونبّهت فريق المطعم يتابعها 🙏 نقدر نكمّل مع بعض — ولو تبي أوصّلك بموظف قل لي وأحوّلك على طول.",
+        };
+      }
       return {
         content: ctx.demoRun
           ? "خذت بالي بملاحظتك 🙏 في الاستخدام الحقيقي ينبّه فريق المطعم ويتابعها. نكمّل مع بعض؟"
@@ -1130,7 +1389,13 @@ export function executeTool(
           description: `${avail.filter((i) => i.category === c.name).length} صنف`,
         }));
         ctx.presentation = { kind: "list", button: truncate("تصفّح المنيو", LIST_BUTTON_MAX), sections: [{ rows }] };
-        return { content: `تم عرض ${rows.length} تصنيف للعميل كقائمة تفاعلية.` };
+        // «تصنيف» is CMS vocabulary, not something a Saudi host says — he says «القسم»
+        // or just names the things. (Native review, same note that produced this WO.)
+        return {
+          content: sa
+            ? `تم عرض ${rows.length} قسم للعميل كقائمة تفاعلية.`
+            : `تم عرض ${rows.length} تصنيف للعميل كقائمة تفاعلية.`,
+        };
       }
 
       const items = cat
@@ -1143,7 +1408,12 @@ export function executeTool(
         : avail;
       if (!items.length) {
         ctx.signals.push({ type: "off_menu", detail: { category: cat } });
-        return { content: `لا توجد أصناف ضمن «${cat}». اعرض التصنيفات المتاحة أو اسأل العميل.`, isError: true };
+        return {
+          content: sa
+            ? `ما فيه أصناف ضمن «${cat}». اعرض الأقسام المتاحة أو اسأل العميل.`
+            : `لا توجد أصناف ضمن «${cat}». اعرض التصنيفات المتاحة أو اسأل العميل.`,
+          isError: true,
+        };
       }
       const rows: PresentationRow[] = items.slice(0, MAX_ROWS).map((i) => ({
         id: `item:${i.id}`,
@@ -1181,7 +1451,11 @@ export function executeTool(
             { id: "set_delivery", title: truncate("توصيل", BUTTON_TITLE_MAX) },
           ],
         };
-        return { content: "قبل التأكيد لازم العميل يختار الاستلام أو التوصيل — اعرض الخيارين (مش أزرار التأكيد)." };
+        return {
+          content: sa
+            ? "قبل التأكيد لازم العميل يختار الاستلام أو التوصيل — اعرض الخيارين (مو أزرار التأكيد)."
+            : "قبل التأكيد لازم العميل يختار الاستلام أو التوصيل — اعرض الخيارين (مش أزرار التأكيد).",
+        };
       }
       ctx.presentation = {
         kind: "buttons",
@@ -1217,25 +1491,46 @@ export function executeTool(
     case "set_payment_method": {
       const method = input.method === "vodafone_cash" ? "vodafone_cash" : "cod";
       const cfg = ctx.paymentConfig;
-      // Gate VF strictly on config — never offer/record it when disabled.
+      // Gate VF strictly on config — never offer/record it when disabled. The Saudi copy
+      // deliberately does NOT name فودافون كاش: it is an EGYPTIAN wallet, and naming a
+      // wallet the tenant doesn't run to a Riyadh guest is the leak this WO closes. The
+      // tool SCHEMA now drops the method entirely for a tenant that hasn't enabled it
+      // (see offeredToolPaymentMethods), so this branch is the defensive floor.
       if (method === "vodafone_cash" && !cfg.vodafone_cash.enabled) {
-        return { content: "فودافون كاش مش متاح حاليًا — الدفع عند الاستلام.", isError: true };
+        return {
+          content: sa
+            ? "الدفع بالمحفظة غير متاح حالياً — الدفع عند الاستلام."
+            : "فودافون كاش مش متاح حاليًا — الدفع عند الاستلام.",
+          isError: true,
+        };
       }
       d.paymentMethod = method;
       if (method === "vodafone_cash") {
         const num = (cfg.vodafone_cash.number ?? "").trim();
         const extra = (cfg.vodafone_cash.instructions ?? "").trim();
         // HONESTY: never claim the payment was received — transfer + we'll confirm.
-        const lines = [
-          "تمام، اختَرت فودافون كاش 📱",
-          `حوّل المبلغ (${d.total} ${d.currency}) على الرقم ده:`,
-          num || "(رقم المحفظة هيتبعتلك من المطعم)",
-          extra,
-          "وابعتلنا لما تحوّل وهنأكد طلبك. (الدفع لسه ما اتأكدش لحد ما المطعم يراجعه.)",
-        ].filter(Boolean);
-        return { content: lines.join("\n") };
+        const lines = sa
+          ? [
+              "تمام، اخترت الدفع بالمحفظة 📱",
+              `حوّل المبلغ (${d.total} ${d.currency}) على الرقم هذا:`,
+              num || "(رقم المحفظة يوصلك من المطعم)",
+              extra,
+              "وأرسل لنا لما تحوّل ونأكد طلبك. (الدفع ما يتأكد إلا بعد ما يراجعه المطعم.)",
+            ]
+          : [
+              "تمام، اختَرت فودافون كاش 📱",
+              `حوّل المبلغ (${d.total} ${d.currency}) على الرقم ده:`,
+              num || "(رقم المحفظة هيتبعتلك من المطعم)",
+              extra,
+              "وابعتلنا لما تحوّل وهنأكد طلبك. (الدفع لسه ما اتأكدش لحد ما المطعم يراجعه.)",
+            ];
+        return { content: lines.filter(Boolean).join("\n") };
       }
-      return { content: "تمام، الدفع عند الاستلام. هنأكد طلبك حالًا." };
+      return {
+        content: sa
+          ? "تمام، الدفع عند الاستلام. نأكد طلبك الحين."
+          : "تمام، الدفع عند الاستلام. هنأكد طلبك حالًا.",
+      };
     }
     default:
       return { content: `أداة غير معروفة: ${name}`, isError: true };
