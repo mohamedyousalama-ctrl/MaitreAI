@@ -35,3 +35,11 @@ next-env.d.ts
 
 # Emergency tenant data exports (PII) — never commit (S8)
 exports/
+
+# Claude Code agent worktrees — transient, auto-cleaned, ~34M each.
+# These are full working copies an isolated agent branches into; committing one
+# would vendor the entire repo into itself. Only the agent's COMMITS matter, and
+# those land on a real branch. Scoped to worktrees/ deliberately: anything else
+# under .claude/ (settings, skills, agent definitions) is project config and
+# should stay committable.
+.claude/worktrees/
