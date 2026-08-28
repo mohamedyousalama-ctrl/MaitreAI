@@ -93,6 +93,7 @@ export async function POST(req: Request) {
       history,
       userMessage: text,
       persistReply: false,
+      demoRun: true,          // do not keep a stranger's words; keep the cost row
     });
     return NextResponse.json({
       ok: true,

@@ -97,5 +97,45 @@ ok("the route path has no dynamic segment", !/app\/api\/demo\/turn\/\[/.test(rou
 const mw = codeOf("lib/supabase/middleware.ts");
 ok("/demo is in PUBLIC_PREFIXES (else it 307s to /login)", /PUBLIC_PREFIXES[^;]*"\/demo"/.test(mw));
 
+// ── 9. A STRANGER'S WORDS ARE NOT KEPT ─────────────────────────────────────
+// The demo is public, so the people typing into it are not any tenant's customers
+// and their words are not ours to keep. `agent_runs.input`/`.output` and
+// `conversation_signals.detail` (which carries the matched allergen term) are the
+// three places a turn would otherwise persist verbatim text.
+//
+// The agent_runs ROW is still written, with cost. That is deliberate and is asserted
+// below: lib/monitoring/sweep.ts sums agent_runs.cost_usd for the daily-spend alert,
+// so dropping the row would blind the only spend monitor that exists — on the one
+// surface anyone can call. Keep the accounting, drop the person.
+const turn = codeOf("lib/ai/customer-turn.ts");
+
+ok("the demo turn declares demoRun", /demoRun:\s*true/.test(route));
+ok("CustomerTurnInput carries an optional demoRun flag", /demoRun\?:\s*boolean;/.test(turn));
+
+// There are TWO agent_runs inserts and the ERROR one appears first in the file, so a
+// lazy match lands on a block with no `output` and no `cost_usd`. Select the SUCCESS
+// insert explicitly by the column only it has. (The first version of this assertion
+// matched the wrong block and reported a false failure — pinned here so it stays fixed.)
+const successInsert = [...turn.matchAll(/\.from\("agent_runs"\)\s*\n?\s*\.insert\(\{[\s\S]*?\n\s*\}\)/g)]
+  .map((m) => m[0]).find((b) => /cost_usd:/.test(b)) ?? "";
+ok("the agent_runs SUCCESS insert was found (the one carrying cost_usd)", successInsert.length > 0);
+ok("it is genuinely the success insert, not the error insert", !/error:\s*message/.test(successInsert));
+ok("the visitor's verbatim message is NOT written on a demo turn",
+  /input:\s*input\.demoRun\s*\?\s*null\s*:\s*input\.userMessage/.test(successInsert));
+ok("the reply is NOT written on a demo turn",
+  /output:\s*input\.demoRun\s*\?\s*null\s*:\s*result\.reply/.test(successInsert));
+ok("the COST is still written on a demo turn (the spend monitor must still see it)",
+  /cost_usd:\s*cost/.test(successInsert));
+
+ok("the error path also withholds the verbatim message on a demo turn",
+  /input:\s*input\.demoRun\s*\?\s*null\s*:\s*input\.userMessage,\s*\n\s*error:/.test(turn));
+
+ok("conversation_signals (which carries the matched allergen term) is skipped on a demo turn",
+  /if\s*\(result\.signals\.length\s*&&\s*!input\.demoRun\)/.test(turn));
+
+// The flag must be OPT-IN: normal tenant traffic keeps writing exactly as before.
+ok("demoRun is opt-in — nothing defaults it to true",
+  !/demoRun\s*=\s*true/.test(turn) && !/demoRun\s*\?\?\s*true/.test(turn));
+
 console.log(`\nPUBLIC-DEMO HARDENING PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

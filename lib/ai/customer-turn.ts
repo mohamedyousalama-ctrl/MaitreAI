@@ -141,6 +141,21 @@ export interface CustomerTurnInput {
    *  failed (never silence). The webhook only passes this when the flag is on, so
    *  flag-off tenants never reach here → pipeline byte-identical when off. */
   imageContext?: { caption: string | null; description: string | null } | null;
+  /** WO-PUBLIC-DEMO — this turn came from the PUBLIC, unauthenticated demo endpoint.
+   *
+   *  A stranger with a link is not a customer of any tenant, so their words are not
+   *  ours to keep. When set, the verbatim message and the reply are NOT written to
+   *  `agent_runs`, and `conversation_signals` (whose `detail` carries the matched
+   *  allergen term) is not written at all.
+   *
+   *  The agent_runs ROW is still written, with its cost, tokens, model and latency.
+   *  That is deliberate: `lib/monitoring/sweep.ts` sums `agent_runs.cost_usd` for the
+   *  daily-spend alert, so dropping the row entirely would blind the only spend
+   *  monitor that exists — on the one surface anyone can call. Keep the accounting,
+   *  drop the person.
+   *
+   *  Undefined ⇒ normal tenant traffic ⇒ every write is byte-identical to before. */
+  demoRun?: boolean;
 }
 
 export interface CustomerTurnOutcome {
@@ -1240,7 +1255,7 @@ export async function runCustomerTurn(
         restaurant_id: restaurantId,
         conversation_id: conversationId,
         trigger: "customer",
-        input: input.userMessage,
+        input: input.demoRun ? null : input.userMessage,
         error: message,
         perception,
       });
@@ -1609,8 +1624,9 @@ export async function runCustomerTurn(
       restaurant_id: restaurantId,
       conversation_id: conversationId,
       trigger: "customer",
-      input: input.userMessage,
-      output: result.reply,
+      // Demo turns keep the accounting and drop the person — see `demoRun`.
+      input: input.demoRun ? null : input.userMessage,
+      output: input.demoRun ? null : result.reply,
       tools_used: result.toolNames,
       model: result.model,
       adapter: result.adapter,
@@ -1675,7 +1691,10 @@ export async function runCustomerTurn(
     }
   }
 
-  if (result.signals.length) {
+  // `detail` carries the matched allergen/safety term — health-adjacent words typed by
+  // a member of the public. Not written for demo turns. There is also nothing to attach
+  // them to: a demo turn has no conversation.
+  if (result.signals.length && !input.demoRun) {
     await admin.from("conversation_signals").insert(
       result.signals.map((s) => ({
         restaurant_id: restaurantId,
