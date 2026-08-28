@@ -87,8 +87,14 @@ check("src: hold writes an operator hold-note (held_not_allowlisted)",
   ras.includes("held_not_allowlisted") && ras.includes("noteToTimeline"));
 // Deploy-safe (P1): the mode gate reads agent_mode ONLY (byte-unchanged, never
 // errors on a missing tester column); the tester columns are read SEPARATELY.
-check("src: mode gate reads agent_mode only (deploy-safe, unchanged)",
-  /\.select\("agent_mode"\)/.test(ras));
+// REPAIR (stale source-shape pin): the mode-gate read now folds two OTHER
+// pre-existing columns into the same query (`.select("agent_mode, feature_flags,
+// dialect")`), which is still deploy-safe. The invariant actually under proof is
+// that the mode gate must NOT read the tester columns (they may not exist yet
+// pre-migration) — those are read separately by the assertion below. Pin THAT.
+const modeSelect = (ras.match(/\.select\("agent_mode[^"]*"\)/) ?? [])[0] ?? "";
+check("src: mode gate read excludes the tester columns (deploy-safe)",
+  modeSelect !== "" && !/tester_allowlist|country/.test(modeSelect));
 check("src: tester columns read separately",
   /\.select\(\s*"country, tester_allowlist, tester_allowlist_mode"\s*\)/.test(ras));
 check("src: missing-column (pre-migration) treated as feature-off, not hold",

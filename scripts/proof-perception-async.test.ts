@@ -28,8 +28,14 @@ ok("perception_async is a registered explicit feature flag",
   /"perception_async"/.test(tier) &&
   /isFeatureExplicitlyEnabled\(\s*feature: ProFeature,\s*features: Record<string, unknown> \| null \| undefined\s*\)/.test(tier));
 
+// REPAIR (stale source-shape pin): `perceptionShouldRun` was reformatted across
+// several lines and GAINED a condition (WO-CALM: `!(calmHoldOn && calmEmergency.fired)`),
+// which strengthens the gate rather than weakening it. Match the derivation
+// whitespace-tolerantly and keep pinning the two parts that carry the invariant:
+// it is driven by the perception/goal-logic flags and it excludes a deterministic
+// allergen hit. Dropping either guard still fails this assertion.
 ok("flag OFF preserves the synchronous perceiveTurn reply path",
-  /const perceptionShouldRun = \(isFeatureExplicitlyEnabled\("perception", tenantFeatures\) \|\| goalLogicOn\) && !combinedAllergenHit\.fired;/.test(ct) &&
+  /const perceptionShouldRun\s*=\s*\(isFeatureExplicitlyEnabled\("perception", tenantFeatures\)\s*\|\|\s*goalLogicOn\)\s*&&\s*[\s\S]{0,200}?!combinedAllergenHit\.fired/.test(ct) &&
   /const perceptionAsyncOn = isFeatureExplicitlyEnabled\("perception_async", tenantFeatures\);/.test(ct) &&
   /const perceptionOn = perceptionShouldRun && !perceptionAsyncOn;/.test(ct) &&
   /const perceptionResult = perceptionOn \? await perceiveTurnWithUsage\(input\.userMessage, input\.history\) : null;/.test(ct) &&
@@ -40,8 +46,18 @@ ok("flag ON removes perception output from the awaited reply path",
   /perceptionRead: perception/.test(ct) &&
   /perceptionAsync,/.test(ct));
 
-const sendIdx = rs.indexOf("const send = outcome.presentation");
-const textSendIdx = rs.indexOf("await sendWhatsAppText({ to: phone, text: outcome.reply, lastInboundAtMs })", sendIdx);
+// REPAIR (stale source-shape pin): the send binding was renamed
+// (`outcome.presentation`/`outcome.reply` → `outboundPresentation`/`outboundReply`)
+// and now carries an epoch guard. The ORDERING invariant is unchanged, so re-anchor
+// on the renamed binding.
+//
+// Anchor on the FULL binding, not a bare `const send = `: there are four such
+// bindings in this file and the first belongs to an unrelated recovery path ~1400
+// lines earlier. Anchoring there makes `textSendIdx > sendIdx` trivially true and
+// the assertion passes for the wrong reason — it would no longer be pinning the
+// PRIMARY send at all.
+const sendIdx = rs.indexOf("const send = outboundPresentation");
+const textSendIdx = rs.indexOf("await sendWhatsAppText({ to: phone, text: outboundReply", sendIdx);
 const scheduleIdx = rs.indexOf("scheduleAsyncPerceptionAfterReply(admin", sendIdx);
 ok("async perception is queued only after the primary reply send resolves",
   sendIdx >= 0 &&

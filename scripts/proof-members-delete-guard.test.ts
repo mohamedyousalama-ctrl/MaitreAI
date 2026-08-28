@@ -241,7 +241,13 @@ ok("route uses mustWrite with exactRows 1 on delete", /mustWrite<[\s\S]*?\.delet
 ok("route pre-check counts other managers, excluding the deleted row", /\.eq\("role", "manager"\)[\s\S]*?\.neq\("id", params\.id\)/.test(route));
 
 const migration = readFileSync("supabase/migrations/0094_members_last_manager_delete_guard.sql", "utf8");
-ok("migration is prepare-only", /PREPARE-ONLY/.test(migration));
+// REPAIR (stale lifecycle pin): 0094 was PREPARE-ONLY when this proof was written
+// and has since been applied to prod via the founder/PM ceremony — the header now
+// records that instead. The invariant worth holding is that the migration keeps
+// declaring its ceremony-governed deployment status, so pin the CURRENT state.
+// Stripping the ceremony declaration still fails this assertion.
+ok("migration declares its founder/PM ceremony deployment status",
+  /PREPARE-ONLY|APPLIED to prod via founder\/PM ceremony/.test(migration));
 ok("migration uses separate DELETE trigger function", /create or replace function public\.enforce_min_one_manager_on_delete\(\)/.test(migration));
 ok("DELETE trigger is BEFORE DELETE on public.members", /create trigger trg_enforce_min_one_manager_on_delete\s*before delete on public\.members\s*for each row\s*execute function public\.enforce_min_one_manager_on_delete\(\)/.test(migration));
 ok("DELETE trigger locks tenant manager rows FOR UPDATE",
