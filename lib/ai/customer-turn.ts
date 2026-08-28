@@ -1003,9 +1003,14 @@ export async function runCustomerTurn(
       : phoneticHit.fired
         ? "phonetic_safety_net"
         : "memory_allergy_gate";
-  const safetyEmergencyHit = (companionOn || calmHoldOn)
-    ? detectAllergenEmergency(input.userMessage)
-    : { fired: false, label: null };
+  // WO-EMERGENCY-OVERRIDE — computed on EVERY posture, not just companion/calm-hold.
+  // It used to be gated on `(companionOn || calmHoldOn)`, so on an `allergy_simple`
+  // tenant an ACTIVE emergency was never even detected: the deflection branch below is
+  // dispatched BEFORE both emergency paths and does not check for one, so «حلقي يتورم»
+  // ("my throat is swelling") received the menu-pointer deflection — escalate:false, no
+  // hold, and no staff alert. The two derivations below stay flag-gated, so companion
+  // and calm-hold behaviour is byte-identical; only the new override branch reads this.
+  const safetyEmergencyHit = detectAllergenEmergency(input.userMessage);
   const calmEmergency = calmHoldOn ? safetyEmergencyHit : { fired: false, label: null };
 
   // WO-V1.0-GOAL-LOGIC bundles perception ON by default — the Goal Interpreter reuses
@@ -1308,6 +1313,19 @@ export async function runCustomerTurn(
       expectedClass: expectedAnswerClass(lastAssistant),
     });
     result = voiceConfirmResult(dialect, input.userMessage, initialDraft, ctx.profile.currency, candidates);
+  } else if (safetyEmergencyHit.fired) {
+    // WO-EMERGENCY-OVERRIDE — an ACTIVE medical emergency wins over EVERY allergy
+    // posture. This branch sits above the simple deflection deliberately: the ordering
+    // IS the defect it fixes. Previously only `calmHoldCandidate` (1317) and
+    // `enterCompanion` (below) handled an emergency, and both require `!allergySimpleOn`,
+    // so a tenant on the simple posture had no emergency path at all.
+    //
+    // Behaviour is the ratified one from WO-SAFETY-MODEL-V3 §5 and is NOT re-litigated
+    // here: no hold, an urgent-guidance reply that never reassures, and a LOUD
+    // notify_without_hold staff alert — silence during a medical emergency was judged
+    // the worst possible outcome, and freezing the thread produces silence.
+    const emergencyDecision = decideCompanionAction(input.userMessage, sessionAllergyNote, allergenDecisionHint);
+    result = companionEmergencyResult(emergencyDecision, dialect, initialDraft, ctx.profile.currency);
   } else if (allergySimpleDeflect && allergySimpleDecision) {
     // WO-SIMPLIFY (PART A) — simple posture, FIRST allergy/disease mention: deflect to the menu +
     // offer a human. No hold, no escalation, no allergy-memory write. The kitchen-ticket canonical

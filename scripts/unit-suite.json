@@ -199,5 +199,6 @@
   "CREDENTIALS_ENCRYPTION_KEY=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-tenant-creds.test.ts",
   "node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-tester-allowlist.test.ts",
   "node --experimental-strip-types scripts/proof-perception-async.test.ts",
-  "node --experimental-strip-types scripts/proof-members-delete-guard.test.ts"
+  "node --experimental-strip-types scripts/proof-members-delete-guard.test.ts",
+  "node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-emergency-override.test.ts"
 ]
