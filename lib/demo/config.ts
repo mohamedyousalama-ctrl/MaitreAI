@@ -36,21 +36,28 @@ export const DEMO_WINDOW_MS = 60 * 60 * 1000;
  * A per-IP limit alone is defeated by any number of source addresses, so the global
  * ceiling is the real control and the per-IP one is courtesy.
  *
- * THE ARITHMETIC WAS WRONG AND IS CORRECTED HERE. This previously read "measured turns
- * cost ~$0.0021, so 2,000 turns bounds a worst day at roughly $4". That held while text
- * was the only surface. The voice route consumes the SAME counter but performs TWO paid
- * operations per slot — Whisper plus the full LLM turn — so a voice turn is several
- * times a text turn and the $4 bound was false the moment voice shipped.
+ * THE ARITHMETIC HAS BEEN WRONG TWICE. Both figures below are now measured against
+ * PRODUCTION, not estimated.
  *
- * Recomputed worst case, with the audio ceiling below:
- *   opus at 24 kbps ≈ 3 KB/s, so 512 KB ≈ 170s ≈ 2.8 min
- *   Whisper at $0.006/min          → ~$0.017
- *   LLM turn (measured)            → ~$0.0021
- *   worst-case voice turn          → ~$0.019
- *   1,000 turns, ALL of them voice → ~$19/day
- * A realistic mixed day is a small fraction of that, and the kill switch in
- * `demo_controls` stops everything instantly. Raising this is a deliberate act with the
- * arithmetic above re-run, not a default.
+ *   v1 said "~$0.0021 a turn, so 2,000 turns bounds a worst day at ~$4". That was a
+ *   measured WARM turn, and it stopped being the bound the moment voice shipped: the
+ *   voice route consumes the SAME counter but pays twice per slot (Whisper + the LLM).
+ *
+ *   v2 recomputed to ~$0.019/turn and ~$19/day. Still low. Four real turns through the
+ *   live endpoint on 2026-08-28 cost $0.12443 — $0.031 a turn, ~15x the original figure.
+ *   The reason is cache economics, not tokens: the demo tenant's system prompt is ~17k
+ *   tokens behind one ephemeral cache breakpoint, and on a sporadically-visited sales
+ *   page the COLD turn is the normal case, billing at the cache-WRITE rate.
+ *
+ * So the honest bound at 1,000 turns is roughly $31/day of text, and more with voice.
+ * Sustained traffic warms the cache and costs far less per turn, so a genuinely busy day
+ * is cheaper per turn than the cold-start tests above — the worst case is "1,000 cold
+ * turns", which is unlikely but is what a cap has to survive.
+ *
+ * Kept at 1,000 deliberately: the ceiling exists to stop an unattended bill, not to
+ * ration a demo the Founder is actively sharing, and `demo_controls.enabled` stops
+ * everything in seconds without a deploy. Raising it is a deliberate act with the
+ * arithmetic above re-run against fresh agent_runs data.
  */
 export const DEMO_GLOBAL_DAILY_TURNS = 1000;
 
