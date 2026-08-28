@@ -48,6 +48,12 @@ export type CriticalAlertType =
   // safety hold. Money truth stands (not blocked); SAFE-1 holds it from the kitchen;
   // a human must review before fulfilment.
   | "paid_while_safety_held"
+  // WO-PAID-CANCELLED — a verified 'paid' webhook settled an order that is already
+  // CANCELLED. Money truth stands: the PSP is really holding the customer's money, so
+  // we record paid + stamp the order and NEVER refuse (refusing would strand real
+  // money off-ledger). This is the most refund-critical of the paid_* alerts — the
+  // customer paid for something nobody will make, so a human MUST refund.
+  | "paid_on_cancelled_order"
   // WO-VOICE-2 — the primary TTS (ElevenLabs) failed and the outbound voice note fell
   // back to OpenAI onyx. The customer still got the text + a voice note (never a silent
   // drop); the alert surfaces the EL outage/quota so it can be checked.

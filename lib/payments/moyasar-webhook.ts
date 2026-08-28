@@ -259,12 +259,17 @@ export async function handleMoyasarWebhook(
     // Stamp the order paid FIRST and confirm a row was actually stamped. If none
     // (e.g. the order is gone) → alert + HOLD: do NOT mark the session paid, do
     // NOT notify, and do NOT consume the event, so a retry can still complete it.
+    // WO-PAID-CANCELLED — `order_status` is returned by the SAME statement (we only
+    // write payment_status, so the returned value is the order's own lifecycle
+    // state, unchanged by this update). No extra read; it feeds the cancelled-order
+    // alert below. It is captured HERE for the same reason `wasExpired` is captured
+    // pre-transition: read the state as it was when the money landed.
     const { data: stamped } = await admin
       .from("orders")
       .update({ payment_status: "paid" })
       .eq("id", session.order_id)
       .eq("restaurant_id", restaurantId)
-      .select("id");
+      .select("id, order_status");
     if (!Array.isArray(stamped) || stamped.length === 0) {
       await recordAlert(admin, {
         restaurantId,
@@ -297,6 +302,30 @@ export async function handleMoyasarWebhook(
         });
       } catch (e) {
         console.error("[moyasar:webhook] paid_after_expiry alert failed (non-blocking):", e);
+      }
+    }
+
+    // WO-PAID-CANCELLED (ruling): a verified paid webhook landed on an order that is
+    // already CANCELLED. Money truth stands — the PSP is really holding the customer's
+    // money, so the order is stamped paid above and we NEVER refuse. Refusing to record
+    // money the processor holds would strand real money off-ledger, which is strictly
+    // worse than the bug: the customer is charged, nothing shows as paid, and nobody
+    // knows a refund is owed. THE FIX IS THE ALERT, not a refusal. This is the most
+    // refund-critical of the paid_* alerts (the customer paid for an order nobody will
+    // make), so it is raised even if the order was cancelled before the link was paid.
+    // Best-effort, on the flip only — same shape as paid_after_expiry above.
+    const stampedOrderStatus =
+      (stamped[0] as { order_status?: string | null } | undefined)?.order_status ?? null;
+    if (stampedOrderStatus === "cancelled") {
+      try {
+        await recordAlert(admin, {
+          restaurantId,
+          type: "paid_on_cancelled_order",
+          detail: `Moyasar settled payment for CANCELLED order ${session.order_id} (session ${session.id}) — recorded paid (money truth, never refused); a REFUND is owed, reconcile now.`,
+          context: { sessionId: session.id, orderId: session.order_id, providerRef },
+        });
+      } catch (e) {
+        console.error("[moyasar:webhook] paid_on_cancelled_order alert failed (non-blocking):", e);
       }
     }
 

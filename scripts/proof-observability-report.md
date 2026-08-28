@@ -51,6 +51,7 @@ Channel shorthand: `Banner` = `system_alerts` console banner; `WA?` = in-app Wha
 | `payment_stamp_failed` | Moyasar paid webhook could not stamp the order paid. | Critical | Banner, WA?, Email no |
 | `paid_after_expiry` | Moyasar settles an expired payment session. | High | Banner, WA?, Email no |
 | `paid_while_safety_held` | Payment settles while linked conversation is in an active safety hold. | Critical | Banner, WA?, Email no |
+| `paid_on_cancelled_order` | Payment settles on an already-cancelled order; recorded paid (money truth), refund owed. | Critical | Banner, WA?, Email no |
 | `voice_tts_fallback` | ElevenLabs TTS failed and voice note fell back to OpenAI. | High | Banner, WA?, Email no |
 | `voice_stt_unavailable` | Production inbound voice STT unavailable; customer gets retry fallback. | Critical | Banner, WA?, Email no |
 | `delivery_silence` | Monitor sweep sees no inbound messages for an open/live non-dormant tenant beyond threshold. | Critical | Banner, WA?, Email no, requires sweep |

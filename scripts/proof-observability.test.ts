@@ -38,6 +38,7 @@ const ALERT_CATALOG: Record<CriticalAlertType, { severity: Severity; channels: r
   payment_stamp_failed: { severity: "critical", channels: ["system_alerts_banner", "alert_whatsapp_if_configured", "email_scaffold"] },
   paid_after_expiry: { severity: "high", channels: ["system_alerts_banner", "alert_whatsapp_if_configured", "email_scaffold"] },
   paid_while_safety_held: { severity: "critical", channels: ["system_alerts_banner", "alert_whatsapp_if_configured", "email_scaffold"] },
+  paid_on_cancelled_order: { severity: "critical", channels: ["system_alerts_banner", "alert_whatsapp_if_configured", "email_scaffold"] },
   voice_tts_fallback: { severity: "high", channels: ["system_alerts_banner", "alert_whatsapp_if_configured", "email_scaffold"] },
   voice_stt_unavailable: { severity: "critical", channels: ["system_alerts_banner", "alert_whatsapp_if_configured", "email_scaffold"] },
   delivery_silence: { severity: "critical", channels: ["system_alerts_banner", "alert_whatsapp_if_configured", "email_scaffold"] },
@@ -298,7 +299,8 @@ try {
 
   const unionTypes = extractCriticalAlertTypes();
   const catalogTypes = Object.keys(ALERT_CATALOG).sort();
-  INVARIANT("CriticalAlertType union was extracted by AST", unionTypes.length === 28, unionTypes);
+  // 29 since WO-PAID-CANCELLED added `paid_on_cancelled_order` (the fifth paid-path alert).
+  INVARIANT("CriticalAlertType union was extracted by AST", unionTypes.length === 29, unionTypes);
   INVARIANT("alert catalog covers the union exactly", sameSet(unionTypes, catalogTypes), {
     unionOnly: unionTypes.filter((type) => !catalogTypes.includes(type)),
     catalogOnly: catalogTypes.filter((type) => !unionTypes.includes(type)),

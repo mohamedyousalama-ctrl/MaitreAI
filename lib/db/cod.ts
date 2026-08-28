@@ -16,6 +16,10 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mustSucceed } from "@/lib/db/checked";
+// THE repo's single minor-unit money guard — the same one the card path uses.
+// Value import (the module is node-builtin-only at runtime), so the cash and card
+// paths share one definition of "a chargeable amount" and cannot drift apart.
+import { toHalalas } from "@/lib/payments/providers/moyasar";
 import type { SettlementSlipData } from "@/lib/render/receipt";
 
 export type SettlementStatus = "pending" | "held_by_driver" | "settled";
@@ -262,6 +266,37 @@ export async function captureCodOnDelivered(
   }
 
   const collected = args.cashCollected ?? expected;
+
+  // MONEY SYMMETRY — the CARD path refuses a total that is not a whole number of
+  // minor units: lib/payments/create-session.ts does `toHalalas(total)` inside a
+  // try/catch and returns `amount_invalid` rather than charge a rounded figure.
+  // The CASH path used to accept the same value silently: `p_expected` reached
+  // capture_cod_on_delivered_atomic, whose `round(p_expected, 2)::numeric(12,2)`
+  // (migration 0093) quietly turned e.g. 10.005 into 10.01 before it entered the
+  // ledger. Nothing fractional was ever stored — the defect is the ASYMMETRY:
+  // identical malformed money was refused on card and rounded on cash, so a bad
+  // total surfaced loudly in one path and vanished in the other.
+  //
+  // This is deliberately the SAME function the card path calls, not a second
+  // implementation — a re-implementation could drift (epsilon, negatives, NaN)
+  // and re-open exactly the gap this closes. Both amounts crossing into the
+  // ledger are checked: `expected` (from orders.total) and `collected` (the
+  // driver/operator figure, which is money too). Same failure code as the card
+  // path, so a caller sees one vocabulary for "this amount is not chargeable".
+  //
+  // Placed at the ledger boundary, AFTER the non-COD and test-order no-ops above:
+  // those paths open no cash row, so there is no rounding to refuse there and
+  // their existing `ok: true` no-op behaviour is untouched.
+  for (const amount of [expected, collected]) {
+    try {
+      toHalalas(amount);
+    } catch {
+      console.error(
+        `[cod] capture refused: ${amount} is not a whole number of minor units (order ${orderId})`,
+      );
+      return { ok: false, error: "amount_invalid" };
+    }
+  }
 
   type CaptureRpcRow = {
     collected?: number | string | null;

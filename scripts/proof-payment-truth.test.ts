@@ -196,8 +196,49 @@ class FakeQuery {
     });
   }
 
+  /**
+   * PostgREST returns ONLY the columns a query actually selects. This fake used to
+   * hand back the whole stored row no matter what `select()` asked for, which meant
+   * a handler could "read" a column it never requested — and the harness could not
+   * tell the difference. That was a real hole: a mutation dropping `order_status`
+   * from the webhook's stamp select (so production would read `undefined` and the
+   * cancelled-order alert would never fire) still passed this proof. Modelling
+   * projection puts the select list inside what these assertions pin.
+   *
+   * Embeds ("orders(order_number, customers(phone))") project to the relation name;
+   * commas inside parentheses are not column separators.
+   */
+  private project(row: Row): Row {
+    const columns = this.selectColumns;
+    if (!columns || columns.trim() === "" || columns.includes("*")) return { ...row };
+
+    const parts: string[] = [];
+    let depth = 0;
+    let current = "";
+    for (const ch of columns) {
+      if (ch === "(") depth += 1;
+      if (ch === ")") depth -= 1;
+      if (ch === "," && depth === 0) {
+        parts.push(current);
+        current = "";
+        continue;
+      }
+      current += ch;
+    }
+    parts.push(current);
+
+    const projected: Row = {};
+    for (const raw of parts) {
+      const part = raw.trim();
+      if (!part) continue;
+      const key = part.includes("(") ? part.slice(0, part.indexOf("(")).trim() : part;
+      if (key in row) projected[key] = row[key];
+    }
+    return projected;
+  }
+
   private shape(row: Row) {
-    const shaped = { ...row };
+    const shaped = this.project(row);
     if (this.table === "payment_sessions" && this.selectColumns?.includes("orders(")) {
       const order = this.db.tables.orders.find((item) => item.id === row.order_id);
       shaped.orders = order
@@ -404,6 +445,24 @@ async function main() {
       actorId: "operator-a",
     });
     assert.equal(outcome.ok, false, "COD accepted a fractional-cent total");
+    // Same refusal code the CARD path returns for the same malformed amount
+    // (lib/payments/create-session.ts). One vocabulary, one guard, both paths.
+    assert.equal(outcome.error, "amount_invalid");
+    assert.equal(db.tables.orders[0].payment_status, "unpaid");
+  });
+
+  // The guard has two halves: `expected` (from orders.total, above) and `collected`
+  // (the driver/operator figure). Both cross into the ledger, so both are pinned —
+  // otherwise the second half could be deleted with the suite still green.
+  await check("cash delivery rejects a non-minor-unit collected amount", async () => {
+    const db = makeCodDb(75);
+    const outcome = await captureCodOnDelivered(db as any, {
+      orderId: "cod-order",
+      restaurantId: "restaurant-a",
+      cashCollected: 74.995,
+    });
+    assert.equal(outcome.ok, false, "COD accepted a fractional-cent collected amount");
+    assert.equal(outcome.error, "amount_invalid");
   });
 
   await check("Moyasar order remains unpaid until a verified paid webhook", async () => {
@@ -470,11 +529,50 @@ async function main() {
     assert.equal(db.tables.orders[0].payment_status, "unpaid");
   });
 
-  await check("payment for a cancelled order does not silently mark it paid", async () => {
+  // CORRECTED ASSERTION (was: "payment for a cancelled order does not silently mark
+  // it paid" — asserting outcome !== "paid" and payment_status === "unpaid").
+  //
+  // WHY THE ORIGINAL WAS WRONG: it demanded the webhook REFUSE the payment. That
+  // contradicts the ruling the handler is built on and states in its own header —
+  // MONEY TRUTH STANDS: we record what the PSP actually holds and never refuse.
+  // Moyasar really has taken the customer's money by the time this webhook lands;
+  // leaving the order "unpaid" would strand real money off-ledger, so the customer
+  // is charged, nothing shows as paid, and nobody knows a refund is owed. That is
+  // strictly worse than the bug being reported. The same ruling already governs the
+  // sibling cases (paid_after_expiry, paid_while_safety_held): record, then alert.
+  //
+  // WHAT THE REAL DEFECT WAS: the handler never read `order_status` at all, so a
+  // cancelled order was stamped paid SILENTLY — the one paid_* case with no alert,
+  // and the most refund-critical of them. The fix is the MISSING ALERT, not a
+  // refusal. This assertion now pins that: payment RECORDED **and** an alert raised.
+  await check("payment for a cancelled order is recorded and alerted, never silent", async () => {
     const db = makePaymentDb({ orderStatus: "cancelled" });
     const outcome = await handleWebhook(db, paidWebhookBody({}));
-    assert.notEqual(outcome.outcome, "paid");
-    assert.equal(db.tables.orders[0].payment_status, "unpaid");
+    // Money truth: the PSP holds the money, so we record it — never refuse.
+    assert.equal(outcome.httpStatus, 200);
+    assert.equal(outcome.outcome, "paid");
+    assert.equal(db.tables.orders[0].payment_status, "paid");
+    assert.equal(db.tables.payment_sessions[0].status, "paid");
+    // The order's own lifecycle state is NOT rewritten by the payment path.
+    assert.equal(db.tables.orders[0].order_status, "cancelled");
+    // ...and it is never silent: a human is told a refund is owed.
+    assert.equal(
+      db.alerts.some((alert) => alert.type === "paid_on_cancelled_order"),
+      true,
+      "no paid_on_cancelled_order alert was raised for a cancelled order",
+    );
+  });
+
+  // Guard against over-alerting: the cancelled-order alert must key off the ORDER's
+  // status, not fire on every settlement. A live order settles with no such alert.
+  await check("payment for a live order raises no cancelled-order alert", async () => {
+    const db = makePaymentDb({ orderStatus: "pending_payment" });
+    const outcome = await handleWebhook(db, paidWebhookBody({}));
+    assert.equal(outcome.outcome, "paid");
+    assert.equal(
+      db.alerts.some((alert) => alert.type === "paid_on_cancelled_order"),
+      false,
+    );
   });
 
   await check("expired-link payment follows the current defined rule", async () => {
