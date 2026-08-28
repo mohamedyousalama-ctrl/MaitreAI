@@ -145,8 +145,12 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.er
   // HUMAN_ACTIVE and only on an explicit human request; the manual «إيقاف للسلامة» lives in
   // the console operator path (conversation-store), untouched.
   const ct = read("lib/ai/customer-turn.ts");
+  // WO-KHALID-ORDER: the id in that call is now `staffFacingConversationId` (null on a
+  // public-demo turn, so a stranger cannot flip a conversation to a human). The
+  // destination state — HUMAN_ACTIVE, never an automatic SYSTEM_HOLD — is what this
+  // invariant is about and is unchanged.
   ok("INV: V3 SINGLE DOOR — explicit transfer → HUMAN_ACTIVE; the automatic SYSTEM_HOLD flip is gone",
-    /setOwnershipState\(admin, conversationId, "HUMAN_ACTIVE"/.test(ct) &&
+    /setOwnershipState\(admin, staffFacingConversationId, "HUMAN_ACTIVE"/.test(ct) &&
     !/nextOwnership = flipPatch\.is_safety_hold === true \? "SYSTEM_HOLD"/.test(ct));
 }
 

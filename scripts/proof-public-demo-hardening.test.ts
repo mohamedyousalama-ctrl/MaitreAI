@@ -73,9 +73,19 @@ ok("restaurantId is NEVER read from the request body",
 ok("the pinned tenant is a real uuid", /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(DEMO_RESTAURANT_ID));
 ok("the pinned tenant is NOT the live client (Wesaya)", DEMO_RESTAURANT_ID !== "5acbc72f-def3-46cd-ad6c-bf0ff4a23642");
 
-// ── 5. nothing is persisted as a customer conversation ─────────────────────
-ok("conversationId is null", /conversationId:\s*null/.test(route));
-ok("persistReply is false", /persistReply:\s*false/.test(route));
+// ── 5. the conversation is an EPHEMERAL, TENANT-VALIDATED demo session ─────
+// This assertion used to read `conversationId is null` / `persistReply is false`, and
+// that was the defect: passing null meant customer-turn's draft reload never ran, so
+// the basket was not state and the agent could never close an order. It now passes a
+// session id — and the controls that replace "it is always null" are asserted in full
+// by scripts/proof-demo-order.test.ts (validation, alert suppression, TTL sweep).
+ok("the route never hardcodes a null conversation any more", !/conversationId:\s*null/.test(route));
+ok("the session id is RESOLVED server-side, never taken from the body as given",
+  /resolveDemoSession\(admin,\s*body\.conversationId\)/.test(route) &&
+  !/conversationId:\s*String\(body|conversationId:\s*body\.conversationId/.test(route));
+ok("the reply row is persisted so the basket survives the turn", /persistReply:\s*true/.test(route));
+ok("demoRun is still passed alongside it — the two are independent controls",
+  /persistReply:\s*true[\s\S]{0,600}demoRun:\s*true/.test(route));
 
 // ── 6. THE RESPONSE IS AN ALLOWLIST ────────────────────────────────────────
 // CustomerTurnOutcome carries the raw tenant flag JSON and our unit economics.
@@ -462,8 +472,16 @@ ok("the human-transfer claim is conditional on demoRun",
   /ctx\.demoRun[\s\S]{0,220}ما أقدر أحوّلك لموظف فعلي/.test(tools));
 ok("the staff-notified claim is conditional on demoRun",
   /ctx\.demoRun[\s\S]{0,220}في الاستخدام الحقيقي ينبّه فريق المطعم/.test(tools));
-ok("the order-registered claim is conditional on demoRun",
-  /ctx\.demoRun[\s\S]{0,200}ما ينحفظ طلب فعلي/.test(tools));
+// WO-KHALID-ORDER changed this one's TRUTH, not its principle. A demo turn now DOES
+// write a real orders row (is_test + source "demo"), so «ما ينحفظ طلب فعلي» — no real
+// order is saved — became the lie. What must stay true is that the demo branch never
+// claims money moved, and never invents an order number it cannot have.
+ok("the order-registered claim is still conditional on demoRun",
+  /ctx\.demoRun[\s\S]{0,240}تجريبي/.test(tools));
+ok("the demo branch says plainly that no payment was taken", /بدون دفع فعلي/.test(tools));
+ok("the demo branch does NOT hand the model an order number to invent",
+  /لا تذكر رقم الطلب/.test(tools));
+ok("the stale 'no real order is saved' claim is gone", !/ما ينحفظ طلب فعلي/.test(tools));
 // Real tenants must be untouched: the original strings still exist as the else branch.
 for (const [label, phrase] of [
   ["transfer", "حوّلت محادثتك لفريق المطعم"],

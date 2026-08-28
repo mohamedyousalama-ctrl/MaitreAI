@@ -157,6 +157,14 @@ export interface CustomerTurnInput {
    *  monitor that exists — on the one surface anyone can call. Keep the accounting,
    *  drop the person.
    *
+   *  WO-KHALID-ORDER — THIS FLAG IS NOW THE ONLY DEMO SWITCH, AND IT IS LOAD-BEARING.
+   *  A demo turn now DOES carry a conversationId (an ephemeral session on the demo
+   *  tenant — lib/demo/session.ts — without which the basket cannot survive a turn and
+   *  the agent can never close an order). So `conversationId === null` no longer means
+   *  "this is the demo", and every side effect that quietly relied on that coincidence
+   *  is now gated on `staffFacingConversationId`, derived from THIS flag. The two are
+   *  independent inputs and must both keep being passed.
+   *
    *  Undefined ⇒ normal tenant traffic ⇒ every write is byte-identical to before. */
   demoRun?: boolean;
 }
@@ -628,6 +636,36 @@ export async function runCustomerTurn(
   const { restaurantId, conversationId } = input;
   const persistReply = input.persistReply ?? !!conversationId;
 
+  // ── WO-KHALID-ORDER — THE GATE THAT REPLACED `if (conversationId)` ────────────
+  //
+  // `conversationId` used to be the de-facto demo switch: the public demo passed
+  // null, so every side effect written as `if (conversationId)` was off for the demo
+  // by accident rather than by decision. The demo now HAS a conversation — it has to,
+  // or the basket cannot survive a turn and the agent can never close an order — so
+  // that accident is gone and each of those side effects needed deciding on purpose.
+  //
+  // The split is by BLAST RADIUS, not by convenience:
+  //
+  //   `conversationId`               — effects that stay INSIDE this conversation:
+  //                                    the draft reload, the AI reply row, the
+  //                                    kitchen allergy note, the duplicate-order read.
+  //                                    These are the demo working correctly.
+  //
+  //   `staffFacingConversationId`    — effects that leave it and reach a HUMAN or a
+  //                                    durable analytics surface: recordCriticalAlert
+  //                                    (which emails AND WhatsApps the Founder and
+  //                                    raises a console banner), ownership flips,
+  //                                    staff messages, allergy audit rows carrying the
+  //                                    visitor's verbatim words, zone-miss rows carrying
+  //                                    their typed address, the Pro conversation report.
+  //                                    NULL on a demo turn — a stranger on a sales page
+  //                                    must never be able to page a real person.
+  //
+  // Deliberately null, not `undefined` and not a boolean: every gated site already
+  // reads `if (conversationId)` and passes it onward, so this substitutes cleanly and
+  // TypeScript's narrowing keeps the non-null guarantee inside each block.
+  const staffFacingConversationId = input.demoRun === true ? null : conversationId;
+
   // Explicit columns (NOT select("*")) — exclude the secret credential columns
   // (wa_access_token_enc / wa_app_secret_enc); the Brain never needs raw secrets.
   const { data: r } = await admin
@@ -743,12 +781,15 @@ export async function runCustomerTurn(
       // Karim Pro P1 terminal hook — ABANDONMENT / stale ARCHIVE. A stale open basket means the
       // prior order attempt was abandoned; emit one record for it (Pro-gated; standard tenants do
       // nothing). Reset is a deliberate customer action, not an abandonment → no report.
-      if (lifecycle.action === "abandoned" || lifecycle.action === "archived_stale") {
+      // `staffFacingConversationId` — a conversation report is a Pro analytics row
+      // built from an LLM read of the whole transcript. It is off for the demo tenant
+      // by tier today; gating it here means it stays off if that ever changes.
+      if (staffFacingConversationId && (lifecycle.action === "abandoned" || lifecycle.action === "archived_stale")) {
         await emitConversationReport(admin, {
           restaurantId,
           tier: tenantTier,
           features: tenantFeatures,
-          conversationId,
+          conversationId: staffFacingConversationId,
           terminalTrigger: "abandoned",
           transcript: input.history,
         });
@@ -1136,14 +1177,16 @@ export async function runCustomerTurn(
     geoDirective = outcome.directive;
     if (outcome.kind === "matched") {
       initialDraft = outcome.draft;
-    } else if (conversationId) {
+    } else if (staffFacingConversationId) {
       // Outside all zones → log the miss (insight feed, spec §2/§4). Best-effort: a
       // pre-migration missing zone_misses table NEVER breaks the turn. No customer PII
       // beyond the conversation ref (PM ruling: pin coords + nearest-zone distance only).
+      // `staffFacingConversationId`: this row stores a stranger's LOCATION on a durable
+      // operator-facing analytics feed. The demo has no business writing one.
       try {
         await admin.from("zone_misses").insert({
           restaurant_id: restaurantId,
-          conversation_id: conversationId,
+          conversation_id: staffFacingConversationId,
           pin_lat: outcome.miss.pinLat,
           pin_lng: outcome.miss.pinLng,
           nearest_zone_id: outcome.miss.nearestZoneId,
@@ -1336,9 +1379,13 @@ export async function runCustomerTurn(
     if (!(companionOn && checkpointPending && sessionAllergyNote && isExplicitOrderConfirmation(input.userMessage))) return;
     checkpointJustAcknowledged = true;
     ctx.allergyAcknowledged = true;
+    // The in-memory acknowledgement above still happens on a demo turn (it changes what
+    // the agent is allowed to do THIS turn); only the durable row is skipped, because
+    // `checkpointAckText` is the visitor's message VERBATIM.
+    if (!staffFacingConversationId) return;
     await recordAllergyEvent(admin, {
       restaurantId,
-      conversationId: conversationId ?? "",
+      conversationId: staffFacingConversationId,
       allergens: [],
       customerMessage: input.userMessage,
       eventKind: "checkpoint",
@@ -1435,7 +1482,11 @@ export async function runCustomerTurn(
     };
     ctx.sessionAllergyNote = companionDecision.note;
     const source: CalmHoldSource = companionDecision.path === "emergency" ? "emergency" : holdSource;
-    await enterCalmAllergyHold(admin, { restaurantId, conversationId, decision: companionDecision, source });
+    // `staffFacingConversationId`: enterCalmAllergyHold flips ownership to SYSTEM_HOLD
+    // and fires recordCriticalAlert. It early-returns on a null id, so a demo turn keeps
+    // the calm-hold REPLY (which already drops the "I alerted the team" claim via the
+    // demoRun flag below) and performs none of the staff-facing half.
+    await enterCalmAllergyHold(admin, { restaurantId, conversationId: staffFacingConversationId, decision: companionDecision, source });
     result = calmHoldResult(companionDecision, dialect, initialDraft, ctx.profile.currency, source, input.demoRun === true);
   } else if (combinedAllergenHit.fired && !companionOn && !allergySimpleOn) {
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
@@ -1651,10 +1702,13 @@ export async function runCustomerTurn(
   // and emit the §4 audit row. Best-effort / never throws. Emergency's SYSTEM_HOLD +
   // staff surface is handled by the escalation flip below; here the emergency path
   // only records the note + audit (post-commit alert is guarded off for emergency).
-  if (companionDecision && conversationId) {
+  // `staffFacingConversationId`: applyCompanionSideEffects runs the post-commit status
+  // query and fires an `allergy_added_post_commit` critical alert — a staff page — and
+  // writes the §4 audit row with the visitor's message verbatim.
+  if (companionDecision && staffFacingConversationId) {
     await applyCompanionSideEffects(admin, {
       restaurantId,
-      conversationId,
+      conversationId: staffFacingConversationId,
       decision: companionDecision,
       customerMessage: input.userMessage,
       agentReply: result.reply,
@@ -1663,10 +1717,11 @@ export async function runCustomerTurn(
   // §6 CHECKPOINT recap emitted this turn (respond.ts intercepted a finalize): record
   // the checkpoint audit row (ack null) so the NEXT explicit confirmation is treated
   // as the acknowledgement. Suppressed on the ack turn itself (already logged above).
-  if (companionOn && conversationId && result.stopReason === "allergy_checkpoint" && !checkpointJustAcknowledged) {
+  // `staffFacingConversationId`: the audit row carries `customerMessage` verbatim.
+  if (companionOn && staffFacingConversationId && result.stopReason === "allergy_checkpoint" && !checkpointJustAcknowledged) {
     await recordAllergyEvent(admin, {
       restaurantId,
-      conversationId,
+      conversationId: staffFacingConversationId,
       allergens: [],
       customerMessage: input.userMessage,
       eventKind: "checkpoint",
@@ -1682,10 +1737,12 @@ export async function runCustomerTurn(
   // emits — phrases + blocked draft (truth_states) + the rewrite sent (agent_reply).
   // Best-effort / deploy-safe (recordAllergyEvent never throws). Post-F2 this fires
   // only in a real allergy context, so it's a genuine liability record, not noise.
-  if (companionOn && conversationId) {
+  // `staffFacingConversationId`: same reason — a verbatim customer message on a durable
+  // liability record.
+  if (companionOn && staffFacingConversationId) {
     const blockAudit = buildBannedPhraseBlockAudit(result.signals, {
       restaurantId,
-      conversationId,
+      conversationId: staffFacingConversationId,
       customerMessage: input.userMessage,
       sessionAllergyNote,
       agentReply: result.reply,
@@ -1696,7 +1753,10 @@ export async function runCustomerTurn(
   // WO-ADDR — written-address no-match insight. Same zone_misses feed as pin misses,
   // but with area_text instead of coordinates. Best-effort so customer turns never
   // depend on the analytics table being present.
-  if (conversationId) {
+  // `staffFacingConversationId`: `area_text` is the visitor's OWN TYPED ADDRESS,
+  // stored verbatim on a durable operator-facing feed. That is exactly the class of
+  // data `demoRun` exists to keep out of the database.
+  if (staffFacingConversationId) {
     for (const signal of result.signals) {
       if (signal.type !== "missing_data" || signal.detail?.reason !== "address_zone_no_match") continue;
       const detail = signal.detail as { address?: unknown; catchAllZoneId?: unknown };
@@ -1704,7 +1764,7 @@ export async function runCustomerTurn(
       try {
         await admin.from("zone_misses").insert({
           restaurant_id: restaurantId,
-          conversation_id: conversationId,
+          conversation_id: staffFacingConversationId,
           area_text: areaText,
           nearest_zone_id: typeof detail.catchAllZoneId === "string" ? detail.catchAllZoneId : null,
         });
@@ -1754,8 +1814,13 @@ export async function runCustomerTurn(
     } catch { /* column not applied yet — PREPARE-ONLY */ }
   }
 
+  // `staffFacingConversationId`: this is a conversation_signals row, and the standing
+  // rule for a demo turn is that conversation_signals is not written AT ALL (see the
+  // flush below, which has always been gated on `!input.demoRun`). This shadow log
+  // predates the demo having a conversation id and would have quietly broken that rule
+  // — `goal_logic` IS on for the demo tenant, so it is a live path, not a hypothetical.
   if (
-    conversationId &&
+    staffFacingConversationId &&
     goalLogicOn &&
     !goalLogicRule6AnnotationPivotOn &&
     isRule6ReadNotUnderstoodClarify(result)
@@ -1763,7 +1828,7 @@ export async function runCustomerTurn(
     try {
       const { error } = await admin.from("conversation_signals").insert({
         restaurant_id: restaurantId,
-        conversation_id: conversationId,
+        conversation_id: staffFacingConversationId,
         type: "missing_data",
         detail: {
           reason: RULE6_ANNOTATION_PIVOT_SHADOW_REASON,
@@ -1853,8 +1918,12 @@ export async function runCustomerTurn(
   }
 
   // `detail` carries the matched allergen/safety term — health-adjacent words typed by
-  // a member of the public. Not written for demo turns. There is also nothing to attach
-  // them to: a demo turn has no conversation.
+  // a member of the public. Not written for demo turns.
+  //
+  // WO-KHALID-ORDER: the second half of the old reason — "there is also nothing to
+  // attach them to: a demo turn has no conversation" — STOPPED BEING TRUE when the demo
+  // got a session. The `!input.demoRun` gate is what actually holds this line, and it
+  // always was; it is restated here so nobody later removes it as redundant.
   if (result.signals.length && !input.demoRun) {
     await admin.from("conversation_signals").insert(
       result.signals.map((s) => ({
@@ -1870,7 +1939,12 @@ export async function runCustomerTurn(
   // EXPLICIT human request. result.escalate is set upstream only via that gate, but we
   // RE-VERIFY here (defense in depth) so NO path can transfer without an explicit ask.
   const explicitHuman = isExplicitHumanRequest(input.userMessage);
-  if (result.escalate && explicitHuman && conversationId) {
+  // `staffFacingConversationId`: THE OWNERSHIP FLIP AND THE STAFF MESSAGE. This block
+  // hands a conversation to a human and posts «العميل بانتظار رد الفريق» into the
+  // operator console. On the demo there is no team waiting and no customer to keep
+  // waiting — tools.ts already tells a demo visitor plainly that a real transfer is
+  // not something the demo can do, and this is the write side of that same promise.
+  if (result.escalate && explicitHuman && staffFacingConversationId) {
     // THE ONE DOOR — a requested handoff is NORMAL service: HUMAN_ACTIVE, resumable,
     // NEVER a safety hold (SYSTEM_HOLD is a manual staff action only now).
     const escalatedAt = new Date().toISOString();
@@ -1881,10 +1955,10 @@ export async function runCustomerTurn(
       is_safety_hold: false,
       updated_at: escalatedAt,
     };
-    await setOwnershipState(admin, conversationId, "HUMAN_ACTIVE", { extra: flipPatch });
+    await setOwnershipState(admin, staffFacingConversationId, "HUMAN_ACTIVE", { extra: flipPatch });
     await admin.from("messages").insert({
       restaurant_id: restaurantId,
-      conversation_id: conversationId,
+      conversation_id: staffFacingConversationId,
       direction: "outbound",
       sender: "system",
       text: `🔔 العميل طلب موظف${result.escalationReason ? ` — ${result.escalationReason}` : ""}. العميل بانتظار رد الفريق.`,
@@ -1895,7 +1969,7 @@ export async function runCustomerTurn(
       restaurantId,
       tier: tenantTier,
       features: tenantFeatures,
-      conversationId,
+      conversationId: staffFacingConversationId,
       terminalTrigger: "escalated",
       escalationReason: result.escalationReason,
       transcript: [
@@ -1911,7 +1985,25 @@ export async function runCustomerTurn(
   // alerts staff with the FULL reason but NEVER freezes — ownership stays AI_ACTIVE and
   // the conversation flows. The reason is audited so nothing the model wanted to say is
   // lost, it just can't freeze anything. Best-effort; never blocks the turn.
-  if (conversationId) {
+  //
+  // ★ WO-KHALID-ORDER — THE HIGHEST-RISK LINE IN THIS CHANGE. ★
+  //
+  // `staffFacingConversationId`, NOT `conversationId`. recordCriticalAlert writes a
+  // `system_alerts` row (the console banner), calls sendAlertEmail, and calls
+  // sendAlertWhatsApp — which sends a real WhatsApp message to ALERT_WHATSAPP_TO, the
+  // Founder's own phone. This loop fires on ANY `notify_without_hold` signal, and the
+  // deterministic allergen gate — which IS on for the demo tenant
+  // (`deterministic_allergen_safety: true`) — emits exactly that signal the moment a
+  // visitor types the word «حساسية».
+  //
+  // Until now the demo was safe from this only because `conversationId` was null. That
+  // null is exactly what this work removes. Anyone typing "allergy" into a public sales
+  // page would have woken a human, at any hour, from any country, for free.
+  //
+  // The customer-facing half is unaffected: the gate's reply already drops its "I
+  // logged it for the kitchen and alerted the team" claim on a demo turn (see
+  // forcedAllergenSafetyResult / emergencyReply), so the demo says only what is true.
+  if (staffFacingConversationId) {
     const notifies: Array<{ reason: string; emergency: boolean }> = [];
     for (const s of result.signals) {
       if (s.type !== "notify_without_hold") continue;
@@ -1926,7 +2018,7 @@ export async function runCustomerTurn(
         restaurantId,
         type: nfy.emergency ? "allergy_emergency_active" : "safety_notify_no_hold",
         detail: nfy.reason,
-        conversationId,
+        conversationId: staffFacingConversationId,
       });
     }
   }

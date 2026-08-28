@@ -22,6 +22,7 @@ import { recordCriticalAlert } from "@/lib/alerts/record";
 import { isFeatureExplicitlyEnabled } from "@/lib/tenant/tier";
 import { loadResolvedPaymentMethods, offeredMethods, recordPaymentSnapshot } from "@/lib/payments/resolve";
 import { isUndefinedColumnError } from "@/lib/db/checked";
+import { DEMO_ORDER_SOURCE } from "@/lib/demo/config";
 
 /** Deterministic UUID from a string (stable id ⇒ idempotent insert). */
 export function uuidFromHash(input: string): string {
@@ -185,9 +186,32 @@ async function recomputeDraftFromDb(
 
 export async function persistOrderFromDraft(
   admin: SupabaseClient,
-  args: { restaurantId: string; conversationId: string; customerId: string | null; draft: OrderDraft; agentRunId?: string | null }
+  args: {
+    restaurantId: string;
+    conversationId: string;
+    customerId: string | null;
+    draft: OrderDraft;
+    agentRunId?: string | null;
+    /** WO-KHALID-ORDER — this order came from the PUBLIC demo, not from WhatsApp.
+     *
+     *  Three consequences, each deliberate:
+     *    • `source` becomes DEMO_ORDER_SOURCE, never "whatsapp". A demo order that
+     *      claims to be a WhatsApp order is a lie in the operator's own reports.
+     *    • `is_test` is stamped (migration 0044), which is the marker the rest of
+     *      the product already uses to keep rehearsal orders out of revenue and
+     *      order-count reporting. Two markers because two different things read them.
+     *    • The `payment_unspecified` alert is SUPPRESSED. That alert emails and
+     *      WhatsApps the Founder, and a demo order has no payment to specify —
+     *      the demo tenant has no PSP and takes no money. Every visitor who
+     *      finished a basket would otherwise page a human.
+     *
+     *  Undefined ⇒ a real tenant order ⇒ every field and every alert is exactly as
+     *  before. */
+    demo?: boolean;
+  }
 ): Promise<PersistOrderResult> {
   const { restaurantId, conversationId, customerId, draft, agentRunId } = args;
+  const demo = args.demo === true;
   if (!draft.finalized || !draft.lines.length) return { created: false, orderId: null, orderNumber: null };
   const { draft: verifiedDraft, zoneId, branchId } = await recomputeDraftFromDb(admin, { restaurantId, draft });
 
@@ -340,7 +364,11 @@ export async function persistOrderFromDraft(
         tax_rate: verifiedDraft.taxRate,
         total: verifiedDraft.total,
         currency: verifiedDraft.currency,
-        source: "whatsapp",
+        // WO-KHALID-ORDER: a public-demo order is stamped as one, on both markers.
+        // The `...(demo ? …)` spread means a real tenant's insert is byte-identical
+        // — `is_test` is not even a key on it.
+        source: demo ? DEMO_ORDER_SOURCE : "whatsapp",
+        ...(demo ? { is_test: true } : {}),
         order_status: "pending_confirmation",
         payment_status: "unpaid",
         // F1.7 Fix 1 / F1.6 — stamp the payment method at birth so pending/pickup/
@@ -367,7 +395,11 @@ export async function persistOrderFromDraft(
     // fallback silently present it as a cash order. Only on a genuinely-created row
     // (never on an idempotent no-op/double-tap), so a retry doesn't re-alert. The
     // order is NOT lost — it's persisted and flagged for the operator to resolve.
-    if (!verifiedDraft.paymentMethod) {
+    // WO-KHALID-ORDER: `&& !demo` — recordCriticalAlert emails and WhatsApps the
+    // Founder. A demo order legitimately has no payment method (the demo tenant has
+    // no PSP and takes no money), so without this every visitor who reached the end
+    // of a basket would raise a critical alert on a real person's phone.
+    if (!verifiedDraft.paymentMethod && !demo) {
       await recordCriticalAlert(admin, {
         restaurantId,
         type: "payment_unspecified",

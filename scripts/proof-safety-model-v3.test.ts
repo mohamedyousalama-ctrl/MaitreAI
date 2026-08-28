@@ -100,11 +100,18 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.er
 // ══ LEG 4 — the SINGLE-DOOR flip + notify executor (source) ═══════════════════
 {
   const ct = read("lib/ai/customer-turn.ts");
+  // WO-KHALID-ORDER renamed the id in this gate from `conversationId` to
+  // `staffFacingConversationId` (= null on a public-demo turn). The SINGLE DOOR is
+  // unchanged and is still asserted here; what was added is a second, narrower
+  // condition — a stranger on the public demo can no longer flip a conversation to a
+  // human. The explicit-human requirement below is the part that must never weaken.
   ok("LEG4: the flip is gated on an explicit human request",
     /const explicitHuman = isExplicitHumanRequest\(input\.userMessage\);/.test(ct) &&
-    /if \(result\.escalate && explicitHuman && conversationId\)/.test(ct));
+    /if \(result\.escalate && explicitHuman && staffFacingConversationId\)/.test(ct));
   ok("LEG4: the ONE door lands in HUMAN_ACTIVE with is_safety_hold:false (never SYSTEM_HOLD)",
-    /setOwnershipState\(admin, conversationId, "HUMAN_ACTIVE"/.test(ct) && /is_safety_hold: false,/.test(ct));
+    /setOwnershipState\(admin, staffFacingConversationId, "HUMAN_ACTIVE"/.test(ct) && /is_safety_hold: false,/.test(ct));
+  ok("LEG4: the demo can never take that door (the id is null when demoRun is set)",
+    /const staffFacingConversationId = input\.demoRun === true \? null : conversationId;/.test(ct));
   ok("LEG4: the automatic SYSTEM_HOLD flip is GONE (manual hold only)",
     !/nextOwnership = flipPatch\.is_safety_hold === true \? "SYSTEM_HOLD"/.test(ct));
   ok("LEG4: notify-without-hold fires recordCriticalAlert (loud for emergencies) with NO ownership change",

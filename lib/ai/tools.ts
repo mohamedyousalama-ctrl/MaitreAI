@@ -1053,12 +1053,21 @@ export function executeTool(
         if (notice) return { content: notice, isError: true };
       }
       d.finalized = true;
-      // No orders row is written on a demo turn (persistOrderFromDraft is only reached
-      // from respond-and-send, which the demo never calls), so "the order is registered"
-      // would be false. State the total; promise nothing.
+      // WO-KHALID-ORDER — a demo turn NOW writes a real orders row, with a real order
+      // number from the atomic allocator, stamped `is_test` and `source:"demo"`
+      // (lib/demo/order.ts). The previous text here — «ما ينحفظ طلب فعلي» (no real order
+      // is saved) — was true when written and is now the opposite of what happens.
+      //
+      // The NUMBER is deliberately absent from this tool result: it does not exist yet.
+      // It is allocated when the row is written, AFTER this turn, and is appended to the
+      // reply deterministically by the demo route. Handing the model a "say the order
+      // number" instruction with no number is how invented numbers happen.
+      //
+      // What IS said here is what stays true either way: this is a test order, and no
+      // money moves. The demo tenant has no PSP and never will.
       return {
         content: ctx.demoRun
-          ? `هذا ملخّص الطلب (تجربة — ما ينحفظ طلب فعلي).\n${summary(d, ctx.sessionAllergyNote)}`
+          ? `تم تسجيل الطلب كطلب تجريبي (بدون دفع فعلي). لا تذكر رقم الطلب — يُضاف تلقائياً.\n${summary(d, ctx.sessionAllergyNote)}`
           : `تم تسجيل الطلب بانتظار تأكيد المطعم.\n${summary(d, ctx.sessionAllergyNote)}`,
       };
     }

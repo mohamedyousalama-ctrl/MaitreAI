@@ -30,6 +30,8 @@ import {
   isDemoHost, DEMO_RESTAURANT_ID, DEMO_MAX_CHARS, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS,
   DEMO_GLOBAL_DAILY_TURNS, DEMO_MAX_AUDIO_BYTES, globalBucket, ipBucket, capDemoHistory,
 } from "@/lib/demo/config";
+import { resolveDemoSession } from "@/lib/demo/session";
+import { closeDemoOrder } from "@/lib/demo/order";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,6 +92,10 @@ export async function POST(req: Request) {
   let buf: Buffer;
   let history: ReturnType<typeof capDemoHistory> = [];
   let mime = "audio/webm";
+  // The visitor's demo session id, carried on the SAME multipart body as the clip so a
+  // spoken turn and a typed turn share one basket. Attacker-controlled like everything
+  // else here; resolved with the tenant AND channel pinned below, never used as given.
+  let rawSessionId: unknown = null;
   try {
     const form = await req.formData();
     const audio = form.get("audio");
@@ -100,6 +106,7 @@ export async function POST(req: Request) {
     if (typeof rawHistory === "string" && rawHistory) {
       history = capDemoHistory(JSON.parse(rawHistory) as unknown);
     }
+    rawSessionId = form.get("conversationId");
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
@@ -177,23 +184,43 @@ export async function POST(req: Request) {
   }
   if (!transcript) return NextResponse.json({ error: "stt_empty" }, { status: 422 });
 
+  // Same ephemeral session as the typed route, resolved the same way — tenant AND
+  // channel pinned — so a visitor who types «أبغى كبسة» and then says «وزيدها لبن» is
+  // adding to ONE basket. Fails soft to a stateless turn if the session cannot be had.
+  const session = await resolveDemoSession(admin, rawSessionId);
+  const conversationId = session?.conversationId ?? null;
+
   try {
     const out = await runCustomerTurn(admin, {
       restaurantId: DEMO_RESTAURANT_ID,
-      conversationId: null,
+      conversationId,
       history,
       userMessage: transcript,
-      persistReply: false,
+      // Persists OUR reply + the basket (`meta.draft`). The transcript of the visitor's
+      // own voice note is still never written as a message row — see the typed route.
+      persistReply: true,
+      // Independent of conversationId and still required: it is what keeps the visitor's
+      // words out of agent_runs/conversation_signals and every staff alert switched off.
       demoRun: true,
       // Feeds the fail-closed phonetic safety net — a garbled allergen word on a
       // voice note is exactly what that net exists to catch.
       sttConfidence,
       isVoiceTranscript: true,
     });
+    // A spoken «أكد الطلب» closes an order exactly like a typed one — same real order
+    // number, same honest "this is a demo, nothing was charged" line.
+    const closed = await closeDemoOrder(admin, {
+      conversationId,
+      draft: out.draft,
+      agentRunId: out.agentRunId,
+      reply: out.reply,
+    });
     return NextResponse.json({
       ok: true,
+      conversationId,
       transcript,
-      reply: out.reply,
+      reply: closed.reply,
+      orderNumber: closed.orderNumber,
       escalate: out.escalate,
       allergenGate: out.model === "deterministic_allergen_gate",
       // THE INTERACTIVE PAYLOAD. Omitting this is why the demo answered «ايش المنيو» with

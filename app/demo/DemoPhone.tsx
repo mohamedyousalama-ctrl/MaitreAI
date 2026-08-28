@@ -41,6 +41,9 @@ const clock = () =>
 const GREETING =
   "هلا والله، أنا خالد من مطعم الديرة 👋\nوش تحب تطلب اليوم؟ تقدر تكتب لي أو ترسل لي ملاحظة صوتية.";
 
+/** Where the visitor's demo session id lives between turns. */
+const SESSION_KEY = "kivo.demo.session";
+
 export default function DemoPhone() {
   // The greeting's timestamp is filled on the client only. Computing it in the
   // initializer renders UTC on the server and Riyadh in the browser, which fails
@@ -77,6 +80,26 @@ export default function DemoPhone() {
   // startRec's interval needs stopRec, which is declared after it.
   const stopRecRef = useRef<((cancelled?: boolean) => Promise<void>) | null>(null);
 
+  // ── THE ORDER SESSION ────────────────────────────────────────────────────
+  // The id of this visitor's ephemeral demo conversation. The server keeps the
+  // BASKET against it, which is the whole reason the demo can now close an order:
+  // before this the agent re-derived the basket from the on-screen transcript every
+  // turn and, past the history cap, simply lost it — «أجهّز لك الطلب؟» forever.
+  //
+  // sessionStorage, not localStorage: a demo is one sitting, and the session expires
+  // server-side anyway. Every access is wrapped — Safari private mode THROWS on
+  // sessionStorage rather than returning null, and a storage quirk must not take the
+  // demo down. Losing the id is survivable: the server mints a fresh session.
+  const convId = useRef<string | null>(null);
+  useEffect(() => {
+    try { convId.current = window.sessionStorage.getItem(SESSION_KEY); } catch { /* storage blocked */ }
+  }, []);
+  const rememberSession = useCallback((id: unknown) => {
+    if (typeof id !== "string" || !id) return;
+    convId.current = id;
+    try { window.sessionStorage.setItem(SESSION_KEY, id); } catch { /* storage blocked */ }
+  }, []);
+
   useEffect(() => {
     setMsgs((prev) => (prev[0] && !prev[0].at ? [{ ...prev[0], at: clock() }, ...prev.slice(1)] : prev));
   }, []);
@@ -105,18 +128,24 @@ export default function DemoPhone() {
       setTyping(true);
       setNotice(null);
       try {
-        // History is rebuilt from what is on screen — the server keeps no session.
+        // History is still rebuilt from what is on screen — it is what the model READS.
+        // The BASKET is not in it: that lives server-side against `conversationId`,
+        // because a transcript capped at DEMO_MAX_HISTORY turns cannot hold an order.
         const history = msgs
           .filter((m) => m.kind === "text" || m.from === "me")
           .map((m) => ({ role: m.from === "me" ? "user" : "assistant", content: m.text }));
         const res = await fetch("/api/demo/turn", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, history }),
+          body: JSON.stringify({ text, history, conversationId: convId.current }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean; reply?: string; error?: string; presentation?: Presentation | null;
+          conversationId?: string;
         };
+        // Store it even on a failed turn: the server may have minted the session before
+        // whatever went wrong, and re-minting one per failure would leak rows.
+        rememberSession(data.conversationId);
         if (!res.ok || !data.ok) {
           setNotice(
             data.error === "rate_limited"
@@ -140,7 +169,7 @@ export default function DemoPhone() {
       }
       void mine;
     },
-    [msgs, push],
+    [msgs, push, rememberSession],
   );
 
   const submitText = useCallback(() => {
@@ -268,11 +297,15 @@ export default function DemoPhone() {
               .map((m) => ({ role: m.from === "me" ? "user" : "assistant", content: m.text })),
           ),
         );
+        // The same session id as the typed path, so a spoken follow-up adds to the
+        // SAME basket rather than starting a second one the server cannot reconcile.
+        if (convId.current) fd.append("conversationId", convId.current);
         const res = await fetch("/api/demo/voice", { method: "POST", body: fd });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean; transcript?: string; reply?: string; error?: string;
-          presentation?: Presentation | null;
+          presentation?: Presentation | null; conversationId?: string;
         };
+        rememberSession(data.conversationId);
         if (!res.ok || !data.ok) {
           setNotice(
             data.error === "stt_unavailable"
@@ -305,7 +338,7 @@ export default function DemoPhone() {
         setTyping(false);
       }
     },
-    [recSecs, push, msgs],
+    [recSecs, push, msgs, rememberSession],
   );
 
   useEffect(() => { stopRecRef.current = stopRec; }, [stopRec]);
