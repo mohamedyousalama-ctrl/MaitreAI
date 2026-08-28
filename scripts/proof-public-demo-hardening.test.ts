@@ -330,7 +330,20 @@ ok("no animation references the undefined bare `kv` keyframe", !/animation:\s*"k
 // ── 14. THE DEMO MUST NOT PROMISE WHAT IT CANNOT DO ───────────────────────────
 // On a demo turn conversationId is null, so the kitchen note is never written and no
 // staff alert fires. The deterministic gate's reply used to claim both.
-ok("the allergen gate takes a demoRun flag", /demoRun = false\n\): RespondResult/.test(turn));
+// Signature check, not position check — a later parameter (e.g. `denied`) must not
+// break it, which the original `demoRun = false\n): RespondResult` regex did.
+const gateSig = /function forcedAllergenSafetyResult\(([\s\S]*?)\): RespondResult/.exec(turn)?.[1] ?? "";
+ok("the allergen gate signature was found", gateSig.length > 0);
+ok("the allergen gate takes a demoRun flag", /demoRun = false/.test(gateSig));
+// The safety gate must never be SUPPRESSED by a denial — «ما عندي حساسية من الجمبري بس
+// عندي من المكسرات» is a denial and an affirmation at once. Only the CLAIM about what the
+// customer said changes, because a live run caught Khalid answering «خذت بالي إنك ذكرت
+// الحساسية» to someone who had just said the opposite.
+ok("it also takes a denial flag, for wording only", /denied = false/.test(gateSig));
+ok("a denial changes only the opener, never the safety substance",
+  /const opener = denied/.test(turn) && /ما ذكرت حساسية/.test(turn));
+ok("the denial detector requires a negator bound to a saying\/having verb",
+  /isExplicitAllergyDenial/.test(turn));
 ok("the 'I logged it for the kitchen and alerted the team' claim is dropped on a demo turn",
   /const recorded = demoRun\s*\n?\s*\?\s*\{ eg: "", sa: "" \}/.test(turn));
 ok("the gate still offers the human OR continue choice on a demo turn",

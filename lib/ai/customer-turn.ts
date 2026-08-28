@@ -74,6 +74,7 @@ import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
 // WO-KHALID-STEP2: dialect-leakage QUALITY linter (observability only — NOT the safety
 // gate). Separate lane from allergen-gate/safety-hold/escalation; never blocks a turn.
+import { isExplicitAllergyDenial } from "@/lib/ai/allergen-gate";
 import { findLeakage } from "@/lib/ai/personas/khalid-dialect-linter.mjs";
 // WO-KHALID-BRAIN-3 — the forbidden-claim list had no runtime importer before this.
 import { findForbiddenClaims } from "@/lib/ai/personas/khalid-forbidden-claims.mjs";
@@ -308,9 +309,21 @@ function forcedAllergenSafetyResult(
   // Claiming them to a stranger who just disclosed an allergy is the worst kind of
   // false comfort, so the CLAIM is dropped while the SAFETY SUBSTANCE (I noticed, I
   // cannot vouch for suitability myself, continue or take a human) is kept intact.
-  demoRun = false
+  demoRun = false,
+  // The customer explicitly DENIED any allergy. The gate still fires — a safety gate must
+  // never be suppressed by a negation, and «ما عندي حساسية من الجمبري بس عندي من المكسرات»
+  // is a denial and an affirmation in one breath. Only the CLAIM about what they said
+  // changes: «خذت بالي إنك ذكرت …» is false when they said the opposite, and a live run
+  // caught exactly that.
+  denied = false
 ): RespondResult {
   const t = term && term !== "الحساسية" ? `«${term}»` : "الحساسية";
+  // Opener only — the safety substance below is identical either way.
+  const opener = denied
+    ? (dialect === "egyptian"
+        ? "تمام، واضح إنك مش ذاكر حساسية 🙏 بس عشان سلامتك أحب أتأكد"
+        : "تمام، واضح إنك ما ذكرت حساسية 🙏 بس عشان سلامتك أحب أتأكد")
+    : (dialect === "egyptian" ? `خدت بالي إنك ذكرت ${t} 🙏` : `خذت بالي إنك ذكرت ${t} 🙏`);
   // WO-SAFETY-MODEL-V3 — NOTIFY-WITHOUT-HOLD: honest line + kitchen note + choices +
   // CONTINUE. NEVER promises a transfer (staff are alerted; the customer chooses). The
   // conversation stays AI_ACTIVE; a human is offered but never forced.
@@ -319,8 +332,8 @@ function forcedAllergenSafetyResult(
     : { eg: " — سجّلت الملاحظة للمطبخ ونبّهت الفريق", sa: " — سجّلت الملاحظة للمطبخ ونبّهت الفريق" };
   const reply =
     dialect === "egyptian"
-      ? `خدت بالي إنك ذكرت ${t} 🙏 صحتك تهمّنا${recorded.eg}. مش هقدر أأكد ملاءمة الأصناف من نفسي، بس نقدر نكمّل والملاحظة واضحة، أو أوصلك بموظف يتأكد لك — تحب إيه؟`
-      : `خذت بالي إنك ذكرت ${t} 🙏 صحتك تهمّنا${recorded.sa}. ما أقدر أأكد ملاءمة الأصناف من نفسي، بس نقدر نكمّل والملاحظة واضحة، أو أوصلك بموظف يتأكد لك — وش تحب؟`;
+      ? `${opener} صحتك تهمّنا${recorded.eg}. مش هقدر أأكد ملاءمة الأصناف من نفسي، بس نقدر نكمّل والملاحظة واضحة، أو أوصلك بموظف يتأكد لك — تحب إيه؟`
+      : `${opener} صحتك تهمّنا${recorded.sa}. ما أقدر أأكد من عندي إن الصنف يناسبك، بس نقدر نكمّل والملاحظة واصلة للمطبخ، أو أوصلك بأحد الزملاء يتأكد لك — وش تحب؟`;
   const reason = `سلامة الحساسية (بوابة حتمية): العميل ذكر تجنّب/مشكلة مع ${term ?? "الطعام"} — نُبّه الفريق؛ لا تجميد، كريم يكمل مع ملاحظة واضحة`;
   return {
     reply,
@@ -448,7 +461,13 @@ function companionEmergencyResult(
   currency: string,
   // See emergencyReply: the staff alert is gated on conversationId, which is null on a
   // demo turn, so the "I alerted the team" half of that reply would be a lie.
-  demoRun = false
+  demoRun = false,
+  // The customer explicitly DENIED any allergy. The gate still fires — a safety gate must
+  // never be suppressed by a negation, and «ما عندي حساسية من الجمبري بس عندي من المكسرات»
+  // is a denial and an affirmation in one breath. Only the CLAIM about what they said
+  // changes: «خذت بالي إنك ذكرت …» is false when they said the opposite, and a live run
+  // caught exactly that.
+  denied = false
 ): RespondResult {
   // WO-SAFETY-MODEL-V3 (§5): an ACTIVE emergency NO LONGER holds. Karim STAYS with the
   // urgent-guidance line (advise emergency services, never reassurance) and fires a LOUD
@@ -495,7 +514,13 @@ function calmHoldResult(
   // flag, which the demo tenant does not have and which the seed proof asserts is
   // never seeded true. Threaded anyway so that enabling that flag later cannot
   // silently reintroduce the "I alerted the team" lie on a demo turn.
-  demoRun = false
+  demoRun = false,
+  // The customer explicitly DENIED any allergy. The gate still fires — a safety gate must
+  // never be suppressed by a negation, and «ما عندي حساسية من الجمبري بس عندي من المكسرات»
+  // is a denial and an affirmation in one breath. Only the CLAIM about what they said
+  // changes: «خذت بالي إنك ذكرت …» is false when they said the opposite, and a live run
+  // caught exactly that.
+  denied = false
 ): RespondResult {
   const emergency = decision.path === "emergency";
   return {
@@ -1442,7 +1467,8 @@ export async function runCustomerTurn(
     result = forcedAllergenSafetyResult(
       combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency,
       holdSource, holdSource === "phonetic_safety_net" ? phoneticHit.reason : null,
-      input.demoRun === true
+      input.demoRun === true,
+      isExplicitAllergyDenial(input.userMessage, combinedAllergenHit.term)
     );
     // KEEP THE PROMISE. The frozen reply above tells the customer «سجّلت الملاحظة للمطبخ»
     // ("I recorded the note for the kitchen"), but on THIS branch nothing used to persist

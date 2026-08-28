@@ -154,6 +154,7 @@ export function composeFinalReply(input: ComposeInput): ComposeResult {
       previousOutbound: input.previousOutbound,
       socialClosing: input.socialClosing,
       hasPresentation: input.hasPresentation,
+      safetyEvent: input.safetyEvent,
     });
     if (contract.appended) {
       text = contract.text;

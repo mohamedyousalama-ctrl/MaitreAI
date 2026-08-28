@@ -192,3 +192,37 @@ export function assertsAllergenSafety(reply: string): boolean {
 export function shouldEscalateOnSafetyClaim(userMessage: string, safetyHoldActive: boolean): boolean {
   return safetyHoldActive === true || detectAllergenAvoidance(userMessage).fired;
 }
+
+/**
+ * An EXPLICIT DENIAL of any allergy — «ما عندي حساسية»، «ما ذكرت حساسية»،
+ * «ما تكلمت عن حساسية».
+ *
+ * THIS DOES NOT, AND MUST NOT, SUPPRESS THE SAFETY GATE. A false negative on an allergy
+ * gate can kill someone; a false positive is only annoying. «ما عندي حساسية من الجمبري بس
+ * عندي من المكسرات» is a denial AND an affirmation in one sentence, and it must still fire.
+ *
+ * It exists for one narrow purpose: the gate's reply opens «خذت بالي إنك ذكرت …» — "I
+ * noticed you mentioned …". When the customer said the OPPOSITE, that sentence is false,
+ * and a live run caught exactly that: the customer wrote «ما تكلمت عن صحة ولا حساسية» and
+ * Khalid answered «خذت بالي إنك ذكرت الحساسية». The safety posture was right; the claim
+ * about what they said was a lie.
+ *
+ * So this only ever changes WORDING. It requires a negator bound to a saying/having verb
+ * AND the absence of any concrete allergen term — if a specific allergen is named
+ * anywhere in the message, this returns false and the normal wording stands.
+ */
+const ALLERGY_DENIAL_RE =
+  // negator + a saying/having verb, then up to a short run of filler («عن صحة ولا …»,
+  // «أي», «اي») before the allergy word. The window is bounded so it cannot bridge two
+  // unrelated clauses.
+  /(?:ما|مو|مب|موب|ماني|لا)\s*(?:تكلمت|ذكرت|قلت|عندي|عندنا|فيه|في)[^.،؛\n]{0,24}?(?:حساسي|تحسس|الرجي|الرج)/;
+
+export function isExplicitAllergyDenial(text: string, allergenTerm?: string | null): boolean {
+  const n = normalizeAr(String(text ?? ""));
+  if (!n) return false;
+  if (!ALLERGY_DENIAL_RE.test(n)) return false;
+  // A named allergen anywhere beats the denial — never soften on a concrete term.
+  const t = String(allergenTerm ?? "").trim();
+  if (t && t !== "الحساسية" && n.includes(normalizeAr(t))) return false;
+  return true;
+}

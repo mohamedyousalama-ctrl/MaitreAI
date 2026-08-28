@@ -32,7 +32,7 @@ import { scanBannedAllergyPhrases } from "../lib/ai/allergen-companion.ts";
 import { isExplicitResetIntent, decideDraftLifecycle, DRAFT_ARCHIVE_MS, DRAFT_RESUME_FRESHNESS_MS } from "../lib/ai/draft-lifecycle.ts";
 import { isDraftPricedConsistent, renderDraftRecap, containsRenderedRecap } from "../lib/ai/recap-render.ts";
 import { injectPendingQuestion, questionHead } from "../lib/ai/askback-injection.ts";
-import { enforceTurnContract, hasActiveUnmetGoal, isSocialClosingTurn } from "../lib/ai/turn-contract.ts";
+import { enforceTurnContract, salesNextStepLine, honestHandoffLine, hasActiveUnmetGoal, isSocialClosingTurn } from "../lib/ai/turn-contract.ts";
 import { composeFinalReply } from "../lib/ai/reply-compose.ts";
 import { buildMenuListPresentation } from "../lib/ai/tools.ts";
 import { respond } from "../lib/ai/respond.ts";
@@ -170,9 +170,22 @@ const draftOf = (qty: number, over: Partial<OrderDraft> = {}): OrderDraft =>
   const active = enforceTurnContract({ text: "هختارلك أحسن تنوع", dialect: "egyptian", draft: draftOf(0, { lines: [] }) as OrderDraft, socialClosing: false });
   ok("D6: active build turn with a bare future-promise → next-step appended", active.appended);
   // Never repeat an identical next-step the previous outbound already ended with.
-  const handoff = "خليني أوصلك بحد من الفريق يكمّل معاك 🙏";
-  const repeat = enforceTurnContract({ text: "معلش", dialect: "egyptian", draft: draftOf(0, { lines: [] }) as OrderDraft, socialClosing: false, previousOutbound: `تمام ${handoff}` });
+  //
+  // WO-KHALID-SALES-NUDGE: the ordinary terminal next-step is now the sales question, not
+  // the handoff, so the dedup case is tested with the nudge. The handoff dedup is kept
+  // and tested too — it still applies on a safety turn, where the handoff is the step.
+  const nudge = salesNextStepLine("egyptian");
+  const repeat = enforceTurnContract({ text: "معلش", dialect: "egyptian", draft: draftOf(0, { lines: [] }) as OrderDraft, socialClosing: false, previousOutbound: `تمام ${nudge}` });
   ok("D7: an identical next-step is NOT repeated across turns", !repeat.appended);
+
+  const handoff = honestHandoffLine("egyptian");
+  const repeatHandoff = enforceTurnContract({ text: "معلش", dialect: "egyptian", draft: draftOf(0, { lines: [] }) as OrderDraft, socialClosing: false, safetyEvent: true, previousOutbound: `تمام ${handoff}` });
+  ok("D7b: the handoff is not repeated either, on a safety turn", !repeatHandoff.appended);
+
+  // And the ordinary turn must NOT offer to fetch a human — the defect this replaced.
+  const ordinary = enforceTurnContract({ text: "تمام، سجّلت ملاحظتك.", dialect: "egyptian", draft: draftOf(0, { lines: [] }) as OrderDraft });
+  ok("D7c: an ordinary turn gets a sales next-step, never a handoff offer",
+    ordinary.kind === "sales_nudge" && !ordinary.text.includes(handoff));
 }
 
 // ─────────────────── END-TO-END through respond() (mock adapter) ─────────────────────────────

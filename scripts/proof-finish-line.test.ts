@@ -25,6 +25,7 @@ import {
   hasHandoffLine,
   hasFuturePromise,
   honestHandoffLine,
+  salesNextStepLine,
   enforceTurnContract,
 } from "../lib/ai/turn-contract.ts";
 import {
@@ -128,12 +129,28 @@ ok("B3: hasFuturePromise detects «هختارلك» (fused) + «هجهّزلك»
   ok("B6: a reply carrying a handoff line satisfies the contract — not appended", !r.appended);
 }
 {
-  // THE tonight bug: a bare future-promise, no question/recap/handoff, empty draft → handoff appended.
+  // THE tonight bug: a bare future-promise, no question/recap/handoff, empty draft → a
+  // next-step is appended.
+  //
+  // WO-KHALID-SALES-NUDGE changed WHICH next-step. The terminal fallback used to be
+  // honestHandoffLine — "let me fetch you a human" — for a RESTAURANT SALES AGENT. A live
+  // 50-conversation run measured handoff language in 20% of turns, NINE OF TEN of them
+  // with escalate:false: the agent kept offering a transfer that no tool performed, which
+  // prompt.ts:463 names as breaking the engine's own honesty law. The handoff is now
+  // reserved for SAFETY turns, where wanting a human is real; everything else gets a
+  // question that advances the order.
   const r = enforceTurnContract({ text: "هختارلك أحسن تنوع!", dialect: "egyptian", draft: draftOf(0, { lines: [] }) as OrderDraft });
   ok("B7: «هختارلك أحسن تنوع!» (none of a/b/c) → next-step APPENDED", r.appended);
   ok("B7b: … the future-promise is flagged", r.futurePromise);
-  eq("B7c: … with an empty draft the next-step is the honest handoff", r.kind, "handoff");
-  ok("B7d: … the delivered text now carries the handoff line", r.text.includes(honestHandoffLine("egyptian")));
+  eq("B7c: … with an empty draft and NO safety event, the next-step is a sales nudge", r.kind, "sales_nudge");
+  ok("B7d: … the delivered text carries the sales next-step", r.text.includes(salesNextStepLine("egyptian")));
+  ok("B7e: … and does NOT offer to fetch a human on an ordinary turn",
+    !r.text.includes(honestHandoffLine("egyptian")));
+
+  // On a SAFETY turn the handoff is still correct and must survive.
+  const rs = enforceTurnContract({ text: "هختارلك أحسن تنوع!", dialect: "egyptian", draft: draftOf(0, { lines: [] }) as OrderDraft, safetyEvent: true });
+  eq("B7f: on a SAFETY turn the next-step is still the honest handoff", rs.kind, "handoff");
+  ok("B7g: … and carries the handoff line", rs.text.includes(honestHandoffLine("egyptian")));
 }
 {
   // Same dead-end but a draft exists → the next-step is a rendered draft recap + «أكمّل؟».
@@ -198,7 +215,7 @@ const finalizeDraft = (): OrderDraft => ({
 // PART B end-to-end — a bare future-promise reply gets the deterministic next-step appended.
 {
   const out = await respond({ brain: BRAIN({ finishLine: true }), history: [], userMessage: "هختارلك أحسن تنوع", initialDraft: null });
-  ok("EB1: flag ON — the mock's future-promise echo gets a next-step appended", out.reply.includes(honestHandoffLine("egyptian")));
+  ok("EB1: flag ON — the mock's future-promise echo gets a next-step appended", out.reply.includes(salesNextStepLine("egyptian")));
   ok("EB1b: flag ON — a turn_contract_next_step signal is recorded", out.signals.some((s) => s.type === "missing_data" && s.detail.reason === "turn_contract_next_step"));
 }
 {

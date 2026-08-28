@@ -54,7 +54,30 @@ export function honestHandoffLine(dialect: string): string {
     : "خليني أوصلك بحد من الفريق يكمّل معاك 🙏";
 }
 
-export type NextStepKind = "pending_question" | "draft_recap" | "handoff";
+export type NextStepKind = "pending_question" | "draft_recap" | "sales_nudge" | "handoff";
+
+/**
+ * The terminal next-step for a SALES agent.
+ *
+ * The contract's last resort used to be honestHandoffLine — "let me fetch you a human".
+ * For a restaurant host that is backwards: any warm statement without a «؟» resolved to
+ * offering to hand the guest away. A live 50-conversation run measured handoff language
+ * in 20% of turns, NINE OF TEN of them with escalate:false — so the agent kept offering
+ * a transfer that no tool was performing. prompt.ts:463 calls that out by name: never say
+ * you are transferring unless escalate_to_human actually ran.
+ *
+ * §ESC TIER 0 in the same prompt says the everyday case is "HANDLE IT — never bail", and
+ * prompt.ts:449 forbids ending an open browse with a content-free deflection. A question
+ * that moves the order forward satisfies the contract AND does the job.
+ *
+ * Deliberately NOT «الأكثر طلباً» — prompt.ts:475 forbids claiming popularity, because the
+ * menu data carries no order-volume field to back it.
+ */
+export function salesNextStepLine(dialect: string): string {
+  return dialect === "saudi"
+    ? "تبي أعرض لك المنيو وأساعدك تختار؟"
+    : "تحب أعرضلك المنيو وأساعدك تختار؟";
+}
 
 export interface TurnContractInput {
   text: string;
@@ -69,6 +92,9 @@ export interface TurnContractInput {
    *  so the engine was punishing the sentence it asked for. It also broke the engine's own
    *  honesty law (prompt.ts:463): never claim a transfer without calling escalate_to_human. */
   hasPresentation?: boolean;
+  /** True on a safety/allergy turn. The ONLY case where the terminal fallback is still
+   *  an offer to fetch a human — everywhere else that was a transfer nobody performed. */
+  safetyEvent?: boolean;
   dialect: string;
   draft: OrderDraft;
   /** The turn's pending deterministic question (from the ask-back settle), if any. */
@@ -186,14 +212,28 @@ export function enforceTurnContract(input: TurnContractInput): TurnContractResul
     });
     return { text: `${text.trim()}\n${recap}`, appended: true, kind: "draft_recap", futurePromise };
   }
+  // A SALES NEXT-STEP, NOT A HANDOFF. This used to go straight to "let me fetch you a
+  // human" — see salesNextStepLine for why that was the wrong terminal state for a host.
+  //
+  // The handoff is kept for the one case where it is honest: a SAFETY turn, where the
+  // engine genuinely wants a human in the loop. Everywhere else the agent asks a question
+  // that advances the order, which satisfies the contract without promising a transfer
+  // that no tool is performing.
   const handoff = honestHandoffLine(input.dialect);
-  if (previousAlreadyEndsWith(input.previousOutbound, handoff) || hasHandoffLine(text)) {
+  if (input.safetyEvent === true) {
+    if (previousAlreadyEndsWith(input.previousOutbound, handoff) || hasHandoffLine(text)) {
+      return { text, appended: false, kind: null, futurePromise };
+    }
+    return { text: `${text.trim()}\n${handoff}`, appended: true, kind: "handoff", futurePromise };
+  }
+  const nudge = salesNextStepLine(input.dialect);
+  if (previousAlreadyEndsWith(input.previousOutbound, nudge) || hasHandoffLine(text)) {
     return { text, appended: false, kind: null, futurePromise };
   }
   return {
-    text: `${text.trim()}\n${handoff}`,
+    text: `${text.trim()}\n${nudge}`,
     appended: true,
-    kind: "handoff",
+    kind: "sales_nudge",
     futurePromise,
   };
 }
