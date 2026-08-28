@@ -103,6 +103,10 @@ import {
 } from "./tools";
 
 export interface RespondInput {
+  /** PUBLIC DEMO. Threaded to ToolContext so tool results cannot claim side effects
+   *  (staff alert, human transfer, a registered order) that a demo turn never performs.
+   *  Optional, default false — real tenants are unaffected. */
+  demoRun?: boolean;
   brain: BrainContext;
   /** Prior turns (user/assistant), oldest first. */
   history: LlmMessage[];
@@ -403,6 +407,7 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
     taxMode: input.brain.taxMode ?? "inclusive",
     taxRate: input.brain.taxRate ?? 0,
     paymentConfig: input.brain.paymentConfig ?? DEFAULT_PAYMENT_CONFIG,
+    demoRun: input.demoRun === true,
     resendReceipt: false,
     sessionAllergyNote: input.brain.sessionAllergyNote,
     // WO-LIVE5-CONFIRM-GATE — whether THIS turn's customer message is an explicit order

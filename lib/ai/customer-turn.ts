@@ -1306,7 +1306,7 @@ export async function runCustomerTurn(
 
   const runRespond = async (): Promise<RespondResult> => {
     try {
-      return await respond({ brain: ctx, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective, mediaDirective, answerFirstDirective, perceptionRead: perception, sessionExpired: sessionExpiredForTurn });
+      return await respond({ brain: ctx, demoRun: input.demoRun === true, history: input.history, userMessage: input.userMessage, initialDraft, perceptionDirective, cadenceDirective, safetyHoldActive, geoDirective, imageDirective, mediaDirective, answerFirstDirective, perceptionRead: perception, sessionExpired: sessionExpiredForTurn });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await admin.from("agent_runs").insert({

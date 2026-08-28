@@ -140,6 +140,11 @@ export interface ToolContext {
   paymentConfig: PaymentConfig;
   /** Set to true by resend_receipt tool; triggers receipt re-send in respond-and-send. */
   resendReceipt: boolean;
+  /** PUBLIC DEMO. On a demo turn conversationId is null, so the side effects these tool
+   *  results DESCRIBE — the staff alert, the ownership flip and staff message, the
+   *  orders row — are all skipped. The tools must not claim them. Optional and default
+   *  false so every real tenant is byte-identical. */
+  demoRun?: boolean;
   /** Running kitchen-readable allergy note, e.g. «⚠️ حساسية: بيض». */
   sessionAllergyNote?: string | null;
   /** WO-LIVE5-CONFIRM-GATE — whether THIS turn's triggering customer message is an
@@ -1048,8 +1053,13 @@ export function executeTool(
         if (notice) return { content: notice, isError: true };
       }
       d.finalized = true;
+      // No orders row is written on a demo turn (persistOrderFromDraft is only reached
+      // from respond-and-send, which the demo never calls), so "the order is registered"
+      // would be false. State the total; promise nothing.
       return {
-        content: `تم تسجيل الطلب بانتظار تأكيد المطعم.\n${summary(d, ctx.sessionAllergyNote)}`,
+        content: ctx.demoRun
+          ? `هذا ملخّص الطلب (تجربة — ما ينحفظ طلب فعلي).\n${summary(d, ctx.sessionAllergyNote)}`
+          : `تم تسجيل الطلب بانتظار تأكيد المطعم.\n${summary(d, ctx.sessionAllergyNote)}`,
       };
     }
     case "escalate_to_human": {
@@ -1075,10 +1085,24 @@ export function executeTool(
       if (ctx.explicitHuman === true) {
         ctx.escalation = { reason };
         ctx.signals.push({ type: "escalation", detail: { reason } });
-        return { content: "حوّلت محادثتك لفريق المطعم، وهيردّوا عليك في أقرب وقت 🙏" };
+        // The actual transfer — the ownership flip and the staff message — happens in
+        // respond-and-send, which a demo turn never reaches. Claiming it would be the
+        // same false promise the allergy paths were just cleared of, and this is the
+        // branch the Founder's own escalate-to-human option lands on.
+        return {
+          content: ctx.demoRun
+            ? "في التجربة ما أقدر أحوّلك لموظف فعلي 🙏 بس في الاستخدام الحقيقي تنتقل المحادثة لفريق المطعم فوراً."
+            : "حوّلت محادثتك لفريق المطعم، وهيردّوا عليك في أقرب وقت 🙏",
+        };
       }
       ctx.signals.push({ type: "notify_without_hold", detail: { reason, source: "model_tool" } });
-      return { content: "سجّلت ملاحظتك ونبّهت فريق المطعم يتابعها 🙏 نقدر نكمّل مع بعض — ولو تحب أوصلك بموظف قولي وأحوّلك على طول." };
+      // conversation_signals is skipped and recordCriticalAlert is gated on a
+      // conversationId that is null, so on a demo turn nobody is notified.
+      return {
+        content: ctx.demoRun
+          ? "خذت بالي بملاحظتك 🙏 في الاستخدام الحقيقي ينبّه فريق المطعم ويتابعها. نكمّل مع بعض؟"
+          : "سجّلت ملاحظتك ونبّهت فريق المطعم يتابعها 🙏 نقدر نكمّل مع بعض — ولو تحب أوصلك بموظف قولي وأحوّلك على طول.",
+      };
     }
     case "present_menu": {
       const avail = ctx.menuItems.filter((i) => i.available);

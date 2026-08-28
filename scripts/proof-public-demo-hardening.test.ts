@@ -414,6 +414,33 @@ ok("0120 revokes from PUBLIC and from anon+authenticated (the 0113 trap)",
   /from public;/.test(mig120) && /from anon, authenticated;/.test(mig120));
 ok("0120 grants execute only to service_role", /grant execute[\s\S]{0,120}to service_role;/.test(mig120));
 
+// ── 14c. THE TOOL LAYER MUST NOT PROMISE WHAT A DEMO TURN CANNOT DO ─────────
+// Three tool results described side effects that a demo turn never performs: the staff
+// alert (recordCriticalAlert is gated on a null conversationId), the human transfer
+// (the ownership flip and staff message live in respond-and-send, which the demo never
+// reaches), and a registered order (no orders row is ever written). The escalate branch
+// is the one the Founder's own escalate-to-human option lands on.
+const tools = codeOf("lib/ai/tools.ts");
+const respond = codeOf("lib/ai/respond.ts");
+ok("ToolContext carries an optional demoRun flag", /demoRun\?:\s*boolean;/.test(tools));
+ok("respond threads it into the tool context", /demoRun:\s*input\.demoRun === true/.test(respond));
+ok("customer-turn passes it to respond", /respond\(\{ brain: ctx, demoRun: input\.demoRun === true/.test(turn));
+ok("the human-transfer claim is conditional on demoRun",
+  /ctx\.demoRun[\s\S]{0,220}ما أقدر أحوّلك لموظف فعلي/.test(tools));
+ok("the staff-notified claim is conditional on demoRun",
+  /ctx\.demoRun[\s\S]{0,220}في الاستخدام الحقيقي ينبّه فريق المطعم/.test(tools));
+ok("the order-registered claim is conditional on demoRun",
+  /ctx\.demoRun[\s\S]{0,200}ما ينحفظ طلب فعلي/.test(tools));
+// Real tenants must be untouched: the original strings still exist as the else branch.
+for (const [label, phrase] of [
+  ["transfer", "حوّلت محادثتك لفريق المطعم"],
+  ["notify", "سجّلت ملاحظتك ونبّهت فريق المطعم"],
+  ["order", "تم تسجيل الطلب بانتظار تأكيد المطعم"],
+] as const) {
+  ok(`the real-tenant ${label} wording is unchanged`, tools.includes(phrase));
+}
+ok("demoRun is opt-in in the tool layer too", !/demoRun\s*=\s*true/.test(tools) && !/demoRun\s*\?\?\s*true/.test(tools));
+
 // ── 15. THE SEED MUST NOT SILENTLY DISARM THE DEMO ───────────────────────────
 // The seed upserts on the primary key, so whatever it writes REPLACES the live
 // tenant's flags. It used to write `khalid_persona: false` while the demo runs it

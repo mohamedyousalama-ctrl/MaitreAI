@@ -42,9 +42,43 @@ const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.er
   ok("LEG2: otherwise it emits notify_without_hold carrying the reason (audit) — no ctx.escalation",
     /ctx\.signals\.push\(\{ type: "notify_without_hold", detail: \{ reason, source: "model_tool" \} \}\);/.test(tl));
   // The notify content must NOT claim a transfer, and must honestly offer a human on ask.
-  const notifyReply = tl.match(/notify_without_hold[\s\S]{0,80}?return \{ content: "([^"]+)"/);
+  //
+  // WO-DEMO: this return is now a demoRun conditional, because on a public demo turn
+  // conversation_signals is skipped and recordCriticalAlert is gated on a null
+  // conversationId — so «نبّهت فريق المطعم» would be a promise nothing keeps. BOTH
+  // branches are checked here: the real-tenant one must be unchanged, and the demo one
+  // must not claim a transfer either.
+  // Extract the NOTIFY ternary's two branches exactly. Two earlier attempts were wrong
+  // and both "passed": one grabbed a fragment spanning a comment and asserted against
+  // garbage; the next matched the FIRST `ctx.demoRun` ternary in the file, which is the
+  // transfer branch, not this one. Slice from the unique model_tool marker first.
+  const notifyScope = tl.slice(tl.indexOf('source: "model_tool"'));
+  const notifyTernary = notifyScope.match(
+    /content: ctx\.demoRun\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"/,
+  );
+  ok("LEG2: the notify reply has both a demo and a real-tenant branch", !!notifyTernary);
+  const demoNotify = notifyTernary?.[1] ?? "";
+  const realNotify = notifyTernary?.[2] ?? "";
   ok("LEG2: the notify reply never claims a transfer, and offers a human on request",
-    !!notifyReply && !/حوّلت محادثتك/.test(notifyReply[1]) && /نبّهت|الفريق/.test(notifyReply[1]) && /موظف/.test(notifyReply[1]));
+    !!realNotify && !/حوّلت محادثتك/.test(realNotify) && /نبّهت|الفريق/.test(realNotify) && /موظف/.test(realNotify));
+  ok("LEG2: neither notify branch claims a transfer",
+    !!demoNotify && !/حوّلت محادثتك/.test(realNotify) && !/حوّلت محادثتك/.test(demoNotify));
+  // On a demo turn conversation_signals is skipped and recordCriticalAlert is gated on a
+  // null conversationId, so the demo branch must not state that the team WAS notified.
+  ok("LEG2: the DEMO notify branch does not claim the team was notified",
+    !!demoNotify && !/نبّهت فريق المطعم يتابعها/.test(demoNotify) && !/سجّلت ملاحظتك/.test(demoNotify));
+
+  // The TRANSFER branch, checked on its own terms: real tenants keep the transfer
+  // sentence; the demo branch must not claim a transfer that never happens.
+  const transferTernary = tl.match(
+    /content: ctx\.demoRun\s*\?\s*"([^"]+)"\s*:\s*"(حوّلت محادثتك[^"]+)"/,
+  );
+  ok("LEG2: the transfer reply has both branches", !!transferTernary);
+  ok("LEG2: the real-tenant transfer wording is unchanged",
+    (transferTernary?.[2] ?? "").startsWith("حوّلت محادثتك لفريق المطعم"));
+  ok("LEG2: the DEMO transfer branch does not claim a transfer happened",
+    !!transferTernary && !/حوّلت محادثتك/.test(transferTernary[1]));
+
   ok("LEG2: ToolContext carries explicitHuman", /explicitHuman\?: boolean;/.test(tl));
 }
 
