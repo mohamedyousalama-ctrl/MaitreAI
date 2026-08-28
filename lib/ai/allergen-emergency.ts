@@ -44,9 +44,16 @@ const HYPOTHETICAL_Q_RE = /(?:ممكن|يمكن|هل|ينفع|يصير|احتم�
 // Each entry is [regex-over-normalized-text, audit-label]. Order: airway, swelling,
 // active reaction, emergency-call, English/mixed.
 const EMERGENCY_PATTERNS: Array<[RegExp, string]> = [
-  // Airway / breathing NOW (Gulf + Egyptian). «ما اقدر اتنفس» / «مش عارف اتنفس» /
-  // «نفسي ضاق/يضيق/ضايق» / «حلقي|زوري|حنجرتي يقفل/يتقفل/بيقفل/يضيق/يتضيق/يتورم».
-  [/ما ?اقدر ?(?:ا|ال)?تنفس|مش ?(?:عارف|قادر|قادره) ?(?:ا|ال)?تنفس|مب ?قادر ?اتنفس|صعوبه في ?التنفس|ما ?اقدر ?اخذ ?نفس/, "صعوبة تنفس"],
+  // Airway / breathing NOW (Najdi + Gulf + Egyptian). «ما اقدر اتنفس» / «مو قادر اتنفس» /
+  // «مش عارف اتنفس» / «نفسي ضاق/يضيق/ضايق» / «حلقي|زوري|حنجرتي يقفل/يضيق/يتورم».
+  //
+  // NAJDI NEGATION «مو» WAS MISSING — a real gap, not a theoretical one. The list carried
+  // Egyptian «مش» and Gulf/Eastern «مب» but not «مو»، which is the ordinary negation in
+  // Najd. Khalid's own configured home region is najd (Riyadh), so the single most natural
+  // way for this agent's core customer to say "I can't breathe" — «مو قادر أتنفس» — did not
+  // fire the emergency path at all, while «ما أقدر أتنفس» did. Added with «موب» and «ماني»,
+  // the other two Najdi/Gulf negators, and the feminine «قادرة».
+  [/ما ?اقدر ?(?:ا|ال)?تنفس|مش ?(?:عارف|عارفه|قادر|قادره) ?(?:ا|ال)?تنفس|(?:مب|مو|موب|ماني|مني) ?(?:قادر|قادره|قادرة)? ?(?:ا|ال)?تنفس|صعوبه في ?التنفس|ما ?اقدر ?اخذ ?نفس/, "صعوبة تنفس"],
   [/نفسي ?(?:ضاق|يضيق|بيضيق|ضايق|مسدود|واقف|بيقف)/, "ضيق نفس"],
   [/(?:حلقي|زوري|حنجرتي|بلعومي) ?(?:يقفل|يتقفل|بيقفل|بتقفل|يضيق|يتضيق|بيضيق|يتورم|بيتورم|مسدود|قافل|بيسكر|يسكر)/, "انسداد الحلق"],
   // Swelling NOW — lips / tongue / face / throat actively swelling.

@@ -116,5 +116,31 @@ const gateEnd = src.indexOf("} else if (enterCompanion) {");
 const gateBranch = gateStart > 0 && gateEnd > gateStart ? src.slice(gateStart, gateEnd) : "";
 ok("the deterministic gate still writes its own note", /writeConversationAllergyNote\(/.test(gateBranch));
 
+// ── NAJDI NEGATION — the dialect this agent is actually built for ───────────
+// The airway family carried Egyptian «مش» and Gulf/Eastern «مب» but NOT Najdi «مو»,
+// so «مو قادر أتنفس» — the ordinary way a Riyadh customer says "I can't breathe" —
+// did not fire, while «ما أقدر أتنفس» did. Khalid's configured home region is najd.
+// A safety detector must not be widened carelessly, so the silent cases below are
+// part of the fix, not decoration: they all use «مو قادر» about something harmless.
+for (const m of [
+  "مو قادر اتنفس", "مو قادره اتنفس", "موب قادر اتنفس", "ماني قادر اتنفس",
+  "مو قادر أتنفس", "حلقي منتفخ ومو قادر اتنفس",
+]) {
+  ok(`Najdi airway emergency fires: «${m}»`, detectAllergenEmergency(m).fired === true);
+}
+for (const m of [
+  "مو قادر اختار وش اطلب",   // can't decide what to order
+  "مو قادر اجي اليوم",        // can't come today
+  "ما اقدر ادفع الحين",       // can't pay right now
+  "مو حلو الطعم",             // doesn't taste good
+  "الجو حار ومو قادر اطلع",   // too hot to go out
+]) {
+  ok(`ordinary «مو قادر» does NOT fire an emergency: «${m}»`, detectAllergenEmergency(m).fired === false);
+}
+// Egyptian and Gulf coverage must survive the widening.
+for (const m of ["ما اقدر اتنفس", "مب قادر اتنفس", "مش عارف اتنفس", "صعوبه في التنفس"]) {
+  ok(`existing airway coverage retained: «${m}»`, detectAllergenEmergency(m).fired === true);
+}
+
 console.log(`\nEMERGENCY-OVERRIDE PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
