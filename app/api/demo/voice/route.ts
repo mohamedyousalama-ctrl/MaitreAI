@@ -33,6 +33,11 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// A voice turn is a Whisper round-trip PLUS a perception call PLUS up to MAX_ITERATIONS
+// model calls over a ~17k-token system prompt. Vercel's default function timeout kills
+// that mid-turn — after the guard slot and the provider spend have already been used —
+// and the visitor just sees a generic error. Set explicitly, as the admin voice routes do.
+export const maxDuration = 60;
 
 function clientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for") ?? "";
@@ -80,24 +85,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "stt_unavailable" }, { status: 503 });
   }
 
-  // Durable guard — fails closed, same as the text route.
-  const { data: guard, error: guardErr } = await admin
-    .rpc("kv_demo_try_consume", {
-      p_ip_bucket: ipBucket(ip),
-      p_global_bucket: globalBucket(),
-      p_ip_limit: DEMO_PER_IP_TURNS,
-      p_global_limit: DEMO_GLOBAL_DAILY_TURNS,
-    })
-    .maybeSingle<{ allowed: boolean; reason: string | null }>();
-  if (guardErr || !guard) {
-    console.error("[demo/voice] spend guard unavailable — refusing", guardErr?.message);
-    return NextResponse.json({ error: "demo_unavailable" }, { status: 503 });
-  }
-  if (!guard.allowed) {
-    const stopped = guard.reason === "disabled";
-    return NextResponse.json({ error: stopped ? "demo_unavailable" : "rate_limited" }, { status: stopped ? 503 : 429 });
-  }
-
   // multipart: the clip plus the on-screen history. The declared length above bounds
   // the whole body, so parsing it cannot be turned into an unbounded allocation.
   let buf: Buffer;
@@ -120,6 +107,29 @@ export async function POST(req: Request) {
   if (!buf.length) return NextResponse.json({ error: "bad_request" }, { status: 400 });
   if (buf.length > DEMO_MAX_AUDIO_BYTES) {
     return NextResponse.json({ error: "audio_too_large" }, { status: 413 });
+  }
+
+  // GUARD CONSUMED ONLY AFTER THE REQUEST IS VALID — same reason as /api/demo/turn.
+  // The guard increments a GLOBAL counter on the way in, so a junk body used to burn one
+  // of the day's slots for free; a thousand of them took the demo dark for a UTC day.
+  // Parsing and size-checking the clip costs nothing (the declared length was already
+  // bounded above), and the guard still precedes STT and the model call.
+  // Durable guard — fails closed, same as the text route.
+  const { data: guard, error: guardErr } = await admin
+    .rpc("kv_demo_try_consume", {
+      p_ip_bucket: ipBucket(ip),
+      p_global_bucket: globalBucket(),
+      p_ip_limit: DEMO_PER_IP_TURNS,
+      p_global_limit: DEMO_GLOBAL_DAILY_TURNS,
+    })
+    .maybeSingle<{ allowed: boolean; reason: string | null }>();
+  if (guardErr || !guard) {
+    console.error("[demo/voice] spend guard unavailable — refusing", guardErr?.message);
+    return NextResponse.json({ error: "demo_unavailable" }, { status: 503 });
+  }
+  if (!guard.allowed) {
+    const stopped = guard.reason === "disabled";
+    return NextResponse.json({ error: stopped ? "demo_unavailable" : "rate_limited" }, { status: stopped ? 503 : 429 });
   }
 
   let transcript: string;

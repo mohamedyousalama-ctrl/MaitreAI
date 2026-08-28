@@ -364,6 +364,56 @@ for (const fn of ["companionEmergencyResult", "calmHoldResult"]) {
 ok("every emergencyReply call in customer-turn passes the flag",
   (turn.match(/emergencyReply\(dialect\)/g) ?? []).length === 0);
 
+// ── 14b. DENIAL OF DEMO — a junk request must not burn a paid slot ───────────
+// The guard increments a GLOBAL counter on the way in. When it ran before the body was
+// parsed, `POST {}` cost the sender nothing and still consumed one of the day's slots;
+// ~1,000 of them, spread over an IPv6 /64 so no per-IP cap engages, took the demo dark
+// until 00:00 UTC. Validation is free, so it must come FIRST — while the guard must
+// still precede everything that actually spends.
+// indexOf returns -1 when the needle is ABSENT, and -1 is less than any real index —
+// so a naive `a < b` ordering assertion passes when `a` has been deleted outright.
+// These throw the comparison away unless BOTH anchors actually exist.
+const before = (label: string, src: string, a: string, b: string) => {
+  const ia = src.indexOf(a), ib = src.indexOf(b);
+  ok(`${label} [both anchors present]`, ia >= 0 && ib >= 0);
+  ok(label, ia >= 0 && ib >= 0 && ia < ib);
+};
+const iTurn = (n: string) => route.indexOf(n);
+before("turn: the body is validated BEFORE the guard is consumed", route, 'error: "bad_request"', "kv_demo_try_consume");
+before("turn: the guard is still consumed BEFORE the model call", route, "kv_demo_try_consume", "runCustomerTurn(");
+before("voice: the clip is validated BEFORE the guard is consumed", voice, 'error: "bad_request"', "kv_demo_try_consume");
+before("voice: the guard is consumed BEFORE STT", voice, "kv_demo_try_consume", "transcribeAudioBytes(");
+before("voice: the guard is consumed BEFORE the model call", voice, "kv_demo_try_consume", "runCustomerTurn(");
+before("voice: the size ceiling still precedes reading the body", voice, "status: 411", "formData()");
+
+// A demo turn is a perception call plus up to MAX_ITERATIONS model calls over a ~17k-token
+// system prompt, and a voice turn adds a Whisper round-trip. On the platform default the
+// function is killed mid-turn AFTER the slot and the provider spend are gone.
+for (const [label, src] of [["turn", route], ["voice", voice]] as const) {
+  ok(`${label}: an explicit maxDuration is set`, /export const maxDuration = \d+/.test(src));
+}
+
+// Migration 0120 — the database half of the same defect.
+// codeOf strips // and /* */ but NOT SQL's `--`, and this migration's header quotes the
+// very expression it removes. Strip -- lines so the assertions read CODE, not prose.
+const sqlCode = (p: string) => readFileSync(resolve(ROOT, p), "utf8")
+  .split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n");
+const mig120 = sqlCode("supabase/migrations/0120_demo_guard_counter_integrity.sql");
+ok("0120 exists and replaces the guard", /create or replace function public\.kv_demo_try_consume/.test(mig120));
+ok("0120 checks the per-IP cap BEFORE touching the global counter",
+  mig120.indexOf("p_ip_bucket") < mig120.indexOf("p_global_bucket, 1"));
+ok("a rejected per-IP turn refunds its own counter",
+  /v_ip > p_ip_limit then[\s\S]{0,200}turns = turns - 1 where bucket = p_ip_bucket/.test(mig120));
+ok("a rejected global turn refunds BOTH counters",
+  /v_global > p_global_limit then[\s\S]{0,320}bucket = p_global_bucket;[\s\S]{0,160}bucket = p_ip_bucket/.test(mig120));
+// The old `coalesce(v_enabled, 1) = 0` treated a MISSING controls row as enabled, so
+// deleting the row left the demo running while an operator believed it was stopped.
+ok("the kill switch FAILS CLOSED when the controls row is absent",
+  /v_enabled is null or v_enabled = false/.test(mig120) && !/coalesce\(v_enabled/.test(mig120));
+ok("0120 revokes from PUBLIC and from anon+authenticated (the 0113 trap)",
+  /from public;/.test(mig120) && /from anon, authenticated;/.test(mig120));
+ok("0120 grants execute only to service_role", /grant execute[\s\S]{0,120}to service_role;/.test(mig120));
+
 // ── 15. THE SEED MUST NOT SILENTLY DISARM THE DEMO ───────────────────────────
 // The seed upserts on the primary key, so whatever it writes REPLACES the live
 // tenant's flags. It used to write `khalid_persona: false` while the demo runs it

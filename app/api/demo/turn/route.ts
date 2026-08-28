@@ -47,6 +47,10 @@ import type { LlmMessage } from "@/lib/ai/llm/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// One perception call plus up to MAX_ITERATIONS model calls over a ~17k-token system
+// prompt. The platform default timeout can kill that mid-turn, after the guard slot and
+// the model spend are already gone, leaving the visitor a generic error.
+export const maxDuration = 60;
 
 /** First hop of x-forwarded-for — the client as the edge saw it. */
 function clientIp(req: Request): string {
@@ -82,6 +86,33 @@ export async function POST(req: Request) {
   //   - `demo_controls.enabled`, read on every turn, so the demo can be stopped in
   //     seconds by flipping one boolean — no redeploy, no env change, no build.
   // Fails CLOSED: if the guard itself errors we refuse the turn rather than spend.
+  const body = (await req.json().catch(() => ({}))) as { text?: unknown; history?: unknown };
+  // LENGTH cap, not just a count cap. This is the control that bounds spend.
+  const text = String(body.text ?? "").trim().slice(0, DEMO_MAX_CHARS);
+  if (!text) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+
+  const history: LlmMessage[] = Array.isArray(body.history)
+    ? (body.history as unknown[]).slice(-DEMO_MAX_HISTORY).flatMap((m) => {
+        if (!m || typeof m !== "object") return [];
+        const role = (m as { role?: unknown }).role === "assistant" ? "assistant" : "user";
+        // Every history entry is capped too — an attacker controls this array.
+        const content = String((m as { content?: unknown }).content ?? "").trim().slice(0, DEMO_MAX_CHARS);
+        return content ? [{ role, content } as LlmMessage] : [];
+      })
+    : [];
+
+  // GUARD CONSUMED ONLY AFTER THE REQUEST IS VALID.
+  //
+  // This block used to run before the body was parsed, and the guard increments its
+  // GLOBAL counter on the way in. So `POST {}` — no text, rejected below as bad_request —
+  // still burned one of the day's slots at zero cost to the sender. About a thousand empty
+  // posts, trivially spread across an IPv6 /64 so neither per-IP cap ever engages, took the
+  // demo dark until 00:00 UTC (03:00 Riyadh), with no auto-recovery and no alert. That is
+  // the single most likely thing to happen to a public URL once it is being shared.
+  //
+  // Validation is free — no model call, no provider, no bytes beyond a parsed JSON body —
+  // so doing it first costs nothing, and the guard still precedes every PAID operation,
+  // which the proof asserts by source ordering rather than by comment.
   const ip = clientIp(req);
   const { data: guard, error: guardErr } = await admin
     .rpc("kv_demo_try_consume", {
@@ -104,21 +135,6 @@ export async function POST(req: Request) {
       { status: stopped ? 503 : 429 },
     );
   }
-
-  const body = (await req.json().catch(() => ({}))) as { text?: unknown; history?: unknown };
-  // LENGTH cap, not just a count cap. This is the control that bounds spend.
-  const text = String(body.text ?? "").trim().slice(0, DEMO_MAX_CHARS);
-  if (!text) return NextResponse.json({ error: "bad_request" }, { status: 400 });
-
-  const history: LlmMessage[] = Array.isArray(body.history)
-    ? (body.history as unknown[]).slice(-DEMO_MAX_HISTORY).flatMap((m) => {
-        if (!m || typeof m !== "object") return [];
-        const role = (m as { role?: unknown }).role === "assistant" ? "assistant" : "user";
-        // Every history entry is capped too — an attacker controls this array.
-        const content = String((m as { content?: unknown }).content ?? "").trim().slice(0, DEMO_MAX_CHARS);
-        return content ? [{ role, content } as LlmMessage] : [];
-      })
-    : [];
 
   try {
     const out = await runCustomerTurn(admin, {
