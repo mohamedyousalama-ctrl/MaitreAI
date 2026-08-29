@@ -35,7 +35,11 @@ export function buildClarifyingQuestion(args: { kind: ClarifyKind; candidates: s
           ? `عندنا أكثر من خيار: ${list} — أيهم تقصد؟`
           : `عندنا أكتر من واحد: ${list} — أي واحد تقصد؟`;
       }
-      // Referent with no concrete antecedent (e.g. «الكبير» with no item chosen yet).
+      // Referent with no concrete antecedent. This is reachable ONLY for a SIZE referent
+      // («الكبير» with no item chosen yet) — goal-interpreter.ts returns null rather than
+      // an empty list for every other referent, precisely so this size-specific sentence
+      // can never be handed to someone who asked about something else. It used to answer
+      // «العروض» with it.
       return sa
         ? "تقصد الكبير لأي صنف بالضبط؟ اختر لي الصنف وأضبط لك الحجم."
         : "تقصد الكبير لأنهي صنف بالظبط؟ قوللي الصنف وأظبطلك الحجم.";

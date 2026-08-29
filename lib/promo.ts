@@ -137,6 +137,34 @@ export function promoDescription(p: OperatorPromotion, currency: string): string
   return p.name;
 }
 
+/** The line the AGENT is shown for one active promo — the whole truth, not just the
+ *  headline.
+ *
+ *  `promoDescription` alone gives «خصم 15% على كل الطلبات», and that is what the customer
+ *  agent was being handed. It omits two things that decide whether the customer actually
+ *  gets the money off:
+ *
+ *    1. THE CODE. Every promo in production carries one («AHLAN15», «OPEN15»). A coded
+ *       promo is redeemed, not automatic — so an agent that announces the discount and
+ *       never mentions the code has told the customer something they cannot act on.
+ *    2. WHETHER ANYTHING APPLIES IT. Nothing does: lib/order-pricing.ts contains no
+ *       discount arithmetic at all, `orders.discount_total` is written 0 on every row,
+ *       and demo order #1004 closed at full price minutes after the agent promised 15%
+ *       off. Until a redemption engine exists, the agent must never imply the total it
+ *       reads back is discounted.
+ *
+ *  Deliberately NOT solved by auto-applying these promos: they are code-gated, some are
+ *  category-scoped with minimum-spend conditions, and one tenant's caption («على أول
+ *  طلب») contradicts its own scopeLabel («كل الطلبات»). Applying them automatically would
+ *  hand out discounts nobody qualified for — a money bug in the other direction. */
+export function promoPromptLine(p: OperatorPromotion, currency: string): string {
+  const parts = [promoDescription(p, currency)];
+  const code = (p.code ?? "").trim();
+  if (code) parts.push(`يُستخدم بكود «${code}»`);
+  parts.push("غير مطبَّق تلقائياً على الإجمالي");
+  return parts.join(" — ");
+}
+
 /** Real numeric amounts a promo introduces (its discount amount + every affected
  *  before/after price), so the money-truth guard recognizes them as legitimate
  *  data and never blocks كريم for quoting a real promo figure. */

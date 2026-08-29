@@ -76,8 +76,20 @@ export function isPriceRequest(text: string): boolean {
 function referentCandidates(text: string, state: GoalState): string[] | null {
   const n = normalizeAr(text);
   if (!REFERENT_RE.test(n)) return null;
-  // «العرض / العروض» → the active offers are the candidates.
-  if (/(?<![ء-ي])(?:العرض|العروض)(?![ء-ي])/.test(n)) return state.offerNames.slice();
+  // «العرض / العروض» → the MENU COMBOS named «عرض …» are the candidates (respond.ts
+  // builds offerNames by filtering menu item names, NOT promo campaigns — the prompt
+  // draws the same distinction: a campaign is a «عرض/خصم», a combo is a وجبة).
+  //
+  // ZERO of them is NOT an ambiguous referent. It means this tenant simply has no such
+  // combos, and the honest answer to «العروض» comes from the active-promotions block.
+  // Returning [] here made classifyGoal ASK — and clarification.ts's `referent` branch
+  // with fewer than two candidates is the SIZE question, so a customer typing «العروض»
+  // was answered «تقصد الكبير لأي صنف بالضبط؟ اختر لي الصنف وأضبط لك الحجم». Reproduced
+  // live on the demo tenant, whose menu has no «عرض…» item at all.
+  if (/(?<![ء-ي])(?:العرض|العروض)(?![ء-ي])/.test(n)) {
+    const combos = state.offerNames.slice();
+    return combos.length ? combos : null;
+  }
   // A size referent («الكبير»…) needs an item in the draft to bind to; none → 0 candidates.
   if (/(?<![ء-ي])(?:الكبير|الكبيره|الوسط|الصغير|الصغيره|الحجم)(?![ء-ي])/.test(n) && !state.hasOpenDraft) return [];
   return null;

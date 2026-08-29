@@ -147,6 +147,14 @@ async function getOrCreateOwner() {
         khalid_persona: true,
         khalid_region: "najd",
         goal_logic: true,
+        // ON because the flag-OFF path SHORT-CIRCUITS an unsure perception read into a
+        // canned question with nothing tappable on screen. Live: «جوعان» — "I'm hungry",
+        // the single most natural thing a customer says to a restaurant — was answered
+        // «ودّي أساعدك صح — توضّح لي أكثر وش تحب بالضبط؟» and no menu. That reply is our
+        // own deterministic code breaking the prompt's own ANTI-DEFLECTION rule, which
+        // forbids a "pick one and tell me" with no options named. With this ON the model
+        // keeps the turn, sees the history the pre-read lacked, and answers with food.
+        goal_logic_rule6_annotation_pivot: true,
         perception: true,
         finish_line: true,
         answer_first: true,
@@ -236,7 +244,12 @@ async function getOrCreateOwner() {
       restaurant_id: RESTAURANT_ID,
       name: "عرض الافتتاح",
       type: "percent_off",
-      config: { scopeType: "all", scopeLabel: "كل الطلبات", amount: 15, caption: "خصم ١٥٪ على أول طلب — بكود AHLAN15" },
+      // scopeLabel USED TO SAY «كل الطلبات» while the caption right beside it said «أول
+      // طلب». promoDescription() renders scopeLabel, so the agent told customers the
+      // discount applied to every order when the promo's own caption says first order
+      // only — the record contradicted itself, and the agent faithfully repeated the
+      // wrong half. Both now say the same thing.
+      config: { scopeType: "first_order", scopeLabel: "أول طلب", amount: 15, caption: "خصم ١٥٪ على أول طلب — بكود AHLAN15" },
       code: "AHLAN15",
       schedule: { start: "2020-01-01T00:00:00.000Z", end: "2030-01-01T00:00:00.000Z" },
       state: "active",
