@@ -270,6 +270,19 @@ async function getOrCreateOwner() {
     { id: ITEM_MOD.kabsaDajajDaggus, restaurant_id: RESTAURANT_ID, item_id: ITEM.kabsaDajaj, modifier_id: MOD.daggus },
   ]);
 
+  // DISH PHOTOS. Vector illustrations under public/demo-dishes, served from the demo's own
+  // origin. Owned outright — the demo previously carried one hotlinked third-party JPEG on
+  // all eight items, which was somebody else's file on somebody else's server, applied to
+  // dishes it did not depict: the Arabic coffee, the laban, the dates and the luqaimat all
+  // showed a lamb platter. This project already carries a permanent rights FAIL (G0-H), so
+  // "borrowed" media is the one shortcut it cannot afford.
+  const DISH_IMAGE = {
+    "كبسة لحم": "kabsa-lahm", "كبسة دجاج": "kabsa-dajaj", "مندي دجاج": "mandi-dajaj",
+    "جريش": "jareesh", "لقيمات": "luqaimat", "قهوة عربية": "gahwa-arabiyya",
+    "تمر سكري": "tamr-sukkari", "لبن بارد": "laban-barid",
+  };
+  void DISH_IMAGE; // consumed by the image_url column below / by scripts/seed-demo-dish-photos.mjs
+
   // 8) Branch + delivery zone (Riyadh).
   await upsert("branches", [
     { id: BRANCH_ID, restaurant_id: RESTAURANT_ID, name: "فرع الرياض - العليا", phone: "+966500000000", address: "حي العليا، الرياض", hours: { open: "11:00", close: "01:00" }, active: true },

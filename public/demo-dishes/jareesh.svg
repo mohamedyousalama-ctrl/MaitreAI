@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="جريش"><title>جريش</title><defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F8F2E7"/><stop offset="1" stop-color="#E9DCC6"/></linearGradient>
+<radialGradient id="rice" cx="42%" cy="32%"><stop offset="0" stop-color="#FAF0D8"/><stop offset="1" stop-color="#EDDCAF"/></radialGradient>
+<radialGradient id="saff" cx="50%" cy="40%"><stop offset="0" stop-color="#F2B95A"/><stop offset="1" stop-color="#DE9430"/></radialGradient>
+<linearGradient id="meat" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A96B3C"/><stop offset="1" stop-color="#7E4A28"/></linearGradient>
+<linearGradient id="chick" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E3AC63"/><stop offset="1" stop-color="#C0813A"/></linearGradient>
+<filter id="sh" x="-25%" y="-25%" width="150%" height="150%"><feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#7a5a33" flood-opacity="0.20"/></filter>
+<filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.2"/></filter>
+</defs><rect width="800" height="600" fill="url(#bg)"/><ellipse cx="400" cy="340" rx="238" ry="178" fill="#00000012"/><ellipse cx="400" cy="322" rx="228" ry="170" fill="#FFFFFF" filter="url(#sh)"/><ellipse cx="400" cy="322" rx="200" ry="148" fill="none" stroke="#E7DDCC" stroke-width="3"/><ellipse cx="400" cy="322" rx="182" ry="118" fill="#EFE3C9"/><ellipse cx="392" cy="306" rx="140" ry="86" fill="#F6EEDB"/><path d="M300 318 Q400 268 500 318 Q400 352 300 318 Z" fill="#E3D2AE" opacity="0.75"/><ellipse cx="400" cy="316" rx="46" ry="26" fill="#E0A34A" opacity="0.85"/><ellipse cx="400" cy="312" rx="24" ry="13" fill="#F0BE68" opacity="0.9"/></svg>
