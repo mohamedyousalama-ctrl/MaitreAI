@@ -104,7 +104,12 @@ function isWordChar(ch: string): boolean {
 // links-first ordering was introduced to end. Invisible bidi controls (RLM/LRM/ZWJ) are
 // excluded too: on an Arabic-first product an RLM after a link is ordinary punctuation, and
 // it percent-encodes into the href as %E2%80%8F and 404s.
-const URL_TRAILING_EXCLUDED = "\\s<>«»؛،.,!?:؛…)*_~`\\u200E\\u200F\\u200D";
+// «؟» (U+061F) is the ARABIC question mark, and its absence here was the most Arabic-shaped
+// bug in the file: «تحب تشوف المنيو https://getkivo.io/menu؟» pulled the ؟ into the href,
+// which percent-encodes to …/menu%D8%9F and 404s. Straight and curly quotes leaked the
+// same way. The list also had «؛» twice, which is what a hand-maintained character class
+// looks like just before it misses one.
+const URL_TRAILING_EXCLUDED = "\\s<>«»؛،؟.,!?:…)\\]}*_~`\"'’”\\u200E\\u200F\\u200D";
 const URL_RE = new RegExp(
   `\\b(?:https?:\\/\\/|www\\.)[^\\s<>«»؛،\\u200E\\u200F\\u200D]+[^${URL_TRAILING_EXCLUDED}]`,
   "i"
@@ -138,6 +143,10 @@ export function parseWhatsAppMarkup(input: string): MarkupToken[] {
     // RELATIVE href that resolved to /demo/WWW.x — a 404 instead of a link.
     out.push({ kind: "link", text: raw, href: /^www\./i.test(raw) ? `https://${raw}` : raw });
     rest = rest.slice(m.index + raw.length);
+    // The URL's LAST character is the left neighbour of whatever segment follows. Without
+    // this line `consumedBefore` stayed "" for the whole message and the comment below —
+    // and this one — described a fix that was never applied.
+    consumedBefore = raw.slice(-1);
   }
   // The TAIL segment needs its left neighbour too — the last character of the URL that
   // preceded it. Passing nothing here left a marker at the tail's start judged against

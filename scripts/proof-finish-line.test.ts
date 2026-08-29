@@ -28,6 +28,7 @@ import {
   salesNextStepLine,
   enforceTurnContract,
 } from "../lib/ai/turn-contract.ts";
+import { composeFinalReply } from "../lib/ai/reply-compose.ts";
 import {
   impliedItemCount,
   exceedsBulkThreshold,
@@ -176,6 +177,43 @@ ok("B3: hasFuturePromise detects «هختارلك» (fused) + «هجهّزلك»
     });
     ok("B9c: … while a genuine dead end STILL gets its next-step (not a blanket suppression)",
       notCollecting.appended && notCollecting.text.includes(salesNextStepLine("saudi")));
+  }
+
+  // ── B11 — THE REAL CALLER. Everything in B10 hand-passes `openSlotFill`, so it can
+  // only test enforceTurnContract's handling of a value someone else computes. Nothing
+  // drove the EXPRESSION that computes it, in reply-compose — which is exactly how the
+  // first fix for this shipped still broken: it read as if it guarded the empty basket
+  // and did not, because `needsStreetAddress` carries no lines check and IMPLIES
+  // `finalizeRequiredFieldMissing`, collapsing the whole thing back to the original bug
+  // one step further along the delivery flow.
+  {
+    const compose = (draft: OrderDraft, core: string) =>
+      composeFinalReply({
+        core, draft, dialect: "saudi", canOrder: true, toolNames: [],
+        safetyEvent: false, flagOn: true, allergyNote: null,
+      });
+    // A ZONED delivery draft with an EMPTY basket — reachable by «توصلون المعادي؟» before
+    // ordering anything (tools.ts set_fulfillment sets the zone with no lines check), or
+    // by removing the last line from a zoned draft.
+    const zonedEmpty = draftOf(0, {
+      lines: [], fulfillment: "delivery", deliveryZone: "حي العليا", address: null,
+    }) as OrderDraft;
+    const dead = compose(zonedEmpty, "أيوه نوصّل لحي العليا، رسوم التوصيل 12 ر.س.");
+    ok("B11: a zoned DELIVERY draft with an EMPTY basket still gets a next-step",
+      dead.text.includes(salesNextStepLine("saudi")));
+
+    // …and the case openSlotFill exists for is still suppressed.
+    const collecting = draftOf(1, {
+      fulfillment: "delivery", deliveryZone: "حي العليا", address: null,
+    }) as OrderDraft;
+    const asking = compose(collecting, "محتاج العنوان التفصيلي عشان أكمل الطلب وأوصّلك صح 🙏");
+    ok("B11b: a real basket awaiting an address is NOT given a second question",
+      !asking.text.includes(salesNextStepLine("saudi")));
+
+    // A pickup draft is never a slot-fill, empty or not.
+    const pickupEmpty = draftOf(0, { lines: [], fulfillment: "pickup" }) as OrderDraft;
+    ok("B11c: an empty PICKUP draft still gets a next-step",
+      compose(pickupEmpty, "تمام، من الفرع.").text.includes(salesNextStepLine("saudi")));
   }
 
   // ── B10 — openSlotFill MUST NOT switch the contract off on a dead end ───────

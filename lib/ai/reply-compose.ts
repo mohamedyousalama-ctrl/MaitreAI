@@ -166,9 +166,19 @@ export function composeFinalReply(input: ComposeInput): ComposeResult {
       // So it now requires an actual open basket, plus the narrower street-address ask
       // which is a genuine slot-fill even before items are priced. `enforceTurnContract`
       // additionally refuses to let this beat a future-promise or a safety turn.
+      //
+      // THE lines.length GUARD APPLIES TO BOTH DISJUNCTS. Written first as
+      // `needsStreetAddress(d) || (finalizeRequiredFieldMissing(d) && d.lines.length > 0)`,
+      // which reads as if it guards the empty case and does not: needsStreetAddress has no
+      // lines check, and it IMPLIES finalizeRequiredFieldMissing (zone resolved + address
+      // missing ⇒ a missing field), so the whole expression collapses to
+      // `finalizeRequiredFieldMissing(d) && (needsStreetAddress(d) || d.lines.length > 0)`.
+      // The empty basket was still live, just one step further along the delivery flow —
+      // reachable by asking «توصلون المعادي؟» with nothing in the basket, or by removing
+      // the last line from a zoned delivery draft.
       openSlotFill:
-        needsStreetAddress(input.draft) ||
-        (finalizeRequiredFieldMissing(input.draft) && input.draft.lines.length > 0),
+        (needsStreetAddress(input.draft) || finalizeRequiredFieldMissing(input.draft)) &&
+        input.draft.lines.length > 0,
       safetyEvent: input.safetyEvent,
     });
     if (contract.appended) {

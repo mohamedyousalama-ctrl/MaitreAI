@@ -200,8 +200,13 @@ export function enforceTurnContract(input: TurnContractInput): TurnContractResul
     hasQuestion(text) ||
     containsRenderedRecap(text) ||
     hasHandoffLine(text) ||
-    // An attached list/buttons IS the next step — see hasPresentation above.
-    input.hasPresentation === true ||
+    // An attached list/buttons IS the next step — see hasPresentation above. Guarded the
+    // same way as openSlotFill below, and for the same reason: a SAFETY turn that also
+    // attached a list (the model calls present_menu on the turn an allergy signal fires)
+    // silently lost the honest handoff line this module calls the only case where the
+    // terminal fallback is still an offer to fetch a human. That defect predates
+    // openSlotFill; the argument in the comment below applied to this line all along.
+    (input.hasPresentation === true && !futurePromise && input.safetyEvent !== true) ||
     // A value the order cannot close without is being collected — see openSlotFill above.
     // NEVER over a future-promise or a safety turn. This sat in the disjunction ahead of
     // `safetyEvent` (consulted far below), so an allergen turn on a zone-less delivery

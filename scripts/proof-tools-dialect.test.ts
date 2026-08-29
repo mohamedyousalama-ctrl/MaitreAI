@@ -549,8 +549,11 @@ ok(`the extra list catches ALL ${LEAKED_AS_SHIPPED.length} strings this WO de-Eg
 // they are native Saudi too — so it must never be the only gate. Asserting a fixed miss
 // COUNT would have to be revised downward every time the linter improves, which is the
 // wrong direction for a test to pull. Assert the property instead.
+// The real number after widening the linter is 7 of 12. `>= 1` was a 10x loosening of the
+// original `>= 10` — technically true, and it would have stayed green on a linter that had
+// silently stopped working entirely. `>= 5` holds with room to spare and still detects that.
 ok(`findLeakage still misses some (${missedByProjectLinter.length}) — it is a conservative QUALITY linter, never the only gate`,
-  missedByProjectLinter.length >= 1);
+  missedByProjectLinter.length >= 5);
 // Each marker the deliverable named, in isolation, on a string the project linter passes.
 for (const [text, label] of [
   ["الطلب مش جاهز", "مش"],
