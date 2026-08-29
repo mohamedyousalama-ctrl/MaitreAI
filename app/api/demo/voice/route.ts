@@ -24,6 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
+import { demoVoiceReply } from "@/lib/demo/voice-out";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
 import { mustWrite } from "@/lib/db/checked";
 import { rateLimit } from "@/lib/rate-limit";
@@ -217,11 +218,28 @@ export async function POST(req: Request) {
       reply: formatCustomerVisibleText(out.reply, out.dialect),
       dialect: out.dialect,
     });
+    // KHALID SPEAKS BACK. Until now the demo could hear and could not answer aloud:
+    // synthesizeVoiceReply had exactly one caller in the repo, the WhatsApp path. The demo
+    // half lives in lib/demo/voice-out.ts rather than inline, because the WhatsApp block
+    // fires recordCriticalAlert on a TTS fallback — which emails and WhatsApps the Founder,
+    // and a stranger on a public page must never be able to page a human.
+    //
+    // Never throws, and never blocks the reply: on any skip the visitor still gets the full
+    // text, which is exactly what they get today.
+    const spoken = await demoVoiceReply(closed.reply, { inboundWasVoice: true });
+    if (spoken.skipped && spoken.skipped !== "not_triggered") {
+      console.warn("[demo/voice] spoken reply skipped", { reason: spoken.skipped });
+    }
+
     return NextResponse.json({
       ok: true,
       conversationId,
       transcript,
       reply: closed.reply,
+      // Base64 rather than a URL: no object to store, nothing to expire, and no public
+      // artifact of a stranger's session left behind. Null whenever we chose not to speak.
+      replyAudio: spoken.audioBase64,
+      replyAudioMime: spoken.mime,
       orderNumber: closed.orderNumber,
       escalate: out.escalate,
       allergenGate: out.model === "deterministic_allergen_gate",

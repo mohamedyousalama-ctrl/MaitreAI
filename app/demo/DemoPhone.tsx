@@ -33,6 +33,10 @@ type Msg = {
   presentation?: Presentation | null;
   /** Voice notes render as a WhatsApp-style player rather than a bubble of text. */
   seconds?: number;
+  /** Khalid's SPOKEN reply, as an object URL. The transcript stays in `text`, so the
+   *  message is readable whether or not the audio plays — a voice-only bubble would be
+   *  unusable on a muted phone, which is most phones. */
+  audioUrl?: string | null;
   at: string;
 };
 
@@ -66,6 +70,9 @@ export default function DemoPhone() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
+  // Every object URL minted for a spoken reply, revoked on unmount. Without this each
+  // reply leaks its audio buffer for the lifetime of the tab.
+  const audioUrls = useRef<string[]>([]);
   const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   // CANCEL TOKEN. getUserMedia is awaited, so the permission prompt opens a window
   // where the user has already released the button before `recorder.current` exists.
@@ -103,6 +110,13 @@ export default function DemoPhone() {
 
   useEffect(() => {
     setMsgs((prev) => (prev[0] && !prev[0].at ? [{ ...prev[0], at: clock() }, ...prev.slice(1)] : prev));
+  }, []);
+
+  // Revoke every spoken-reply object URL on unmount. Each one pins its audio buffer in
+  // memory until revoked or the tab closes.
+  useEffect(() => () => {
+    for (const url of audioUrls.current) URL.revokeObjectURL(url);
+    audioUrls.current = [];
   }, []);
 
   // Stick to the bottom on new messages, the way a chat app does.
@@ -315,6 +329,7 @@ export default function DemoPhone() {
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean; transcript?: string; reply?: string; error?: string;
           presentation?: Presentation | null; conversationId?: string;
+          replyAudio?: string | null; replyAudioMime?: string | null;
         };
         rememberSession(data.conversationId);
         if (!res.ok || !data.ok) {
@@ -337,11 +352,30 @@ export default function DemoPhone() {
         }
         // Show the voice note the way WhatsApp does — a player, with what we heard.
         push({ from: "me", kind: "voice", text: String(data.transcript ?? ""), seconds });
+        // KHALID'S SPOKEN REPLY. base64 → Blob → object URL, so the audio never touches
+        // disk and disappears with the tab. Additive: the text bubble renders exactly as
+        // before and gains a play control, which is what keeps the reply usable on a muted
+        // phone — i.e. most phones.
+        let audioUrl: string | null = null;
+        if (data.replyAudio) {
+          try {
+            const bin = atob(data.replyAudio);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const url = URL.createObjectURL(new Blob([bytes], { type: data.replyAudioMime || "audio/mpeg" }));
+            audioUrls.current.push(url);
+            audioUrl = url;
+          } catch {
+            // A malformed payload must never cost the visitor their reply.
+            audioUrl = null;
+          }
+        }
         push({
           from: "khalid",
           kind: "text",
           text: String(data.reply ?? ""),
           presentation: data.presentation ?? null,
+          audioUrl,
         });
       } catch {
         setNotice("ما قدرنا نوصل للخدمة 🙏");
@@ -537,6 +571,38 @@ function renderWhatsApp(body: string): React.ReactNode[] {
   });
 }
 
+/** Khalid's spoken reply — a play control above the text, the way WhatsApp shows a voice
+ *  note. The TEXT IS ALWAYS RENDERED TOO: audio alone is unusable on a muted phone, and it
+ *  would put the order total somewhere a visitor cannot re-read. */
+function SpokenReply({ url }: { url: string }) {
+  const ref = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  return (
+    <div style={S.voice}>
+      <button
+        type="button"
+        style={S.play}
+        aria-label={playing ? "إيقاف" : "تشغيل"}
+        onClick={() => {
+          const el = ref.current;
+          if (!el) return;
+          if (playing) { el.pause(); el.currentTime = 0; setPlaying(false); return; }
+          // A failed play() must not leave the button stuck showing "playing".
+          void el.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+        }}
+      >
+        {playing ? "❚❚" : "▶"}
+      </button>
+      <span style={S.wave} aria-hidden>
+        {Array.from({ length: 22 }).map((_, i) => (
+          <i key={i} style={{ ...S.bar, height: `${5 + ((i * 7) % 13)}px` }} />
+        ))}
+      </span>
+      <audio ref={ref} src={url} preload="none" onEnded={() => setPlaying(false)} onPause={() => setPlaying(false)} />
+    </div>
+  );
+}
+
 function Bubble({
   m, mmss, onPick,
 }: {
@@ -563,6 +629,7 @@ function Bubble({
             <span style={S.voiceTime}>{mmss(m.seconds ?? 0)}</span>
           </div>
         ) : null}
+        {m.audioUrl ? <SpokenReply url={m.audioUrl} /> : null}
         {m.text ? <div style={{ ...S.text, ...(isEmojiOnly(m.text) ? S.emojiOnly : null) }}>{renderWhatsApp(m.text)}</div> : null}
         <div style={S.meta}>
           <span>{m.at}</span>
