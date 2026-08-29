@@ -96,8 +96,17 @@ ok("the Saudi prompt's customer-utterance example is Najdi, not Hijazi",
   saudi.includes("«أبي آكل»") && !saudi.includes("«أبغى آكل»"));
 ok("the Najdi quantity exemplars use «تبي», the Najdi form",
   saudi.includes("«كم عرض تبي؟»") && saudi.includes("«كم قطعة تبي؟»"));
-ok("«أبغى» survives ONLY where it is named as a Hijazi cue to mirror lightly",
-  !/«أبغى آكل»/.test(saudi));
+// This USED to re-test `!/«أبغى آكل»/` — a byte-for-byte duplicate of the line above,
+// under a name claiming a property it never checked. It would have stayed green if «أبغى»
+// were added as something Khalid should SAY. Now it asserts the actual property: every
+// occurrence sits on the LIGHT-MIRROR rule, where it is framed as a Hijazi GUEST's cue.
+{
+  const lines = saudi.split("\n").filter((l) => l.includes("أبغى"));
+  ok(`«أبغى» appears only on the LIGHT-MIRROR rule (${lines.length} line(s))`,
+    lines.length > 0 && lines.every((l) => l.includes("LIGHT-MIRROR")));
+  ok("…and no Hijazi 2nd-person form is given to Khalid to say",
+    !/تبغى|تبغون|يبغى|نبغى/.test(saudi));
+}
 
 // ── 3. THE SAFETY LINE ───────────────────────────────────────────────────────
 // The mandatory cross-contact caveat is the one sentence that must land cleanly with a
