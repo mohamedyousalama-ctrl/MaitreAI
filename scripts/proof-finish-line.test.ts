@@ -371,7 +371,13 @@ ok("W1: the finish_line flag is registered in ProFeature", /"finish_line"/.test(
 ok("W2: customer-turn derives the flag and sets brain.finishLine", /finishLineOn = isFeatureExplicitlyEnabled\("finish_line", tenantFeatures\)/.test(ct) && /finishLine: finishLineOn/.test(ct));
 ok("W3: BrainContext carries the optional finishLine flag", /finishLine\?: boolean;/.test(pr));
 ok("W4: respond.ts imports the three finish-line modules", /from "\.\/recap-render"/.test(rs) && /from "\.\/turn-contract"/.test(rs) && /from "\.\/bulk-threshold"/.test(rs));
-ok("W5 (PART C): the bulk short-circuit runs BEFORE the model loop, gated on the flag", /input\.brain\.finishLine && canOrder && exceedsBulkThreshold\(input\.userMessage\)/.test(rs));
+// Re-pinned 29 Aug: the condition gained `!awaitingDeliveryAddress` (see the address block
+// below). Asserting each conjunct independently keeps this strict — dropping any one now
+// fails — without breaking again the next time a guard is added.
+ok("W5 (PART C): the bulk short-circuit runs BEFORE the model loop, gated on the flag",
+  /input\.brain\.finishLine/.test(rs) && /canOrder/.test(rs) &&
+  /exceedsBulkThreshold\(input\.userMessage\)/.test(rs) &&
+  /input\.brain\.finishLine && canOrder && !awaitingDeliveryAddress && exceedsBulkThreshold/.test(rs));
 {
   const bulkIdx = rs.indexOf("exceedsBulkThreshold(input.userMessage)");
   const loopIdx = rs.indexOf("for (let i = 0; i < MAX_ITERATIONS; i++)");
@@ -395,7 +401,56 @@ ok("W7 (PART A): the fast-path finalize renders the confirmed recap under the fl
   ok("W8b (PART B/E): … and the compose pass runs BEFORE the reply is returned", composeIdx > 0 && composeIdx < returnIdx);
 }
 
+// ── AN ADDRESS IS NOT AN ORDER — live demo bug, 29 Aug 2026 ──────────────────
+// Khalid asked «وين توصّل؟ عطني العنوان بالتفصيل 📍». The customer answered «25 شارع جده»
+// and was handed off to a human with «طلبات المناسبات والكميات الكبيرة يرتّبها معك أحد من
+// الفريق» — the street number read as twenty-five items. The order was 147.2 ر.س of food
+// and the demo ended in an escalation instead of a confirmation, in front of a prospect.
+//
+// This module already refuses to read a PRICE or a CLOCK TIME as a quantity. A house number
+// is the same class of mistake, and it is the more predictable one: we ASKED for the
+// address, so the shape of the answer is known before it arrives.
+{
+  for (const addr of [
+    "25 شارع جده",              // the exact live message
+    "٢٥ شارع جده",              // Arabic-Indic
+    "شارع 25",                  // number after the address word
+    "حي العليا مخرج 9",          // «مخرج» — how Riyadh addresses are actually given
+    "مبنى 12 شقة 3",
+    "شقة 14 الدور الثالث",
+    "25 street name",
+    "exit 9 al olaya",
+  ]) {
+    ok(`an address is not a bulk order: ${addr}`, !exceedsBulkThreshold(addr));
+  }
+
+  // THE OPPOSITE FAILURE. Excluding too much would silently disable the handoff this
+  // module exists for — a party order that happens to name a district or a street.
+  for (const bulk of [
+    "٢٠ بيتزا حفلة",
+    "25 بيتزا",
+    "٢٥ بيتزا لحي العليا",       // names a district AND is genuinely bulk
+    "أبغى 30 كبسة للمناسبة",
+    "25 stuffed pizzas",         // «st…» must not read as «street»
+    "٥٠ وجبة",
+  ]) {
+    ok(`a real bulk order still hands off: ${bulk}`, exceedsBulkThreshold(bulk));
+  }
+
+  // The boundary that made the first version of this fix do nothing: JS `\b` is defined on
+  // [A-Za-z0-9_], so «شارع\b» never matches «شارع جده». Arabic needs no boundary; Latin
+  // does, or «25 stuffed» matches «st». Pinned because it is invisible on inspection.
+  ok("the Arabic address words match without a word boundary", impliedItemCount("25 شارع جده") === 0);
+  ok("the Latin address words keep theirs", impliedItemCount("25 stuffed pizzas") === 25);
+
+  // And the structural gate: the bulk check must not even run on the turn where an address
+  // is the expected reply.
+  const respondSrc = readFileSync(resolve(process.cwd(), "lib/ai/respond.ts"), "utf8");
+  ok("the bulk check is skipped while a delivery order is awaiting its address",
+    /awaitingDeliveryAddress[\s\S]{0,200}!awaitingDeliveryAddress && exceedsBulkThreshold/.test(respondSrc));
+}
+
+console.log("sample bulk handoff:", bulkHandoffReply("egyptian"));
 console.log(`\n${fail === 0 ? "✅" : "❌"} proof-finish-line: ${pass}/${pass + fail} passed`);
 console.log("sample recap:", renderDraftRecap(draftOf(2), { dialect: "egyptian", allergyNote: "⚠️ حساسية: بيض" }).replace(/\n/g, " ⏎ "));
-console.log("sample bulk handoff:", bulkHandoffReply("egyptian"));
 if (fail > 0) process.exit(1);

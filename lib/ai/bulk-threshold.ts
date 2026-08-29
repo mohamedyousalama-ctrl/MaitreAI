@@ -24,6 +24,33 @@ const PRICE_CONTEXT_RE = /(?:ج\.?\s*م|جنيه|جنيها|ر\.?\s*س|ريال|
 // «الساعة ٩» is a clock time, never an item count.
 const TIME_CONTEXT_RE = /الساع[ةه]\s*$/;
 
+// AN ADDRESS IS NOT AN ORDER. Live on the demo: a customer answering «عطني العنوان
+// بالتفصيل» typed «25 شارع جده» and was handed off with «طلبات المناسبات والكميات الكبيرة
+// يرتّبها معك أحد من الفريق» — the street number 25 read as twenty-five items. So did
+// «حي العليا مخرج 9» and «مبنى 12 شقة 3». This module already refuses to read a price or a
+// clock time as a quantity; a house number is the same class of mistake and the address
+// question is one we ASKED, so the answer is entirely predictable.
+//
+// ADJACENCY IS TIGHT ON PURPOSE. The number must sit directly beside the address word, so
+// «٢٥ بيتزا لحي العليا» — a genuine party order that happens to name a district — still
+// trips the threshold. A loose window would read «لحي» inside it and silently disable the
+// bulk handoff for any order mentioning a neighbourhood.
+// The two scripts need different boundaries. JS `\b` is defined on [A-Za-z0-9_], so
+// Arabic letters are all "non-word" and `شارع\b` never matches «شارع جده» — the first
+// version of this fix silently did nothing for the very string that prompted it. Latin
+// words DO need the boundary, or «25 stuffed pizzas» matches `st` and a real party order
+// stops tripping the threshold.
+const ADDRESS_WORD_AR =
+  "شارع|طريق|حي|مخرج|مبنى|عمارة|بناية|شقة|فيلا|دور|طابق|بلوك|وحدة|رقم|ص\\.?\\s?ب";
+const ADDRESS_WORD_EN =
+  "street|st|road|rd|ave|avenue|building|bldg|apt|apartment|floor|unit|block|exit|no";
+/** «25 شارع» — the number, then an address word immediately after. */
+const ADDRESS_AFTER_RE =
+  new RegExp(`^\\s*(?:(?:${ADDRESS_WORD_AR})|(?:${ADDRESS_WORD_EN})\\b)`, "i");
+/** «شارع 25» / «مخرج ٩» — an address word immediately before the number. */
+const ADDRESS_BEFORE_RE =
+  new RegExp(`(?:(?:${ADDRESS_WORD_AR})|\\b(?:${ADDRESS_WORD_EN}))\\s*$`, "i");
+
 /**
  * The largest stated QUANTITY implied by the message (0 when none). Numbers adjacent
  * to a currency token (a price), 4+ digit runs (phones/ids), values > 999, and clock
@@ -44,6 +71,7 @@ export function impliedItemCount(message: string): number {
     const before = s.slice(Math.max(0, m.index - 8), m.index);
     if (PRICE_CONTEXT_RE.test(after) || PRICE_CONTEXT_RE.test(before)) continue; // a price
     if (TIME_CONTEXT_RE.test(before)) continue; // a clock time
+    if (ADDRESS_AFTER_RE.test(after) || ADDRESS_BEFORE_RE.test(before)) continue; // a house/street number
     if (val > max) max = val;
   }
   return max;

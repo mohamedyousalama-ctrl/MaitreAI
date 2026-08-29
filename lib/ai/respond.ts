@@ -444,7 +444,16 @@ export async function respond(input: RespondInput): Promise<RespondResult> {
   // tool loop: honest handoff line + set the escalation (respond's handoff output) so
   // the team is alerted (customer-turn's notify path) and picks it up. No model call.
   // Flag OFF → never runs → byte-identical.
-  if (input.brain.finishLine && canOrder && exceedsBulkThreshold(input.userMessage)) {
+  // SECOND LAYER: a delivery order with no address yet is WAITING for one, because we just
+  // asked. Whatever the customer types next is the answer to our own question, and its
+  // numbers are house and street numbers. Live on the demo: «25 شارع جده» was handed off as
+  // a twenty-five-item party order. bulk-threshold.ts now refuses to read an address number
+  // as a quantity on its own, and this gate means the check does not even run on the turn
+  // where an address is the expected reply — lexical and structural, because either alone
+  // would leave the other class of address unhandled.
+  const awaitingDeliveryAddress =
+    ctx.draft.fulfillment === "delivery" && !ctx.draft.address?.trim();
+  if (input.brain.finishLine && canOrder && !awaitingDeliveryAddress && exceedsBulkThreshold(input.userMessage)) {
     const impliedCount = impliedItemCount(input.userMessage);
     const reason = bulkHandoffReason(impliedCount);
     ctx.escalation = { reason };
