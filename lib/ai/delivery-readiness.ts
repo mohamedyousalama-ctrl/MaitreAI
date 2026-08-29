@@ -28,10 +28,19 @@ const isSaudi = (d: string) => d === "saudi";
 // --- frozen customer-safe lines ---------------------------------------------
 
 /** The FROZEN address-detail ask, the single deterministic question after a
- *  zone-only delivery capture. Egyptian is the WO-specified verbatim string. */
+ *  zone-only delivery capture. Egyptian is the WO-specified verbatim string.
+ *
+ *  THE SAUDI BRANCH WAS EGYPTIAN. It said «ابعت لي» — the Egyptian/Levantine imperative
+ *  of «بعت» — and differed from the Egyptian branch only by un-fusing «ابعتلي» into two
+ *  words. A Riyadh speaker says «أرسل لي» or «اكتب لي». Observed live on production, on
+ *  the najd demo tenant, in this exact turn.
+ *
+ *  It was diagnosed once as model drift and it is not: it is this hardcoded string. The
+ *  diagnosis came from a truncated grep, and enabling address_flow_v2 is what made it
+ *  fire. The Egyptian branch is unchanged and still correct for an Egyptian tenant. */
 export function frozenAddressAsk(dialect: string): string {
   return isSaudi(dialect)
-    ? "تمام 👌 ابعت لي العنوان بالتفصيل — الشارع ورقم العمارة وعلامة مميزة"
+    ? "تمام 👌 اكتب لي العنوان بالتفصيل — الشارع ورقم العمارة وعلامة مميزة"
     : "تمام 👌 ابعتلي العنوان بالتفصيل — الشارع ورقم العمارة وعلامة مميزة";
 }
 
@@ -46,7 +55,7 @@ export function frozenDraftHoldingLine(dialect: string): string {
 /** A frozen honest line for an empty draft / nothing to finalize. */
 export function frozenEmptyDraftLine(dialect: string): string {
   return isSaudi(dialect)
-    ? "ما عندي طلب مفتوح حالياً 🙏 تحب تطلب وش؟"
+    ? "ما عندي طلب مفتوح الحين 🙏 وش تحب تطلب؟"
     : "مفيش طلب مفتوح دلوقتي 🙏 تحب تطلب إيه؟";
 }
 

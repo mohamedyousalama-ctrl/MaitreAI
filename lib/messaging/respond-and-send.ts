@@ -1556,7 +1556,14 @@ export async function respondAndSendWhatsApp(
   // HANDOFF-HARDENING (Fix 1): after a timeout auto-return, open with an honest
   // resume line that acknowledges the wait BEFORE the Brain answers the message.
   if (resumedAfterTimeout) {
-    const resumeText = formatCustomerVisibleText("معلش اتأخرنا عليك 🙏 أنا معاك دلوقتي ونكمّل على طول.", outboundDialect);
+    // DIALECT-BRANCHED. This was one unbranched Egyptian line carrying three markers the
+    // linter bans — «معلش», «معاك», «دلوقتي» — sent to every tenant including Saudi ones.
+    const resumeText = formatCustomerVisibleText(
+      outboundDialect === "saudi"
+        ? "العذر منك تأخّرنا عليك 🙏 أنا معك الحين ونكمّل على طول."
+        : "معلش اتأخرنا عليك 🙏 أنا معاك دلوقتي ونكمّل على طول.",
+      outboundDialect,
+    );
     const { data: rmsg } = await admin
       .from("messages")
       .insert({

@@ -146,13 +146,22 @@ export const TYPED_ACTION_STRINGS = Object.freeze({
     egyptian: "تمام، الدفع عند الاستلام.",
     saudi: "تمام، الدفع عند الاستلام.",
   },
+  // VODAFONE CASH IS AN EGYPTIAN WALLET. It does not exist in Saudi Arabia, and the Saudi
+  // branch named it anyway — so a Saudi customer could be told we had set up a payment
+  // product that is not available in their country. That is a market error, not a dialect
+  // one, and it is worse: the Arabic was fine and the fact was wrong.
+  //
+  // The Saudi copy is now method-neutral rather than renamed. Renaming it to «مدى» would
+  // be a second false claim (it would assert a method the customer did not choose), and
+  // this key should be unreachable on a Saudi tenant in the first place — a Saudi tenant
+  // configured with vodafone_cash is a data defect that copy must not paper over.
   pay_vodafone_cash: {
     egyptian: "تمام، اخترت فودافون كاش. هنثبت طريقة الدفع ونكمل تأكيد الطلب.",
-    saudi: "تمام، اخترت فودافون كاش. نثبت طريقة الدفع ونكمل تأكيد الطلب.",
+    saudi: "تمام، ثبّتنا طريقة الدفع ونكمل تأكيد الطلب.",
   },
   pay_vodafone_cash_unavailable: {
     egyptian: "فودافون كاش مش متاح حالياً. نكمل بالدفع عند الاستلام؟",
-    saudi: "فودافون كاش غير متاح حالياً. نكمل بالدفع عند الاستلام؟",
+    saudi: "طريقة الدفع هذي مو متوفرة الحين. نكمل بالدفع عند الاستلام؟",
   },
   pay_counter: {
     egyptian: "تمام، الدفع كاش عند الاستلام من الفرع.",
@@ -168,7 +177,7 @@ export const TYPED_ACTION_STRINGS = Object.freeze({
   },
   select_item_unavailable: {
     egyptian: "معلش، الاختيار ده مش متاح دلوقتي. اختار صنف تاني من المنيو أو اكتبلي طلبك.",
-    saudi: "المعذرة، الاختيار هذا غير متاح حالياً. اختر صنف ثاني من القائمة أو اكتب لي طلبك.",
+    saudi: "العذر منك، الاختيار هذا غير متاح حالياً. اختر صنف ثاني من القائمة أو اكتب لي طلبك.",
   },
   select_item_needs_variant: {
     egyptian: (item: string, options: string) => `اختار حجم «${item}»: ${options}.`,
@@ -184,15 +193,15 @@ export const TYPED_ACTION_STRINGS = Object.freeze({
   },
   select_category_unavailable: {
     egyptian: "معلش، التصنيف ده مش متاح دلوقتي. اختار من التصنيفات الحالية أو اكتبلي طلبك.",
-    saudi: "المعذرة، التصنيف هذا غير متاح حالياً. اختر من التصنيفات الحالية أو اكتب لي طلبك.",
+    saudi: "العذر منك، التصنيف هذا غير متاح حالياً. اختر من التصنيفات الحالية أو اكتب لي طلبك.",
   },
   recovery_wrong_context: {
     egyptian: "معلش، الاختيار ده مش مرتبط بخطوة مفتوحة دلوقتي. اكتبلي طلبك أو اختار من آخر أزرار بعتها.",
-    saudi: "المعذرة، الاختيار هذا غير مرتبط بخطوة مفتوحة حالياً. اكتب لي طلبك أو اختر من آخر أزرار أرسلتها.",
+    saudi: "العذر منك، الاختيار هذا غير مرتبط بخطوة مفتوحة حالياً. اكتب لي طلبك أو اختر من آخر أزرار أرسلتها.",
   },
   unknown_interactive: {
     egyptian: "معلش، الاختيار ده مش واضح عندي دلوقتي. اختار من آخر أزرار بعتها أو اكتبلي طلبك.",
-    saudi: "المعذرة، الاختيار هذا غير واضح عندي حالياً. اختر من آخر أزرار أرسلتها أو اكتب لي طلبك.",
+    saudi: "العذر منك، الاختيار هذا غير واضح عندي حالياً. اختر من آخر أزرار أرسلتها أو اكتب لي طلبك.",
   },
 });
 

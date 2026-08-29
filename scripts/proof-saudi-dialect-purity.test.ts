@@ -44,6 +44,22 @@ const FILES = [
   "lib/ai/disease-diet-guard.ts",
   "lib/ai/respond.ts",
   "lib/messaging/respond-and-send.ts",
+  // WO-DIALECT-AUDIT (29 Aug). An audit found Egyptian in the SAUDI branch of eleven files
+  // this list had never opened — «ابعت لي العنوان» in delivery-readiness.ts fired on
+  // production, and typed-actions.ts offered a Saudi customer فودافون كاش, an Egyptian
+  // wallet that does not exist in the country. Nine files was never the right list either.
+  "lib/ai/delivery-readiness.ts",
+  "lib/ai/prompt.ts",
+  "lib/ai/pay-playbook.ts",
+  "lib/ai/voice-quality.ts",
+  "lib/ai/clarification.ts",
+  "lib/ai/recap-render.ts",
+  "lib/ai/perception.ts",
+  "lib/ai/prompt-allergy.ts",
+  "lib/messaging/typed-actions.ts",
+  "lib/messaging/image-turn.ts",
+  "lib/ai/media-intent.ts",
+  "lib/delivery/routing.ts",
 ];
 
 // EXTRA markers. The project linter's Egyptian list is 26 entries and misses the ones
@@ -105,7 +121,11 @@ function saudiStrings(path: string): Array<{ line: number; text: string }> {
   // next three is joined so a ternary wrapped across lines is read the same way.
   for (let i = 0; i < lines.length; i++) {
     if (isComment(lines[i])) continue;
-    const isSaudiFirst = /dialect === "saudi"\s*$|dialect === "saudi"\s*\?/.test(lines[i]);
+    // `isSaudi(dialect) ?` and `sa ?` are used as widely as the literal comparison, and the
+    // detector understood neither — so delivery-readiness.ts, tools.ts and clarification.ts
+    // contributed ZERO branches while reporting no failures. A branch-walker that silently
+    // walks nothing is worse than no walker: it reports success.
+    const isSaudiFirst = /dialect === "saudi"\s*$|dialect === "saudi"\s*\?|isSaudi\([A-Za-z_.]+\)\s*$|isSaudi\([A-Za-z_.]+\)\s*\?|(?:^|[^A-Za-z])sa\s*\?/.test(lines[i]);
     const isEgFirst = /dialect === "egyptian"\s*$|dialect === "egyptian"\s*\?|(?:^|[^A-Za-z])eg\s*\?/.test(lines[i]);
     if (!isSaudiFirst && !isEgFirst) continue;
     const window = [lines[i], lines[i + 1] ?? "", lines[i + 2] ?? "", lines[i + 3] ?? ""].join("\n");
@@ -143,16 +163,49 @@ const offenders: string[] = [];
 for (const f of FILES) {
   for (const { line, text } of saudiStrings(f)) {
     checked++;
-    const hits = offend(text);
+    // A BAN IS NOT A USE. «never «حضرتك» أو «يا فندم»» instructs the model NOT to say them;
+    // flagging it would push someone to delete the very rule that prevents the defect. Only
+    // a marker with no negation immediately before it counts as a use.
+    const hits = offend(text).filter((h) => {
+      const marker = h.split("(")[0].split("/")[0];
+      const at = text.indexOf(marker);
+      if (at < 0) return true;
+      const before = text.slice(Math.max(0, at - 60), at);
+      return !/\b(never|NEVER|not|avoid|forbidden|banned)\b|لا تقول|ممنوع|تجنّب|تجنب/.test(before);
+    });
     if (hits.length) offenders.push(`${f}:${line} [${hits.join(", ")}] ${text.slice(0, 70)}`);
   }
 }
 
-ok(`the extractor found Saudi strings to check (found ${checked})`, checked >= 25);
+// COVERAGE IS ITSELF AN ASSERTION. The floor was 25 while the real count was 93, so
+// deleting files from FILES or blinding the extractor dropped coverage to 87 and the proof
+// stayed GREEN — a scan can be narrowed to nothing without failing, which is how eleven
+// files with Egyptian in their Saudi branches stayed invisible.
+ok(`the extractor found Saudi strings to check (found ${checked})`, checked >= 85);
+
+// The specific files an audit found harbouring Egyptian in a SAUDI branch. Named so that
+// removing one from FILES fails here rather than quietly shrinking the scan.
+for (const mustCover of [
+  "lib/ai/delivery-readiness.ts",   // «ابعت لي العنوان» — fired on production
+  "lib/messaging/typed-actions.ts", // offered a Saudi customer فودافون كاش
+  "lib/ai/pay-playbook.ts",         // «لسه» in the Saudi anchor set
+  "lib/ai/prompt.ts",
+]) {
+  ok(`${mustCover} is in the scanned set`, FILES.includes(mustCover));
+}
+
+// And the EXTRACTOR must actually see the branch forms those files use. delivery-readiness
+// writes `isSaudi(dialect) ? …`, which the detector did not recognise — so the file was in
+// the list and contributed ZERO branches. A walker that walks nothing reports success.
+ok("the extractor understands `isSaudi(...) ?`, not just the literal comparison",
+  saudiStrings("lib/ai/delivery-readiness.ts").length >= 3);
 // The file that carried SIX Egyptian strings contributed ZERO before — its copy lives
 // in an object literal, not a ternary, so the first extractor never opened it.
 ok("allergy-calm-hold.ts is actually covered (it was silently skipped before)",
   saudiStrings("lib/ai/allergy-calm-hold.ts").length >= 5);
+// Name the offenders. A bare pass/fail here meant a failure told you a Saudi branch was
+// Egyptian somewhere across a dozen files and left you to find it by hand.
+if (offenders.length) for (const o of offenders) console.log("      →", o);
 ok("no SAUDI branch contains an Egyptian / Levantine / Iraqi marker", offenders.length === 0);
 for (const o of offenders) console.log(`      ${o}`);
 
