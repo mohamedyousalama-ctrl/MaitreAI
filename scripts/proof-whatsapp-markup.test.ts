@@ -79,27 +79,80 @@ const VERBATIM = [
 for (const input of VERBATIM) {
   eq(`markers glued to a word are LITERAL: ${input}`, parseWhatsAppMarkup(input), [{ kind: "text", text: input }]);
 }
-// The invariant behind all of them, as a property: nothing visible may be invented or lost.
+// THE PROPERTY THAT CAN ACTUALLY SEE THIS FAILURE CLASS. The previous version asserted
+// only that NON-MARKER characters survive — so it returned zero offenders across 153
+// MILLION strings while «PROMO_5» still rendered «PROMO5», because the character being
+// deleted IS a marker. Every corruption in this file's history is a marker that was
+// literal text and got eaten. So the property has to be about the RUNS: every formatted
+// run must be non-empty, must not be padded with whitespace (WhatsApp requires the marker
+// to touch the content on both sides), and the rejoin must still preserve everything else.
 {
-  const alphabet = ["*", "_", "~", "`", "a", "ب", " ", "5"];
+  const alphabet = ["*", "_", "~", "`", "a", "ب", "\u064F", " ", "5", "\n"];
   let checked = 0;
   const offenders: string[] = [];
+  const strip = (x: string) => x.replace(/[*_~`]/g, "");
   const walk = (acc: string) => {
     if (acc) {
       checked++;
-      const rebuilt = parseWhatsAppMarkup(acc).map((t) => t.text).join("");
-      // Every character that survives must appear in the original, in order, and only
-      // markers may be dropped. Stripping markers from BOTH sides makes that exact.
-      const strip = (x: string) => x.replace(/[*_~`]/g, "");
-      if (strip(rebuilt) !== strip(acc)) offenders.push(acc);
+      const toks = parseWhatsAppMarkup(acc);
+      if (strip(toks.map((t) => t.text).join("")) !== strip(acc)) offenders.push(`rejoin:${acc}`);
+      else for (const t of toks) {
+        if (t.kind === "text" || t.kind === "link") continue;
+        if (!t.text || /^\s|\s$/.test(t.text)) { offenders.push(`padded:${acc}`); break; }
+      }
     }
     if (acc.length >= 6) return;
     for (const c of alphabet) walk(acc + c);
   };
   walk("");
-  ok(`parser never invents or loses a NON-marker character (${checked} strings, offenders: ${offenders.length}${offenders.length ? ` e.g. ${JSON.stringify(offenders[0])}` : ""})`,
+  ok(`every emitted run is well-formed over ${checked} strings (offenders: ${offenders.length}${offenders.length ? ` e.g. ${JSON.stringify(offenders[0])}` : ""})`,
     offenders.length === 0);
 }
+
+// The four ways this parser has deleted a literal marker, each pinned by the exact string
+// adversarial review broke it with.
+const STILL_LITERAL = [
+  // (1) an OPENING marker followed by a space still opened a run and paired across the message
+  "التوصيل ~ 20 ريال، والطلب من 50~60 ريال",
+  "الخصم _ ينطبق على الكود PROMO_5",
+  "5 * 3* 2",
+  "` `",
+  // (2) a CLOSING marker glued to the start of a word
+  "الرمز _A_5 والرمز _B_10",
+  // (3) one Arabic diacritic bypassed a word class of [\p{L}\p{N}_] alone
+  "الكودُ_5 مع الكودُ_10",
+  "الكودْ~5 مع الكودْ~10",
+];
+for (const input of STILL_LITERAL) {
+  eq(`stays literal: ${input}`, parseWhatsAppMarkup(input), [{ kind: "text", text: input }]);
+}
+
+// (4) boundaries read from an absolute offset saw the PREVIOUS run's closing marker — a
+// character no longer in the output — and suppressed the run beside it.
+for (const [input, kinds] of [
+  ["_مائل_~مشطوب~", "italic,strike"],
+  ["_مائل_*عريض*", "italic,bold"],
+  ["*a*_b_~c~`d`", "bold,italic,strike,mono"],
+] as const) {
+  eq(`adjacent runs chain: ${input}`,
+    parseWhatsAppMarkup(input).filter((t) => t.kind !== "text").map((t) => t.kind).join(","), kinds);
+}
+
+// The guard is PER RUN, not per message: a malformed pair must not disarm a good one.
+{
+  const toks = parseWhatsAppMarkup("قال _مرحبا_x وبعدين _y_ تمام");
+  ok("a glued pair stays literal while a well-formed one beside it still formats",
+    toks.some((t) => t.kind === "text" && t.text.includes("_مرحبا_x")) &&
+    toks.some((t) => t.kind === "italic" && t.text === "y"));
+}
+
+// A URL is ONE opaque span. Formatting used to run first, so a URL containing markers was
+// torn apart and its href TRUNCATED to the directory — a live link to the wrong page.
+for (const url of ["https://getkivo.io/menu/_special_offer", "https://getkivo.io/x/~sale~/y"]) {
+  const link = parseWhatsAppMarkup(url).find((t) => t.kind === "link") as { href?: string } | undefined;
+  eq(`a URL is opaque, href not truncated: ${url}`, link?.href, url);
+}
+
 // WhatsApp has no «__bold__»; leaving it fully literal is the correct behaviour, and it is
 // strictly better than the half-eaten «_الإجمالي_» the unguarded parser produced.
 eq("«__x__» stays literal — WhatsApp has no such marker",
@@ -120,6 +173,12 @@ ok("a ZWJ family is ONE glyph", isEmojiOnly("👨‍👩‍👧‍👦"));
 ok("a flag is ONE glyph", isEmojiOnly("🇸🇦"));
 ok("a keycap is ONE glyph", isEmojiOnly("1️⃣"));
 ok("a skin-tone emoji is ONE glyph", isEmojiOnly("👍🏽"));
+ok("whitespace BETWEEN emoji is fine — WhatsApp enlarges «👍 👍»", isEmojiOnly("👍 👍"));
+// Extended_Pictographic alone is too wide: «©» and «™» carry it and WhatsApp does NOT
+// enlarge them. Emoji presentation is the real test — «❤️» qualifies via its U+FE0F.
+ok("«©» is not enlarged", !isEmojiOnly("©"));
+ok("«™» is not enlarged", !isEmojiOnly("™"));
+ok("«❤️» IS enlarged (U+FE0F asks for emoji presentation)", isEmojiOnly("❤️"));
 ok("four do not", !isEmojiOnly("🌟🔥😊👍"));
 ok("emoji with words is not emoji-only", !isEmojiOnly("تمام 🌟"));
 ok("empty is not emoji-only", !isEmojiOnly("   "));

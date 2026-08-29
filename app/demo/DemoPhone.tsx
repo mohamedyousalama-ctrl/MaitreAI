@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEMO_MAX_AUDIO_BYTES, DEMO_MAX_RECORD_SECONDS } from "@/lib/demo/config";
 import { parseWhatsAppMarkup, isEmojiOnly } from "@/lib/util/whatsapp-markup";
+import { DEMO_MAX_CHARS } from "@/lib/demo/config";
 
 /** The interactive payload the Brain attaches to a turn — the same shape WhatsApp
  *  renders as a tappable list or button row (lib/ai/tools.ts). The demo dropped this
@@ -461,6 +462,11 @@ export default function DemoPhone() {
               <div style={S.inputWrap}>
                 <input
                   value={draft}
+                  // The server already truncates to DEMO_MAX_CHARS, but the LOCAL bubble
+                  // renders the raw draft, and renderWhatsApp re-parses it on every render.
+                  // Without this, pasting a very long body only ever hurt the visitor's own
+                  // tab — but it cost nothing to stop.
+                  maxLength={DEMO_MAX_CHARS}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") submitText(); }}
                   placeholder="رسالة"
