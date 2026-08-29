@@ -595,6 +595,11 @@ ok("the seed targets the same pinned tenant the routes use", seed.includes(DEMO_
 ok("the seed enables khalid_persona, as config.ts claims", /khalid_persona:\s*true/.test(seed));
 ok("config.ts still claims the persona is on (the two must agree)", /`khalid_persona`\s*on/.test(cfgRaw));
 ok("the seed keeps the Saudi dialect the persona depends on", /dialect:\s*"saudi"/.test(seed));
+// The demo seeds a real Riyadh zone; without this flag a written address never matches it.
+ok("the seed enables address_flow_v2, so a written Riyadh address resolves deterministically",
+  /address_flow_v2:\s*true/.test(seed));
+ok("and the zone that flag exists to match is actually seeded",
+  /name:\s*"حي العليا"/.test(seed) && /delivery_zones/.test(seed));
 // G0-R and real money: these must never be seeded onto a public tenant.
 // The seed leaves voice_notes OFF, but the parenthetical this line used to carry — "the
 // outbound TTS path" — stopped being true when Khalid was given a voice. voice_notes gates

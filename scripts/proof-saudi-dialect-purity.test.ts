@@ -168,5 +168,30 @@ ok("the linter still detects a known Egyptian marker", !findLeakage("انا عا
 ok("the linter still detects a known Levantine marker", !findLeakage("بدي اطلب هلق").ok);
 ok("the linter passes clean Najdi", findLeakage("هلا والله، وش تحب تطلب اليوم؟").ok);
 
+// ── LIVE LEAK, 29 Aug 2026 — caught in production, not in a test ─────────────
+// The delivery-address turn on the najd demo tenant answered «تمام 👌 ابعت لي العنوان
+// بالتفصيل». findLeakage returned {"ok":true,"hits":[]} on that exact string: «ابعت» is the
+// Egyptian imperative of «بعت» and was simply not on the list. A Riyadh speaker says
+// «أرسل لي» / «اكتب لي», so there is no Najdi homograph to protect.
+//
+// This is model DRIFT, not a hardcoded string — the prompt already forbids Egyptian
+// borrowing and the model did it anyway. The linter is the only thing that can see that
+// happen, so a marker it cannot see is a leak nobody will ever hear about.
+{
+  const leaked = findLeakage("تمام 👌 ابعت لي العنوان بالتفصيل — الشارع ورقم العمارة", { region: "najd" });
+  ok("the live «ابعت» leak is caught", !leaked.ok && leaked.hits.some((h) => h.marker === "ابعت"));
+
+  // And the ban must not cost us legitimate Najdi. Every one of these is what Khalid
+  // SHOULD say; a linter that flags them would train everyone to ignore it.
+  for (const clean of [
+    "أرسل لي العنوان", "اكتب لي العنوان بالتفصيل", "وش تحب تطلب؟",
+    "أبشر، الطلب معنا", "تبي كبسة وحدة ولا أكثر؟", "هلا والله، نوّرت",
+    "الحين وقت الغدا", "ما نقدر نضمن عدم وجود أثر",
+  ]) {
+    const r = findLeakage(clean, { region: "najd" });
+    ok(`natural Najdi is not flagged: ${clean.slice(0, 28)}`, r.ok);
+  }
+}
+
 console.log(`\nSAUDI DIALECT PURITY PROOF: ${pass} passed, ${fail} failed  (${checked} Saudi branches scanned)`);
 process.exit(fail === 0 ? 0 : 1);

@@ -204,6 +204,13 @@ async function getOrCreateOwner() {
         memory_allergy_gate: true,
         typed_quantity_fill: true,
         typed_interactive_actions: true,
+        // ADDRESS. The demo seeds a real Riyadh delivery zone («حي العليا», 12 ر.س, 45 min,
+        // 30 ر.س minimum) and then handled a written address on the LEGACY path, which does
+        // not match it — so a visitor typing their own neighbourhood got no deterministic
+        // zone resolution, on a demo whose whole argument is that the deterministic layer
+        // owns the facts. This flag was not deliberately withheld the way voice_notes and
+        // psp_payments are below; it was simply never added.
+        address_flow_v2: true,
         allergen_symptom_detection: true,
         deterministic_allergen_safety: true,
       },
