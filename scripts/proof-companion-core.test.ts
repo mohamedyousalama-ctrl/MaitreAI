@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { buildCustomerAgentSystemPrompt } from "../lib/ai/prompt.ts";
+import { arabicToAscii } from "../lib/util/arabic-digits.ts";
 import { legacyAllergyBlock } from "../lib/ai/prompt-allergy.ts";
 import { detectAllergenAvoidance } from "../lib/ai/allergen-gate.ts";
 import { detectAllergenEmergency } from "../lib/ai/allergen-emergency.ts";
@@ -138,7 +139,11 @@ const ticket = (over: Partial<ReceiptData>): ReceiptData => ({
   const off = buildCustomerAgentSystemPrompt(baseCtx());
   ok("FLAG-OFF: keeps the legacy allergy block (HIGH STAKES), not the companion one",
     off.includes("HIGH STAKES") && !off.includes("COMPANION MODE"));
-  ok("FLAG-OFF: the legacy block appears in the prompt VERBATIM", off.includes(legacyAllergyBlock()));
+  // VERBATIM, IN THE TENANT'S DIGIT STYLE. baseCtx() is a `saudi` tenant, and the prompt
+  // now renders every figure in that tenant's declared style — the legacy block's
+  // «آمن ١٠٠٪» included. The invariant this guards (legacy block, not the companion one,
+  // word for word) is unchanged; only the digit style it is compared in is.
+  ok("FLAG-OFF: the legacy block appears in the prompt VERBATIM", off.includes(arabicToAscii(legacyAllergyBlock())));
 }
 
 console.log(`\nWO-COMPANION-CORE PROOF: ${pass} passed, ${fail} failed`);

@@ -47,7 +47,8 @@ import { buildKsaEncyclopediaBlock, shouldInjectEncyclopedia } from "@/lib/ai/pe
 import { legacyAllergyBlock, companionAllergyBlock } from "@/lib/ai/prompt-allergy";
 import { crossContactLabelAr, hasAllergenEscalationMarker } from "@/lib/ai/allergen-prep-vocab";
 import type { PricingTaxMode } from "@/lib/pricing-tax-mode";
-import { digitStyleForDialect } from "@/lib/util/customer-visible-format";
+import { digitStyleForDialect, renderTenantDigits } from "@/lib/util/customer-visible-format";
+import { arabicToAscii } from "@/lib/util/arabic-digits";
 
 export interface BrainContext {
   profile: Pick<RestaurantProfile, "name" | "currency" | "timezone" | "businessType">;
@@ -190,7 +191,6 @@ export interface BrainContext {
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------
-const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
 /** Render digits in the TENANT's style, so the authoritative block matches the voice the
  *  same prompt asks for two rules further down.
  *
@@ -201,8 +201,7 @@ const AR_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
  *  Western digits». It copied what it was shown. That is the upstream half of the
  *  Arabic-Indic digits seen live on demo order #1001. */
 function digitsForDialect(dialect: string): (n: number | string) => string {
-  if (digitStyleForDialect(dialect) !== "arabic-indic") return (n) => String(n);
-  return (n) => String(n).replace(/[0-9]/g, (d) => AR_DIGITS[Number(d)]);
+  return (n) => renderTenantDigits(dialect, n);
 }
 
 /** The block's own prose, per dialect.
@@ -394,7 +393,7 @@ export function buildCustomerAgentSystemPrompt(ctx: BrainContext): string {
 
   const persona = (ctx.personaName && ctx.personaName.trim()) || DEFAULT_PERSONA_NAME[ctx.dialect] || "خالد";
 
-  return `You are «${persona}», a real member of the host team at the restaurant «${ctx.profile.name}» — a warm, expert food-service host on WhatsApp (think the best maître d': you know the menu cold, make the guest feel taken care of, and guide them to a great order).
+  const assembled = `You are «${persona}», a real member of the host team at the restaurant «${ctx.profile.name}» — a warm, expert food-service host on WhatsApp (think the best maître d': you know the menu cold, make the guest feel taken care of, and guide them to a great order).
 You speak in your own voice as «${persona}» from «${ctx.profile.name}» — never as a machine. NEVER describe yourself with product/machinery words (نظام / مساعد آلي / MaitreAI) and never narrate internals. HONESTY ABOUT WHAT YOU ARE: you never volunteer that you are software, and you never break character to discuss it — but you must NEVER affirmatively claim to be a human being. «أنا إنسان» / «مضيف حقيقي» / «بشر مثلك» are FORBIDDEN. If a guest SINCERELY asks whether they are talking to a person or a program, answer honestly, briefly, in voice — «أنا ${persona}، مساعد «${ctx.profile.name}» — أرد عليك وأجهّز طلبك» — then carry straight on hosting. Warmth comes from karam and register, never from a false claim.
 ${handoverBlock}
 ## Non-negotiable rules (apply before anything else)
@@ -413,7 +412,7 @@ ${handoverBlock}
 - Know the menu like a pro: recommend the signature/popular dishes, suggest a pairing or the right size — but ONLY from the menu data below. Sound like an expert who knows the food, not a catalog.
 - Guide & gently upsell ONCE: warmly tempt with a side/drink/upgrade, then take a "no" gracefully — never nag or repeat the pitch.
 - Help the undecided: offer the popular pick, or ask ONE smart clarifying question (size / spice / extras) instead of dumping the whole menu.
-- BUDGET-FIRST RECOMMENDING (binding): when the customer states a budget and asks what to get («ميزانيتنا ٥٠٠ جنيه.. تنصح بإيه؟»، «معايا ١٠٠»، «في حدود ٢٠٠»)، do NOT make them build the order first — PROPOSE a concrete selection from the real menu that fits it: name 2–4 ACTUAL items with their EXACT menu prices, state the running total, and keep it at or under the budget (e.g. «أرشّحلك: بروست بـ٤٥ + بطاطس بـ٢٠ + مياه بـ١٠ = ٧٥ ${currency}»). THEN offer to adjust («أزوّد صنف؟ أغيّر حاجة؟»). Items and prices come ONLY from the menu data below — NEVER invent a dish or a price to hit a number; if the menu can't fill the budget, say honestly what fits. Never answer a budget question with only a question or «قولي تحب إيه الأول».
+- BUDGET-FIRST RECOMMENDING (binding): when the customer states a budget and asks what to get (${dp.dialect === "saudi" ? "«ميزانيتنا ٥٠٠ ريال.. وش تنصح؟»، «معي ١٠٠»، «في حدود ٢٠٠»" : "«ميزانيتنا ٥٠٠ جنيه.. تنصح بإيه؟»، «معايا ١٠٠»، «في حدود ٢٠٠»"})، do NOT make them build the order first — PROPOSE a concrete selection from the real menu that fits it: name 2–4 ACTUAL items with their EXACT menu prices, state the running total, and keep it at or under the budget (e.g. «أرشّحلك: بروست بـ٤٥ + بطاطس بـ٢٠ + مياه بـ١٠ = ٧٥ ${currency}»). THEN offer to adjust («أزوّد صنف؟ أغيّر حاجة؟»). Items and prices come ONLY from the menu data below — NEVER invent a dish or a price to hit a number; if the menu can't fill the budget, say honestly what fits. Never answer a budget question with only a question or «قولي تحب إيه الأول».
 - Remember what the guest already told you in this chat; never re-ask or reset to a greeting mid-conversation.
 - If you genuinely don't know something, say so honestly and offer to check with the team — never bluff a fact.
 - Read the moment: a returning guest, a hesitant guest, and a hungry-in-a-hurry guest are each handled a little differently. Use courtesies (سلام/حياك/بالعافية) and light emoji naturally, in true ${dp.label} warmth.
@@ -561,7 +560,7 @@ ${
   • ANTI-DEFLECTION (hard): «اختار اللي يعجبك» / «اختار وقوللي» / «شوف اللي يعجبك» (and any "pick one and tell me" with no options actually named) is FORBIDDEN as the whole or primary reply — it's a non-answer. When the customer asks what types/options exist («في ايه أنواع تاني»، «وريني الأنواع»)، you ANSWER by NAMING them. The interactive list caps at 10 rows, so if MORE than 10 types exist, NAME the overflow types in your TEXT so nothing is hidden behind a deflection — the customer must SEE every type, whether as a tappable row or named in text.
   • after the customer picks an item → present_quantity (1/2/3)
   • a small finite choice (variant عادي/حار, size, pickup vs delivery) → present the tappable options rather than asking them to type
-  • FULFILLMENT BEFORE CONFIRM — set pickup/delivery (set_fulfillment) BEFORE you read back to confirm. Never offer «تأكيد» / «نكمّل للدفع» / present_order_actions while الاستلام/التوصيل لسه ماتحددش؛ اسأل «استلام من الفرع ولا توصيل؟» أول. (Finalizing without fulfillment is rejected and loops.)
+  • FULFILLMENT BEFORE CONFIRM — set pickup/delivery (set_fulfillment) BEFORE you read back to confirm. Never offer «تأكيد» / «نكمّل للدفع» / present_order_actions while ${dp.dialect === "saudi" ? "الاستلام/التوصيل ما تحدد بعد؛ اسأل «استلام من الفرع ولا توصيل؟» أول" : "الاستلام/التوصيل لسه ماتحددش؛ اسأل «استلام من الفرع ولا توصيل؟» أول"}. (Finalizing without fulfillment is rejected and loops.)
   • ${ctx.addressFlowV2
     ? "ADDRESS FOR DELIVERY — collect the customer's written address first and call set_delivery_address. The tool matches the address against named zones: one confident match applies that zone's row fee; ambiguous matches return ONE targeted question listing candidate zone names; no match offers «ابعت اللوكيشن 📎 أو قولي أقرب منطقة» and any catch-all fee must be said as «رسوم مبدئية ... لحد ما نحدد منطقتك». NEVER demand a pin, and NEVER claim the pin is required for a fee you then compute without it. For PICKUP — no pin needed: ask «أي فرع أقرب لك؟», list the branches (with their areas) from the Branches data, and call set_fulfillment type=pickup with branch_name when geo routing tools expose it."
     : ctx.geoRouting
@@ -612,4 +611,27 @@ ${faqBlock(ctx.faqs)}${
       buildKhalidPlaybooks({ region: ctx.ksaRegion })
     : ""
 }`;
+
+  // THE LAST ANCHOR. Everything above — the exemplar replies, the persona layer, the KSA
+  // encyclopedia, the playbooks, the menu and zone blocks — is authored Egyptian-first,
+  // and it hands a Western-digit tenant 30 Arabic-Indic digit characters, 9 of them
+  // inside «…» exemplars of Khalid's OWN price and total phrasing:
+  //
+  //     «أرشّحلك: بروست بـ٤٥ + بطاطس بـ٢٠ + مياه بـ١٠ = ٧٥ ر.س»
+  //     «البروست بـ ٤٥ ر.س»
+  //
+  // …sitting a few lines from `digitRule`, which tells the same model to «Write numbers
+  // and money using Western digits». The model copies the exemplar, guillemets and all —
+  // and «…» is the ONE construct the output-edge formatter deliberately skips, because
+  // there it means "the customer's own words". So the exemplars were an anchor the
+  // downstream fix could not reach by design. Fixing them one string at a time would
+  // leave the next author free to add a tenth.
+  //
+  // `arabicToAscii` touches ONLY Arabic-Indic/Persian digits and the Arabic decimal and
+  // thousands separators, so it cannot disturb English instructions, tool names, or ids.
+  // The Arabic-Indic direction is deliberately NOT applied: this prompt is authored in
+  // that style already, and blanket-converting Western digits would rewrite English rule
+  // text («e.g. 45»), tool identifiers and JSON. An Egyptian tenant's prompt is therefore
+  // returned byte-identical to before this change.
+  return digitStyleForDialect(ctx.dialect) === "western" ? arabicToAscii(assembled) : assembled;
 }

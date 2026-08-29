@@ -18,8 +18,7 @@
 // ============================================================================
 
 import type { OrderDraft, DraftLine } from "./tools";
-import { toArabicDigits } from "@/lib/util/arabic-digits";
-import { digitStyleForDialect, optionValueOnly } from "@/lib/util/customer-visible-format";
+import { optionValueOnly, renderTenantDigits } from "@/lib/util/customer-visible-format";
 
 /** Recap phase. "readback" is the pre-confirmation order readback that ends with
  *  «أجهّزلك الطلب؟». "confirmed" heads the registered-order recap (no readback ask).
@@ -44,9 +43,7 @@ export interface RecapOptions {
  *  declares digitStyle:"western". The output-edge formatter in the routes is a backstop;
  *  THIS is where the wrong digits were being written, so this is where it is fixed. */
 function digitsFor(dialect: string): (v: number | string) => string {
-  return digitStyleForDialect(dialect) === "arabic-indic"
-    ? (v) => toArabicDigits(v)
-    : (v) => String(v);
+  return (v) => renderTenantDigits(dialect, v);
 }
 
 /** The option text for one draft line (variant + choices + modifiers), value-only. */

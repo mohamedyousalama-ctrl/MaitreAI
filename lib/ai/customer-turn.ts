@@ -84,7 +84,7 @@ import { detectCallbackRequest } from "@/lib/ai/callback-trigger";
 // dup_order_awareness flag is ON and a registered order exists this conversation.
 import { refersToRegisteredOrder } from "@/lib/ai/order-reference";
 import { toArabicDigits } from "@/lib/util/arabic-digits";
-import { digitStyleForDialect } from "@/lib/util/customer-visible-format";
+import { renderTenantDigits } from "@/lib/util/customer-visible-format";
 import { perceiveTurnWithUsage, recoveryDirective, cadenceCue, type PerceptionRead } from "@/lib/ai/perception";
 import { emitConversationReport } from "@/lib/intelligence/conversation-report";
 import type { LlmMessage, LlmUsage } from "@/lib/ai/llm/types";
@@ -415,20 +415,13 @@ interface RegisteredOrderRef {
  *  resolve to THAT order (never re-finalize a duplicate — live #1009→#1010). Non-escalating,
  *  draft untouched (NOT finalized → the persist path never runs). The SAFETY-FIRST gate in
  *  the dispatch chain guarantees no allergen/emergency/human-request signal was present. */
-/** Render a figure in the TENANT's digit style. Two sites here hardcoded
- *  `toArabicDigits`, so a Saudi tenant — digitStyle:"western" per lib/ai/dialect.ts —
- *  was told «طلبك رقم #١٠٠١» in the digit style its own profile bans. */
-function tenantDigits(dialect: string, v: number | string): string {
-  return digitStyleForDialect(dialect) === "arabic-indic" ? toArabicDigits(v) : String(v);
-}
-
 function dupOrderRecapResult(
   order: RegisteredOrderRef,
   dialect: string,
   initialDraft: OrderDraft | null,
   currency: string
 ): RespondResult {
-  const num = tenantDigits(dialect, order.orderNumber);
+  const num = renderTenantDigits(dialect, order.orderNumber);
   const openDoor =
     dialect === "egyptian" ? "ولو حابب تطلب حاجة جديدة قولّي 😊" : "ولو تحب تطلب شي جديد قول لي 😊";
   const reply = `طلبك رقم #${num} مسجّل بالفعل ✅\n${order.itemsSummary}\n${order.statusLabel}\n${openDoor}`;
@@ -1302,7 +1295,7 @@ export async function runCustomerTurn(
         const lines = Array.isArray(row2.items) ? (row2.items as { name?: string; quantity?: number }[]) : [];
         const itemsSummary =
           lines
-            .map((l) => `${tenantDigits(dialect, Number(l.quantity ?? 1))}× ${String(l.name ?? "").trim()}`.trim())
+            .map((l) => `${renderTenantDigits(dialect, Number(l.quantity ?? 1))}× ${String(l.name ?? "").trim()}`.trim())
             .filter((s) => s && !s.endsWith("× "))
             .join("، ") || "طلبك المسجّل";
         const statusLabel =

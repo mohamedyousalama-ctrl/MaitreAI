@@ -20,9 +20,10 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { formatCustomerVisibleText, formatCustomerVisibleNumbers } from "../lib/util/customer-visible-format.ts";
+import { formatCustomerVisibleText, formatCustomerVisibleNumbers, sanitizeWhatsAppBold } from "../lib/util/customer-visible-format.ts";
 import { renderDraftRecap } from "../lib/ai/recap-render.ts";
 import { demoOrderConfirmation } from "../lib/demo/order.ts";
+import { buildCustomerAgentSystemPrompt } from "../lib/ai/prompt.ts";
 import type { OrderDraft } from "../lib/ai/tools.ts";
 
 let pass = 0, fail = 0;
@@ -85,6 +86,81 @@ const draft = {
   ok("recap (egyptian): NO Western digit leaks in", !/[0-9]/.test(egyptian));
 }
 
+// ── 2b. THE BOLD SANITIZER IS IDEMPOTENT — exhaustively, not by one lucky input ──
+// proof-polish.test.ts asserts idempotence with «**الإجمالي**», which is a stable case.
+// It was NOT idempotent in general: `*a**a` → `*a*a` → `*a* a`, because the "does a
+// space belong here?" decision read a character that the next step then deleted. With
+// formatters now called from more places, "run it twice" has to be safe.
+{
+  const alphabet = ["*", "a", " ", "٥"];
+  let checked = 0;
+  const offenders: string[] = [];
+  const walk = (acc: string) => {
+    if (acc) { checked++; if (sanitizeWhatsAppBold(sanitizeWhatsAppBold(acc)) !== sanitizeWhatsAppBold(acc)) offenders.push(acc); }
+    if (acc.length >= 6) return;
+    for (const c of alphabet) walk(acc + c);
+  };
+  walk("");
+  ok(`bold sanitizer: idempotent over all ${checked} strings of length ≤6 (offenders: ${offenders.length}${offenders.length ? ` e.g. ${JSON.stringify(offenders[0])}` : ""})`,
+    offenders.length === 0);
+  // The exact string adversarial review used to break it.
+  eq("bold sanitizer: the known counterexample is stable",
+    sanitizeWhatsAppBold(sanitizeWhatsAppBold("*a**a")), sanitizeWhatsAppBold("*a**a"));
+  // And formatting a whole reply twice is a no-op, in both digit directions.
+  for (const d of ["saudi", "egyptian"]) {
+    const x = "الإجمالي *٧٠.١٥***١٠٠١ — 45 ر.س";
+    eq(`formatCustomerVisibleText is idempotent (${d})`,
+      formatCustomerVisibleText(formatCustomerVisibleText(x, d), d), formatCustomerVisibleText(x, d));
+  }
+}
+
+// ── 3b. THE SYSTEM PROMPT ITSELF — behavioral, not source-shape ─────────────
+// A regex on a helper's NAME proves nothing: the body can be reverted to the hardcode
+// with every other assertion still green (proven by adversarial review). These build the
+// real prompt and read its output, which is the only thing the model ever sees.
+function promptCtx(dialect: string, draft: OrderDraft | null): Record<string, unknown> {
+  return {
+    profile: { name: "مطعم الديرة", currency: dialect === "saudi" ? "ر.س" : "ج.م", timezone: "Asia/Riyadh", businessType: "restaurant" },
+    dialect, menuItems: [], modifiers: [], branches: [], deliveryAreas: [],
+    policies: { refund: "", cancellation: "", delivery: "", replacement: "", payment: "" },
+    faqs: [], aiTone: { personality: "friendly", responseLength: "short", emojiUsage: "minimal", language: "ar", greeting: "" },
+    mode: "live", isOpen: true, autoAccept: false,
+    personaName: dialect === "saudi" ? "خالد" : "كريم",
+    statefulOrders: true, currentDraft: draft,
+  };
+}
+
+{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const saudiPrompt = buildCustomerAgentSystemPrompt(promptCtx("saudi", draft) as any);
+
+  // The state block is the model's AUTHORITATIVE order truth. It was rendered in
+  // Arabic-Indic for every tenant, so the model was shown one digit style and told to
+  // write another. It copied what it was shown.
+  ok("prompt (saudi): the «الطلب الحالي» state block is in Western digits",
+    saudiPrompt.includes("2× كبسة دجاج") && saudiPrompt.includes("الإجمالي حتى الآن: 97.75 ر.س"));
+  ok("prompt (saudi): the state block's prose is Saudi, not Cairene",
+    saudiPrompt.includes("لا تعيد بناءه من المحادثة") &&
+    !saudiPrompt.includes("متعيدش") && !saudiPrompt.includes("هيظهر") && !saudiPrompt.includes("لسه ماتحددش"));
+
+  // THE WHOLE PROMPT. The exemplar replies («…بـ٤٥ + …بـ٢٠ = ٧٥ ر.س») are the anchor the
+  // output-edge formatter CANNOT reach, because «…» is exactly what it preserves — there
+  // it means "the customer's own words". So not one Arabic-Indic digit may survive here.
+  const arabicIndicInSaudi = (saudiPrompt.match(/[٠-٩۰-۹]/g) ?? []).length;
+  ok(`prompt (saudi): ZERO Arabic-Indic digits anywhere in the prompt (found ${arabicIndicInSaudi})`,
+    arabicIndicInSaudi === 0);
+  ok("prompt (saudi): the digit RULE and the exemplars finally agree",
+    saudiPrompt.includes("Write numbers and money using Western digits"));
+
+  // The Egyptian prompt is authored in this style and must be untouched.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const egyptianPrompt = buildCustomerAgentSystemPrompt(promptCtx("egyptian", { ...draft, currency: "ج.م" } as OrderDraft) as any);
+  ok("prompt (egyptian): still Arabic-Indic, and its state block with it",
+    /[٠-٩]/.test(egyptianPrompt) && egyptianPrompt.includes("٢× كبسة دجاج"));
+  ok("prompt (egyptian): keeps its own Cairene state-block prose",
+    egyptianPrompt.includes("متعيدش بناءه من المحادثة"));
+}
+
 // ── 4. the demo order confirmation carries no digit opinion of its own ───────
 ok("demoOrderConfirmation does NOT convert the order number itself",
   demoOrderConfirmation("1001").includes("1001"));
@@ -106,6 +182,8 @@ ok("…and the tenant's formatter is what decides",
     /function digitsFor\(dialect: string\)/.test(recap) && !/const ar = \(v: number \| string\): string => toArabicDigits/.test(recap));
 
   const prompt = read("lib/ai/prompt.ts");
+  // Source-shape pins below. They are a tripwire for a careless edit, NOT the guarantee —
+  // the behavioral assertions in §3b are. A regex on a helper name survives a reverted body.
   ok("the «الطلب الحالي» state block is rendered in the tenant's digit style",
     /function digitsForDialect\(dialect: string\)/.test(prompt) &&
     /currentOrderBlock\(ctx\.currentDraft, currency, ctx\.dialect\)/.test(prompt));
@@ -114,7 +192,7 @@ ok("…and the tenant's formatter is what decides",
 
   const turn = read("lib/ai/customer-turn.ts");
   ok("the registered-order recap uses the tenant's digit style",
-    /function tenantDigits\(dialect: string/.test(turn) && !/toArabicDigits\(order\.orderNumber\)/.test(turn));
+    /renderTenantDigits\(dialect, order\.orderNumber\)/.test(turn) && !/toArabicDigits\(order\.orderNumber\)/.test(turn));
 
   const order = read("lib/demo/order.ts");
   ok("demo/order.ts no longer imports toArabicDigits at all", !/toArabicDigits/.test(order.replace(/\/\/[^\n]*/g, "")));

@@ -7,35 +7,65 @@ export function digitStyleForDialect(dialect: string | null | undefined): Custom
   return dialectProfile(dialect).digitStyle;
 }
 
+/** Render ONE figure in the tenant's declared digit style.
+ *
+ *  THE SINGLE SOURCE. "digit style for this dialect" had grown four private copies —
+ *  in customer-turn.ts, recap-render.ts, prompt.ts and here — and that is precisely how
+ *  one bug came to have four independent causes: each site was fixed, or not, on its own.
+ *  Every caller now shares this one. */
+export function renderTenantDigits(dialect: string | null | undefined, value: number | string): string {
+  return digitStyleForDialect(dialect) === "arabic-indic" ? toArabicDigits(value) : String(value);
+}
+
 function isWordChar(ch: string | undefined): boolean {
   return !!ch && /[\p{L}\p{N}]/u.test(ch);
 }
 
 export function sanitizeWhatsAppBold(text: string): string {
   const markdownNormalized = String(text).replace(/(^|[^*])\*\*([^*\n]+?)\*\*(?!\*)/g, "$1*$2*");
-  let out = "";
-  let lastIndex = 0;
+
+  // SPLIT FIRST, SPACE SECOND. This used to decide "does a space belong after this bold
+  // run?" by reading the next character of the INPUT — a character that the very next
+  // step might delete as a stray asterisk. So `*a**a` became `*a*a` on the first pass and
+  // `*a* a` on the second: the function was NOT idempotent, though
+  // scripts/proof-polish.test.ts asserts that it is (with an input that happens to be a
+  // stable case). Stripping the strays into pieces first means the spacing decision is
+  // made against a character that actually survives, so a second pass is a no-op.
+  type Piece = { bold: boolean; text: string };
+  const pieces: Piece[] = [];
   const pairRe = /\*([^*\n]+?)\*/g;
+  let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = pairRe.exec(markdownNormalized))) {
-    out += markdownNormalized.slice(lastIndex, match.index).replace(/\*/g, "");
-
+    pieces.push({ bold: false, text: markdownNormalized.slice(lastIndex, match.index).replace(/\*/g, "") });
     const content = match[1] ?? "";
     const trimmed = content.trim();
-    if (!trimmed || trimmed !== content) {
-      out += trimmed;
-    } else {
-      const next = markdownNormalized[match.index + match[0].length];
-      if (isWordChar(out.at(-1))) out += " ";
-      out += `*${content}*`;
-      if (isWordChar(next)) out += " ";
-    }
-
+    // A run padded with spaces («* x *») is not bold on WhatsApp — keep the words, drop
+    // the markers. An empty run contributes nothing at all.
+    if (!trimmed || trimmed !== content) pieces.push({ bold: false, text: trimmed });
+    else pieces.push({ bold: true, text: content });
     lastIndex = pairRe.lastIndex;
   }
+  pieces.push({ bold: false, text: markdownNormalized.slice(lastIndex).replace(/\*/g, "") });
 
-  out += markdownNormalized.slice(lastIndex).replace(/\*/g, "");
+  let out = "";
+  for (let i = 0; i < pieces.length; i++) {
+    const piece = pieces[i] as Piece;
+    if (!piece.text) continue;
+    if (!piece.bold) {
+      out += piece.text;
+      continue;
+    }
+    if (isWordChar(out.at(-1))) out += " ";
+    out += `*${piece.text}*`;
+    let next: string | undefined;
+    for (let j = i + 1; j < pieces.length; j++) {
+      const later = pieces[j] as Piece;
+      if (later.text) { next = later.text[0]; break; }
+    }
+    if (isWordChar(next)) out += " ";
+  }
   return out;
 }
 

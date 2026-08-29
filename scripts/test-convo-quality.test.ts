@@ -38,7 +38,15 @@ const both = (label: string, needle: string) => {
 
 // ── Fix 1: BUDGET RECOMMENDATIONS (propose a combo within budget, never demand order-first) ──
 both("budget: BUDGET-FIRST heading", "BUDGET-FIRST RECOMMENDING");
-both("budget: reproduces the «ميزانيتنا ٥٠٠ جنيه» transcript", "ميزانيتنا ٥٠٠ جنيه");
+// PER-DIALECT. This asserted the Saudi prompt contained «ميزانيتنا ٥٠٠ جنيه» — the
+// EGYPTIAN pound, in a rule teaching a Saudi restaurant how to quote a budget, alongside
+// «تنصح بإيه؟» and «معايا». The exemplar is now branched; the transcript it reproduces is
+// still pinned for Karim, and Khalid gets the same rule in his own currency and words.
+ok("budget: reproduces the «ميزانيتنا ٥٠٠ جنيه» transcript — in Karim prompt",
+  karim.includes("ميزانيتنا ٥٠٠ جنيه"));
+ok("budget: the same rule reaches Khalid in RIYALS and Saudi wording",
+  khalid.includes("ميزانيتنا 500 ريال") && khalid.includes("وش تنصح؟") &&
+  !khalid.includes("جنيه") && !khalid.includes("تنصح بإيه؟"));
 both("budget: propose concrete items+prices within budget", "keep it at or under the budget");
 both("budget: never demand they build the order first", "do NOT make them build the order first");
 both("budget: engine-truth prices only (no invention)", "NEVER invent a dish or a price");
