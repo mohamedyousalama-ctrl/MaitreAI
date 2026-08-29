@@ -139,6 +139,45 @@ ok("B3: hasFuturePromise detects «هختارلك» (fused) + «هجهّزلك»
   // prompt.ts:463 names as breaking the engine's own honesty law. The handoff is now
   // reserved for SAFETY turns, where wanting a human is real; everything else gets a
   // question that advances the order.
+  // ── B8/B9 — the two "this turn already has a next step" signals ────────────
+  // NEITHER had a single assertion anywhere in the suite: reverting either left it green.
+  {
+    // B8 — hasPresentation. An attached list/buttons IS the next step. Without this the
+    // contract glued «خلّني أوصلك بأحد من الفريق» under a tappable menu — an offer to
+    // fetch a human that no tool performs, which prompt.ts names as breaking its own
+    // honesty law, stapled to the very opener the prompt tells the model to write.
+    const withList = enforceTurnContract({
+      text: "تفضّل، هذي قائمتنا 👇", dialect: "saudi",
+      draft: draftOf(0, { lines: [] }) as OrderDraft, hasPresentation: true,
+    });
+    ok("B8: a turn carrying an interactive presentation is SATISFIED — nothing appended", !withList.appended);
+    const withoutList = enforceTurnContract({
+      text: "تفضّل، هذي قائمتنا 👇", dialect: "saudi",
+      draft: draftOf(0, { lines: [] }) as OrderDraft,
+    });
+    ok("B8b: … and the SAME sentence without one still gets a next-step (the signal is doing the work)",
+      withoutList.appended);
+  }
+  {
+    // B9 — openSlotFill. Live on the demo: «محتاج العنوان التفصيلي (الشارع + علامة مميزة)
+    // عشان أكمل الطلب» — an imperative with no «؟» — was judged a dead end and
+    // «تبي أعرض لك المنيو وأساعدك تختار؟» was appended. Two questions in one turn, and a
+    // menu offer in the middle of collecting an address.
+    const addressAsk = "محتاج العنوان التفصيلي (الشارع + علامة مميزة) عشان أكمل الطلب وأوصّلك صح 🙏";
+    const collecting = enforceTurnContract({
+      text: addressAsk, dialect: "saudi",
+      draft: draftOf(0, { lines: [] }) as OrderDraft, openSlotFill: true,
+    });
+    ok("B9: a turn collecting a finalize-required value is SATISFIED — nothing appended", !collecting.appended);
+    ok("B9b: … and no second question is glued on",
+      !collecting.text.includes(salesNextStepLine("saudi")));
+    const notCollecting = enforceTurnContract({
+      text: addressAsk, dialect: "saudi", draft: draftOf(0, { lines: [] }) as OrderDraft,
+    });
+    ok("B9c: … while a genuine dead end STILL gets its next-step (not a blanket suppression)",
+      notCollecting.appended && notCollecting.text.includes(salesNextStepLine("saudi")));
+  }
+
   const r = enforceTurnContract({ text: "هختارلك أحسن تنوع!", dialect: "egyptian", draft: draftOf(0, { lines: [] }) as OrderDraft });
   ok("B7: «هختارلك أحسن تنوع!» (none of a/b/c) → next-step APPENDED", r.appended);
   ok("B7b: … the future-promise is flagged", r.futurePromise);

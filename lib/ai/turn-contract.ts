@@ -92,6 +92,21 @@ export interface TurnContractInput {
    *  so the engine was punishing the sentence it asked for. It also broke the engine's own
    *  honesty law (prompt.ts:463): never claim a transfer without calling escalate_to_human. */
   hasPresentation?: boolean;
+  /** WO-SLOTFILL — this turn is COLLECTING A VALUE the order cannot be finalized without
+   *  (a delivery zone or a street address). Like hasPresentation, the customer's next move
+   *  is already determined: type the value. It is not a dead end needing a next-step.
+   *
+   *  The contract has a `pendingQuestion` input meant to cover this, but on a tenant
+   *  without `address_flow_v2` all three producers of that value are gated off, so it is
+   *  structurally always null and reply-compose's skip never fires. Live on the demo:
+   *  «محتاج العنوان التفصيلي (الشارع + علامة مميزة) عشان أكمل الطلب» — an imperative with
+   *  no «؟» — was judged unsatisfied, and «تبي أعرض لك المنيو وأساعدك تختار؟» was glued
+   *  underneath. Two questions in one turn, and the wrong one: a menu offer in the middle
+   *  of taking an address.
+   *
+   *  Deliberately NOT a blanket suppression. A genuine dead end — empty basket, pickup, or
+   *  a delivery draft with nothing missing — still runs the full contract. */
+  openSlotFill?: boolean;
   /** True on a safety/allergy turn. The ONLY case where the terminal fallback is still
    *  an offer to fetch a human — everywhere else that was a transfer nobody performed. */
   safetyEvent?: boolean;
@@ -187,6 +202,8 @@ export function enforceTurnContract(input: TurnContractInput): TurnContractResul
     hasHandoffLine(text) ||
     // An attached list/buttons IS the next step — see hasPresentation above.
     input.hasPresentation === true ||
+    // A value the order cannot close without is being collected — see openSlotFill above.
+    input.openSlotFill === true ||
     input.escalated === true;
 
   if (satisfied) return { text, appended: false, kind: null, futurePromise };

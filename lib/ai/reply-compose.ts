@@ -154,6 +154,10 @@ export function composeFinalReply(input: ComposeInput): ComposeResult {
       previousOutbound: input.previousOutbound,
       socialClosing: input.socialClosing,
       hasPresentation: input.hasPresentation,
+      // A finalize-required delivery field still missing IS "this turn is collecting a
+      // value". Deterministic, already computed for the recap-CTA suppression above, and
+      // it cannot mask a real dead end: an empty, pickup, or complete draft returns false.
+      openSlotFill: finalizeRequiredFieldMissing(input.draft),
       safetyEvent: input.safetyEvent,
     });
     if (contract.appended) {

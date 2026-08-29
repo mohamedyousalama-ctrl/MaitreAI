@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEMO_MAX_AUDIO_BYTES, DEMO_MAX_RECORD_SECONDS } from "@/lib/demo/config";
+import { parseWhatsAppMarkup, isEmojiOnly } from "@/lib/util/whatsapp-markup";
 
 /** The interactive payload the Brain attaches to a turn — the same shape WhatsApp
  *  renders as a tappable list or button row (lib/ai/tools.ts). The demo dropped this
@@ -496,6 +497,31 @@ export default function DemoPhone() {
 
 /* ── pieces ──────────────────────────────────────────────────────────────── */
 
+/** Render one message body the way WhatsApp does.
+ *
+ *  The reply arrives in WhatsApp's WIRE FORMAT — `*bold*`, `_italic_`, `~strike~`,
+ *  backtick monospace — because lib/util/customer-visible-format.ts produces exactly what
+ *  the real client is sent. This page was printing that wire format raw, so a customer
+ *  saw «خصم *15%* على أول طلب» with the asterisks. The parser only READS; nothing here
+ *  changes a single character that goes out. */
+function renderWhatsApp(body: string): React.ReactNode[] {
+  return parseWhatsAppMarkup(body).map((t, i) => {
+    switch (t.kind) {
+      case "bold": return <strong key={i} style={{ fontWeight: 700 }}>{t.text}</strong>;
+      case "italic": return <em key={i}>{t.text}</em>;
+      case "strike": return <s key={i}>{t.text}</s>;
+      case "mono": return <code key={i} style={S.mono}>{t.text}</code>;
+      case "link":
+        return (
+          <a key={i} href={t.href} target="_blank" rel="noopener noreferrer" style={S.link}>
+            {t.text}
+          </a>
+        );
+      default: return <span key={i}>{t.text}</span>;
+    }
+  });
+}
+
 function Bubble({
   m, mmss, onPick,
 }: { m: Msg; mmss: (s: number) => string; onPick: (label: string) => void }) {
@@ -514,7 +540,7 @@ function Bubble({
             <span style={S.voiceTime}>{mmss(m.seconds ?? 0)}</span>
           </div>
         ) : null}
-        {m.text ? <div style={S.text}>{m.text}</div> : null}
+        {m.text ? <div style={{ ...S.text, ...(isEmojiOnly(m.text) ? S.emojiOnly : null) }}>{renderWhatsApp(m.text)}</div> : null}
         <div style={S.meta}>
           <span>{m.at}</span>
           {mine && <span style={S.ticks} aria-label="تم التسليم">✓✓</span>}
@@ -633,7 +659,14 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 14.5, lineHeight: 1.5, boxShadow: "0 1px 1px rgba(0,0,0,.25)" },
   mine: { background: WA.green, borderTopLeftRadius: 0 },
   theirs: { background: WA.theirs, borderTopRightRadius: 0 },
-  text: { whiteSpace: "pre-wrap", wordBreak: "break-word" },
+  // `dir: "auto"` + plaintext bidi so EACH LINE resolves its own direction, exactly as
+  // WhatsApp does. The thread is hardcoded dir="rtl", so an English or digits-only line
+  // was being laid out right-to-left, which WhatsApp never does.
+  text: { whiteSpace: "pre-wrap", wordBreak: "break-word", unicodeBidi: "plaintext" as const },
+  emojiOnly: { fontSize: 40, lineHeight: 1.15 },
+  mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.92em",
+    background: "rgba(0,0,0,.22)", borderRadius: 4, padding: "0 4px" },
+  link: { color: "#53bdeb", textDecoration: "underline" },
   meta: { display: "flex", gap: 4, justifyContent: "flex-start", alignItems: "center",
     fontSize: 10.5, color: "#8696a0", marginTop: 2 },
   ticks: { color: "#53bdeb" },

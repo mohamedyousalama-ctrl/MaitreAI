@@ -87,6 +87,18 @@ for (const [label, needle] of MUST_NOT_SAY) {
   ok(`…and the Egyptian prompt keeps it`, egyptian.includes(needle));
 }
 
+// ── 2b. NAJDI vs HIJAZI ──────────────────────────────────────────────────────
+// «أبغى آكل» was the ONLY Saudi customer utterance in the entire base prompt — and it is
+// HIJAZI. khalid.ts:375 itself names «أبغى» as a Hijazi cue a Najdi Khalid should only
+// lightly mirror, yet the base prompt gave the model no Najdi anchor to prefer. Live
+// output: «كم حبة تبغى؟» on a najd tenant. Najdi is «أبي» / «تبي».
+ok("the Saudi prompt's customer-utterance example is Najdi, not Hijazi",
+  saudi.includes("«أبي آكل»") && !saudi.includes("«أبغى آكل»"));
+ok("the Najdi quantity exemplars use «تبي», the Najdi form",
+  saudi.includes("«كم عرض تبي؟»") && saudi.includes("«كم قطعة تبي؟»"));
+ok("«أبغى» survives ONLY where it is named as a Hijazi cue to mirror lightly",
+  !/«أبغى آكل»/.test(saudi));
+
 // ── 3. THE SAFETY LINE ───────────────────────────────────────────────────────
 // The mandatory cross-contact caveat is the one sentence that must land cleanly with a
 // customer who has just said they have an allergy. It carried the Egyptian ما...ش
