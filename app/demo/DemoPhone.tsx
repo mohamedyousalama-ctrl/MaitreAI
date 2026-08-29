@@ -38,8 +38,31 @@ type Msg = {
    *  message is readable whether or not the audio plays — a voice-only bubble would be
    *  unusable on a muted phone, which is most phones. */
   audioUrl?: string | null;
+  /** Dish photos the Brain asked to send. WhatsApp sends these as separate image messages
+   *  after the text (respond-and-send.ts sendRequestedPhotos); the demo renders them as
+   *  photo bubbles under the reply, which is what that looks like on a phone. */
+  photos?: DemoPhoto[] | null;
   at: string;
 };
+
+/** Mirrors PhotoRequest from lib/ai/tools.ts — the fields the client actually renders. */
+type DemoPhoto = { itemId: string; name: string; imageUrl: string; caption: string };
+
+/** Only http(s) images are rendered. The payload is server-built, but this page is public
+ *  and a `javascript:` or `data:` src has no business reaching an <img> on it. */
+function usablePhotos(raw: unknown): DemoPhoto[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((p): p is DemoPhoto =>
+      !!p && typeof p === "object" &&
+      typeof (p as DemoPhoto).imageUrl === "string" &&
+      /^https:\/\//i.test((p as DemoPhoto).imageUrl))
+    .slice(0, DEMO_MAX_PHOTOS);
+}
+
+/** WhatsApp sends at most a handful of images per turn; an unbounded list on a public page
+ *  is a page-weight problem the visitor pays for. */
+const DEMO_MAX_PHOTOS = 4;
 
 const clock = () =>
   new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit", hour12: true });
@@ -163,7 +186,7 @@ export default function DemoPhone() {
         });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean; reply?: string; error?: string; presentation?: Presentation | null;
-          conversationId?: string;
+          conversationId?: string; photoRequests?: unknown;
         };
         // Store it even on a failed turn: the server may have minted the session before
         // whatever went wrong, and re-minting one per failure would leak rows.
@@ -183,6 +206,7 @@ export default function DemoPhone() {
           kind: "text",
           text: String(data.reply ?? ""),
           presentation: data.presentation ?? null,
+          photos: usablePhotos(data.photoRequests),
         });
       } catch {
         setNotice("ما قدرنا نوصل للخدمة 🙏 تأكد من الاتصال.");
@@ -330,7 +354,7 @@ export default function DemoPhone() {
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean; transcript?: string; reply?: string; error?: string;
           presentation?: Presentation | null; conversationId?: string;
-          replyAudio?: string | null; replyAudioMime?: string | null;
+          replyAudio?: string | null; replyAudioMime?: string | null; photoRequests?: unknown;
         };
         rememberSession(data.conversationId);
         if (!res.ok || !data.ok) {
@@ -386,6 +410,7 @@ export default function DemoPhone() {
           kind: "text",
           text: String(data.reply ?? ""),
           presentation: data.presentation ?? null,
+          photos: usablePhotos(data.photoRequests),
           audioUrl,
         });
       } catch {
@@ -661,7 +686,40 @@ function Bubble({
           {mine && <span style={S.ticks} aria-label="تم التسليم">✓✓</span>}
         </div>
       </div>
+      {m.photos?.length ? <DishPhotos photos={m.photos} /> : null}
       {m.presentation ? <Options p={m.presentation} onPick={onPick} /> : null}
+    </div>
+  );
+}
+
+/** Dish photos, WhatsApp-style: image bubbles under the reply, each with its caption.
+ *
+ *  The Brain has always built these and both demo routes have always returned them — the
+ *  client simply dropped the field, so a request for a dish photo produced a text reply and
+ *  no picture. Rendering them here is the whole fix on this side; whether anything appears
+ *  depends on the tenant's menu_items.image_url being populated, which is a content task.
+ *
+ *  A broken or slow image must never break the reply: onError hides the tile, so a dead URL
+ *  degrades to the text the visitor already has rather than to a broken-image icon. */
+function DishPhotos({ photos }: { photos: DemoPhoto[] }) {
+  const [dead, setDead] = useState<Record<string, boolean>>({});
+  const shown = photos.filter((p) => !dead[p.itemId + p.imageUrl]);
+  if (!shown.length) return null;
+  return (
+    <div style={S.photoWrap}>
+      {shown.map((p) => (
+        <figure key={p.itemId + p.imageUrl} style={S.photoCard}>
+          <img
+            src={p.imageUrl}
+            alt={p.name}
+            loading="lazy"
+            decoding="async"
+            style={S.photoImg}
+            onError={() => setDead((d) => ({ ...d, [p.itemId + p.imageUrl]: true }))}
+          />
+          {p.caption ? <figcaption style={S.photoCap}>{p.caption}</figcaption> : null}
+        </figure>
+      ))}
     </div>
   );
 }
@@ -793,6 +851,10 @@ const S: Record<string, React.CSSProperties> = {
   bar: { display: "block", width: 2, background: "#8696a0", borderRadius: 1 },
   voiceTime: { fontSize: 11, color: "#8696a0" },
   voiceFail: { fontSize: 11, color: "#8696a0", whiteSpace: "nowrap" as const },
+  photoWrap: { display: "flex", flexDirection: "column" as const, gap: 6, margin: "4px 0 2px" },
+  photoCard: { margin: 0, background: "#fff", borderRadius: 10, overflow: "hidden" as const, boxShadow: "0 1px 1px rgba(0,0,0,.13)", maxWidth: 240 },
+  photoImg: { display: "block", width: "100%", height: "auto", objectFit: "cover" as const, background: "#e9edef" },
+  photoCap: { padding: "6px 8px", fontSize: 12.5, lineHeight: 1.4, color: "#111b21" },
   typing: { display: "flex", gap: 4, alignItems: "center", padding: "10px 12px" },
   dot: { width: 6, height: 6, borderRadius: "50%", background: "#8696a0", display: "block",
     animation: "demoDot 1.2s infinite" },

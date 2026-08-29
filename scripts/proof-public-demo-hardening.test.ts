@@ -369,6 +369,31 @@ ok(`no demo file synthesizes speech in the browser${browserVoice.length ? ` — 
 // And the pin must sit on the LIVE path, not merely exist in the repo.
 ok("the spoken-reply route goes through the pinned wrapper",
   /from "@\/lib\/demo\/voice-out"/.test(voice) && /demoVoiceReply\s*\(/.test(voice));
+// ── DISH PHOTOS ─────────────────────────────────────────────────────────────
+// The Brain has always built photoRequests and BOTH demo routes have always returned them.
+// The client dropped the field, so asking to see a dish produced text and no picture — the
+// server did the work and the browser threw it away.
+ok("both demo routes return the photos the Brain built",
+  /photoRequests: out\.photoRequests/.test(route) && /photoRequests: out\.photoRequests/.test(voice));
+// BOTH call sites. The client pushes Khalid's reply in two places — the typed turn and the
+// voice turn — and a single-match assertion passed while one of them dropped the photos.
+{
+  const wired = (phone.match(/photos: usablePhotos\(data\.photoRequests\)/g) || []).length;
+  ok(`the client consumes them on BOTH reply paths (found ${wired})`, wired === 2);
+}
+ok("and renders them", /<DishPhotos photos=\{m\.photos\}/.test(phone));
+// Only https. The payload is server-built, but this page is unauthenticated and a
+// `javascript:` or `data:` src has no business reaching an <img> on it.
+ok("only https image sources are rendered",
+  phone.includes("^https") && /usablePhotos/.test(phone) && /\.test\(\(p as DemoPhoto\)\.imageUrl\)/.test(phone));
+ok("the photo count is bounded on a public page", /DEMO_MAX_PHOTOS = \d+/.test(phone) && /slice\(0, DEMO_MAX_PHOTOS\)/.test(phone));
+// A dead or slow image must degrade to the text the visitor already has, never to a broken
+// -image icon sitting under Khalid's reply in front of a prospect.
+ok("a photo that fails to load hides itself instead of breaking the reply",
+  /onError=\{\(\) => setDead/.test(phone) && /shown\.length/.test(phone));
+ok("images are lazy and async-decoded so they never block the text",
+  /loading="lazy"/.test(phone) && /decoding="async"/.test(phone));
+
 ok("the call screen does not fake a connected call (no running duration)",
   !/setSecs|callDuration/.test(phone));
 
