@@ -1,16 +1,37 @@
 // ============================================================================
-// MaitreAI — ElevenLabs TTS adapter (WO-VOICE-2) — the PRODUCTION voice.
-// Khalid's production voice = the EL Voice-Design custom "EL-custom-A" (warm
-// Najdi male, §0.6, the authenticity path), model eleven_flash_v2.5 (the ~2×
-// cost/latency tier). INERT until ELEVENLABS_API_KEY is provisioned.
+// MaitreAI — ElevenLabs TTS adapter — the PRODUCTION voice.
 //
-// The voice id is NEVER hardcoded — Mohamed retrieves EL-custom-A's id from his
-// ElevenLabs dashboard and sets ELEVENLABS_VOICE_ID at deploy (like OPENAI_API_KEY).
-// Swapping voices stays a one-line env change. Model is env-overridable too.
+// Khalid's voice is «Khalid kivo» (`pYDa2s34YCzHjbn4DnXP`), a fully synthetic Voice Design
+// produced from a written prompt — no donor recording, no clone. It is handed over by
+// KIV-313 with an exact configuration, and this adapter's job is to reproduce that
+// configuration on the wire, byte for byte, or refuse to speak.
+//
+// WHAT THIS FILE DID NOT SEND, AND HAD TO.
+// The request body was `{ text, model_id }` and nothing else. Two consequences:
+//
+//   1. NO VOICE SETTINGS — so ElevenLabs applied whatever is saved on the voice object at
+//      that moment. The configuration the Founder actually listened to and accepted
+//      (stability 0.50, similarity 0.75, style 0, speed 1.00) was therefore not something
+//      this code guaranteed; it was something we hoped nobody had changed in a dashboard.
+//      A voice "verified at 0.50" that silently renders at whatever the object now holds
+//      is not a verified voice. The settings are now sent explicitly on every request.
+//   2. NO PRONUNCIATION DICTIONARY — so «قهوة» was mispronounced on every single render,
+//      which is the one correction the handoff proved and froze.
+//
+// THE MODEL IS PART OF THE ACCEPTANCE, NOT A PREFERENCE. KIV-313: keep `eleven_v3` unless a
+// separately reviewed model change is authorized. So `ELEVENLABS_TTS_MODEL` may confirm the
+// registered model but may not silently replace it — a model swap changes how the voice
+// sounds, and a change nobody reviewed is exactly what "separately reviewed" excludes.
+//
+// AND THE VOICE ITSELF IS ALLOW-LISTED (lib/ai/tts/voice-registry.ts). The refusal lives
+// HERE, in the adapter, rather than only in the demo's caller, because the demo is not the
+// only surface that can reach ElevenLabs — lib/messaging/respond-and-send.ts can too. A
+// guard that protects one of two callers protects neither in the case that matters.
 // ============================================================================
 
 import type { TtsAdapter } from "./types";
 import { ttsCostUsd } from "./pricing";
+import { KHALID_VOICE, lookupVoice, normalizeVoiceId, voiceRefusalReason } from "./voice-registry";
 
 export const elevenlabsTtsAdapter: TtsAdapter = {
   name: "elevenlabs",
@@ -22,9 +43,27 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
     // `/v1/text-to-speech/%20%20ID%20%20` and 404'd in production.
     const key = (process.env.ELEVENLABS_API_KEY || "").trim();
     if (!key) throw new Error("ELEVENLABS_API_KEY not set");
-    const voiceId = (opts?.voiceId || process.env.ELEVENLABS_VOICE_ID || "").trim();
+
+    const voiceId = normalizeVoiceId(opts?.voiceId || process.env.ELEVENLABS_VOICE_ID || "");
     if (!voiceId) throw new Error("ELEVENLABS_VOICE_ID not set");
-    const model = (process.env.ELEVENLABS_TTS_MODEL || "").trim() || "eleven_flash_v2.5";
+
+    // THE ALLOW LIST, BEFORE ANY MONEY IS SPENT. An unregistered id is refused here rather
+    // than after a paid synthesis, and the refusal names what was wrong so an operator can
+    // fix it without guessing.
+    const voice = lookupVoice(voiceId);
+    if (!voice) throw new Error(`ElevenLabs TTS refused: ${voiceRefusalReason(voiceId)}`);
+
+    // The registered model is the default. An override is permitted only if it AGREES —
+    // see the header: an unreviewed model change is not ours to make.
+    const requested = (process.env.ELEVENLABS_TTS_MODEL || "").trim();
+    if (requested && requested !== voice.model) {
+      throw new Error(
+        `ElevenLabs TTS refused: ELEVENLABS_TTS_MODEL="${requested}" does not match the ` +
+          `model «${voice.name}» was accepted under ("${voice.model}"). A model change needs ` +
+          `its own review (KIV-313 §3).`
+      );
+    }
+    const model = voice.model;
     const body = String(text ?? "");
 
     const res = await fetch(
@@ -32,7 +71,25 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
       {
         method: "POST",
         headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/ogg" },
-        body: JSON.stringify({ text: body, model_id: model }),
+        body: JSON.stringify({
+          text: body,
+          model_id: model,
+          voice_settings: {
+            stability: voice.settings.stability,
+            similarity_boost: voice.settings.similarity_boost,
+            style: voice.settings.style,
+            use_speaker_boost: voice.settings.use_speaker_boost,
+            speed: voice.settings.speed,
+          },
+          // The ONE proven correction: «قهوة» → ɡahwa. Deliberately not the old broad
+          // 18-rule qaf dictionary, which was never qualified for this voice.
+          pronunciation_dictionary_locators: [
+            {
+              pronunciation_dictionary_id: voice.pronunciationDictionary.id,
+              version_id: voice.pronunciationDictionary.versionId,
+            },
+          ],
+        }),
       }
     );
     if (!res.ok) {
@@ -51,3 +108,6 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
     };
   },
 };
+
+/** Re-exported so callers and proofs read the pin from one place. */
+export { KHALID_VOICE };

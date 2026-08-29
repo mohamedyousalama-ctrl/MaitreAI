@@ -16,6 +16,8 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { KHALID_VOICE, isAuthorizedVoice } from "@/lib/ai/tts/voice-registry";
+import { TTS_RATE_PER_CHAR } from "@/lib/ai/tts/pricing";
 import { demoVoiceProviderPinned, demoVoiceReply, demoVoiceSignalsFor, voiceMatchesPin, DEMO_TTS_MAX_CHARS } from "../lib/demo/voice-out.ts";
 import { voiceSignalsForTurn, voiceHardZeroReason } from "../lib/messaging/voice-budget.ts";
 import { decodeReplyAudio, DEMO_AUDIO_DEFAULT_MIME } from "../lib/demo/audio-payload.ts";
@@ -72,8 +74,11 @@ withEnv({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", OPENAI_API_KE
   ok("pinned with a key but NO voice id → refuses; an unpinned voice is a wrong voice",
     !demoVoiceProviderPinned());
 });
+withEnv({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId }, () => {
+  ok("pinned, key AND the REGISTERED voice id → speaks", demoVoiceProviderPinned());
+});
 withEnv({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: "vid" }, () => {
-  ok("pinned, key AND voice id → speaks", demoVoiceProviderPinned());
+  ok("…but an unregistered voice id refuses, key or no key", !demoVoiceProviderPinned());
 });
 withEnv({ TTS_ADAPTER: "openai", OPENAI_API_KEY: "sk-present" }, () => {
   ok("pinning OPENAI is refused — onyx is never the demo's voice, even deliberately",
@@ -216,7 +221,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   // A real custom voice id — a STOCK id is refused, which is itself asserted below.
   const PINNED = {
     TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key",
-    ELEVENLABS_VOICE_ID: "KhalidCustomVoice01", OPENAI_API_KEY: "sk-present",
+    ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId, OPENAI_API_KEY: "sk-present",
   };
   const SPEAK = { inboundWasVoice: true, safetyHold: false, isReceipt: false };
 
@@ -231,13 +236,47 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ok("only ElevenLabs is contacted on a healthy turn",
       hosts.length === 1 && hosts[0] === "api.elevenlabs.io");
     ok("THE PINNED VOICE ID is the one actually requested on the wire",
-      paths.length === 1 && paths[0].includes("KhalidCustomVoice01"));
+      paths.length === 1 && paths[0].includes(KHALID_VOICE.voiceId));
     ok("the priced model is the one actually sent to the provider",
-      bodies.length === 1 && bodies[0].includes("eleven_flash_v2.5"));
+      bodies.length === 1 && bodies[0].includes(KHALID_VOICE.model));
+
+    // ── KIV-313 §10 — THE ACCEPTED CONFIGURATION, ON THE WIRE ────────────────
+    // The Founder listened to «Khalid kivo» at a SPECIFIC configuration and accepted THAT.
+    // Before this, the request body was `{text, model_id}` — no voice_settings at all — so
+    // ElevenLabs applied whatever was saved on the voice object at render time. The voice
+    // "verified at stability 0.50" was therefore verified only for as long as nobody
+    // touched a dashboard slider, and nothing here would have noticed if they had.
+    const sent = JSON.parse(bodies[0]) as {
+      voice_settings?: Record<string, unknown>;
+      pronunciation_dictionary_locators?: Array<Record<string, unknown>>;
+    };
+    ok("voice_settings are sent explicitly, not left to the saved object",
+      !!sent.voice_settings);
+    ok("stability is the accepted 0.50 — NOT the unselected 0.40/0.30 captures",
+      sent.voice_settings?.stability === 0.5);
+    ok("similarity_boost is the accepted 0.75", sent.voice_settings?.similarity_boost === 0.75);
+    ok("style is the accepted 0", sent.voice_settings?.style === 0);
+    ok("speed is the accepted 1.00", sent.voice_settings?.speed === 1);
+    ok("speaker boost matches the saved object", sent.voice_settings?.use_speaker_boost === true);
+
+    // The ONE proven pronunciation correction, «قهوة» → ɡahwa. Without the locator the
+    // word was mispronounced on every render, which is the single fix the handoff froze.
+    const loc = sent.pronunciation_dictionary_locators ?? [];
+    ok("the pronunciation dictionary is attached to the request", loc.length === 1);
+    ok("…and it is the qualified one-word dictionary, by id and version",
+      loc[0]?.pronunciation_dictionary_id === KHALID_VOICE.pronunciationDictionary.id &&
+      loc[0]?.version_id === KHALID_VOICE.pronunciationDictionary.versionId);
+    // KIV-313 is explicit that the old broad 18-rule qaf dictionary must NOT come back: it
+    // was never qualified for this voice and introduced many errors. One locator, not two.
+    ok("no second dictionary rides along — no blanket ق→g rule", loc.length < 2);
+
+    // Provenance, recorded where an auditor can read it: this voice is a synthetic Voice
+    // Design, not a donor recording or a clone. That is the fact G0-R turns on.
+    ok("the registered voice is synthetic by provenance", KHALID_VOICE.provenance === "generated");
     ok("the reported spend is the model+chars the provider was actually given",
-      out.spend !== null && out.spend!.model === "eleven_flash_v2.5" &&
+      out.spend !== null && out.spend!.model === KHALID_VOICE.model &&
       out.spend!.chars === "تفضل، وش تحب تطلب؟".length &&
-      Math.abs(out.spend!.costUsd - out.spend!.chars * 0.00011) < 1e-9);
+      Math.abs(out.spend!.costUsd - out.spend!.chars * TTS_RATE_PER_CHAR[`elevenlabs:${KHALID_VOICE.model}`]) < 1e-9);
   });
 
   // (b) ELEVENLABS DOWN: refuse, and — the finding this replaces — never BUY the onyx
@@ -282,9 +321,24 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ok("an unpriced model is refused — one env var must not blind the spend monitor",
       !demoVoiceProviderPinned());
   });
-  await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: "eleven_multilingual_v2" }, async () => {
-    ok("a known, priced model is accepted", demoVoiceProviderPinned());
+  // KIV-313 §3 — `eleven_v3` is part of what was ACCEPTED, not a preference. An env value
+  // that agrees is a no-op confirmation; one that disagrees is an unreviewed model change,
+  // and it must fail closed in the pin AND in the adapter, not be approved by one and
+  // rejected by the other.
+  await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: KHALID_VOICE.model }, async () => {
+    ok("an env model that AGREES with the registry is accepted", demoVoiceProviderPinned());
   });
+  for (const other of ["eleven_multilingual_v2", "eleven_flash_v2.5", "eleven_turbo_v2"]) {
+    await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: other }, async () => {
+      ok(`an unreviewed model swap to ${other} is refused by the pin`, !demoVoiceProviderPinned());
+    });
+    hosts = []; paths = []; bodies = []; stub(200);
+    await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: other }, async () => {
+      const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+      ok(`…and the provider is never contacted for ${other}`,
+        out.audioBase64 === null && hosts.length === 0);
+    });
+  }
 
   // (f) Whitespace is not configuration.
   await withEnvAsync({ ...PINNED, ELEVENLABS_API_KEY: " " }, async () => {
@@ -306,18 +360,18 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   // passed the price check here and priced at $0 in the adapter, taking the entire
   // synthesis off the spend ledger. Money spent, nothing recorded.
   hosts = []; paths = []; bodies = []; stub(200);
-  await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: "  eleven_flash_v2.5  " }, async () => {
+  await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: `  ${KHALID_VOICE.model}  ` }, async () => {
     const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
     ok("a padded model still prices, and the ledger still sees the spend",
       out.audioBase64 !== null && out.spend !== null && out.spend!.costUsd > 0);
     ok("the padded model is trimmed before it reaches the provider",
-      bodies.length === 1 && bodies[0].includes('"eleven_flash_v2.5"'));
+      bodies.length === 1 && bodies[0].includes(`"${KHALID_VOICE.model}"`));
   });
   hosts = []; paths = []; bodies = []; stub(200);
-  await withEnvAsync({ ...PINNED, ELEVENLABS_VOICE_ID: "  KhalidCustomVoice01  " }, async () => {
+  await withEnvAsync({ ...PINNED, ELEVENLABS_VOICE_ID: `  ${KHALID_VOICE.voiceId}  ` }, async () => {
     const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
     ok("a padded voice id is trimmed, not requested as %20%20ID%20%20",
-      out.audioBase64 !== null && paths.length === 1 && paths[0].includes("/KhalidCustomVoice01"));
+      out.audioBase64 !== null && paths.length === 1 && paths[0].includes(`/${KHALID_VOICE.voiceId}`));
   });
   // A padded `mock` must resolve to the mock, NOT fall through to key inference and buy an
   // OpenAI onyx synthesis on an unauthenticated page.
@@ -440,7 +494,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     /if \(!voiceMatchesPin\(result, pinnedVoiceId\)\) return refuse\("wrong_voice"\);/.test(mod));
   // Driven, not read: a lying adapter is the only thing that can make the value we ASKED
   // for differ from the value that ANSWERED, and no env configuration can produce one.
-  const PIN = "KhalidCustomVoice01";
+  const PIN = KHALID_VOICE.voiceId;
   ok("the pinned voice and provider are accepted",
     voiceMatchesPin({ adapter: "elevenlabs", voiceId: PIN }, PIN));
   ok("a different ElevenLabs voice is refused — right company, wrong person",
@@ -455,12 +509,31 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   }
   ok("a refusal after a paid synthesis still reports the spend",
     /const refuse = [\s\S]{0,120}spend: spentAnyway/.test(mod));
-  ok("stock ids are compared with invisibles stripped and case-folded",
-    /replace\(INVISIBLE_RE, ""\)[\s\S]{0,40}toLowerCase\(\)/.test(mod));
+  // DRIVEN, NOT GREPPED. These five used to be asserted as `mod.includes(legacy)` — the
+  // proof checked that voice-out.ts CONTAINED the id as text. That passes for a list that
+  // nothing reads, and it went red the moment the 50-entry deny list was replaced by a
+  // strictly stronger allow list, which is a proof failing on a change that improved the
+  // thing it was protecting. Ask the guard instead.
   for (const legacy of ["29vD33N1CtxCmqQRPOHJ", "2EiwWnXFnvU5JabPnv8n", "5Q0t7uMcjvnagumLfvZi",
-                        "GBv7mTt0atIp3Br8iCZE", "pMsXgVXv3BLzUgSXRplE"]) {
-    ok(`the legacy premade voice ${legacy} is refused`, mod.includes(legacy));
+                        "GBv7mTt0atIp3Br8iCZE", "pMsXgVXv3BLzUgSXRplE",
+                        // stock Rachel / Adam, the likely paste error
+                        "21m00Tcm4TlvDq8ikWAM", "pNInz6obpgDQGcFmaJgB",
+                        // the identified quarantined object (KIV-90/95)
+                        "VuqFqWXHibJ61b9IiVJ7"]) {
+    ok(`the unregistered voice ${legacy} is refused`, !isAuthorizedVoice(legacy));
+    withEnv({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: legacy }, () => {
+      ok(`…and the demo will not speak with it`, !demoVoiceProviderPinned());
+    });
   }
+  // Case and invisibles are normalised — for the RIGHT id, which is the case that matters:
+  // a correct id pasted with a zero-width character must not be read as "unknown voice".
+  ok("the registered id is matched despite a zero-width character",
+    isAuthorizedVoice(`${KHALID_VOICE.voiceId.slice(0, 4)}\u200b${KHALID_VOICE.voiceId.slice(4)}`));
+  ok("the registered id is matched case-insensitively",
+    isAuthorizedVoice(KHALID_VOICE.voiceId.toLowerCase()));
+  // …and normalising must not turn a WRONG id into an accepted one.
+  ok("a near-miss id is still refused", !isAuthorizedVoice(KHALID_VOICE.voiceId.slice(0, -1) + "X"));
+  ok("an empty id is refused", !isAuthorizedVoice("") && !isAuthorizedVoice(null));
 }
 
 // ── 2e3. THE EMERGENCY MUST OUTRANK THE GARBLE LADDER ───────────────────────

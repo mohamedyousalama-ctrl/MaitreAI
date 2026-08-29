@@ -38,6 +38,7 @@
 import "server-only";
 import { getTtsAdapter } from "@/lib/ai/tts";
 import { TTS_RATE_PER_CHAR } from "@/lib/ai/tts/pricing";
+import { lookupVoice } from "@/lib/ai/tts/voice-registry";
 import {
   voiceHardZeroReason, voiceSignalsForTurn,
   type VoiceZeroReason, type VoiceTurnSignals,
@@ -82,41 +83,22 @@ const envTrim = (k: string): string => (process.env[k] || "").trim();
  *  blank to a reader and a billable character to a provider. */
 const INVISIBLE_RE = /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/g;
 
-/** ElevenLabs' own STOCK voice ids — public constants, shipped in every account.
+/** THE VOICE IS ALLOW-LISTED, NOT DENY-LISTED — see lib/ai/tts/voice-registry.ts.
  *
- *  THIS IS A HEURISTIC, AND THE ONLY HONEST CLAIM FOR IT: it catches the LIKELY paste
- *  error, not every wrong voice. Pinning the provider never pinned the VOICE — any valid
- *  id in the account speaks with no error, so a mis-copied id yields ElevenLabs' stock
- *  "Rachel" (female) or "Adam" (American male) reading Najdi Arabic, exactly the failure
- *  this module claims to prevent. Copying an opaque 20-character id off a dashboard is the
- *  single most likely operator error in the rollout, and a STOCK id is definitionally not
- *  the Founder's designed Khalid — so those we can refuse outright. A wrong CUSTOM id we
- *  cannot detect without asking the provider, and that is a per-turn API call; it stays a
- *  known residual risk, listed for the Founder rather than papered over. */
-const ELEVENLABS_STOCK_VOICE_IDS = new Set([
-  "21m00Tcm4TlvDq8ikWAM", "9BWtsMINqrJLrRacOk9x", "AZnzlk1XvdvUeBnXmlld", "CwhRBWXzGAHq8TQ4Fs17",
-  "CYw3kZ02Hs0563khs1Fj", "D38z5RcWu1voky8WS1ja", "EXAVITQu4vr4xnSDxMaL", "ErXwobaYiN019PkySvjV",
-  "FGY2WhTYpPnrIDTdsKH5", "IKne3meq5aSn9XLyUdCD", "JBFqnCBsd6RMkjVDRZzb", "LcfcDJNUP1GQjkzn1xUU",
-  "MF3mGyEYCl7XYWbV9V6O", "N2lVS1w4EtoT3dr4eOWO", "ODq5zmih8GrVes37Dizd", "SAz9YHcvj6GT2YYXdXww",
-  "SOYHLrjzK2X1ezoPC6cr", "TX3LPaxmHKxFdv7VOQHJ", "TxGEqnHWrfWFTfGW9XjX", "VR6AewLTigWG4xSOukaG",
-  "XB0fDUnXU5powFXDhCwa", "Xb7hH8MSUJpSbSDYk0k2", "XrExE9yKIg1WjnnlVkGX", "ZQe5CZNOzWyzPSCn5a3c",
-  "Zlb1dXrM653N07WRdFW3", "bIHbv24MWmeRgasZH58o", "bVMeCyTHy58xNoL34h3p", "cgSgspJ2msm6clMCkdW9",
-  "cjVigY5qzO86Huf0OWal", "flq6f7yk4E4fJM5XTYuZ", "g5CIjZEefAph4nQFvHAz", "iP95p4xoKVk53GoZ742B",
-  "jBpfuIE2acCO8z3wKNLl", "jsCqWAovK2LkecY7zXl4", "nPczCjzI2devNBz1zQrb", "oWAxZDx7w5VEj9dCyTzz",
-  "onwK4e9ZLuTAKqWW03F9", "pFZP5JQG7iQjIQuC4Bku", "piTKgcLEGmPE4e6mEKli", "pNInz6obpgDQGcFmaJgB",
-  "pqHfZKP75CvOlQylNhV4", "t0jbNlBVZ17f02VDIeMI", "yoZ06aMxZJJ28mfd3POQ", "z9fAnlkpzviPz146aGWa",
-  "zcAOhNBS3c14rBihAFp1", "ThT5KcBeYPX3keUQqHPh",
-  // legacy premade set — verified to speak before they were listed
-  "29vD33N1CtxCmqQRPOHJ", "2EiwWnXFnvU5JabPnv8n", "5Q0t7uMcjvnagumLfvZi",
-  "GBv7mTt0atIp3Br8iCZE", "pMsXgVXv3BLzUgSXRplE",
-].map((v) => v.toLowerCase()));
-
-/** Compare stock ids case-insensitively and with invisibles stripped: a lowercased paste
- *  (`21m00tcm4tlvdq8ikwam`) and an id carrying a stray zero-width character both used to
- *  slip past an exact-string Set and speak in a stock voice. */
-function isStockVoiceId(id: string): boolean {
-  return ELEVENLABS_STOCK_VOICE_IDS.has(id.replace(INVISIBLE_RE, "").trim().toLowerCase());
-}
+ *  This used to be a 50-entry list of ElevenLabs' STOCK voice ids, and its own comment was
+ *  honest about the limit: "it catches the LIKELY paste error, not every wrong voice." A
+ *  wrong CUSTOM id — the quarantined `Khalid Demo`, `Saad`, or any of the historical
+ *  objects KIV-95 has not finished inventorying — passed it and spoke.
+ *
+ *  KIV-313 closed that hole by naming exactly one voice. An allow list of one refuses every
+ *  stock id (none is registered) AND every historical id, including the ones nobody has
+ *  written down yet, which is the set a deny list can never cover. The old list is gone
+ *  rather than kept alongside, because a guard that no longer decides anything still reads
+ *  like a guard, and the next person to touch this file should not have to work out which
+ *  of the two is load-bearing.
+ *
+ *  The residual risk the old comment recorded is now CLOSED for the wrong-custom-id case:
+ *  a mis-copied id is refused before the network, without a provider round trip. */
 
 /** True when the demo is configured to speak in a voice we actually chose.
  *
@@ -128,13 +110,22 @@ export function demoVoiceProviderPinned(): boolean {
   if (pinned === "elevenlabs") {
     const voiceId = envTrim("ELEVENLABS_VOICE_ID");
     if (!envTrim("ELEVENLABS_API_KEY") || !voiceId) return false;
-    if (isStockVoiceId(voiceId)) return false;
+    // Only a registered voice may speak. Stock ids, quarantined ids and typos all land here.
+    const voice = lookupVoice(voiceId);
+    if (!voice) return false;
+    // THE MODEL THIS CHECK PRICES MUST BE THE MODEL THE ADAPTER SENDS. It used to read
+    // ELEVENLABS_TTS_MODEL with its own default of "eleven_flash_v2.5" while the adapter
+    // read the same var with the same default — two copies of one decision, which is how
+    // they drift. The registry now owns it, and an env value that DISAGREES is refused
+    // here exactly as the adapter refuses it, so a mismatch fails closed in both places
+    // instead of the pin approving a configuration the adapter will then reject.
+    const requested = envTrim("ELEVENLABS_TTS_MODEL");
+    if (requested && requested !== voice.model) return false;
     // REFUSE A MODEL WE CANNOT PRICE. ttsCostUsd() returns 0 for an unknown provider:model,
-    // so an unrecognised ELEVENLABS_TTS_MODEL does not merely cost more — it reports its
-    // cost as ZERO, and the demo's spend goes invisible to lib/monitoring/sweep.ts again.
-    // One env var must not be able to blind the only spend monitor there is.
-    const model = envTrim("ELEVENLABS_TTS_MODEL") || "eleven_flash_v2.5";
-    if (!TTS_RATE_PER_CHAR[`elevenlabs:${model}`]) return false;
+    // so an unrecognised model does not merely cost more — it reports its cost as ZERO, and
+    // the demo's spend goes invisible to lib/monitoring/sweep.ts again. One env var must
+    // not be able to blind the only spend monitor there is.
+    if (!TTS_RATE_PER_CHAR[`elevenlabs:${voice.model}`]) return false;
     return true;
   }
   // `mock` is pinned on purpose in tests and local runs; it produces no provider cost and
