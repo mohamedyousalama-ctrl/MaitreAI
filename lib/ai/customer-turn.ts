@@ -96,7 +96,7 @@ import { applyPinRouting } from "@/lib/delivery/routing";
 import { buildImageDirective } from "@/lib/messaging/image-turn";
 import { imageAvailabilityGuard, isDeicticImageReference } from "@/lib/ai/image-binding";
 import type { AiToneConfig } from "@/lib/types";
-import { dialectProfile } from "@/lib/ai/dialect";
+import { dialectProfile, resolveTenantDialect, tenantCurrencyMismatch } from "@/lib/ai/dialect";
 import {
   buildTurnCallObservabilityMeta,
   hasCapShadowViolation,
@@ -706,7 +706,7 @@ export async function runCustomerTurn(
   const { data: r } = await admin
     .from("restaurants")
     .select(
-      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,tier,feature_flags,auto_accept_orders,agent_persona_name,tax_mode,tax_rate,payment_config"
+      "agent_mode,is_open,ai_tone,dialect,country,name,currency,timezone,business_type,tier,feature_flags,auto_accept_orders,agent_persona_name,tax_mode,tax_rate,payment_config"
     )
     .eq("id", restaurantId)
     .single();
@@ -881,7 +881,14 @@ export async function runCustomerTurn(
     }
   }
 
-  const dialect = String(row.dialect ?? "egyptian");
+  const dialect = resolveTenantDialect(row as { dialect?: string | null; country?: string | null }, "customer-turn");
+  // Observability only — a Saudi tenant priced in ج.م is a data defect nothing else sees.
+  {
+    const cur = tenantCurrencyMismatch(row as { dialect?: string | null; currency?: string | null });
+    if (cur.mismatch) {
+      console.warn(`[dialect] customer-turn: tenant currency "${cur.actual}" does not match dialect "${dialect}" (expected "${cur.expected}")`);
+    }
+  }
 
   // WO-COMPANION-W1-CORE (§1a.2/§6): read the session's monotonic allergy-note union
   // and whether a §6 checkpoint is pending/acknowledged. Best-effort + deploy-safe —

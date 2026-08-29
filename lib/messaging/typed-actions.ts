@@ -32,6 +32,7 @@ import {
 import { FIXED_INTERACTIVE_CONTROLS } from "./interactive-router";
 import { asPricingTaxMode, type PricingTaxMode } from "@/lib/order-pricing";
 import { DRAFT_RESUME_FRESHNESS_MS } from "@/lib/ai/draft-lifecycle";
+import { dialectProfile, resolveTenantDialect } from "@/lib/ai/dialect";
 
 type ActiveMenuItem = Awaited<ReturnType<typeof loadBrain>>["menuItems"][number];
 
@@ -538,12 +539,16 @@ export async function handleTypedInteractiveAction(
 
   const { data: r } = await admin
     .from("restaurants")
-    .select("dialect,currency,tax_mode,tax_rate,payment_config,feature_flags")
+    .select("dialect,country,currency,tax_mode,tax_rate,payment_config,feature_flags")
     .eq("id", args.restaurantId)
     .single();
   const restaurant = (r ?? {}) as Record<string, unknown>;
-  const dialect = String(restaurant.dialect ?? "egyptian");
-  const currency = String(restaurant.currency ?? "ج.م");
+  const dialect = resolveTenantDialect(restaurant as { dialect?: string | null; country?: string | null }, "typed-actions.interactive");
+  // Same shape as the dialect default above: a hardcoded EGYPTIAN currency for every
+  // tenant. Derive it from the resolved dialect instead, so a Saudi tenant with no currency
+  // set gets ر.س rather than ج.م. lib/render/load.ts already defaults to ر.س, so the two
+  // halves of the codebase disagreed about this too.
+  const currency = String(restaurant.currency ?? dialectProfile(dialect).currencyDefault);
   const features = (restaurant.feature_flags as Record<string, unknown> | null) ?? args.features;
   const brain = await loadBrain(admin, args.restaurantId);
   const payments = await loadResolvedPaymentMethods(admin, args.restaurantId, {
@@ -626,10 +631,10 @@ export async function handleUnknownInteractiveCommand(
   const id = cleanInteractiveId(args.interactiveId);
   const { data: r } = await admin
     .from("restaurants")
-    .select("dialect")
+    .select("dialect,country")
     .eq("id", args.restaurantId)
     .single();
-  const dialect = String((r as { dialect?: string | null } | null)?.dialect ?? "egyptian");
+  const dialect = resolveTenantDialect(r as { dialect?: string | null; country?: string | null } | null, "typed-actions.quantity");
   const reply = stringFor("unknown_interactive", dialect);
 
   const { data: msg } = await admin
@@ -702,11 +707,11 @@ export async function handleTypedQuantityFill(
 
   const { data: r } = await admin
     .from("restaurants")
-    .select("dialect,currency,tax_mode,tax_rate,payment_config,feature_flags")
+    .select("dialect,country,currency,tax_mode,tax_rate,payment_config,feature_flags")
     .eq("id", args.restaurantId)
     .single();
   const restaurant = (r ?? {}) as Record<string, unknown>;
-  const dialect = String(restaurant.dialect ?? "egyptian");
+  const dialect = resolveTenantDialect(restaurant as { dialect?: string | null; country?: string | null }, "typed-actions.fill");
   const features = (restaurant.feature_flags as Record<string, unknown> | null) ?? args.features;
   // THE KILL SWITCH — checked BEFORE any further work, and from inside the handler.
   //

@@ -26,6 +26,7 @@ import { recoveryDirective } from "../lib/ai/perception.ts";
 import { buildAnswerFirstDirective } from "../lib/ai/media-intent.ts";
 import { buildImageDirective } from "../lib/messaging/image-turn.ts";
 import { applyPinRouting } from "../lib/delivery/routing.ts";
+import { resolveTenantDialect, tenantCurrencyMismatch, LEGACY_DIALECT_DEFAULT } from "../lib/ai/dialect.ts";
 import { emptyDraft } from "../lib/ai/tools.ts";
 
 const ROOT = process.cwd();
@@ -309,6 +310,77 @@ ok("the linter passes clean Najdi", findLeakage("هلا والله، وش تحب
   ok("§HX1 is dialect-branched", /ctx\.dialect === "saudi" \? `## رسائل الفريق البشري/.test(promptSrc));
   ok("its Saudi branch says «مين قال وش», not «مين قال إيه»",
     /§HX1 — مين قال وش/.test(promptSrc) && /§HX1 — مين قال إيه/.test(promptSrc));
+}
+
+// ── THE UNSET-DIALECT DEFAULT ────────────────────────────────────────────────
+// Seven sites each wrote `String(row.dialect ?? "egyptian")`, so a tenant whose dialect
+// column is null or blank received the ENTIRE Egyptian persona — including a Saudi
+// restaurant. dialectProfile() in the same module defaults the other way, to SAUDI, so the
+// codebase disagreed with itself about what an unset dialect means.
+//
+// Latent, not live: all 13 production tenants have a dialect set, verified before the
+// change. Fixed anyway because the failure is silent and total — nothing errors, nothing
+// logs, the restaurant simply speaks the wrong country's Arabic — and a tenant created
+// without a dialect is an ordinary onboarding slip.
+{
+  ok("a set dialect is used verbatim",
+    resolveTenantDialect({ dialect: "saudi", country: "EG" }, "t") === "saudi" &&
+    resolveTenantDialect({ dialect: "egyptian", country: "SA" }, "t") === "egyptian");
+  ok("it is trimmed and case-folded, so « Saudi » is not treated as unset",
+    resolveTenantDialect({ dialect: "  SAUDI  " }, "t") === "saudi");
+
+  // THE DEFECT: no dialect on a Saudi tenant used to yield the whole Egyptian persona.
+  ok("an unset dialect falls back to the tenant's COUNTRY, not to Egyptian",
+    resolveTenantDialect({ dialect: null, country: "SA" }, "t") === "saudi");
+  ok("and an Egyptian tenant with no dialect still resolves Egyptian",
+    resolveTenantDialect({ dialect: "", country: "EG" }, "t") === "egyptian");
+  ok("country matching is case- and whitespace-insensitive",
+    resolveTenantDialect({ dialect: null, country: " sa " }, "t") === "saudi");
+
+  // NON-REGRESSION: with neither signal the historical default is preserved exactly, so no
+  // tenant alive today changes behaviour. This is what makes the change safe to ship.
+  ok("neither dialect nor country → the historical default, unchanged",
+    resolveTenantDialect({}, "t") === LEGACY_DIALECT_DEFAULT &&
+    resolveTenantDialect(null, "t") === LEGACY_DIALECT_DEFAULT &&
+    LEGACY_DIALECT_DEFAULT === "egyptian");
+  ok("an unknown dialect string is not trusted as a dialect",
+    resolveTenantDialect({ dialect: "levantine", country: "SA" }, "t") === "saudi");
+  // Guessing beyond the two countries this product serves would repeat the mistake.
+  ok("an unserved country is not guessed at",
+    resolveTenantDialect({ dialect: null, country: "AE" }, "t") === LEGACY_DIALECT_DEFAULT);
+
+  // No call site may go back to the silent default.
+  for (const f of ["lib/ai/customer-turn.ts", "lib/messaging/respond-and-send.ts", "lib/messaging/typed-actions.ts"]) {
+    ok(`${f} no longer defaults a dialect to Egyptian in place`,
+      !/dialect \?\? "egyptian"/.test(readFileSync(resolve(process.cwd(), f), "utf8")));
+  }
+
+  // CURRENCY, the same shape: typed-actions hardcoded «ج.م» for every tenant while
+  // lib/render/load.ts defaulted to «ر.س».
+  ok("the currency default is derived from the dialect, not hardcoded Egyptian",
+    /dialectProfile\(dialect\)\.currencyDefault/.test(readFileSync(resolve(process.cwd(), "lib/messaging/typed-actions.ts"), "utf8")));
+
+  // A REAL ROW IN PRODUCTION: «مطعم الذواقة» is dialect "saudi", country "SA", currency
+  // «ج.م» — a Saudi restaurant priced in Egyptian pounds, which nothing detected. Dormant
+  // (agent_mode off, no traffic since June), so this is observability, not a rewrite of
+  // anyone's money.
+  ok("a dialect/currency mismatch is detected",
+    tenantCurrencyMismatch({ dialect: "saudi", currency: "ج.م" }).mismatch === true &&
+    tenantCurrencyMismatch({ dialect: "egyptian", currency: "ر.س" }).mismatch === true);
+  ok("a matching pair is not flagged",
+    tenantCurrencyMismatch({ dialect: "saudi", currency: "ر.س" }).mismatch === false &&
+    tenantCurrencyMismatch({ dialect: "egyptian", currency: "ج.م" }).mismatch === false);
+  ok("missing data is not a mismatch — absence is not a contradiction",
+    tenantCurrencyMismatch({ dialect: "saudi" }).mismatch === false &&
+    tenantCurrencyMismatch({ currency: "ر.س" }).mismatch === false &&
+    tenantCurrencyMismatch(null).mismatch === false);
+
+  // DEPLOY SAFETY. `country` travels with the tester columns, which respond-and-send reads
+  // behind an explicit 42703 missing-column guard. I added it to the MODE GATE select and
+  // proof-tester-allowlist caught it. Pinned here too so the reason travels with the fix.
+  const ras = readFileSync(resolve(process.cwd(), "lib/messaging/respond-and-send.ts"), "utf8");
+  ok("the mode-gate select stays free of country (deploy-safe)",
+    /\.select\("agent_mode, feature_flags, dialect"\)/.test(ras));
 }
 
 console.log(`\nSAUDI DIALECT PURITY PROOF: ${pass} passed, ${fail} failed  (${checked} Saudi branches scanned)`);

@@ -75,6 +75,7 @@ import {
 import { recordAllergyEvent } from "@/lib/db/allergy-audit";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 import { formatCustomerVisiblePresentation, formatCustomerVisibleText } from "@/lib/util/customer-visible-format";
+import { resolveTenantDialect } from "@/lib/ai/dialect";
 
 export type RespondAndSendStatus =
   | "responded"
@@ -910,9 +911,9 @@ export async function respondAndSendWhatsApp(
       console.error("[respond-and-send] stuck check error", e)
     );
 
-    const { data: rFlags } = await admin.from("restaurants").select("feature_flags, dialect").eq("id", restaurantId).single();
+    const { data: rFlags } = await admin.from("restaurants").select("feature_flags, dialect, country").eq("id", restaurantId).single();
     const features = (rFlags?.feature_flags as Record<string, unknown> | null) ?? null;
-    const dialect = String((rFlags as { dialect?: string } | null)?.dialect ?? "egyptian");
+    const dialect = resolveTenantDialect(rFlags as { dialect?: string | null; country?: string | null } | null, "respond-and-send.notify");
     const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
 
     const calmHeld = await handleCalmHeldInbound(admin, {
@@ -995,7 +996,7 @@ export async function respondAndSendWhatsApp(
         if (alreadyBridged) return { status: "skipped_takeover" }; // already acked this window — stay silent
 
         const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
-        const ackDialect = String((rFlags as { dialect?: string } | null)?.dialect ?? "egyptian");
+        const ackDialect = resolveTenantDialect(rFlags as { dialect?: string | null; country?: string | null } | null, "respond-and-send.ack");
         const ackText = formatCustomerVisibleText(safetyBridgeAck(ackDialect), ackDialect);
         // 1. CUSTOMER ACK — persist + send. NOTE: we do NOT bump conversations.updated_at (unlike
         //    the recovery send): an automated ack is not operator activity.
@@ -1101,7 +1102,15 @@ export async function respondAndSendWhatsApp(
   // OFF). feature_flags is an existing column, so folding it into the agent_mode read is
   // deploy-safe; the WATERMARK column read below is the one that must degrade gracefully.
   const convFlags = (rest?.feature_flags as Record<string, unknown> | null) ?? null;
-  const outboundDialect = String((rest as { dialect?: string | null } | null)?.dialect ?? "egyptian");
+  // DIALECT ONLY HERE, deliberately. This is the MODE GATE read, and it must stay
+  // deploy-safe: `country` travels with the tester columns, which are fetched separately
+  // below behind an explicit missing-column guard (42703). Adding it here would make the
+  // gate throw on a deploy that lands before that migration —
+  // proof-tester-allowlist.test.ts pins exactly this, and caught me adding it.
+  // With no country, resolveTenantDialect falls through to the historical default, which
+  // is precisely this line's previous behaviour: nothing regresses, this site simply does
+  // not gain the country fallback.
+  const outboundDialect = resolveTenantDialect(rest as { dialect?: string | null } | null, "respond-and-send.outbound");
   const coalescingOn = isFeatureExplicitlyEnabled("inbound_coalescing", convFlags);
 
   const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
