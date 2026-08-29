@@ -154,10 +154,21 @@ export function composeFinalReply(input: ComposeInput): ComposeResult {
       previousOutbound: input.previousOutbound,
       socialClosing: input.socialClosing,
       hasPresentation: input.hasPresentation,
-      // A finalize-required delivery field still missing IS "this turn is collecting a
-      // value". Deterministic, already computed for the recap-CTA suppression above, and
-      // it cannot mask a real dead end: an empty, pickup, or complete draft returns false.
-      openSlotFill: finalizeRequiredFieldMissing(input.draft),
+      // "This turn is collecting a value the order cannot close without."
+      //
+      // THE COMMENT HERE USED TO CLAIM an empty draft returns false. IT DOES NOT.
+      // `deliveryMissingFields` never looks at `lines`, so ANY draft with
+      // fulfillment === "delivery" and no zone returned true — including an EMPTY basket,
+      // a state one tap on «توصيل» or one failed set_fulfillment produces. That switched
+      // the turn contract off for every following turn of the conversation, on production
+      // tenants with finish_line on, not just the demo.
+      //
+      // So it now requires an actual open basket, plus the narrower street-address ask
+      // which is a genuine slot-fill even before items are priced. `enforceTurnContract`
+      // additionally refuses to let this beat a future-promise or a safety turn.
+      openSlotFill:
+        needsStreetAddress(input.draft) ||
+        (finalizeRequiredFieldMissing(input.draft) && input.draft.lines.length > 0),
       safetyEvent: input.safetyEvent,
     });
     if (contract.appended) {

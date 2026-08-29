@@ -203,7 +203,12 @@ export function enforceTurnContract(input: TurnContractInput): TurnContractResul
     // An attached list/buttons IS the next step — see hasPresentation above.
     input.hasPresentation === true ||
     // A value the order cannot close without is being collected — see openSlotFill above.
-    input.openSlotFill === true ||
+    // NEVER over a future-promise or a safety turn. This sat in the disjunction ahead of
+    // `safetyEvent` (consulted far below), so an allergen turn on a zone-less delivery
+    // draft silently lost the honest handoff line the contract exists to guarantee — and a
+    // bare future-promise («هجهزلك أحسن تنوع») became a dead end with nothing to answer,
+    // which is the exact production failure this module was written for.
+    (input.openSlotFill === true && !futurePromise && input.safetyEvent !== true) ||
     input.escalated === true;
 
   if (satisfied) return { text, appended: false, kind: null, futurePromise };

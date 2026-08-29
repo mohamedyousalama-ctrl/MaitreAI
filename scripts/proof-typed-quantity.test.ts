@@ -68,10 +68,24 @@ eq("«٣ كاديا» is still compound", parseBareQuantityAnswer("٣ كاديا
 // entire customer-turn pipeline, allergen gate included, so the probe has to GATE — it
 // used to be computed, passed in, and merely written to `meta`.
 ok("the shared handler refuses on any safety signal, before it parses a quantity",
-  /if \(Object\.values\(args\.safetyProbe \?\? \{\}\)\.some\(Boolean\)\) \{[\s\S]{0,140}reason: "safety_signal"/.test(typed) &&
+  /if \(safetyProbeFired\(args\.safetyProbe\)\) \{[\s\S]{0,140}reason: "safety_signal"/.test(typed) &&
   typed.indexOf('reason: "safety_signal"') < typed.indexOf("const qty = quantityFromInteractiveId"));
-ok("«safety_signal» is a declared pass-through reason, not an ad-hoc string",
-  /reason: "non_numeric" \| "no_pending_quantity" \| "ambiguous_draft" \| "safety_signal";/.test(typed));
+ok("«safety_signal» and «flag_off» are declared pass-through reasons, not ad-hoc strings",
+  /reason: "non_numeric" \| "no_pending_quantity" \| "ambiguous_draft" \| "safety_signal" \| "flag_off";/.test(typed));
+// The probe is a CLOSED STRUCT. It used to be Record<string, unknown>, so `{}` was legal —
+// and `Object.values({}).some(Boolean)` is false, i.e. an empty probe read as "all clear".
+// The demo route was in fact passing `{}`. Now that is a compile error.
+ok("SafetyProbe is a closed struct with all four detectors required",
+  /export interface SafetyProbe \{[\s\S]{0,220}allergenAvoidance: boolean;[\s\S]{0,220}allergenSymptom: boolean;[\s\S]{0,220}phoneticSafetyNet: boolean;[\s\S]{0,220}allergenEmergency: boolean;/.test(typed) &&
+  !/safetyProbe: Record<string, unknown>/.test(typed));
+// Reading the four fields BY NAME means adding a fifth detector without wiring it here is
+// a compile error, rather than a silently-ignored field.
+ok("safetyProbeFired reads every field by name, not via Object.values",
+  /export function safetyProbeFired\(probe: SafetyProbe\): boolean \{\s*return probe\.allergenAvoidance \|\| probe\.allergenSymptom \|\| probe\.phoneticSafetyNet \|\| probe\.allergenEmergency;/.test(typed));
+// The kill switch: a flag that cannot switch a surface off is not a kill switch. It was
+// checked only at the WhatsApp call site, so the public demo stayed on the rail.
+ok("the handler itself honours typed_quantity_fill, so both callers are covered",
+  /if \(!isFeatureExplicitlyEnabled\("typed_quantity_fill", features\)\) \{[\s\S]{0,120}reason: "flag_off"/.test(typed));
 
 const qtyPresentation = {
   kind: "buttons",

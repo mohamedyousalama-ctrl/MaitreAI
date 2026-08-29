@@ -19,7 +19,14 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { isTypedInteractiveActionId, interactiveCommandFromId } from "../lib/messaging/typed-actions.ts";
+import {
+  isTypedInteractiveActionId,
+  interactiveCommandFromId,
+  handleTypedInteractiveAction,
+  handleTypedQuantityFill,
+  safetyProbeFired,
+} from "../lib/messaging/typed-actions.ts";
+import { DEMO_RESTAURANT_ID } from "../lib/demo/config.ts";
 
 let pass = 0, fail = 0;
 const ok = (name: string, condition: boolean) => {
@@ -113,7 +120,25 @@ ok("the demo seed enables typed_quantity_fill, which is why the route need not r
 // "rarely" is not a safety property. The gate lives in the shared handler, so the WhatsApp
 // path gets it too.
 ok("handleTypedQuantityFill refuses on ANY safety signal",
-  /if \(Object\.values\(args\.safetyProbe \?\? \{\}\)\.some\(Boolean\)\) \{[\s\S]{0,120}reason: "safety_signal"/.test(typed));
+  /if \(safetyProbeFired\(args\.safetyProbe\)\) \{[\s\S]{0,120}reason: "safety_signal"/.test(typed));
+// A TAP and free TEXT are independent fields on a public endpoint, so one request can
+// carry «set_pickup» and «عندي حساسية وصار عندي ضيق تنفس» together. The tap rail returns
+// early with no model call, skipping runCustomerTurn and its allergen gate — so the probe
+// must gate the TAP too, not only the typed quantity. WhatsApp does the same
+// (respond-and-send's burstSafetyTakesPriority).
+ok("ONE probe is computed and it gates the TAP rail as well",
+  /const safetyFired = safetyProbeFired\(safetyProbe\);/.test(route) &&
+  /if \(conversationId && rawInteractiveId && !safetyFired && isTypedInteractiveActionId/.test(route));
+ok("…and the route no longer passes an empty probe to anything", !/safetyProbe: \{\}/.test(route));
+// Our own interactive ids carry database UUIDs (menu_items.id and menu_categories.id are
+// both `uuid` columns), so free text in an «item:»/«cat:» payload is never legitimate — it
+// used to reach messages.meta verbatim from a public endpoint.
+ok("«item:»/«cat:» payloads must be UUIDs",
+  /if \(isUuid\(itemId\)\)/.test(typed) && /if \(isUuid\(categoryIdOrName\)\)/.test(typed));
+ok("…and a non-UUID payload is not a typed action at all",
+  !isTypedInteractiveActionId("item:<script>alert(1)</script>") &&
+  !isTypedInteractiveActionId("cat:../../etc/passwd") &&
+  isTypedInteractiveActionId("item:11111111-1111-4111-8111-111111111111"));
 ok("…before it even parses a quantity",
   typed.indexOf('reason: "safety_signal"') < typed.indexOf("const qty = quantityFromInteractiveId"));
 ok("the demo computes the same four detectors the WhatsApp path does",
@@ -128,6 +153,137 @@ ok("the demo computes the same four detectors the WhatsApp path does",
 ok("typed-actions imports the shared draft-freshness constant",
   /import \{ DRAFT_RESUME_FRESHNESS_MS \} from "@\/lib\/ai\/draft-lifecycle"/.test(typed) &&
   /const DRAFT_FRESHNESS_MS = DRAFT_RESUME_FRESHNESS_MS;/.test(typed));
+
+// ── 8. BEHAVIOUR, not prose ──────────────────────────────────────────────────
+// Every assertion above is a regex over source text. Adversarial review made the point
+// concretely: a behaviour-PRESERVING refactor of the safety gate turned this file red,
+// while the tap rail's total absence of a gate — a request carrying «qty:2» plus
+// «عندي حساسية ... ضيق تنفس» skipping the entire allergen pipeline — was invisible to it.
+// A raw-source regex measures the prose, not the code. These drive the real handlers.
+{
+  type Row = Record<string, unknown>;
+  type Filter = { col: string; val: unknown };
+  // NOTE: no constructor parameter properties — `node --experimental-strip-types` only
+  // ERASES types, it does not generate the assignments those imply.
+  class Q implements PromiseLike<{ data: unknown; error: unknown }> {
+    filters: Filter[] = [];
+    wantSingle = false;   // NOT `single`: a field of that name shadows the single() method
+    limitN: number | null = null;
+    db: DB;
+    table: string;
+    op: string;
+    payload: unknown;
+    constructor(db: DB, table: string, op: string, payload: unknown = null) {
+      this.db = db; this.table = table; this.op = op; this.payload = payload;
+    }
+    eq(col: string, val: unknown) { this.filters.push({ col, val }); return this; }
+    not() { return this; }
+    in() { return this; }
+    order() { return this; }
+    select() { return this; }
+    limit(n: number) { this.limitN = n; return this; }
+    maybeSingle() { this.wantSingle = true; return this; }
+    single() { this.wantSingle = true; return this; }
+    then<R1 = { data: unknown; error: unknown }, R2 = never>(
+      res?: ((v: { data: unknown; error: unknown }) => R1 | PromiseLike<R1>) | null,
+      rej?: ((r: unknown) => R2 | PromiseLike<R2>) | null
+    ): PromiseLike<R1 | R2> {
+      this.db.calls.push({ table: this.table, op: this.op, payload: this.payload });
+      let data: unknown = null;
+      if (this.op === "select") {
+        let rows = (this.db.tables[this.table] ?? []).filter((r) => this.filters.every((f) => r[f.col] === f.val));
+        if (this.limitN != null) rows = rows.slice(0, this.limitN);
+        data = this.wantSingle ? (rows[0] ?? null) : rows;
+      } else if (this.op === "insert") {
+        const row = { id: `row-${this.db.seq++}`, ...(this.payload as Row) };
+        (this.db.tables[this.table] ??= []).push(row);
+        data = this.wantSingle ? row : [row];
+      }
+      return Promise.resolve(res ? res({ data, error: null }) : ({ data, error: null } as unknown as R1));
+    }
+  }
+  class DB {
+    tables: Record<string, Row[]> = {};
+    calls: Array<{ table: string; op: string; payload: unknown }> = [];
+    seq = 1;
+    constructor(seed: Record<string, Row[]>) { this.tables = seed; }
+    from(table: string) {
+      return {
+        select: () => new Q(this, table, "select").select(),
+        insert: (p: unknown) => new Q(this, table, "insert", p),
+        update: (p: unknown) => new Q(this, table, "update", p),
+        upsert: (p: unknown) => new Q(this, table, "upsert", p),
+        delete: () => new Q(this, table, "delete"),
+      };
+    }
+    async rpc() { return { data: null, error: null }; }
+    writes() { return this.calls.filter((c) => c.op !== "select"); }
+  }
+  const CONV = "11111111-2222-4333-8444-555555555555";
+  const seed = () => new DB({
+    restaurants: [{
+      id: DEMO_RESTAURANT_ID, dialect: "saudi", currency: "ر.س", tax_mode: "added", tax_rate: 15,
+      payment_config: null, feature_flags: { typed_quantity_fill: true, typed_interactive_actions: true },
+    }],
+    conversations: [{ id: CONV, restaurant_id: DEMO_RESTAURANT_ID }],
+    messages: [], menu_items: [], menu_categories: [], modifiers: [], menu_item_modifiers: [],
+    branches: [], delivery_zones: [], policies: [], faqs: [], promotions: [], conversation_signals: [],
+  });
+  const CLEAR = { allergenAvoidance: false, allergenSymptom: false, phoneticSafetyNet: false, allergenEmergency: false };
+  const args = (over: Record<string, unknown> = {}) => ({
+    restaurantId: DEMO_RESTAURANT_ID, conversationId: CONV,
+    features: null, safetyProbe: CLEAR, demoRun: true, ...over,
+  });
+
+  // A confirm TAP performs no writes of its own — it canonicalises and hands the turn on.
+  {
+    const db = seed();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await handleTypedInteractiveAction(db as any, args({ interactiveId: "confirm_order" }) as never);
+    ok("(behaviour) a confirm tap returns confirm_gate and writes nothing",
+      r.kind === "confirm_gate" && db.writes().length === 0);
+  }
+
+  // THE HOLE REVIEW FOUND: a safety signal must beat a tap. The route gates this, so drive
+  // the route's own predicate rather than asserting its source shape.
+  ok("(behaviour) safetyProbeFired is true when ANY single detector fires",
+    safetyProbeFired({ ...CLEAR, allergenEmergency: true }) &&
+    safetyProbeFired({ ...CLEAR, allergenAvoidance: true }) &&
+    safetyProbeFired({ ...CLEAR, allergenSymptom: true }) &&
+    safetyProbeFired({ ...CLEAR, phoneticSafetyNet: true }));
+  ok("(behaviour) …and false only when all four are clear", !safetyProbeFired(CLEAR));
+
+  // The quantity rail refuses a safety turn BEFORE touching the database.
+  {
+    const db = seed();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await handleTypedQuantityFill(db as any, args({
+      userMessage: "وحده بس", interactiveId: null,
+      safetyProbe: { ...CLEAR, allergenEmergency: true },
+    }) as never);
+    ok("(behaviour) a safety signal short-circuits the quantity rail with ZERO db calls",
+      r.kind === "pass_through" && r.reason === "safety_signal" && db.calls.length === 0);
+  }
+
+  // …and the kill switch does the same, from inside the handler.
+  {
+    const db = seed();
+    db.tables.restaurants[0]!.feature_flags = { typed_quantity_fill: false };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await handleTypedQuantityFill(db as any, args({ userMessage: "وحده بس", interactiveId: null }) as never);
+    ok("(behaviour) typed_quantity_fill=false stops the rail on BOTH surfaces",
+      r.kind === "pass_through" && r.reason === "flag_off" && db.writes().length === 0);
+  }
+
+  // No pending quantity question → pass through, and still no writes.
+  {
+    const db = seed();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await handleTypedQuantityFill(db as any, args({ userMessage: "وحده بس", interactiveId: null }) as never);
+    ok("(behaviour) no pending question → pass_through, no writes",
+      r.kind === "pass_through" && db.writes().length === 0);
+  }
+}
 
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} demo-interactive-rail: ${pass}/${pass + fail} passed`);
 process.exit(fail === 0 ? 0 : 1);

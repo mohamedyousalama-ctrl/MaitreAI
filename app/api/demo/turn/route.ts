@@ -60,7 +60,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
-import { handleTypedInteractiveAction, handleTypedQuantityFill, isTypedInteractiveActionId } from "@/lib/messaging/typed-actions";
+import { handleTypedInteractiveAction, handleTypedQuantityFill, isTypedInteractiveActionId, safetyProbeFired } from "@/lib/messaging/typed-actions";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
 import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
@@ -198,14 +198,30 @@ export async function POST(req: Request) {
   // row carrying the visitor's own words, which is precisely what `demoRun` forbids.
   const rawInteractiveId = String(body.interactiveId ?? "").trim().slice(0, 64);
   let userMessage = text;
-  if (conversationId && rawInteractiveId && isTypedInteractiveActionId(rawInteractiveId)) {
+
+  // ONE PROBE, BOTH RAILS. `text` and `interactiveId` are INDEPENDENT fields on a public
+  // endpoint, so a request can carry a tap id AND «عندي حساسية وصار عندي ضيق تنفس» in the
+  // same body. The tap rail answers with no model call and returns early, which skips
+  // runCustomerTurn and the deterministic allergen gate with it — so a tap must not be
+  // allowed to outrank a safety signal in the text. WhatsApp does exactly this
+  // (respond-and-send.ts `burstSafetyTakesPriority`), and this route's own header promises
+  // «the same deterministic allergen gate».
+  const safetyProbe = {
+    allergenAvoidance: detectAllergenAvoidance(text).fired,
+    allergenSymptom: detectAllergenSymptom(text).fired,
+    phoneticSafetyNet: detectPhoneticSafetyNet(text, { sttConfidence: null, isVoiceTranscript: false }).fired,
+    allergenEmergency: detectAllergenEmergency(text).fired,
+  };
+  const safetyFired = safetyProbeFired(safetyProbe);
+
+  if (conversationId && rawInteractiveId && !safetyFired && isTypedInteractiveActionId(rawInteractiveId)) {
     try {
       const typed = await handleTypedInteractiveAction(admin, {
         restaurantId: DEMO_RESTAURANT_ID,
         conversationId,
         interactiveId: rawInteractiveId,
         features: null,
-        safetyProbe: {},
+        safetyProbe,
         demoRun: true,
       });
       if (typed.kind === "confirm_gate") {
@@ -249,15 +265,10 @@ export async function POST(req: Request) {
         userMessage: text,
         interactiveId: null,
         features: null,
-        // The same probe the WhatsApp path computes. It now GATES rather than merely
-        // being recorded, so an allergen or emergency turn can never be short-circuited
-        // past the safety pipeline by looking like a bare quantity.
-        safetyProbe: {
-          allergenAvoidance: detectAllergenAvoidance(text).fired,
-          allergenSymptom: detectAllergenSymptom(text).fired,
-          phoneticSafetyNet: detectPhoneticSafetyNet(text, { sttConfidence: null, isVoiceTranscript: false }).fired,
-          allergenEmergency: detectAllergenEmergency(text).fired,
-        },
+        // The same probe. It GATES rather than merely being recorded, so an allergen or
+        // emergency turn can never be short-circuited past the safety pipeline by looking
+        // like a bare quantity.
+        safetyProbe,
         demoRun: true,
       });
       if (filled.kind === "handled") {

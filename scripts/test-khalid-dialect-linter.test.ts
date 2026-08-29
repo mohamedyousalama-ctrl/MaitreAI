@@ -13,6 +13,7 @@ import {
   LEVANTINE,
   OTHER,
   CARICATURE,
+  HIJAZI,
   emojiCount,
   overLength,
 } from "../lib/ai/personas/khalid-dialect-linter.mjs";
@@ -103,6 +104,55 @@ ok("(wb) «كتيرة»-like embedding does not trip كتير", isWordHit("كت�
 ok("(wb) leading-boundary: «وكيفك» does not trip كيفك", isWordHit("وكيفك", "كيفك") === false);
 ok("(wb) punctuation boundary: «كيفك؟» trips", isWordHit("كيفك؟", "كيفك") === true);
 ok("(wb) space boundary: «يا كيفك» trips", isWordHit("يا كيفك", "كيفك") === true);
+
+// --- WO-DIALECT-COVERAGE: the two markers that reached LIVE customers ---------
+// Fed Khalid's actual live replies, this linter used to return {"ok":true,"hits":[]} for
+// both. It missed 42 of 51 markers an audit put to it.
+ok("(live) «كام كبسة لحم تبي؟» is caught", !findLeakage("كام كبسة لحم تبي؟").ok);
+ok("(live) …and tagged Egyptian",
+  findLeakage("كام كبسة لحم تبي؟").hits.some((h) => h.marker === "كام" && h.category === "egyptian"));
+ok("(live) «كم حبة تبغى؟» is caught FOR A NAJDI TENANT",
+  !findLeakage("كم حبة تبغى؟", { region: "najd" }).ok);
+ok("(live) …and tagged hijazi",
+  findLeakage("كم حبة تبغى؟", { region: "najd" }).hits.some((h) => h.marker === "تبغى" && h.category === "hijazi"));
+
+// The Saudi-internal axis is REGION-GATED: on a Hijazi tenant these words are the house
+// voice, and flagging them would be the same false-ban that removed «خالص» and «شلونك».
+ok("(region) «تبغى» is CLEAN for a hijaz tenant", findLeakage("كم حبة تبغى؟", { region: "hijaz" }).ok);
+ok("(region) …and clean when no region is supplied at all (callers unchanged)",
+  findLeakage("كم حبة تبغى؟").ok);
+ok("(region) an Egyptian marker still trips regardless of region",
+  !findLeakage("كام حبة؟", { region: "hijaz" }).ok);
+
+// The newly added Egyptian markers.
+for (const m of ["مش", "لسه", "برضه", "جامد", "قوللي", "مفيش", "معنديش", "نقدرش", "النهارده", "دي", "ده"]) {
+  ok(`(new) «${m}» trips`, !findLeakage(m).ok);
+}
+ok("(new) the ما…ش circumfix is caught in a real sentence",
+  !findLeakage("ما نقدرش نضمن عدم وجود أثر").ok);
+
+// --- BANLIST SANITY: native Saudi must NEVER trip ---------------------------
+// Each line below is real Najdi/Gulf that an earlier candidate list would have flagged.
+// This is the discipline that removed «خالص» and «شلونك» from the reference lists.
+const NATIVE_SAUDI_LINES = [
+  "هلا والله، وش تحب تطلب اليوم؟",
+  "تفضّل، هذي قائمتنا 👇",
+  "أبشر، طلبك خالص والحساب خالص",       // «خالص» = done/settled, NOT the Egyptian intensifier
+  "هلا وغلا، شلونك",                     // native Eastern-Saudi
+  "أنا أسمع الشكوى بالكامل",             // contains «كام» as a SUBSTRING — must not trip
+  "ما فيه حاجة تنقص طلبك",               // «حاجة» = need in Saudi
+  "ماشي، أضبطها لك",                     // «ماشي» = ordinary Gulf assent
+  "عشان أرتّب لك الطلب صح",              // «عشان» is pan-Arabic; our own Saudi prompt uses it
+  "أعطني شوية وقت وأجهّزه",
+];
+for (const line of NATIVE_SAUDI_LINES) {
+  ok(`(sanity) native Saudi stays clean: ${line}`, findLeakage(line, { region: "najd" }).ok);
+}
+ok("(sanity) the deliberate exclusions are absent from the Egyptian list",
+  !EGYPTIAN.includes("ايه") && !EGYPTIAN.includes("حاجة") && !EGYPTIAN.includes("ماشي") &&
+  !EGYPTIAN.includes("عشان") && !EGYPTIAN.includes("خالص"));
+ok("(sanity) HIJAZI is never folded into the global BANLIST",
+  HIJAZI.length > 0 && !BANLIST.some((b) => HIJAZI.includes(b.marker)));
 
 // --- DETERMINISM ------------------------------------------------------------
 const t = "كيفك، بدي بديل بدون مكسرات دلوقتي";

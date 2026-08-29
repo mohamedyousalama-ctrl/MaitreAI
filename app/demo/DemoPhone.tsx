@@ -8,9 +8,8 @@
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEMO_MAX_AUDIO_BYTES, DEMO_MAX_RECORD_SECONDS } from "@/lib/demo/config";
+import { DEMO_MAX_AUDIO_BYTES, DEMO_MAX_CHARS, DEMO_MAX_RECORD_SECONDS } from "@/lib/demo/config";
 import { parseWhatsAppMarkup, isEmojiOnly } from "@/lib/util/whatsapp-markup";
-import { DEMO_MAX_CHARS } from "@/lib/demo/config";
 
 /** The interactive payload the Brain attaches to a turn — the same shape WhatsApp
  *  renders as a tappable list or button row (lib/ai/tools.ts). The demo dropped this
@@ -540,7 +539,15 @@ function renderWhatsApp(body: string): React.ReactNode[] {
 
 function Bubble({
   m, mmss, onPick,
-}: { m: Msg; mmss: (s: number) => string; onPick: (label: string) => void }) {
+}: {
+  m: Msg;
+  mmss: (s: number) => string;
+  // Must match Options' signature. It declared `(label: string) => void` while Options
+  // called it with two arguments — assignable by arity, so it compiled and worked at
+  // runtime, but any refactor trusting the declared type would silently drop the id,
+  // revert every tap to the model path, and produce no type error and no test failure.
+  onPick: (label: string, id?: string) => void;
+}) {
   const mine = m.from === "me";
   return (
     <div style={{ ...S.row, justifyContent: mine ? "flex-end" : "flex-start", flexWrap: "wrap" }}>
@@ -675,10 +682,12 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 14.5, lineHeight: 1.5, boxShadow: "0 1px 1px rgba(0,0,0,.25)" },
   mine: { background: WA.green, borderTopLeftRadius: 0 },
   theirs: { background: WA.theirs, borderTopRightRadius: 0 },
-  // `dir: "auto"` + plaintext bidi so EACH LINE resolves its own direction, exactly as
-  // WhatsApp does. The thread is hardcoded dir="rtl", so an English or digits-only line
-  // was being laid out right-to-left, which WhatsApp never does.
-  text: { whiteSpace: "pre-wrap", wordBreak: "break-word", unicodeBidi: "plaintext" as const },
+  // Plaintext bidi so EACH LINE resolves its own direction, as WhatsApp does — the thread
+  // itself is hardcoded dir="rtl", so an English or digits-only line was laid out
+  // right-to-left. `textAlign: "start"` is needed too: unicode-bidi fixes the reading
+  // order but alignment still resolves against the inherited rtl direction, so an English
+  // line would read correctly and sit on the wrong side.
+  text: { whiteSpace: "pre-wrap", wordBreak: "break-word", unicodeBidi: "plaintext" as const, textAlign: "start" as const },
   emojiOnly: { fontSize: 40, lineHeight: 1.15 },
   mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.92em",
     background: "rgba(0,0,0,.22)", borderRadius: 4, padding: "0 4px" },

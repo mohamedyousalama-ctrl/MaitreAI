@@ -56,21 +56,59 @@ const PATTERNS: { re: RegExp; kind: MarkupToken["kind"] }[] = [
  *  PARSE-TIME SyntaxError on Safari < 16.4, which would take this whole client module down
  *  on that browser rather than degrade. */
 function isOpenGlued(text: string, index: number): boolean {
-  if (index < 0 || index >= text.length) return false;
-  return /[\p{L}\p{N}\p{M}_]/u.test(text[index] as string);
+  const ch = codePointEndingAt(text, index);
+  return !!ch && /[\p{L}\p{N}\p{M}_]/u.test(ch);
+}
+
+/** The full code point ENDING at `index`, or "" — a lone surrogate half matches no
+ *  \p{…} class, so reading text[index] let every astral word character through the guard:
+ *  «𝟝_5_ 𝟝_10_» rendered «𝟝5 … 𝟝10», the PROMO_5 bug one Unicode plane up. */
+function codePointEndingAt(text: string, index: number): string {
+  if (index < 0 || index >= text.length) return "";
+  const code = text.charCodeAt(index);
+  if (code >= 0xdc00 && code <= 0xdfff && index > 0) {
+    const hi = text.charCodeAt(index - 1);
+    if (hi >= 0xd800 && hi <= 0xdbff) return text.slice(index - 1, index + 1);
+  }
+  return text[index] as string;
+}
+
+/** The full code point STARTING at `index`, or "". */
+function codePointStartingAt(text: string, index: number): string {
+  if (index < 0 || index >= text.length) return "";
+  const code = text.charCodeAt(index);
+  if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length) {
+    const lo = text.charCodeAt(index + 1);
+    if (lo >= 0xdc00 && lo <= 0xdfff) return text.slice(index, index + 2);
+  }
+  return text[index] as string;
 }
 
 /** …and may not CLOSE one glued to the start of a word: «الرمز _A_5 والرمز _B_10» rendered
  *  «A5 … B10», deleting the underscores mid-token. `_` is EXCLUDED here so adjacent runs
  *  still chain — «*a*_b_~c~» must give three runs, not one and two literals. */
 function isCloseGlued(text: string, index: number): boolean {
-  if (index < 0 || index >= text.length) return false;
-  return /[\p{L}\p{N}\p{M}]/u.test(text[index] as string);
+  const ch = codePointStartingAt(text, index);
+  return !!ch && /[\p{L}\p{N}\p{M}]/u.test(ch);
 }
 
-// Trailing punctuation must not be swallowed into the URL — «شوف https://x.com/a.» ends
-// in a sentence, not in a dot-suffixed path.
-const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>«»؛،]+[^\s<>«»؛،.,!?:؛…)]/i;
+/** Same test against an explicit neighbour character from OUTSIDE this segment. */
+function isWordChar(ch: string): boolean {
+  return !!ch && /[\p{L}\p{N}\p{M}]/u.test(ch);
+}
+
+// Trailing punctuation must not be swallowed into the URL — «شوف https://x.com/a.» ends in
+// a sentence, not a dot-suffixed path. The four FORMATTING MARKERS are excluded for the
+// same reason and a sharper one: «الرابط: *https://kivo.io/pay/abc*» would otherwise build
+// href="…/abc*" — a live link to the WRONG url, which is exactly the class of failure the
+// links-first ordering was introduced to end. Invisible bidi controls (RLM/LRM/ZWJ) are
+// excluded too: on an Arabic-first product an RLM after a link is ordinary punctuation, and
+// it percent-encodes into the href as %E2%80%8F and 404s.
+const URL_TRAILING_EXCLUDED = "\\s<>«»؛،.,!?:؛…)*_~`\\u200E\\u200F\\u200D";
+const URL_RE = new RegExp(
+  `\\b(?:https?:\\/\\/|www\\.)[^\\s<>«»؛،\\u200E\\u200F\\u200D]+[^${URL_TRAILING_EXCLUDED}]`,
+  "i"
+);
 
 /** Parse one message body into tokens. Never throws; unmatched markers stay literal.
  *
@@ -83,24 +121,41 @@ export function parseWhatsAppMarkup(input: string): MarkupToken[] {
   if (!src) return [];
   const out: MarkupToken[] = [];
   let rest = src;
+  let consumedBefore = "";   // the last character already emitted, for the segment boundary
   for (;;) {
     const m = URL_RE.exec(rest);
     if (!m || m.index === undefined) break;
-    pushFormatted(rest.slice(0, m.index), out);
+    const segment = rest.slice(0, m.index);
+    // THE SEGMENT'S TRUE NEIGHBOURS. Splitting at every URL and formatting each piece
+    // independently made a closing marker at a segment's END get tested against
+    // end-of-string instead of against the URL's first character — always a letter. So
+    // «اطلب من ~هنا~https://kivo.io/menu» deleted BOTH tildes, while the identical shape
+    // without a link («~هنا~هناك») correctly left them literal. The guard this whole file
+    // exists for simply was not consulted at a segment edge.
+    pushFormatted(segment, out, consumedBefore, m[0][0] ?? "");
     const raw = m[0];
     // URL_RE is case-insensitive, so the scheme test must be too: «WWW.x» once produced a
     // RELATIVE href that resolved to /demo/WWW.x — a 404 instead of a link.
     out.push({ kind: "link", text: raw, href: /^www\./i.test(raw) ? `https://${raw}` : raw });
     rest = rest.slice(m.index + raw.length);
   }
-  pushFormatted(rest, out);
+  // The TAIL segment needs its left neighbour too — the last character of the URL that
+  // preceded it. Passing nothing here left a marker at the tail's start judged against
+  // an empty context, which is the same hole one position further along.
+  pushFormatted(rest, out, consumedBefore, "");
   return out;
 }
 
-/** Tokenize one LINK-FREE run into text and formatting spans. */
-function pushFormatted(run: string, out: MarkupToken[]): void {
+/** Tokenize one LINK-FREE run into text and formatting spans.
+ *
+ *  `before` and `after` are the real characters on either side of this run in the ORIGINAL
+ *  message — the tail of whatever was already emitted, and the first character of the URL
+ *  that ends the segment. Without them a run's outer edges were judged against
+ *  end-of-string. */
+function pushFormatted(run: string, out: MarkupToken[], before = "", after = ""): void {
   if (!run) return;
   let rest = run;
+  let prev = before;
   for (;;) {
     let best: { index: number; length: number; content: string; kind: MarkupToken["kind"] } | null = null;
     for (const { re, kind } of PATTERNS) {
@@ -115,7 +170,10 @@ function pushFormatted(run: string, out: MarkupToken[]): void {
         // at an absolute offset made position 0 look at the previous run's closing marker —
         // a character that no longer exists in the output — which suppressed adjacent runs:
         // «_مائل_~مشطوب~» left the tildes visible.
-        if (!isOpenGlued(rest, at - 1) && !isCloseGlued(rest, at + m[0].length)) {
+        const end = at + m[0].length;
+        const openGlued = at === 0 ? isWordChar(prev) : isOpenGlued(rest, at - 1);
+        const closeGlued = end >= rest.length ? isWordChar(after) : isCloseGlued(rest, end);
+        if (!openGlued && !closeGlued) {
           if (!best || at < best.index) best = { index: at, length: m[0].length, content: m[1] ?? "", kind };
           break;
         }
@@ -126,6 +184,10 @@ function pushFormatted(run: string, out: MarkupToken[]): void {
     if (best.index > 0) out.push({ kind: "text", text: rest.slice(0, best.index) });
     out.push({ kind: best.kind, text: best.content } as MarkupToken);
     rest = rest.slice(best.index + best.length);
+    // Reset the left neighbour: the character now before position 0 is this run's own
+    // CLOSING marker, which is consumed and gone from the output — treating it as context
+    // is what used to suppress «_مائل_~مشطوب~» into one run and two literals.
+    prev = "";
   }
   if (rest) out.push({ kind: "text", text: rest });
 }

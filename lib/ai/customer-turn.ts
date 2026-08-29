@@ -1893,7 +1893,13 @@ export async function runCustomerTurn(
 
   if (isFeatureExplicitlyEnabled("khalid_persona", tenantFeatures) && result.reply) {
     try {
-      const leak = findLeakage(result.reply);
+      // The tenant's KSA region, so the Saudi-INTERNAL axis runs. Without it a Hijazi
+      // word inside a Najdi tenant's reply was invisible by design: live output
+      // «كم حبة تبغى؟» on a `khalid_region: najd` tenant linted clean. On a Hijazi tenant
+      // the same word is the house voice, so the check is region-gated rather than global.
+      const leak = findLeakage(result.reply, {
+        region: typeof tenantFeatures?.khalid_region === "string" ? tenantFeatures.khalid_region : undefined,
+      });
       if (!leak.ok) {
         console.warn(
           `[khalid:dialect-leakage] conv=${conversationId} ${leak.hits.length} hit(s): ` +

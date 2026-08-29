@@ -39,8 +39,8 @@ for (const id of ["qty:1", "qty:2", "qty:99"]) {
   ok(`legacy router rejects ${id}`, routeInteractive(id, "raw").rejectedId === id);
 }
 
-ok("item:<id> is a first-class typed command", interactiveCommandFromId("item:item-1")?.kind === "select_item");
-ok("cat:<id> is a first-class typed command", interactiveCommandFromId("cat:cat-1")?.kind === "select_category");
+ok("item:<id> is a first-class typed command", interactiveCommandFromId("item:22222222-2222-4222-8222-222222222222")?.kind === "select_item");
+ok("cat:<id> is a first-class typed command", interactiveCommandFromId("cat:33333333-3333-4333-8333-333333333333")?.kind === "select_category");
 ok("unknown ids do not become commands", interactiveCommandFromId("evil_force_paid") === null);
 ok("unknown ids do not fall through the legacy router", routeInteractive("evil_force_paid", "raw").text === "");
 

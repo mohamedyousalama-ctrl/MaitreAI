@@ -44,15 +44,15 @@ type Call = {
 const nowIso = new Date().toISOString();
 
 const categoryRows = [
-  { id: "cat-burgers", restaurant_id: "restaurant-interactive", name: "برجر", sort: 1 },
+  { id: "44444444-4444-4444-8444-444444444444", restaurant_id: "restaurant-interactive", name: "برجر", sort: 1 },
   { id: "cat-desserts", restaurant_id: "restaurant-interactive", name: "حلويات", sort: 2 },
 ];
 
 const menuRows = [
   {
-    id: "item-burger",
+    id: "11111111-1111-4111-8111-111111111111",
     restaurant_id: "restaurant-interactive",
-    category_id: "cat-burgers",
+    category_id: "44444444-4444-4444-8444-444444444444",
     name: "برجر كلاسيك",
     name_en: null,
     description: "لحم وصوص",
@@ -87,7 +87,7 @@ function draftWithBurger(qty = 1): OrderDraft {
   return {
     lines: [
       {
-        itemId: "item-burger",
+        itemId: "11111111-1111-4111-8111-111111111111",
         name: "برجر كلاسيك",
         quantity: qty,
         unitPrice: 100,
@@ -296,8 +296,8 @@ try {
   process.env.AI_ADAPTER = "mock";
   delete process.env.ANTHROPIC_API_KEY;
 
-  eq("parser: item id maps to select_item command", interactiveCommandFromId("item:item-burger")?.kind, "select_item");
-  eq("parser: category id maps to select_category command", interactiveCommandFromId("cat:cat-burgers")?.kind, "select_category");
+  eq("parser: item id maps to select_item command", interactiveCommandFromId("item:11111111-1111-4111-8111-111111111111")?.kind, "select_item");
+  eq("parser: category id maps to select_category command", interactiveCommandFromId("cat:44444444-4444-4444-8444-444444444444")?.kind, "select_category");
   eq("parser: qty id maps to quantity command", interactiveCommandFromId("qty:3")?.kind, "choose_quantity");
   eq("parser: confirm id maps to confirm command", interactiveCommandFromId("confirm_order")?.kind, "confirm_order");
   eq("parser: allergy continue id is registered", interactiveCommandFromId(RECOVERY_CHOICE_CONTINUE)?.action, "allergy_recovery_continue");
@@ -308,7 +308,7 @@ try {
   const itemA = await handleTypedInteractiveAction(directA.client, {
     restaurantId: "restaurant-interactive",
     conversationId: "conversation-interactive",
-    interactiveId: "item:item-burger",
+    interactiveId: "item:11111111-1111-4111-8111-111111111111",
     features: {},
     safetyProbe: {},
   });
@@ -316,14 +316,14 @@ try {
   const itemDraftA = itemWritesA.find((m) => (m.meta as Record<string, unknown> | undefined)?.typedAction)?.meta as Record<string, unknown>;
   ok("known item id executes select_item as a typed command", itemA.kind === "handled" && itemA.action === "select_item", itemA);
   ok("item command mutates draft through item id, not label text",
-    ((itemDraftA?.draft as OrderDraft | undefined)?.lines ?? [])[0]?.itemId === "item-burger",
+    ((itemDraftA?.draft as OrderDraft | undefined)?.lines ?? [])[0]?.itemId === "11111111-1111-4111-8111-111111111111",
     itemDraftA);
 
   const directB = makeFakeAdmin();
   const itemB = await handleTypedInteractiveAction(directB.client, {
     restaurantId: "restaurant-interactive",
     conversationId: "conversation-interactive",
-    interactiveId: "item:item-burger",
+    interactiveId: "item:11111111-1111-4111-8111-111111111111",
     features: {},
     safetyProbe: {},
   });
@@ -333,7 +333,7 @@ try {
   const category = await handleTypedInteractiveAction(directCat.client, {
     restaurantId: "restaurant-interactive",
     conversationId: "conversation-interactive",
-    interactiveId: "cat:cat-burgers",
+    interactiveId: "cat:44444444-4444-4444-8444-444444444444",
     features: {},
     safetyProbe: {},
   });
@@ -341,11 +341,11 @@ try {
     category.kind === "handled" &&
       category.action === "select_category" &&
       category.presentation?.kind === "list" &&
-      category.presentation.sections[0]?.rows[0]?.id === "item:item-burger",
+      category.presentation.sections[0]?.rows[0]?.id === "item:11111111-1111-4111-8111-111111111111",
     category);
 
   const bridgeKnown = makeFakeAdmin({
-    inbound: { interactiveId: "item:item-burger", text: "عايز حاجة عادية ممكن تتفهم غلط" },
+    inbound: { interactiveId: "item:11111111-1111-4111-8111-111111111111", text: "عايز حاجة عادية ممكن تتفهم غلط" },
   });
   const knownResult = await respondAndSendWhatsApp(
     bridgeKnown.client,
@@ -356,7 +356,7 @@ try {
   const knownTyped = knownWrites.find((m) => (m.meta as Record<string, unknown> | undefined)?.typedAction)?.meta as Record<string, unknown>;
   ok("known tap returns before any customer-agent/LLM run", knownResult.status === "responded" && !bridgeKnown.calls.some((c) => c.table === "agent_runs"), { knownResult, calls: bridgeKnown.calls });
   ok("visible label text is ignored in favor of the item id",
-    ((knownTyped?.draft as OrderDraft | undefined)?.lines ?? [])[0]?.itemId === "item-burger" &&
+    ((knownTyped?.draft as OrderDraft | undefined)?.lines ?? [])[0]?.itemId === "11111111-1111-4111-8111-111111111111" &&
       JSON.stringify(knownTyped).includes("عايز حاجة عادية ممكن تتفهم غلط") === false,
     knownTyped);
 

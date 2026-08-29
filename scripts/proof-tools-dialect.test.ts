@@ -542,8 +542,15 @@ const LEAKED_AS_SHIPPED = [
 const missedByProjectLinter = LEAKED_AS_SHIPPED.filter((t) => findLeakage(t).ok);
 ok(`the extra list catches ALL ${LEAKED_AS_SHIPPED.length} strings this WO de-Egyptianised`,
   LEAKED_AS_SHIPPED.every((t) => offend(t).length > 0));
-ok(`findLeakage alone waves ${missedByProjectLinter.length} of them through — so it can never be the only gate`,
-  missedByProjectLinter.length >= 10);
+// The project linter has since been widened (WO-DIALECT-COVERAGE: «كام», «مش», «لسه»,
+// the ما…ش circumfix, and a region-gated Hijazi axis), so it now catches most of these.
+// The POINT of this assertion is unchanged and still holds: it is a QUALITY linter with a
+// deliberately conservative banlist — «حاجة», «ماشي», «عشان», «ايه» are excluded because
+// they are native Saudi too — so it must never be the only gate. Asserting a fixed miss
+// COUNT would have to be revised downward every time the linter improves, which is the
+// wrong direction for a test to pull. Assert the property instead.
+ok(`findLeakage still misses some (${missedByProjectLinter.length}) — it is a conservative QUALITY linter, never the only gate`,
+  missedByProjectLinter.length >= 1);
 // Each marker the deliverable named, in isolation, on a string the project linter passes.
 for (const [text, label] of [
   ["الطلب مش جاهز", "مش"],
@@ -555,7 +562,10 @@ for (const [text, label] of [
   ["هبعتلك الصورة", "هـ-future"],
   ["اعرض التصنيفات المتاحة", "تصنيف"],
 ] as const) {
-  ok(`the extra list catches «${label}» (the project linter does not)`, offend(text).length > 0 && findLeakage(text).ok);
+  // The extra list must catch it. Whether the project linter ALSO catches it is no longer
+  // asserted either way: it now catches «مش» and «لسه», and pinning "the project linter
+  // does NOT catch this" would make every improvement to the linter break this test.
+  ok(`the extra list catches «${label}»`, offend(text).length > 0);
 }
 // And it must not false-flag real Najdi.
 for (const clean of [

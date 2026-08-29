@@ -178,6 +178,39 @@ ok("B3: hasFuturePromise detects «هختارلك» (fused) + «هجهّزلك»
       notCollecting.appended && notCollecting.text.includes(salesNextStepLine("saudi")));
   }
 
+  // ── B10 — openSlotFill MUST NOT switch the contract off on a dead end ───────
+  // `finalizeRequiredFieldMissing` never looks at `lines`, so ANY delivery draft with no
+  // zone returned true — INCLUDING AN EMPTY BASKET, a state one tap on «توصيل» or one
+  // failed set_fulfillment produces. reply-compose passed it straight through, so the
+  // contract was switched off for every following turn, on production tenants with
+  // finish_line on. The comment justifying it claimed an empty draft returned false. It
+  // did not. These assert the two guards that now stand between that state and silence.
+  {
+    const emptyDelivery = draftOf(0, { lines: [] }) as OrderDraft;
+    // A bare future-promise is the exact production dead-end this module exists for.
+    const promise = enforceTurnContract({
+      text: "هجهزلك أحسن تنوع", dialect: "saudi", draft: emptyDelivery, openSlotFill: true,
+    });
+    ok("B10: openSlotFill NEVER beats a future-promise — that is the dead end, not a slot-fill",
+      promise.appended && promise.futurePromise);
+
+    // …and never suppresses the safety terminal. openSlotFill sits in the `satisfied`
+    // disjunction ABOVE where safetyEvent is consulted, so it silently won.
+    const safety = enforceTurnContract({
+      text: "أنا معك وأتابع الموضوع", dialect: "saudi", draft: emptyDelivery,
+      openSlotFill: true, safetyEvent: true,
+    });
+    ok("B10b: openSlotFill NEVER suppresses the safety handoff",
+      safety.appended && safety.kind === "handoff");
+
+    // The ordinary case it WAS built for still works.
+    const collecting = enforceTurnContract({
+      text: "محتاج العنوان التفصيلي عشان أكمل الطلب وأوصّلك صح 🙏", dialect: "saudi",
+      draft: emptyDelivery, openSlotFill: true,
+    });
+    ok("B10c: a plain slot-fill turn is still satisfied", !collecting.appended);
+  }
+
   const r = enforceTurnContract({ text: "هختارلك أحسن تنوع!", dialect: "egyptian", draft: draftOf(0, { lines: [] }) as OrderDraft });
   ok("B7: «هختارلك أحسن تنوع!» (none of a/b/c) → next-step APPENDED", r.appended);
   ok("B7b: … the future-promise is flagged", r.futurePromise);

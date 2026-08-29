@@ -109,6 +109,72 @@ for (const input of VERBATIM) {
     offenders.length === 0);
 }
 
+// THE INVARIANT THAT SEES THE LINK-BOUNDARY CLASS. The property above asserts that
+// non-marker characters survive and that no run is whitespace-padded. Both are true, over
+// a billion strings — and BOTH ARE BLIND to a marker eaten as a marker, which is every
+// bug this file has ever had. Worse, that alphabet contains no «h», «w», «.», «/» or «:»,
+// so no input in it can contain a URL, and the link-boundary hole was unreachable in
+// principle. This one walks the ORIGINAL string and asserts BOUNDARY CONSISTENCY: no
+// formatted run may sit next to a surviving word character, on an alphabet that can
+// actually build a link.
+{
+  const A = ["*", "_", "~", "`", "a", "ب", "\u064F", " ", "5", "h", "t", "p", ":", "/", ".", "w", "\u200F"];
+  const WORD = /[\p{L}\p{N}\p{M}]/u;
+  let checked = 0;
+  const offenders: string[] = [];
+  const check = (input: string) => {
+    checked++;
+    let i = 0;
+    for (const t of parseWhatsAppMarkup(input)) {
+      if (t.kind === "text" || t.kind === "link") { i = input.indexOf(t.text, i) + t.text.length; continue; }
+      const at = input.indexOf(t.text, i);
+      if (at < 1) { i = Math.max(i, at + t.text.length); continue; }
+      const prev = [...input.slice(0, at - 1)].pop() ?? "";
+      const afterIdx = at + t.text.length + 1;
+      const next = afterIdx < input.length ? [...input.slice(afterIdx)][0] ?? "" : "";
+      if ((prev && WORD.test(prev)) || (next && WORD.test(next))) { offenders.push(input); return; }
+      i = afterIdx;
+    }
+  };
+  const walk = (acc: string) => { if (acc) check(acc); if (acc.length >= 4) return; for (const c of A) walk(acc + c); };
+  walk("");
+  ok(`no formatted run touches a surviving word character (${checked} strings, offenders: ${offenders.length}${offenders.length ? ` e.g. ${JSON.stringify(offenders[0])}` : ""})`,
+    offenders.length === 0);
+}
+
+// (5) A segment boundary is still a boundary. Formatting each URL-delimited piece
+// independently meant a closing marker at a piece's END was tested against end-of-string
+// instead of against the URL's first character — always a letter.
+for (const input of [
+  "اطلب من ~هنا~https://kivo.io/menu",
+  "كود الخصم `PROMO`www.kivo.io",
+  "الكود *SAVE10*www.kivo.io/menu",
+]) {
+  ok(`a marker glued to a following LINK stays literal: ${input}`,
+    !parseWhatsAppMarkup(input).some((t) => t.kind !== "text" && t.kind !== "link"));
+}
+// …and the identical shape WITHOUT a link must behave the same way, which is what proves
+// the two paths agree rather than merely both being green.
+ok("the same shape without a link is identical",
+  parseWhatsAppMarkup("اطلب من ~هنا~هناك").every((t) => t.kind === "text"));
+
+// (6) A marker must never end up INSIDE an href. Links-first stopped truncating the href
+// and started polluting it: «*https://kivo.io/pay/abc*» built href="…/abc*", a live link
+// to the wrong URL. Same for the invisible bidi controls that follow a link in Arabic.
+for (const input of ["الرابط: *https://kivo.io/pay/abc*", "*www.kivo.io/pay/abc*", "الرابط \u200Fwww.kivo.io\u200F تمام"]) {
+  const link = parseWhatsAppMarkup(input).find((t) => t.kind === "link") as { href?: string } | undefined;
+  ok(`href carries no marker or bidi control: ${input}`,
+    !!link?.href && !/[*_~`\u200E\u200F\u200D]/.test(link.href));
+}
+
+// (7) The guard reads CODE POINTS. Reading text[i] gave a lone surrogate half, which
+// matches no \p{…} class, so every astral word character walked straight through it —
+// «𝟝_5_ 𝟝_10_» rendered «𝟝5 … 𝟝10»: the PROMO_5 bug one Unicode plane up.
+for (const input of ["𝟝_5_ 𝟝_10_", "𝐀*a*", "*a*𝐀"]) {
+  ok(`an astral word character blocks the marker: ${input}`,
+    parseWhatsAppMarkup(input).every((t) => t.kind === "text"));
+}
+
 // The four ways this parser has deleted a literal marker, each pinned by the exact string
 // adversarial review broke it with.
 const STILL_LITERAL = [

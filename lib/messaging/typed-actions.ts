@@ -61,6 +61,27 @@ export type InteractiveCommand =
   | { kind: "select_category"; action: "select_category"; id: string; categoryIdOrName: string }
   | { kind: "allergy_recovery"; action: "allergy_recovery_continue" | "allergy_recovery_realert"; id: typeof RECOVERY_CHOICE_CONTINUE | typeof RECOVERY_CHOICE_REALERT; choice: "continue" | "realert" };
 
+/** The four safety detectors a caller must run before any deterministic shortcut.
+ *
+ *  A CLOSED STRUCT, deliberately. It used to be `Record<string, unknown>`, so `{}` was a
+ *  legal value — and `Object.values({}).some(Boolean)` is `false`, i.e. an empty probe
+ *  reads as "all clear". A caller that forgot to compute it, or one that passed `{}` just
+ *  to satisfy the types, would silently disable the gate with nothing to catch it. Every
+ *  field is required, so the compiler asks the question. */
+export interface SafetyProbe {
+  allergenAvoidance: boolean;
+  allergenSymptom: boolean;
+  phoneticSafetyNet: boolean;
+  allergenEmergency: boolean;
+}
+
+/** True when ANY detector fired. Reads the four fields BY NAME rather than iterating
+ *  Object.values, so adding a field to SafetyProbe without adding it here is a compile
+ *  error instead of a silent gap. */
+export function safetyProbeFired(probe: SafetyProbe): boolean {
+  return probe.allergenAvoidance || probe.allergenSymptom || probe.phoneticSafetyNet || probe.allergenEmergency;
+}
+
 export type TypedInteractiveActionResult =
   | {
       kind: "handled";
@@ -95,7 +116,7 @@ export type TypedQuantityFillResult =
   | Extract<TypedInteractiveActionResult, { kind: "handled" }>
   | {
       kind: "pass_through";
-      reason: "non_numeric" | "no_pending_quantity" | "ambiguous_draft" | "safety_signal";
+      reason: "non_numeric" | "no_pending_quantity" | "ambiguous_draft" | "safety_signal" | "flag_off";
     };
 
 type Dialect = "egyptian" | "saudi" | string;
@@ -191,6 +212,11 @@ const FIXED_COMMANDS: Record<string, InteractiveCommand> = {
 // they agree today only by coincidence.
 const DRAFT_FRESHNESS_MS = DRAFT_RESUME_FRESHNESS_MS;
 
+/** Our own interactive ids carry database UUIDs, never free text. */
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 function cleanInteractiveId(id: string | null | undefined): string {
   return typeof id === "string" ? id.trim() : "";
 }
@@ -209,14 +235,24 @@ export function interactiveCommandFromId(id: string | null | undefined): Interac
   if (fixed) return fixed;
   const qty = qtyFromId(clean);
   if (qty != null) return { kind: "choose_quantity", action: "qty", id: clean, quantity: qty };
+  // `item:` and `cat:` ids are MINTED BY US from database ids — lib/ai/tools.ts writes
+  // `item:${i.id}` and `cat:${c.id}`, both UUIDs. The payload was previously accepted as
+  // any non-empty string, so an id like «item:<script>alert(1)</script>» passed
+  // isTypedInteractiveActionId, reached the handler, missed the menu lookup, and was
+  // written VERBATIM into messages.meta.typedAction — twice. No XSS (the reply is a fixed
+  // string, React escapes, the id is never echoed), but it is attacker-controlled text
+  // persisted on a public endpoint, which the demo's isolation contract forbids in the
+  // same breath as it forbids the visitor's own words.
   if (clean.startsWith("item:")) {
     const itemId = clean.slice("item:".length).trim();
-    if (itemId) return { kind: "select_item", action: "select_item", id: clean, itemId };
+    if (isUuid(itemId)) return { kind: "select_item", action: "select_item", id: clean, itemId };
     return null;
   }
   if (clean.startsWith("cat:")) {
     const categoryIdOrName = clean.slice("cat:".length).trim();
-    if (categoryIdOrName) return { kind: "select_category", action: "select_category", id: clean, categoryIdOrName };
+    if (isUuid(categoryIdOrName)) {
+      return { kind: "select_category", action: "select_category", id: clean, categoryIdOrName };
+    }
     return null;
   }
   if (clean === RECOVERY_CHOICE_CONTINUE) {
@@ -465,7 +501,7 @@ export async function handleTypedInteractiveAction(
     conversationId: string;
     interactiveId: string;
     features: Record<string, unknown> | null;
-    safetyProbe: Record<string, unknown>;
+    safetyProbe: SafetyProbe;
     /** A public-demo turn. Mirrors lib/ai/customer-turn.ts's `demoRun`: the reply row and
      *  its `meta.draft` still persist — that row IS the basket, and it carries no visitor
      *  words — but nothing STAFF-FACING or analytical is written. Without it, wiring the
@@ -623,7 +659,7 @@ export async function handleTypedQuantityFill(
     userMessage: string;
     interactiveId?: string | null;
     features: Record<string, unknown> | null;
-    safetyProbe: Record<string, unknown>;
+    safetyProbe: SafetyProbe;
     /** A public-demo turn. Mirrors lib/ai/customer-turn.ts's `demoRun`: the reply row and
      *  its `meta.draft` still persist — that row IS the basket, and it carries no visitor
      *  words — but nothing STAFF-FACING or analytical is written. Without it, wiring the
@@ -639,16 +675,12 @@ export async function handleTypedQuantityFill(
   // `parseBareQuantityAnswer` is strict enough that such a turn rarely parses — but
   // "rarely" is not a safety property, and the strictness is not what anyone would be
   // relying on. This is the explicit gate, and it protects the WhatsApp path too.
-  if (Object.values(args.safetyProbe ?? {}).some(Boolean)) {
+  if (safetyProbeFired(args.safetyProbe)) {
     return { kind: "pass_through", reason: "safety_signal" };
   }
 
   const qty = quantityFromInteractiveId(args.interactiveId) ?? parseBareQuantityAnswer(args.userMessage);
   if (qty == null) return { kind: "pass_through", reason: "non_numeric" };
-
-  const draft = await loadLatestPendingQuantityDraft(admin, args.conversationId);
-  if (!draft) return { kind: "pass_through", reason: "no_pending_quantity" };
-  if (draft.lines.length !== 1) return { kind: "pass_through", reason: "ambiguous_draft" };
 
   const { data: r } = await admin
     .from("restaurants")
@@ -658,6 +690,21 @@ export async function handleTypedQuantityFill(
   const restaurant = (r ?? {}) as Record<string, unknown>;
   const dialect = String(restaurant.dialect ?? "egyptian");
   const features = (restaurant.feature_flags as Record<string, unknown> | null) ?? args.features;
+  // THE KILL SWITCH — checked BEFORE any further work, and from inside the handler.
+  //
+  // It was checked only at the WhatsApp call site, so turning `typed_quantity_fill` off
+  // stopped WhatsApp and left the public demo page on the rail until a redeploy. A flag
+  // that cannot switch a surface off is not a kill switch. It also sat AFTER the draft
+  // scan, so a disabled feature still cost a query — a switch that keeps working is a weak
+  // switch. Both callers now get it from one place, before the scan.
+  if (!isFeatureExplicitlyEnabled("typed_quantity_fill", features)) {
+    return { kind: "pass_through", reason: "flag_off" };
+  }
+
+  const draft = await loadLatestPendingQuantityDraft(admin, args.conversationId);
+  if (!draft) return { kind: "pass_through", reason: "no_pending_quantity" };
+  if (draft.lines.length !== 1) return { kind: "pass_through", reason: "ambiguous_draft" };
+
   const brain = await loadBrain(admin, args.restaurantId);
   const payments = await loadResolvedPaymentMethods(admin, args.restaurantId, {
     paymentConfig: restaurant.payment_config ?? DEFAULT_PAYMENT_CONFIG,
