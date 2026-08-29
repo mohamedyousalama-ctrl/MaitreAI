@@ -31,6 +31,16 @@ export function getTtsAdapter(): TtsAdapter {
   return mockTtsAdapter;
 }
 
+/** The adapter's governance refusals, tagged so the fallback law can tell "we refuse to
+ *  speak as this voice" apart from "ElevenLabs is down". Matched on a marker the adapter
+ *  puts in the message rather than on prose, so rewording an error cannot silently
+ *  re-open the fallback. */
+export const VOICE_REFUSAL_MARKER = "ElevenLabs TTS refused:";
+
+export function isVoiceGovernanceRefusal(message: string): boolean {
+  return message.includes(VOICE_REFUSAL_MARKER);
+}
+
 export interface VoiceReplyResult {
   result: TtsResult;
   /** True when the primary (ElevenLabs) failed and we fell back to OpenAI onyx. */
@@ -51,6 +61,23 @@ export async function synthesizeVoiceReply(text: string, opts?: TtsSynthesizeOpt
     return { result, fellBack: false, primaryError: null };
   } catch (primaryErr) {
     const primaryError = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+
+    // A REFUSAL IS NOT AN OUTAGE, AND MUST NOT BE ANSWERED BY BUYING A DIFFERENT VOICE.
+    //
+    // The fallback law exists for a provider that is DOWN: a customer waiting on an order
+    // is better served by any voice than by silence. It was catching the voice registry's
+    // refusals too — so pinning the G0-R QUARANTINED object, or a stock voice, or a typo,
+    // did not stop the turn: it bought an OpenAI `onyx` synthesis and sent an American
+    // male voice reading Najdi Arabic to a real WhatsApp customer. An audit drove exactly
+    // that: `voiceId=VuqFqWXHibJ61b9IiVJ7` → `hosts contacted: ["api.openai.com"]`.
+    //
+    // That is a fail-OPEN on "while G0-R is BLOCKED: no provider voice generation" — the
+    // guard refused, and the refusal produced generation anyway. It also defeats the
+    // reason the check was put in the adapter at all, which was to cover this caller.
+    // A refusal means we do not know whose voice this is; the answer to that is silence
+    // and the text reply, never a substitute.
+    if (isVoiceGovernanceRefusal(primaryError)) return null;
+
     // Only ElevenLabs has an automatic fallback target (onyx). If the primary was
     // already OpenAI/mock, there is nothing to fall back to → text-only.
     if (primary.name !== "elevenlabs") return null;

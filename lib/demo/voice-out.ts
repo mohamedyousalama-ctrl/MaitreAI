@@ -133,6 +133,39 @@ export function demoVoiceProviderPinned(): boolean {
   return pinned === "mock";
 }
 
+/** Can this surface actually PRODUCE A SOUND right now?
+ *
+ *  Not the same question as demoVoiceProviderPinned(), and conflating them shipped a lie.
+ *  That function answers "is the configuration deliberate", and it says YES for `mock` —
+ *  correctly, because a pinned mock is a considered choice rather than a misconfiguration.
+ *  But the mock produces NO AUDIO. The demo's capability probe used it as "can speak", so
+ *  with TTS_ADAPTER=mock the call screen opened, listened, thought, and went silent — and
+ *  then told the visitor that safety/money/receipt rules were why. On a reply reading
+ *  «تمام، كبسة دجاج وحدة 👍», which contains no allergen, no amount and no receipt.
+ *
+ *  That is a fabricated demonstration of the one guarantee this page exists to sell, on
+ *  every turn. The probe must ask THIS question instead. */
+export function demoVoiceAudible(): boolean {
+  return demoVoiceProviderPinned() && envTrim("TTS_ADAPTER").toLowerCase() !== "mock";
+}
+
+/** Why a turn produced no audio, in the only two shapes a VISITOR should be told apart:
+ *  a deliberate product rule, or the voice not working. Deliberately coarse — a public
+ *  page has no business learning which env var is wrong.
+ *
+ *  The distinction is not cosmetic. A rule-based silence means "keep going, this reply is
+ *  text on purpose"; a provider failure means "the voice is not working, stop pretending
+ *  to be a call". Collapsing them made every provider failure display the safety-rule
+ *  explanation and kept the loop running, uploading a fresh clip each turn. */
+export function demoVoiceSilenceKind(skipped: DemoVoiceOutSkip | null): "none" | "rule" | "unavailable" {
+  if (!skipped) return "none";
+  if (skipped === "safety_hold" || skipped === "money_figure" ||
+      skipped === "payment_link" || skipped === "receipt") return "rule";
+  // `too_long` sits here rather than under "rule": the visitor cannot tell it from a
+  // failure, and describing a length cap as a safety guarantee is the same false claim.
+  return "unavailable";
+}
+
 /** Does the synthesis we got back actually come from the provider AND the voice we pinned?
  *  Takes the result rather than reading env, so a proof can hand it a lying adapter. */
 export function voiceMatchesPin(
@@ -205,7 +238,11 @@ export async function demoVoiceReply(
   // itself, so the value checked here and the value actually spoken were never the same
   // value — a default injected in the adapter shipped ElevenLabs' stock "Rachel" to a
   // visitor with skipped:null and every proof green.
-  const pinnedVoiceId = envTrim("ELEVENLABS_VOICE_ID");
+  // THE CANONICAL ID, not what was typed. The adapter now puts the registry's spelling on
+  // the wire and echoes that back, so comparing against the raw env value made a correct
+  // id with a zero-width character — the exact paste the registry tolerates on purpose —
+  // BUY a synthesis and then discard it as `wrong_voice`, every turn, forever.
+  const pinnedVoiceId = lookupVoice(envTrim("ELEVENLABS_VOICE_ID"))?.voiceId ?? "";
   let result;
   try {
     result = await adapter.synthesize(text, { voiceId: pinnedVoiceId });

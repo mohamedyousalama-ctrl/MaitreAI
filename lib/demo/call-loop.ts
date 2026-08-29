@@ -14,8 +14,39 @@
 // ceiling must still be heard rather than cut into nothing.
 // ============================================================================
 
-/** Above the noise floor of an ordinary room, below normal speech. */
-export const SPEECH_RMS = 0.045;
+// ── THE FLOOR IS CALIBRATED TO THE ROOM, NOT A CONSTANT ─────────────────────
+//
+// A single absolute threshold was wrong in both directions, and an audit drove both:
+//
+//   * a room humming at rms 0.05 — an ordinary busy restaurant, which is the room this
+//     product is SOLD INTO — sat above the constant, so the detector latched "speech"
+//     immediately and never saw quiet again. Every turn ran to the 20-second ceiling and
+//     uploaded 20 seconds of ambience to the transcriber: 7.6× the cost and an 8× slower
+//     demo, with the "never upload silence" guard unreachable in exactly that room.
+//   * a quiet speaker peaking at 0.030 never crossed it at all, and the call TERMINATED
+//     on them with no retry.
+//
+// So the floor is derived from the room: measure the quietest moment of the first fraction
+// of a second, and require speech to stand clearly above it.
+
+/** Nothing below this is speech, whatever the room. Guards against a near-silent stream
+ *  (a muted or dead microphone) calibrating to ~0 and then treating hiss as speech. */
+export const ABSOLUTE_FLOOR = 0.02;
+/** Speech has to be this many times the room's own noise. */
+export const SPEECH_RATIO = 2.5;
+/** How long we listen before deciding what "quiet" sounds like here. Six samples at the
+ *  component's 60 ms cadence. The recorder is already running throughout, so nothing the
+ *  visitor says is lost — only the DECISION waits. */
+export const CALIBRATION_MS = 360;
+/** The measured floor is clamped into this band. The upper bound matters: a visitor who
+ *  starts talking the instant the turn opens would otherwise calibrate the room to their
+ *  own voice and never be heard again. */
+export const FLOOR_MIN = 0.002;
+export const FLOOR_MAX = 0.06;
+
+/** Retained as the ABSOLUTE_FLOOR's public name so existing callers and proofs keep
+ *  working; it is now the floor of the calibrated threshold rather than the threshold. */
+export const SPEECH_RMS = ABSOLUTE_FLOOR;
 /** Quiet for this long AFTER speech began ends the turn. A pause between words in Arabic
  *  running speech is comfortably under a second; a turn-ending pause is longer. Too short
  *  and the visitor gets interrupted mid-sentence, which is the failure people notice. */
@@ -29,12 +60,25 @@ export type VadState = {
   /** When the current run of quiet began; 0 while sound is present. */
   quietSince: number;
   startedAt: number;
+  /** Quietest sample seen during calibration — the room's own noise. */
+  noiseFloor: number;
+  /** The live threshold: max(ABSOLUTE_FLOOR, noiseFloor × SPEECH_RATIO). Exposed so a
+   *  caller (or a proof) can see what this room actually decided. */
+  threshold: number;
+  calibrating: boolean;
 };
 
 export type VadVerdict = "listening" | "spoke" | "silent" | "cutoff";
 
 export function newVadState(now: number): VadState {
-  return { heardSpeech: false, quietSince: 0, startedAt: now };
+  return {
+    heardSpeech: false, quietSince: 0, startedAt: now,
+    noiseFloor: Number.POSITIVE_INFINITY, threshold: ABSOLUTE_FLOOR, calibrating: true,
+  };
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
 }
 
 /**
@@ -48,7 +92,26 @@ export function newVadState(now: number): VadState {
  * is nothing to transcribe.
  */
 export function vadStep(state: VadState, rms: number, now: number, maxMs: number): VadVerdict {
-  if (rms > SPEECH_RMS) {
+  const elapsed = now - state.startedAt;
+
+  // CALIBRATE FIRST. Take the quietest sample of the opening window as the room's floor,
+  // then hold the threshold for the rest of the turn — a threshold that kept moving during
+  // speech would drift up into the speech itself and cut the visitor off.
+  if (state.calibrating) {
+    if (rms < state.noiseFloor) state.noiseFloor = rms;
+    if (elapsed >= CALIBRATION_MS) {
+      const room = clamp(
+        Number.isFinite(state.noiseFloor) ? state.noiseFloor : 0,
+        FLOOR_MIN, FLOOR_MAX
+      );
+      state.threshold = Math.max(ABSOLUTE_FLOOR, room * SPEECH_RATIO);
+      state.calibrating = false;
+    }
+    // No verdict during calibration except the hard ceiling, which is checked below.
+    if (elapsed < maxMs) return "listening";
+  }
+
+  if (rms > state.threshold) {
     state.heardSpeech = true;
     state.quietSince = 0;
   } else if (state.heardSpeech && state.quietSince === 0) {
@@ -71,7 +134,11 @@ export type CallAction =
   /** Show the reply as text, then listen again — a hard-zero turn, working as intended. */
   | { kind: "show_text"; note: "text_only" }
   /** Stop the loop and tell the visitor why. */
-  | { kind: "end"; reason: "rate_limited" | "unavailable" | "error" };
+  | { kind: "end"; reason: "rate_limited" | "stopped" | "voice_unavailable" | "error" };
+
+/** What the server said about a missing audio track. `rule` = text-only on purpose;
+ *  `unavailable` = the voice is not working. */
+export type SilenceKind = "none" | "rule" | "unavailable";
 
 /**
  * What to do with a response from /api/demo/voice.
@@ -86,9 +153,26 @@ export type CallAction =
  * — showing the text. Treating them as an error would end a call precisely when the demo
  * is doing the thing it exists to demonstrate.
  */
-export function callResponseAction(status: number, hasAudio: boolean): CallAction {
+export function callResponseAction(
+  status: number,
+  hasAudio: boolean,
+  silence: SilenceKind = "none"
+): CallAction {
   if (status === 429) return { kind: "end", reason: "rate_limited" };
-  if (status === 503) return { kind: "end", reason: "unavailable" };
+  // 503 is the demo being STOPPED — the kill switch, an unconfigured backend, STT down.
+  // It is not a dropped connection, and saying «انقطع الاتصال» for the Founder's own kill
+  // switch tells a prospect the product broke when in fact it was switched off.
+  if (status === 503) return { kind: "end", reason: "stopped" };
   if (status < 200 || status >= 300) return { kind: "end", reason: "error" };
-  return hasAudio ? { kind: "speak" } : { kind: "show_text", note: "text_only" };
+  if (hasAudio) return { kind: "speak" };
+
+  // NO AUDIO, AND THE REASON DECIDES. A product rule is the demo working: show the text,
+  // keep listening. Anything else means the voice is not working, and continuing to
+  // record — while claiming a safety rule caused the silence — is a fabricated
+  // demonstration of the exact guarantee this page exists to sell, plus a fresh upload
+  // every turn. A conservative default: an OLD server that does not send the field yet
+  // reports "none", and an unexplained silence must not be dressed up as a rule.
+  return silence === "rule"
+    ? { kind: "show_text", note: "text_only" }
+    : { kind: "end", reason: "voice_unavailable" };
 }

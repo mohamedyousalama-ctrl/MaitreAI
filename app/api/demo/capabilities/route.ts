@@ -22,9 +22,10 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { demoVoiceProviderPinned } from "@/lib/demo/voice-out";
+import { demoVoiceAudible } from "@/lib/demo/voice-out";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
-import { isDemoHost } from "@/lib/demo/config";
+import { isDemoHost, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS } from "@/lib/demo/config";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,11 +37,24 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  // RATE-LIMITED like the other two demo routes. The handler does no I/O, so this is not a
+  // spend lever in the way a turn is — but it is `force-dynamic` and `no-store`, so every
+  // hit is an uncacheable function invocation, and it was the only demo route without a
+  // bucket. A generous limit costs nothing and keeps the three consistent.
+  const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0]!.trim() || "unknown";
+  const rl = rateLimit(`demo-cap:${ip}`, DEMO_PER_IP_TURNS * 4, DEMO_WINDOW_MS);
+  if (!rl.ok) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } });
+  }
+
   // BOTH HALVES OR NEITHER. A hands-free conversation needs ears as well as a voice, and
   // /api/demo/voice refuses the mock STT adapter outright on every environment — so if STT
   // resolves to the mock, the loop cannot run at all and the call screen must not offer it.
   const voiceIn = resolveSttAdapterName() !== "mock";
-  const voiceOut = demoVoiceProviderPinned();
+  // demoVoiceAudible, NOT demoVoiceProviderPinned: the latter says YES for a pinned
+  // `mock`, which is a deliberate configuration that produces no sound. Using it here
+  // opened a call screen that could never make a noise.
+  const voiceOut = demoVoiceAudible();
 
   return NextResponse.json(
     { voiceCall: voiceIn && voiceOut },

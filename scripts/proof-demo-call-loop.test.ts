@@ -4,18 +4,30 @@
 // Run: node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types \
 //        scripts/proof-demo-call-loop.test.ts
 //
-// The call screen's two real decisions are "when did they stop talking?" and "what do we do
-// with this response?". Inside a React component both are reachable only through a
-// microphone and a network, so in practice neither would ever be driven — and this repo has
-// been bitten four times by an assertion that matched a NAME instead of a BEHAVIOUR. Both
-// are pure functions in lib/demo/call-loop.ts, and this file drives them with real
-// waveforms and real status codes.
+// THIS FILE EXISTS IN ITS CURRENT FORM BECAUSE ITS FIRST VERSION DID NOT WORK.
+//
+// That version drove the two pure functions in lib/demo/call-loop.ts and read the component
+// with regexes. Two independent adversarial reviews then broke the feature while keeping it
+// green — fourteen mutations survived between them, and TWO survived the entire 215-file
+// suite: inverting the capability probe (so the honest panel shows exactly when the voice
+// works, and the call screen opens exactly when it does not), and deleting the microphone
+// release from hangUp() (so the mic stays open after the visitor hangs up). Both were
+// "covered" by assertions matching text inside a function that nothing called.
+//
+// Two lessons, both already written down in this repo and both re-learned here:
+//   * an assertion on a NAME, or on text in an uncalled function, protects nothing;
+//   * a test whose inputs are defined in terms of the constant under test — the old
+//     `LOUD = SPEECH_RMS + 0.05` — cannot constrain that constant at all.
+//
+// So section 3 EXECUTES the real CallScreen out of the real DemoPhone.tsx, against
+// instrumented browser APIs, and asserts what the component actually did.
 // ============================================================================
 
 import {
   newVadState, vadStep, callResponseAction,
-  SPEECH_RMS, HANGOVER_MS, NO_SPEECH_MS,
+  ABSOLUTE_FLOOR, SPEECH_RATIO, HANGOVER_MS, NO_SPEECH_MS, CALIBRATION_MS, FLOOR_MAX,
 } from "../lib/demo/call-loop.ts";
+import { makeRuntime, loadCallScreen, installBrowser, visibleText, findByLabel } from "./call-screen-harness.mjs";
 
 let pass = 0;
 const fails: string[] = [];
@@ -25,8 +37,8 @@ const ok = (label: string, cond: boolean) => {
 };
 
 /** Drive the detector over a scripted waveform: [rms, durationMs] pairs, sampled every
- *  60ms exactly as the component does. Returns the verdict and when it landed. */
-function drive(script: Array<[number, number]>, maxMs = 20_000): { verdict: string; at: number } {
+ *  60ms exactly as the component does. */
+function drive(script: Array<[number, number]>, maxMs = 20_000): { verdict: string; at: number; threshold: number } {
   const t0 = 1_000_000;
   const state = newVadState(t0);
   let now = t0;
@@ -34,155 +46,318 @@ function drive(script: Array<[number, number]>, maxMs = 20_000): { verdict: stri
     const until = now + dur;
     while (now < until) {
       const v = vadStep(state, rms, now, maxMs);
-      if (v !== "listening") return { verdict: v, at: now - t0 };
+      if (v !== "listening") return { verdict: v, at: now - t0, threshold: state.threshold };
       now += 60;
     }
   }
-  return { verdict: "listening", at: now - t0 };
+  return { verdict: "listening", at: now - t0, threshold: state.threshold };
 }
 
-const LOUD = SPEECH_RMS + 0.05;
-const QUIET = SPEECH_RMS - 0.02;
+/** A quiet room, then speech, then quiet. `room` and `speech` are ABSOLUTE rms values —
+ *  never expressed in terms of the threshold, or the threshold goes untested. */
+const turn = (room: number, speech: number, speechMs = 1500) =>
+  drive([[room, CALIBRATION_MS + 60], [speech, speechMs], [room, 4000]]);
 
 console.log("\n── 1. END OF SPEECH ─────────────────────────────────────────────");
 
-// The ordinary case: someone says a sentence and stops.
-{
-  const r = drive([[QUIET, 300], [LOUD, 1500], [QUIET, 3000]]);
-  ok("a sentence followed by a real pause ends the turn", r.verdict === "spoke");
-  ok(`…and it ends about ${HANGOVER_MS}ms after they stopped, not instantly`,
-    r.at >= 300 + 1500 + HANGOVER_MS - 120 && r.at <= 300 + 1500 + HANGOVER_MS + 120);
+// ── ABSOLUTE VALUES. The previous version defined its inputs as SPEECH_RMS ± a constant,
+// so setting the floor to 0.9 (no human voice reaches it) or 0.000001 (silence is speech)
+// left every waveform assertion green. These are real rms levels.
+ok("a normal speaker in a quiet room is heard", turn(0.005, 0.15).verdict === "spoke");
+ok("a QUIET speaker in a quiet room is heard too — the call must not end on them",
+  turn(0.004, 0.030).verdict === "spoke");
+ok("a very loud speaker is heard", turn(0.005, 0.60).verdict === "spoke");
+// The failure the old constant produced: a busy restaurant, which is the room this product
+// is SOLD INTO. A fixed 0.045 floor latched on the hum, never saw quiet again, and uploaded
+// the full 20-second ceiling to the transcriber on every single turn.
+ok("a noisy room does NOT latch on its own hum",
+  drive([[0.05, CALIBRATION_MS + 60], [0.05, 19_000]]).verdict === "silent");
+ok("…and in that same noisy room, real speech over the hum is still heard",
+  turn(0.05, 0.30).verdict === "spoke");
+ok("…and that turn ends on the hangover, not at the 20s ceiling",
+  turn(0.05, 0.30).at < 5000);
+for (const room of [0.002, 0.01, 0.03, 0.05, 0.08]) {
+  const t = turn(room, Math.max(0.12, room * 4));
+  ok(`room ${room}: speech heard, turn ends promptly (threshold ${t.threshold.toFixed(3)})`,
+    t.verdict === "spoke" && t.at < 5000);
 }
+// The calibrated threshold must actually track the room, and never fall below the floor.
+ok("the threshold is the room times the ratio, floored",
+  Math.abs(turn(0.02, 0.4).threshold - 0.02 * SPEECH_RATIO) < 1e-9 &&
+  turn(0.0001, 0.4).threshold === ABSOLUTE_FLOOR);
+ok("a room noisier than the clamp does not push the threshold arbitrarily high",
+  turn(0.5, 0.9).threshold <= FLOOR_MAX * SPEECH_RATIO + 1e-9);
+// Someone who talks from the very first instant would otherwise calibrate the room to
+// their own voice and never be heard again.
+ok("a visitor who starts talking immediately is still heard",
+  drive([[0.25, 2000], [0.005, 4000]]).verdict === "spoke");
 
-// THE FAILURE PEOPLE ACTUALLY NOTICE. A pause between words must not cut them off. This is
-// the assertion that would have caught a hangover set to, say, 300ms.
+// THE FAILURE PEOPLE NOTICE. A pause between words must not cut them off.
 {
-  const r = drive([[LOUD, 900], [QUIET, 600], [LOUD, 900], [QUIET, 500], [LOUD, 800], [QUIET, 3000]]);
+  const r = drive([[0.005, CALIBRATION_MS + 60], [0.2, 900], [0.005, 600],
+                   [0.2, 900], [0.005, 500], [0.2, 800], [0.005, 3000]]);
   ok("a natural pause MID-SENTENCE does not end the turn", r.verdict === "spoke");
-  ok("…and the turn ends only after the LAST word, not the first pause",
-    r.at > 900 + 600 + 900 + 500 + 800);
+  ok("…and the turn ends only after the LAST word", r.at > 900 + 600 + 900 + 500 + 800);
 }
 for (const gap of [200, 500, 800, 1000]) {
-  const r = drive([[LOUD, 600], [QUIET, gap], [LOUD, 600], [QUIET, 3000]]);
-  ok(`a ${gap}ms gap is a pause, not the end of a turn`,
-    r.verdict === "spoke" && r.at > 600 + gap + 600);
+  const r = drive([[0.005, CALIBRATION_MS + 60], [0.2, 600], [0.005, gap], [0.2, 600], [0.005, 3000]]);
+  ok(`a ${gap}ms gap is a pause, not the end of a turn`, r.verdict === "spoke" && r.at > 600 + gap + 600);
 }
+ok(`the hangover is ${HANGOVER_MS}ms — long enough for Arabic running speech`,
+  HANGOVER_MS >= 900 && HANGOVER_MS <= 1500);
 
-// A SILENT ROOM MUST NEVER UPLOAD. A clip of silence still costs a transcription and still
+// A silent room must never upload: a clip of silence still costs a transcription and still
 // burns one of the visitor's turns.
 {
-  const r = drive([[QUIET, 20_000]]);
+  const r = drive([[0.002, 20_000]]);
   ok("a silent room yields `silent`, never `spoke`", r.verdict === "silent");
   ok(`…and gives up at ${NO_SPEECH_MS}ms rather than holding the microphone open`,
     r.at >= NO_SPEECH_MS - 120 && r.at <= NO_SPEECH_MS + 120);
+  ok("silence is reported before the hard ceiling, not at it",
+    drive([[0.002, 60_000]], 30_000).at < 30_000);
 }
-// …and it must not wait out the full ceiling to say so.
-{
-  const r = drive([[QUIET, 60_000]], 30_000);
-  ok("silence is reported before the hard ceiling, not at it", r.at < 30_000);
-}
-
-// SOMEONE WHO TALKS PAST THE CEILING IS STILL HEARD. Discarding a long answer because the
-// visitor was verbose is worse than a slightly long clip.
-{
-  const r = drive([[LOUD, 60_000]], 6_000);
-  ok("continuous speech past the ceiling is sent, not discarded", r.verdict === "spoke");
-  ok("…and it is cut at the ceiling", r.at >= 6_000 - 120 && r.at <= 6_000 + 120);
-}
-// But a ceiling reached with NO speech has nothing to send.
-{
-  const r = drive([[QUIET, 60_000]], 3_000);
-  ok("the ceiling with no speech at all is `cutoff`, not `spoke`", r.verdict === "cutoff");
-}
-
-// The threshold is a threshold: exactly-at is not above.
-{
-  const r = drive([[SPEECH_RMS, 20_000]]);
-  ok("rms exactly at the floor is not speech", r.verdict === "silent");
-  const r2 = drive([[SPEECH_RMS + 0.001, 2000], [QUIET, 3000]]);
-  ok("rms just above the floor is speech", r2.verdict === "spoke");
-}
-
-// A single loud sample (a door slam) still arms the detector — and then the hangover ends
-// the turn, so the worst case is one short clip, not a stuck microphone.
-{
-  const r = drive([[LOUD, 60], [QUIET, 5000]]);
-  ok("a one-sample transient cannot hold the microphone open forever", r.verdict === "spoke");
-}
+// Someone who talks past the ceiling is still heard; the ceiling with NO speech has
+// nothing to send.
+ok("continuous speech past the ceiling is sent, not discarded",
+  drive([[0.005, CALIBRATION_MS + 60], [0.3, 60_000]], 6_000).verdict === "spoke");
+ok("the ceiling with no speech at all is `cutoff`, not `spoke`",
+  drive([[0.002, 60_000]], 3_000).verdict === "cutoff");
+ok("a one-sample transient cannot hold the microphone open forever",
+  drive([[0.005, CALIBRATION_MS + 60], [0.5, 60], [0.005, 5000]]).verdict === "spoke");
+ok(`calibration is ${CALIBRATION_MS}ms — long enough to measure, short enough not to be felt`,
+  CALIBRATION_MS >= 180 && CALIBRATION_MS <= 600);
 
 console.log("\n── 2. WHAT TO DO WITH A RESPONSE ────────────────────────────────");
 
-// A CAP IS AN ANSWER. A hands-free loop makes turns far faster than typing does, so a
-// refusal must END the call. Retrying would let the CLIENT decide how much money an
+// A CAP IS AN ANSWER. Retrying would let the CLIENT decide how much money an
 // unauthenticated page may spend, and that is the one party that must never hold it.
 ok("429 ends the call — the loop never retries into a cap",
   callResponseAction(429, true).kind === "end" &&
   (callResponseAction(429, true) as { reason: string }).reason === "rate_limited");
-ok("…and 429 ends it even when audio came back",
-  callResponseAction(429, true).kind === "end");
-ok("503 ends the call", callResponseAction(503, false).kind === "end");
+// 503 is the demo being SWITCHED OFF, including by the Founder's own kill switch. Calling
+// that «انقطع الاتصال» reports a product failure that did not happen.
+ok("503 is reported as stopped, not as a dropped connection",
+  (callResponseAction(503, false) as { reason: string }).reason === "stopped");
 for (const s of [400, 401, 404, 411, 413, 422, 500, 502]) {
   ok(`${s} ends the call rather than looping`, callResponseAction(s, true).kind === "end");
 }
-
-// NO AUDIO IS NOT A FAILURE — it is the product rule working. Safety, money, payment-link
-// and receipt replies are text-only, and ending the call on those would stop the demo
-// precisely when it is demonstrating the guarantee it exists to show.
 ok("a 200 WITH audio is spoken", callResponseAction(200, true).kind === "speak");
-ok("a 200 with NO audio shows the text and keeps going, not an error",
-  callResponseAction(200, false).kind === "show_text");
-ok("…and it is labelled as deliberate, not as a fault",
-  (callResponseAction(200, false) as { note: string }).note === "text_only");
-for (const s of [200, 201, 204, 299]) {
-  ok(`${s} is treated as success`, callResponseAction(s, true).kind === "speak");
+
+// NO AUDIO — AND THE REASON DECIDES. Collapsing these two made every provider failure
+// display the safety-rule explanation and kept the loop recording.
+ok("a rule-based silence shows the text and keeps going",
+  callResponseAction(200, false, "rule").kind === "show_text");
+ok("…labelled as deliberate, not as a fault",
+  (callResponseAction(200, false, "rule") as { note: string }).note === "text_only");
+ok("an UNAVAILABLE voice ends the call instead of pretending a rule caused it",
+  (callResponseAction(200, false, "unavailable") as { reason: string }).reason === "voice_unavailable");
+// The conservative default: an older server that does not send the field must not have its
+// silence dressed up as a product guarantee.
+ok("an unexplained silence is NOT treated as a rule",
+  callResponseAction(200, false).kind === "end" &&
+  callResponseAction(200, false, "none").kind === "end");
+
+console.log("\n── 3. THE COMPONENT, EXECUTED ───────────────────────────────────");
+
+const QUIET_ROOM = Array(7).fill(0.005);
+const SPEAKS = [...QUIET_ROOM, ...Array(10).fill(0.20), ...Array(18).fill(0.005)];
+const AUDIO_OK = {
+  conversationId: "c1", transcript: "أبغى كبسة", reply: "تمام، كبسة وحدة",
+  replyAudio: Buffer.from("OGGBYTES").toString("base64"),
+  replyAudioMime: "audio/ogg", replyAudioSilence: "none",
+};
+
+async function runScreen(opts: {
+  capabilities?: boolean;
+  server?: (n: number) => { status: number; body?: unknown };
+  rmsScript?: number[];
+  history?: unknown[];
+  ms?: number;
+  hangUpAfterMs?: number;
+  /** Press the hangup BUTTON rather than unmounting — they are different code paths. */
+  pressHangUpAfterMs?: number;
+  serverDelayMs?: number;
+}) {
+  const rt = makeRuntime();
+  const log = installBrowser({
+    capabilities: opts.capabilities ?? true,
+    rmsScript: opts.rmsScript ?? SPEAKS,
+    server: opts.server ?? (() => ({ status: 200, body: AUDIO_OK })),
+    serverDelayMs: opts.serverDelayMs ?? 0,
+  });
+  const CallScreen = loadCallScreen(rt.React);
+  const pushed: Array<Record<string, unknown>> = [];
+  let ended = false;
+  const props = {
+    convId: { current: null as string | null },
+    onSession: () => {},
+    push: (m: Record<string, unknown>) => { pushed.push(m); return m; },
+    historyRef: { current: (opts.history ?? [{ from: "me", kind: "text", text: "سلام" }]) as unknown[] },
+    audioUrls: { current: [] as string[] },
+    onEnd: () => { ended = true; },
+  };
+  // SAMPLE WHAT THE VISITOR SAW OVER TIME, not only at the end. A call screen moves through
+  // listening → thinking → speaking on its own, so a single final snapshot asserts whatever
+  // phase the clock happened to stop in — which is a coin toss, not a test.
+  const seen: string[] = [];
+  const sampler = setInterval(() => { seen.push(visibleText(rt.tree).join(" | ")); }, 150);
+  rt.mount(() => CallScreen(props));
+  if (opts.hangUpAfterMs != null) {
+    await new Promise((r) => setTimeout(r, opts.hangUpAfterMs));
+    rt.unmount();
+  }
+  if (opts.pressHangUpAfterMs != null) {
+    await new Promise((r) => setTimeout(r, opts.pressHangUpAfterMs));
+    const btn = findByLabel(rt.tree, "إنهاء") as { onClick?: () => void } | null;
+    if (!btn?.onClick) throw new Error("no hangup button rendered");
+    btn.onClick();
+  }
+  await new Promise((r) => setTimeout(r, opts.ms ?? 5200));
+  const text = visibleText(rt.tree).join(" | ");
+  clearInterval(sampler);
+  // SNAPSHOT BEFORE TEARDOWN. The unmount below releases everything, so counters read
+  // AFTER it always balance — which silently forgave a hangUp() that released nothing.
+  // What a hangup must guarantee is that the microphone is back BEFORE the component is
+  // ever unmounted, because on a real page nothing unmounts it.
+  const atHangup = {
+    tracksOpened: log.tracksOpened, tracksStopped: log.tracksStopped,
+    ctxOpened: log.ctxOpened, ctxClosed: log.ctxClosed,
+    requests: log.voiceRequests.length, played: log.played.length,
+  };
+  const everSaw = (needle: string) => seen.some((t) => t.includes(needle)) || text.includes(needle);
+  // ALWAYS TEAR DOWN before returning. Leaving a scenario's loop running let it keep
+  // recording, uploading and opening AudioContexts into the NEXT scenario's counters —
+  // which is how this harness first "found" a request issued after hangup and a leaked
+  // audio context. Neither was real: instrumented properly, the component runs its mount
+  // effect exactly once, closes every context it opens, and issues nothing after teardown.
+  // A test double that bleeds between cases invents defects as readily as it hides them.
+  rt.unmount();
+  await new Promise((r) => setTimeout(r, 120));
+  return { log, pushed, ended, props, text, everSaw, atHangup };
 }
 
-console.log("\n── 3. THE CAPABILITY PROBE GATES THE WHOLE SCREEN ───────────────");
-// The call screen must not offer itself when the server cannot both hear and speak: a
-// screen that listens, thinks, then answers with silence reads as a dropped call, which
-// KIV-308 names the worst outcome available here.
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-const cap = readFileSync(resolve(process.cwd(), "app/api/demo/capabilities/route.ts"), "utf8");
-ok("the probe requires BOTH halves — ears and voice",
-  /voiceIn && voiceOut/.test(cap));
-ok("the probe is host-gated like the demo routes themselves",
-  /isDemoHost\(req\.headers\.get\("host"\)\)/.test(cap));
-ok("the probe is never cached — it flips with configuration",
-  /"Cache-Control": "no-store"/.test(cap));
-ok("the probe discloses one boolean and no provider detail",
-  /voiceCall: voiceIn && voiceOut/.test(cap) &&
-  !/ELEVENLABS_API_KEY|voiceId|apiKey/.test(cap));
+// (a) THE HAPPY PATH — and the two things it must carry.
+{
+  const r = await runScreen({ ms: 11_000 });
+  ok("the screen probes capabilities before opening a microphone", r.log.capabilityRequests === 1);
+  ok("a turn reaches /api/demo/voice", r.log.voiceRequests.length >= 1);
 
-const phone = readFileSync(resolve(process.cwd(), "app/demo/DemoPhone.tsx"), "utf8");
-const callScreen = phone.slice(phone.indexOf("function CallScreen("), phone.indexOf("const Dot = ("));
-ok("the screen falls back to the honest panel when the probe says no",
-  /setPhase\("unavailable"\)/.test(phone) &&
-  /المكالمة الصوتية غير مفعّلة في التجربة/.test(phone));
-// NO FAKE CONNECTION, AT ALL. Not "a duration that starts once a turn completes" — none.
-// A counting duration on a call-styled screen reads as a connected call whenever it starts,
-// and this is a half-duplex voice conversation. proof-public-demo-hardening asserts the
-// same absence from the other side; both must agree or the guard is one edit from gone.
-ok("the call screen has no duration counter of any kind",
-  !/setSecs|callDuration|mmss/.test(callScreen));
-// `mmss` DOES exist in this file — it renders the length of a voice NOTE in the thread,
-// which is a recording's real duration and nothing to do with a call. Scoping matters:
-// a whole-file scan would fail on it and push the next reader to delete the assertion.
-ok("…while the voice-note player keeps its own duration", /mmss\(recSecs\)/.test(phone));
-// Scoped to the CALL SCREEN. A whole-file scan for «متصل الآن» also catches the chat
-// header's ordinary online indicator at the top of the thread, which is a legitimate
-// WhatsApp affordance and not a claim that a call connected — the first version of this
-// assertion failed on it, which would have taught the next reader to delete the assertion
-// rather than the fake.
-ok("the call screen calls itself a voice conversation, not a phone call",
-  /محادثة صوتية/.test(callScreen) &&
-  !/>\s*متصل الآن/.test(callScreen) &&
-  !/رنين|يرن/.test(callScreen));
-ok("…and the chat header's own online indicator is untouched",
-  /\{typing \? "يكتب…" : "متصل الآن"\}/.test(phone));
-// The microphone must come back on every exit path.
-ok("hanging up releases the microphone and the audio context",
-  /getTracks\(\)\.forEach\(\(t\) => t\.stop\(\)\)/.test(phone) && /audioCtx\.current\?\.close\(\)/.test(phone));
+  // HISTORY TRAVELS. Without it a hands-free CONVERSATION has no memory of its own previous
+  // turn — and the session-scoped allergen collector, which reads history, returns nothing,
+  // degrading the durable kitchen note from a declared allergy to «غير محدد». The mic-note
+  // path has carried history since that defect was fixed there; the call screen shipped
+  // without it, on the one surface where memory is the entire feature.
+  const fields = (r.log.voiceRequests[0] ?? []).map((f: string[]) => f[0]);
+  ok("the clip carries the conversation history", fields.includes("history"));
+  const hist = (r.log.voiceRequests[0] ?? []).find((f: string[]) => f[0] === "history")?.[1] ?? "";
+  ok("…and the history is the real thread, not an empty array",
+    hist.includes("سلام") && hist !== "[]");
+
+  ok("the reply is played", r.log.played.length >= 1);
+  // OBJECT URLs SURVIVE THE CALL. Revoking the previous turn's URL destroyed audio the
+  // THREAD was still rendering: every call bubble but the last played "الصوت ما اشتغل"
+  // when pressed, because the player only fetches on press.
+  ok("no object URL is revoked while the thread still renders it", r.log.urlsRevoked.length === 0);
+  ok("…and every URL minted is registered with the parent for cleanup",
+    r.props.audioUrls.current.length === r.log.urlsCreated.length);
+  ok("the loop continues to a second turn", r.log.voiceRequests.length >= 2);
+  ok("…without re-prompting for the microphone", r.log.micPrompts === 1);
+  ok("the turn is recorded in the thread", r.pushed.some((m) => m.text === "تمام، كبسة وحدة"));
+}
+
+// (b) THE PROBE GATES THE SCREEN. Inverting it survived the whole suite before.
+{
+  const r = await runScreen({ capabilities: false, ms: 1200 });
+  ok("probe says no → NO microphone is ever opened", r.log.micPrompts === 0);
+  ok("probe says no → no turn is ever uploaded", r.log.voiceRequests.length === 0);
+  ok("probe says no → the honest panel is shown",
+    r.text.includes("المكالمة الصوتية غير مفعّلة في التجربة"));
+}
+{
+  const r = await runScreen({ capabilities: true, ms: 1200 });
+  ok("probe says yes → the honest panel is NOT shown",
+    !r.text.includes("المكالمة الصوتية غير مفعّلة في التجربة"));
+  ok("probe says yes → the microphone opens", r.log.micPrompts === 1);
+}
+
+// (c) HANGUP RELEASES THE MICROPHONE. Deleting release() from hangUp() survived the whole
+// suite before, leaving the recording indicator lit on a stranger's phone.
+{
+  // UNMOUNTING is one path. Keep the clock running afterwards: nothing may resume.
+  const r = await runScreen({ hangUpAfterMs: 900, ms: 2500 });
+  ok("unmounting stops every microphone track",
+    r.log.tracksStopped === r.log.tracksOpened && r.log.tracksOpened >= 1);
+  ok("unmounting closes every AudioContext",
+    r.log.ctxClosed === r.log.ctxOpened && r.log.ctxOpened >= 1);
+  ok("…and no turn is uploaded after it", r.log.voiceRequests.length === 0);
+}
+{
+  // PRESSING THE BUTTON is a DIFFERENT path, and the one a visitor actually uses. Asserting
+  // only the unmount left `hangUp()` untested: deleting release() from it kept every
+  // assertion green while the microphone stayed open on a stranger's phone, with the
+  // recording indicator lit, after they had hung up.
+  const r = await runScreen({ pressHangUpAfterMs: 900, ms: 2500 });
+  ok("pressing hang up stops every microphone track — before any unmount",
+    r.atHangup.tracksStopped === r.atHangup.tracksOpened && r.atHangup.tracksOpened >= 1);
+  ok("pressing hang up closes every AudioContext — before any unmount",
+    r.atHangup.ctxClosed === r.atHangup.ctxOpened && r.atHangup.ctxOpened >= 1);
+  ok("pressing hang up tells the parent the call is over", r.ended === true);
+  ok("…and no turn is uploaded after it", r.atHangup.requests === 0);
+}
+
+// (c2) HANGING UP WHILE KHALID IS THINKING. This is the state a visitor is most likely to
+// hang up in, because it is the slowest — and it is the one where the loop itself will NOT
+// clean up: the post-fetch path returns on `!live.current` without releasing anything, so
+// hangUp() is the only thing that can hand the microphone back. Deleting release() from
+// hangUp() passed every other assertion here, because the listening path's own teardown
+// happened to cover for it.
+{
+  const r = await runScreen({ serverDelayMs: 2500, pressHangUpAfterMs: 3200, ms: 3000 });
+  ok("a request is in flight when the visitor hangs up", r.atHangup.requests === 1);
+  ok("hanging up MID-REQUEST stops every microphone track, with no unmount to help",
+    r.atHangup.tracksStopped === r.atHangup.tracksOpened && r.atHangup.tracksOpened >= 1);
+  ok("…and still closes every AudioContext", r.atHangup.ctxClosed === r.atHangup.ctxOpened);
+  ok("…and the loop does not resume when the response lands",
+    r.atHangup.requests === 1 && r.atHangup.played === 0);
+}
+
+// (d) A CAP ENDS THE CALL — driven, not reasoned about.
+{
+  const r = await runScreen({ server: () => ({ status: 429, body: {} }), ms: 6000 });
+  ok("a 429 stops the loop after exactly one upload", r.log.voiceRequests.length === 1);
+  ok("…and releases the microphone", r.log.tracksStopped === r.log.tracksOpened);
+  ok("…and tells the visitor to keep typing", r.everSaw("كمّل معي بالكتابة"));
+}
+
+// (e) A RULE-BASED SILENCE CONTINUES; AN UNAVAILABLE VOICE STOPS. Before, both continued,
+// and both blamed the safety rule — a fabricated demonstration of the one guarantee this
+// page exists to sell, on a reply containing no allergen, no amount and no receipt.
+{
+  const r = await runScreen({
+    server: () => ({ status: 200, body: { ...AUDIO_OK, replyAudio: null, replyAudioSilence: "rule" } }),
+    ms: 13_000,
+  });
+  ok("a rule-based silence keeps the conversation going", r.log.voiceRequests.length >= 2);
+  ok("…and explains, at the time, that this one is written on purpose",
+    r.everSaw("نعرضها مكتوبة"));
+}
+{
+  const r = await runScreen({
+    server: () => ({ status: 200, body: { ...AUDIO_OK, replyAudio: null, replyAudioSilence: "unavailable" } }),
+    ms: 6000,
+  });
+  ok("an unavailable voice stops the loop after one turn", r.log.voiceRequests.length === 1);
+  ok("…and does NOT blame the safety rule for it", !r.everSaw("حساسية"));
+  ok("…and says the voice is not working", r.everSaw("الصوت مو شغّال"));
+  ok("…and releases the microphone", r.log.tracksStopped === r.log.tracksOpened);
+}
+
+// (f) A SILENT ROOM NEVER UPLOADS.
+{
+  const r = await runScreen({ rmsScript: Array(200).fill(0.003), ms: 9500 });
+  ok("a silent room uploads nothing at all", r.log.voiceRequests.length === 0);
+  ok("…and hands the microphone back", r.log.tracksStopped === r.log.tracksOpened);
+}
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} demo-call-loop: ${pass}/${pass + fails.length} passed`);
 if (fails.length) { for (const f of fails) console.log(`   ✗ ${f}`); process.exit(1); }

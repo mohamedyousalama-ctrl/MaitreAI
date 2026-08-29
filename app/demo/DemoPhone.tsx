@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { decodeReplyAudio } from "@/lib/demo/audio-payload";
 import { DEMO_MAX_AUDIO_BYTES, DEMO_MAX_CHARS, DEMO_MAX_RECORD_SECONDS } from "@/lib/demo/config";
-import { newVadState, vadStep, callResponseAction, type VadVerdict } from "@/lib/demo/call-loop";
+import { newVadState, vadStep, callResponseAction, type VadVerdict, type CallAction, type SilenceKind } from "@/lib/demo/call-loop";
 import { parseWhatsAppMarkup, isEmojiOnly } from "@/lib/util/whatsapp-markup";
 
 /** The interactive payload the Brain attaches to a turn — the same shape WhatsApp
@@ -149,6 +149,11 @@ export default function DemoPhone() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [msgs, typing]);
+
+  // The call screen sends history at the moment it uploads, which is outside React's
+  // render cycle — a captured `msgs` would be whatever it was when the screen mounted.
+  const msgsRef = useRef<Msg[]>(msgs);
+  useEffect(() => { msgsRef.current = msgs; }, [msgs]);
 
   const push = useCallback((m: Omit<Msg, "id" | "at">) => {
     const msg: Msg = { ...m, id: nextId.current++, at: clock() };
@@ -577,6 +582,8 @@ export default function DemoPhone() {
             convId={convId}
             onSession={rememberSession}
             push={push}
+            historyRef={msgsRef}
+            audioUrls={audioUrls}
             onEnd={() => setInCall(false)}
           />
         )}
@@ -780,12 +787,34 @@ function Options({ p, onPick }: { p: Presentation; onPick: (label: string, id?: 
  *  faster than a person typing, so a 429 or a 503 stops it immediately instead of
  *  retrying — the client must never be what decides how much money this page may spend.
  */
+/** One place that turns an end reason into words. Each reason gets its OWN sentence:
+ *  telling a prospect «انقطع الاتصال بخالد» ("the connection to Khalid was cut") when the
+ *  Founder's own kill switch stopped the demo, or when the voice simply is not configured,
+ *  reports a product failure that did not happen. */
+function endMessage(action: CallAction): string {
+  if (action.kind !== "end") return "";
+  switch (action.reason) {
+    case "rate_limited":
+      return "خلّصنا عدد المكالمات المسموح فيها الحين 🙏 كمّل معي بالكتابة.";
+    case "stopped":
+      return "التجربة موقوفة مؤقتاً 🙏 كمّل معي بالكتابة في المحادثة.";
+    case "voice_unavailable":
+      return "الصوت مو شغّال الحين 🙏 كمّل معي بالكتابة — نفس خالد، نفس الردود.";
+    default:
+      return "صار خلل بسيط 🙏 كمّل معي بالكتابة في المحادثة.";
+  }
+}
+
 function CallScreen({
-  convId, onSession, push, onEnd,
+  convId, onSession, push, historyRef, audioUrls, onEnd,
 }: {
   convId: React.MutableRefObject<string | null>;
   onSession: (id?: string) => void;
   push: (m: Omit<Msg, "id" | "at">) => Msg;
+  /** The thread so far, read at send time. A call turn MUST carry it — see below. */
+  historyRef: React.MutableRefObject<Msg[]>;
+  /** The parent's registry of spoken-reply object URLs, revoked once on unmount. */
+  audioUrls: React.MutableRefObject<string[]>;
   onEnd: () => void;
 }) {
   type Phase = "checking" | "unavailable" | "listening" | "thinking" | "speaking" | "ended";
@@ -801,7 +830,6 @@ function CallScreen({
   const recorder = useRef<MediaRecorder | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
   const player = useRef<HTMLAudioElement | null>(null);
-  const objectUrl = useRef<string | null>(null);
   const abort = useRef<AbortController | null>(null);
   const started = useRef(false);
 
@@ -817,7 +845,6 @@ function CallScreen({
     audioCtx.current = null;
     try { player.current?.pause(); } catch { /* nothing playing */ }
     player.current = null;
-    if (objectUrl.current) { URL.revokeObjectURL(objectUrl.current); objectUrl.current = null; }
     abort.current?.abort();
     abort.current = null;
   }, []);
@@ -908,6 +935,21 @@ function CallScreen({
     try {
       const fd = new FormData();
       fd.append("audio", blob, "call.webm");
+      // HISTORY TRAVELS, exactly as it does on the mic-note path. Omitting it made every
+      // call turn STATELESS — a spoken follow-up («وزيدها لبن») reached Khalid with no
+      // memory of what was being ordered, on the one surface where memory IS the feature.
+      // It also starves the session-scoped allergen collector: with no history it returns
+      // no terms, and the durable kitchen note degrades from the declared allergy to
+      // «غير محدد». lib/demo/config.ts records this exact defect as already fixed once on
+      // the voice route; it must not come back through the call screen.
+      fd.append(
+        "history",
+        JSON.stringify(
+          historyRef.current
+            .filter((m) => m.kind === "text" || m.from === "me")
+            .map((m) => ({ role: m.from === "me" ? "user" : "assistant", content: m.text })),
+        ),
+      );
       if (convId.current) fd.append("conversationId", convId.current);
       abort.current = new AbortController();
       const res = await fetch("/api/demo/voice", { method: "POST", body: fd, signal: abort.current.signal });
@@ -916,19 +958,12 @@ function CallScreen({
       // A CAP IS AN ANSWER, NOT A GLITCH. A voice loop can burn a per-IP budget in under a
       // minute, so a refusal ends the call — retrying is how a client turns a cap into a
       // suggestion.
-      const decisionEarly = callResponseAction(res.status, false);
-      if (decisionEarly.kind === "end") {
-        stopWith(
-          decisionEarly.reason === "rate_limited"
-            ? "خلّصنا عدد المكالمات المسموح فيها الحين 🙏 كمّل معي بالكتابة."
-            : "انقطع الاتصال بخالد 🙏 كمّل معي بالكتابة في المحادثة."
-        );
-        return;
-      }
+      if (!res.ok) { stopWith(endMessage(callResponseAction(res.status, false))); return; }
 
       const data = (await res.json()) as {
         conversationId?: string; transcript?: string; reply?: string;
         replyAudio?: string | null; replyAudioMime?: string | null;
+        replyAudioSilence?: SilenceKind;
         presentation?: Presentation | null;
       };
       onSession(data.conversationId);
@@ -941,7 +976,16 @@ function CallScreen({
       const reply = String(data.reply ?? "");
       setLastText(reply);
 
-      if (callResponseAction(res.status, !!data.replyAudio).kind !== "speak") {
+      const action = callResponseAction(res.status, !!data.replyAudio, data.replyAudioSilence ?? "none");
+      if (action.kind === "end") {
+        // The voice is not working. Say THAT — do not keep recording while telling the
+        // visitor a safety rule caused the silence, which is a fabricated demonstration of
+        // the guarantee this page exists to sell, and a fresh upload every turn.
+        push({ from: "khalid", kind: "text", text: reply, presentation: data.presentation ?? null });
+        stopWith(endMessage(action));
+        return;
+      }
+      if (action.kind === "show_text") {
         // BY DESIGN on a safety / money / payment-link / receipt turn. Say so and keep
         // going; silence here would look like a failure of the very rule being shown.
         push({ from: "khalid", kind: "text", text: reply, presentation: data.presentation ?? null });
@@ -958,35 +1002,44 @@ function CallScreen({
       // in the demo proof. A private copy here would be a second thing to get wrong.
       const decoded = decodeReplyAudio(data.replyAudio, data.replyAudioMime);
       if (!decoded) {
+        // Audio arrived and would not decode. That is the voice failing, not a product
+        // rule, and it must not borrow the rule's explanation.
         push({ from: "khalid", kind: "text", text: reply, presentation: data.presentation ?? null });
-        setTextOnly(true);
-        setPhase("speaking");
-        await new Promise((r) => setTimeout(r, 2400));
-        if (live.current) void runTurn();
+        stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));
         return;
       }
       const url = URL.createObjectURL(new Blob([decoded.bytes], { type: decoded.type }));
-      if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-      objectUrl.current = url;
+      // REGISTERED WITH THE PARENT, NOT REVOKED PER TURN. Revoking the previous turn's URL
+      // destroyed audio the THREAD was still rendering: every call bubble but the last
+      // played «الصوت ما اشتغل» the moment anyone pressed it, because SpokenReply uses
+      // preload="none" and only fetches on press. The commit's own reason for pushing
+      // these into the thread is to leave a record of what was said; half of it was being
+      // deleted on the way out. The parent already revokes this list on unmount.
+      audioUrls.current.push(url);
       push({ from: "khalid", kind: "voice", text: reply, audioUrl: url, presentation: data.presentation ?? null });
 
       setPhase("speaking");
       const el = new Audio(url);
       player.current = el;
-      await new Promise<void>((done) => {
-        el.onended = () => done();
-        // A playback failure must not strand the loop in "speaking" forever — the visitor
-        // still has the text, so carry on listening.
-        el.onerror = () => done();
-        void el.play().catch(() => done());
+      // A FAILURE TO PLAY IS NOT A TURN THAT WENT FINE. Treating `onerror` and a rejected
+      // play() the same as `onended` meant that on any client which cannot decode Ogg/Opus
+      // the entire call ran silently, turn after turn, with the screen reading «يتكلم…»
+      // and nothing anywhere recording it. The sibling voice-note player says so out loud;
+      // this must too. `pause()` on hangup fires neither event, which is why `live` is
+      // rechecked rather than resolving on a third path.
+      const played = await new Promise<boolean>((done) => {
+        el.onended = () => done(true);
+        el.onerror = () => done(false);
+        void el.play().catch(() => done(false));
       });
       if (!live.current) return;
+      if (!played) { stopWith(endMessage({ kind: "end", reason: "voice_unavailable" })); return; }
       void runTurn();
     } catch (err) {
       if ((err as Error)?.name === "AbortError") return;
       stopWith("صار خلل بسيط 🙏 كمّل معي بالكتابة في المحادثة.");
     }
-  }, [convId, onSession, push, release, stopWith]);
+  }, [convId, onSession, push, historyRef, audioUrls, release, stopWith]);
 
   // ── capability probe, then start ──────────────────────────────────────────
   useEffect(() => {

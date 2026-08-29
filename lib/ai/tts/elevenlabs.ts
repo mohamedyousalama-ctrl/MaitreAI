@@ -44,14 +44,22 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
     const key = (process.env.ELEVENLABS_API_KEY || "").trim();
     if (!key) throw new Error("ELEVENLABS_API_KEY not set");
 
-    const voiceId = normalizeVoiceId(opts?.voiceId || process.env.ELEVENLABS_VOICE_ID || "");
-    if (!voiceId) throw new Error("ELEVENLABS_VOICE_ID not set");
+    const configured = normalizeVoiceId(opts?.voiceId || process.env.ELEVENLABS_VOICE_ID || "");
+    if (!configured) throw new Error("ELEVENLABS_VOICE_ID not set");
 
     // THE ALLOW LIST, BEFORE ANY MONEY IS SPENT. An unregistered id is refused here rather
     // than after a paid synthesis, and the refusal names what was wrong so an operator can
     // fix it without guessing.
-    const voice = lookupVoice(voiceId);
-    if (!voice) throw new Error(`ElevenLabs TTS refused: ${voiceRefusalReason(voiceId)}`);
+    const voice = lookupVoice(configured);
+    if (!voice) throw new Error(`ElevenLabs TTS refused: ${voiceRefusalReason(configured)}`);
+
+    // AND WE SEND THE REGISTERED ID, NOT WHAT WAS TYPED. The lookup tolerates case and
+    // invisible characters so that a correct id pasted from a dashboard is not read as an
+    // unknown voice — but ElevenLabs voice ids are CASE-SENSITIVE, so putting the
+    // operator's variant on the wire turned that tolerance into a 404 in production
+    // (`.../pyda2s34yczhjbn4dnxp` was accepted here and would never resolve there). The
+    // registry holds the canonical spelling; everything downstream uses it.
+    const voiceId = voice.voiceId;
 
     // The registered model is the default. An override is permitted only if it AGREES —
     // see the header: an unreviewed model change is not ours to make.

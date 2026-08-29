@@ -50,9 +50,15 @@ export const DEMO_WINDOW_MS = 60 * 60 * 1000;
  *   page the COLD turn is the normal case, billing at the cache-WRITE rate.
  *
  *   v3 (voice-out): "and more with voice" is now a number. TTS bills per character:
- *   DEMO_TTS_MAX_CHARS (600) x elevenlabs:eleven_flash_v2.5 at $0.00011/char = $0.066 a
- *   spoken reply, so 1,000 spoken turns adds up to $66/day — which MORE THAN DOUBLES the
- *   worst-case day rather than nudging it. It is a true ceiling and not the expectation:
+ *   DEMO_TTS_MAX_CHARS (600) x elevenlabs:eleven_v3 at $0.00022/char = $0.132 a spoken
+ *   reply, so 1,000 spoken turns adds up to $132/day — which roughly TRIPLES the worst-case
+ *   day rather than nudging it.
+ *
+ *   RE-RUN WHENEVER THE MODEL CHANGES. This paragraph read $0.066 / $66 against
+ *   eleven_flash_v2.5 while KIV-313 pinned eleven_v3 at twice the rate — the number under
+ *   the cap silently stopped describing the cap. The pinned model lives in
+ *   lib/ai/tts/voice-registry.ts and its rate in lib/ai/tts/pricing.ts; a change to either
+ *   invalidates the figures here. It is a true ceiling and not the expectation:
  *   TTS fires only on a VOICE turn whose reply is under the cap and is not hard-zero
  *   suppressed (safety / money / receipt / payment-link are text-only), and a demo reply
  *   quoting a price — the common case once an order starts — is suppressed by definition.

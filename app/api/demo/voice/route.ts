@@ -24,7 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
-import { demoVoiceReply, demoVoiceSignalsFor } from "@/lib/demo/voice-out";
+import { demoVoiceReply, demoVoiceSignalsFor, demoVoiceSilenceKind } from "@/lib/demo/voice-out";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
 import { mustWrite } from "@/lib/db/checked";
 import { rateLimit } from "@/lib/rate-limit";
@@ -348,6 +348,13 @@ export async function POST(req: Request) {
       // artifact of a stranger's session left behind. Null whenever we chose not to speak.
       replyAudio: spoken.audioBase64,
       replyAudioMime: spoken.mime,
+      // WHY there is no audio, in two coarse shapes: "rule" (this reply is text-only on
+      // purpose — safety, money, a payment link, a receipt) or "unavailable" (the voice is
+      // not working). The call loop needs the difference and had no way to get it: every
+      // silent turn looked identical, so a provider failure displayed the safety-rule
+      // explanation and the loop kept recording. Deliberately coarse — a public page has
+      // no business learning which env var is wrong.
+      replyAudioSilence: demoVoiceSilenceKind(spoken.skipped),
       orderNumber: closed.orderNumber,
       escalate: out.escalate,
       allergenGate,

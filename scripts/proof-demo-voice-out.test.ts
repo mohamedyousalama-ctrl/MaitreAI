@@ -225,10 +225,18 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   };
   const SPEAK = { inboundWasVoice: true, safetyHold: false, isReceipt: false };
 
+  // THE SAMPLE IS PART OF THE TEST. Every wire assertion used to run against one 18-character
+  // string with no «ق» in it — so a review dropped the pronunciation dictionary EXACTLY when
+  // the reply contains «قهوة», attached the banned broad-qaf dictionary whenever «ق» appears,
+  // and corrupted the voice settings only for bodies over 30 characters. All three stayed
+  // green, because the one sample triggered none of them. This one is long, and it contains
+  // the very word the frozen dictionary exists to fix.
+  const REPLY = "تفضل، وش تحب تطلب اليوم؟ عندنا قهوة عربية طازجة، وكبسة لحم، وبروست دجاج — كل شي جاهز الحين.";
+
   // (a) HEALTHY: the visitor gets ElevenLabs' actual bytes, and no other host is touched.
   hosts = []; paths = []; bodies = []; stub(200);
   await withEnvAsync(PINNED, async () => {
-    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    const out = await demoVoiceReply(REPLY, SPEAK);
     ok("a healthy turn returns the provider's real audio to the visitor",
       out.audioBase64 !== null && Buffer.from(out.audioBase64!, "base64").toString() === EL_BYTES);
     ok("a healthy turn reports the spend it actually incurred",
@@ -239,6 +247,28 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
       paths.length === 1 && paths[0].includes(KHALID_VOICE.voiceId));
     ok("the priced model is the one actually sent to the provider",
       bodies.length === 1 && bodies[0].includes(KHALID_VOICE.model));
+
+    // ── THE PIN ITSELF, AGAINST LITERALS FROM THE HANDOFF ────────────────────
+    // Every other assertion here compares the request to KHALID_VOICE — and KHALID_VOICE to
+    // NOTHING. An adversarial review repointed the registry at a different ElevenLabs voice
+    // and the whole 215-file suite stayed green: the one control this work exists to install
+    // was pinned by no assertion at all. These are the values copied from KIV-313, written
+    // out, so that changing the voice is a test failure and not a silent substitution.
+    ok("the registered voice is the one KIV-313 handed over",
+      KHALID_VOICE.voiceId === "pYDa2s34YCzHjbn4DnXP");
+    ok("…under the name it was accepted as", KHALID_VOICE.name === "Khalid kivo");
+    ok("…on the model it was accepted under", KHALID_VOICE.model === "eleven_v3");
+    ok("…with the qualified one-word dictionary, by id and version",
+      KHALID_VOICE.pronunciationDictionary.id === "rv3aw4bY6zoL4iWxJlDk" &&
+      KHALID_VOICE.pronunciationDictionary.versionId === "AuNrVOZsoDPTqDl8wlFw");
+    ok("…and the settings the Founder listened to",
+      KHALID_VOICE.settings.stability === 0.5 &&
+      KHALID_VOICE.settings.similarity_boost === 0.75 &&
+      KHALID_VOICE.settings.style === 0 &&
+      KHALID_VOICE.settings.speed === 1 &&
+      KHALID_VOICE.settings.use_speaker_boost === true);
+    ok("and the voice on the wire is that literal id, not merely 'whatever is registered'",
+      paths[0].includes("/pYDa2s34YCzHjbn4DnXP"));
 
     // ── KIV-313 §10 — THE ACCEPTED CONFIGURATION, ON THE WIRE ────────────────
     // The Founder listened to «Khalid kivo» at a SPECIFIC configuration and accepted THAT.
@@ -275,15 +305,30 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ok("the registered voice is synthetic by provenance", KHALID_VOICE.provenance === "generated");
     ok("the reported spend is the model+chars the provider was actually given",
       out.spend !== null && out.spend!.model === KHALID_VOICE.model &&
-      out.spend!.chars === "تفضل، وش تحب تطلب؟".length &&
+      out.spend!.chars === REPLY.length &&
       Math.abs(out.spend!.costUsd - out.spend!.chars * TTS_RATE_PER_CHAR[`elevenlabs:${KHALID_VOICE.model}`]) < 1e-9);
   });
 
   // (b) ELEVENLABS DOWN: refuse, and — the finding this replaces — never BUY the onyx
   // synthesis we would only discard. OPENAI_API_KEY is present and onyx would succeed.
+  // A 5xx, NOT ONLY A 401. The failure stub tested one status, so an adapter that RETRIES
+  // on a server error — with a different model, no settings and no dictionary — went
+  // undetected: the retry never fired, because 401 is not 5xx. Every failure class must
+  // reach the same refusal, and none may reach a second request.
+  for (const status of [500, 502, 503, 429, 422]) {
+    hosts = []; paths = []; bodies = []; stub(status);
+    await withEnvAsync(PINNED, async () => {
+      const out = await demoVoiceReply(REPLY, SPEAK);
+      ok(`an ElevenLabs ${status} yields no audio and no retry`,
+        out.audioBase64 === null && out.skipped === "synth_failed" && hosts.length === 1);
+      ok(`…and never reaches another provider on a ${status}`,
+        hosts.every((h) => h === "api.elevenlabs.io"));
+    });
+  }
+
   hosts = []; paths = []; bodies = []; stub(401);
   await withEnvAsync(PINNED, async () => {
-    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    const out = await demoVoiceReply(REPLY, SPEAK);
     ok("an ElevenLabs failure yields NO audio — onyx never reaches the visitor",
       out.audioBase64 === null && out.skipped === "synth_failed");
     ok("and OpenAI is never CALLED, so the discarded onyx synthesis is never billed",
@@ -334,7 +379,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     });
     hosts = []; paths = []; bodies = []; stub(200);
     await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: other }, async () => {
-      const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+      const out = await demoVoiceReply(REPLY, SPEAK);
       ok(`…and the provider is never contacted for ${other}`,
         out.audioBase64 === null && hosts.length === 0);
     });
@@ -361,7 +406,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   // synthesis off the spend ledger. Money spent, nothing recorded.
   hosts = []; paths = []; bodies = []; stub(200);
   await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: `  ${KHALID_VOICE.model}  ` }, async () => {
-    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    const out = await demoVoiceReply(REPLY, SPEAK);
     ok("a padded model still prices, and the ledger still sees the spend",
       out.audioBase64 !== null && out.spend !== null && out.spend!.costUsd > 0);
     ok("the padded model is trimmed before it reaches the provider",
@@ -369,7 +414,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   });
   hosts = []; paths = []; bodies = []; stub(200);
   await withEnvAsync({ ...PINNED, ELEVENLABS_VOICE_ID: `  ${KHALID_VOICE.voiceId}  ` }, async () => {
-    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    const out = await demoVoiceReply(REPLY, SPEAK);
     ok("a padded voice id is trimmed, not requested as %20%20ID%20%20",
       out.audioBase64 !== null && paths.length === 1 && paths[0].includes(`/${KHALID_VOICE.voiceId}`));
   });
@@ -377,7 +422,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   // OpenAI onyx synthesis on an unauthenticated page.
   hosts = []; paths = []; bodies = []; stub(200);
   await withEnvAsync({ TTS_ADAPTER: "  mock  ", OPENAI_API_KEY: "sk-present" }, async () => {
-    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    const out = await demoVoiceReply(REPLY, SPEAK);
     ok("a padded `mock` pin stays mock and contacts NO provider",
       out.skipped === "mock_pinned" && hosts.length === 0);
   });
@@ -390,7 +435,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     arrayBuffer: async () => new ArrayBuffer(0),
   }) as unknown as Response) as typeof fetch;
   await withEnvAsync(PINNED, async () => {
-    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    const out = await demoVoiceReply(REPLY, SPEAK);
     ok("an empty 200 is a failure, not silent audio with a bill",
       out.audioBase64 === null && out.skipped === "synth_failed" && out.spend === null);
   });
@@ -663,6 +708,101 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   ok("the TEXT is still rendered alongside it — audio alone is unusable on a muted phone",
     /m\.audioUrl \? <SpokenReply[\s\S]{0,140}m\.text \?/.test(phone));
   ok("object URLs are revoked on unmount", /URL\.revokeObjectURL\(url\)/.test(phone));
+}
+
+// ── "CAN THIS SURFACE SPEAK" IS NOT "IS THIS CONFIGURATION DELIBERATE" ──────
+// The demo's capability probe used demoVoiceProviderPinned() as "can speak". That function
+// says YES for a pinned `mock` — correctly, because a pinned mock is a considered choice —
+// but the mock produces NO AUDIO. So with TTS_ADAPTER=mock the call screen opened, listened,
+// thought, and went silent, and then told the visitor that safety/money/receipt rules were
+// why, on a reply containing none of those. A fabricated demonstration of the one guarantee
+// the page exists to sell, on every turn.
+{
+  const { demoVoiceAudible } = await import("../lib/demo/voice-out.ts");
+  const env = { ...process.env };
+  const set = (v: Record<string, string>) => {
+    for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "OPENAI_API_KEY"]) delete process.env[k];
+    Object.assign(process.env, v);
+  };
+  set({ TTS_ADAPTER: "mock" });
+  ok("a pinned mock is a deliberate configuration…", demoVoiceProviderPinned() === true);
+  ok("…but it is NOT audible, so the call screen must not offer itself", demoVoiceAudible() === false);
+  set({ TTS_ADAPTER: "  MOCK  " });
+  ok("…and a padded, upper-cased mock is caught the same way", demoVoiceAudible() === false);
+  set({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId });
+  ok("a real pinned voice IS audible", demoVoiceAudible() === true);
+  set({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: "21m00Tcm4TlvDq8ikWAM" });
+  ok("an unregistered voice is not audible", demoVoiceAudible() === false);
+  set({});
+  ok("nothing configured is not audible", demoVoiceAudible() === false);
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
+}
+
+// ── A REFUSAL MUST NOT BECOME A DIFFERENT PROVIDER'S VOICE ──────────────────
+// The voice guard was moved into the adapter so it would cover the WhatsApp path as well
+// as the demo. It did the opposite there: synthesizeVoiceReply's fallback law caught the
+// refusal like any outage and bought an OpenAI `onyx` synthesis, so pinning the G0-R
+// QUARANTINED object sent an American male voice reading Najdi Arabic to a real customer.
+// A guard that answers "we do not know whose voice this is" by generating a different
+// voice is a fail-OPEN on "while G0-R is BLOCKED: no provider voice generation".
+{
+  const { synthesizeVoiceReply, isVoiceGovernanceRefusal } = await import("../lib/ai/tts/index.ts");
+  const realFetch = globalThis.fetch;
+  const contacted: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    contacted.push(new URL(String(input)).host);
+    return {
+      ok: true, status: 200, text: async () => "stub",
+      arrayBuffer: async () => new TextEncoder().encode("BYTES").buffer,
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  const env = { ...process.env };
+  const set = (v: Record<string, string>) => {
+    for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "OPENAI_API_KEY"]) delete process.env[k];
+    Object.assign(process.env, v);
+  };
+
+  for (const bad of [
+    "VuqFqWXHibJ61b9IiVJ7",   // the identified quarantined object (KIV-90/95)
+    "21m00Tcm4TlvDq8ikWAM",   // stock Rachel
+    "pYDa2s34YCzHjbn4DnX",    // one character short — a typo
+  ]) {
+    contacted.length = 0;
+    set({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: bad, OPENAI_API_KEY: "sk-present" });
+    const out = await synthesizeVoiceReply("قهوة عربية طازجة وكبسة لحم", { voiceId: bad });
+    ok(`a refused voice (${bad.slice(0, 8)}…) yields NO audio on the WhatsApp path`, out === null);
+    ok(`…and buys nothing from ANY provider — no onyx substitute`, contacted.length === 0);
+  }
+
+  // A GENUINE OUTAGE STILL FALLS BACK. The fallback law exists for a provider that is DOWN,
+  // and narrowing it must not delete it: a customer waiting on an order is better served by
+  // any voice than by silence.
+  contacted.length = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const host = new URL(String(input)).host;
+    contacted.push(host);
+    if (host === "api.elevenlabs.io") return { ok: false, status: 503, text: async () => "down" } as unknown as Response;
+    return {
+      ok: true, status: 200, text: async () => "stub",
+      arrayBuffer: async () => new TextEncoder().encode("ONYX").buffer,
+    } as unknown as Response;
+  }) as typeof fetch;
+  set({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId, OPENAI_API_KEY: "sk-present" });
+  const outage = await synthesizeVoiceReply("قهوة عربية طازجة", { voiceId: KHALID_VOICE.voiceId });
+  ok("a real ElevenLabs OUTAGE still falls back — the law is narrowed, not removed",
+    outage !== null && outage.fellBack === true);
+
+  ok("a governance refusal is recognised by its marker, not by prose",
+    isVoiceGovernanceRefusal("ElevenLabs TTS refused: voice X is quarantined"));
+  ok("…and an outage is NOT, so the fallback law still applies to it",
+    !isVoiceGovernanceRefusal("ElevenLabs TTS 503: upstream unavailable") &&
+    !isVoiceGovernanceRefusal("fetch failed"));
+
+  globalThis.fetch = realFetch;
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
 }
 
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} demo-voice-out: ${pass}/${pass + fail} passed`);

@@ -109,6 +109,12 @@ export function lookupVoice(id: string | null | undefined): RegisteredVoice | nu
   return null;
 }
 
+/** Collapse control characters and cap the length, for a value that reaches a log. */
+function clip(v: string): string {
+  const flat = v.replace(/[\r\n\t\u2028\u2029]+/g, " ");
+  return flat.length > 48 ? `${flat.slice(0, 48)}…` : flat;
+}
+
 export function isAuthorizedVoice(id: string | null | undefined): boolean {
   return lookupVoice(id) !== null;
 }
@@ -117,7 +123,11 @@ export function isAuthorizedVoice(id: string | null | undefined): boolean {
  *  voice id is not a credential (KIV-313 publishes this one in plain text); the API key is,
  *  and it is not read here at all. */
 export function voiceRefusalReason(id: string | null | undefined): string | null {
-  const norm = normalizeVoiceId(id);
+  // BOUNDED AND SINGLE-LINE. This message is built from an ENV-CONTROLLED value and ends up
+  // in console.warn and in a critical alert, so an id carrying a newline is a log-injection
+  // primitive and a 300-character id is a 390-character log line. Neither is a crisis; both
+  // are free to prevent.
+  const norm = clip(normalizeVoiceId(id));
   if (!norm) return "no voice id configured";
   if (isAuthorizedVoice(norm)) return null;
   const quarantined = Object.entries(QUARANTINED_VOICE_IDS).find(
