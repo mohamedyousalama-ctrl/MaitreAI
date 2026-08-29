@@ -60,7 +60,11 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
-import { handleTypedInteractiveAction, isTypedInteractiveActionId } from "@/lib/messaging/typed-actions";
+import { handleTypedInteractiveAction, handleTypedQuantityFill, isTypedInteractiveActionId } from "@/lib/messaging/typed-actions";
+import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
+import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
+import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
+import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { rateLimit } from "@/lib/rate-limit";
 import { isDemoHost } from "@/lib/demo/config";
 import {
@@ -220,6 +224,55 @@ export async function POST(req: Request) {
     } catch (e) {
       // Never let the rail break a turn that the text path can still serve.
       console.error("[demo] typed action failed; falling through to the model", e);
+    }
+  }
+
+  // THE QUANTITY RAIL. The tap rail above resolves «qty:2»; this is the same rail for a
+  // customer who TYPES the answer — «وحده بس», «حبتين», «٣ حبات» — which is what a customer
+  // actually does. lib/messaging/quantity-fill.ts parses it deterministically and it was
+  // reachable only from WhatsApp, so on the demo the most natural reply to our own
+  // «كم حبة تبي؟» went to the model and hoped.
+  //
+  // Only when no interactive id was sent (a tap was already handled above) and a real
+  // session exists. handleTypedQuantityFill is self-gating: it passes through on a
+  // non-numeric answer, on no pending quantity question, on an ambiguous draft, and — as
+  // of this change — on ANY safety signal in the turn.
+  //
+  // The tenant is PINNED to the demo restaurant and its seed enables `typed_quantity_fill`
+  // (asserted in scripts/proof-demo-interactive-rail.test.ts), so the route does not spend
+  // a second round-trip re-reading a flag the handler already reads with the row it needs.
+  if (conversationId && !rawInteractiveId) {
+    try {
+      const filled = await handleTypedQuantityFill(admin, {
+        restaurantId: DEMO_RESTAURANT_ID,
+        conversationId,
+        userMessage: text,
+        interactiveId: null,
+        features: null,
+        // The same probe the WhatsApp path computes. It now GATES rather than merely
+        // being recorded, so an allergen or emergency turn can never be short-circuited
+        // past the safety pipeline by looking like a bare quantity.
+        safetyProbe: {
+          allergenAvoidance: detectAllergenAvoidance(text).fired,
+          allergenSymptom: detectAllergenSymptom(text).fired,
+          phoneticSafetyNet: detectPhoneticSafetyNet(text, { sttConfidence: null, isVoiceTranscript: false }).fired,
+          allergenEmergency: detectAllergenEmergency(text).fired,
+        },
+        demoRun: true,
+      });
+      if (filled.kind === "handled") {
+        return NextResponse.json({
+          ok: true,
+          conversationId,
+          reply: formatCustomerVisibleText(filled.reply, filled.dialect),
+          presentation: filled.presentation
+            ? formatCustomerVisiblePresentation(filled.presentation, filled.dialect)
+            : null,
+          photoRequests: [],
+        });
+      }
+    } catch (e) {
+      console.error("[demo] typed quantity fill failed; falling through to the model", e);
     }
   }
 

@@ -88,6 +88,40 @@ for (const id of ["", "   ", "not_a_real_id", "qty:abc", "../../etc/passwd", "co
   ok(`«${id}» is rejected, so it can never reach the throwing handler`, !isTypedInteractiveActionId(id));
 }
 
+// ── 6b. THE TYPED QUANTITY RAIL ──────────────────────────────────────────────
+// The tap rail resolves «qty:2». This is the same rail for a customer who TYPES the
+// answer — «وحده بس», «حبتين», «٣ حبات» — which is what a customer actually does. The
+// deterministic parser existed and was fixed for exactly those words, and was reachable
+// only from WhatsApp: on the demo the most natural reply to our own «كم حبة تبي؟» went to
+// the model and hoped.
+ok("the demo route calls the typed quantity rail", /await handleTypedQuantityFill\(admin, \{/.test(route));
+ok("…only when NO interactive id was sent (a tap was already handled)",
+  /if \(conversationId && !rawInteractiveId\) \{/.test(route));
+ok("…and after the tap rail, so a tap is never double-handled",
+  route.indexOf("handleTypedInteractiveAction") < route.indexOf("handleTypedQuantityFill(admin"));
+ok("its reply is formatted for the tenant like every other customer-visible string",
+  /reply: formatCustomerVisibleText\(filled\.reply, filled\.dialect\)/.test(route));
+ok("a rail failure falls through to the model rather than losing the turn",
+  /typed quantity fill failed; falling through to the model/.test(route));
+ok("the demo seed enables typed_quantity_fill, which is why the route need not re-read it",
+  /typed_quantity_fill: true/.test(read("scripts/seed-demo-ksa-tenant.mjs")));
+
+// ── 6c. SAFETY FIRST — the probe now GATES, it does not merely get recorded ───
+// It was computed by the caller, passed in, and written to `meta` while gating nothing. A
+// deterministic quantity shortcut skips the whole customer-turn pipeline, allergen gate
+// included. parseBareQuantityAnswer is strict enough that such a turn rarely parses — but
+// "rarely" is not a safety property. The gate lives in the shared handler, so the WhatsApp
+// path gets it too.
+ok("handleTypedQuantityFill refuses on ANY safety signal",
+  /if \(Object\.values\(args\.safetyProbe \?\? \{\}\)\.some\(Boolean\)\) \{[\s\S]{0,120}reason: "safety_signal"/.test(typed));
+ok("…before it even parses a quantity",
+  typed.indexOf('reason: "safety_signal"') < typed.indexOf("const qty = quantityFromInteractiveId"));
+ok("the demo computes the same four detectors the WhatsApp path does",
+  /allergenAvoidance: detectAllergenAvoidance\(text\)\.fired/.test(route) &&
+  /allergenSymptom: detectAllergenSymptom\(text\)\.fired/.test(route) &&
+  /phoneticSafetyNet: detectPhoneticSafetyNet\(text/.test(route) &&
+  /allergenEmergency: detectAllergenEmergency\(text\)\.fired/.test(route));
+
 // ── 7. the freshness window is ONE constant, not two ─────────────────────────
 // This module and lib/ai/customer-turn.ts must see the SAME basket; two independently
 // maintained windows agreed only by coincidence.

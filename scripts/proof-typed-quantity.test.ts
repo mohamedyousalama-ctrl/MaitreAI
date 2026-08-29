@@ -63,6 +63,16 @@ eq("«حبة» alone is not a quantity", parseBareQuantityAnswer("حبة"), null
 eq("«واحد كبسة» is still compound", parseBareQuantityAnswer("واحد كبسة"), null);
 eq("«٣ كاديا» is still compound", parseBareQuantityAnswer("٣ كاديا"), null);
 
+// SAFETY: a quantity that parses cleanly must STILL not short-circuit a turn carrying an
+// allergen / symptom / phonetic-net / emergency signal. The deterministic fill skips the
+// entire customer-turn pipeline, allergen gate included, so the probe has to GATE — it
+// used to be computed, passed in, and merely written to `meta`.
+ok("the shared handler refuses on any safety signal, before it parses a quantity",
+  /if \(Object\.values\(args\.safetyProbe \?\? \{\}\)\.some\(Boolean\)\) \{[\s\S]{0,140}reason: "safety_signal"/.test(typed) &&
+  typed.indexOf('reason: "safety_signal"') < typed.indexOf("const qty = quantityFromInteractiveId"));
+ok("«safety_signal» is a declared pass-through reason, not an ad-hoc string",
+  /reason: "non_numeric" \| "no_pending_quantity" \| "ambiguous_draft" \| "safety_signal";/.test(typed));
+
 const qtyPresentation = {
   kind: "buttons",
   buttons: [

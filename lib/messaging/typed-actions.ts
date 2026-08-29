@@ -95,7 +95,7 @@ export type TypedQuantityFillResult =
   | Extract<TypedInteractiveActionResult, { kind: "handled" }>
   | {
       kind: "pass_through";
-      reason: "non_numeric" | "no_pending_quantity" | "ambiguous_draft";
+      reason: "non_numeric" | "no_pending_quantity" | "ambiguous_draft" | "safety_signal";
     };
 
 type Dialect = "egyptian" | "saudi" | string;
@@ -632,6 +632,17 @@ export async function handleTypedQuantityFill(
     demoRun?: boolean;
   }
 ): Promise<TypedQuantityFillResult> {
+  // SAFETY FIRST. The probe was computed by the caller, passed in, and then only RECORDED
+  // in `meta` — it gated nothing. A deterministic quantity shortcut skips the whole
+  // customer-turn pipeline, allergen gate included, so a turn carrying an allergen,
+  // symptom, phonetic-net or emergency signal must never be consumed by it. In practice
+  // `parseBareQuantityAnswer` is strict enough that such a turn rarely parses — but
+  // "rarely" is not a safety property, and the strictness is not what anyone would be
+  // relying on. This is the explicit gate, and it protects the WhatsApp path too.
+  if (Object.values(args.safetyProbe ?? {}).some(Boolean)) {
+    return { kind: "pass_through", reason: "safety_signal" };
+  }
+
   const qty = quantityFromInteractiveId(args.interactiveId) ?? parseBareQuantityAnswer(args.userMessage);
   if (qty == null) return { kind: "pass_through", reason: "non_numeric" };
 
