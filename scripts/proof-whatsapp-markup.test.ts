@@ -109,37 +109,85 @@ for (const input of VERBATIM) {
     offenders.length === 0);
 }
 
-// THE INVARIANT THAT SEES THE LINK-BOUNDARY CLASS. The property above asserts that
-// non-marker characters survive and that no run is whitespace-padded. Both are true, over
-// a billion strings — and BOTH ARE BLIND to a marker eaten as a marker, which is every
-// bug this file has ever had. Worse, that alphabet contains no «h», «w», «.», «/» or «:»,
-// so no input in it can contain a URL, and the link-boundary hole was unreachable in
-// principle. This one walks the ORIGINAL string and asserts BOUNDARY CONSISTENCY: no
-// formatted run may sit next to a surviving word character, on an alphabet that can
-// actually build a link.
+// THE INVARIANT THAT SEES THE LINK-BOUNDARY CLASS — and this time it can actually reach a
+// link. The first version of this property walked an alphabet with no URL characters at
+// all, so a link was unreachable in principle. The SECOND version added «h w . / :» and
+// walked to depth 4 — while URL_RE's shortest possible match is SIX characters («www.ah»).
+// It therefore produced ZERO link tokens across 88,740 strings and was blind for the
+// second consecutive time, reporting clean while a live hole sat at a link boundary.
+//
+// So the corpus is now SEEDED: every case embeds a real URL and varies what sits either
+// side of it, which is the only place the segment-boundary guard is exercised at all.
 {
-  const A = ["*", "_", "~", "`", "a", "ب", "\u064F", " ", "5", "h", "t", "p", ":", "/", ".", "w", "\u200F"];
   const WORD = /[\p{L}\p{N}\p{M}]/u;
+  const ok_ = (input: string) => {
+    // Walk with a real cursor, not a naive indexOf, and never skip a run.
+    let cursor = 0;
+    for (const t of parseWhatsAppMarkup(input)) {
+      const at = input.indexOf(t.text, cursor);
+      if (at < 0) return false;                        // a token that is not in the input
+      if (t.kind === "text" || t.kind === "link") { cursor = at + t.text.length; continue; }
+      const prev = [...input.slice(0, Math.max(0, at - 1))].pop() ?? "";
+      const nextIdx = at + t.text.length + 1;
+      const next = nextIdx < input.length ? [...input.slice(nextIdx)][0] ?? "" : "";
+      if (prev && WORD.test(prev)) return false;
+      if (next && WORD.test(next)) return false;
+      cursor = nextIdx;
+    }
+    return true;
+  };
+
+  // Single characters either side are NOT enough: «www.a.co/𝟝*.*» — the astral
+  // segment-boundary bug — needs a THREE-character suffix, and a corpus that appends at
+  // most two never builds it. So the fixtures are marker PATTERNS, the shapes that
+  // actually pair up, not an alphabet walk.
+  const URLS = ["www.a.co", "https://k.io/p", "www.a.co/𝟝", "www.a.co/~u", "www.a.co/a_b", "www.a.co/x"];
+  const PATTERNS_AROUND = [
+    "", "*", "_", "~", "`", "a", "ه", "5", " ", "𝟝", "\u064E", "\u200F", "\u202E", ".", ")", "؟", '"',
+    "*.*", "_._", "~.~", "`.`", "*a*", "_a_", "~a~", "*ه*", "*𝟝*",
+    "x*", "*x", "ه_", "_ه", "𝟝*", "*𝟝", " *", "* ", "*)", "(*",
+    "الرابط: *", "*x وبعدين", "؟*", "*؟",
+  ];
   let checked = 0;
   const offenders: string[] = [];
-  const check = (input: string) => {
-    checked++;
-    let i = 0;
-    for (const t of parseWhatsAppMarkup(input)) {
-      if (t.kind === "text" || t.kind === "link") { i = input.indexOf(t.text, i) + t.text.length; continue; }
-      const at = input.indexOf(t.text, i);
-      if (at < 1) { i = Math.max(i, at + t.text.length); continue; }
-      const prev = [...input.slice(0, at - 1)].pop() ?? "";
-      const afterIdx = at + t.text.length + 1;
-      const next = afterIdx < input.length ? [...input.slice(afterIdx)][0] ?? "" : "";
-      if ((prev && WORD.test(prev)) || (next && WORD.test(next))) { offenders.push(input); return; }
-      i = afterIdx;
-    }
-  };
-  const walk = (acc: string) => { if (acc) check(acc); if (acc.length >= 4) return; for (const c of A) walk(acc + c); };
-  walk("");
-  ok(`no formatted run touches a surviving word character (${checked} strings, offenders: ${offenders.length}${offenders.length ? ` e.g. ${JSON.stringify(offenders[0])}` : ""})`,
+  const check = (x: string) => { checked++; if (!ok_(x)) offenders.push(x); };
+  for (const u of URLS)
+    for (const a of PATTERNS_AROUND)
+      for (const b of PATTERNS_AROUND) {
+        check(a + u + b);
+        check(a + u + b + u);          // TWO urls — what the segment machine really does
+        check(u + a + u + b);
+      }
+  ok(`link-boundary consistency over ${checked} SEEDED strings (offenders: ${offenders.length}${offenders.length ? ` e.g. ${JSON.stringify(offenders[0])}` : ""})`,
     offenders.length === 0);
+
+  // A marker must never end up INSIDE an href, no matter what follows the closing one.
+  // The earlier assertion pinned «*https://…/abc*» — which passes — while
+  // «*https://…/abc*x» built href="…/abc*x", a live link to the wrong URL.
+  {
+    const bad: string[] = [];
+    for (const u of URLS) for (const a of PATTERNS_AROUND) for (const b of PATTERNS_AROUND) {
+      for (const t of parseWhatsAppMarkup(a + u + b)) {
+        if (t.kind !== "link") continue;
+        const href = (t as { href: string }).href;
+        if (/[*`]/.test(href) || /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/.test(href)) {
+          bad.push(a + u + b);
+        }
+      }
+    }
+    ok(`no href carries a formatting marker or an invisible control (offenders: ${bad.length}${bad.length ? ` e.g. ${JSON.stringify(bad[0])}` : ""})`,
+      bad.length === 0);
+  }
+
+  // The property must be able to SEE a link. The previous version reached ZERO links
+  // across 88,740 strings, because it walked to depth 4 while URL_RE's shortest possible
+  // match is SIX characters — blind in principle, for the second time running.
+  {
+    const withLink = URLS.flatMap((u) => PATTERNS_AROUND.map((a) => parseWhatsAppMarkup(a + u)))
+      .filter((toks) => toks.some((t) => t.kind === "link")).length;
+    ok(`…and the corpus actually produces links (${withLink} of ${URLS.length * PATTERNS_AROUND.length} probes)`,
+      withLink > URLS.length * 10);
+  }
 }
 
 // (5) A segment boundary is still a boundary. Formatting each URL-delimited piece

@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { runCustomerTurn, CustomerTurnError, scheduleAsyncPerceptionAfterReply } from "@/lib/ai/customer-turn";
 import {
   handleTypedQuantityFill,
+  safetyProbeFired,
   handleTypedInteractiveAction,
   handleUnknownInteractiveCommand,
   isTypedInteractiveActionId,
@@ -1265,7 +1266,7 @@ export async function respondAndSendWhatsApp(
       phoneticSafetyNet: detectPhoneticSafetyNet(tapSafetyText, { sttConfidence: null, isVoiceTranscript: false }).fired,
       allergenEmergency: detectAllergenEmergency(tapSafetyText).fired,
     };
-    const burstSafetyTakesPriority = coalesced.count > 1 && Object.values(tapSafetyProbe).some(Boolean);
+    const burstSafetyTakesPriority = coalesced.count > 1 && safetyProbeFired(tapSafetyProbe);
     if (!burstSafetyTakesPriority && !isTypedInteractiveActionId(cleanInteractiveId)) {
       let unknown: UnknownInteractiveCommandResult;
       try {

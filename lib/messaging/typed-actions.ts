@@ -231,7 +231,16 @@ function qtyFromId(id: string): number | null {
 export function interactiveCommandFromId(id: string | null | undefined): InteractiveCommand | null {
   const clean = cleanInteractiveId(id);
   if (!clean) return null;
-  const fixed = FIXED_COMMANDS[clean];
+  // Object.hasOwn, not a bare lookup. FIXED_COMMANDS is an object literal, so
+  // FIXED_COMMANDS["toString"] is a truthy FUNCTION — and eight prototype keys
+  // («toString», «__proto__», «constructor», «valueOf», «hasOwnProperty», …) therefore
+  // resolved as registered commands. isTypedInteractiveActionId said false while
+  // interactiveCommandFromId said yes: the two exported predicates disagreed on the same
+  // input, so the handler's own `throw new Error("unregistered typed interactive id")`
+  // never fired for them and it persisted a row with `action: undefined`. Both call sites
+  // gate on the predicate, so this was a defeated second line of defence rather than a
+  // live hole — which is exactly the kind of thing that becomes live later.
+  const fixed = Object.hasOwn(FIXED_COMMANDS, clean) ? FIXED_COMMANDS[clean] : undefined;
   if (fixed) return fixed;
   const qty = qtyFromId(clean);
   if (qty != null) return { kind: "choose_quantity", action: "qty", id: clean, quantity: qty };

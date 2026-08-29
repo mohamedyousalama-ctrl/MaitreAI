@@ -109,9 +109,26 @@ function isWordChar(ch: string): boolean {
 // which percent-encodes to …/menu%D8%9F and 404s. Straight and curly quotes leaked the
 // same way. The list also had «؛» twice, which is what a hand-maintained character class
 // looks like just before it misses one.
-const URL_TRAILING_EXCLUDED = "\\s<>«»؛،؟.,!?:…)\\]}*_~`\"'’”\\u200E\\u200F\\u200D";
+// EVERY invisible formatting/bidi control, as ranges — not the three that happened to come
+// up in testing. U+202E (RLO) is the classic URL-display spoof and, since the visible link
+// text IS the href here, it reorders the label of a live anchor. Named individually, this
+// list covered 3 of roughly 15.
+const URL_INVISIBLE = "\\u00AD\\u061C\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF";
+
+// Characters that may never appear ANYWHERE in a URL we linkify. RFC 3986's unreserved set
+// is ALPHA / DIGIT / «-» «.» «_» «~», so «*» and a backtick are not unreserved — and they
+// are two of our four formatting markers. Excluding them from the BODY (not just the last
+// position) is what stops «*https://kivo.io/pay/abc*x» building href="…/abc*x": a live link
+// to the wrong URL, with its opening «*» emitted as literal text beside it.
+//
+// «_» and «~» are deliberately NOT excluded from the body: both ARE unreserved and both are
+// common in real URLs («/~user», «/some_path»). Excluding them would break more links than
+// it fixes. They remain excluded from the final position only, so the common
+// «الرابط: _https://x.io/a_» still resolves correctly.
+const URL_BODY_EXCLUDED = `\\s<>«»؛،*\`${URL_INVISIBLE}`;
+const URL_TRAILING_EXCLUDED = `\\s<>«»؛،؟.,!?:…)\\]}*_~\`"'’”${URL_INVISIBLE}`;
 const URL_RE = new RegExp(
-  `\\b(?:https?:\\/\\/|www\\.)[^\\s<>«»؛،\\u200E\\u200F\\u200D]+[^${URL_TRAILING_EXCLUDED}]`,
+  `\\b(?:https?:\\/\\/|www\\.)[^${URL_BODY_EXCLUDED}]+[^${URL_TRAILING_EXCLUDED}]`,
   "i"
 );
 
@@ -143,10 +160,13 @@ export function parseWhatsAppMarkup(input: string): MarkupToken[] {
     // RELATIVE href that resolved to /demo/WWW.x — a 404 instead of a link.
     out.push({ kind: "link", text: raw, href: /^www\./i.test(raw) ? `https://${raw}` : raw });
     rest = rest.slice(m.index + raw.length);
-    // The URL's LAST character is the left neighbour of whatever segment follows. Without
-    // this line `consumedBefore` stayed "" for the whole message and the comment below —
-    // and this one — described a fix that was never applied.
-    consumedBefore = raw.slice(-1);
+    // The URL's LAST CODE POINT is the left neighbour of whatever segment follows.
+    //
+    // Written first as `raw.slice(-1)` — a UTF-16 code UNIT. A URL ending in an astral
+    // character yields a lone low surrogate, which matches no \p{…} class, so the guard is
+    // bypassed: «www.a.co/𝟝*.*» ate both asterisks. That is precisely the defect
+    // codePointEndingAt exists to prevent, reintroduced in the same commit that closed it.
+    consumedBefore = codePointEndingAt(raw, raw.length - 1);
   }
   // The TAIL segment needs its left neighbour too — the last character of the URL that
   // preceded it. Passing nothing here left a marker at the tail's start judged against
