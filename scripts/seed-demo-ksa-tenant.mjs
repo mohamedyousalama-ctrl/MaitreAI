@@ -132,9 +132,28 @@ async function getOrCreateOwner() {
   // writes exactly what the demo depends on.
   //
   // DELIBERATELY ABSENT, and they must stay absent:
-  //   voice_notes   — the outbound ElevenLabs TTS path. G0-R forbids provider voice
-  //                   generation and customer exposure; the demo must not be able to
-  //                   emit a generated voice.
+  //   voice_notes   — the WHATSAPP outbound voice path and its per-conversation daily
+  //                   billing counters, which belong to a real tenant. Held OFF so the
+  //                   demo tenant never enters that budget.
+  //
+  //                   G0-R AS ORIGINALLY WRITTEN — "the demo must not be able to emit a
+  //                   generated voice" — IS SUPERSEDED, by the Founder's own request that
+  //                   the demo speak in the ElevenLabs Khalid voice. Recording the change
+  //                   rather than letting the flag quietly stop meaning what it said: the
+  //                   demo DOES emit a generated voice now, and this flag is no longer
+  //                   what stops it, because lib/demo/voice-out.ts does not consult it.
+  //
+  //                   G0-R IS NARROWED, NOT DROPPED. What survives is the part that was
+  //                   ever load-bearing — the demo must never emit a voice NOBODY CHOSE,
+  //                   and must never turn an unauthenticated page into an unbounded bill.
+  //                   Both are now enforced where the spend happens: an explicit provider
+  //                   pin (inference is what silently selects OpenAI onyx), a refusal to
+  //                   use ElevenLabs' stock voice ids or a model we cannot price, a hard
+  //                   600-character cap before any provider call, no onyx fallback bought
+  //                   or shipped, and an agent_runs row per synthesis so the spend monitor
+  //                   can see it. proof-public-demo-hardening.test.ts enforces the
+  //                   containment: lib/demo/voice-out.ts is the ONLY demo file permitted
+  //                   to reach a provider, so nothing can route around those controls.
   //   psp_payments  — real money. Nothing on a public page may reach a live PSP.
   //   allergy_simple / allergy_calm_hold / allergy_companion_mode — held OFF on purpose
   //                   so the flag-OFF deterministic gate fires and the visitor sees the

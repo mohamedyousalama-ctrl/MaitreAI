@@ -362,9 +362,15 @@ export default function DemoPhone() {
             const bin = atob(data.replyAudio);
             const bytes = new Uint8Array(bin.length);
             for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-            const url = URL.createObjectURL(new Blob([bytes], { type: data.replyAudioMime || "audio/mpeg" }));
-            audioUrls.current.push(url);
-            audioUrl = url;
+            const url = URL.createObjectURL(new Blob([bytes], { type: data.replyAudioMime || "audio/ogg" }));
+            if (!mounted.current) {
+              // The visitor closed the tab mid-request. The unmount cleanup has already
+              // run, so anything pushed now would never be revoked.
+              URL.revokeObjectURL(url);
+            } else {
+              audioUrls.current.push(url);
+              audioUrl = url;
+            }
           } catch {
             // A malformed payload must never cost the visitor their reply.
             audioUrl = null;
@@ -577,6 +583,7 @@ function renderWhatsApp(body: string): React.ReactNode[] {
 function SpokenReply({ url }: { url: string }) {
   const ref = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [failed, setFailed] = useState(false);
   return (
     <div style={S.voice}>
       <button
@@ -587,8 +594,13 @@ function SpokenReply({ url }: { url: string }) {
           const el = ref.current;
           if (!el) return;
           if (playing) { el.pause(); el.currentTime = 0; setPlaying(false); return; }
-          // A failed play() must not leave the button stuck showing "playing".
-          void el.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+          // A failed play() must not leave the button stuck showing "playing" — and must
+          // not fail SILENTLY either. Resetting the icon and saying nothing means a tap
+          // does visibly nothing in front of a prospect: the likeliest causes are an
+          // unsupported codec (ogg/opus on older Safari), NotAllowedError, or low-power
+          // mode, none of which the visitor can diagnose from an unchanged button.
+          setFailed(false);
+          void el.play().then(() => setPlaying(true)).catch(() => { setPlaying(false); setFailed(true); });
         }}
       >
         {playing ? "❚❚" : "▶"}
@@ -598,7 +610,15 @@ function SpokenReply({ url }: { url: string }) {
           <i key={i} style={{ ...S.bar, height: `${5 + ((i * 7) % 13)}px` }} />
         ))}
       </span>
-      <audio ref={ref} src={url} preload="none" onEnded={() => setPlaying(false)} onPause={() => setPlaying(false)} />
+      {failed ? <span style={S.voiceFail}>الصوت ما اشتغل — النص فوق</span> : null}
+      <audio
+        ref={ref}
+        src={url}
+        preload="none"
+        onEnded={() => setPlaying(false)}
+        onPause={() => setPlaying(false)}
+        onError={() => { setPlaying(false); setFailed(true); }}
+      />
     </div>
   );
 }
@@ -767,6 +787,7 @@ const S: Record<string, React.CSSProperties> = {
   wave: { display: "flex", alignItems: "center", gap: 2, flex: 1 },
   bar: { display: "block", width: 2, background: "#8696a0", borderRadius: 1 },
   voiceTime: { fontSize: 11, color: "#8696a0" },
+  voiceFail: { fontSize: 11, color: "#8696a0", whiteSpace: "nowrap" as const },
   typing: { display: "flex", gap: 4, alignItems: "center", padding: "10px 12px" },
   dot: { width: 6, height: 6, borderRadius: "50%", background: "#8696a0", display: "block",
     animation: "demoDot 1.2s infinite" },

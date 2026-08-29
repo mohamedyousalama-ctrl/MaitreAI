@@ -226,9 +226,47 @@ export async function POST(req: Request) {
     //
     // Never throws, and never blocks the reply: on any skip the visitor still gets the full
     // text, which is exactly what they get today.
-    const spoken = await demoVoiceReply(closed.reply, { inboundWasVoice: true });
-    if (spoken.skipped && spoken.skipped !== "not_triggered") {
+    //
+    // The two structured signals are the ones lib/messaging/voice-budget.ts asks for.
+    // A HARD-ZERO turn is text-only: a spoken safety message is a fresh mis-hearing
+    // surface, and this demo exists to show the allergen gate — speaking that reply
+    // would demonstrate the feature in the one modality the product forbids for it.
+    const allergenGate = out.model === "deterministic_allergen_gate";
+    const spoken = await demoVoiceReply(closed.reply, {
+      inboundWasVoice: true,
+      safetyHold: allergenGate || out.escalate === true,
+      isReceipt: !!closed.orderNumber,
+    });
+    // `not_triggered` and `mock_pinned` are deliberate configurations, not faults.
+    if (spoken.skipped && spoken.skipped !== "not_triggered" && spoken.skipped !== "mock_pinned") {
       console.warn("[demo/voice] spoken reply skipped", { reason: spoken.skipped });
+    }
+
+    // TTS SPEND, recorded for the same reason STT spend is (see the note above): this is
+    // the one surface anyone can call, and money spent here must be visible to
+    // lib/monitoring/sweep.ts. Unlike the STT write this does NOT fail closed — the
+    // synthesis is already paid for and the reply is already composed, so refusing the
+    // response would discard work we have been billed for without preventing any spend.
+    // It is loud instead: the turn is already counted by the durable guard.
+    if (spoken.spend && spoken.spend.costUsd > 0) {
+      try {
+        await mustWrite<{ id: string }>(
+          admin.from("agent_runs").insert({
+            restaurant_id: DEMO_RESTAURANT_ID,
+            conversation_id: null,
+            trigger: "voice_tts",
+            input: null,
+            output: null,
+            model: spoken.spend.model,
+            adapter: spoken.spend.adapter,
+            cost_usd: spoken.spend.costUsd,
+          }).select("id"),
+          "demo_voice.tts_cost",
+          { exactRows: 1 },
+        );
+      } catch (e) {
+        console.error("[demo/voice] TTS spend accounting failed", e);
+      }
     }
 
     return NextResponse.json({
@@ -242,7 +280,7 @@ export async function POST(req: Request) {
       replyAudioMime: spoken.mime,
       orderNumber: closed.orderNumber,
       escalate: out.escalate,
-      allergenGate: out.model === "deterministic_allergen_gate",
+      allergenGate,
       // THE INTERACTIVE PAYLOAD. Omitting this is why the demo answered «ايش المنيو» with
       // «اختار من التصنيفات» and no categories on screen: present_menu builds the real
       // list into ctx.presentation and tells the model it was rendered, WhatsApp renders

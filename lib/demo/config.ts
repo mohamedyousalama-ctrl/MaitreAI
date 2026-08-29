@@ -49,7 +49,20 @@ export const DEMO_WINDOW_MS = 60 * 60 * 1000;
  *   tokens behind one ephemeral cache breakpoint, and on a sporadically-visited sales
  *   page the COLD turn is the normal case, billing at the cache-WRITE rate.
  *
- * So the honest bound at 1,000 turns is roughly $31/day of text, and more with voice.
+ *   v3 (voice-out): "and more with voice" is now a number. TTS bills per character:
+ *   DEMO_TTS_MAX_CHARS (600) x elevenlabs:eleven_flash_v2.5 at $0.00011/char = $0.066 a
+ *   spoken reply, so 1,000 spoken turns adds up to $66/day — which MORE THAN DOUBLES the
+ *   worst-case day rather than nudging it. It is a true ceiling and not the expectation:
+ *   TTS fires only on a VOICE turn whose reply is under the cap and is not hard-zero
+ *   suppressed (safety / money / receipt / payment-link are text-only), and a demo reply
+ *   quoting a price — the common case once an order starts — is suppressed by definition.
+ *   Two things keep it from going invisible: an unpriced ELEVENLABS_TTS_MODEL is REFUSED
+ *   (an unknown model prices at $0, which would blind the monitor), and every synthesis
+ *   writes an agent_runs row with trigger 'voice_tts' that lib/monitoring/sweep.ts sums.
+ *
+ * So the honest bound at 1,000 turns is roughly $31/day of text, plus STT, plus up to
+ * $66/day of TTS if every one of those turns is spoken — call it under $110 on the worst
+ * day the caps physically permit.
  * Sustained traffic warms the cache and costs far less per turn, so a genuinely busy day
  * is cheaper per turn than the cold-start tests above — the worst case is "1,000 cold
  * turns", which is unlikely but is what a cap has to survive.

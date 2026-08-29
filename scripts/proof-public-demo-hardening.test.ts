@@ -22,7 +22,7 @@
 // its entire life.
 // ============================================================================
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   isDemoHost, DEMO_RESTAURANT_ID, DEMO_MAX_CHARS, DEMO_MAX_HISTORY,
@@ -111,8 +111,14 @@ function assertPayloadAllowlist(label: string, src: string) {
   });
   // The allergen-gate boolean is DERIVED from `model`; it lives on the model-backed
   // payload, so it is asserted across the file rather than per-payload.
+  // Two shapes are legitimate: derived inline in the payload, or bound to a const of the
+  // same name first (the voice route needs the boolean twice — once to decide whether the
+  // reply may be spoken aloud, once in the payload). What must never happen is the raw
+  // model id reaching the visitor, which the `model:` check above covers per-payload.
+  const DERIVE = 'out.model === "deterministic_allergen_gate"';
   ok(`${label}: the allergenGate boolean is derived, not the raw model id`,
-    /allergenGate:\s*out\.model === "deterministic_allergen_gate"/.test(src));
+    src.includes(`allergenGate: ${DERIVE}`) ||
+    (src.includes(`const allergenGate = ${DERIVE}`) && /\ballergenGate,/.test(src)));
   ok(`${label}: the error path does not leak the underlying exception text`,
     !/detail:\s*e instanceof Error/.test(src));
 }
@@ -299,10 +305,52 @@ const page = codeOf("app/demo/page.tsx");
 ok("the page gates on host server-side and 404s", /isDemoHost/.test(page) && /notFound\(\)/.test(page));
 ok("the page is not indexable", /index:\s*false/.test(page));
 
-// G0-R: the demo must not be able to reach provider VOICE GENERATION.
-for (const [label, src] of [["client", phone], ["voice route", voice], ["page", page]] as const) {
-  ok(`the ${label} cannot reach a TTS path`, !/lib\/ai\/tts|elevenlabs|ElevenLabs|speechSynthesis|\/api\/tts/.test(src));
+// G0-R: CONTAINMENT — the demo's only route to a voice provider is the pinned wrapper.
+//
+// This guard used to read "the demo cannot reach a TTS path at all". That was true until
+// Khalid was given a voice — and then it stayed GREEN for the wrong reason: the voice route
+// reaches TTS through lib/demo/voice-out, one hop past a source-text regex, and the file
+// that actually calls the provider sat outside this guard's scope entirely. A check that
+// passes because of an indirection is not a check.
+//
+// What matters is CONTAINMENT. lib/demo/voice-out.ts is where the provider is PINNED (an
+// unpinned adapter silently selects OpenAI `onyx`, an American male voice, reporting no
+// error) and where the input is CAPPED (TTS bills per character, and this page is
+// unauthenticated). A direct getTtsAdapter() or synthesizeVoiceReply() call anywhere else
+// in the demo skips BOTH at once — the wrong voice and an unbounded bill. So the scan walks
+// the whole demo surface, which covers files that do not exist yet.
+const DEMO_TTS_WRAPPER = "lib/demo/voice-out.ts";
+const demoSurface: string[] = [];
+{
+  const walk = (dir: string) => {
+    for (const e of readdirSync(resolve(ROOT, dir), { withFileTypes: true })) {
+      const child = `${dir}/${e.name}`;
+      if (e.isDirectory()) walk(child);
+      else if (/\.tsx?$/.test(e.name)) demoSurface.push(child);
+    }
+  };
+  for (const d of ["app/demo", "app/api/demo", "lib/demo"]) walk(d);
+  demoSurface.sort();
 }
+ok("the demo-surface scan actually found the demo files", demoSurface.length >= 8);
+ok("the scan covers the file that calls the provider", demoSurface.includes(DEMO_TTS_WRAPPER));
+
+const REACHES_PROVIDER = /lib\/ai\/tts|getTtsAdapter\s*\(|synthesizeVoiceReply\s*\(/;
+ok("the sanctioned wrapper is the file that really reaches the provider",
+  REACHES_PROVIDER.test(codeOf(DEMO_TTS_WRAPPER)));
+const bypassers = demoSurface.filter((f) => f !== DEMO_TTS_WRAPPER && REACHES_PROVIDER.test(codeOf(f)));
+ok(`no demo file reaches a voice provider except through the pinned wrapper${bypassers.length ? ` — bypassed by: ${bypassers.join(", ")}` : ""}`,
+  bypassers.length === 0);
+
+// A browser-synthesized voice is an unchosen voice — the same defect as onyx, client-side,
+// and it evades the wrapper completely because it never touches the server.
+const browserVoice = demoSurface.filter((f) => /speechSynthesis|SpeechSynthesisUtterance/.test(codeOf(f)));
+ok(`no demo file synthesizes speech in the browser${browserVoice.length ? ` — found in: ${browserVoice.join(", ")}` : ""}`,
+  browserVoice.length === 0);
+
+// And the pin must sit on the LIVE path, not merely exist in the repo.
+ok("the spoken-reply route goes through the pinned wrapper",
+  /from "@\/lib\/demo\/voice-out"/.test(voice) && /demoVoiceReply\s*\(/.test(voice));
 ok("the call screen does not fake a connected call (no running duration)",
   !/setSecs|callDuration/.test(phone));
 
@@ -530,7 +578,14 @@ ok("the seed enables khalid_persona, as config.ts claims", /khalid_persona:\s*tr
 ok("config.ts still claims the persona is on (the two must agree)", /`khalid_persona`\s*on/.test(cfgRaw));
 ok("the seed keeps the Saudi dialect the persona depends on", /dialect:\s*"saudi"/.test(seed));
 // G0-R and real money: these must never be seeded onto a public tenant.
-ok("the seed does NOT enable voice_notes (the outbound TTS path — G0-R)", !/voice_notes:\s*true/.test(seed));
+// The seed leaves voice_notes OFF, but the parenthetical this line used to carry — "the
+// outbound TTS path" — stopped being true when Khalid was given a voice. voice_notes gates
+// the WHATSAPP path (respond-and-send.ts) and its per-conversation daily counters, which
+// belong to a real tenant's billing; the demo's voice is gated instead by the env pin in
+// lib/demo/voice-out.ts. Keeping the flag off still matters — it keeps the demo tenant out
+// of the WhatsApp voice budget entirely — but it is NOT what keeps the demo honest.
+ok("the seed does NOT enable voice_notes (the WhatsApp voice path + its tenant billing counters)",
+  !/voice_notes:\s*true/.test(seed));
 ok("the seed does NOT enable psp_payments (real money on a public page)", !/psp_payments:\s*true/.test(seed));
 // Held off deliberately so the flag-OFF deterministic gate fires the two-option wording.
 for (const f of ["allergy_simple", "allergy_calm_hold", "allergy_companion_mode"]) {
