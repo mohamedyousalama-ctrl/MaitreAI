@@ -93,8 +93,15 @@ check("src: hold writes an operator hold-note (held_not_allowlisted)",
 // that the mode gate must NOT read the tester columns (they may not exist yet
 // pre-migration) — those are read separately by the assertion below. Pin THAT.
 const modeSelect = (ras.match(/\.select\("agent_mode[^"]*"\)/) ?? [])[0] ?? "";
+// NARROWED 29 Aug: this matched `country` as well, and country is NOT a tester column —
+// `country text not null default 'SA'` is in 0001_init.sql, the original schema, and
+// lib/db/conversations.ts reads it standalone with no 42703 guard. The tester columns
+// (tester_allowlist, tester_allowlist_mode, migration 0057) are the deploy-safety concern;
+// country is only co-selected with them a few lines below. The over-broad version caused a
+// real defect: it pushed the mode gate to resolve its dialect WITHOUT country while every
+// other site resolved WITH it, giving one tenant two dialects in a single turn.
 check("src: mode gate read excludes the tester columns (deploy-safe)",
-  modeSelect !== "" && !/tester_allowlist|country/.test(modeSelect));
+  modeSelect !== "" && !/tester_allowlist/.test(modeSelect));
 check("src: tester columns read separately",
   /\.select\(\s*"country, tester_allowlist, tester_allowlist_mode"\s*\)/.test(ras));
 check("src: missing-column (pre-migration) treated as feature-off, not hold",

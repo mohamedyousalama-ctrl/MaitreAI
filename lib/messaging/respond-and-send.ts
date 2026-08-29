@@ -473,9 +473,9 @@ async function sendMenuLinkFallback(
   phone: string,
   lastInboundAtMs: number
 ): Promise<void> {
-  const { data: r } = await admin.from("restaurants").select("slug,dialect").eq("id", restaurantId).maybeSingle();
+  const { data: r } = await admin.from("restaurants").select("slug,dialect,country").eq("id", restaurantId).maybeSingle();
   const slug = (r as { slug?: string | null } | null)?.slug ?? null;
-  const dialect = (r as { dialect?: string | null } | null)?.dialect ?? null;
+  const dialect = resolveTenantDialect(r as { dialect?: string | null; country?: string | null } | null, "respond-and-send.menu-link", restaurantId);
   const url = slug ? `${appBaseUrl()}/order/${slug}` : appBaseUrl();
   const text = `${formatCustomerVisibleText("تقدر تتصفّح المنيو كامل بالصور من هنا 👇", dialect)}\n${url}`;
   const send = await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
@@ -513,8 +513,8 @@ async function sendAgentErrorFallbackToCustomer(
 ): Promise<void> {
   try {
     if (!phone) return;
-    const { data: r } = await admin.from("restaurants").select("dialect").eq("id", restaurantId).maybeSingle();
-    const dialect = (r as { dialect?: string | null } | null)?.dialect;
+    const { data: r } = await admin.from("restaurants").select("dialect,country").eq("id", restaurantId).maybeSingle();
+    const dialect = resolveTenantDialect(r as { dialect?: string | null; country?: string | null } | null, "respond-and-send.error-fallback", restaurantId);
     const text = formatCustomerVisibleText(agentErrorFallbackText(dialect), dialect);
     const send = await sendWhatsAppText({ to: phone, text, lastInboundAtMs });
     await admin.from("messages").insert({
@@ -913,7 +913,7 @@ export async function respondAndSendWhatsApp(
 
     const { data: rFlags } = await admin.from("restaurants").select("feature_flags, dialect, country").eq("id", restaurantId).single();
     const features = (rFlags?.feature_flags as Record<string, unknown> | null) ?? null;
-    const dialect = resolveTenantDialect(rFlags as { dialect?: string | null; country?: string | null } | null, "respond-and-send.notify");
+    const dialect = resolveTenantDialect(rFlags as { dialect?: string | null; country?: string | null } | null, "respond-and-send.notify", restaurantId);
     const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
 
     const calmHeld = await handleCalmHeldInbound(admin, {
@@ -996,7 +996,7 @@ export async function respondAndSendWhatsApp(
         if (alreadyBridged) return { status: "skipped_takeover" }; // already acked this window — stay silent
 
         const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";
-        const ackDialect = resolveTenantDialect(rFlags as { dialect?: string | null; country?: string | null } | null, "respond-and-send.ack");
+        const ackDialect = resolveTenantDialect(rFlags as { dialect?: string | null; country?: string | null } | null, "respond-and-send.ack", restaurantId);
         const ackText = formatCustomerVisibleText(safetyBridgeAck(ackDialect), ackDialect);
         // 1. CUSTOMER ACK — persist + send. NOTE: we do NOT bump conversations.updated_at (unlike
         //    the recovery send): an automated ack is not operator activity.
@@ -1095,22 +1095,27 @@ export async function respondAndSendWhatsApp(
   // auto-reply — while test/live (and closed) reply normally. The stored
   // agent_mode (setup|test|live|paused) maps onto SystemMode; a missing value
   // defaults to live so the existing reply path is unchanged.
-  const { data: rest } = await admin.from("restaurants").select("agent_mode, feature_flags, dialect").eq("id", restaurantId).single();
+  const { data: rest } = await admin.from("restaurants").select("agent_mode, feature_flags, dialect, country").eq("id", restaurantId).single();
   const agentMode = ((rest?.agent_mode as string) || "live") as SystemMode;
   if (!modeAllowsAgentReply(agentMode)) return { status: "skipped_mode" };
   // WO-LIVE4-F2 — per-conversation inbound coalescing (flag inbound_coalescing, default
   // OFF). feature_flags is an existing column, so folding it into the agent_mode read is
   // deploy-safe; the WATERMARK column read below is the one that must degrade gracefully.
   const convFlags = (rest?.feature_flags as Record<string, unknown> | null) ?? null;
-  // DIALECT ONLY HERE, deliberately. This is the MODE GATE read, and it must stay
-  // deploy-safe: `country` travels with the tester columns, which are fetched separately
-  // below behind an explicit missing-column guard (42703). Adding it here would make the
-  // gate throw on a deploy that lands before that migration —
-  // proof-tester-allowlist.test.ts pins exactly this, and caught me adding it.
-  // With no country, resolveTenantDialect falls through to the historical default, which
-  // is precisely this line's previous behaviour: nothing regresses, this site simply does
-  // not gain the country fallback.
-  const outboundDialect = resolveTenantDialect(rest as { dialect?: string | null } | null, "respond-and-send.outbound");
+  // `country` BELONGS in this select. It is not a late-migration column: `country text not
+  // null default 'SA'` is in 0001_init.sql, the ORIGINAL schema, and lib/db/conversations.ts
+  // already reads it standalone and unguarded on the conversation-creation path. It was once
+  // removed from here on the belief that it was one of the "tester" columns of migration
+  // 0057 and would 42703 on an early deploy; the only thing that said so was an over-broad
+  // regex in proof-tester-allowlist.test.ts, whose own comment scopes that deploy-safety
+  // invariant to the tester columns. country is merely co-selected with them there.
+  //
+  // The omission was not harmless. This dialect feeds formatCustomerVisibleText (digit
+  // style) and the Najdi-vs-Cairene resume line below, so a tenant in the fallback state
+  // resolved SAUDI in the brain (which sees country) and EGYPTIAN here — a SPLIT persona,
+  // an Egyptian reply rendered with Saudi digits, which is a worse failure than being
+  // uniformly wrong in one direction.
+  const outboundDialect = resolveTenantDialect(rest as { dialect?: string | null; country?: string | null } | null, "respond-and-send.outbound", restaurantId);
   const coalescingOn = isFeatureExplicitlyEnabled("inbound_coalescing", convFlags);
 
   const phone = (conv.customers as { phone?: string } | null)?.phone ?? "";

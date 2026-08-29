@@ -18,6 +18,7 @@ import { getAdapter, recordUsageEvent } from "@/lib/ai/llm";
 import { dialectProfile } from "@/lib/ai/dialect";
 import { computeAffected, draftToRow, offerSummary, isComplete, type PromoDraft } from "@/lib/promo";
 import { renderPromoPng } from "@/lib/render/promo";
+import { resolveTenantDialect } from "@/lib/ai/dialect";
 
 export const runtime = "nodejs";
 
@@ -36,8 +37,8 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as { action?: string; draft?: PromoDraft };
   const action = body.action ?? "menu";
 
-  const { data: r } = await supabase.from("restaurants").select("name,dialect,currency").eq("id", restaurantId).single();
-  const dialect = String(r?.dialect ?? "egyptian");
+  const { data: r } = await supabase.from("restaurants").select("name,dialect,country,currency").eq("id", restaurantId).single();
+  const dialect = resolveTenantDialect(r as { dialect?: string | null; country?: string | null } | null, "agent.promo", restaurantId);
   const currency = String(r?.currency || dialectProfile(dialect).currencyDefault);
 
   // --- menu: scope options for the chips + client-side preview compute --------

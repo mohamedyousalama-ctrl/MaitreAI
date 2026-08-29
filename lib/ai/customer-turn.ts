@@ -96,7 +96,7 @@ import { applyPinRouting } from "@/lib/delivery/routing";
 import { buildImageDirective } from "@/lib/messaging/image-turn";
 import { imageAvailabilityGuard, isDeicticImageReference } from "@/lib/ai/image-binding";
 import type { AiToneConfig } from "@/lib/types";
-import { dialectProfile, resolveTenantDialect, tenantCurrencyMismatch } from "@/lib/ai/dialect";
+import { dialectProfile, resolveTenantDialect, resolveTenantDialectDetailed, tenantCurrencyMismatch } from "@/lib/ai/dialect";
 import {
   buildTurnCallObservabilityMeta,
   hasCapShadowViolation,
@@ -881,13 +881,20 @@ export async function runCustomerTurn(
     }
   }
 
-  const dialect = resolveTenantDialect(row as { dialect?: string | null; country?: string | null }, "customer-turn");
+  const dialect = resolveTenantDialect(row as { dialect?: string | null; country?: string | null }, "customer-turn", restaurantId);
   // Observability only — a Saudi tenant priced in ج.م is a data defect nothing else sees.
-  {
-    const cur = tenantCurrencyMismatch(row as { dialect?: string | null; currency?: string | null });
-    if (cur.mismatch) {
-      console.warn(`[dialect] customer-turn: tenant currency "${cur.actual}" does not match dialect "${dialect}" (expected "${cur.expected}")`);
-    }
+  // Both findings are held here and PUSHED AS SIGNAL ROWS next to the other guards, far
+  // below: `result` does not exist yet at this point in the turn, and this file's own
+  // conclusion (see the dialect_leakage guard) is that a console.warn is invisible in
+  // practice — nobody reads a lambda log, so a defect reported only there is a defect
+  // nobody ever fixes. A row in conversation_signals is queryable.
+  const dialectDefect = resolveTenantDialectDetailed(row as { dialect?: string | null; country?: string | null });
+  const currencyDefect = tenantCurrencyMismatch(row as { dialect?: string | null; currency?: string | null });
+  if (currencyDefect.mismatch) {
+    console.warn(
+      `[dialect] customer-turn: restaurant=${restaurantId} tenant currency "${currencyDefect.actual}" ` +
+        `does not match dialect "${dialect}" (expected "${currencyDefect.expected}")`
+    );
   }
 
   // WO-COMPANION-W1-CORE (§1a.2/§6): read the session's monotonic allergy-note union
@@ -1974,6 +1981,34 @@ export async function runCustomerTurn(
     } catch {
       /* a detector fault must never break a customer turn */
     }
+  }
+
+  // TENANT DATA DEFECTS seen at the top of this turn (dialect fell back; currency
+  // contradicts the dialect). Pushed here, above the flush, for the reason the
+  // dialect_leakage guard states: a warn nobody reads is not observability. Neither
+  // affects the reply — both say a tenant ROW needs fixing, and the row carries the
+  // restaurant_id that says which one.
+  if (dialectDefect.source !== "own") {
+    result.signals.push({
+      type: "guard",
+      detail: {
+        guard: "tenant_dialect_unset",
+        resolved: dialectDefect.dialect,
+        source: dialectDefect.source,
+        country: dialectDefect.country || null,
+      },
+    });
+  }
+  if (currencyDefect.mismatch) {
+    result.signals.push({
+      type: "guard",
+      detail: {
+        guard: "tenant_currency_mismatch",
+        dialect,
+        actual: currencyDefect.actual,
+        expected: currencyDefect.expected,
+      },
+    });
   }
 
   // `detail` carries the matched allergen/safety term — health-adjacent words typed by

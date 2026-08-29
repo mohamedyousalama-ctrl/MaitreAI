@@ -543,12 +543,21 @@ export async function handleTypedInteractiveAction(
     .eq("id", args.restaurantId)
     .single();
   const restaurant = (r ?? {}) as Record<string, unknown>;
-  const dialect = resolveTenantDialect(restaurant as { dialect?: string | null; country?: string | null }, "typed-actions.interactive");
-  // Same shape as the dialect default above: a hardcoded EGYPTIAN currency for every
-  // tenant. Derive it from the resolved dialect instead, so a Saudi tenant with no currency
-  // set gets ر.س rather than ج.م. lib/render/load.ts already defaults to ر.س, so the two
-  // halves of the codebase disagreed about this too.
-  const currency = String(restaurant.currency ?? dialectProfile(dialect).currencyDefault);
+  const dialect = resolveTenantDialect(restaurant as { dialect?: string | null; country?: string | null }, "typed-actions.interactive", args.restaurantId);
+  // Same shape as the dialect default above: a hardcoded EGYPTIAN currency for every tenant,
+  // while lib/render/load.ts defaulted to ر.س — two halves of the codebase disagreeing.
+  //
+  // BE HONEST ABOUT THE REACH. `currency` is NOT NULL (0001_init.sql), so this fallback
+  // fires only when the row itself is missing — and then the dialect is missing too and
+  // resolves to the historical default, whose currency IS «ج.م». So for every row the
+  // schema permits this is byte-identical to the constant it replaces. It is worth making
+  // anyway because the constant encoded "every tenant is Egyptian" and this does not, but
+  // it is a consistency fix, not a live one.
+  //
+  // `||`, not `??`: an EMPTY currency is not a currency, and the sibling sites
+  // (agent/suggest, agent/promo) already use `||`. With `??` a blank column rendered every
+  // total with no currency at all, on this path only — one more half-and-half.
+  const currency = String(restaurant.currency || dialectProfile(dialect).currencyDefault);
   const features = (restaurant.feature_flags as Record<string, unknown> | null) ?? args.features;
   const brain = await loadBrain(admin, args.restaurantId);
   const payments = await loadResolvedPaymentMethods(admin, args.restaurantId, {
@@ -634,7 +643,7 @@ export async function handleUnknownInteractiveCommand(
     .select("dialect,country")
     .eq("id", args.restaurantId)
     .single();
-  const dialect = resolveTenantDialect(r as { dialect?: string | null; country?: string | null } | null, "typed-actions.quantity");
+  const dialect = resolveTenantDialect(r as { dialect?: string | null; country?: string | null } | null, "typed-actions.unknown-command", args.restaurantId);
   const reply = stringFor("unknown_interactive", dialect);
 
   const { data: msg } = await admin
@@ -711,7 +720,7 @@ export async function handleTypedQuantityFill(
     .eq("id", args.restaurantId)
     .single();
   const restaurant = (r ?? {}) as Record<string, unknown>;
-  const dialect = resolveTenantDialect(restaurant as { dialect?: string | null; country?: string | null }, "typed-actions.fill");
+  const dialect = resolveTenantDialect(restaurant as { dialect?: string | null; country?: string | null }, "typed-actions.fill", args.restaurantId);
   const features = (restaurant.feature_flags as Record<string, unknown> | null) ?? args.features;
   // THE KILL SWITCH — checked BEFORE any further work, and from inside the handler.
   //

@@ -26,7 +26,7 @@ import { recoveryDirective } from "../lib/ai/perception.ts";
 import { buildAnswerFirstDirective } from "../lib/ai/media-intent.ts";
 import { buildImageDirective } from "../lib/messaging/image-turn.ts";
 import { applyPinRouting } from "../lib/delivery/routing.ts";
-import { resolveTenantDialect, tenantCurrencyMismatch, LEGACY_DIALECT_DEFAULT } from "../lib/ai/dialect.ts";
+import { resolveTenantDialect, resolveTenantDialectDetailed, tenantCurrencyMismatch, LEGACY_DIALECT_DEFAULT } from "../lib/ai/dialect.ts";
 import { emptyDraft } from "../lib/ai/tools.ts";
 
 const ROOT = process.cwd();
@@ -346,19 +346,74 @@ ok("the linter passes clean Najdi", findLeakage("هلا والله، وش تحب
   ok("an unknown dialect string is not trusted as a dialect",
     resolveTenantDialect({ dialect: "levantine", country: "SA" }, "t") === "saudi");
   // Guessing beyond the two countries this product serves would repeat the mistake.
-  ok("an unserved country is not guessed at",
-    resolveTenantDialect({ dialect: null, country: "AE" }, "t") === LEGACY_DIALECT_DEFAULT);
+  //
+  // ASSERTED ON THE **SOURCE**, NOT THE VALUE. The first version compared the result to
+  // LEGACY_DIALECT_DEFAULT, which is "egyptian" — so adding AE:"egyptian" to the country
+  // map passed the assertion untouched, and only a guess toward SAUDI was ever caught. Half
+  // a guard. `source` says WHY the answer came out, so a guess in either direction fails.
+  for (const c of ["AE", "US", "KW", "QA", "BH", "OM", "JO", "MA", "XX", "sa-ish"]) {
+    const r = resolveTenantDialectDetailed({ dialect: null, country: c });
+    ok(`country ${c} is not served, so it is not guessed at`,
+      r.source === "legacy-default" && r.dialect === LEGACY_DIALECT_DEFAULT);
+  }
+  // …and the two that ARE served must resolve BY COUNTRY, not coincidentally by default.
+  ok("SA resolves saudi by country, EG resolves egyptian by country",
+    resolveTenantDialectDetailed({ dialect: null, country: "SA" }).source === "country" &&
+    resolveTenantDialectDetailed({ dialect: null, country: "SA" }).dialect === "saudi" &&
+    resolveTenantDialectDetailed({ dialect: null, country: "EG" }).source === "country" &&
+    resolveTenantDialectDetailed({ dialect: null, country: "EG" }).dialect === "egyptian");
 
-  // No call site may go back to the silent default.
-  for (const f of ["lib/ai/customer-turn.ts", "lib/messaging/respond-and-send.ts", "lib/messaging/typed-actions.ts"]) {
-    ok(`${f} no longer defaults a dialect to Egyptian in place`,
-      !/dialect \?\? "egyptian"/.test(readFileSync(resolve(process.cwd(), f), "utf8")));
+  // THE WIRING, not just the function. The first version of this block asserted only the
+  // absence of the literal `dialect ?? "egyptian"` — so restoring the original bug at every
+  // call site as `String(row.dialect ?? LEGACY_DIALECT_DEFAULT)`, using this module's own
+  // export, left all 54 assertions GREEN. A proof that pins a resolver nobody has to call
+  // protects nothing.
+  const DIALECT_SITES = [
+    "lib/ai/customer-turn.ts",
+    "lib/messaging/respond-and-send.ts",
+    "lib/messaging/typed-actions.ts",
+    // Outside lib/, and outside the earlier scan entirely — both build a full dialect-driven
+    // context, so they had the same defect and no test could have caught them.
+    "app/api/agent/suggest/route.ts",
+    "app/api/agent/promo/route.ts",
+  ];
+  // AND THE PIN HAS TO BE ON THE DEFECT, NOT ON ITS SPELLING. The previous version tested
+  // for the two literal strings `dialect ?? "egyptian"` and `dialect ?? LEGACY_DIALECT_DEFAULT`.
+  // An adversarial review restored the ORIGINAL BUG, in full, at three separate call sites
+  // — as `row["dialect"] ?? "egyptian"`, as `?.dialect || "egyptian"`, as
+  // `restaurant.dialect || "egyptian"` — and the proof stayed GREEN at 54/54 each time. A
+  // pin that a rename walks past is decoration. This one matches the SHAPE: a dialect read,
+  // any accessor, either coalescing operator, any spelling of the default.
+  const IN_PLACE_DEFAULT =
+    /dialect["'\]\s]*\s*(\?\?|\|\|)\s*(["'](saudi|egyptian)["']|LEGACY_DIALECT_DEFAULT)/;
+  for (const f of DIALECT_SITES) {
+    const src = readFileSync(resolve(process.cwd(), f), "utf8");
+    ok(`${f}: no in-place dialect default, in any spelling`, !IN_PLACE_DEFAULT.test(src));
+    ok(`${f}: actually calls the resolver`, /resolveTenantDialect(Detailed)?\(/.test(src));
+    // And the resolver must be able to SEE the country, or the fallback it exists for is
+    // dead: every site's restaurants SELECT has to carry the column.
+    const selects = src.match(/\.select\(\s*"[^"]*dialect[^"]*"/g) ?? [];
+    ok(`${f}: every dialect SELECT also reads country (${selects.length} found)`,
+      selects.length > 0 && selects.every((sel) => sel.includes("country")));
+    // THE COUNTING INVARIANT, which no rename can evade: a SELECT that asks the database
+    // for `dialect` exists to produce a dialect, so it must be matched by a resolve. Fewer
+    // resolves than dialect-bearing selects means some site is deriving its own.
+    const resolves = src.match(/resolveTenantDialect(Detailed)?\(/g) ?? [];
+    ok(`${f}: ${resolves.length} resolver call(s) for ${selects.length} dialect SELECT(s)`,
+      resolves.length >= selects.length);
   }
 
   // CURRENCY, the same shape: typed-actions hardcoded «ج.م» for every tenant while
   // lib/render/load.ts defaulted to «ر.س».
-  ok("the currency default is derived from the dialect, not hardcoded Egyptian",
-    /dialectProfile\(dialect\)\.currencyDefault/.test(readFileSync(resolve(process.cwd(), "lib/messaging/typed-actions.ts"), "utf8")));
+  // Pinned on the SHAPE, not on the local's name: `dialectProfile(dialect)` went red when a
+  // reviewer renamed the variable to `tenantDialect`, which changes nothing a customer sees.
+  // A proof that fails on a safe refactor teaches people to edit the proof.
+  {
+    const ta = readFileSync(resolve(process.cwd(), "lib/messaging/typed-actions.ts"), "utf8");
+    ok("the currency default is derived from the dialect, not hardcoded Egyptian",
+      /dialectProfile\([A-Za-z_$][\w$]*\)\.currencyDefault/.test(ta) &&
+      !/currency[^\n]*\?\?\s*"ج\.م"/.test(ta));
+  }
 
   // A REAL ROW IN PRODUCTION: «مطعم الذواقة» is dialect "saudi", country "SA", currency
   // «ج.م» — a Saudi restaurant priced in Egyptian pounds, which nothing detected. Dormant
@@ -370,6 +425,20 @@ ok("the linter passes clean Najdi", findLeakage("هلا والله، وش تحب
   ok("a matching pair is not flagged",
     tenantCurrencyMismatch({ dialect: "saudi", currency: "ر.س" }).mismatch === false &&
     tenantCurrencyMismatch({ dialect: "egyptian", currency: "ج.م" }).mismatch === false);
+  // The SAME currency spelled differently is not a mismatch. dialect.ts calls
+  // profile.currency AUTHORITATIVE, so flagging «SAR» on a Saudi tenant would contradict
+  // the field being inspected — and a detector that cries wolf on valid data gets ignored.
+  for (const [d, c] of [
+    ["saudi", "SAR"], ["saudi", "﷼"], ["saudi", "ريال"], ["saudi", "sr"],
+    ["egyptian", "EGP"], ["egyptian", "جنيه"], ["egyptian", "ج.م."],
+  ] as const) {
+    ok(`${c} is a legitimate ${d} currency, not a mismatch`,
+      tenantCurrencyMismatch({ dialect: d, currency: c }).mismatch === false);
+  }
+  ok("but the real cross-currency defect is still caught",
+    tenantCurrencyMismatch({ dialect: "saudi", currency: "EGP" }).mismatch === true &&
+    tenantCurrencyMismatch({ dialect: "egyptian", currency: "SAR" }).mismatch === true);
+
   ok("missing data is not a mismatch — absence is not a contradiction",
     tenantCurrencyMismatch({ dialect: "saudi" }).mismatch === false &&
     tenantCurrencyMismatch({ currency: "ر.س" }).mismatch === false &&
@@ -378,9 +447,25 @@ ok("the linter passes clean Najdi", findLeakage("هلا والله، وش تحب
   // DEPLOY SAFETY. `country` travels with the tester columns, which respond-and-send reads
   // behind an explicit 42703 missing-column guard. I added it to the MODE GATE select and
   // proof-tester-allowlist caught it. Pinned here too so the reason travels with the fix.
+  // The mode gate DOES read country, and the earlier assertion that it must not was built
+  // on a false premise: `country text not null default 'SA'` is in 0001_init.sql, the
+  // original schema, and lib/db/conversations.ts reads it standalone with no 42703 guard.
+  // What it must stay free of is the TESTER columns (migration 0057), which are fetched
+  // separately behind that guard. Asserted by CONTENT, not by exact spacing or column
+  // order — the previous form failed on a pure re-spacing of the same columns.
+  //
+  // FOUND BY COLUMN SET, NOT BY COLUMN ORDER. Anchoring the match on "agent_mode" as the
+  // FIRST column meant that reordering the select — pure SQL-equivalent noise — made the
+  // proof report the mode gate as missing, and then report it as leaking tester columns,
+  // because `modeSelect` had silently become the empty string. Two red assertions for a
+  // change with no behaviour in it. Match the select that names both columns, in any order.
   const ras = readFileSync(resolve(process.cwd(), "lib/messaging/respond-and-send.ts"), "utf8");
-  ok("the mode-gate select stays free of country (deploy-safe)",
-    /\.select\("agent_mode, feature_flags, dialect"\)/.test(ras));
+  const modeSelect =
+    (ras.match(/\.select\("[^"]*"\)/g) ?? []).find((sel) => sel.includes("agent_mode") && sel.includes("dialect")) ?? "";
+  ok("the mode-gate select was located at all", modeSelect !== "");
+  ok("the mode-gate select exists and reads country", modeSelect.includes("country"));
+  ok("and stays free of the tester columns (deploy-safe, migration 0057)",
+    modeSelect !== "" && !/tester_allowlist/.test(modeSelect));
 }
 
 console.log(`\nSAUDI DIALECT PURITY PROOF: ${pass} passed, ${fail} failed  (${checked} Saudi branches scanned)`);

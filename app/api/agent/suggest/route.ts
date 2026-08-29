@@ -21,6 +21,7 @@ import type { Tier } from "@/lib/tenant/tier";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 import type { AiToneConfig } from "@/lib/types";
 import { asPricingTaxMode } from "@/lib/order-pricing";
+import { resolveTenantDialect } from "@/lib/ai/dialect";
 
 export const runtime = "nodejs";
 
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
   const { data: r } = await supabase
     .from("restaurants")
     .select(
-      "agent_mode,is_open,ai_tone,dialect,name,currency,timezone,business_type,tier,auto_accept_orders,agent_persona_name,tax_mode,tax_rate"
+      "agent_mode,is_open,ai_tone,dialect,country,name,currency,timezone,business_type,tier,auto_accept_orders,agent_persona_name,tax_mode,tax_rate"
     )
     .eq("id", restaurantId)
     .single();
@@ -105,7 +106,7 @@ export async function POST(req: Request) {
   const { data: convRow } = await supabase.from("conversations").select("handover_note").eq("id", conversationId).single();
   const handoverNote = (convRow?.handover_note as string | null) ?? undefined;
 
-  const sDialect = String(row.dialect ?? "egyptian");
+  const sDialect = resolveTenantDialect(row as { dialect?: string | null; country?: string | null }, "agent.suggest", restaurantId);
   const ctx: BrainContext = {
     profile: {
       name: String(row.name ?? ""),
