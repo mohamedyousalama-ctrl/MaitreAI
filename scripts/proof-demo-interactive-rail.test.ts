@@ -285,5 +285,42 @@ ok("typed-actions imports the shared draft-freshness constant",
   }
 }
 
+// ── THE SPOKEN PATH GETS THE SAME RAIL ──────────────────────────────────────
+// The typed route resolved «وحده بس» deterministically and the VOICE route did not, so the
+// single most natural SPOKEN answer to our own "how many?" was the one answer that went to
+// the model. A demo whose typed path is deterministic and whose spoken path is not is two
+// products, and only one of them was tested.
+{
+  const strip = (p: string) => readFileSync(resolve(process.cwd(), p), "utf8")
+    .split("\n")
+    .filter((l) => { const t = l.trimStart(); return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*"); })
+    .join("\n");
+  const voice = strip("app/api/demo/voice/route.ts");
+
+  ok("the voice route runs the quantity rail on the transcript",
+    /handleTypedQuantityFill\(/.test(voice) && /userMessage: transcript/.test(voice));
+  ok("the rail is GATED by the safety probe, not merely handed one",
+    /if \(conversationId && !safetyProbeFired\(voiceSafetyProbe\)\)/.test(voice));
+  ok("the probe is passed into the handler as well as gating the rail",
+    /safetyProbe: voiceSafetyProbe/.test(voice));
+  // The point of running this on the voice path: the phonetic safety net exists FOR
+  // low-confidence audio. Passing null confidence here would copy the typed route's
+  // blindness onto the one surface that can actually see.
+  ok("the phonetic net gets the REAL stt confidence, not the typed route's nulls",
+    /phoneticSafetyNet: detectPhoneticSafetyNet\(transcript, \{ sttConfidence, isVoiceTranscript: true \}\)/.test(voice));
+  ok("all four detectors run on the transcript",
+    /detectAllergenAvoidance\(transcript\)/.test(voice) &&
+    /detectAllergenSymptom\(transcript\)/.test(voice) &&
+    /detectAllergenEmergency\(transcript\)/.test(voice));
+  // A deterministic fill is not a model turn, so it has no stopReason to classify — and
+  // this route must never synthesize a reply the safety classifier has not cleared.
+  ok("a deterministic fill returns text only, never audio",
+    /kind === "handled"[\s\S]{0,420}replyAudio: null/.test(voice));
+  ok("demoRun still holds on the spoken rail", /userMessage: transcript[\s\S]{0,300}demoRun: true/.test(voice));
+  // The TAP rail is deliberately absent: a voice note carries no interactive id.
+  ok("the tap rail is NOT mirrored onto voice (there is nothing to resolve)",
+    !/handleTypedInteractiveAction\(/.test(voice));
+}
+
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} demo-interactive-rail: ${pass}/${pass + fail} passed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -34,6 +34,11 @@ import {
 } from "@/lib/demo/config";
 import { resolveDemoSession } from "@/lib/demo/session";
 import { closeDemoOrder } from "@/lib/demo/order";
+import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
+import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
+import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
+import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
+import { handleTypedQuantityFill, safetyProbeFired } from "@/lib/messaging/typed-actions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -191,6 +196,60 @@ export async function POST(req: Request) {
   // adding to ONE basket. Fails soft to a stateless turn if the session cannot be had.
   const session = await resolveDemoSession(admin, rawSessionId);
   const conversationId = session?.conversationId ?? null;
+
+  // THE QUANTITY RAIL, on the spoken path. The typed route resolves «وحده بس» / «حبتين» /
+  // «٣ حبات» deterministically through lib/messaging/quantity-fill.ts; this route did not,
+  // so the single most natural SPOKEN answer to our own question — "how many?" — was the
+  // one answer that went to the model instead of to the parser. A demo whose typed path is
+  // deterministic and whose spoken path is not is two products.
+  //
+  // The tap rail from the typed route is deliberately NOT mirrored: a voice note carries no
+  // interactive id, so there is nothing for it to resolve.
+  //
+  // THE SAFETY PROBE IS STRONGER HERE, not merely copied. The typed route passes
+  // `sttConfidence: null, isVoiceTranscript: false` because it has neither; this route has
+  // both, so the phonetic safety net runs with the real confidence of the real audio —
+  // which is exactly the signal it was written for. It GATES: an allergen or emergency turn
+  // can never be short-circuited past the safety pipeline by sounding like a bare quantity.
+  const voiceSafetyProbe = {
+    allergenAvoidance: detectAllergenAvoidance(transcript).fired,
+    allergenSymptom: detectAllergenSymptom(transcript).fired,
+    phoneticSafetyNet: detectPhoneticSafetyNet(transcript, { sttConfidence, isVoiceTranscript: true }).fired,
+    allergenEmergency: detectAllergenEmergency(transcript).fired,
+  };
+  if (conversationId && !safetyProbeFired(voiceSafetyProbe)) {
+    try {
+      const filled = await handleTypedQuantityFill(admin, {
+        restaurantId: DEMO_RESTAURANT_ID,
+        conversationId,
+        userMessage: transcript,
+        interactiveId: null,
+        features: null,
+        safetyProbe: voiceSafetyProbe,
+        demoRun: true,
+      });
+      if (filled.kind === "handled") {
+        // A deterministic fill produces no synthesis: there is no model turn, so there is
+        // no stopReason to classify, and this route speaks only what the classifier has
+        // cleared. The visitor gets the text, exactly as the typed route answers.
+        return NextResponse.json({
+          ok: true,
+          conversationId,
+          transcript,
+          reply: formatCustomerVisibleText(filled.reply, filled.dialect),
+          replyAudio: null,
+          replyAudioMime: null,
+          presentation: filled.presentation
+            ? formatCustomerVisiblePresentation(filled.presentation, filled.dialect)
+            : null,
+          photoRequests: [],
+        });
+      }
+    } catch (e) {
+      // Never let the rail break a turn the model path can still serve.
+      console.error("[demo/voice] quantity fill failed; falling through to the model", e);
+    }
+  }
 
   try {
     const out = await runCustomerTurn(admin, {
