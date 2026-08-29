@@ -136,24 +136,39 @@ async function getOrCreateOwner() {
   //                   billing counters, which belong to a real tenant. Held OFF so the
   //                   demo tenant never enters that budget.
   //
-  //                   G0-R AS ORIGINALLY WRITTEN — "the demo must not be able to emit a
-  //                   generated voice" — IS SUPERSEDED, by the Founder's own request that
-  //                   the demo speak in the ElevenLabs Khalid voice. Recording the change
-  //                   rather than letting the flag quietly stop meaning what it said: the
-  //                   demo DOES emit a generated voice now, and this flag is no longer
-  //                   what stops it, because lib/demo/voice-out.ts does not consult it.
+  //                   G0-R IS NOT SUPERSEDED, AND THIS CODE DOES NOT MOVE IT. An earlier
+  //                   revision of this comment claimed G0-R was superseded by the Founder's
+  //                   request for a speaking demo. THAT WAS WRONG and is corrected here.
+  //                   G0-R is Rights Remediation in the Khalid R4 program (Linear project
+  //                   a94730d2-cb63-484f-910a-6483e7e60ddb) and its state is BLOCKED. Its
+  //                   governing rule is explicit: while G0-R is blocked there is NO PROVIDER
+  //                   VOICE GENERATION and NO CUSTOMER EXPOSURE; the blocked rule "is
+  //                   evaluated first and is unoverridable; fail closed" (KIV-219 constraint
+  //                   6); and "no chat summary, builder narrative, issue completion, or
+  //                   planning approval moves a gate without independently inspectable
+  //                   evidence." Founder interest is not gate approval, and an implementer
+  //                   never clears a gate over its own work. A code comment cannot move a
+  //                   rights gate, and this one does not.
   //
-  //                   G0-R IS NARROWED, NOT DROPPED. What survives is the part that was
-  //                   ever load-bearing — the demo must never emit a voice NOBODY CHOSE,
-  //                   and must never turn an unauthenticated page into an unbounded bill.
-  //                   Both are now enforced where the spend happens: an explicit provider
-  //                   pin (inference is what silently selects OpenAI onyx), a refusal to
-  //                   use ElevenLabs' stock voice ids or a model we cannot price, a hard
-  //                   600-character cap before any provider call, no onyx fallback bought
-  //                   or shipped, and an agent_runs row per synthesis so the spend monitor
-  //                   can see it. proof-public-demo-hardening.test.ts enforces the
-  //                   containment: lib/demo/voice-out.ts is the ONLY demo file permitted
-  //                   to reach a provider, so nothing can route around those controls.
+  //                   WHAT THE VOICE CODE ACTUALLY IS: the machine enforcement that keeps
+  //                   G0-R held on this surface. lib/demo/voice-out.ts is fail-closed by
+  //                   construction — with no explicit TTS_ADAPTER pin plus a key and a
+  //                   voice id, demoVoiceProviderPinned() is false and the demo emits NO
+  //                   generated voice at all. Provider generation therefore requires a
+  //                   deliberate act by the account operator, which is where the gate
+  //                   decision belongs, not a code path that can drift into it. On top of
+  //                   that: inference is never trusted (it is what silently selects OpenAI
+  //                   onyx), ElevenLabs stock voice ids are refused, a model we cannot
+  //                   price is refused, there is a hard 600-character cap before any
+  //                   provider call, no onyx fallback is bought or shipped, and every
+  //                   synthesis writes an agent_runs row the spend monitor can see.
+  //                   proof-public-demo-hardening.test.ts enforces containment:
+  //                   lib/demo/voice-out.ts is the ONLY demo file permitted to reach a
+  //                   provider, so nothing can route around those controls.
+  //
+  //                   SO: enabling the demo's voice is a G0-R action, not a deploy detail.
+  //                   It needs the gate cleared on inspectable evidence (KIV-90 / 92 / 93 /
+  //                   95 remain open) — not an env var set because the code is ready.
   //   psp_payments  — real money. Nothing on a public page may reach a live PSP.
   //   allergy_simple / allergy_calm_hold / allergy_companion_mode — held OFF on purpose
   //                   so the flag-OFF deterministic gate fires and the visitor sees the
