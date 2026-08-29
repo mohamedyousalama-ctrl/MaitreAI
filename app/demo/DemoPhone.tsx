@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { decodeReplyAudio } from "@/lib/demo/audio-payload";
 import { DEMO_MAX_AUDIO_BYTES, DEMO_MAX_CHARS, DEMO_MAX_RECORD_SECONDS } from "@/lib/demo/config";
+import { newVadState, vadStep, callResponseAction, type VadVerdict } from "@/lib/demo/call-loop";
 import { parseWhatsAppMarkup, isEmojiOnly } from "@/lib/util/whatsapp-markup";
 
 /** The interactive payload the Brain attaches to a turn — the same shape WhatsApp
@@ -571,7 +572,14 @@ export default function DemoPhone() {
           )}
         </div>
 
-        {inCall && <CallScreen onEnd={() => setInCall(false)} />}
+        {inCall && (
+          <CallScreen
+            convId={convId}
+            onSession={rememberSession}
+            push={push}
+            onEnd={() => setInCall(false)}
+          />
+        )}
       </div>
       <p style={S.footnote}>
         هذه تجربة من Kivo. خالد يرد فعلياً — نفس المحرّك، نفس قائمة الطعام، نفس فحص الحساسية.
@@ -747,24 +755,318 @@ function Options({ p, onPick }: { p: Presentation; onPick: (label: string, id?: 
   );
 }
 
-function CallScreen({ onEnd }: { onEnd: () => void }) {
-  // NO RUNNING TIMER. A counting call duration is the universal signal that a call
-  // connected — nothing connects here, and a demo that fakes a live call in front of
-  // a prospect is the one thing this page must not do. It says what it is instead.
-  //
-  // The note also no longer dates the missing half against an internal approval:
-  // a prospect should not be told which sign-off the product is waiting on.
+/** KIV-308 option A — a hands-free VOICE CONVERSATION, not a simulated phone call.
+ *
+ *  WHAT THIS IS, AND WHAT IT REFUSES TO PRETEND TO BE. Record → transcribe → the real
+ *  Brain → speak → listen again. It is a genuine conversation and it is half-duplex, so it
+ *  is labelled as a voice conversation and never as a connected PSTN call: no ringing
+ *  tone, no «متصل الآن» before anything exists, and the duration counter starts only once
+ *  a turn has actually completed — a timer that counts from the moment you tap is the
+ *  universal signal that a call connected, and it is a lie until one has.
+ *
+ *  IT ONLY OFFERS ITSELF WHEN IT CAN ACTUALLY WORK. /api/demo/capabilities reports whether
+ *  the server can both hear and speak. When it cannot, this falls back to exactly the
+ *  honest panel that was here before. A call screen that listens, thinks and then answers
+ *  with silence reads as a dropped call, not as an unconfigured feature — and shipping
+ *  that in front of a restaurant owner is the worst outcome available here.
+ *
+ *  SOME TURNS ARE SILENT ON PURPOSE, AND THAT IS THE PRODUCT WORKING. Safety, money,
+ *  payment-link and receipt replies are text-only by rule (lib/messaging/voice-budget.ts).
+ *  On those turns the server returns the reply with no audio, and this screen SHOWS the
+ *  text and says why rather than going quiet. Dead air would misread the one guarantee the
+ *  demo exists to show off.
+ *
+ *  THE CAPS ARE THE SERVER'S, AND A REFUSAL ENDS THE CALL. A loop generates turns far
+ *  faster than a person typing, so a 429 or a 503 stops it immediately instead of
+ *  retrying — the client must never be what decides how much money this page may spend.
+ */
+function CallScreen({
+  convId, onSession, push, onEnd,
+}: {
+  convId: React.MutableRefObject<string | null>;
+  onSession: (id?: string) => void;
+  push: (m: Omit<Msg, "id" | "at">) => Msg;
+  onEnd: () => void;
+}) {
+  type Phase = "checking" | "unavailable" | "listening" | "thinking" | "speaking" | "ended";
+  const [phase, setPhase] = useState<Phase>("checking");
+  const [note, setNote] = useState<string>("");
+  const [lastText, setLastText] = useState<string>("");
+  const [textOnly, setTextOnly] = useState(false);
+
+  // Every async path checks this. A hangup mid-request must not resume the loop, re-open
+  // the microphone, or play audio into a screen the visitor has already left.
+  const live = useRef(true);
+  const stream = useRef<MediaStream | null>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const audioCtx = useRef<AudioContext | null>(null);
+  const player = useRef<HTMLAudioElement | null>(null);
+  const objectUrl = useRef<string | null>(null);
+  const abort = useRef<AbortController | null>(null);
+  const started = useRef(false);
+
+  /** Hand back every OS resource we hold. Called on hangup, on unmount, and on any error
+   *  path — a microphone left open after a demo is a red recording dot on a stranger's
+   *  phone, and an AudioContext left running keeps the audio hardware awake. */
+  const release = useCallback(() => {
+    try { recorder.current?.state !== "inactive" && recorder.current?.stop(); } catch { /* already stopped */ }
+    recorder.current = null;
+    stream.current?.getTracks().forEach((t) => t.stop());
+    stream.current = null;
+    try { void audioCtx.current?.close(); } catch { /* already closed */ }
+    audioCtx.current = null;
+    try { player.current?.pause(); } catch { /* nothing playing */ }
+    player.current = null;
+    if (objectUrl.current) { URL.revokeObjectURL(objectUrl.current); objectUrl.current = null; }
+    abort.current?.abort();
+    abort.current = null;
+  }, []);
+
+  const hangUp = useCallback(() => {
+    live.current = false;
+    release();
+    onEnd();
+  }, [release, onEnd]);
+
+  /** Stop for a reason the visitor should see, without pretending the line dropped. */
+  const stopWith = useCallback((msg: string) => {
+    live.current = false;
+    release();
+    setPhase("ended");
+    setNote(msg);
+  }, [release]);
+
+  // ── one turn: listen until silence, send, speak, repeat ───────────────────
+  const runTurn = useCallback(async () => {
+    if (!live.current) return;
+    setPhase("listening");
+    setTextOnly(false);
+
+    let chunks: Blob[] = [];
+    try {
+      if (!stream.current) {
+        stream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (!live.current) { release(); return; }
+      }
+      const mr = new MediaRecorder(stream.current);
+      recorder.current = mr;
+      chunks = [];
+      mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+
+      // ENERGY-BASED END-OF-SPEECH. The browser has no "they stopped talking" event, so we
+      // read the waveform: RMS above the floor means speech, and a continuous stretch of
+      // quiet AFTER speech has started ends the turn. Requiring speech first is what stops
+      // a silent room from firing an empty clip at the transcriber on a loop.
+      audioCtx.current = new AudioContext();
+      const analyser = audioCtx.current.createAnalyser();
+      analyser.fftSize = 512;
+      audioCtx.current.createMediaStreamSource(stream.current).connect(analyser);
+      const frame = new Uint8Array(analyser.fftSize);
+
+      const MAX_MS = Math.min(DEMO_MAX_RECORD_SECONDS, 20) * 1000;
+      const vad = newVadState(Date.now());
+
+      const stopped = new Promise<VadVerdict>((resolve) => {
+        const tick = setInterval(() => {
+          if (!live.current) { clearInterval(tick); resolve("silent"); return; }
+          analyser.getByteTimeDomainData(frame);
+          let sum = 0;
+          for (let i = 0; i < frame.length; i++) { const x = (frame[i] - 128) / 128; sum += x * x; }
+          const verdict = vadStep(vad, Math.sqrt(sum / frame.length), Date.now(), MAX_MS);
+          if (verdict !== "listening") { clearInterval(tick); resolve(verdict); }
+        }, 60);
+      });
+
+      mr.start();
+      const outcome = await stopped;
+      await new Promise<void>((done) => { mr.onstop = () => done(); try { mr.stop(); } catch { done(); } });
+      try { void audioCtx.current?.close(); } catch { /* already closed */ }
+      audioCtx.current = null;
+      if (!live.current) { release(); return; }
+
+      if (outcome !== "spoke") {
+        stopWith("ما سمعت شي 🙏 تقدر تبدأ المكالمة من جديد، أو تكتب لي في المحادثة.");
+        return;
+      }
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "";
+      stopWith(
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "ما أعطيتنا إذن المايك 🙏 فعّله من إعدادات المتصفح أو اكتب لي."
+          : "ما قدرنا نفتح المايك 🙏 اكتب لي في المحادثة."
+      );
+      return;
+    }
+
+    // ── send ────────────────────────────────────────────────────────────────
+    setPhase("thinking");
+    const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
+    if (blob.size > DEMO_MAX_AUDIO_BYTES) {
+      stopWith("المقطع طويل شوي 🙏 جرّب جملة أقصر.");
+      return;
+    }
+    try {
+      const fd = new FormData();
+      fd.append("audio", blob, "call.webm");
+      if (convId.current) fd.append("conversationId", convId.current);
+      abort.current = new AbortController();
+      const res = await fetch("/api/demo/voice", { method: "POST", body: fd, signal: abort.current.signal });
+      if (!live.current) return;
+
+      // A CAP IS AN ANSWER, NOT A GLITCH. A voice loop can burn a per-IP budget in under a
+      // minute, so a refusal ends the call — retrying is how a client turns a cap into a
+      // suggestion.
+      const decisionEarly = callResponseAction(res.status, false);
+      if (decisionEarly.kind === "end") {
+        stopWith(
+          decisionEarly.reason === "rate_limited"
+            ? "خلّصنا عدد المكالمات المسموح فيها الحين 🙏 كمّل معي بالكتابة."
+            : "انقطع الاتصال بخالد 🙏 كمّل معي بالكتابة في المحادثة."
+        );
+        return;
+      }
+
+      const data = (await res.json()) as {
+        conversationId?: string; transcript?: string; reply?: string;
+        replyAudio?: string | null; replyAudioMime?: string | null;
+        presentation?: Presentation | null;
+      };
+      onSession(data.conversationId);
+      if (!live.current) return;
+
+      // The call turns land in the THREAD too. Hanging up should leave a readable record of
+      // what was said — a conversation that vanishes when the screen closes is not a
+      // conversation the visitor can check the prices in.
+      if (data.transcript) push({ from: "me", kind: "voice", text: data.transcript, seconds: 0 });
+      const reply = String(data.reply ?? "");
+      setLastText(reply);
+
+      if (callResponseAction(res.status, !!data.replyAudio).kind !== "speak") {
+        // BY DESIGN on a safety / money / payment-link / receipt turn. Say so and keep
+        // going; silence here would look like a failure of the very rule being shown.
+        push({ from: "khalid", kind: "text", text: reply, presentation: data.presentation ?? null });
+        setTextOnly(true);
+        setPhase("speaking");
+        await new Promise((r) => setTimeout(r, 2600));
+        if (live.current) void runTurn();
+        return;
+      }
+
+      // ── speak ─────────────────────────────────────────────────────────────
+      // decodeReplyAudio, not a second inline atob: this module exists because a bad
+      // payload used to throw and silently drop a reply, and it is driven with real bytes
+      // in the demo proof. A private copy here would be a second thing to get wrong.
+      const decoded = decodeReplyAudio(data.replyAudio, data.replyAudioMime);
+      if (!decoded) {
+        push({ from: "khalid", kind: "text", text: reply, presentation: data.presentation ?? null });
+        setTextOnly(true);
+        setPhase("speaking");
+        await new Promise((r) => setTimeout(r, 2400));
+        if (live.current) void runTurn();
+        return;
+      }
+      const url = URL.createObjectURL(new Blob([decoded.bytes], { type: decoded.type }));
+      if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+      objectUrl.current = url;
+      push({ from: "khalid", kind: "voice", text: reply, audioUrl: url, presentation: data.presentation ?? null });
+
+      setPhase("speaking");
+      const el = new Audio(url);
+      player.current = el;
+      await new Promise<void>((done) => {
+        el.onended = () => done();
+        // A playback failure must not strand the loop in "speaking" forever — the visitor
+        // still has the text, so carry on listening.
+        el.onerror = () => done();
+        void el.play().catch(() => done());
+      });
+      if (!live.current) return;
+      void runTurn();
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError") return;
+      stopWith("صار خلل بسيط 🙏 كمّل معي بالكتابة في المحادثة.");
+    }
+  }, [convId, onSession, push, release, stopWith]);
+
+  // ── capability probe, then start ──────────────────────────────────────────
+  useEffect(() => {
+    live.current = true;
+    let cancelled = false;
+    (async () => {
+      let can = false;
+      try {
+        const res = await fetch("/api/demo/capabilities", { cache: "no-store" });
+        can = res.ok && !!(await res.json())?.voiceCall;
+      } catch { can = false; }
+      if (cancelled || !live.current) return;
+      if (!can) { setPhase("unavailable"); return; }
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+        setPhase("unavailable");
+        return;
+      }
+      if (started.current) return;
+      started.current = true;
+      void runTurn();
+    })();
+    return () => { cancelled = true; live.current = false; release(); };
+    // runTurn is stable for the life of the screen; re-running this effect would open a
+    // second microphone and a second loop against the same conversation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // NO DURATION COUNTER, DELIBERATELY — not even one that starts after a real turn.
+  // A first version showed mm:ss once a turn had completed, on the argument that timing a
+  // conversation that genuinely exists is honest. It is, but it is not what a viewer reads:
+  // a counting duration on a call-styled screen is the universal signal that a CALL
+  // connected, and this is a half-duplex voice conversation, not a phone line. KIV-308's
+  // non-negotiable is literal about it, and proof-public-demo-hardening asserts the absence
+  // outright. The phase label below says what is happening and says it more usefully.
+
+  // The honest panel, unchanged, whenever the server cannot both hear and speak.
+  if (phase === "checking" || phase === "unavailable") {
+    return (
+      <div style={S.call}>
+        <div style={S.callAvatar} aria-hidden>خ</div>
+        <div style={S.callName}>خالد — مطعم الديرة</div>
+        <div style={S.callStatus}>
+          {phase === "checking" ? "لحظة…" : "المكالمة الصوتية غير مفعّلة في التجربة"}
+        </div>
+        {phase === "unavailable" && (
+          <p style={S.callNote}>
+            خالد يفهم الملاحظات الصوتية الحين — سجّل ملاحظة من زر المايك وبيرد عليك.
+          </p>
+        )}
+        <button style={S.hangup} onClick={hangUp} aria-label="إغلاق"><PhoneIcon /></button>
+      </div>
+    );
+  }
+
+  const status =
+    phase === "listening" ? "يسمعك…"
+    : phase === "thinking" ? "يفكر…"
+    : phase === "speaking" ? (textOnly ? "هذي نعرضها مكتوبة" : "يتكلم…")
+    : "انتهت المحادثة";
+
   return (
     <div style={S.call}>
-      <div style={S.callAvatar} aria-hidden>خ</div>
+      <div style={{ ...S.callAvatar, ...(phase === "listening" ? S.callAvatarLive : null) }} aria-hidden>خ</div>
       <div style={S.callName}>خالد — مطعم الديرة</div>
-      <div style={S.callStatus}>المكالمة الصوتية غير مفعّلة في التجربة</div>
-      <p style={S.callNote}>
-        خالد يفهم الملاحظات الصوتية الحين — سجّل ملاحظة من زر المايك وبيرد عليك.
-      </p>
-      <button style={S.hangup} onClick={onEnd} aria-label="إغلاق">
-        <PhoneIcon />
-      </button>
+      {/* Named for what it is. Not «مكالمة», which would claim a phone line. */}
+      <div style={S.callStatus}>محادثة صوتية</div>
+      <div style={S.callPhase} aria-live="polite">{status}</div>
+      {phase !== "ended" && (
+        <div style={S.callWave} aria-hidden>
+          <Dot d={0} /><Dot d={0.15} /><Dot d={0.3} />
+        </div>
+      )}
+      {textOnly && (
+        <p style={S.callNote}>
+          الرسائل اللي فيها حساسية أو مبالغ أو إيصال نعرضها مكتوبة دايماً — عشان تقراها بنفسك.
+        </p>
+      )}
+      {lastText && <p style={S.callTranscript}>{lastText}</p>}
+      {note && <p style={S.callNote}>{note}</p>}
+      <button style={S.hangup} onClick={hangUp} aria-label="إنهاء"><PhoneIcon /></button>
     </div>
   );
 }
@@ -882,6 +1184,16 @@ const S: Record<string, React.CSSProperties> = {
   callName: { fontSize: 20, fontWeight: 600 },
   callStatus: { fontSize: 14, color: "#8696a0", fontVariantNumeric: "tabular-nums" },
   callNote: { fontSize: 12.5, color: "#8696a0", maxWidth: 300, lineHeight: 1.7, marginTop: 6 },
+  // A live ring while the microphone is open — the visitor should be able to see that the
+  // page is listening without reading a word.
+  callAvatarLive: { boxShadow: "0 0 0 3px rgba(0,168,132,.85), 0 0 0 10px rgba(0,168,132,.22)" },
+  callPhase: { fontSize: 13, color: "#00a884", marginTop: 2, minHeight: 18 },
+  callWave: { display: "flex", gap: 5, marginTop: 10, height: 10, alignItems: "center" },
+  callTranscript: {
+    fontSize: 13.5, color: "#e9edef", maxWidth: 300, lineHeight: 1.8, marginTop: 10,
+    background: "#202c33", borderRadius: 12, padding: "10px 12px", textAlign: "start",
+    maxHeight: 132, overflowY: "auto",
+  },
   hangup: { marginTop: 18, width: 60, height: 60, borderRadius: "50%", background: "#f15c6d",
     color: "#fff", border: 0, display: "grid", placeItems: "center", cursor: "pointer",
     transform: "rotate(135deg)" },
