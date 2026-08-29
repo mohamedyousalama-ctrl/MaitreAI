@@ -74,8 +74,22 @@ export function asksToSeeMedia(text: string): boolean {
  *  checkout: real item photos via send_item_photos (or an honest no-photo line + the menu),
  *  or the full menu via present_menu. Returns null when it must NOT render (byte-identical).
  *  `enabled` is the flag gate; `asked` is asksToSeeMedia for the turn. */
-export function buildAnswerFirstDirective(opts: { enabled: boolean; asked: boolean }): string | null {
+export function buildAnswerFirstDirective(
+  opts: { enabled: boolean; asked: boolean; dialect?: string | null }
+): string | null {
   if (!opts.enabled || !opts.asked) return null;
+  // DIALECT-BRANCHED. This is appended to systemTail — it is among the LAST things the
+  // model reads before writing — and it was Cairene for every tenant: «الطلب ده»، «لو
+  // مفيش»، «متكمّلش». A Saudi agent given a Cairene instruction on its final read is being
+  // told, in Egyptian, how to answer a Saudi customer.
+  if (opts.dialect === "saudi") {
+    return (
+      "[أجب-أولاً] العميل طلب صراحةً إنه يشوف صور/أصناف أو المنيو. لبِّ هذا الطلب أول شي في نفس ردك، " +
+      "قبل لا تسأل عن الدفع أو الاستلام أو تأكيد الطلب: إذا طلب صورة صنف معيّن استخدم أداة send_item_photos " +
+      "للصنف اللي سمّاه؛ إذا ما فيه صورة متاحة قل له بصراحة واعرض عليه المنيو؛ إذا طلب المنيو كامل استخدم present_menu. " +
+      "لا تكمّل للتأكيد أو الدفع قبل لا تخدم طلب المشاهدة."
+    );
+  }
   return (
     "[أجب-أولاً] العميل طلب صراحةً إنه يشوف صور/أصناف أو المنيو. لبِّ الطلب ده الأول في نفس ردك، " +
     "قبل ما تسأل عن الدفع أو الاستلام أو تأكيد الطلب: لو طلب صورة صنف مُعيّن استخدم أداة send_item_photos " +

@@ -22,6 +22,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { findLeakage } from "../lib/ai/personas/khalid-dialect-linter.mjs";
+import { recoveryDirective } from "../lib/ai/perception.ts";
+import { buildAnswerFirstDirective } from "../lib/ai/media-intent.ts";
+import { buildImageDirective } from "../lib/messaging/image-turn.ts";
+import { applyPinRouting } from "../lib/delivery/routing.ts";
+import { emptyDraft } from "../lib/ai/tools.ts";
 
 const ROOT = process.cwd();
 let pass = 0, fail = 0;
@@ -244,6 +249,66 @@ ok("the linter passes clean Najdi", findLeakage("هلا والله، وش تحب
     const r = findLeakage(clean, { region: "najd" });
     ok(`natural Najdi is not flagged: ${clean.slice(0, 28)}`, r.ok);
   }
+}
+
+// ── THE PER-TURN DIRECTIVES — the LAST thing the model reads ────────────────
+// These are appended to systemTail AFTER the whole static prompt (respond.ts), so they are
+// the final instructions before the model writes. Five of them took no dialect argument at
+// all and were Cairene for every tenant: the §HX1 human-messages block, the perception
+// recovery directive, the image directive, the answer-first directive, and both pin-routing
+// directives — which between them carried five ما…ش prohibitives («متعتمدوش»، «ماتتوهش»،
+// «متكمّلش»، «متحسبش»، «متطلبش»). A Saudi agent was being told in Egyptian how to answer a
+// Saudi customer, on its last read of the turn. Branch-walkers cannot see an UNBRANCHED
+// string, which is why nothing caught these; they are driven here instead.
+{
+  const saudiOut: [string, string | null][] = [
+    ["recoveryDirective (low confidence)", recoveryDirective({ confidence: "low", intent: "unknown", risk: "none" } as never, "saudi")],
+    ["recoveryDirective (allergy risk)", recoveryDirective({ confidence: "high", intent: "order", risk: "allergy" } as never, "saudi")],
+    ["buildAnswerFirstDirective", buildAnswerFirstDirective({ enabled: true, asked: true, dialect: "saudi" })],
+    ["buildImageDirective (described)", buildImageDirective({ description: "طبق كبسة", caption: "" } as never, { dialect: "saudi" })],
+    ["buildImageDirective (deictic)", buildImageDirective({ description: "طبق", caption: "" } as never, { deictic: true, dialect: "saudi" })],
+    ["buildImageDirective (unreadable)", buildImageDirective({ description: "", caption: "" } as never, { dialect: "saudi" })],
+  ];
+  for (const [label, text] of saudiOut) {
+    const r = findLeakage(String(text ?? ""), { region: "najd" });
+    ok(`${label}: the Saudi directive is clean`,
+      !!text && r.ok);
+  }
+
+  // And the Egyptian branches must KEEP their Egyptian — a "fix" that flattened both
+  // branches to one register would pass a Saudi-only check while breaking every Egyptian
+  // tenant, which is the failure this whole file exists to prevent in the other direction.
+  const egyptianOut: [string, string | null][] = [
+    ["recoveryDirective", recoveryDirective({ confidence: "low", intent: "unknown", risk: "none" } as never, "egyptian")],
+    ["buildAnswerFirstDirective", buildAnswerFirstDirective({ enabled: true, asked: true, dialect: "egyptian" })],
+    ["buildImageDirective", buildImageDirective({ description: "طبق", caption: "" } as never, { dialect: "egyptian" })],
+  ];
+  for (const [label, text] of egyptianOut) {
+    ok(`${label}: the Egyptian branch still reads Egyptian`, !findLeakage(String(text ?? ""), {}).ok);
+  }
+
+  // The two pin-routing directives are string-built inside applyPinRouting, so they are
+  // pinned at source: the Saudi branch must not carry the ما…ش prohibitives.
+  // DRIVEN, not read. Source checks here were useless: setting `sa = false` left both
+  // Arabic strings in the file, so the assertions passed while every Saudi tenant got the
+  // Cairene directive. With no delivery areas the router returns "outside", which is the
+  // branch that carries «متأكدش» — enough to prove dialect actually reaches the string.
+  {
+    const pin = { lat: 24.71, lng: 46.68 };
+    const draft = emptyDraft("ر.س");
+    const sa = applyPinRouting(pin as never, draft, [], [], "saudi");
+    const eg = applyPinRouting(pin as never, draft, [], [], "egyptian");
+    ok("applyPinRouting's SAUDI directive is clean", findLeakage(sa.directive, { region: "najd" }).ok);
+    ok("it drops the ما…ش prohibitive", /لا تأكد على أي منطقة/.test(sa.directive) && !/متأكدش/.test(sa.directive));
+    ok("applyPinRouting's EGYPTIAN directive keeps its own register", /متأكدش على أي منطقة/.test(eg.directive));
+    ok("the two directives actually differ", sa.directive !== eg.directive);
+  }
+
+  // §HX1 lives inside prompt.ts as a template literal, so it is pinned at source too.
+  const promptSrc = readFileSync(resolve(process.cwd(), "lib/ai/prompt.ts"), "utf8");
+  ok("§HX1 is dialect-branched", /ctx\.dialect === "saudi" \? `## رسائل الفريق البشري/.test(promptSrc));
+  ok("its Saudi branch says «مين قال وش», not «مين قال إيه»",
+    /§HX1 — مين قال وش/.test(promptSrc) && /§HX1 — مين قال إيه/.test(promptSrc));
 }
 
 console.log(`\nSAUDI DIALECT PURITY PROOF: ${pass} passed, ${fail} failed  (${checked} Saudi branches scanned)`);

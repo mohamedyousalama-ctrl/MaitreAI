@@ -61,6 +61,17 @@ const golden = readFileSync(GOLDEN, "utf8");
 const onPrompt = buildCustomerAgentSystemPrompt(baseCtx({ khalidPersona: true, ksaRegion: "najd" }) as any);
 
 // THE gate: flag-OFF is byte-identical to the pre-wiring baseline.
+//
+// GOLDEN REGENERATED 29 Aug 2026, deliberately, for §HX1 ONLY. baseCtx builds this prompt
+// with dialect:"saudi", and the §HX1 human-messages block was UNBRANCHED Cairene — so the
+// captured baseline encoded the defect: a Saudi tenant being instructed in Egyptian, with
+// three ما…ش prohibitives («متعتمدوش»، «متكرروش»، «ومتطبّقوش»). The block is now branched
+// and the Saudi half is clean (asserted in proof-saudi-dialect-purity.test.ts).
+//
+// The regeneration was verified line-for-line before it was accepted: the diff against the
+// previous golden is exactly four lines in and four lines out, all inside §HX1, with the
+// section's trailing blank line preserved. A whole-file regenerate would have silently
+// absorbed any other drift, so the diff was read rather than trusted.
 ok("flag-OFF prompt is BYTE-IDENTICAL to the pre-change golden", offPrompt === golden);
 ok("flag-OFF contains NO Khalid persona-layer marker", !offPrompt.includes("طبقة الشخصية"));
 // WO-KHALID-STEP1 (proof a, semantic): the curated voice anchors NEVER reach the

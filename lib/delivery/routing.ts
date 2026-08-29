@@ -75,8 +75,14 @@ export function applyPinRouting(
   pin: InboundPin,
   draft: OrderDraft,
   areas: DeliveryArea[],
-  branches: Branch[]
+  branches: Branch[],
+  // DIALECT-BRANCHED. Both directives below land in systemTail and were Cairene for every
+  // tenant, carrying THREE ما…ش prohibitives — «متأكدش»، «متحسبش»، «متطلبش» — plus «ابعتله
+  // بالنص ده بالظبط». The one place the model is told NOT to improvise was itself written
+  // in the wrong dialect for a Saudi tenant.
+  dialect?: string | null
 ): PinRoutingOutcome {
+  const sa = dialect === "saudi";
   const route = routeDeliveryPin(
     { lat: pin.lat, lng: pin.lng } as LatLng,
     areas.map(toRoutableZone),
@@ -87,9 +93,11 @@ export function applyPinRouting(
     return {
       kind: "outside",
       draft,
-      directive:
-        "التوجيه (لازم): موقع العميل خارج كل مناطق التوصيل. ابعتله بالنص ده بالظبط بدون أي تعديل ولا أرقام: " +
-        "«للأسف موقعك خارج نطاق التوصيل حالياً 🙏 تقدر تستلم من أقرب فرع؟» ثم اعرض عليه الاستلام من الفرع (اسأله أي فرع أقرب له واعرض الفروع). متأكدش على أي منطقة أو رسوم توصيل.",
+      directive: sa
+        ? "التوجيه (لازم): موقع العميل خارج كل مناطق التوصيل. أرسل له هذا النص بالضبط بدون أي تعديل ولا أرقام: " +
+          "«للأسف موقعك خارج نطاق التوصيل الحين 🙏 تقدر تستلم من أقرب فرع؟» بعدها اعرض عليه الاستلام من الفرع (اسأله أي فرع أقرب له واعرض الفروع). لا تأكد على أي منطقة أو رسوم توصيل."
+        : "التوجيه (لازم): موقع العميل خارج كل مناطق التوصيل. ابعتله بالنص ده بالظبط بدون أي تعديل ولا أرقام: " +
+          "«للأسف موقعك خارج نطاق التوصيل حالياً 🙏 تقدر تستلم من أقرب فرع؟» ثم اعرض عليه الاستلام من الفرع (اسأله أي فرع أقرب له واعرض الفروع). متأكدش على أي منطقة أو رسوم توصيل.",
       miss: {
         pinLat: pin.lat,
         pinLng: pin.lng,
@@ -121,9 +129,12 @@ export function applyPinRouting(
     branchName: branch?.name ?? null,
     deliveryFee: fee,
     via: route.via,
-    directive:
-      `التوجيه (لازم): موقع العميل اتحدد داخل منطقة «${route.zone.name}»${branchLine}. ` +
-      `تم ضبط التوصيل ورسومه تلقائياً من بيانات المنطقة (متحسبش أنت أي رسوم). ` +
-      `أكّد للعميل المنطقة${branchLine ? " والفرع" : ""} باختصار وكمّل الطلب (اعرض الملخص والتأكيد). متطلبش منه عنوان مكتوب.`,
+    directive: sa
+      ? `التوجيه (لازم): موقع العميل انحدد داخل منطقة «${route.zone.name}»${branchLine}. ` +
+        `تم ضبط التوصيل ورسومه تلقائياً من بيانات المنطقة (لا تحسب إنت أي رسوم). ` +
+        `أكّد للعميل المنطقة${branchLine ? " والفرع" : ""} باختصار وكمّل الطلب (اعرض الملخص والتأكيد). لا تطلب منه عنوان مكتوب.`
+      : `التوجيه (لازم): موقع العميل اتحدد داخل منطقة «${route.zone.name}»${branchLine}. ` +
+        `تم ضبط التوصيل ورسومه تلقائياً من بيانات المنطقة (متحسبش أنت أي رسوم). ` +
+        `أكّد للعميل المنطقة${branchLine ? " والفرع" : ""} باختصار وكمّل الطلب (اعرض الملخص والتأكيد). متطلبش منه عنوان مكتوب.`,
   };
 }

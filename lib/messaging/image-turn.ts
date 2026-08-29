@@ -58,27 +58,52 @@ export function imageHistoryContent(baseText: string, description: string | null
  * to a warm question when the image is unclear. It does NOT touch the deterministic
  * allergen gate, which runs on the customer's own text independently and earlier.
  */
-export function buildImageDirective(ctx: ImageTurnContext, opts?: { deictic?: boolean }): string {
+export function buildImageDirective(
+  ctx: ImageTurnContext,
+  opts?: { deictic?: boolean; dialect?: string | null }
+): string {
   const desc = (ctx.description ?? "").trim();
-  // WO-IMAGE-BINDING — when the customer says «ده/دي/الصورة», the referent is THIS image:
-  // bind and answer, never ask "which one?" with the image in front of you (fixes FR-011
-  // fail 3, the products-photo non-answer). Availability stays guarded deterministically.
+  // DIALECT-BRANCHED. Appended to systemTail, so it is among the last things the model
+  // reads. It was Cairene for every tenant — «بيقول «ده/دي»»، «بعت صورة»، «القراءة دي»،
+  // «مش متطابقة»، «رحّب بيه»، «محتاج إيه بالظبط» — which is a Cairene instruction telling a
+  // Saudi agent how to talk about a photo a Saudi customer just sent.
+  const sa = opts?.dialect === "saudi";
+  // WO-IMAGE-BINDING — when the customer says «ده/دي/هذا/هذي/الصورة», the referent is THIS
+  // image: bind and answer, never ask "which one?" with the image in front of you (fixes
+  // FR-011 fail 3, the products-photo non-answer). Availability stays guarded
+  // deterministically.
   const deicticLine = opts?.deictic
-    ? "العميل بيقول «ده/دي» — ده إشارة مباشرة للصورة دي بالذات: اقرأها واربطها بالمنيو وجاوب فوراً، ممنوع تسأل «تقصد إيه» والصورة قدامك."
+    ? (sa
+        ? "العميل يقول «هذا/هذي» — هذي إشارة مباشرة للصورة هذي بالذات: اقرأها واربطها بالمنيو وجاوب فوراً، ممنوع تسأل «وش تقصد» والصورة قدامك."
+        : "العميل بيقول «ده/دي» — ده إشارة مباشرة للصورة دي بالذات: اقرأها واربطها بالمنيو وجاوب فوراً، ممنوع تسأل «تقصد إيه» والصورة قدامك.")
     : null;
   if (desc) {
-    return [
-      "## 👀 صورة من العميل (قراءة داخلية — ليست حقيقة)",
-      `العميل بعت صورة. قراءة بصرية بتوصفها: «${desc}».`,
-      ...(deicticLine ? [deicticLine] : []),
-      "اتعامل معاها طبيعي: لو عرض/كتيبة أو صنف واضح، اربطه بالمنيو الحقيقي وأكمّل بدفء (مثال: «شفت الصورة 👀 ده عرض الكتيبة — موجود! تحبه؟»).",
-      "ممنوع تماماً: تخترع سعر أو صنف مش موجود فعلاً في المنيو؛ أو تأكّد توفّر حاجة من غير ما تتأكد منها. القراءة دي مجرد وصف — لو مش متطابقة مع المنيو، اسأل توضيحاً.",
-      "لو الصورة مش واضحة أو مش متعلّقة بالأكل/الطلب، اسأل العميل بلطف محتاج إيه بالظبط. ممنوع الصمت أو تجاهل الصورة.",
-    ].join("\n");
+    return sa
+      ? [
+          "## 👀 صورة من العميل (قراءة داخلية — ليست حقيقة)",
+          `العميل أرسل صورة. قراءة بصرية توصفها: «${desc}».`,
+          ...(deicticLine ? [deicticLine] : []),
+          "تعامل معها طبيعي: إذا عرض/كتيّب أو صنف واضح، اربطه بالمنيو الحقيقي وكمّل بدفء (مثال: «شفت الصورة 👀 هذا عرض الكتيّب — موجود! تحبه؟»).",
+          "ممنوع تماماً: تخترع سعر أو صنف مو موجود فعلاً في المنيو؛ أو تأكّد توفّر شي من دون ما تتأكد منه. هذي القراءة مجرد وصف — إذا ما كانت متطابقة مع المنيو، اسأل توضيحاً.",
+          "إذا الصورة مو واضحة أو مو متعلّقة بالأكل/الطلب، اسأل العميل بلطف وش يحتاج بالضبط. ممنوع الصمت أو تجاهل الصورة.",
+        ].join("\n")
+      : [
+          "## 👀 صورة من العميل (قراءة داخلية — ليست حقيقة)",
+          `العميل بعت صورة. قراءة بصرية بتوصفها: «${desc}».`,
+          ...(deicticLine ? [deicticLine] : []),
+          "اتعامل معاها طبيعي: لو عرض/كتيبة أو صنف واضح، اربطه بالمنيو الحقيقي وأكمّل بدفء (مثال: «شفت الصورة 👀 ده عرض الكتيبة — موجود! تحبه؟»).",
+          "ممنوع تماماً: تخترع سعر أو صنف مش موجود فعلاً في المنيو؛ أو تأكّد توفّر حاجة من غير ما تتأكد منها. القراءة دي مجرد وصف — لو مش متطابقة مع المنيو، اسأل توضيحاً.",
+          "لو الصورة مش واضحة أو مش متعلّقة بالأكل/الطلب، اسأل العميل بلطف محتاج إيه بالظبط. ممنوع الصمت أو تجاهل الصورة.",
+        ].join("\n");
   }
   // Vision read unavailable (error/timeout/test mode) — warm fallback, never silence.
-  return [
-    "## 👀 صورة من العميل",
-    "العميل بعت صورة اتعذّر قراءتها آلياً. رحّب بيه واسأله بدفء يقول محتاج إيه أو يكتب سؤاله — من غير ما تخمّن محتوى الصورة. ممنوع الصمت.",
-  ].join("\n");
+  return sa
+    ? [
+        "## 👀 صورة من العميل",
+        "العميل أرسل صورة تعذّر قراءتها آلياً. رحّب فيه واسأله بدفء يقول وش يحتاج أو يكتب سؤاله — من دون ما تخمّن محتوى الصورة. ممنوع الصمت.",
+      ].join("\n")
+    : [
+        "## 👀 صورة من العميل",
+        "العميل بعت صورة اتعذّر قراءتها آلياً. رحّب بيه واسأله بدفء يقول محتاج إيه أو يكتب سؤاله — من غير ما تخمّن محتوى الصورة. ممنوع الصمت.",
+      ].join("\n");
 }

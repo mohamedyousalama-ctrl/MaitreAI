@@ -1191,7 +1191,7 @@ export async function runCustomerTurn(
       meta: { path: "perceiveTurn", parsed: !!perception },
     });
   }
-  const perceptionDirective = perceptionOn ? recoveryDirective(perception) : null;
+  const perceptionDirective = perceptionOn ? recoveryDirective(perception, dialect) : null;
   // P4 cadence cue (consumes the P3 read; fires only on a non-default mood signal).
   const cadenceDirective = ctx.cadence ? cadenceCue(perception) : null;
   const perceptionAsync = perceptionShouldRun && perceptionAsyncOn;
@@ -1207,7 +1207,8 @@ export async function runCustomerTurn(
       input.pinLocation,
       initialDraft ?? emptyDraft(ctx.profile.currency),
       brain.deliveryAreas,
-      brain.branches
+      brain.branches,
+      dialect,
     );
     geoDirective = outcome.directive;
     if (outcome.kind === "matched") {
@@ -1330,7 +1331,7 @@ export async function runCustomerTurn(
   // only — it does NOT touch the deterministic allergen gate, which already ran above
   // on input.userMessage (the caption / 📷 placeholder), never on the vision read.
   const imageDirective = input.imageContext
-    ? buildImageDirective(input.imageContext, { deictic: isDeicticImageReference(input.imageContext.caption ?? "") })
+    ? buildImageDirective(input.imageContext, { deictic: isDeicticImageReference(input.imageContext.caption ?? ""), dialect })
     : null;
 
   // WO-LIVE-3 §4 — pre-turn media directive (guard→model coherence). Only when
@@ -1381,7 +1382,7 @@ export async function runCustomerTurn(
   // ignored «ابعتلي صوره»). Per-turn directive, gated on the answer_first flag → OFF, or a
   // turn with no see-request → null → the prompt is byte-identical.
   const answerFirstDirective = isFeatureExplicitlyEnabled("answer_first", tenantFeatures)
-    ? buildAnswerFirstDirective({ enabled: true, asked: asksToSeeMedia(input.userMessage) })
+    ? buildAnswerFirstDirective({ enabled: true, asked: asksToSeeMedia(input.userMessage), dialect })
     : null;
 
   const runRespond = async (): Promise<RespondResult> => {

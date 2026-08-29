@@ -90,8 +90,14 @@ const D_PRODUCTS = "الصورة تعرض أصناف من مطعم (يظهر ا�
     /if \(input\.imageContext && isFeatureExplicitlyEnabled\("media_turn_trigger", tenantFeatures\)\) \{[\s\S]*?imageAvailabilityGuard\(\{/.test(ct));
   ok("WIRE: a rewrite emits the image_binding_rewrite measurement signal",
     /type: "image_binding_rewrite", detail: \{ \.\.\.imgGuard\.signal \}/.test(ct));
+  // Re-pinned 29 Aug: the options object gained `dialect` (the directive was Cairene for
+  // every tenant and is appended to systemTail — the model's last read of the turn).
+  // Asserting each option independently so the next addition does not break this again,
+  // while still requiring both to be present.
   ok("WIRE: the directive receives the deictic flag",
-    /buildImageDirective\(input\.imageContext, \{ deictic: isDeicticImageReference\(input\.imageContext\.caption \?\? ""\) \}\)/.test(ct));
+    /buildImageDirective\(input\.imageContext, \{[^}]*deictic: isDeicticImageReference\(input\.imageContext\.caption \?\? ""\)/.test(ct));
+  ok("WIRE: and the tenant dialect, so it is not Cairene for a Saudi tenant",
+    /buildImageDirective\(input\.imageContext, \{[^}]*dialect[^}]*\}\)/.test(ct));
 }
 
 console.log(`\nWO-IMAGE-BINDING PROOF: ${pass} passed, ${fail} failed`);
