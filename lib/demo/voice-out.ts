@@ -24,8 +24,9 @@
 // the onyx fallback, and this module refuses a fallback anyway — so routing through it
 // meant PAYING OpenAI for an onyx synthesis on every ElevenLabs failure and discarding the
 // bytes one line later, on an unauthenticated page, precisely when ElevenLabs is already
-// over quota. Calling the adapter directly makes the wrong voice structurally impossible
-// instead of refused after purchase.
+// over quota. Calling the adapter directly removes that automatic fallback purchase
+// entirely. The adapter/voice checks below are still refusals AFTER a synthesis has been
+// paid for — which is why they carry the spend to the ledger rather than dropping it.
 //
 // AND WE VERIFY WHAT CAME BACK, not what we asked for. `getTtsAdapter()` lives in the
 // shared WhatsApp-path file; a one-token edit there ("elevenlabs" → openaiTtsAdapter) used
@@ -74,6 +75,8 @@ export const DEMO_TTS_MAX_CHARS = 600;
  *  an untrimmed truthiness test let it through to a request against `.../text-to-speech/%20`. */
 const envTrim = (k: string): string => (process.env[k] || "").trim();
 
+const INVISIBLE_RE = /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/g;
+
 /** ElevenLabs' own STOCK voice ids — public constants, shipped in every account.
  *
  *  THIS IS A HEURISTIC, AND THE ONLY HONEST CLAIM FOR IT: it catches the LIKELY paste
@@ -98,7 +101,17 @@ const ELEVENLABS_STOCK_VOICE_IDS = new Set([
   "onwK4e9ZLuTAKqWW03F9", "pFZP5JQG7iQjIQuC4Bku", "piTKgcLEGmPE4e6mEKli", "pNInz6obpgDQGcFmaJgB",
   "pqHfZKP75CvOlQylNhV4", "t0jbNlBVZ17f02VDIeMI", "yoZ06aMxZJJ28mfd3POQ", "z9fAnlkpzviPz146aGWa",
   "zcAOhNBS3c14rBihAFp1", "ThT5KcBeYPX3keUQqHPh",
-]);
+  // legacy premade set — verified to speak before they were listed
+  "29vD33N1CtxCmqQRPOHJ", "2EiwWnXFnvU5JabPnv8n", "5Q0t7uMcjvnagumLfvZi",
+  "GBv7mTt0atIp3Br8iCZE", "pMsXgVXv3BLzUgSXRplE",
+].map((v) => v.toLowerCase()));
+
+/** Compare stock ids case-insensitively and with invisibles stripped: a lowercased paste
+ *  (`21m00tcm4tlvdq8ikwam`) and an id carrying a stray zero-width character both used to
+ *  slip past an exact-string Set and speak in a stock voice. */
+function isStockVoiceId(id: string): boolean {
+  return ELEVENLABS_STOCK_VOICE_IDS.has(id.replace(INVISIBLE_RE, "").trim().toLowerCase());
+}
 
 /** True when the demo is configured to speak in a voice we actually chose.
  *
@@ -110,7 +123,7 @@ export function demoVoiceProviderPinned(): boolean {
   if (pinned === "elevenlabs") {
     const voiceId = envTrim("ELEVENLABS_VOICE_ID");
     if (!envTrim("ELEVENLABS_API_KEY") || !voiceId) return false;
-    if (ELEVENLABS_STOCK_VOICE_IDS.has(voiceId)) return false;
+    if (isStockVoiceId(voiceId)) return false;
     // REFUSE A MODEL WE CANNOT PRICE. ttsCostUsd() returns 0 for an unknown provider:model,
     // so an unrecognised ELEVENLABS_TTS_MODEL does not merely cost more — it reports its
     // cost as ZERO, and the demo's spend goes invisible to lib/monitoring/sweep.ts again.
@@ -126,7 +139,6 @@ export function demoVoiceProviderPinned(): boolean {
 
 /** Zero-width and bidi characters that `trim()` does not remove. A reply of one U+200B is
  *  blank to a reader and a billable character to a provider. */
-const INVISIBLE_RE = /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/g;
 
 /** Synthesize the demo's spoken reply, or explain why it stayed silent. Never throws. */
 export async function demoVoiceReply(
@@ -164,9 +176,15 @@ export async function demoVoiceReply(
   // than logging a cause that is not true.
   if (adapter.name === "mock") return none("mock_pinned");
 
+  // PASS THE ID WE VALIDATED, and below, verify the one that came back. Calling
+  // synthesize(text) with no options left the adapter to re-read ELEVENLABS_VOICE_ID
+  // itself, so the value checked here and the value actually spoken were never the same
+  // value — a default injected in the adapter shipped ElevenLabs' stock "Rachel" to a
+  // visitor with skipped:null and every proof green.
+  const pinnedVoiceId = envTrim("ELEVENLABS_VOICE_ID");
   let result;
   try {
-    result = await adapter.synthesize(text);
+    result = await adapter.synthesize(text, { voiceId: pinnedVoiceId });
   } catch {
     // No fallback is attempted, and none is bought. On WhatsApp falling back to onyx is
     // right — a customer waiting on an order is better served by any voice than silence.
@@ -179,7 +197,18 @@ export async function demoVoiceReply(
   // THE PROVIDER'S OWN ACCOUNT OF ITSELF, checked after the fact. getTtsAdapter() is a
   // shared file on the WhatsApp path; asserting only what we ASKED for left the demo's
   // whole voice guarantee resting on a file no demo proof reads.
-  if (result.adapter !== "elevenlabs") return none("wrong_voice");
+  // A refusal AFTER a synthesis still cost money — carry the spend so the ledger sees it.
+  const spentAnyway = {
+    costUsd: result.costUsd, chars: result.chars,
+    model: result.model, adapter: result.adapter,
+  };
+  const refuse = (why: DemoVoiceOutSkip): DemoVoiceOut =>
+    ({ audioBase64: null, mime: null, skipped: why, spend: spentAnyway });
+
+  if (result.adapter !== "elevenlabs") return refuse("wrong_voice");
+  // THE VOICE, not just the provider. Right company, wrong person is still a stranger
+  // reading Najdi Arabic to a prospect.
+  if ((result.voiceId ?? "") !== pinnedVoiceId) return refuse("wrong_voice");
 
   return {
     audioBase64: Buffer.from(result.audio).toString("base64"),

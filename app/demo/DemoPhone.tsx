@@ -8,6 +8,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { decodeReplyAudio } from "@/lib/demo/audio-payload";
 import { DEMO_MAX_AUDIO_BYTES, DEMO_MAX_CHARS, DEMO_MAX_RECORD_SECONDS } from "@/lib/demo/config";
 import { parseWhatsAppMarkup, isEmojiOnly } from "@/lib/util/whatsapp-markup";
 
@@ -356,24 +357,20 @@ export default function DemoPhone() {
         // disk and disappears with the tab. Additive: the text bubble renders exactly as
         // before and gains a play control, which is what keeps the reply usable on a muted
         // phone — i.e. most phones.
+        // The decode lives in lib/demo/audio-payload.ts so a proof can drive it with real
+        // bytes; it returns null rather than throwing, so a bad payload never costs the
+        // visitor their reply.
         let audioUrl: string | null = null;
-        if (data.replyAudio) {
-          try {
-            const bin = atob(data.replyAudio);
-            const bytes = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-            const url = URL.createObjectURL(new Blob([bytes], { type: data.replyAudioMime || "audio/ogg" }));
-            if (!mounted.current) {
-              // The visitor closed the tab mid-request. The unmount cleanup has already
-              // run, so anything pushed now would never be revoked.
-              URL.revokeObjectURL(url);
-            } else {
-              audioUrls.current.push(url);
-              audioUrl = url;
-            }
-          } catch {
-            // A malformed payload must never cost the visitor their reply.
-            audioUrl = null;
+        const decoded = decodeReplyAudio(data.replyAudio, data.replyAudioMime);
+        if (decoded) {
+          const url = URL.createObjectURL(new Blob([decoded.bytes], { type: decoded.type }));
+          if (!mounted.current) {
+            // The visitor closed the tab mid-request. The unmount cleanup has already run,
+            // so anything pushed now would never be revoked.
+            URL.revokeObjectURL(url);
+          } else {
+            audioUrls.current.push(url);
+            audioUrl = url;
           }
         }
         push({

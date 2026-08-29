@@ -66,10 +66,43 @@ export function decideVoiceSend(input: VoiceBudgetInput): VoiceBudgetDecision {
 }
 
 // --- reply-content suppression detectors (money / payment link) --------------
-// Money figure: a number adjacent to a currency token (SAR / ريال / ر.س / جنيه),
-// or a currency token adjacent to a number — either order.
+// Money figure: a number adjacent to a currency token, EITHER ORDER — plus the shapes a
+// real reply actually uses. The previous version required an ASCII digit beside a currency
+// word, and was verified to MISS every one of these, all of which were then spoken aloud:
+//
+//   «الإجمالي: ٧٠.١٥ ر.س»          Arabic-Indic digits — `\d` never matches ٠-٩ at all.
+//                                   On a western-digit tenant the outbound formatter
+//                                   happened to rewrite these to ASCII first, so the gate
+//                                   only ever worked BY ACCIDENT of the tenant profile —
+//                                   and on an Arabic-Indic tenant the same formatter
+//                                   rewrites a caught price INTO a miss.
+//   «قصدك ٧٠ ريال؟»                a quoted read-back: the formatter deliberately exempts
+//                                   quoted runs (they are the customer's own words), so
+//                                   the digits survive un-normalised.
+//   «الكبسة بـ70 والمندي بـ65»      a price with NO currency token — the shape the prompt's
+//                                   own few-shot examples use.
+//   «الإجمالي 70.15 ﷼»             U+FDFC RIAL SIGN.
+//   «بسعر 45 ريـال»                 tatweel inside the currency word.
+//
+// So: normalise digits and strip tatweel FIRST (see moneyScanText), and treat the bare
+// price shapes as money too. A false positive costs one text-only reply, which is free.
 const MONEY_RE =
-  /(\d[\d.,]*\s*(?:ريال|ر\.?\s?س|sar|s\.?r|جنيه|ج\.?\s?م|درهم|aed|egp))|((?:ريال|ر\.?\s?س|sar|جنيه|درهم)\s*\d)/i;
+  /(\d[\d.,]*\s*(?:ريال|ر\.?\s?س|sar|s\.?r|جنيه|ج\.?\s?م|درهم|aed|egp|﷼))|((?:ريال|ر\.?\s?س|sar|جنيه|درهم|﷼)\s*\d)/i;
+// Bare price shapes, no currency token: «بـ45», «= 75», «45 + 20», «السعر 45».
+// The «بـ» prefix is matched as a bare «ب» because moneyScanText strips the tatweel first.
+const BARE_PRICE_RE =
+  /(ب\s*\d)|(=\s*\d)|(\d\s*\+\s*\d)|((?:السعر|سعر|الإجمالي|المجموع|الاجمالي|بسعر)\s*:?\s*\d)/i;
+
+/** Arabic-Indic and Eastern-Arabic digits -> ASCII, and drop tatweel. The money scan must
+ *  not depend on the tenant's digit style: the SAME shared gate serves a western-digit
+ *  Saudi tenant and an Arabic-Indic Egyptian one, and a rule that only sees ASCII protects
+ *  exactly one of them. */
+function moneyScanText(t: string): string {
+  return t
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
+    .replace(/\u0640/g, "");
+}
 // Payment link/intent: an explicit pay marker or a known checkout URL.
 const PAY_LINK_RE = /(رابط\s*الدفع|ادفع|الدفع\s*الآن|checkout|moyasar|payment|pay(?:link)?\b|https?:\/\/\S*(?:pay|checkout|moyasar)\S*)/i;
 
@@ -84,8 +117,63 @@ export function voiceHardZeroReason(
 ): VoiceZeroReason | null {
   if (signals.safetyHold) return "safety_hold";
   if (signals.isReceipt) return "receipt";
-  const t = String(replyText ?? "");
+  const t = moneyScanText(String(replyText ?? ""));
   if (PAY_LINK_RE.test(t)) return "payment_link";
-  if (MONEY_RE.test(t)) return "money_figure";
+  if (MONEY_RE.test(t) || BARE_PRICE_RE.test(t)) return "money_figure";
   return null;
+}
+
+// ── WHICH TURNS ARE SAFETY TURNS — decided from the turn, not from proxies ──────────
+//
+// This exists because a public demo derived "is this a safety turn?" from `escalate ===
+// true` and one model string, and the ACTIVE ANAPHYLAXIS branch sets neither: it returns
+// escalate:false with model "deterministic_allergen_companion". The reply that was
+// therefore synthesized and played to a visitor contained the ambulance number 997 — the
+// one sentence in the product where a mis-heard digit has a physical consequence, and the
+// exact category the top of this file rules text-only.
+//
+// The signal is `stopReason`, which every deterministic branch already sets truthfully.
+
+/** Stop reasons whose reply may be spoken. An ALLOWLIST, deliberately: a deterministic
+ *  branch added later is SILENT until someone lists it here on purpose. Text-only costs
+ *  nothing; a spoken safety message is a new mis-hearing surface. */
+export const VOICE_SPEAKABLE_STOP_REASONS: ReadonlySet<string> = new Set([
+  "end_turn", "tool_finalized", "goal_clarify", "needs_fulfillment",
+  "voice_garble_guard", "voice_ladder_confirm",
+  // provider-side stop reasons for an ordinary model turn
+  "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal",
+]);
+
+/** Named for the record; the fail-closed default below already covers them. */
+const SAFETY_STOP_REASONS: ReadonlySet<string> = new Set([
+  "allergen_companion_emergency", "allergen_gate_notify", "allergy_checkpoint",
+  "allergy_simple_deflection", "allergy_calm_hold", "allergy_calm_hold_emergency",
+  "bulk_handoff",
+]);
+
+/** Turns that read an order back to the customer — a receipt by any other name. */
+const RECEIPT_STOP_REASONS: ReadonlySet<string> = new Set([
+  "dup_order_reference", "old_draft_restatement",
+]);
+
+export interface VoiceTurnSignals { safetyHold: boolean; isReceipt: boolean }
+
+/** Derive the hard-zero signals from a completed turn. Pure. */
+export function voiceSignalsForTurn(turn: {
+  stopReason?: string | null;
+  escalate?: boolean | null;
+  model?: string | null;
+  orderNumber?: string | null;
+}): VoiceTurnSignals {
+  const stop = String(turn.stopReason ?? "").trim();
+  const model = String(turn.model ?? "");
+  const isReceipt = RECEIPT_STOP_REASONS.has(stop) || !!turn.orderNumber;
+  const namedSafety =
+    turn.escalate === true ||
+    SAFETY_STOP_REASONS.has(stop) ||
+    // Any allergen branch, including one named after this was written.
+    /^deterministic_allerg/.test(model);
+  // FAIL CLOSED: a stop reason nobody listed is treated as a safety turn.
+  const unknown = !VOICE_SPEAKABLE_STOP_REASONS.has(stop) && !isReceipt;
+  return { safetyHold: namedSafety || unknown, isReceipt };
 }

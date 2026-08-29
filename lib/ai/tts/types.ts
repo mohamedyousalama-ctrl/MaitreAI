@@ -30,6 +30,13 @@ export interface TtsResult {
   chars: number;
   /** Synthesis cost in USD (chars × provider rate); 0 for mock/unknown. */
   costUsd: number;
+  /** The voice actually requested of the provider, echoed back so a caller can verify that
+   *  the voice it VALIDATED is the voice that spoke. Without this the demo validated
+   *  ELEVENLABS_VOICE_ID and then called synthesize() with no options, leaving the adapter
+   *  to re-read the env var itself — so the value checked and the value used were never the
+   *  same value, and a default injected in the adapter shipped a stock voice undetected.
+   *  Null where the concept does not apply (mock). */
+  voiceId?: string | null;
 }
 
 export interface TtsAdapter {

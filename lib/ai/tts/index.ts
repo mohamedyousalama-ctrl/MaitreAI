@@ -19,7 +19,10 @@ import { openaiTtsAdapter } from "./openai";
 
 // (agent-eval re-kick: real path-matching change so the paths filter triggers CI.)
 export function getTtsAdapter(): TtsAdapter {
-  const sel = (process.env.TTS_ADAPTER || "").toLowerCase();
+  // TRIMMED: a caller that trimmed this value while this function did not would "pin"
+  // `" mock "` and then fall through to key inference here and resolve to OpenAI — buying
+  // an onyx synthesis on every turn and discarding it.
+  const sel = (process.env.TTS_ADAPTER || "").trim().toLowerCase();
   if (sel === "elevenlabs") return elevenlabsTtsAdapter;
   if (sel === "openai") return openaiTtsAdapter;
   if (sel === "mock") return mockTtsAdapter;

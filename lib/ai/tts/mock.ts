@@ -17,6 +17,7 @@ export const mockTtsAdapter: TtsAdapter = {
       adapter: "mock",
       chars: String(text ?? "").length,
       costUsd: 0,
+      voiceId: null,
     };
   },
 };

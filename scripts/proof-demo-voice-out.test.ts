@@ -17,6 +17,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { demoVoiceProviderPinned, demoVoiceReply, DEMO_TTS_MAX_CHARS } from "../lib/demo/voice-out.ts";
+import { voiceSignalsForTurn, voiceHardZeroReason } from "../lib/messaging/voice-budget.ts";
+import { decodeReplyAudio, DEMO_AUDIO_DEFAULT_MIME } from "../lib/demo/audio-payload.ts";
 
 let pass = 0, fail = 0;
 const ok = (name: string, condition: boolean) => {
@@ -156,10 +158,8 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     // And the control: an ordinary reply under the SAME pinned provider is NOT suppressed,
     // so the four assertions above are about the categories and not about the config.
     const plain = await demoVoiceReply("تفضل، وش تحب تطلب؟", speak);
-    ok("an ordinary reply is not suppressed by the hard-zero gate",
-      plain.skipped === "mock_pinned");
-    ok("a deliberately pinned `mock` reports itself, not a false misconfiguration",
-      plain.skipped === "mock_pinned");
+    ok("an ordinary reply is not suppressed, and a pinned `mock` reports itself rather "
+      + "than a misconfiguration that is not true", plain.skipped === "mock_pinned");
   });
 }
 
@@ -169,8 +169,6 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   const route = read("app/api/demo/voice/route.ts");
   // The route already writes STT cost to agent_runs and says why: "the one surface anyone
   // can call was the one surface the spend monitor could not see". TTS is the same money.
-  ok("the wrapper carries the provider's cost back to the caller",
-    /costUsd: result\.costUsd/.test(mod));
   ok("a silent turn reports no spend", /spend: null/.test(mod));
   ok("the route writes TTS cost into the ledger sweep.ts reads",
     /trigger: "voice_tts"/.test(route) && /cost_usd: spoken\.spend\.costUsd/.test(route));
@@ -192,11 +190,19 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   const ONYX_BYTES = "ONYX-AUDIO-BYTES";
   const realFetch = globalThis.fetch;
   let hosts: string[] = [];
+  // THE PATH, not only the host. Recording the host alone left the pinned VOICE ID
+  // unverified on the wire: an adapter defaulting `opts?.voiceId || "<stock Rachel>"` still
+  // called api.elevenlabs.io, so every host assertion passed while a stock female voice
+  // read Najdi Arabic to a visitor.
+  let paths: string[] = [];
+  let bodies: string[] = [];
 
   const stub = (elStatus: number) => {
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
       hosts.push(new URL(url).host);
+      paths.push(new URL(url).pathname);
+      if (init && typeof init.body === "string") bodies.push(init.body);
       const body = url.includes("elevenlabs.io") ? EL_BYTES : ONYX_BYTES;
       const okStatus = url.includes("elevenlabs.io") ? elStatus : 200;
       return {
@@ -215,7 +221,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   const SPEAK = { inboundWasVoice: true, safetyHold: false, isReceipt: false };
 
   // (a) HEALTHY: the visitor gets ElevenLabs' actual bytes, and no other host is touched.
-  hosts = []; stub(200);
+  hosts = []; paths = []; bodies = []; stub(200);
   await withEnvAsync(PINNED, async () => {
     const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
     ok("a healthy turn returns the provider's real audio to the visitor",
@@ -224,11 +230,19 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
       out.spend !== null && out.spend!.costUsd > 0 && out.spend!.adapter === "elevenlabs");
     ok("only ElevenLabs is contacted on a healthy turn",
       hosts.length === 1 && hosts[0] === "api.elevenlabs.io");
+    ok("THE PINNED VOICE ID is the one actually requested on the wire",
+      paths.length === 1 && paths[0].includes("KhalidCustomVoice01"));
+    ok("the priced model is the one actually sent to the provider",
+      bodies.length === 1 && bodies[0].includes("eleven_flash_v2.5"));
+    ok("the reported spend is the model+chars the provider was actually given",
+      out.spend !== null && out.spend!.model === "eleven_flash_v2.5" &&
+      out.spend!.chars === "تفضل، وش تحب تطلب؟".length &&
+      Math.abs(out.spend!.costUsd - out.spend!.chars * 0.00011) < 1e-9);
   });
 
   // (b) ELEVENLABS DOWN: refuse, and — the finding this replaces — never BUY the onyx
   // synthesis we would only discard. OPENAI_API_KEY is present and onyx would succeed.
-  hosts = []; stub(401);
+  hosts = []; paths = []; bodies = []; stub(401);
   await withEnvAsync(PINNED, async () => {
     const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
     ok("an ElevenLabs failure yields NO audio — onyx never reaches the visitor",
@@ -244,7 +258,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ["an over-cap turn", "ا".repeat(DEMO_TTS_MAX_CHARS + 1), SPEAK],
     ["a typed turn", "تمام", { ...SPEAK, inboundWasVoice: false }],
   ] as const) {
-    hosts = []; stub(200);
+    hosts = []; paths = []; bodies = []; stub(200);
     await withEnvAsync(PINNED, async () => {
       const out = await demoVoiceReply(text, opts);
       ok(`${name} contacts no provider at all`, hosts.length === 0 && out.audioBase64 === null);
@@ -252,7 +266,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   }
 
   // (d) A STOCK ElevenLabs voice id is refused before the network — the likely paste error.
-  hosts = []; stub(200);
+  hosts = []; paths = []; bodies = []; stub(200);
   await withEnvAsync({ ...PINNED, ELEVENLABS_VOICE_ID: "21m00Tcm4TlvDq8ikWAM" }, async () => {
     const out = await demoVoiceReply("تفضل", SPEAK);
     ok("ElevenLabs' stock 'Rachel' is refused — a stock voice is never the designed Khalid",
@@ -281,10 +295,50 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   });
 
   // (g) A zero-width-only reply is blank to a reader and billable to a provider.
-  hosts = []; stub(200);
+  hosts = []; paths = []; bodies = []; stub(200);
   await withEnvAsync(PINNED, async () => {
     const out = await demoVoiceReply("\u200b\u200b", SPEAK);
     ok("a zero-width-only reply is empty, not billable", out.skipped === "empty" && hosts.length === 0);
+  });
+
+  // (h2) TRIM MUST BE AGREED ACROSS FILES. When one file trimmed an env value and another
+  // read it raw, the two saw different strings: one stray space in ELEVENLABS_TTS_MODEL
+  // passed the price check here and priced at $0 in the adapter, taking the entire
+  // synthesis off the spend ledger. Money spent, nothing recorded.
+  hosts = []; paths = []; bodies = []; stub(200);
+  await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: "  eleven_flash_v2.5  " }, async () => {
+    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    ok("a padded model still prices, and the ledger still sees the spend",
+      out.audioBase64 !== null && out.spend !== null && out.spend!.costUsd > 0);
+    ok("the padded model is trimmed before it reaches the provider",
+      bodies.length === 1 && bodies[0].includes('"eleven_flash_v2.5"'));
+  });
+  hosts = []; paths = []; bodies = []; stub(200);
+  await withEnvAsync({ ...PINNED, ELEVENLABS_VOICE_ID: "  KhalidCustomVoice01  " }, async () => {
+    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    ok("a padded voice id is trimmed, not requested as %20%20ID%20%20",
+      out.audioBase64 !== null && paths.length === 1 && paths[0].includes("/KhalidCustomVoice01"));
+  });
+  // A padded `mock` must resolve to the mock, NOT fall through to key inference and buy an
+  // OpenAI onyx synthesis on an unauthenticated page.
+  hosts = []; paths = []; bodies = []; stub(200);
+  await withEnvAsync({ TTS_ADAPTER: "  mock  ", OPENAI_API_KEY: "sk-present" }, async () => {
+    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    ok("a padded `mock` pin stays mock and contacts NO provider",
+      out.skipped === "mock_pinned" && hosts.length === 0);
+  });
+
+  // (h3) A 200 with an empty body is not a success. Without this check it was reported as
+  // audio, with spend, for bytes that do not exist.
+  hosts = []; paths = []; bodies = [];
+  globalThis.fetch = (async () => ({
+    ok: true, status: 200, text: async () => "",
+    arrayBuffer: async () => new ArrayBuffer(0),
+  }) as unknown as Response) as typeof fetch;
+  await withEnvAsync(PINNED, async () => {
+    const out = await demoVoiceReply("تفضل، وش تحب تطلب؟", SPEAK);
+    ok("an empty 200 is a failure, not silent audio with a bill",
+      out.audioBase64 === null && out.skipped === "synth_failed" && out.spend === null);
   });
 
   // (h) The docstring promises this never throws.
@@ -292,6 +346,99 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   ok("a missing options argument does not throw", noOpts.skipped === "not_triggered");
 
   globalThis.fetch = realFetch;
+}
+
+// ── 2e. THE SIGNAL THE ROUTE FEEDS THE GATE — the 997 finding ────────────────
+// The route used to derive "is this a safety turn?" from `escalate === true` and one model
+// string. The ACTIVE ANAPHYLAXIS branch sets NEITHER — escalate:false, and a different
+// model — so the reply telling a visitor to call an ambulance on 997 was synthesized and
+// played aloud. Nothing in the 214-file suite asserted what the route passed, so setting
+// both arguments to `false` left every proof green.
+{
+  const SAFE_TO_SPEAK = { stopReason: "end_turn", escalate: false, model: "claude", orderNumber: null };
+  ok("an ordinary reply is speakable", (() => {
+    const g = voiceSignalsForTurn(SAFE_TO_SPEAK);
+    return !g.safetyHold && !g.isReceipt;
+  })());
+
+  // THE ONE THAT WAS SPOKEN. escalate:false and a model string the route did not check.
+  const emergency = voiceSignalsForTurn({
+    stopReason: "allergen_companion_emergency",
+    escalate: false, model: "deterministic_allergen_companion", orderNumber: null,
+  });
+  ok("ACTIVE ANAPHYLAXIS is a safety turn even though escalate is false", emergency.safetyHold);
+
+  for (const [why, stop, model] of [
+    ["the deterministic allergen gate", "allergen_gate_notify", "deterministic_allergen_gate"],
+    ["an allergy checkpoint", "allergy_checkpoint", "deterministic_allergen_companion"],
+    ["the simple-allergy deflection", "allergy_simple_deflection", "deterministic_allergy_simple"],
+    ["a calm hold", "allergy_calm_hold", "deterministic_allergy_calm_hold"],
+    ["a calm hold in an emergency", "allergy_calm_hold_emergency", "deterministic_allergy_calm_hold"],
+    ["a bulk handoff", "bulk_handoff", "claude"],
+  ] as const) {
+    ok(`${why} is a safety turn`,
+      voiceSignalsForTurn({ stopReason: stop, escalate: false, model, orderNumber: null }).safetyHold);
+  }
+
+  ok("an order read back from a PREVIOUS turn is a receipt, even with no order number now",
+    voiceSignalsForTurn({ stopReason: "dup_order_reference", escalate: false, model: "deterministic_dup_order", orderNumber: null }).isReceipt);
+  ok("restating an old draft is a receipt",
+    voiceSignalsForTurn({ stopReason: "old_draft_restatement", escalate: false, model: "x", orderNumber: null }).isReceipt);
+  ok("an order closed on THIS turn is a receipt",
+    voiceSignalsForTurn({ ...SAFE_TO_SPEAK, orderNumber: "1006" }).isReceipt);
+  ok("an escalating turn is a safety turn", voiceSignalsForTurn({ ...SAFE_TO_SPEAK, escalate: true }).safetyHold);
+
+  // FAIL CLOSED. A deterministic branch added next year is silent until someone lists it.
+  ok("an UNKNOWN stop reason is treated as a safety turn, not spoken",
+    voiceSignalsForTurn({ stopReason: "some_branch_invented_later", escalate: false, model: "x", orderNumber: null }).safetyHold);
+  ok("an allergen model nobody listed is still a safety turn",
+    voiceSignalsForTurn({ stopReason: "end_turn", escalate: false, model: "deterministic_allergen_something_new", orderNumber: null }).safetyHold);
+
+  // And the route must actually use it rather than reconstructing proxies.
+  const vroute = read("app/api/demo/voice/route.ts");
+  ok("the route derives the signals from the turn, not from escalate/model proxies",
+    /voiceSignalsForTurn\(/.test(vroute) &&
+    /safetyHold: voiceSignals\.safetyHold/.test(vroute) &&
+    /isReceipt: voiceSignals\.isReceipt/.test(vroute) &&
+    !/safetyHold: allergenGate/.test(vroute));
+}
+
+// ── 2f. PRICES THAT WERE SPOKEN ─────────────────────────────────────────────
+// Every string below was verified to be SYNTHESIZED AND PLAYED to a visitor.
+{
+  const spoken: [string, string][] = [
+    ["Arabic-Indic digits — `\\d` never matched ٠-٩ at all", "الإجمالي: ٧٠.١٥ ر.س"],
+    ["a quoted read-back, which the outbound formatter deliberately leaves un-normalised", "قصدك «كبسة بـ٧٠ ريال»؟"],
+    ["a price with NO currency token", "الكبسة بـ70 والمندي بـ65، وش تختار؟"],
+    ["the shape the prompt's own examples use", "بروست بـ45 + بطاطس بـ20 = 65"],
+    ["U+FDFC RIAL SIGN", "الإجمالي 70.15 ﷼"],
+    ["tatweel inside the currency word", "كبسة لحم بسعر 45 ريـال"],
+    ["an Arabic-Indic Egyptian total", "المجموع ١٢٠ جنيه"],
+  ];
+  for (const [why, text] of spoken) {
+    ok(`a price is text-only: ${why}`,
+      voiceHardZeroReason(text, { safetyHold: false, isReceipt: false }) === "money_figure");
+  }
+  ok("an ordinary reply with no price is still speakable",
+    voiceHardZeroReason("تفضل، وش تحب تطلب اليوم؟", { safetyHold: false, isReceipt: false }) === null);
+  ok("a plain quantity is not mistaken for a price",
+    voiceHardZeroReason("تمام، ضفت لك ٢ كبسة", { safetyHold: false, isReceipt: false }) === null);
+}
+
+// ── 2g. THE CLIENT DECODE, driven with real bytes ───────────────────────────
+{
+  const b64 = Buffer.from("OGG-BYTES").toString("base64");
+  const good = decodeReplyAudio(b64, "audio/ogg");
+  ok("a valid payload decodes to the provider's actual bytes",
+    !!good && Buffer.from(good.bytes).toString() === "OGG-BYTES");
+  ok("the MIME defaults to ogg, not mpeg — the provider returns opus in an ogg container",
+    decodeReplyAudio(b64, null)?.type === DEMO_AUDIO_DEFAULT_MIME && DEMO_AUDIO_DEFAULT_MIME === "audio/ogg");
+  for (const [why, val] of [
+    ["a null payload", null], ["an empty string", ""], ["a non-string", 42],
+    ["malformed base64", "!!!not-base64!!!"],
+  ] as const) {
+    ok(`${why} yields no audio and does not throw`, decodeReplyAudio(val, "audio/ogg") === null);
+  }
 }
 
 // ── 3. THE LINE THAT MUST NEVER BE COPIED FROM WHATSAPP ──────────────────────
@@ -317,8 +464,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   // a comment cannot satisfy now that read() strips comments.
   ok("the fallback wrapper is not imported — onyx cannot be bought, let alone shipped",
     !/synthesizeVoiceReply/.test(mod));
-  ok("the provider that ANSWERED is verified, not the one we asked for",
-    /result\.adapter !== "elevenlabs"/.test(mod));
+
   // This used to match the word "never blocks the reply" — which appears ONLY in a comment,
   // so it checked no code whatsoever. The real property has three parts, and the last two
   // are what mutations "route computes the audio and never returns it" and "client ignores
@@ -335,7 +481,8 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   {
     const cl = read("app/demo/DemoPhone.tsx");
     ok("the client actually consumes the audio rather than dropping it",
-      /if\s*\(\s*data\.replyAudio/.test(cl) && /atob\(data\.replyAudio/.test(cl) &&
+      /decodeReplyAudio\(\s*data\.replyAudio/.test(cl) &&
+      /createObjectURL\(new Blob\(\[decoded\.bytes\]/.test(cl) &&
       /audioUrl = url/.test(cl));
   }
   ok("the route asks for voice only on a spoken turn", /inboundWasVoice: true/.test(route));

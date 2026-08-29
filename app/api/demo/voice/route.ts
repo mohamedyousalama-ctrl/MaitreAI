@@ -25,6 +25,7 @@ import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
 import { demoVoiceReply } from "@/lib/demo/voice-out";
+import { voiceSignalsForTurn } from "@/lib/messaging/voice-budget";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
 import { mustWrite } from "@/lib/db/checked";
 import { rateLimit } from "@/lib/rate-limit";
@@ -232,10 +233,22 @@ export async function POST(req: Request) {
     // surface, and this demo exists to show the allergen gate — speaking that reply
     // would demonstrate the feature in the one modality the product forbids for it.
     const allergenGate = out.model === "deterministic_allergen_gate";
+    // DERIVED FROM THE TURN, NOT FROM PROXIES. This previously read
+    // `safetyHold: allergenGate || out.escalate === true`, and the ACTIVE ANAPHYLAXIS
+    // branch sets neither of those — it returns escalate:false with a different model
+    // string — so the reply telling a visitor to call an ambulance was synthesized and
+    // played aloud. voiceSignalsForTurn reads stopReason, which that branch does set, and
+    // fails closed on any stop reason nobody has listed as safe to speak.
+    const voiceSignals = voiceSignalsForTurn({
+      stopReason: out.stopReason,
+      escalate: out.escalate,
+      model: out.model,
+      orderNumber: closed.orderNumber,
+    });
     const spoken = await demoVoiceReply(closed.reply, {
       inboundWasVoice: true,
-      safetyHold: allergenGate || out.escalate === true,
-      isReceipt: !!closed.orderNumber,
+      safetyHold: voiceSignals.safetyHold,
+      isReceipt: voiceSignals.isReceipt,
     });
     // `not_triggered` and `mock_pinned` are deliberate configurations, not faults.
     if (spoken.skipped && spoken.skipped !== "not_triggered" && spoken.skipped !== "mock_pinned") {
@@ -248,7 +261,11 @@ export async function POST(req: Request) {
     // synthesis is already paid for and the reply is already composed, so refusing the
     // response would discard work we have been billed for without preventing any spend.
     // It is loud instead: the turn is already counted by the durable guard.
-    if (spoken.spend && spoken.spend.costUsd > 0) {
+    // UNCONDITIONAL on a real synthesis. Gating this on `costUsd > 0` meant that any
+    // mispriced model — one stray space in ELEVENLABS_TTS_MODEL was enough — priced at $0
+    // and then wrote NO ROW AT ALL, so 100% of the spend went invisible. A zero cost on a
+    // real synthesis is exactly the anomaly the monitor should see.
+    if (spoken.spend) {
       try {
         await mustWrite<{ id: string }>(
           admin.from("agent_runs").insert({

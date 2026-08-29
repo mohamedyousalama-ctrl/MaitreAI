@@ -22,7 +22,7 @@
 // its entire life.
 // ============================================================================
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   isDemoHost, DEMO_RESTAURANT_ID, DEMO_MAX_CHARS, DEMO_MAX_HISTORY,
@@ -326,18 +326,36 @@ const demoSurface: string[] = [];
     for (const e of readdirSync(resolve(ROOT, dir), { withFileTypes: true })) {
       const child = `${dir}/${e.name}`;
       if (e.isDirectory()) walk(child);
-      else if (/\.tsx?$/.test(e.name)) demoSurface.push(child);
+      // Any source extension: the same rogue file renamed .mjs walked straight past a
+      // `.tsx?` filter.
+      else if (/\.(tsx?|jsx?|mjs|cjs)$/.test(e.name)) demoSurface.push(child);
     }
   };
-  for (const d of ["app/demo", "app/api/demo", "lib/demo"]) walk(d);
+  for (const d of ["app/demo", "app/api/demo", "lib/demo", "components/demo"]) {
+    if (existsSync(resolve(ROOT, d))) walk(d);
+  }
   demoSurface.sort();
 }
 ok("the demo-surface scan actually found the demo files", demoSurface.length >= 8);
 ok("the scan covers the file that calls the provider", demoSurface.includes(DEMO_TTS_WRAPPER));
 
-const REACHES_PROVIDER = /lib\/ai\/tts|getTtsAdapter\s*\(|synthesizeVoiceReply\s*\(/;
+// Imports AND raw HTTP. A scan for imports alone was evaded by a file that simply fetched
+// api.elevenlabs.io directly — no wrapper, no pin, no character cap. It is also evaded by
+// a relative import, so match the path shape rather than only the `@/` alias.
+const REACHES_PROVIDER =
+  /lib\/ai\/tts|\.\.?\/ai\/tts|getTtsAdapter\s*\(|synthesizeVoiceReply\s*\(|api\.elevenlabs\.io|api\.openai\.com|\/v1\/text-to-speech|\/v1\/audio\/speech/;
 ok("the sanctioned wrapper is the file that really reaches the provider",
   REACHES_PROVIDER.test(codeOf(DEMO_TTS_WRAPPER)));
+// POSITIVE CONTROL. Without this, weakening REACHES_PROVIDER to something that matches
+// nothing leaves the whole scan green and vacuous.
+for (const probe of [
+  'import { getTtsAdapter } from "@/lib/ai/tts";',
+  'import * as t from "../ai/tts/index.ts";',
+  'await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + id);',
+  'await fetch("https://api.openai.com/v1/audio/speech");',
+]) {
+  ok(`the containment pattern still detects: ${probe.slice(0, 46)}…`, REACHES_PROVIDER.test(probe));
+}
 const bypassers = demoSurface.filter((f) => f !== DEMO_TTS_WRAPPER && REACHES_PROVIDER.test(codeOf(f)));
 ok(`no demo file reaches a voice provider except through the pinned wrapper${bypassers.length ? ` — bypassed by: ${bypassers.join(", ")}` : ""}`,
   bypassers.length === 0);

@@ -181,6 +181,10 @@ export interface CustomerTurnOutcome {
   presentation: Presentation | null;
   photoRequests: PhotoRequest[];
   toolNames: string[];
+  /** Which branch answered this turn. Deterministic safety branches set it truthfully, so
+   *  a caller deciding whether a reply may be SPOKEN reads this rather than inferring from
+   *  `escalate`/`model` — the active-anaphylaxis branch sets escalate:false. */
+  stopReason: string;
   model: string;
   adapter: "claude" | "mock";
   mode: string;
@@ -2079,6 +2083,10 @@ export async function runCustomerTurn(
     toolNames: result.toolNames,
     model: result.model,
     adapter: result.adapter,
+    // The turn's OWN account of which branch answered. Every deterministic branch sets it
+    // truthfully; without it a caller has to guess a safety turn from proxies like
+    // `escalate`, and the active-anaphylaxis branch sets escalate:false.
+    stopReason: result.stopReason,
     mode,
     usage: result.usage,
     costUsd: cost,

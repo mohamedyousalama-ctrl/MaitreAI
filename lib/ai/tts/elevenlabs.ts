@@ -15,11 +15,16 @@ import { ttsCostUsd } from "./pricing";
 export const elevenlabsTtsAdapter: TtsAdapter = {
   name: "elevenlabs",
   async synthesize(text, opts) {
-    const key = process.env.ELEVENLABS_API_KEY;
+    // TRIMMED AT THE POINT OF USE. A caller that validated a TRIMMED env value while this
+    // file read the RAW one produced two different strings: `ELEVENLABS_TTS_MODEL` with one
+    // stray space passed the caller's price check and then priced at $0 here, taking the
+    // whole synthesis off the spend ledger; a padded voice id requested
+    // `/v1/text-to-speech/%20%20ID%20%20` and 404'd in production.
+    const key = (process.env.ELEVENLABS_API_KEY || "").trim();
     if (!key) throw new Error("ELEVENLABS_API_KEY not set");
-    const voiceId = opts?.voiceId || process.env.ELEVENLABS_VOICE_ID;
+    const voiceId = (opts?.voiceId || process.env.ELEVENLABS_VOICE_ID || "").trim();
     if (!voiceId) throw new Error("ELEVENLABS_VOICE_ID not set");
-    const model = process.env.ELEVENLABS_TTS_MODEL || "eleven_flash_v2.5";
+    const model = (process.env.ELEVENLABS_TTS_MODEL || "").trim() || "eleven_flash_v2.5";
     const body = String(text ?? "");
 
     const res = await fetch(
@@ -42,6 +47,7 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
       adapter: "elevenlabs",
       chars: body.length,
       costUsd: ttsCostUsd(`elevenlabs:${model}`, body.length),
+      voiceId,
     };
   },
 };

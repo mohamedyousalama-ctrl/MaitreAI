@@ -36,6 +36,7 @@ export const openaiTtsAdapter: TtsAdapter = {
       adapter: "openai",
       chars: body.length,
       costUsd: ttsCostUsd(`openai:${model}`, body.length),
+      voiceId: voice,
     };
   },
 };
