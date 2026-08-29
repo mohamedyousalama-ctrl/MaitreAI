@@ -35,7 +35,14 @@ const both = (label: string, needle: string) => {
 // ── 1. DATA-QUESTION HONESTY ──
 both("data: DATA & PRIVACY QUESTIONS heading", "DATA & PRIVACY QUESTIONS (binding honesty)");
 both("data: never claim nothing is stored (the false answer)", "NEVER claim nothing is stored or that the chat disappears");
-both("data: the truthful line — records kept to serve", "بنحتفظ بسجل الطلبات والمحادثة عشان نقدر نخدمك");
+// PER-DIALECT. This asserted the Cairene «بنحتفظ» for BOTH personas — i.e. it pinned the
+// defect: the data-honesty line, one of the binding-honesty sentences, was authored once
+// in Egyptian and served verbatim to Saudi tenants. The truth it states is unchanged;
+// only the dialect it states it in is now the tenant's.
+ok("data: the truthful line — records kept to serve — Karim",
+  karim.includes("بنحتفظ بسجل الطلبات والمحادثة عشان نقدر نخدمك"));
+ok("data: the same truth reaches Khalid in Najdi",
+  khalid.includes("نحتفظ بسجل الطلبات والمحادثة عشان نقدر نخدمك") && !khalid.includes("بنحتفظ"));
 both("data: route — offer to notify the team", "أبلّغ الفريق يتابعوا طلبك");
 both("data: mention the privacy policy", "سياسة الخصوصية");
 both("data: NO delete tool — never say اتمسح", "NO delete tool");

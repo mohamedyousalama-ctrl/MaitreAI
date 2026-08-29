@@ -143,7 +143,13 @@ const ticket = (over: Partial<ReceiptData>): ReceiptData => ({
   // now renders every figure in that tenant's declared style — the legacy block's
   // «آمن ١٠٠٪» included. The invariant this guards (legacy block, not the companion one,
   // word for word) is unchanged; only the digit style it is compared in is.
-  ok("FLAG-OFF: the legacy block appears in the prompt VERBATIM", off.includes(arabicToAscii(legacyAllergyBlock())));
+  // baseCtx() is a `saudi` tenant, so the block must be requested in ITS dialect —
+// legacyAllergyBlock took no dialect at all and was pure Cairene, including the
+// mandatory cross-contact caveat («ما نقدرش نضمن»), a SAFETY sentence. The invariant
+// guarded here (the legacy block, word for word, not the companion one) is unchanged.
+ok("FLAG-OFF: the legacy block appears in the prompt VERBATIM", off.includes(arabicToAscii(legacyAllergyBlock("saudi"))));
+ok("FLAG-OFF: and that block is Najdi, not Cairene",
+  off.includes("ما نقدر نضمن عدم وجود أثر") && !off.includes("ما نقدرش نضمن"));
 }
 
 console.log(`\nWO-COMPANION-CORE PROOF: ${pass} passed, ${fail} failed`);
