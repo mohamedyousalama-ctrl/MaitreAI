@@ -90,8 +90,18 @@ const MONEY_RE =
   /(\d[\d.,]*\s*(?:ريال|ر\.?\s?س|sar|s\.?r|جنيه|ج\.?\s?م|درهم|aed|egp|﷼))|((?:ريال|ر\.?\s?س|sar|جنيه|درهم|﷼)\s*\d)/i;
 // Bare price shapes, no currency token: «بـ45», «= 75», «45 + 20», «السعر 45».
 // The «بـ» prefix is matched as a bare «ب» because moneyScanText strips the tatweel first.
-const BARE_PRICE_RE =
-  /(ب\s*\d)|(=\s*\d)|(\d\s*\+\s*\d)|((?:السعر|سعر|الإجمالي|المجموع|الاجمالي|بسعر)\s*:?\s*\d)/i;
+// «ب» needs a WORD BOUNDARY and a unit exclusion. Without them it matched the last letter
+// of any Arabic word before a number, and — worse — read «بـ١٥ دقيقة» ("in 15 minutes") as
+// a price, silencing one of the most common things a restaurant says. Note `\d` and not
+// `\d+` before the lookahead: `\d+` backtracks and the unit exclusion silently never fires.
+const PRICE_UNIT_EXCLUDE =
+  "دقيقة|دقائق|دقايق|ساعة|ساعات|يوم|أيام|ايام|أسبوع|اسبوع|شهر|أشخاص|اشخاص|شخص|كيلو|جرام|قطعة|قطع|حبة|حبات";
+const BARE_PRICE_RE = new RegExp(
+  `(?:^|[^\\p{L}\\p{M}])ب\\s*\\d(?![\\d.,\\s]*(?:${PRICE_UNIT_EXCLUDE}))` +
+  `|=\\s*\\d|\\d\\s*\\+\\s*\\d` +
+  `|(?:السعر|سعر|الإجمالي|المجموع|الاجمالي|بسعر)\\s*:?\\s*\\d`,
+  "iu"
+);
 
 /** Arabic-Indic and Eastern-Arabic digits -> ASCII, and drop tatweel. The money scan must
  *  not depend on the tenant's digit style: the SAME shared gate serves a western-digit

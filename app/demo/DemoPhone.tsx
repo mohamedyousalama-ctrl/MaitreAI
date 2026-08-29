@@ -362,6 +362,11 @@ export default function DemoPhone() {
         // visitor their reply.
         let audioUrl: string | null = null;
         const decoded = decodeReplyAudio(data.replyAudio, data.replyAudioMime);
+        // The Blob/URL construction stays INSIDE a try. Outside one, a throw here escaped
+        // to the request-level catch, which skips pushing the message entirely — so an
+        // audio problem cost the visitor their TEXT reply and showed a network error that
+        // had not happened, the exact outcome the decode is written to prevent.
+        try {
         if (decoded) {
           const url = URL.createObjectURL(new Blob([decoded.bytes], { type: decoded.type }));
           if (!mounted.current) {
@@ -372,6 +377,9 @@ export default function DemoPhone() {
             audioUrls.current.push(url);
             audioUrl = url;
           }
+        }
+        } catch {
+          audioUrl = null;
         }
         push({
           from: "khalid",

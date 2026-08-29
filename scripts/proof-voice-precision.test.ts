@@ -128,10 +128,23 @@ const top = (t: string) => resolveVoiceCandidates(t, { menuItemNames: MENU })[0]
   // Asserting each negated signal INDEPENDENTLY inside the voiceGuardOn block is
   // both truer and stricter: dropping any one of the three now fails, and adding a
   // fourth does not spuriously break this test again.
-  const guardBlock = /const voiceGuardOn =[\s\S]{0,400}?;/.exec(ct)?.[0] ?? "";
+  // Re-pinned 2026-08-29. STATEMENTS ONLY: the window is measured in characters, so a
+  // comment inside the guard pushed the closing `;` past it and the lazy match truncated
+  // mid-block — the same spurious break this test has now suffered twice. Stripping
+  // comments first makes the window about the CODE, which is what it was always meant to
+  // measure, and the signal list below can grow without anyone touching the number again.
+  const ctCode = ct.split("\n")
+    .filter((l) => { const t = l.trimStart(); return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*"); })
+    .join("\n");
+  const guardBlock = /const voiceGuardOn =[\s\S]{0,400}?;/.exec(ctCode)?.[0] ?? "";
   ok("WIRE: the assent-exit stays under the safety-first guard (no allergen/emergency bypass)",
     guardBlock.length > 0 &&
     /!combinedAllergenHit\.fired/.test(guardBlock) &&
+    // The UNGATED emergency detector. `companionEmergency`/`calmEmergency` are this same
+    // signal filtered through two feature flags, so on a tenant with both OFF they are
+    // hard-false and guard nothing — which is how an «اتصلوا بالإسعاف» voice note under
+    // 0.70 STT confidence reached the garble ladder instead of the emergency override.
+    /!safetyEmergencyHit\.fired/.test(guardBlock) &&
     /!companionEmergency\.fired/.test(guardBlock) &&
     /!calmEmergency\.fired/.test(guardBlock) &&
     /input\.isVoiceTranscript === true/.test(guardBlock));

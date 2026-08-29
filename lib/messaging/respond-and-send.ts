@@ -26,7 +26,7 @@ import { sendWhatsAppText, sendWhatsAppInteractive, sendWhatsAppImageLink, sendW
 // it into the reply send; the outbound chokepoint drops the reply if a human claimed the
 // conversation mid-turn (epoch changed). readControlEpoch is deploy-safe (missing column → null).
 import { readControlEpoch } from "./send-gate";
-import { decideVoiceSend, voiceHardZeroReason, voiceNotesPerDay } from "./voice-budget";
+import { decideVoiceSend, voiceHardZeroReason, voiceNotesPerDay, voiceSignalsForTurn } from "./voice-budget";
 import { shouldOfferVoiceReply } from "@/lib/ai/voice-reply-trigger";
 import { synthesizeVoiceReply } from "@/lib/ai/tts";
 import { buildPhotoThreadCaptions } from "./photo-thread";
@@ -1794,8 +1794,25 @@ export async function respondAndSendWhatsApp(
       replyText: outboundReply,
       inboundWasVoice,
       userMessage,
-      safetyHold: outcome.escalate === true,
-      isReceipt: outcome.resendReceipt === true,
+      // DERIVED FROM THE TURN, NOT FROM PROXIES — the same fix the demo route got, on the
+      // surface that matters more. `escalate === true` does not identify a safety turn:
+      // the ACTIVE ANAPHYLAXIS branch (customer-turn.ts companionEmergencyResult) returns
+      // escalate:false and deliberately does not hold, so «🚨 اتصل بالإسعاف 997 الحين» was
+      // sent to a real customer AS A VOICE NOTE. The deterministic allergen gate and the
+      // allergy checkpoint escaped the same way; only the calm hold was caught, and only
+      // because enterCalmAllergyHold writes is_safety_hold to the row first.
+      //
+      // An ambulance number is the one sentence in this product where a mis-heard digit
+      // has a physical consequence, and voice-budget.ts rules it text-only for exactly
+      // that reason. voiceSignalsForTurn reads stopReason, which every deterministic
+      // branch sets truthfully, and fails closed on anything unlisted.
+      ...voiceSignalsForTurn({
+        stopReason: outcome.stopReason,
+        escalate: outcome.escalate,
+        model: outcome.model,
+        // A receipt resend is a receipt even when the branch itself is an ordinary turn.
+        orderNumber: outcome.resendReceipt === true ? "resend" : null,
+      }),
       lastInboundAtMs,
     }).catch((e) => console.error("[respond-and-send] voice note error", e));
   }

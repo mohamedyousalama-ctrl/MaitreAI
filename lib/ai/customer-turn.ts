@@ -1440,6 +1440,15 @@ export async function runCustomerTurn(
     isFeatureExplicitlyEnabled("voice_garble_guard", tenantFeatures) &&
     input.isVoiceTranscript === true &&
     !combinedAllergenHit.fired &&
+    // THE UNGATED EMERGENCY DETECTOR, not its two flag-gated views. `companionEmergency`
+    // and `calmEmergency` are `safetyEmergencyHit` filtered through allergy_companion_mode
+    // and allergy_calm_hold; on any tenant with those OFF — the demo among them — both are
+    // hard-false and these two lines guard nothing. So a voice note saying «اتصلوا
+    // بالإسعاف» at STT confidence below 0.70 skipped the emergency override entirely and
+    // got «ما وصلني صوتك واضح، ممكن تكتبها لي؟» instead. A panicked, breathless caller is
+    // exactly the low-confidence case, and asking them to retype is the one answer that
+    // must never be given. This restores what the comment above has always claimed.
+    !safetyEmergencyHit.fired &&
     !companionEmergency.fired &&
     !calmEmergency.fired;
   // WO-VOICE-PRECISION (finding 4) — assent-exit: a pure assent («أيوه/تمام/صح») the turn

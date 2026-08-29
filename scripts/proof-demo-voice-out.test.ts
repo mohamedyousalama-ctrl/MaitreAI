@@ -16,7 +16,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { demoVoiceProviderPinned, demoVoiceReply, DEMO_TTS_MAX_CHARS } from "../lib/demo/voice-out.ts";
+import { demoVoiceProviderPinned, demoVoiceReply, demoVoiceSignalsFor, voiceMatchesPin, DEMO_TTS_MAX_CHARS } from "../lib/demo/voice-out.ts";
 import { voiceSignalsForTurn, voiceHardZeroReason } from "../lib/messaging/voice-budget.ts";
 import { decodeReplyAudio, DEMO_AUDIO_DEFAULT_MIME } from "../lib/demo/audio-payload.ts";
 
@@ -394,13 +394,93 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   ok("an allergen model nobody listed is still a safety turn",
     voiceSignalsForTurn({ stopReason: "end_turn", escalate: false, model: "deterministic_allergen_something_new", orderNumber: null }).safetyHold);
 
-  // And the route must actually use it rather than reconstructing proxies.
+  // THE ROUTE'S OWN MAPPING, EXECUTED. Four regexes on identifiers used to stand here, and
+  // replacing the whole argument object with constants left them all matching, the suite
+  // at 214/214, and the anaphylaxis reply synthesized. The mapping is now a function the
+  // proof calls with a real emergency-shaped outcome.
+  const emergencyOutcome = {
+    stopReason: "allergen_companion_emergency", escalate: false,
+    model: "deterministic_allergen_companion",
+  };
+  ok("the route's mapping marks the 997 emergency as a safety turn",
+    demoVoiceSignalsFor(emergencyOutcome, { orderNumber: null }).safetyHold === true);
+  ok("the route's mapping still lets an ordinary turn speak",
+    demoVoiceSignalsFor({ stopReason: "end_turn", escalate: false, model: "claude" },
+      { orderNumber: null }).safetyHold === false);
+  ok("the route's mapping carries the closed order through as a receipt",
+    demoVoiceSignalsFor({ stopReason: "end_turn", escalate: false, model: "claude" },
+      { orderNumber: "1006" }).isReceipt === true);
   const vroute = read("app/api/demo/voice/route.ts");
-  ok("the route derives the signals from the turn, not from escalate/model proxies",
-    /voiceSignalsForTurn\(/.test(vroute) &&
-    /safetyHold: voiceSignals\.safetyHold/.test(vroute) &&
-    /isReceipt: voiceSignals\.isReceipt/.test(vroute) &&
-    !/safetyHold: allergenGate/.test(vroute));
+  ok("the route uses that mapping on the REAL turn, not on constants",
+    /demoVoiceSignalsFor\(out, closed\)/.test(vroute) && !/safetyHold: allergenGate/.test(vroute));
+  // The audio must be synthesized from the SAME string the visitor reads. `out.reply` is
+  // the pre-close text: it lacks the demo's "nothing was charged" line and carries
+  // un-normalised digits, so speaking it makes the audio disagree with the bubble.
+  ok("the spoken text is the one the visitor is shown", /demoVoiceReply\(closed\.reply/.test(vroute));
+  // THE LIVE WHATSAPP PATH — the same defect, on the surface that matters more.
+  const ras = read("lib/messaging/respond-and-send.ts");
+  ok("the WhatsApp voice note derives its signals from the turn too",
+    /voiceSignalsForTurn\(\{/.test(ras) && !/safetyHold: outcome\.escalate === true/.test(ras));
+  // The ledger row is written for ANY real synthesis — gating it on a positive cost let a
+  // mispriced model take 100% of the spend off the books.
+  ok("the ledger write is not gated on a positive cost",
+    /if \(spoken\.spend\) \{/.test(vroute) && !/spoken\.spend\.costUsd > 0/.test(vroute));
+}
+
+// ── 2e2. FIXES THAT WERE CLAIMED BUT PINNED BY NOTHING ──────────────────────
+{
+  const mod = read("lib/demo/voice-out.ts");
+  ok("the validated voice id is PASSED to the adapter, not re-read by it",
+    /adapter\.synthesize\(text, \{ voiceId: pinnedVoiceId \}\)/.test(mod));
+  // The comparison itself is driven below; that its RESULT is acted on is source-anchored,
+  // and deliberately so: no env configuration can make the value we ask for differ from
+  // the value the adapter echoes, so only a lying adapter reaches the branch — which is
+  // what the driven cases below supply. Deleting the call site left the suite green.
+  ok("and the comparison actually gates the reply",
+    /if \(!voiceMatchesPin\(result, pinnedVoiceId\)\) return refuse\("wrong_voice"\);/.test(mod));
+  // Driven, not read: a lying adapter is the only thing that can make the value we ASKED
+  // for differ from the value that ANSWERED, and no env configuration can produce one.
+  const PIN = "KhalidCustomVoice01";
+  ok("the pinned voice and provider are accepted",
+    voiceMatchesPin({ adapter: "elevenlabs", voiceId: PIN }, PIN));
+  ok("a different ElevenLabs voice is refused — right company, wrong person",
+    !voiceMatchesPin({ adapter: "elevenlabs", voiceId: "21m00Tcm4TlvDq8ikWAM" }, PIN));
+  ok("onyx wearing an elevenlabs label is refused on the voice id",
+    !voiceMatchesPin({ adapter: "elevenlabs", voiceId: "onyx" }, PIN));
+  ok("another provider is refused even with the right voice id",
+    !voiceMatchesPin({ adapter: "openai", voiceId: PIN }, PIN));
+  for (const missing of [undefined, null, ""]) {
+    ok(`an adapter that reports no voice id at all is refused (${JSON.stringify(missing)})`,
+      !voiceMatchesPin({ adapter: "elevenlabs", voiceId: missing }, PIN));
+  }
+  ok("a refusal after a paid synthesis still reports the spend",
+    /const refuse = [\s\S]{0,120}spend: spentAnyway/.test(mod));
+  ok("stock ids are compared with invisibles stripped and case-folded",
+    /replace\(INVISIBLE_RE, ""\)[\s\S]{0,40}toLowerCase\(\)/.test(mod));
+  for (const legacy of ["29vD33N1CtxCmqQRPOHJ", "2EiwWnXFnvU5JabPnv8n", "5Q0t7uMcjvnagumLfvZi",
+                        "GBv7mTt0atIp3Br8iCZE", "pMsXgVXv3BLzUgSXRplE"]) {
+    ok(`the legacy premade voice ${legacy} is refused`, mod.includes(legacy));
+  }
+}
+
+// ── 2e3. THE EMERGENCY MUST OUTRANK THE GARBLE LADDER ───────────────────────
+// A voice note saying «اتصلوا بالإسعاف» at STT confidence below 0.70 used to take the
+// voice-garble ladder — «ما وصلني صوتك واضح، ممكن تكتبها لي؟», SPOKEN — and never reach
+// the emergency override at all. A panicked, breathless caller IS the low-confidence case,
+// and "please retype that" is the one answer that must never be given to them.
+//
+// The guard excluded `companionEmergency` and `calmEmergency`, which are the ungated
+// detector filtered through two feature flags that are OFF on this tenant — so both were
+// hard-false and guarded nothing. Source-anchored because the ladder is inline in a
+// DB-bound turn; the ordering it pins is the whole point.
+{
+  const ct = read("lib/ai/customer-turn.ts");
+  const guard = /const voiceGuardOn =[\s\S]{0,400}?;/.exec(ct)?.[0] ?? "";
+  ok("the voice ladder is skipped when the UNGATED emergency detector fires",
+    /!safetyEmergencyHit\.fired/.test(guard));
+  ok("and it is not relying on the flag-gated views alone",
+    guard.includes("!safetyEmergencyHit.fired") &&
+    guard.indexOf("!safetyEmergencyHit.fired") < guard.indexOf("!companionEmergency.fired"));
 }
 
 // ── 2f. PRICES THAT WERE SPOKEN ─────────────────────────────────────────────
@@ -411,7 +491,8 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ["a quoted read-back, which the outbound formatter deliberately leaves un-normalised", "قصدك «كبسة بـ٧٠ ريال»؟"],
     ["a price with NO currency token", "الكبسة بـ70 والمندي بـ65، وش تختار؟"],
     ["the shape the prompt's own examples use", "بروست بـ45 + بطاطس بـ20 = 65"],
-    ["U+FDFC RIAL SIGN", "الإجمالي 70.15 ﷼"],
+    // No keyword and no «بـ»: this fixture genuinely depends on ﷼ being in MONEY_RE.
+    ["U+FDFC RIAL SIGN", "كبسة لحم 70.15 ﷼"],
     ["tatweel inside the currency word", "كبسة لحم بسعر 45 ريـال"],
     ["an Arabic-Indic Egyptian total", "المجموع ١٢٠ جنيه"],
   ];
@@ -423,6 +504,23 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     voiceHardZeroReason("تفضل، وش تحب تطلب اليوم؟", { safetyHold: false, isReceipt: false }) === null);
   ok("a plain quantity is not mistaken for a price",
     voiceHardZeroReason("تمام، ضفت لك ٢ كبسة", { safetyHold: false, isReceipt: false }) === null);
+  // THE OPPOSITE FAILURE. «ب» is also the ordinary preposition "in", so a rule matching
+  // «ب» + digits read «بـ١٥ دقيقة» as a price and silenced one of the most common things a
+  // restaurant says — on the LIVE WhatsApp path, not just the demo.
+  for (const [why, text] of [
+    ["a preparation time", "بيكون جاهز بـ١٥ دقيقة"],
+    ["a lead time in days", "الحجز للمناسبات نحتاج بـ٣ أيام مقدماً"],
+    ["an order number", "رقم الطلب ١٠٠٦، بانتظار تأكيد المطعم"],
+    ["a phone number", "راسلنا واتساب ٠٥٠١٢٣٤٥٦٧"],
+    ["a door number", "ندق عليك على الباب ٤ صح؟"],
+    ["an office number", "التوصيل لمكتب ٢٠٥ تمام؟"],
+    ["a driver ETA", "آسفين على التأخير، السائق قريب ٥ دقايق"],
+    ["a quantity across a newline", "تمام، سجّلت لك الطلب\n٣ كبسات و٢ عصير"],
+    ["a bare prep time", "يجهز خلال ٣٠ دقيقة"],
+  ] as const) {
+    ok(`not a price, still speakable: ${why}`,
+      voiceHardZeroReason(text, { safetyHold: false, isReceipt: false }) === null);
+  }
 }
 
 // ── 2g. THE CLIENT DECODE, driven with real bytes ───────────────────────────

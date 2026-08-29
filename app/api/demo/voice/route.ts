@@ -24,8 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
-import { demoVoiceReply } from "@/lib/demo/voice-out";
-import { voiceSignalsForTurn } from "@/lib/messaging/voice-budget";
+import { demoVoiceReply, demoVoiceSignalsFor } from "@/lib/demo/voice-out";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
 import { mustWrite } from "@/lib/db/checked";
 import { rateLimit } from "@/lib/rate-limit";
@@ -239,12 +238,7 @@ export async function POST(req: Request) {
     // string — so the reply telling a visitor to call an ambulance was synthesized and
     // played aloud. voiceSignalsForTurn reads stopReason, which that branch does set, and
     // fails closed on any stop reason nobody has listed as safe to speak.
-    const voiceSignals = voiceSignalsForTurn({
-      stopReason: out.stopReason,
-      escalate: out.escalate,
-      model: out.model,
-      orderNumber: closed.orderNumber,
-    });
+    const voiceSignals = demoVoiceSignalsFor(out, closed);
     const spoken = await demoVoiceReply(closed.reply, {
       inboundWasVoice: true,
       safetyHold: voiceSignals.safetyHold,

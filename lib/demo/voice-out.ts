@@ -38,7 +38,10 @@
 import "server-only";
 import { getTtsAdapter } from "@/lib/ai/tts";
 import { TTS_RATE_PER_CHAR } from "@/lib/ai/tts/pricing";
-import { voiceHardZeroReason, type VoiceZeroReason } from "@/lib/messaging/voice-budget";
+import {
+  voiceHardZeroReason, voiceSignalsForTurn,
+  type VoiceZeroReason, type VoiceTurnSignals,
+} from "@/lib/messaging/voice-budget";
 
 export type DemoVoiceOutSkip =
   | "not_triggered"      // the visitor typed; we answer in text
@@ -75,6 +78,8 @@ export const DEMO_TTS_MAX_CHARS = 600;
  *  an untrimmed truthiness test let it through to a request against `.../text-to-speech/%20`. */
 const envTrim = (k: string): string => (process.env[k] || "").trim();
 
+/** Zero-width and bidi characters that `trim()` does not remove. A reply of one U+200B is
+ *  blank to a reader and a billable character to a provider. */
 const INVISIBLE_RE = /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/g;
 
 /** ElevenLabs' own STOCK voice ids — public constants, shipped in every account.
@@ -137,8 +142,36 @@ export function demoVoiceProviderPinned(): boolean {
   return pinned === "mock";
 }
 
-/** Zero-width and bidi characters that `trim()` does not remove. A reply of one U+200B is
- *  blank to a reader and a billable character to a provider. */
+/** Does the synthesis we got back actually come from the provider AND the voice we pinned?
+ *  Takes the result rather than reading env, so a proof can hand it a lying adapter. */
+export function voiceMatchesPin(
+  result: { adapter?: string | null; voiceId?: string | null },
+  pinnedVoiceId: string
+): boolean {
+  if (result.adapter !== "elevenlabs") return false;
+  return (result.voiceId ?? "") === pinnedVoiceId;
+}
+
+/** The demo route's mapping from a completed turn to the hard-zero signals, as a PURE
+ *  function so a proof can drive it with an emergency-shaped outcome.
+ *
+ *  It lives here rather than inline in the route because inline it was checkable only by
+ *  regexes on identifiers: replacing the whole argument object with four constants
+ *  (`stopReason: "end_turn", escalate: false, model: "claude", orderNumber: null`) left
+ *  every assertion matching and the full suite green, while an active-anaphylaxis reply —
+ *  ambulance number and all — was synthesized and played to the visitor. */
+export function demoVoiceSignalsFor(
+  turn: { stopReason?: string | null; escalate?: boolean | null; model?: string | null },
+  closed: { orderNumber?: string | null }
+): VoiceTurnSignals {
+  return voiceSignalsForTurn({
+    stopReason: turn.stopReason,
+    escalate: turn.escalate,
+    model: turn.model,
+    orderNumber: closed.orderNumber ?? null,
+  });
+}
+
 
 /** Synthesize the demo's spoken reply, or explain why it stayed silent. Never throws. */
 export async function demoVoiceReply(
@@ -205,10 +238,11 @@ export async function demoVoiceReply(
   const refuse = (why: DemoVoiceOutSkip): DemoVoiceOut =>
     ({ audioBase64: null, mime: null, skipped: why, spend: spentAnyway });
 
-  if (result.adapter !== "elevenlabs") return refuse("wrong_voice");
-  // THE VOICE, not just the provider. Right company, wrong person is still a stranger
-  // reading Najdi Arabic to a prospect.
-  if ((result.voiceId ?? "") !== pinnedVoiceId) return refuse("wrong_voice");
+  // THE PROVIDER *AND* THE VOICE. Right company, wrong person is still a stranger reading
+  // Najdi Arabic to a prospect. Exported as a pure function because inline it was
+  // untestable: no configuration a proof can reach makes the adapter's own env fallback
+  // differ from the value we pass, so deleting the whole round trip left the suite green.
+  if (!voiceMatchesPin(result, pinnedVoiceId)) return refuse("wrong_voice");
 
   return {
     audioBase64: Buffer.from(result.audio).toString("base64"),
