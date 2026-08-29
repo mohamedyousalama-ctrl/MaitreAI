@@ -209,6 +209,7 @@
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-promo-honesty.test.ts",
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-saudi-prompt-register.test.ts",
   "node --experimental-strip-types scripts/proof-whatsapp-markup.test.ts",
+  "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-demo-interactive-rail.test.ts",
   "node --experimental-strip-types scripts/proof-tax-mode-integrity.test.ts",
   "node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-tools-dialect.test.ts"
 ]

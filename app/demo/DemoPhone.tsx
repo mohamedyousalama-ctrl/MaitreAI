@@ -119,7 +119,7 @@ export default function DemoPhone() {
 
   /** Send a turn to the real Brain and render the reply. */
   const send = useCallback(
-    async (text: string, asVoice?: { seconds: number }) => {
+    async (text: string, asVoice?: { seconds: number }, interactiveId?: string) => {
       const mine = push({
         from: "me",
         kind: asVoice ? "voice" : "text",
@@ -138,7 +138,13 @@ export default function DemoPhone() {
         const res = await fetch("/api/demo/turn", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, history, conversationId: convId.current }),
+          // `interactiveId` is what a TAP posts on real WhatsApp, and it is the whole
+          // reason the deterministic layer exists: a tap resolves to an ACTION, never to a
+          // sentence the model has to re-interpret. The demo used to send only the visible
+          // title, so tapping «تأكيد الطلب» and typing it were byte-identical at the route,
+          // and both depended on the model choosing to finalize. The bubble still shows the
+          // title, exactly as WhatsApp does.
+          body: JSON.stringify({ text, history, conversationId: convId.current, interactiveId }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean; reply?: string; error?: string; presentation?: Presentation | null;
@@ -180,13 +186,17 @@ export default function DemoPhone() {
     void send(t);
   }, [draft, typing, send]);
 
-  /** A tapped option becomes an ordinary customer message. WhatsApp posts the row id
-   *  back through interactive-router; the demo has no such router, so it sends the
-   *  visible TITLE — which the Brain understands anyway, because a customer typing
-   *  «كبسة لحم» is the case it is built for. */
-  const onPick = useCallback((label: string) => {
+  /** A tapped option posts BOTH the visible title and the row id, as WhatsApp does.
+   *
+   *  This used to send the title alone, with a comment calling that safe "because the Brain
+   *  understands it anyway". It does not, reliably: on WhatsApp a tap resolves through
+   *  lib/messaging/typed-actions.ts to a deterministic ACTION with no model call at all,
+   *  and the demo reached none of it. Live consequence — tapping «تأكيد الطلب» closed order
+   *  #1002 instantly, while typing «ايه أكد الطلب» re-printed the receipt and asked again,
+   *  because closing depended on the model deciding to call finalize. */
+  const onPick = useCallback((label: string, id?: string) => {
     if (typing) return;
-    void send(label);
+    void send(label, undefined, id);
   }, [typing, send]);
 
   // ── hold-to-record, exactly as WhatsApp does it ──────────────────────────
@@ -555,7 +565,7 @@ function Bubble({
  *  button row; here they are chips under the bubble. Tapping sends the row's TITLE as
  *  the next message — the same text a customer would have typed — so the Brain reads it
  *  through its normal path with no demo-only routing. */
-function Options({ p, onPick }: { p: Presentation; onPick: (label: string) => void }) {
+function Options({ p, onPick }: { p: Presentation; onPick: (label: string, id?: string) => void }) {
   const items: { id: string; title: string; description?: string }[] =
     p.kind === "buttons"
       ? p.buttons
@@ -565,7 +575,7 @@ function Options({ p, onPick }: { p: Presentation; onPick: (label: string) => vo
     <div style={S.options}>
       {p.kind === "list" && p.button ? <div style={S.optionsHead}>{p.button}</div> : null}
       {items.map((it) => (
-        <button key={it.id} style={S.option} onClick={() => onPick(it.title)}>
+        <button key={it.id} style={S.option} onClick={() => onPick(it.title, it.id)}>
           <span style={S.optionTitle}>{it.title}</span>
           {it.description ? <span style={S.optionDesc}>{it.description}</span> : null}
         </button>

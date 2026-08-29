@@ -95,13 +95,24 @@ ok("demoRun is still passed alongside it — the two are independent controls",
 // this is that gap closed.)
 const LEAKS = ["features", "costUsd", "usage", "agentRunId", "tier", "latencyMs", "perception", "draft", "toolNames"];
 function assertPayloadAllowlist(label: string, src: string) {
-  const payload = /return NextResponse\.json\(\{\s*\n\s*ok: true[\s\S]*?\}\);/.exec(src)?.[0] ?? "";
-  ok(`${label}: the success payload was found`, payload.length > 0);
-  for (const leak of LEAKS) {
-    ok(`${label}: the response never returns \`${leak}\``, !new RegExp(`(?<![A-Za-z0-9_])${leak}\\s*:`).test(payload));
-  }
-  ok(`${label}: \`model\` is not returned raw — only the derived allergenGate boolean`,
-    !/(?<![A-Za-z0-9_])model:/.test(payload) && /allergenGate:\s*out\.model === "deterministic_allergen_gate"/.test(payload));
+  // EVERY success payload, not just the first. A route may now return early — the
+  // deterministic typed-action rail answers a tap without a model call — and a single
+  // `.exec()` matched only that new block, so the MAIN payload stopped being checked at
+  // all the moment the rail was added. A leak guard that silently narrows its own scope is
+  // worse than no guard, because the suite still reads green.
+  const payloads = [...src.matchAll(/return NextResponse\.json\(\{\s*\n\s*ok: true[\s\S]*?\n\s*\}\);/g)].map((m) => m[0]);
+  ok(`${label}: at least one success payload was found`, payloads.length > 0);
+  payloads.forEach((payload, i) => {
+    const where = `${label}[payload ${i + 1}/${payloads.length}]`;
+    for (const leak of LEAKS) {
+      ok(`${where}: the response never returns \`${leak}\``, !new RegExp(`(?<![A-Za-z0-9_])${leak}\\s*:`).test(payload));
+    }
+    ok(`${where}: \`model\` is never returned raw`, !/(?<![A-Za-z0-9_])model:/.test(payload));
+  });
+  // The allergen-gate boolean is DERIVED from `model`; it lives on the model-backed
+  // payload, so it is asserted across the file rather than per-payload.
+  ok(`${label}: the allergenGate boolean is derived, not the raw model id`,
+    /allergenGate:\s*out\.model === "deterministic_allergen_gate"/.test(src));
   ok(`${label}: the error path does not leak the underlying exception text`,
     !/detail:\s*e instanceof Error/.test(src));
 }

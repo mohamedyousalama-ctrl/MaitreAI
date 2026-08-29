@@ -31,6 +31,7 @@ import {
 } from "@/lib/ai/allergen-companion-flow";
 import { FIXED_INTERACTIVE_CONTROLS } from "./interactive-router";
 import { asPricingTaxMode, type PricingTaxMode } from "@/lib/order-pricing";
+import { DRAFT_RESUME_FRESHNESS_MS } from "@/lib/ai/draft-lifecycle";
 
 type ActiveMenuItem = Awaited<ReturnType<typeof loadBrain>>["menuItems"][number];
 
@@ -66,6 +67,12 @@ export type TypedInteractiveActionResult =
       id: string;
       action: TypedInteractiveActionKind;
       reply: string;
+      /** The tenant's dialect, so a caller can run the reply through
+       *  formatCustomerVisibleText — the digit style is the TENANT's decision, and a
+       *  caller that has to guess it will guess wrong (see lib/ai/customer-turn.ts, where
+       *  the same field exists for the same reason). Both handlers already read it from
+       *  the restaurant row to build the reply; they just never returned it. */
+      dialect: string;
       replyMessageId: string | null;
       presentation: Presentation | null;
       signals: ToolSignal[];
@@ -179,7 +186,10 @@ const FIXED_COMMANDS: Record<string, InteractiveCommand> = {
   pay_counter: { kind: "set_payment_method", action: "pay_counter", id: "pay_counter", method: "cod" },
 };
 
-const DRAFT_FRESHNESS_MS = 45 * 60 * 1000;
+// Imported rather than redeclared: this module and lib/ai/customer-turn.ts must see the
+// SAME basket, and two independently-maintained freshness windows is a drift hazard —
+// they agree today only by coincidence.
+const DRAFT_FRESHNESS_MS = DRAFT_RESUME_FRESHNESS_MS;
 
 function cleanInteractiveId(id: string | null | undefined): string {
   return typeof id === "string" ? id.trim() : "";
@@ -456,6 +466,12 @@ export async function handleTypedInteractiveAction(
     interactiveId: string;
     features: Record<string, unknown> | null;
     safetyProbe: Record<string, unknown>;
+    /** A public-demo turn. Mirrors lib/ai/customer-turn.ts's `demoRun`: the reply row and
+     *  its `meta.draft` still persist — that row IS the basket, and it carries no visitor
+     *  words — but nothing STAFF-FACING or analytical is written. Without it, wiring the
+     *  demo to this module would start filling `conversation_signals` from strangers on a
+     *  public page, which is exactly what `demoRun` exists to prevent. */
+    demoRun?: boolean;
   }
 ): Promise<TypedInteractiveActionResult> {
   const id = cleanInteractiveId(args.interactiveId);
@@ -520,7 +536,7 @@ export async function handleTypedInteractiveAction(
     .select("id")
     .single();
   await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", args.conversationId);
-  if (ctx.signals.length) {
+  if (ctx.signals.length && !args.demoRun) {
     await admin.from("conversation_signals").insert(
       ctx.signals.map((s) => ({
         restaurant_id: args.restaurantId,
@@ -533,6 +549,7 @@ export async function handleTypedInteractiveAction(
 
   return {
     kind: "handled",
+    dialect,
     id,
     action,
     reply,
@@ -607,6 +624,12 @@ export async function handleTypedQuantityFill(
     interactiveId?: string | null;
     features: Record<string, unknown> | null;
     safetyProbe: Record<string, unknown>;
+    /** A public-demo turn. Mirrors lib/ai/customer-turn.ts's `demoRun`: the reply row and
+     *  its `meta.draft` still persist — that row IS the basket, and it carries no visitor
+     *  words — but nothing STAFF-FACING or analytical is written. Without it, wiring the
+     *  demo to this module would start filling `conversation_signals` from strangers on a
+     *  public page, which is exactly what `demoRun` exists to prevent. */
+    demoRun?: boolean;
   }
 ): Promise<TypedQuantityFillResult> {
   const qty = quantityFromInteractiveId(args.interactiveId) ?? parseBareQuantityAnswer(args.userMessage);
@@ -664,7 +687,7 @@ export async function handleTypedQuantityFill(
     .select("id")
     .single();
   await admin.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", args.conversationId);
-  if (ctx.signals.length) {
+  if (ctx.signals.length && !args.demoRun) {
     await admin.from("conversation_signals").insert(
       ctx.signals.map((s) => ({
         restaurant_id: args.restaurantId,
@@ -677,6 +700,7 @@ export async function handleTypedQuantityFill(
 
   return {
     kind: "handled",
+    dialect,
     id,
     action: "qty",
     reply,

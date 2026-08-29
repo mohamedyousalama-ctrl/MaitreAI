@@ -60,6 +60,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
+import { handleTypedInteractiveAction, isTypedInteractiveActionId } from "@/lib/messaging/typed-actions";
 import { rateLimit } from "@/lib/rate-limit";
 import { isDemoHost } from "@/lib/demo/config";
 import {
@@ -112,7 +113,7 @@ export async function POST(req: Request) {
   //     seconds by flipping one boolean — no redeploy, no env change, no build.
   // Fails CLOSED: if the guard itself errors we refuse the turn rather than spend.
   const body = (await req.json().catch(() => ({}))) as {
-    text?: unknown; history?: unknown; conversationId?: unknown;
+    text?: unknown; history?: unknown; conversationId?: unknown; interactiveId?: unknown;
   };
   // LENGTH cap, not just a count cap. This is the control that bounds spend.
   const text = String(body.text ?? "").trim().slice(0, DEMO_MAX_CHARS);
@@ -173,6 +174,55 @@ export async function POST(req: Request) {
   const session = await resolveDemoSession(admin, body.conversationId);
   const conversationId = session?.conversationId ?? null;
 
+  // THE DETERMINISTIC RAIL — what a TAP does on WhatsApp, now on the demo too.
+  //
+  // lib/messaging/typed-actions.ts turns a tapped row id into an ACTION with no model call
+  // at all: set pickup/delivery, set a quantity, add a category's items, cancel. Only
+  // lib/messaging/respond-and-send.ts — the WhatsApp bridge — ever reached it; this route
+  // calls runCustomerTurn directly and so reached NONE of it, even though the demo tenant's
+  // seed turns `typed_interactive_actions` and `typed_quantity_fill` ON. Dead configuration.
+  //
+  // `confirm_gate` is deliberately NOT handled here: it canonicalises the tap to the fixed
+  // «تأكيد الطلب.» string and falls through to the normal turn, so a tap and a typed confirm
+  // land on the SAME text and the same closeDemoOrder path. That is exactly what
+  // respond-and-send.ts does with it.
+  //
+  // The id arrives from a public page, so it is length-capped and MUST pass
+  // isTypedInteractiveActionId first — handleTypedInteractiveAction THROWS on an
+  // unregistered id. An id we do not recognise is ignored and the turn proceeds as text;
+  // handleUnknownInteractiveCommand is never called here, because it writes a staff-facing
+  // row carrying the visitor's own words, which is precisely what `demoRun` forbids.
+  const rawInteractiveId = String(body.interactiveId ?? "").trim().slice(0, 64);
+  let userMessage = text;
+  if (conversationId && rawInteractiveId && isTypedInteractiveActionId(rawInteractiveId)) {
+    try {
+      const typed = await handleTypedInteractiveAction(admin, {
+        restaurantId: DEMO_RESTAURANT_ID,
+        conversationId,
+        interactiveId: rawInteractiveId,
+        features: null,
+        safetyProbe: {},
+        demoRun: true,
+      });
+      if (typed.kind === "confirm_gate") {
+        userMessage = typed.userMessage;
+      } else {
+        return NextResponse.json({
+          ok: true,
+          conversationId,
+          reply: formatCustomerVisibleText(typed.reply, typed.dialect),
+          presentation: typed.presentation
+            ? formatCustomerVisiblePresentation(typed.presentation, typed.dialect)
+            : null,
+          photoRequests: [],
+        });
+      }
+    } catch (e) {
+      // Never let the rail break a turn that the text path can still serve.
+      console.error("[demo] typed action failed; falling through to the model", e);
+    }
+  }
+
   try {
     const out = await runCustomerTurn(admin, {
       restaurantId: DEMO_RESTAURANT_ID, // pinned; never from the request
@@ -181,7 +231,7 @@ export async function POST(req: Request) {
       // forever because, from its side, the basket was empty every single time.
       conversationId,
       history,
-      userMessage: text,
+      userMessage,
       // TRUE now, and only for the draft. The row it writes is OUR reply plus
       // `meta.draft` — the basket. The visitor's own message is still never persisted as
       // a message row, which also keeps the demo tenant out of the monitor's
