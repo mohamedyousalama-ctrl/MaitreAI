@@ -71,9 +71,12 @@ export async function synthesizeVoiceReply(text: string, opts?: TtsSynthesizeOpt
     // male voice reading Najdi Arabic to a real WhatsApp customer. An audit drove exactly
     // that: `voiceId=VuqFqWXHibJ61b9IiVJ7` → `hosts contacted: ["api.openai.com"]`.
     //
-    // That is a fail-OPEN on "while G0-R is BLOCKED: no provider voice generation" — the
-    // guard refused, and the refusal produced generation anyway. It also defeats the
-    // reason the check was put in the adapter at all, which was to cover this caller.
+    // That is a fail-OPEN on the rule the registry exists to enforce — no legacy or
+    // donor-derived object may be generated or exposed (G0-R, scoped by Founder ruling on
+    // KIV-90). The guard refused, and the refusal produced generation anyway. It also
+    // defeats the reason the check was put in the adapter at all, which was to cover this
+    // caller. Note the failure was never about WHICH voice replaced it: substituting any
+    // voice for one we have refused is the defect.
     // A refusal means we do not know whose voice this is; the answer to that is silence
     // and the text reply, never a substitute.
     if (isVoiceGovernanceRefusal(primaryError)) return null;

@@ -20,11 +20,19 @@
 // voice objects had unclear provenance (donor recordings, clones). `Khalid kivo` is a
 // fully synthetic Voice Design produced from a written prompt, provider category
 // `generated` — there is no donor and no clone. That is a fact about THIS object, recorded
-// here as inspectable evidence for KIV-95. It is NOT a G0-R clearance: recording that a
-// voice is synthetic is not the same act as a gate deciding that the surface may speak,
-// and this file must never be read as performing the latter. A prior commit in this repo
-// declared G0-R "SUPERSEDED" from inside the code and had to be retracted; the lesson is
-// that gate state lives in the gate, never in a source file.
+// here as inspectable evidence for KIV-95.
+//
+// THE GATE IS NOW SCOPED, BY FOUNDER RULING (KIV-90, 29 Aug 2026), to read: *no LEGACY or
+// DONOR-DERIVED object may be generated or exposed; a registered `generated` voice is
+// permitted.* The rights question that gate exists to answer does not arise for a voice its
+// owner synthesized from a written prompt.
+//
+// THAT RULING DOES NOT LIVE HERE, AND THIS FILE DOES NOT PERFORM IT. It records what a
+// voice IS; the gate decides what may speak. A prior commit declared G0-R "SUPERSEDED"
+// from inside a source comment, citing a Founder request that had not been made, and had to
+// be retracted — the lesson is that gate state lives in the gate, never in a source file.
+// If the ruling is ever narrowed again, this code needs no edit: it already refuses
+// everything except the one registered voice.
 // ============================================================================
 
 /** The provenance classes this product will accept for a customer-reachable voice.
