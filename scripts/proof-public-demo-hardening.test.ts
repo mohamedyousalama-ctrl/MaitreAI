@@ -337,6 +337,50 @@ const demoSurface: string[] = [];
   demoSurface.sort();
 }
 ok("the demo-surface scan actually found the demo files", demoSurface.length >= 8);
+
+// ── EVERY OTHER FILE THAT REACHES THE PROVIDER GOES THROUGH THE REGISTRY ────
+//
+// This scan walked app/demo, app/api/demo, lib/demo and components/demo — and nothing
+// else. A review then found `scripts/mizan/mizan-voice.mjs`: a raw fetch to
+// api.elevenlabs.io taking an operator-supplied VOICE_A/B/C, uploading the result to a
+// PUBLIC Supabase bucket that MizanReviewClient plays to reviewers. Driven with the
+// identified G0-R quarantined object it produced 13 syntheses and 13 public uploads before
+// the script's own HOLD could fire. A legacy object GENERATED and EXPOSED — the one thing
+// the scoped rights ruling still forbids — from a directory no proof looked at.
+//
+// So the invariant is stated over the WHOLE repository, not one directory: any file that
+// reaches ElevenLabs must name the registry. The exemptions are the registry itself and
+// the adapter it governs.
+{
+  const REGISTRY_OWNERS = new Set(["lib/ai/tts/voice-registry.ts", "lib/ai/tts/elevenlabs.ts"]);
+  const all: string[] = [];
+  const walkAll = (dir: string) => {
+    for (const e of readdirSync(resolve(ROOT, dir), { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name === ".next" || e.name === ".git" || e.name === ".claude") continue;
+      const child = dir === "." ? e.name : `${dir}/${e.name}`;
+      if (e.isDirectory()) walkAll(child);
+      else if (/\.(tsx?|jsx?|mjs|cjs)$/.test(e.name)) all.push(child);
+    }
+  };
+  walkAll(".");
+  const reaches = all.filter((f) => {
+    if (REGISTRY_OWNERS.has(f)) return false;
+    const src = readFileSync(resolve(ROOT, f), "utf8");
+    return /api\.elevenlabs\.io/.test(src);
+  });
+  const ungoverned = reaches.filter((f) => {
+    const src = readFileSync(resolve(ROOT, f), "utf8");
+    // Either it imports the registry, or it reads the registered id out of it directly —
+    // an .mjs script cannot import the TypeScript module, so it extracts the literal.
+    return !/voice-registry/.test(src) && !/assertRegisteredVoice|ALLOWED_VOICE_ID/.test(src);
+  });
+  ok(`every file reaching ElevenLabs is governed by the registry (${reaches.length} found, ${ungoverned.length} ungoverned)`,
+    reaches.length > 0 && ungoverned.length === 0);
+  if (ungoverned.length) console.log("   ungoverned:", ungoverned.join(", "));
+  // And the scan itself must not be able to pass by finding nothing.
+  ok("…and the scan reached outside the demo directories to find them",
+    reaches.some((f) => !f.startsWith("app/demo") && !f.startsWith("lib/demo") && !f.startsWith("app/api/demo")));
+}
 ok("the scan covers the file that calls the provider", demoSurface.includes(DEMO_TTS_WRAPPER));
 
 // Imports AND raw HTTP. A scan for imports alone was evaded by a file that simply fetched

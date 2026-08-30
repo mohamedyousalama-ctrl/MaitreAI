@@ -792,16 +792,144 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   // There is no second layer: decideVoiceSend is called with `enabled: true` hardcoded.
   ok("the WhatsApp voice note is gated on the tenant's own voice_notes flag",
     /isFeatureExplicitlyEnabled\("voice_notes"/.test(ras));
-  // B1 on the live path, and it must be INSIDE the function so a second caller cannot omit it.
-  const fn = ras.slice(ras.indexOf("async function maybeSendVoiceNote"), ras.indexOf("/**\n * WO-MEDIA-GUARD"));
-  ok("…and the dialect guard lives inside maybeSendVoiceNote, not at its call site",
-    /voiceMayReadDialect\(/.test(fn));
+  const fn = ras.slice(ras.indexOf("export async function maybeSendVoiceNote"), ras.indexOf("/**\n * WO-MEDIA-GUARD"));
   // M-c — the provider has already billed; a WhatsApp transmit failure must not discard
   // our only record of the money.
   ok("the TTS spend row is written BEFORE the transmit check, not after",
     fn.indexOf('trigger: "voice_tts"') < fn.indexOf("const audioSend = await sendWhatsAppAudio"));
   ok("…and there is exactly one spend row per synthesis",
     (fn.match(/trigger: "voice_tts"/g) ?? []).length === 1);
+}
+
+// ── B1, DRIVEN — THE GUARD'S WIRING, NOT JUST ITS HELPER ────────────────────
+//
+// The first version of this asserted `/voiceMayReadDialect\(/` against the function's
+// source. A review then deleted the `return` from the guard — leaving the identifier, the
+// log line and everything else in place — and the whole 215-file suite stayed green with
+// tsc and lint clean. «وصاية» would have spoken Saudi on the first note. `false && …`
+// survived it too.
+//
+// That is verbatim the trap this repo has written down five times: an assertion matching a
+// NAME rather than a BEHAVIOUR. So maybeSendVoiceNote is now EXECUTED, with a fake admin
+// client and an instrumented fetch, and the assertion is about which hosts were contacted.
+{
+  const { maybeSendVoiceNote } = await import("../lib/messaging/respond-and-send.ts");
+  const realFetch = globalThis.fetch;
+  const env = { ...process.env };
+  const contacted: string[] = [];
+  globalThis.fetch = (async (u: RequestInfo | URL) => {
+    contacted.push(new URL(String(u)).host);
+    return {
+      ok: true, status: 200, text: async () => "",
+      json: async () => ({ messages: [{ id: "m1" }] }),
+      arrayBuffer: async () => new TextEncoder().encode("AUDIO").buffer,
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  // Minimal Supabase double: the function reads the conversation's hold flag and writes a
+  // counter, a message row and a spend row. None of that is under test here.
+  const admin = { from: () => ({
+    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { is_safety_hold: false }, error: null }) }) }),
+    insert: async () => ({ data: null, error: null }),
+    update: () => ({ eq: async () => ({ data: null, error: null }) }),
+  }) } as never;
+
+  Object.assign(process.env, {
+    TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key",
+    ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
+  });
+  delete process.env.ELEVENLABS_TTS_MODEL;
+
+  const turn = {
+    restaurantId: "r", conversationId: "c", phone: "+201000000000",
+    inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
+    lastInboundAtMs: Date.now(),
+  };
+
+  contacted.length = 0;
+  await maybeSendVoiceNote(admin, { ...turn, replyText: "أهلاً بيك، تحب تطلب إيه؟", tenantDialect: "egyptian" });
+  const elEgypt = contacted.filter((h) => h.includes("elevenlabs")).length;
+  ok("an EGYPTIAN tenant contacts NO voice provider — «وصاية» stays on text", elEgypt === 0);
+  ok("…and no other provider is substituted for it either", contacted.length === 0);
+
+  contacted.length = 0;
+  await maybeSendVoiceNote(admin, { ...turn, replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi" });
+  ok("a SAUDI tenant does reach ElevenLabs — the guard is not simply off",
+    contacted.filter((h) => h.includes("elevenlabs")).length === 1);
+
+  for (const d of ["", "  ", "levantine", "EGYPTIAN"]) {
+    contacted.length = 0;
+    await maybeSendVoiceNote(admin, { ...turn, replyText: "هلا فيك", tenantDialect: d });
+    ok(`dialect ${JSON.stringify(d)} reaches no provider`,
+      contacted.filter((h) => h.includes("elevenlabs")).length === 0);
+  }
+
+  globalThis.fetch = realFetch;
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
+}
+
+// ── F2, DRIVEN — THE CAPABILITY ROUTE ITSELF ────────────────────────────────
+//
+// The call-screen harness MOCKS /api/demo/capabilities, so nothing executed the real
+// handler: inverting `voiceOut`, inverting `voiceIn`, removing the host gate and removing
+// the rate limit all survived the full suite. That first one is the defect the previous
+// round names by name and claims closed — it was closed one level down, in
+// demoVoiceAudible(), and left open in the route that consumes it.
+{
+  const { GET } = await import("../app/api/demo/capabilities/route.ts");
+  const env = { ...process.env };
+  const req = (host: string, ip = "1.2.3.4") =>
+    new Request("https://x/api/demo/capabilities", { headers: { host, "x-forwarded-for": ip } });
+  const call = async (host: string, ip?: string) => {
+    const r = await GET(req(host, ip));
+    return { status: r.status, body: await r.json() as { voiceCall?: boolean } };
+  };
+
+  // BOTH HALVES ARE SET INDEPENDENTLY, or neither is tested. `voiceCall` is
+  // `voiceIn && voiceOut`, so leaving STT unconfigured pins it false through the EARS and
+  // makes the VOICE half unobservable — inverting `voiceOut` to `true` survived exactly
+  // that way. Every case below fixes STT to a real adapter and varies only the voice,
+  // except the two that deliberately test the ears.
+  const set = (v: Record<string, string>) => {
+    for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "STT_ADAPTER"]) delete process.env[k];
+    Object.assign(process.env, { STT_ADAPTER: "groq", ...v });
+  };
+
+  set({});
+  ok("nothing configured → the route reports it cannot hold a call",
+    (await call("maitre-ai.vercel.app", "9.9.9.1")).body.voiceCall === false);
+  set({ TTS_ADAPTER: "mock" });
+  ok("a pinned mock → still cannot hold a call",
+    (await call("maitre-ai.vercel.app", "9.9.9.2")).body.voiceCall === false);
+  set({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "k", ELEVENLABS_VOICE_ID: "21m00Tcm4TlvDq8ikWAM" });
+  ok("an unregistered voice → still cannot hold a call",
+    (await call("maitre-ai.vercel.app", "9.9.9.3")).body.voiceCall === false);
+
+  // The POSITIVE case — without it, a probe hardwired to `false` would pass everything above.
+  set({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "k", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId });
+  ok("a fully configured surface DOES report that it can hold a call",
+    (await call("maitre-ai.vercel.app", "9.9.9.6")).body.voiceCall === true);
+  // …and the ears half, varied on its own against that same working voice.
+  set({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "k", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId, STT_ADAPTER: "mock" });
+  ok("a working voice with NO ears still cannot hold a call",
+    (await call("maitre-ai.vercel.app", "9.9.9.7")).body.voiceCall === false);
+
+  // The host gate, on the route rather than in a comment about it.
+  for (const bad of ["evil.example.com", "maitre-ai.vercel.app.evil.com"]) {
+    ok(`the probe 404s on ${bad}`, (await call(bad, "9.9.9.4")).status === 404);
+  }
+  ok("…and answers on the demo host", (await call("maitre-ai.vercel.app", "9.9.9.5")).status === 200);
+
+  // The rate limit, driven until it actually refuses.
+  let limited = 0;
+  for (let i = 0; i < 200; i++) {
+    if ((await call("maitre-ai.vercel.app", "9.9.9.99")).status === 429) { limited = i; break; }
+  }
+  ok(`the probe is rate limited (refused after ${limited} requests)`, limited > 0);
+
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
 }
 
 // ── H4 — THE CANONICAL VOICE ID, ON THE LIVE PATH ───────────────────────────
@@ -904,6 +1032,29 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     const out = await synthesizeVoiceReply("قهوة عربية طازجة وكبسة لحم", { voiceId: bad });
     ok(`a refused voice (${bad.slice(0, 8)}…) yields NO audio on the WhatsApp path`, out === null);
     ok(`…and buys nothing from ANY provider — no onyx substitute`, contacted.length === 0);
+  }
+
+  // A 4xx IS A MISCONFIGURATION, NOT AN OUTAGE, and no other voice fixes it. A revoked key,
+  // a plan without eleven_v3, an unknown dictionary locator, an exhausted quota — each is
+  // PERMANENT until a human changes something, so answering it by buying an OpenAI voice
+  // ships an American male reading Arabic to a real customer on EVERY turn, forever, while
+  // paging the Founder each time. There is no circuit breaker; there does not need to be
+  // one if the substitution never happens.
+  for (const status of [400, 401, 403, 404, 422, 429]) {
+    contacted.length = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const host = new URL(String(input)).host;
+      contacted.push(host);
+      if (host === "api.elevenlabs.io") return { ok: false, status, text: async () => "nope" } as unknown as Response;
+      return {
+        ok: true, status: 200, text: async () => "",
+        arrayBuffer: async () => new TextEncoder().encode("ONYX").buffer,
+      } as unknown as Response;
+    }) as typeof fetch;
+    set({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId, OPENAI_API_KEY: "sk-present" });
+    const out = await synthesizeVoiceReply("قهوة عربية طازجة", { voiceId: KHALID_VOICE.voiceId });
+    ok(`an ElevenLabs ${status} yields NO audio — onyx is never substituted`, out === null);
+    ok(`…and OpenAI is never contacted on a ${status}`, !contacted.some((h) => h.includes("openai")));
   }
 
   // A GENUINE OUTAGE STILL FALLS BACK. The fallback law exists for a provider that is DOWN,

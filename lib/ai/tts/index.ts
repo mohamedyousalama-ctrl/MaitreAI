@@ -14,7 +14,7 @@
 
 import type { TtsAdapter, TtsResult, TtsSynthesizeOptions } from "./types";
 import { mockTtsAdapter } from "./mock";
-import { elevenlabsTtsAdapter } from "./elevenlabs";
+import { elevenlabsTtsAdapter, TTS_CONFIG_FAULT } from "./elevenlabs";
 import { openaiTtsAdapter } from "./openai";
 
 // (agent-eval re-kick: real path-matching change so the paths filter triggers CI.)
@@ -45,7 +45,7 @@ export function getTtsAdapter(): TtsAdapter {
 export const VOICE_REFUSAL_MARKER = "ElevenLabs TTS refused:";
 
 export function isVoiceGovernanceRefusal(message: string): boolean {
-  return message.includes(VOICE_REFUSAL_MARKER);
+  return message.includes(VOICE_REFUSAL_MARKER) || message.includes(TTS_CONFIG_FAULT);
 }
 
 export interface VoiceReplyResult {
@@ -86,6 +86,10 @@ export async function synthesizeVoiceReply(text: string, opts?: TtsSynthesizeOpt
     // voice for one we have refused is the defect.
     // A refusal means we do not know whose voice this is; the answer to that is silence
     // and the text reply, never a substitute.
+    // Covers both a registry refusal and a 4xx configuration fault — see the marker's
+    // definition. Neither is fixed by generating a different voice, and both are permanent
+    // until a human changes something, so substituting would ship the wrong voice on every
+    // turn rather than bridging a blip.
     if (isVoiceGovernanceRefusal(primaryError)) return null;
 
     // Only ElevenLabs has an automatic fallback target (onyx). If the primary was

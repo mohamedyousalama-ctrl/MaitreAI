@@ -33,6 +33,9 @@ import type { TtsAdapter } from "./types";
 import { ttsCostUsd } from "./pricing";
 import { KHALID_VOICE, lookupVoice, normalizeVoiceId, voiceRefusalReason } from "./voice-registry";
 
+/** Marker for a 4xx: something is MISCONFIGURED, and no other voice fixes it. */
+export const TTS_CONFIG_FAULT = "ElevenLabs TTS configuration fault";
+
 export const elevenlabsTtsAdapter: TtsAdapter = {
   name: "elevenlabs",
   async synthesize(text, opts) {
@@ -102,7 +105,15 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
     );
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      throw new Error(`ElevenLabs TTS ${res.status}: ${detail.slice(0, 200)}`);
+      // A 4xx IS A CONFIGURATION FAULT, NOT AN OUTAGE, and the difference decides whether
+      // the fallback law applies. A revoked key, a plan without `eleven_v3`, an unknown
+      // dictionary locator, an exhausted quota — all are PERMANENT until someone changes
+      // something, so answering them by buying an OpenAI voice ships an American male
+      // reading Arabic to a real customer on EVERY turn, forever, while paging the Founder
+      // each time. Tagged so `synthesizeVoiceReply` can tell the two apart; 5xx and network
+      // failures stay outages, which is what the fallback exists for.
+      const kind = res.status >= 400 && res.status < 500 ? TTS_CONFIG_FAULT : "ElevenLabs TTS";
+      throw new Error(`${kind} ${res.status}: ${detail.slice(0, 200)}`);
     }
     const audio = Buffer.from(await res.arrayBuffer());
     return {

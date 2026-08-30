@@ -545,7 +545,13 @@ async function sendAgentErrorFallbackToCustomer(
 /** The globally configured voice id, trimmed at the point of use. */
 const envVoiceId = (): string => (process.env.ELEVENLABS_VOICE_ID || "").trim();
 
-async function maybeSendVoiceNote(
+/** EXPORTED FOR THE PROOF, and for a specific reason. A review deleted the `return` from
+ *  the dialect guard below and the entire 215-file suite stayed green, because the only
+ *  thing watching that line was a regex looking for an identifier — which `false &&` and a
+ *  dropped `return` both leave in place. That is the exact trap this repo has now written
+ *  down five times. The guard is proven by DRIVING this function, so the wiring is tested
+ *  and not merely the helper it calls. */
+export async function maybeSendVoiceNote(
   admin: SupabaseClient,
   args: {
     restaurantId: string; conversationId: string; phone: string; replyText: string;

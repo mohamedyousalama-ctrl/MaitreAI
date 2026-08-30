@@ -36,7 +36,43 @@ function readActivePacket() {
 }
 const replyText = (it) => (it.replies || []).filter((r) => r && r.trim()).join("\n").trim();
 
+// ── THE RELEASE REGISTRY APPLIES HERE TOO ──────────────────────────────────
+//
+// This script is a raw fetch to ElevenLabs with an operator-supplied VOICE_A/B/C, and it
+// uploads the result to a PUBLIC Supabase bucket that MizanReviewClient plays to reviewers.
+// It therefore both GENERATES and EXPOSES a voice — the two things the G0-R ruling still
+// forbids for a legacy or donor-derived object — and it did so entirely outside
+// lib/ai/tts/voice-registry.ts, which lives in TypeScript the product imports and this
+// script does not.
+//
+// A review drove this with the identified quarantined object and got 13 syntheses and 13
+// public uploads before the script's own HOLD could fire. The claim that "the allow list of
+// one enforces the rule in code" was true of the product and false of this file. Now it is
+// true of both.
+//
+// Read from the registry rather than copied, so the two cannot drift; a proof asserts the
+// extraction still works and still yields the registered id.
+const REGISTRY_TS = new URL("../../lib/ai/tts/voice-registry.ts", import.meta.url);
+const ALLOWED_VOICE_ID = (() => {
+  const src = readFileSync(REGISTRY_TS, "utf8");
+  const m = src.match(/voiceId:\s*"([A-Za-z0-9]+)"/);
+  if (!m) throw new Error("HOLD — cannot read the registered voice id from voice-registry.ts");
+  return m[1];
+})();
+
+function assertRegisteredVoice(voiceId, label) {
+  const v = String(voiceId ?? "").trim();
+  if (v !== ALLOWED_VOICE_ID) {
+    throw new Error(
+      `HOLD — ${label}="${v.slice(0, 32)}" is not in the voice release registry ` +
+        `(expected ${ALLOWED_VOICE_ID}). No synthesis, no upload, no voice substitution.`
+    );
+  }
+}
+
 async function synth(text, voiceId) {
+  // BEFORE the network, before any money, and before anything reaches a public bucket.
+  assertRegisteredVoice(voiceId, "voice id");
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
     method: "POST",
     headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY, "Content-Type": "application/json", Accept: "audio/mpeg" },
@@ -65,6 +101,9 @@ async function resolveUrls(packet) {
   }
   const voices = { A: process.env.VOICE_A, B: process.env.VOICE_B, C: process.env.VOICE_C };
   if (!voices.A) throw new Error("VOICE_A not set");
+  // Refuse the whole RUN, not each synthesis: a run that would hold on its third voice has
+  // already generated and published the first two.
+  for (const [k, v] of Object.entries(voices)) if (v) assertRegisteredVoice(v, `VOICE_${k}`);
   const items = {};
   for (const it of packet.items) {
     const text = replyText(it);
