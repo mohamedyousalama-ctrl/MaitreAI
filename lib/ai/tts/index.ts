@@ -1,15 +1,16 @@
 // ============================================================================
 // MaitreAI — TTS adapter resolver + fallback wrapper (WO-VOICE-2).
-// Selection (env flip, zero code change):
-//   TTS_ADAPTER = mock | elevenlabs | openai  (explicit), else auto:
-//   ELEVENLABS_API_KEY → elevenlabs, OPENAI_API_KEY → openai, else mock.
-// Default is mock so the voice path works with no spend until a real provider +
-// ElevenLabs voice are provisioned + selected (owner approval — paid key).
+// Selection is EXPLICIT ONLY: TTS_ADAPTER = mock | elevenlabs | openai. Nothing is
+// inferred from the presence of a key — see the note in getTtsAdapter(). Default is mock,
+// so the voice path works end to end with no spend and no provider until one is pinned
+// on purpose.
 //
-// FALLBACK LAW: when the primary is ElevenLabs and it fails (outage/quota/error),
-// synthesizeVoiceReply automatically falls back to OpenAI onyx and flags fellBack
-// so the caller fires an alert — a voice reply is NEVER silently dropped. The
-// customer always has the text regardless (voice is additive-only).
+// FALLBACK LAW, and its two exceptions. When ElevenLabs is DOWN, synthesizeVoiceReply
+// falls back to OpenAI onyx and flags fellBack so the caller alerts — a customer waiting on
+// an order is better served by any voice than by silence, and they have the text either way.
+// It does NOT fall back on (a) a voice-registry refusal or (b) a 4xx: both mean something is
+// misconfigured rather than unavailable, both are permanent until a human acts, and
+// answering either with a different voice ships the wrong one on every turn forever.
 // ============================================================================
 
 import type { TtsAdapter, TtsResult, TtsSynthesizeOptions } from "./types";
@@ -26,15 +27,21 @@ export function getTtsAdapter(): TtsAdapter {
   if (sel === "elevenlabs") return elevenlabsTtsAdapter;
   if (sel === "openai") return openaiTtsAdapter;
   if (sel === "mock") return mockTtsAdapter;
-  // ELEVENLABS IS NEVER INFERRED. Inferring it from the key alone produced a partial-config
-  // state that failed in the WORST possible direction: with the key and voice set but
-  // TTS_ADAPTER forgotten, the WhatsApp path — REAL CUSTOMERS — started speaking, while the
-  // demo, the surface actually being switched on, stayed silent on `provider_unpinned`.
-  // Exactly backwards. The demo has always required an explicit pin for this reason
-  // (lib/demo/voice-out.ts: "relying on inference is what makes the silent substitution
-  // possible"); the live path now requires the same, so a half-finished configuration is
-  // silent everywhere rather than live where nobody is looking.
-  if (process.env.OPENAI_API_KEY) return openaiTtsAdapter;
+  // NO PROVIDER IS EVER INFERRED. An explicit TTS_ADAPTER, or nothing speaks.
+  //
+  // A first attempt at this removed only the ElevenLabs half and left the OpenAI line
+  // standing — which made the failure WORSE, not better. Production always has
+  // OPENAI_API_KEY, so a live WhatsApp turn with TTS_ADAPTER forgotten fell straight past
+  // the deleted line onto `openaiTtsAdapter` and bought an `onyx` synthesis: an American
+  // male voice reading Arabic, transmitted to a real customer, with the voice registry
+  // never consulted at all. Driven: `hosts contacted: ["api.openai.com","graph.facebook.com"]`,
+  // `whatsapp audio sent? true`. That is the exact substitution the registry exists to
+  // prevent, arriving through the front door rather than the fallback — in the function
+  // rewritten to prevent it.
+  //
+  // Half a fix was worse than none: before, the same misconfiguration at least reached
+  // ElevenLabs and the registry. Now nothing is inferred, so a half-finished configuration
+  // is genuinely silent everywhere rather than live in the wrong voice.
   return mockTtsAdapter;
 }
 

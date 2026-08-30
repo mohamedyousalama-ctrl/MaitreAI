@@ -112,7 +112,11 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
       // reading Arabic to a real customer on EVERY turn, forever, while paging the Founder
       // each time. Tagged so `synthesizeVoiceReply` can tell the two apart; 5xx and network
       // failures stay outages, which is what the fallback exists for.
-      const kind = res.status >= 400 && res.status < 500 ? TTS_CONFIG_FAULT : "ElevenLabs TTS";
+      // ANYTHING THAT IS NOT A 5xx IS NOT AN OUTAGE. 4xx is the reachable case (bad key, wrong
+      // plan, unknown dictionary, exhausted quota); a 3xx reaching here would mean a redirect
+      // fetch did not follow, which is also a configuration fact rather than a provider that
+      // is down. Only 5xx earns the fallback.
+      const kind = res.status < 500 ? TTS_CONFIG_FAULT : "ElevenLabs TTS";
       throw new Error(`${kind} ${res.status}: ${detail.slice(0, 200)}`);
     }
     const audio = Buffer.from(await res.arrayBuffer());

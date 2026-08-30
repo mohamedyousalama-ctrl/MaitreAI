@@ -24,7 +24,35 @@ import { uniqueHostedPacketId } from "./mizan-packet-id.mjs";
 const here = dirname(fileURLToPath(import.meta.url));
 const DATA_TS = join(here, "..", "..", "lib", "mizan", "active-packet-data.ts");
 const BUCKET = "mizan-khalid-audio";
-const MODEL = process.env.ELEVENLABS_TTS_MODEL || "eleven_flash_v2_5"; // NB: underscores (the dotted id is rejected by the API)
+const REGISTRY_TS = new URL("../../lib/ai/tts/voice-registry.ts", import.meta.url);
+const { ALLOWED_VOICE_ID, REGISTERED_MODEL } = (() => {
+  const src = readFileSync(REGISTRY_TS, "utf8");
+  // ANCHORED ON THE NAMED EXPORT, not on "the first match in the file". A plain
+  // /voiceId:\s*"…"/ took whichever entry appeared first, so registering a second voice
+  // ABOVE KHALID_VOICE would have silently repinned this script to it.
+  const block = src.slice(src.indexOf("export const KHALID_VOICE"));
+  const id = block.match(/voiceId:\s*"([A-Za-z0-9]+)"/);
+  const model = block.match(/model:\s*"([A-Za-z0-9_.]+)"/);
+  if (!id || !model) throw new Error("HOLD — cannot read KHALID_VOICE from voice-registry.ts");
+  return { ALLOWED_VOICE_ID: id[1], REGISTERED_MODEL: model[1] };
+})();
+
+// THE MODEL IS PART OF WHAT WAS ACCEPTED, HERE TOO. This was an unchecked operator
+// override defaulting to eleven_flash_v2_5, while the registry pins eleven_v3 and the
+// product adapter refuses anything else. So reviewers in the public bucket were scoring
+// «Khalid kivo» rendered under a model the Founder never accepted — and .env.example tells
+// operators that ELEVENLABS_TTS_MODEL "is refused", which was true of the adapter and false
+// of this script. An override that AGREES is a no-op; one that disagrees is refused.
+const MODEL = (() => {
+  const requested = (process.env.ELEVENLABS_TTS_MODEL || "").trim();
+  if (requested && requested !== REGISTERED_MODEL) {
+    throw new Error(
+      `HOLD — ELEVENLABS_TTS_MODEL="${requested}" does not match the registered model ` +
+        `("${REGISTERED_MODEL}"). A model change needs its own review (KIV-313 §3).`
+    );
+  }
+  return REGISTERED_MODEL;
+})();
 const COMPARE_SCENARIO = "S9-01"; // short, warm, native greeting — no tenant name
 
 /** Parse the generated TS literal module back into an object. */
@@ -52,13 +80,6 @@ const replyText = (it) => (it.replies || []).filter((r) => r && r.trim()).join("
 //
 // Read from the registry rather than copied, so the two cannot drift; a proof asserts the
 // extraction still works and still yields the registered id.
-const REGISTRY_TS = new URL("../../lib/ai/tts/voice-registry.ts", import.meta.url);
-const ALLOWED_VOICE_ID = (() => {
-  const src = readFileSync(REGISTRY_TS, "utf8");
-  const m = src.match(/voiceId:\s*"([A-Za-z0-9]+)"/);
-  if (!m) throw new Error("HOLD — cannot read the registered voice id from voice-registry.ts");
-  return m[1];
-})();
 
 function assertRegisteredVoice(voiceId, label) {
   const v = String(voiceId ?? "").trim();

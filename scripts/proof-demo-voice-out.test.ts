@@ -61,8 +61,9 @@ withEnv({ OPENAI_API_KEY: "sk-present" }, () => {
   ok("no TTS config at all → the demo refuses to speak", !demoVoiceProviderPinned());
 });
 withEnv({ ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: "vid", OPENAI_API_KEY: "sk-present" }, () => {
-  // getTtsAdapter() WOULD pick ElevenLabs here by inference — but inference is exactly the
-  // mechanism that silently picks onyx when the key is missing or wrongly scoped.
+  // getTtsAdapter() used to pick ElevenLabs here by inference. Inference is gone entirely
+  // now — see the note in lib/ai/tts/index.ts — because it is exactly the mechanism that
+  // silently picks a different voice when a key is missing or wrongly scoped.
   ok("keys present but TTS_ADAPTER unset → still refuses; inference is never trusted",
     !demoVoiceProviderPinned());
 });
@@ -788,10 +789,30 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
 // ── THE TWO LIVE-PATH GUARDS THAT NOTHING PINNED ────────────────────────────
 {
   const ras = readFileSync(resolve(process.cwd(), "lib/messaging/respond-and-send.ts"), "utf8");
+  // THE CALL SITE, NOT JUST THE FUNCTION. A review pinned the guard's BODY by driving it,
+  // then broke it from one line higher: passing a literal `"saudi"` as `tenantDialect`, or
+  // deriving it from the registry so the guard compares the registry against itself, let an
+  // EGYPTIAN tenant reach ElevenLabs at 215/215. Same shape as the defect it was fixing —
+  // closed one level down, open one level up. Both the argument and the flag gate are
+  // asserted on the CALL, inside the block that makes it.
+  const callSite = ras.slice(ras.indexOf("void maybeSendVoiceNote(admin, {"), ras.indexOf("void maybeSendVoiceNote(admin, {") + 1400);
+  ok("the tenant dialect passed to the guard is the one RESOLVED for this turn",
+    /tenantDialect: outboundDialect/.test(callSite));
+  ok("…and it is not a literal, nor read back from the registry it is checked against",
+    !/tenantDialect: ["'`]/.test(callSite) && !/tenantDialect:[^,]*lookupVoice/.test(callSite));
   // H3 — deleting this one line is the difference between ONE tenant speaking and all 13.
   // There is no second layer: decideVoiceSend is called with `enabled: true` hardcoded.
-  ok("the WhatsApp voice note is gated on the tenant's own voice_notes flag",
-    /isFeatureExplicitlyEnabled\("voice_notes"/.test(ras));
+  const gate = ras.slice(Math.max(0, ras.indexOf("void maybeSendVoiceNote(admin, {") - 400), ras.indexOf("void maybeSendVoiceNote(admin, {"));
+  ok("the voice note is gated on the tenant's own voice_notes flag, at the call",
+    /isFeatureExplicitlyEnabled\("voice_notes", outcome\.features\)/.test(gate));
+  ok("…and that gate is not weakened by an `|| true` or a negation",
+    !/voice_notes[^)]*\)\s*\|\|/.test(gate) && !/!isFeatureExplicitlyEnabled\("voice_notes"/.test(gate));
+  // The guard must not be conditioned on the environment: an audit disabled it with
+  // `NODE_ENV !== "production" &&` and with `!process.env.VERCEL &&`, both green, both
+  // meaning the protection existed everywhere EXCEPT where it matters.
+  ok("the dialect guard is not conditioned on NODE_ENV or a deploy variable",
+    !/NODE_ENV[\s\S]{0,80}voiceMayReadDialect/.test(ras) &&
+    !/process\.env\.VERCEL[\s\S]{0,80}voiceMayReadDialect/.test(ras));
   const fn = ras.slice(ras.indexOf("export async function maybeSendVoiceNote"), ras.indexOf("/**\n * WO-MEDIA-GUARD"));
   // M-c — the provider has already billed; a WhatsApp transmit failure must not discard
   // our only record of the money.
@@ -799,6 +820,67 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     fn.indexOf('trigger: "voice_tts"') < fn.indexOf("const audioSend = await sendWhatsAppAudio"));
   ok("…and there is exactly one spend row per synthesis",
     (fn.match(/trigger: "voice_tts"/g) ?? []).length === 1);
+}
+
+// ── NO PROVIDER IS INFERRED — DRIVEN ON THE LIVE PATH ───────────────────────
+//
+// A half-finished configuration must be SILENT, not merely pointed somewhere else. A first
+// attempt removed the ElevenLabs inference and left the OpenAI line standing; production
+// always has OPENAI_API_KEY, so a live WhatsApp turn with TTS_ADAPTER forgotten bought an
+// `onyx` synthesis and TRANSMITTED it to a real customer, with the registry never consulted.
+// Worse than the state it replaced, and 215/215 green. Asserted here on the live path, by
+// which hosts were contacted.
+{
+  const { maybeSendVoiceNote } = await import("../lib/messaging/respond-and-send.ts");
+  const { getTtsAdapter } = await import("../lib/ai/tts/index.ts");
+  const realFetch = globalThis.fetch;
+  const env = { ...process.env };
+  const contacted: string[] = [];
+  globalThis.fetch = (async (u: RequestInfo | URL) => {
+    contacted.push(new URL(String(u)).host);
+    return {
+      ok: true, status: 200, text: async () => "",
+      json: async () => ({ messages: [{ id: "m1" }] }),
+      arrayBuffer: async () => new TextEncoder().encode("AUDIO").buffer,
+    } as unknown as Response;
+  }) as typeof fetch;
+  const admin = { from: () => ({
+    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { is_safety_hold: false }, error: null }) }) }),
+    insert: async () => ({ data: null, error: null }),
+    update: () => ({ eq: async () => ({ data: null, error: null }) }),
+  }) } as never;
+  const turn = {
+    restaurantId: "r", conversationId: "c", phone: "+966500000000",
+    inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
+    lastInboundAtMs: Date.now(), replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi",
+  };
+
+  // The exact operator error the activation step invites: key and voice set, pin forgotten.
+  for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "OPENAI_API_KEY"]) delete process.env[k];
+  Object.assign(process.env, {
+    ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
+    OPENAI_API_KEY: "sk-present",
+  });
+  ok("with no pin, the adapter resolves to mock — no provider is inferred",
+    getTtsAdapter().name === "mock");
+  contacted.length = 0;
+  await maybeSendVoiceNote(admin, turn);
+  ok("a live turn with TTS_ADAPTER forgotten contacts NO voice provider",
+    !contacted.some((h) => h.includes("elevenlabs") || h.includes("openai")));
+  ok("…and transmits no audio to the customer",
+    !contacted.some((h) => h.includes("graph.facebook.com")));
+
+  // …and the same configuration WITH the pin does speak, so the guard is not simply off.
+  process.env.TTS_ADAPTER = "elevenlabs";
+  contacted.length = 0;
+  await maybeSendVoiceNote(admin, turn);
+  ok("…while the same configuration WITH the pin reaches ElevenLabs",
+    contacted.filter((h) => h.includes("elevenlabs")).length === 1 &&
+    !contacted.some((h) => h.includes("openai")));
+
+  globalThis.fetch = realFetch;
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
 }
 
 // ── B1, DRIVEN — THE GUARD'S WIRING, NOT JUST ITS HELPER ────────────────────
@@ -920,6 +1002,42 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ok(`the probe 404s on ${bad}`, (await call(bad, "9.9.9.4")).status === 404);
   }
   ok("…and answers on the demo host", (await call("maitre-ai.vercel.app", "9.9.9.5")).status === 200);
+
+  // The route must not become a disclosure surface. Its own header promises ONE boolean —
+  // "not which provider, not which voice, not whether a key exists".
+  {
+    const r = await call("maitre-ai.vercel.app", "9.9.9.8");
+    ok("the probe answers exactly one field", Object.keys(r.body).length === 1);
+    ok("…named voiceCall, and nothing about the provider", "voiceCall" in r.body);
+    const raw = JSON.stringify(r.body);
+    ok("…leaking no provider, voice id or key state",
+      !/elevenlabs|openai|voiceId|apiKey|key/i.test(raw));
+  }
+  // A cached `true` after the voice is switched off is exactly the silent call screen the
+  // route exists to prevent.
+  {
+    const res = await GET(req("maitre-ai.vercel.app", "8.8.4.4"));
+    // Read by iterating rather than `.get()`: under this loader the Headers implementation
+    // is case-SENSITIVE, so `.get("cache-control")` returns "" for a header stored as
+    // "Cache-Control" — which made this assertion fail against correct code. Matching the
+    // name case-insensitively tests the response, not the test harness's header shim.
+    const cc = [...res.headers.entries()]
+      .find(([k]) => k.toLowerCase() === "cache-control")?.[1] ?? "";
+    ok(`the probe is never cached (status ${res.status}, cache-control ${JSON.stringify(cc)})`,
+      res.status === 200 && cc.includes("no-store"));
+  }
+  // The rate-limit bucket must be keyed on the CLIENT ADDRESS, not on a header a caller
+  // chooses — an attacker-selected bucket is not a limit.
+  {
+    const ras2 = readFileSync(resolve(process.cwd(), "app/api/demo/capabilities/route.ts"), "utf8");
+    ok("the rate limit is keyed on x-forwarded-for, like the other demo routes",
+      /x-forwarded-for/.test(ras2) && !/x-demo-client/.test(ras2));
+    ok("…over the shared demo window, not a private one",
+      /DEMO_WINDOW_MS/.test(ras2) && !/rateLimit\([^)]*\d{4,}\s*\)/.test(ras2));
+    // A missing Host header must 404, not fall through to a default that passes the gate.
+    const noHost = await GET(new Request("https://x/api/demo/capabilities", { headers: { "x-forwarded-for": "9.9.9.10" } }));
+    ok("a request with no Host header is refused, not defaulted", noHost.status === 404);
+  }
 
   // The rate limit, driven until it actually refuses.
   let limited = 0;

@@ -70,6 +70,16 @@ delete process.env.VOICE_NOTES_PER_DAY;
 // --- TTS selection + fallback contract --------------------------------------
 delete process.env.TTS_ADAPTER; delete process.env.ELEVENLABS_API_KEY; delete process.env.OPENAI_API_KEY;
 eq("default adapter = mock (no spend)", getTtsAdapter().name, "mock");
+// WITH OPENAI_API_KEY PRESENT — which production always has. Deleting it above meant this
+// file measured a configuration production does not run: an audit found that with the EL
+// key set and TTS_ADAPTER forgotten, resolution fell through to OpenAI and shipped `onyx`
+// to a real WhatsApp customer, while every assertion here stayed green because the one
+// variable that makes it happen had been removed first.
+process.env.OPENAI_API_KEY = "sk-present";
+eq("OPENAI key alone does NOT arm openai — production's own state", getTtsAdapter().name, "mock");
+process.env.ELEVENLABS_API_KEY = "el-key";
+eq("…nor do BOTH keys together, with no pin", getTtsAdapter().name, "mock");
+delete process.env.ELEVENLABS_API_KEY; delete process.env.OPENAI_API_KEY;
 process.env.TTS_ADAPTER = "elevenlabs";
 eq("explicit elevenlabs", getTtsAdapter().name, "elevenlabs");
 process.env.TTS_ADAPTER = "openai";
