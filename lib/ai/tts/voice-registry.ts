@@ -41,6 +41,12 @@ export type VoiceProvenance = "generated";
 
 export interface RegisteredVoice {
   voiceId: string;
+  /** The dialect this voice was DESIGNED to speak. A voice may only read its own dialect:
+   *  «Khalid kivo» is a Najdi Saudi male, and pointing it at an Egyptian tenant produces a
+   *  Saudi accent reading Cairene text to that restaurant's customers. There is exactly one
+   *  global ELEVENLABS_VOICE_ID and no per-tenant column, so a mismatched tenant has only
+   *  two possible outcomes — the wrong voice, or silence. Silence is the correct one. */
+  dialect: "saudi" | "egyptian";
   /** The provider's own display name, for operator-facing messages. */
   name: string;
   provenance: VoiceProvenance;
@@ -67,6 +73,7 @@ export interface RegisteredVoice {
 export const KHALID_VOICE: RegisteredVoice = {
   voiceId: "pYDa2s34YCzHjbn4DnXP",
   name: "Khalid kivo",
+  dialect: "saudi",
   provenance: "generated",
   model: "eleven_v3",
   settings: {
@@ -121,6 +128,22 @@ export function lookupVoice(id: string | null | undefined): RegisteredVoice | nu
 function clip(v: string): string {
   const flat = v.replace(/[\r\n\t\u2028\u2029]+/g, " ");
   return flat.length > 48 ? `${flat.slice(0, 48)}…` : flat;
+}
+
+/** May the registered voice read this tenant's replies?
+ *
+ *  THE CASE THIS EXISTS FOR IS LIVE. «وصاية» is an Egyptian tenant, `agent_mode: live`, with
+ *  `voice_notes` enabled and 20 conversations. `ELEVENLABS_VOICE_ID` is a single GLOBAL
+ *  setting, so the moment a key is provisioned that restaurant's real customers begin
+ *  receiving Egyptian Arabic spoken in a synthetic SAUDI voice — and because there is no
+ *  per-tenant voice column, no configuration exists that would make it correct.
+ *
+ *  Text is not a degraded outcome here. The reply is always composed and sent as text
+ *  first; withholding the audio costs that tenant nothing it had yesterday, while speaking
+ *  in the wrong country's accent is a quality failure their customers hear immediately. */
+export function voiceMayReadDialect(voice: RegisteredVoice | null, tenantDialect: string | null | undefined): boolean {
+  if (!voice) return false;
+  return String(tenantDialect ?? "").trim().toLowerCase() === voice.dialect;
 }
 
 export function isAuthorizedVoice(id: string | null | undefined): boolean {

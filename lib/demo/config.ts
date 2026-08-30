@@ -50,25 +50,33 @@ export const DEMO_WINDOW_MS = 60 * 60 * 1000;
  *   page the COLD turn is the normal case, billing at the cache-WRITE rate.
  *
  *   v3 (voice-out): "and more with voice" is now a number. TTS bills per character:
- *   DEMO_TTS_MAX_CHARS (600) x elevenlabs:eleven_v3 at $0.00022/char = $0.132 a spoken
- *   reply, so 1,000 spoken turns adds up to $132/day — which roughly TRIPLES the worst-case
- *   day rather than nudging it.
+ *   DEMO_TTS_MAX_CHARS (600) x elevenlabs:eleven_v3 at $0.0001/char = $0.06 a spoken reply,
+ *   so 1,000 spoken turns is $60/day of TTS. Added to the text worst case that is roughly
+ *   $91 on the worst day the caps physically permit.
  *
- *   RE-RUN WHENEVER THE MODEL CHANGES. This paragraph read $0.066 / $66 against
- *   eleven_flash_v2.5 while KIV-313 pinned eleven_v3 at twice the rate — the number under
- *   the cap silently stopped describing the cap. The pinned model lives in
- *   lib/ai/tts/voice-registry.ts and its rate in lib/ai/tts/pricing.ts; a change to either
- *   invalidates the figures here. It is a true ceiling and not the expectation:
- *   TTS fires only on a VOICE turn whose reply is under the cap and is not hard-zero
- *   suppressed (safety / money / receipt / payment-link are text-only), and a demo reply
- *   quoting a price — the common case once an order starts — is suppressed by definition.
+ *   RE-RUN THIS WHENEVER THE MODEL OR THE RATE CHANGES, AND RE-READ THE SUMMARY LINE. This
+ *   paragraph has now been wrong twice in one week, both times in the same way: the numbers
+ *   were updated where they are computed and left stale three lines lower, where a reader
+ *   actually takes them away. It said "$66/day … under $110 on the worst day" against a
+ *   model costing twice that, and then $132 against a rate that turned out to be half what
+ *   was entered. The pinned model lives in lib/ai/tts/voice-registry.ts and its rate in
+ *   lib/ai/tts/pricing.ts; a change to either invalidates every figure in this paragraph.
+ *
+ *   Measured, for contrast with the ceiling: real demo replies average ~66 characters, so
+ *   the realistic figure is closer to $7/day. The ceiling is what the cap has to be sized
+ *   against, but it is not the expectation.
+ *
  *   Two things keep it from going invisible: an unpriced ELEVENLABS_TTS_MODEL is REFUSED
  *   (an unknown model prices at $0, which would blind the monitor), and every synthesis
  *   writes an agent_runs row with trigger 'voice_tts' that lib/monitoring/sweep.ts sums.
  *
  * So the honest bound at 1,000 turns is roughly $31/day of text, plus STT, plus up to
- * $66/day of TTS if every one of those turns is spoken — call it under $110 on the worst
+ * $60/day of TTS if every one of those turns is spoken — call it under $95 on the worst
  * day the caps physically permit.
+ *
+ * THIS SENTENCE IS THE ONE THAT GOES STALE. It is what a reader actually carries away, and
+ * twice now it has kept a number the arithmetic above had already corrected. If you change
+ * the model or the rate, change it HERE too, or delete it.
  * Sustained traffic warms the cache and costs far less per turn, so a genuinely busy day
  * is cheaper per turn than the cold-start tests above — the worst case is "1,000 cold
  * turns", which is unlikely but is what a cap has to survive.

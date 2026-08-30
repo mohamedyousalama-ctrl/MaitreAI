@@ -26,7 +26,14 @@ export function getTtsAdapter(): TtsAdapter {
   if (sel === "elevenlabs") return elevenlabsTtsAdapter;
   if (sel === "openai") return openaiTtsAdapter;
   if (sel === "mock") return mockTtsAdapter;
-  if (process.env.ELEVENLABS_API_KEY) return elevenlabsTtsAdapter;
+  // ELEVENLABS IS NEVER INFERRED. Inferring it from the key alone produced a partial-config
+  // state that failed in the WORST possible direction: with the key and voice set but
+  // TTS_ADAPTER forgotten, the WhatsApp path — REAL CUSTOMERS — started speaking, while the
+  // demo, the surface actually being switched on, stayed silent on `provider_unpinned`.
+  // Exactly backwards. The demo has always required an explicit pin for this reason
+  // (lib/demo/voice-out.ts: "relying on inference is what makes the silent substitution
+  // possible"); the live path now requires the same, so a half-finished configuration is
+  // silent everywhere rather than live where nobody is looking.
   if (process.env.OPENAI_API_KEY) return openaiTtsAdapter;
   return mockTtsAdapter;
 }

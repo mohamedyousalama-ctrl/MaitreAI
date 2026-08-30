@@ -76,7 +76,19 @@ process.env.TTS_ADAPTER = "openai";
 eq("explicit openai (fallback engine)", getTtsAdapter().name, "openai");
 delete process.env.TTS_ADAPTER;
 process.env.ELEVENLABS_API_KEY = "x";
-eq("auto elevenlabs when EL key present", getTtsAdapter().name, "elevenlabs");
+// CHANGED DELIBERATELY: elevenlabs is no longer inferred from the key.
+//
+// This used to assert `getTtsAdapter() === "elevenlabs"` on the key alone. An audit showed
+// what that produced in a half-finished configuration: with the key and voice id set but
+// TTS_ADAPTER forgotten, the WhatsApp path — REAL CUSTOMERS — started speaking, while the
+// demo, the surface actually being switched on, stayed silent on `provider_unpinned`.
+// Exactly the wrong way round. The demo has always required an explicit pin for this
+// reason; the live path now requires the same, so a partial configuration is silent
+// everywhere rather than live where nobody is watching.
+eq("EL key alone does NOT arm elevenlabs — an explicit pin is required", getTtsAdapter().name, "mock");
+process.env.TTS_ADAPTER = "elevenlabs";
+eq("…and the explicit pin arms it", getTtsAdapter().name, "elevenlabs");
+delete process.env.TTS_ADAPTER;
 delete process.env.ELEVENLABS_API_KEY;
 
 // --- pricing ----------------------------------------------------------------

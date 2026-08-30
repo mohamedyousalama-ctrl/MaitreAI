@@ -312,10 +312,26 @@ ok("typed-actions imports the shared draft-freshness constant",
     /detectAllergenAvoidance\(transcript\)/.test(voice) &&
     /detectAllergenSymptom\(transcript\)/.test(voice) &&
     /detectAllergenEmergency\(transcript\)/.test(voice));
-  // A deterministic fill is not a model turn, so it has no stopReason to classify — and
-  // this route must never synthesize a reply the safety classifier has not cleared.
-  ok("a deterministic fill returns text only, never audio",
-    /kind === "handled"[\s\S]{0,420}replyAudio: null/.test(voice));
+  // A deterministic fill IS SPOKEN, and its clearance has three parts — this assertion used
+  // to require silence, on the grounds that "a deterministic fill is not a model turn, so it
+  // has no stopReason to classify, and this route must never synthesize a reply the safety
+  // classifier has not cleared." The premise was right and the conclusion was not: silence
+  // ended the call on «كم قطعة تحب؟» → «خمسة», the most common spoken turn in the demo,
+  // telling a restaurant owner «الصوت مو شغّال» at the moment the product was working.
+  //
+  // What replaced the stopReason is stricter, not weaker:
+  //   1. the safety probe gates the branch (all four detectors, real stt confidence);
+  //   2. voiceHardZeroReason still scans the reply for money / link / receipt;
+  //   3. the conversation's PERSISTED is_safety_hold is folded in, so a calm-hold opened on
+  //      an EARLIER turn still silences this one — the probe cannot see previous turns.
+  ok("a deterministic fill is synthesized, not skipped",
+    /const filledSpoken = await demoVoiceReply\(/.test(voice));
+  ok("…and it always reports WHY it was silent, so the loop cannot read it as a failure",
+    /replyAudioSilence: demoVoiceSilenceKind\(filledSpoken\.skipped\)/.test(voice));
+  ok("…and a safety hold from an EARLIER turn still silences it",
+    /safetyHold: heldFromEarlierTurn/.test(voice) && /select\("is_safety_hold"\)/.test(voice));
+  ok("…and an unreadable hold flag fails CLOSED, never open",
+    /convErr \? true :/.test(voice));
   ok("demoRun still holds on the spoken rail", /userMessage: transcript[\s\S]{0,300}demoRun: true/.test(voice));
   // The TAP rail is deliberately absent: a voice note carries no interactive id.
   ok("the tap rail is NOT mirrored onto voice (there is nothing to resolve)",

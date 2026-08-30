@@ -229,16 +229,90 @@ export async function POST(req: Request) {
         demoRun: true,
       });
       if (filled.kind === "handled") {
-        // A deterministic fill produces no synthesis: there is no model turn, so there is
-        // no stopReason to classify, and this route speaks only what the classifier has
-        // cleared. The visitor gets the text, exactly as the typed route answers.
+        // THIS REPLY IS SPOKEN, and the earlier reasoning for staying silent was wrong.
+        //
+        // It said: "a deterministic fill produces no synthesis: there is no model turn, so
+        // there is no stopReason to classify, and this route speaks only what the
+        // classifier has cleared." True about the classifier, wrong about the conclusion —
+        // this branch is reached ONLY when `safetyProbeFired(voiceSafetyProbe)` is false,
+        // and that probe ran the phonetic safety net with the real STT confidence of the
+        // real audio. That is a STRONGER clearance than a model turn's stopReason, not a
+        // missing one. The text is also OUR OWN template rather than model output, and
+        // voiceHardZeroReason still scans it for a money figure, a link or a receipt.
+        //
+        // Staying silent here killed the call on the flagship flow. «كم قطعة تحب؟» is the
+        // question the demo asks on almost every order, and «خمسة» / «وحدة بس» is the most
+        // natural spoken answer to it — which is precisely why this rail exists. With no
+        // audio and no reason attached, the call loop's conservative default read the
+        // silence as "the voice is broken", ended the conversation on turn two or three,
+        // and told a restaurant owner «الصوت مو شغّال». The demo terminated itself at the
+        // exact moment it was working.
+        // THE CLEARANCE HAS THREE PARTS, and the third is the one a first attempt missed.
+        //
+        //   1. THIS TURN'S WORDS — the probe above ran all four detectors, including the
+        //      phonetic safety net with the REAL stt confidence of the real audio, and did
+        //      not fire. That is why we are in this branch at all.
+        //   2. THIS REPLY'S TEXT — voiceHardZeroReason still scans it inside demoVoiceReply
+        //      for a money figure, a payment link or a receipt.
+        //   3. EARLIER TURNS — a conversation can already be under an allergy calm-hold from
+        //      a PREVIOUS turn, and the probe cannot see that: it only reads what was said
+        //      just now. Passing `safetyHold: false` unconditionally would have spoken a
+        //      quantity confirmation into a held conversation. The WhatsApp path folds
+        //      `is_safety_hold` in for exactly this reason; so does this one now.
+        //
+        // Absent all three, staying silent here was not a safety property — it was a gap
+        // that ended the call on the most common spoken turn in the demo.
+        let heldFromEarlierTurn = false;
+        try {
+          const { data: convRow, error: convErr } = await admin
+            .from("conversations")
+            .select("is_safety_hold")
+            .eq("id", conversationId)
+            .maybeSingle();
+          // FAIL CLOSED. A read error means we do not know whether this conversation is
+          // held, and "we do not know" must never be spoken aloud.
+          heldFromEarlierTurn = convErr ? true : (convRow as { is_safety_hold?: boolean } | null)?.is_safety_hold === true;
+        } catch {
+          heldFromEarlierTurn = true;
+        }
+
+        const filledText = formatCustomerVisibleText(filled.reply, filled.dialect);
+        const filledSpoken = await demoVoiceReply(filledText, {
+          inboundWasVoice: true,
+          safetyHold: heldFromEarlierTurn,
+          isReceipt: false,    // a quantity fill is never a receipt
+        });
+        if (filledSpoken.spend) {
+          try {
+            await mustWrite<{ id: string }>(
+              admin.from("agent_runs").insert({
+                restaurant_id: DEMO_RESTAURANT_ID,
+                conversation_id: null,
+                trigger: "voice_tts",
+                input: null,
+                output: null,
+                model: filledSpoken.spend.model,
+                adapter: filledSpoken.spend.adapter,
+                cost_usd: filledSpoken.spend.costUsd,
+              }).select("id"),
+              "demo_voice.tts_cost_quantity_fill",
+              { exactRows: 1 },
+            );
+          } catch (e) {
+            console.error("[demo/voice] TTS spend accounting failed (quantity fill)", e);
+          }
+        }
         return NextResponse.json({
           ok: true,
           conversationId,
           transcript,
-          reply: formatCustomerVisibleText(filled.reply, filled.dialect),
-          replyAudio: null,
-          replyAudioMime: null,
+          reply: filledText,
+          replyAudio: filledSpoken.audioBase64,
+          replyAudioMime: filledSpoken.mime,
+          // Never omitted. The client's default for a missing field is "unavailable", by
+          // design — an unexplained silence must not be dressed up as a product rule — so
+          // leaving it out of ONE of the route's two exits ended the call on that exit.
+          replyAudioSilence: demoVoiceSilenceKind(filledSpoken.skipped),
           presentation: filled.presentation
             ? formatCustomerVisiblePresentation(filled.presentation, filled.dialect)
             : null,

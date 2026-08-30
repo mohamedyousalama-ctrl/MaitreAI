@@ -87,10 +87,34 @@ ok("the threshold is the room times the ratio, floored",
   turn(0.0001, 0.4).threshold === ABSOLUTE_FLOOR);
 ok("a room noisier than the clamp does not push the threshold arbitrarily high",
   turn(0.5, 0.9).threshold <= FLOOR_MAX * SPEECH_RATIO + 1e-9);
-// Someone who talks from the very first instant would otherwise calibrate the room to
-// their own voice and never be heard again.
-ok("a visitor who starts talking immediately is still heard",
-  drive([[0.25, 2000], [0.005, 4000]]).verdict === "spoke");
+// SOMEONE WHO TALKS FROM THE VERY FIRST INSTANT. Without a clamp they would calibrate the
+// room to their own voice and never be heard. An audit showed the clamp only NARROWED that:
+// at FLOOR_MAX 0.06 the threshold could pin at 0.15, so an immediate talker below that was
+// still lost and the call ended at 8s with «ما سمعت شي». Driven at real speech levels, not
+// at one comfortable value 1.7x above the pin.
+for (const level of [0.09, 0.12, 0.15, 0.25, 0.4]) {
+  ok(`a visitor talking from the first instant at rms ${level} is heard`,
+    drive([[level, 2000], [0.005, 4000]]).verdict === "spoke");
+}
+// And when the opening window WAS contaminated by speech, the floor must fall once a real
+// pause arrives — otherwise the whole turn is judged against a threshold measured off the
+// visitor's own voice.
+{
+  // The case that NEEDS the correction: an immediate talker QUIETER than the pinned
+  // threshold. Calibration measures their voice (0.08), the threshold pins above it, and
+  // without the downward correction nothing they say for the rest of the turn is ever
+  // heard — the call ends at 8s on a person who was talking the whole time.
+  const r = drive([[0.08, 400], [0.004, 1500], [0.08, 800], [0.004, 3000]]);
+  ok("an immediate talker quieter than the pinned threshold is still heard",
+    r.verdict === "spoke");
+  ok("…because the floor corrects downward at the first real pause",
+    r.threshold <= ABSOLUTE_FLOOR + 1e-9);
+}
+// …but it must NOT keep moving once speech is under way, or it drifts up into the speech
+// and cuts them off mid-sentence.
+ok("the threshold stops moving once a turn is under way",
+  drive([[0.004, CALIBRATION_MS + 60], [0.2, 900], [0.004, 600], [0.2, 900], [0.004, 3000]]).at
+    > CALIBRATION_MS + 900 + 600 + 900);
 
 // THE FAILURE PEOPLE NOTICE. A pause between words must not cut them off.
 {

@@ -76,6 +76,7 @@ import { recordAllergyEvent } from "@/lib/db/allergy-audit";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 import { formatCustomerVisiblePresentation, formatCustomerVisibleText } from "@/lib/util/customer-visible-format";
 import { resolveTenantDialect } from "@/lib/ai/dialect";
+import { lookupVoice, voiceMayReadDialect } from "@/lib/ai/tts/voice-registry";
 
 export type RespondAndSendStatus =
   | "responded"
@@ -541,14 +542,40 @@ async function sendAgentErrorFallbackToCustomer(
  * log the per-note cost to agent_runs. Deploy-safe: a missing 0077 counter column
  * (migration PREPARE-ONLY) makes the whole path inert. Best-effort — never throws.
  */
+/** The globally configured voice id, trimmed at the point of use. */
+const envVoiceId = (): string => (process.env.ELEVENLABS_VOICE_ID || "").trim();
+
 async function maybeSendVoiceNote(
   admin: SupabaseClient,
   args: {
     restaurantId: string; conversationId: string; phone: string; replyText: string;
     inboundWasVoice: boolean; userMessage: string; safetyHold: boolean; isReceipt: boolean;
-    lastInboundAtMs: number;
+    lastInboundAtMs: number; tenantDialect: string;
   }
 ): Promise<void> {
+  // A VOICE MAY ONLY READ ITS OWN DIALECT.
+  //
+  // `ELEVENLABS_VOICE_ID` is a single GLOBAL setting and there is no per-tenant voice
+  // column, so every tenant with `voice_notes` on gets the SAME voice. «Khalid kivo» is a
+  // Najdi Saudi male. «وصاية» is an Egyptian tenant, `agent_mode: live`, `voice_notes: true`,
+  // 20 conversations — so the moment a key is provisioned, that restaurant's real customers
+  // would start receiving Cairene Arabic spoken in a Saudi accent. No configuration exists
+  // that would make that correct: the release registry admits exactly one voice.
+  //
+  // Refusing costs the tenant nothing it had yesterday — the text reply is always composed
+  // and sent first, and voice is additive by construction — while speaking is a quality
+  // failure their customers hear on the first note. Checked HERE rather than at the call
+  // site so a second caller cannot omit it.
+  const registered = lookupVoice(envVoiceId());
+  if (!voiceMayReadDialect(registered, args.tenantDialect)) {
+    console.warn(
+      `[voice] restaurant=${args.restaurantId} tenant dialect "${args.tenantDialect}" does not match ` +
+        `the registered voice (${registered ? `«${registered.name}», ${registered.dialect}` : "none registered"}); ` +
+        `text-only. A voice for this dialect has to be registered before it can speak.`
+    );
+    return;
+  }
+
   const triggered = shouldOfferVoiceReply({ inboundWasVoice: args.inboundWasVoice, userText: args.userMessage });
 
   // Deploy-safe daily-counter read: the 0077 columns are PREPARE-ONLY. A 42703 /
@@ -584,8 +611,23 @@ async function maybeSendVoiceNote(
     });
   }
 
+  // THE PROVIDER HAS ALREADY BILLED US. Record the spend BEFORE the transmit check —
+  // returning early on a WhatsApp failure discarded our only record of money that was
+  // already spent, so the sweep under-counted by exactly the failures. The demo path got
+  // this right (it carries `spend` even on a post-synthesis refusal); this one did not.
+  await admin.from("agent_runs").insert({
+    restaurant_id: args.restaurantId,
+    conversation_id: args.conversationId,
+    trigger: "voice_tts",
+    input: "[voice reply]",
+    output: args.replyText,
+    model: tts.result.model,
+    adapter: tts.result.adapter,
+    cost_usd: tts.result.costUsd,
+  });
+
   const audioSend = await sendWhatsAppAudio({ to: args.phone, audio: tts.result.audio, mime: tts.result.mime, lastInboundAtMs: args.lastInboundAtMs });
-  if (audioSend.status !== "sent") return; // transmit failed → don't bill/count
+  if (audioSend.status !== "sent") return; // transmit failed → the spend above is already recorded
 
   // Bump the daily counter + accumulate cost (best-effort). Also persist a voice
   // message row + log the per-note synthesis cost to agent_runs (like STT/LLM).
@@ -602,16 +644,8 @@ async function maybeSendVoiceNote(
     channel_message_id: audioSend.externalMessageId ?? null,
     meta: { kind: "voice_note", voice: true, tts_adapter: tts.result.adapter, tts_model: tts.result.model, tts_cost_usd: tts.result.costUsd },
   });
-  await admin.from("agent_runs").insert({
-    restaurant_id: args.restaurantId,
-    conversation_id: args.conversationId,
-    trigger: "voice_tts",
-    input: "[voice reply]",
-    output: args.replyText,
-    model: tts.result.model,
-    adapter: tts.result.adapter,
-    cost_usd: tts.result.costUsd,
-  });
+  // The agent_runs spend row is written ABOVE, before the transmit — see the note there.
+  // One row per synthesis, not one per successful send.
 }
 
 /**
@@ -1815,6 +1849,7 @@ export async function respondAndSendWhatsApp(
       replyText: outboundReply,
       inboundWasVoice,
       userMessage,
+      tenantDialect: outboundDialect,
       // DERIVED FROM THE TURN, NOT FROM PROXIES — the same fix the demo route got, on the
       // surface that matters more. `escalate === true` does not identify a safety turn:
       // the ACTIVE ANAPHYLAXIS branch (customer-turn.ts companionEmergencyResult) returns

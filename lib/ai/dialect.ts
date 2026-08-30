@@ -145,10 +145,12 @@ export function resolveTenantDialect(
 }
 
 /**
- * True when a tenant's dialect and currency disagree — «مطعم الذواقة» is dialect:"saudi",
- * country:"SA", currency:"ج.م", i.e. a Saudi restaurant priced in Egyptian pounds. Nothing
- * detects that today, so it sits in the data until a customer sees the wrong symbol on a
- * total. Observability only: it never blocks a turn and never rewrites a tenant's money.
+ * True when a tenant's dialect and currency disagree. The case that motivated it: «مطعم
+ * الذواقة» was dialect:"saudi", country:"SA", currency:"ج.م" — a Saudi restaurant priced in
+ * Egyptian pounds — and nothing detected it. That row was corrected on 2026-08-29 (it was
+ * an incomplete revert of migration 0013's Egypt-first conversion), so **no tenant matches
+ * this detector today**; it is here to catch the next one. Observability only: it never
+ * blocks a turn and never rewrites a tenant's money.
  */
 // The SAME currency, written differently, is not a mismatch. «ر.س»، «ريال»، «﷼» and «SAR»
 // are all the Saudi riyal, and dialect.ts's own comment calls profile.currency

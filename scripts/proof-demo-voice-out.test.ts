@@ -710,6 +710,136 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   ok("object URLs are revoked on unmount", /URL\.revokeObjectURL\(url\)/.test(phone));
 }
 
+// ── EVERY GUARD BELOW WAS UNPROTECTED, AND AN AUDIT KILLED IT WITH 215/215 GREEN ──
+{
+  const { demoVoiceSilenceKind } = await import("../lib/demo/voice-out.ts");
+  const { TTS_RATE_PER_CHAR } = await import("../lib/ai/tts/pricing.ts");
+  const { voiceMayReadDialect, lookupVoice } = await import("../lib/ai/tts/voice-registry.ts");
+
+  // B3 — demoVoiceSilenceKind, the headline fix of the previous round, had NO assertions
+  // anywhere. Two mutations reopened the defect it was written to close, with the whole
+  // suite green: reporting `synth_failed` as a product rule tells the visitor a safety
+  // guarantee caused a provider outage AND keeps the loop recording; reporting `too_long`
+  // the same way dresses a length cap as a safety promise.
+  for (const rule of ["safety_hold", "money_figure", "payment_link", "receipt"] as const) {
+    ok(`${rule} is a product RULE — show the text, keep talking`,
+      demoVoiceSilenceKind(rule) === "rule");
+  }
+  for (const notRule of ["synth_failed", "wrong_voice", "provider_unpinned", "mock_pinned", "too_long", "empty"] as const) {
+    ok(`${notRule} is UNAVAILABLE — never dressed up as a safety rule`,
+      demoVoiceSilenceKind(notRule) === "unavailable");
+  }
+  ok("no skip reason at all is `none`", demoVoiceSilenceKind(null) === "none");
+
+  // H5 — the eleven_v3 RATE was unpinned: the pin checks presence, never accuracy, so any
+  // wrong-but-present number was accepted and `agent_runs.cost_usd` — the only figure the
+  // spend sweep sums — was wrong by that factor. Read off the provider dashboard.
+  ok("eleven_v3 is priced at the published $0.10 / 1K characters",
+    TTS_RATE_PER_CHAR["elevenlabs:eleven_v3"] === 0.0001);
+  ok("flash is priced at the published $0.05 / 1K characters",
+    TTS_RATE_PER_CHAR["elevenlabs:eleven_flash_v2.5"] === 0.00005);
+  ok("a 600-character reply — the demo cap — costs about six cents",
+    Math.abs(600 * TTS_RATE_PER_CHAR["elevenlabs:eleven_v3"] - 0.06) < 1e-9);
+
+  // B1 — A VOICE MAY ONLY READ ITS OWN DIALECT. «وصاية» is a LIVE Egyptian tenant with
+  // voice_notes enabled; ELEVENLABS_VOICE_ID is a single global setting, so without this
+  // guard her real customers receive Cairene Arabic in a synthetic Saudi voice the moment
+  // a key exists — and no configuration could fix it, because exactly one voice is
+  // registered.
+  const khalid = lookupVoice(KHALID_VOICE.voiceId);
+  ok("the registered voice declares the dialect it speaks", KHALID_VOICE.dialect === "saudi");
+  ok("it may read for a SAUDI tenant", voiceMayReadDialect(khalid, "saudi"));
+  ok("it may NOT read for an EGYPTIAN tenant — «وصاية» stays on text",
+    !voiceMayReadDialect(khalid, "egyptian"));
+  for (const d of [null, undefined, "", "  ", "levantine", "SAUDI "]) {
+    const expected = String(d ?? "").trim().toLowerCase() === "saudi";
+    ok(`dialect ${JSON.stringify(d)} → ${expected ? "may" : "may not"} be read aloud`,
+      voiceMayReadDialect(khalid, d) === expected);
+  }
+  ok("an unregistered voice may read for nobody", !voiceMayReadDialect(null, "saudi"));
+}
+
+// ── B2 — EVERY EXIT THAT CAN RETURN AUDIO MUST SAY WHY IT DIDN'T ────────────
+// The client's default for a missing `replyAudioSilence` is "unavailable", deliberately:
+// an unexplained silence must never be dressed up as a product guarantee. That default is
+// right, and it is exactly why omitting the field from ONE of the route's exits was so
+// damaging. The deterministic quantity-fill exit — «كم قطعة تحب؟» → «خمسة», the most common
+// spoken turn in the whole demo — returned audio:null with no reason, so the call ENDED on
+// turn two or three of the flagship ordering flow telling a restaurant owner «الصوت مو
+// شغّال». Structural, not spot-checked: any future exit that forgets the field fails here.
+{
+  const route = readFileSync(resolve(process.cwd(), "app/api/demo/voice/route.ts"), "utf8");
+  const exits = [...route.matchAll(/return NextResponse\.json\(\{[\s\S]*?\n    \}\)/g)].map((m) => m[0]);
+  const audioExits = exits.filter((e) => e.includes("replyAudio"));
+  ok(`every exit that carries audio also carries its reason (${audioExits.length} found)`,
+    audioExits.length >= 2 && audioExits.every((e) => e.includes("replyAudioSilence")));
+  // …and the quantity-fill turn is SPOKEN, not silently skipped. Staying quiet there was
+  // never a safety requirement: this branch is reached only when the phonetic safety probe
+  // did NOT fire, having run with the real STT confidence of the real audio — a stronger
+  // clearance than a model turn's stopReason, not a missing one.
+  const fillStart = route.indexOf('if (filled.kind === "handled")');
+  const fill = route.slice(fillStart, route.indexOf("} catch (e) {", fillStart));
+  ok("the deterministic quantity-fill reply is synthesized, not skipped",
+    /demoVoiceReply\(/.test(fill));
+  ok("…and its spend reaches the ledger like any other synthesis",
+    /trigger: "voice_tts"/.test(fill));
+}
+
+// ── THE TWO LIVE-PATH GUARDS THAT NOTHING PINNED ────────────────────────────
+{
+  const ras = readFileSync(resolve(process.cwd(), "lib/messaging/respond-and-send.ts"), "utf8");
+  // H3 — deleting this one line is the difference between ONE tenant speaking and all 13.
+  // There is no second layer: decideVoiceSend is called with `enabled: true` hardcoded.
+  ok("the WhatsApp voice note is gated on the tenant's own voice_notes flag",
+    /isFeatureExplicitlyEnabled\("voice_notes"/.test(ras));
+  // B1 on the live path, and it must be INSIDE the function so a second caller cannot omit it.
+  const fn = ras.slice(ras.indexOf("async function maybeSendVoiceNote"), ras.indexOf("/**\n * WO-MEDIA-GUARD"));
+  ok("…and the dialect guard lives inside maybeSendVoiceNote, not at its call site",
+    /voiceMayReadDialect\(/.test(fn));
+  // M-c — the provider has already billed; a WhatsApp transmit failure must not discard
+  // our only record of the money.
+  ok("the TTS spend row is written BEFORE the transmit check, not after",
+    fn.indexOf('trigger: "voice_tts"') < fn.indexOf("const audioSend = await sendWhatsAppAudio"));
+  ok("…and there is exactly one spend row per synthesis",
+    (fn.match(/trigger: "voice_tts"/g) ?? []).length === 1);
+}
+
+// ── H4 — THE CANONICAL VOICE ID, ON THE LIVE PATH ───────────────────────────
+// ElevenLabs voice ids are CASE-SENSITIVE. The registry lookup is deliberately tolerant so
+// a correct id pasted with odd case or a zero-width character is not read as "unknown" —
+// but the adapter must then send the REGISTERED spelling, or that tolerance becomes a 404
+// in production. The demo passes the canonical id explicitly, so only the WhatsApp path
+// (which passes no voiceId at all) was exposed, and nothing pinned it.
+{
+  const realFetch = globalThis.fetch;
+  const urls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    urls.push(String(input));
+    return { ok: true, status: 200, text: async () => "", arrayBuffer: async () => new TextEncoder().encode("B").buffer } as unknown as Response;
+  }) as typeof fetch;
+  const env = { ...process.env };
+  const { elevenlabsTtsAdapter } = await import("../lib/ai/tts/elevenlabs.ts");
+  for (const typed of [
+    KHALID_VOICE.voiceId.toLowerCase(),
+    KHALID_VOICE.voiceId.toUpperCase(),
+    `  ${KHALID_VOICE.voiceId}  `,
+    `${KHALID_VOICE.voiceId.slice(0, 4)}\u200b${KHALID_VOICE.voiceId.slice(4)}`,
+  ]) {
+    urls.length = 0;
+    process.env.ELEVENLABS_API_KEY = "el-key";
+    process.env.ELEVENLABS_VOICE_ID = typed;
+    delete process.env.ELEVENLABS_TTS_MODEL;
+    const r = await elevenlabsTtsAdapter.synthesize("قهوة عربية", undefined);
+    ok(`a voice id typed as ${JSON.stringify(typed.slice(0, 12))}… goes on the wire CANONICALLY`,
+      urls.length === 1 && urls[0]!.includes(`/${KHALID_VOICE.voiceId}?`));
+    ok(`…and is echoed back canonically, so the pin check cannot mismatch`,
+      r.voiceId === KHALID_VOICE.voiceId);
+  }
+  globalThis.fetch = realFetch;
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
+}
+
 // ── "CAN THIS SURFACE SPEAK" IS NOT "IS THIS CONFIGURATION DELIBERATE" ──────
 // The demo's capability probe used demoVoiceProviderPinned() as "can speak". That function
 // says YES for a pinned `mock` — correctly, because a pinned mock is a considered choice —
