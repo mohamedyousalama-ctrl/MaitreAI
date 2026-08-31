@@ -805,8 +805,12 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   const gate = ras.slice(Math.max(0, ras.indexOf("void maybeSendVoiceNote(admin, {") - 400), ras.indexOf("void maybeSendVoiceNote(admin, {"));
   ok("the voice note is gated on the tenant's own voice_notes flag, at the call",
     /isFeatureExplicitlyEnabled\("voice_notes", outcome\.features\)/.test(gate));
-  ok("…and that gate is not weakened by an `|| true` or a negation",
-    !/voice_notes[^)]*\)\s*\|\|/.test(gate) && !/!isFeatureExplicitlyEnabled\("voice_notes"/.test(gate));
+  // ASSERT THE SHAPE, NOT A LIST OF WEAKENINGS. The first version hunted for `… || true`
+  // and missed `true || …` — the same weakening written the other way round, which let every
+  // Saudi-dialect tenant speak regardless of its own flag, at 216/216. Enumerating the ways
+  // to break something is always incomplete; pinning what it must LOOK like is not.
+  ok("…and the gate is exactly a conjunction on that flag, with nothing beside it",
+    /&& isFeatureExplicitlyEnabled\("voice_notes", outcome\.features\)\) \{/.test(gate));
   // The guard must not be conditioned on the environment: an audit disabled it with
   // `NODE_ENV !== "production" &&` and with `!process.env.VERCEL &&`, both green, both
   // meaning the protection existed everywhere EXCEPT where it matters.
@@ -856,7 +860,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   };
 
   // The exact operator error the activation step invites: key and voice set, pin forgotten.
-  for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "OPENAI_API_KEY"]) delete process.env[k];
+  for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "OPENAI_API_KEY", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"]) delete process.env[k];
   Object.assign(process.env, {
     ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
     OPENAI_API_KEY: "sk-present",
@@ -867,7 +871,25 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   await maybeSendVoiceNote(admin, turn);
   ok("a live turn with TTS_ADAPTER forgotten contacts NO voice provider",
     !contacted.some((h) => h.includes("elevenlabs") || h.includes("openai")));
-  ok("…and transmits no audio to the customer",
+  // WITH WHATSAPP ACTUALLY CONFIGURED. Without these two variables sendWhatsAppAudio
+  // returns `skipped` before it ever fetches, so this assertion could not fail — it stayed
+  // green under a mutation that was synthesizing onyx at the time. Its two siblings did
+  // bite, so the protection was real; this line was decorative until now.
+  Object.assign(process.env, { WHATSAPP_ACCESS_TOKEN: "wa-token", WHATSAPP_PHONE_NUMBER_ID: "12345" });
+  contacted.length = 0;
+  await maybeSendVoiceNote(admin, turn);
+  ok("…and transmits no audio to the customer, even with WhatsApp configured",
+    !contacted.some((h) => h.includes("graph.facebook.com")));
+
+  // TTS_ADAPTER=openai IS AN ACCEPTED VALUE, and it used to be a complete registry bypass on
+  // the live path: `onyx` synthesized and TRANSMITTED to a real customer, with a perfectly
+  // correct ELEVENLABS_VOICE_ID beside it, `fellBack:false` so no alert, and the dialect
+  // guard passing because the ElevenLabs voice it checks IS correct. The demo has refused
+  // this since it was written; the path that reaches paying customers did not.
+  process.env.TTS_ADAPTER = "openai";
+  contacted.length = 0;
+  await maybeSendVoiceNote(admin, turn);
+  ok("TTS_ADAPTER=openai synthesizes nothing that reaches the customer",
     !contacted.some((h) => h.includes("graph.facebook.com")));
 
   // …and the same configuration WITH the pin does speak, so the guard is not simply off.

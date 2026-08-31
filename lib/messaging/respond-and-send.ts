@@ -76,7 +76,7 @@ import { recordAllergyEvent } from "@/lib/db/allergy-audit";
 import type { LlmMessage } from "@/lib/ai/llm/types";
 import { formatCustomerVisiblePresentation, formatCustomerVisibleText } from "@/lib/util/customer-visible-format";
 import { resolveTenantDialect } from "@/lib/ai/dialect";
-import { lookupVoice, voiceMayReadDialect } from "@/lib/ai/tts/voice-registry";
+import { lookupVoice, voiceMayReadDialect, voiceMatchesPin } from "@/lib/ai/tts/voice-registry";
 
 export type RespondAndSendStatus =
   | "responded"
@@ -607,6 +607,31 @@ export async function maybeSendVoiceNote(
 
   const tts = await synthesizeVoiceReply(args.replyText);
   if (!tts) return; // both primary + fallback failed → text-only (already sent)
+
+  // VERIFY WHAT CAME BACK, exactly as the demo does — and for the reason the demo's own
+  // note gives: asserting only what we ASKED for leaves the whole voice guarantee resting
+  // on a selection made in another file.
+  //
+  // The hole this closes: `TTS_ADAPTER=openai` is an accepted value, so an operator who
+  // writes it — with a perfectly correct ELEVENLABS_VOICE_ID sitting beside it — gets
+  // `onyx` synthesized and TRANSMITTED to a real customer, with the registry never
+  // consulted and `fellBack:false`, so no alert fires either. The dialect guard does not
+  // catch it: it checks the configured ElevenLabs voice, which is correct. The demo has
+  // refused this since it was written (voiceMatchesPin requires adapter === "elevenlabs");
+  // the live path, which reaches actual paying customers, did not.
+  //
+  // SCOPED TO A NON-FALLBACK RESULT. A `fellBack` result IS onyx, deliberately: the
+  // fallback law exists for a provider that is DOWN, and it is bounded and alerted. What
+  // must never happen is a silent substitution nobody chose and nobody is told about.
+  if (!tts.fellBack && !voiceMatchesPin(tts.result, envVoiceId())) {
+    console.warn(
+      `[voice] restaurant=${args.restaurantId} refusing a synthesis that is not the ` +
+        `registered voice (adapter=${tts.result.adapter}, voice=${tts.result.voiceId ?? "none"}); ` +
+        `text-only. Check TTS_ADAPTER — only "elevenlabs" may speak on this path.`
+    );
+    return;
+  }
+
   if (tts.fellBack) {
     void recordCriticalAlert(admin, {
       type: "voice_tts_fallback",

@@ -153,6 +153,17 @@ export function isAuthorizedVoice(id: string | null | undefined): boolean {
 /** Why an id was refused, in words an operator can act on. Never includes a secret — a
  *  voice id is not a credential (KIV-313 publishes this one in plain text); the API key is,
  *  and it is not read here at all. */
+/** Does the synthesis we got back actually come from the provider AND the voice we pinned?
+ *  Takes the result rather than reading env, so a proof can hand it a lying adapter. */
+export function voiceMatchesPin(
+  result: { adapter?: string | null; voiceId?: string | null },
+  pinnedVoiceId: string
+): boolean {
+  if (result.adapter !== "elevenlabs") return false;
+  return (result.voiceId ?? "") === pinnedVoiceId;
+}
+
+
 export function voiceRefusalReason(id: string | null | undefined): string | null {
   // BOUNDED AND SINGLE-LINE. This message is built from an ENV-CONTROLLED value and ends up
   // in console.warn and in a critical alert, so an id carrying a newline is a log-injection

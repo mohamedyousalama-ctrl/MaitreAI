@@ -38,7 +38,7 @@
 import "server-only";
 import { getTtsAdapter } from "@/lib/ai/tts";
 import { TTS_RATE_PER_CHAR } from "@/lib/ai/tts/pricing";
-import { lookupVoice } from "@/lib/ai/tts/voice-registry";
+import { lookupVoice, voiceMatchesPin } from "@/lib/ai/tts/voice-registry";
 import {
   voiceHardZeroReason, voiceSignalsForTurn,
   type VoiceZeroReason, type VoiceTurnSignals,
@@ -166,15 +166,12 @@ export function demoVoiceSilenceKind(skipped: DemoVoiceOutSkip | null): "none" |
   return "unavailable";
 }
 
-/** Does the synthesis we got back actually come from the provider AND the voice we pinned?
- *  Takes the result rather than reading env, so a proof can hand it a lying adapter. */
-export function voiceMatchesPin(
-  result: { adapter?: string | null; voiceId?: string | null },
-  pinnedVoiceId: string
-): boolean {
-  if (result.adapter !== "elevenlabs") return false;
-  return (result.voiceId ?? "") === pinnedVoiceId;
-}
+/** Re-exported from the registry, which owns the question. It moved there when the LIVE
+ *  WhatsApp path needed the same check: `TTS_ADAPTER=openai` was an accepted value, so an
+ *  operator could get `onyx` transmitted to a real customer with a correct voice id sitting
+ *  beside it and no alert. The live path must not import a demo module to ask that. */
+export { voiceMatchesPin } from "@/lib/ai/tts/voice-registry";
+
 
 /** The demo route's mapping from a completed turn to the hard-zero signals, as a PURE
  *  function so a proof can drive it with an emergency-shaped outcome.
