@@ -1459,6 +1459,60 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ok("a successful turn records exactly one spend row", r.ledger.length === 1 && r.ledger[0]!.adapter === "elevenlabs");
   }
 
+  // (4) AND THE CAP MUST BOUND A CONFIGURATION THAT PAYS AND REFUSES.
+  //
+  // `voice_notes_sent` is the only thing limiting how much voice work one conversation can
+  // cause in a day, and the refusal path used to leave it untouched — so a paying-and-
+  // refusing configuration repeated on EVERY triggering turn, forever, with the cap
+  // switched off. Driven over a STATEFUL conversation row, so only the code under test can
+  // advance the counter: a fixed row would let this pass no matter what the code did.
+  {
+    const CAP = 10, TURNS = 20;
+    for (const [label, vars, expectTransmit] of [
+      ["a refusing configuration (TTS_ADAPTER=openai)", { TTS_ADAPTER: "openai" }, false],
+      ["the correct configuration", { TTS_ADAPTER: "elevenlabs" }, true],
+    ] as const) {
+      const row = { voice_notes_day: null as string | null, voice_notes_sent: 0, voice_cost_usd: 0, is_safety_hold: false };
+      let billed = 0, transmitted = 0;
+      globalThis.fetch = (async (u: RequestInfo | URL) => {
+        const host = new URL(String(u)).host;
+        if (host.includes("elevenlabs") || host.includes("openai")) billed++;
+        // THE SEND LEG ONLY. A delivered voice note is TWO calls to graph.facebook.com —
+        // upload to /media, then post to /messages — so counting the host double-counts
+        // every note and makes the cap look breached when it is holding exactly.
+        if (host.includes("graph.facebook.com") && new URL(String(u)).pathname.endsWith("/messages")) transmitted++;
+        return {
+          ok: true, status: 200, text: async () => "",
+          json: async () => ({ messages: [{ id: "m1" }], id: "media-1" }),
+          arrayBuffer: async () => new TextEncoder().encode("AUDIO").buffer,
+        } as unknown as Response;
+      }) as typeof fetch;
+      const admin = { from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { ...row }, error: null }) }) }),
+        insert: async () => ({ data: null, error: null }),
+        update: (patch: Record<string, unknown>) => ({ eq: async () => { Object.assign(row, patch); return { data: null, error: null }; } }),
+      }) } as never;
+      for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]) delete process.env[k];
+      Object.assign(process.env, {
+        ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
+        OPENAI_API_KEY: "sk-present", WHATSAPP_ACCESS_TOKEN: "wa-token", WHATSAPP_PHONE_NUMBER_ID: "12345",
+        ...vars,
+      });
+      for (let i = 0; i < TURNS; i++) {
+        await maybeSendVoiceNote(admin, {
+          restaurantId: "r", conversationId: "c", phone: "+966500000000",
+          inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
+          lastInboundAtMs: Date.now(), replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi",
+          features: { voice_notes: true },
+        });
+      }
+      ok(`${label}: ${TURNS} turns bill at most the daily cap (billed ${billed})`, billed <= CAP);
+      ok(`…and the counter actually advanced to the cap (${row.voice_notes_sent})`, row.voice_notes_sent === CAP);
+      ok(`…and it ${expectTransmit ? "delivered" : "delivered nothing"} (transmitted ${transmitted})`,
+        expectTransmit ? transmitted === CAP : transmitted === 0);
+    }
+  }
+
   globalThis.fetch = realFetch;
   for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
   Object.assign(process.env, env);

@@ -708,9 +708,19 @@ export async function maybeSendVoiceNote(
         `Text-only, and the synthesis was still billed. Whichever of the two differs is ` +
         `the one to fix — TTS_ADAPTER for the adapter, ELEVENLABS_VOICE_ID for the voice.`
     );
-    // The per-conversation cost record must include it too, for the same reason.
+    // AND IT COUNTS AGAINST THE CAP. `voice_notes_sent` is the only thing bounding how much
+    // voice work one conversation can cause in a day, and `decideVoiceSend` is the only
+    // reader of it — so leaving it untouched here meant a configuration that pays and
+    // refuses was UNCAPPED: it repeated on every triggering turn, of every conversation,
+    // every day, forever. Driven at 20 turns: 20 billed syntheses against a cap of 10.
+    //
+    // Counting a refusal is deliberate and is not a claim that a note was sent — no
+    // `messages` row is written on this path, so nothing tells the customer or the operator
+    // that audio went out. What the column actually governs is the per-conversation voice
+    // BUDGET, and a synthesis the provider billed us for spent that budget whether or not
+    // we could use what came back. Bounding real money is worth more than the column's name.
     await admin.from("conversations")
-      .update({ voice_notes_day: today, voice_notes_sent: notesSentToday, voice_cost_usd: Number((costSoFar + tts.result.costUsd).toFixed(6)) })
+      .update({ voice_notes_day: today, voice_notes_sent: notesSentToday + 1, voice_cost_usd: Number((costSoFar + tts.result.costUsd).toFixed(6)) })
       .eq("id", args.conversationId);
     return;
   }
