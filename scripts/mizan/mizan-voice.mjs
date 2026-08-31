@@ -38,7 +38,7 @@ const { ALLOWED_VOICE_ID, REGISTERED_MODEL } = (() => {
 })();
 
 // THE MODEL IS PART OF WHAT WAS ACCEPTED, HERE TOO. This was an unchecked operator
-// override defaulting to eleven_v3 (pinned by lib/ai/tts/voice-registry.ts), while the registry pins eleven_v3 and the
+// override defaulting to eleven_flash_v2_5, while the registry pins eleven_v3 and the
 // product adapter refuses anything else. So reviewers in the public bucket were scoring
 // «Khalid kivo» rendered under a model the Founder never accepted — and .env.example tells
 // operators that ELEVENLABS_TTS_MODEL "is refused", which was true of the adapter and false

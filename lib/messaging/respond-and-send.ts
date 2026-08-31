@@ -657,12 +657,61 @@ export async function maybeSendVoiceNote(
   // SCOPED TO A NON-FALLBACK RESULT. A `fellBack` result IS onyx, deliberately: the
   // fallback law exists for a provider that is DOWN, and it is bounded and alerted. What
   // must never happen is a silent substitution nobody chose and nobody is told about.
-  if (!tts.fellBack && !voiceMatchesPin(tts.result, envVoiceId())) {
+  // THE PROVIDER HAS ALREADY BILLED US. Record the spend BEFORE *every* post-synthesis
+  // decision — the transmit check and the pin refusal below are the same class of thing,
+  // and returning early on either discarded our only record of money already spent.
+  //
+  // The refusal used to sit ABOVE this insert, so a refused synthesis was paid for and
+  // then vanished: 25 turns → 25 paid syntheses, 0 ledger rows, $0.00 recorded. That is
+  // money the daily-budget alert cannot see, which is precisely the spend nobody catches.
+  // The demo path has carried its `spend` through a post-synthesis refusal since it was
+  // written (lib/demo/voice-out.ts, `spentAnyway`); this one now does the same.
+  await admin.from("agent_runs").insert({
+    restaurant_id: args.restaurantId,
+    conversation_id: args.conversationId,
+    trigger: "voice_tts",
+    input: "[voice reply]",
+    output: args.replyText,
+    model: tts.result.model,
+    adapter: tts.result.adapter,
+    cost_usd: tts.result.costUsd,
+  });
+
+  // VERIFY WHAT CAME BACK, exactly as the demo does — and for the reason the demo's own
+  // note gives: asserting only what we ASKED for leaves the whole voice guarantee resting
+  // on a selection made in another file.
+  //
+  // The hole this closes: `TTS_ADAPTER=openai` is an accepted value, so an operator who
+  // writes it — with a perfectly correct ELEVENLABS_VOICE_ID sitting beside it — gets
+  // `onyx` synthesized and TRANSMITTED to a real customer, with the registry never
+  // consulted and `fellBack:false`, so no alert fires either. The dialect guard does not
+  // catch it: it checks the configured ElevenLabs voice, which is correct. The demo has
+  // refused this since it was written (voiceMatchesPin requires adapter === "elevenlabs");
+  // the live path, which reaches actual paying customers, did not.
+  //
+  // SCOPED TO A NON-FALLBACK RESULT. A `fellBack` result IS onyx, deliberately: the
+  // fallback law exists for a provider that is DOWN, and it is bounded and alerted. What
+  // must never happen is a silent substitution nobody chose and nobody is told about.
+  //
+  // COMPARED CANONICAL AGAINST CANONICAL. `registered` came from `lookupVoice`, which
+  // deliberately tolerates a lowercase paste or a zero-width character, and the adapter
+  // puts the registry's own spelling on the wire and echoes THAT back. Comparing it
+  // against the raw env string therefore refused the RIGHT voice — after paying for it —
+  // on every one of those tolerated spellings: 25 turns, 25 paid syntheses, 0 transmitted,
+  // with the log below sending the operator to `TTS_ADAPTER`, the one variable that was
+  // correct. The demo hit this exact defect and fixed it the same way; this is that fix.
+  if (!tts.fellBack && !voiceMatchesPin(tts.result, registered?.voiceId ?? "")) {
     console.warn(
       `[voice] restaurant=${args.restaurantId} refusing a synthesis that is not the ` +
-        `registered voice (adapter=${tts.result.adapter}, voice=${tts.result.voiceId ?? "none"}); ` +
-        `text-only. Check TTS_ADAPTER — only "elevenlabs" may speak on this path.`
+        `registered voice: got adapter=${tts.result.adapter}, voice=${tts.result.voiceId ?? "none"}; ` +
+        `expected adapter=elevenlabs, voice=${registered?.voiceId ?? "none registered"}. ` +
+        `Text-only, and the synthesis was still billed. Whichever of the two differs is ` +
+        `the one to fix — TTS_ADAPTER for the adapter, ELEVENLABS_VOICE_ID for the voice.`
     );
+    // The per-conversation cost record must include it too, for the same reason.
+    await admin.from("conversations")
+      .update({ voice_notes_day: today, voice_notes_sent: notesSentToday, voice_cost_usd: Number((costSoFar + tts.result.costUsd).toFixed(6)) })
+      .eq("id", args.conversationId);
     return;
   }
 
@@ -675,21 +724,6 @@ export async function maybeSendVoiceNote(
       context: { adapter: tts.result.adapter },
     });
   }
-
-  // THE PROVIDER HAS ALREADY BILLED US. Record the spend BEFORE the transmit check —
-  // returning early on a WhatsApp failure discarded our only record of money that was
-  // already spent, so the sweep under-counted by exactly the failures. The demo path got
-  // this right (it carries `spend` even on a post-synthesis refusal); this one did not.
-  await admin.from("agent_runs").insert({
-    restaurant_id: args.restaurantId,
-    conversation_id: args.conversationId,
-    trigger: "voice_tts",
-    input: "[voice reply]",
-    output: args.replyText,
-    model: tts.result.model,
-    adapter: tts.result.adapter,
-    cost_usd: tts.result.costUsd,
-  });
 
   const audioSend = await sendWhatsAppAudio({ to: args.phone, audio: tts.result.audio, mime: tts.result.mime, lastInboundAtMs: args.lastInboundAtMs });
   if (audioSend.status !== "sent") return; // transmit failed → the spend above is already recorded

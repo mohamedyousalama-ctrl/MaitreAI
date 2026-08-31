@@ -1292,5 +1292,177 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   Object.assign(process.env, env);
 }
 
+// ── THE ROLLOUT ITSELF, DRIVEN — three ways the live path failed at activation ──
+//
+// All three were found by driving the real `maybeSendVoiceNote` over an instrumented
+// network on the commit that was about to be merged and have the key set against it. Each
+// is reachable by an ORDINARY operator action, not a contrived one, which is why they are
+// asserted by DRIVING rather than by reading the source.
+{
+  const { maybeSendVoiceNote } = await import("../lib/messaging/respond-and-send.ts");
+  const realFetch = globalThis.fetch;
+  const env = { ...process.env };
+
+  /** Drive one turn and report what was contacted, transmitted and recorded. */
+  async function turnWith(
+    vars: Record<string, string | undefined>
+  ): Promise<{ hosts: string[]; transmitted: string | null; ledger: { trigger: string; adapter: string; cost: number }[] }> {
+    const hosts: string[] = [];
+    let transmitted: string | null = null;
+    const ledger: { trigger: string; adapter: string; cost: number }[] = [];
+    globalThis.fetch = (async (u: RequestInfo | URL, init?: RequestInit) => {
+      const host = new URL(String(u)).host;
+      hosts.push(host);
+      // READ THE BYTES BACK OUT. Asserting only that graph.facebook.com was contacted
+      // cannot tell Khalid's voice from onyx, and onyx reaching a customer is the whole
+      // failure — so the audio actually uploaded is captured and identified.
+      if (host.includes("graph.facebook.com") && init?.body instanceof FormData) {
+        const f = (init.body as FormData).get("file");
+        if (f && typeof (f as Blob).text === "function") transmitted = await (f as Blob).text();
+      }
+      return {
+        ok: true, status: 200, text: async () => "",
+        json: async () => ({ messages: [{ id: "m1" }], id: "media-1" }),
+        arrayBuffer: async () =>
+          new TextEncoder().encode(host.includes("openai") ? "OPENAI-ONYX-AUDIO" : "ELEVENLABS-AUDIO").buffer,
+      } as unknown as Response;
+    }) as typeof fetch;
+
+    const admin = { from: (table: string) => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { is_safety_hold: false }, error: null }) }) }),
+      insert: async (rowArg: unknown) => {
+        const r = rowArg as { trigger?: string; adapter?: string; cost_usd?: number };
+        if (table === "agent_runs" && r?.trigger === "voice_tts") {
+          ledger.push({ trigger: r.trigger, adapter: String(r.adapter), cost: Number(r.cost_usd ?? 0) });
+        }
+        return { data: null, error: null };
+      },
+      update: () => ({ eq: async () => ({ data: null, error: null }) }),
+    }) } as never;
+
+    for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "OPENAI_API_KEY", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"]) delete process.env[k];
+    Object.assign(process.env, {
+      OPENAI_API_KEY: "sk-present", WHATSAPP_ACCESS_TOKEN: "wa-token", WHATSAPP_PHONE_NUMBER_ID: "12345",
+    });
+    for (const [k, v] of Object.entries(vars)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+    await maybeSendVoiceNote(admin, {
+      restaurantId: "r", conversationId: "c", phone: "+966500000000",
+      inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
+      lastInboundAtMs: Date.now(), replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi",
+      features: { voice_notes: true },
+    });
+    return { hosts, transmitted, ledger };
+  }
+
+  // (1) A MISSING KEY MUST NOT BUY ONYX.
+  //
+  // `TTS_ADAPTER=elevenlabs` with the key not yet saved, mistyped, or rotated to empty
+  // threw "ELEVENLABS_API_KEY not set" — a bare message carrying neither marker — so
+  // `synthesizeVoiceReply` read it as an OUTAGE and applied the fallback law, transmitting
+  // an American male voice reading Najdi Arabic to a real customer on every turn. This is
+  // reachable in the ordinary window between saving TTS_ADAPTER and saving the key, which
+  // is exactly the sequence an operator follows during activation.
+  for (const [label, key] of [["unset", undefined], ["empty", ""], ["whitespace", "   "]] as const) {
+    const r = await turnWith({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: key, ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId });
+    ok(`ELEVENLABS_API_KEY ${label} buys no OpenAI voice`, !r.hosts.some((h) => h.includes("openai")));
+    ok(`…and transmits nothing to the customer (${label})`, r.transmitted === null);
+  }
+  // The same for a missing voice id, which is the other half of the same window.
+  {
+    const r = await turnWith({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: undefined });
+    ok("ELEVENLABS_VOICE_ID unset buys no OpenAI voice", !r.hosts.some((h) => h.includes("openai")));
+    ok("…and transmits nothing to the customer", r.transmitted === null);
+  }
+  // AND A GENUINE OUTAGE STILL FALLS BACK, so the tag above did not delete the fallback
+  // law. Without this the three assertions above would pass on a build that never speaks.
+  {
+    const hosts: string[] = [];
+    let transmitted: string | null = null;
+    globalThis.fetch = (async (u: RequestInfo | URL, init?: RequestInit) => {
+      const host = new URL(String(u)).host;
+      hosts.push(host);
+      if (host.includes("graph.facebook.com") && init?.body instanceof FormData) {
+        const f = (init.body as FormData).get("file");
+        if (f && typeof (f as Blob).text === "function") transmitted = await (f as Blob).text();
+      }
+      const down = host.includes("elevenlabs");
+      return {
+        ok: !down, status: down ? 503 : 200, text: async () => "upstream unavailable",
+        json: async () => ({ messages: [{ id: "m1" }], id: "media-1" }),
+        arrayBuffer: async () => new TextEncoder().encode("OPENAI-ONYX-AUDIO").buffer,
+      } as unknown as Response;
+    }) as typeof fetch;
+    const admin = { from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { is_safety_hold: false }, error: null }) }) }),
+      insert: async () => ({ data: null, error: null }),
+      update: () => ({ eq: async () => ({ data: null, error: null }) }),
+    }) } as never;
+    Object.assign(process.env, {
+      TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
+      OPENAI_API_KEY: "sk-present", WHATSAPP_ACCESS_TOKEN: "wa-token", WHATSAPP_PHONE_NUMBER_ID: "12345",
+    });
+    await maybeSendVoiceNote(admin, {
+      restaurantId: "r", conversationId: "c", phone: "+966500000000",
+      inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
+      lastInboundAtMs: Date.now(), replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi",
+      features: { voice_notes: true },
+    });
+    ok("a real 5xx OUTAGE still falls back and still transmits — the fallback law survives",
+      transmitted === "OPENAI-ONYX-AUDIO");
+  }
+
+  // (2) THE SPELLINGS THE REGISTRY TOLERATES ON PURPOSE MUST SPEAK.
+  //
+  // `lookupVoice` folds case and strips invisibles so that a correct id pasted from a
+  // dashboard is not read as an unknown voice. The adapter then puts the registry's
+  // CANONICAL spelling on the wire and echoes that back — so comparing it against the raw
+  // env string refused the RIGHT voice AFTER paying for it, on every turn, forever, with
+  // the log naming the one variable that was correct. The demo hit this and fixed it; the
+  // live path had the unfixed copy.
+  for (const [label, spelling] of [
+    ["canonical", KHALID_VOICE.voiceId],
+    ["lowercase", KHALID_VOICE.voiceId.toLowerCase()],
+    ["zero-width space", `${KHALID_VOICE.voiceId}​`],
+    ["left-to-right mark", `‎${KHALID_VOICE.voiceId}`],
+    ["soft hyphen", `${KHALID_VOICE.voiceId}­`],
+    ["padded", `  ${KHALID_VOICE.voiceId}  `],
+  ] as const) {
+    const r = await turnWith({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: spelling });
+    ok(`a ${label} voice id speaks rather than paying and refusing`, r.transmitted === "ELEVENLABS-AUDIO");
+    ok(`…and reached ElevenLabs exactly once (${label})`, r.hosts.filter((h) => h.includes("elevenlabs")).length === 1);
+  }
+  // AND AN UNREGISTERED ID IS STILL REFUSED, so the comparison was not simply deleted.
+  for (const bad of ["21m00Tcm4TlvDq8ikWAM", `${KHALID_VOICE.voiceId.slice(0, -1)}X`, "VuqFqWXHibJ61b9IiVJ7"]) {
+    const r = await turnWith({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: bad });
+    ok(`${bad.slice(0, 10)}… still reaches no provider and no customer`,
+      !r.hosts.some((h) => h.includes("elevenlabs") || h.includes("openai")) && r.transmitted === null);
+  }
+
+  // (3) A SYNTHESIS WE PAID FOR IS ON THE LEDGER, EVEN WHEN WE THEN REFUSE IT.
+  //
+  // The pin refusal used to return ABOVE the `agent_runs` insert, so a refused synthesis
+  // was billed by the provider and then vanished from our own record: driven at 25 turns,
+  // 25 paid syntheses produced 0 ledger rows and $0.00. Money the daily-budget alert
+  // cannot see is the spend nobody catches.
+  {
+    const r = await turnWith({ TTS_ADAPTER: "openai", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId });
+    ok("TTS_ADAPTER=openai still transmits nothing to the customer", r.transmitted === null);
+    ok("…but the synthesis it paid for IS recorded on the ledger",
+      r.ledger.length === 1 && r.ledger[0]!.adapter === "openai" && r.ledger[0]!.cost > 0);
+  }
+  // …and the ordinary success path still records exactly one row, not two — the spend
+  // insert moved, and a move is where a duplicate gets left behind.
+  {
+    const r = await turnWith({ TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId });
+    ok("a successful turn records exactly one spend row", r.ledger.length === 1 && r.ledger[0]!.adapter === "elevenlabs");
+  }
+
+  globalThis.fetch = realFetch;
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
+}
+
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} demo-voice-out: ${pass}/${pass + fail} passed`);
 process.exit(fail === 0 ? 0 : 1);

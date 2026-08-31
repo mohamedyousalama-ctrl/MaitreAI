@@ -44,11 +44,24 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
     // stray space passed the caller's price check and then priced at $0 here, taking the
     // whole synthesis off the spend ledger; a padded voice id requested
     // `/v1/text-to-speech/%20%20ID%20%20` and 404'd in production.
+    // A MISSING VARIABLE IS A CONFIGURATION FAULT, AND MUST BE TAGGED AS ONE.
+    //
+    // Untagged, these two throws read to `synthesizeVoiceReply` as an OUTAGE, and the
+    // fallback law answered them by buying OpenAI `onyx` — so `TTS_ADAPTER=elevenlabs`
+    // with the key not yet saved, mistyped, or rotated to empty TRANSMITTED an American
+    // male voice reading Najdi Arabic to a real WhatsApp customer, on every turn, until
+    // somebody read the page. Driven: `hosts contacted:
+    // ["api.openai.com","graph.facebook.com"]`, `transmitted: "OPENAI-ONYX-AUDIO"`.
+    //
+    // That is the same fail-open the 4xx tag was added to close, arriving one step
+    // earlier — and it is reachable during an ORDINARY rollout, in the window between
+    // saving TTS_ADAPTER and saving the key. Neither condition is fixed by a different
+    // voice and neither is transient, which is the whole test for this marker.
     const key = (process.env.ELEVENLABS_API_KEY || "").trim();
-    if (!key) throw new Error("ELEVENLABS_API_KEY not set");
+    if (!key) throw new Error(`${TTS_CONFIG_FAULT}: ELEVENLABS_API_KEY not set`);
 
     const configured = normalizeVoiceId(opts?.voiceId || process.env.ELEVENLABS_VOICE_ID || "");
-    if (!configured) throw new Error("ELEVENLABS_VOICE_ID not set");
+    if (!configured) throw new Error(`${TTS_CONFIG_FAULT}: ELEVENLABS_VOICE_ID not set`);
 
     // THE ALLOW LIST, BEFORE ANY MONEY IS SPENT. An unregistered id is refused here rather
     // than after a paid synthesis, and the refusal names what was wrong so an operator can
