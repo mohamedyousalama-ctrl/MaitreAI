@@ -798,8 +798,17 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   const callSite = ras.slice(ras.indexOf("void maybeSendVoiceNote(admin, {"), ras.indexOf("void maybeSendVoiceNote(admin, {") + 1400);
   ok("the tenant dialect passed to the guard is the one RESOLVED for this turn",
     /tenantDialect: outboundDialect/.test(callSite));
-  ok("…and it is not a literal, nor read back from the registry it is checked against",
-    !/tenantDialect: ["'`]/.test(callSite) && !/tenantDialect:[^,]*lookupVoice/.test(callSite));
+  // AND WHERE THAT VALUE COMES FROM. The property-name regex above is a same-line grep: a
+  // review redefined `outboundDialect` one line ABOVE the slice as
+  // `lookupVoice(envVoiceId())?.dialect ?? ""` — the guard comparing the registry against
+  // itself — and every assertion here stayed green at 216/216 while an Egyptian tenant
+  // spoke. Pin the definition, which is the thing that decides.
+  const outboundDef = ras.slice(ras.indexOf("const outboundDialect ="), ras.indexOf("const outboundDialect =") + 200);
+  ok("outboundDialect is resolved from the TENANT ROW, not from the registry",
+    /const outboundDialect = resolveTenantDialect\(/.test(outboundDef));
+  ok("…and there is exactly one definition of it, so none can shadow the other",
+    (ras.match(/const outboundDialect =/g) ?? []).length === 1);
+  ok("…and it is not a literal", !/tenantDialect: ["'`]/.test(callSite));
   // H3 — deleting this one line is the difference between ONE tenant speaking and all 13.
   // There is no second layer: decideVoiceSend is called with `enabled: true` hardcoded.
   const gate = ras.slice(Math.max(0, ras.indexOf("void maybeSendVoiceNote(admin, {") - 400), ras.indexOf("void maybeSendVoiceNote(admin, {"));
@@ -820,6 +829,29 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   const fn = ras.slice(ras.indexOf("export async function maybeSendVoiceNote"), ras.indexOf("/**\n * WO-MEDIA-GUARD"));
   // M-c — the provider has already billed; a WhatsApp transmit failure must not discard
   // our only record of the money.
+  ok("…and the flag is re-checked INSIDE the function, where driving it can see",
+    /isFeatureExplicitlyEnabled\("voice_notes", args\.features\)/.test(fn));
+  // A CONFIG FAULT MUST BE VISIBLE. A 4xx correctly yields silence rather than a substitute
+  // voice — and yielded it with no alert and not even a console line, so voice could be dead
+  // for every live tenant with no signal anywhere. A log line, not an alert: this fires once
+  // per turn, and recordCriticalAlert emails and WhatsApps a human.
+  {
+    // SCOPED TO THAT BRANCH. A wide window matched the `fellBack` alert that legitimately
+    // follows it a few lines later, so the assertion failed against correct code — the
+    // block boundary is the thing being asserted about, so take the block.
+    const start = fn.indexOf("if (!tts) {");
+    const branch = fn.slice(start, fn.indexOf("\n  }", start));
+    ok("a synthesis that produced nothing is at least logged, with the tenant named",
+      /console\.warn\(/.test(branch) && /restaurant=\$\{args\.restaurantId\}/.test(branch));
+    // MATCH THE CALL, NOT THE WORD. `/recordCriticalAlert/` matched the branch's own
+    // COMMENT explaining why it deliberately does not page — the assertion failed against
+    // correct code because the code explains itself. The open paren is the call.
+    ok("…and it is a log line, not a page — a bad key must not alert on every turn",
+      !/recordCriticalAlert\(/.test(branch));
+    // …while the FALLBACK, which does ship a wrong voice, still pages a human.
+    ok("a fallback to another voice still raises a critical alert",
+      /if \(tts\.fellBack\) \{[\s\S]{0,400}recordCriticalAlert\(/.test(fn));
+  }
   ok("the TTS spend row is written BEFORE the transmit check, not after",
     fn.indexOf('trigger: "voice_tts"') < fn.indexOf("const audioSend = await sendWhatsAppAudio"));
   ok("…and there is exactly one spend row per synthesis",
@@ -857,6 +889,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     restaurantId: "r", conversationId: "c", phone: "+966500000000",
     inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
     lastInboundAtMs: Date.now(), replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi",
+    features: { voice_notes: true },
   };
 
   // The exact operator error the activation step invites: key and voice set, pin forgotten.
@@ -948,6 +981,9 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     restaurantId: "r", conversationId: "c", phone: "+201000000000",
     inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
     lastInboundAtMs: Date.now(),
+    // The tenant's own flag. The function re-checks it internally, so a fixture without it
+    // is refused — which is the guard working, and is why these positive controls matter.
+    features: { voice_notes: true },
   };
 
   contacted.length = 0;
@@ -960,6 +996,18 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   await maybeSendVoiceNote(admin, { ...turn, replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi" });
   ok("a SAUDI tenant does reach ElevenLabs — the guard is not simply off",
     contacted.filter((h) => h.includes("elevenlabs")).length === 1);
+
+  // THE FLAG, DRIVEN. Previously only a regex around the call site watched this, and a
+  // review hoisted the read out of the `if` so it gated nothing — all 13 tenants able to
+  // speak, at 216/216. Now it is inside the function, so it is covered the same way the
+  // dialect guard is.
+  contacted.length = 0;
+  await maybeSendVoiceNote(admin, { ...turn, replyText: "هلا فيك", tenantDialect: "saudi", features: { voice_notes: false } });
+  ok("a tenant whose voice_notes flag is OFF reaches no provider", contacted.length === 0);
+  contacted.length = 0;
+  await maybeSendVoiceNote(admin, { ...turn, replyText: "هلا فيك", tenantDialect: "saudi", features: null });
+  ok("…and so does a tenant with no flags at all — explicit-only, never inferred",
+    contacted.length === 0);
 
   for (const d of ["", "  ", "levantine", "EGYPTIAN"]) {
     contacted.length = 0;
@@ -1052,10 +1100,28 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   // chooses — an attacker-selected bucket is not a limit.
   {
     const ras2 = readFileSync(resolve(process.cwd(), "app/api/demo/capabilities/route.ts"), "utf8");
-    ok("the rate limit is keyed on x-forwarded-for, like the other demo routes",
-      /x-forwarded-for/.test(ras2) && !/x-demo-client/.test(ras2));
-    ok("…over the shared demo window, not a private one",
+    ok("the rate limit uses the shared demo window, not a private one",
       /DEMO_WINDOW_MS/.test(ras2) && !/rateLimit\([^)]*\d{4,}\s*\)/.test(ras2));
+    // DRIVEN, NOT GREPPED. `/x-forwarded-for/.test(src)` passed a mutation that merely put
+    // `x-real-ip ||` in front of it — an attacker-chosen bucket, which is not a limit, and
+    // is the exact defect the old assertion's own comment named. So: hold the real client
+    // address fixed, rotate every other header a caller could pick, and require the limit
+    // to still bite.
+    let refusedWithRotatingHeaders = false;
+    for (let i = 0; i < 300; i++) {
+      const r = await GET(new Request("https://x/api/demo/capabilities", {
+        headers: {
+          host: "maitre-ai.vercel.app",
+          "x-forwarded-for": "5.5.5.5",       // the real client, held FIXED
+          "x-real-ip": `9.0.0.${i % 250}`,    // rotated
+          "x-demo-client": `c${i}`,           // rotated
+          "cf-connecting-ip": `8.0.0.${i % 250}`, // rotated
+        },
+      }));
+      if (r.status === 429) { refusedWithRotatingHeaders = true; break; }
+    }
+    ok("one client cannot buy a fresh bucket by rotating headers it controls",
+      refusedWithRotatingHeaders);
     // A missing Host header must 404, not fall through to a default that passes the gate.
     const noHost = await GET(new Request("https://x/api/demo/capabilities", { headers: { "x-forwarded-for": "9.9.9.10" } }));
     ok("a request with no Host header is refused, not defaulted", noHost.status === 404);

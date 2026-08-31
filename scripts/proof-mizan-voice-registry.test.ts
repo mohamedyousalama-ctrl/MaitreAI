@@ -38,15 +38,26 @@ const SCRIPT = "scripts/mizan/mizan-voice.mjs";
 const QUARANTINED = "VuqFqWXHibJ61b9IiVJ7"; // the one identified legacy object (KIV-90/95)
 
 /** Run the script with instrumented globals and report what it actually reached. */
-async function run(voiceA: string): Promise<{ providerCalls: string[]; uploads: string[]; error: string | null }> {
+async function run(voiceA: string): Promise<{ providerCalls: string[]; uploads: string[]; models: string[]; error: string | null }> {
   const providerCalls: string[] = [];
   const uploads: string[] = [];
+  // THE BODY, NOT JUST THE URL. The first version read only the request URL, so the model
+  // pin was proven solely through the env-override refusal and never through what was
+  // actually sent. Changing `model_id: MODEL` to a literal produced 13 syntheses and 13
+  // public uploads under a model the Founder never accepted — with the emitted packet still
+  // declaring eleven_v3, so reviewers would score one model while told they scored another
+  // — at 18/18 green.
+  const models: string[] = [];
   const realFetch = globalThis.fetch;
   const env = { ...process.env };
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.includes("api.elevenlabs.io")) providerCalls.push(url);
+    if (url.includes("api.elevenlabs.io")) {
+      providerCalls.push(url);
+      try { models.push(String(JSON.parse(String(init?.body ?? "{}")).model_id ?? "")); }
+      catch { models.push("<unparseable>"); }
+    }
     if (url.includes("/storage/v1/object")) uploads.push(url);
     return {
       ok: true, status: 200, text: async () => "",
@@ -73,7 +84,7 @@ async function run(voiceA: string): Promise<{ providerCalls: string[]; uploads: 
   globalThis.fetch = realFetch;
   for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
   Object.assign(process.env, env);
-  return { providerCalls, uploads, error };
+  return { providerCalls, uploads, models, error };
 }
 
 console.log("\n── THE QUARANTINED OBJECT REACHES NOTHING ───────────────────────");
@@ -147,6 +158,8 @@ console.log("\n── THE MODEL IS PINNED HERE TOO ─────────�
   ok("…and it reaches the provider", r.providerCalls.length > 0);
   ok("…with the registered voice id on the wire",
     r.providerCalls.every((u) => u.includes(KHALID_VOICE.voiceId)));
+  ok(`…and the registered MODEL on the wire (${JSON.stringify([...new Set(r.models)])})`,
+    r.models.length > 0 && r.models.every((m) => m === KHALID_VOICE.model));
 }
 
 console.log("\n── DEFENCE IN DEPTH: EITHER GUARD ALONE STILL REFUSES ───────────");

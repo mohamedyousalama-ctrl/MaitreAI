@@ -7,7 +7,7 @@
 //     MIZAN_VOICE_URLS=<path-to-voice-urls.json> node scripts/mizan/mizan-voice.mjs
 //
 // Renders Khalid's SAME captured replies (byte-identical text — no rewriting) in the
-// PRODUCTION voice (ElevenLabs EL-custom-A = Voice A, model eleven_flash_v2_5), plus a
+// PRODUCTION voice (ElevenLabs EL-custom-A = Voice A, model eleven_v3 (pinned by lib/ai/tts/voice-registry.ts)), plus a
 // 3-voice comparison of ONE short greeting (A/B/C) for the "which sounds most Saudi?"
 // pick. Uploads mp3s (web/iOS/WhatsApp-playable — same voice as prod, browser-safe
 // container) to the public `mizan-khalid-audio` bucket under unguessable random names,
@@ -38,7 +38,7 @@ const { ALLOWED_VOICE_ID, REGISTERED_MODEL } = (() => {
 })();
 
 // THE MODEL IS PART OF WHAT WAS ACCEPTED, HERE TOO. This was an unchecked operator
-// override defaulting to eleven_flash_v2_5, while the registry pins eleven_v3 and the
+// override defaulting to eleven_v3 (pinned by lib/ai/tts/voice-registry.ts), while the registry pins eleven_v3 and the
 // product adapter refuses anything else. So reviewers in the public bucket were scoring
 // «Khalid kivo» rendered under a model the Founder never accepted — and .env.example tells
 // operators that ELEVENLABS_TTS_MODEL "is refused", which was true of the adapter and false

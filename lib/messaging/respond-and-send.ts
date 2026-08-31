@@ -557,8 +557,24 @@ export async function maybeSendVoiceNote(
     restaurantId: string; conversationId: string; phone: string; replyText: string;
     inboundWasVoice: boolean; userMessage: string; safetyHold: boolean; isReceipt: boolean;
     lastInboundAtMs: number; tenantDialect: string;
+    /** The tenant's feature flags, re-checked here — see below. */
+    features: Record<string, unknown> | null;
   }
 ): Promise<void> {
+  // THE FLAG IS RE-CHECKED HERE, not only at the call site.
+  //
+  // The call site checks it too, and that check is what normally applies. But a review
+  // hoisted the read out of the `if` — `const voiceFlag = isFeature…(…); const voiceAllowed
+  // = voiceFlag ? true : true;` — and every assertion stayed green at 216/216 while all 13
+  // tenants became able to speak, because the assertions were regexes over the lines around
+  // the call and the identifier was still there. Enumerating the ways to weaken a condition
+  // is always incomplete.
+  //
+  // Inside the function it is covered by DRIVING the function, which is the only kind of
+  // coverage that has survived a round of this. Defence in depth: the call site still gates,
+  // and a caller that forgets to is refused here.
+  if (!isFeatureExplicitlyEnabled("voice_notes", args.features)) return;
+
   // A VOICE MAY ONLY READ ITS OWN DIALECT.
   //
   // `ELEVENLABS_VOICE_ID` is a single GLOBAL setting and there is no per-tenant voice
@@ -606,7 +622,25 @@ export async function maybeSendVoiceNote(
   if (!decision.send) return;
 
   const tts = await synthesizeVoiceReply(args.replyText);
-  if (!tts) return; // both primary + fallback failed → text-only (already sent)
+  if (!tts) {
+    // SAY SOMETHING. A 4xx here — a key scoped to the wrong account, a plan without
+    // eleven_v3, a voice or pronunciation-dictionary id that does not exist in this
+    // account, an exhausted quota — correctly produces silence rather than a substitute
+    // voice. But it produced silence with NO alert and not even a console line, so voice
+    // could be dead for every live tenant with no signal anywhere, indefinitely. The
+    // customer is unharmed (the text reply already went; voice is additive), which is
+    // exactly why nobody would notice.
+    //
+    // A LOG LINE, NOT AN ALERT. recordCriticalAlert emails and WhatsApps a human, and this
+    // fires once per turn — a bad key would page continuously. The fallback path already
+    // alerts for the case that ships a wrong voice; this one only needs to be visible.
+    console.warn(
+      `[voice] restaurant=${args.restaurantId} synthesis produced nothing — text-only. ` +
+        `If this repeats, check ELEVENLABS_API_KEY, the plan's access to the pinned model, ` +
+        `and that the voice and pronunciation dictionary exist in that account.`
+    );
+    return; // both primary + fallback failed → text-only (already sent)
+  }
 
   // VERIFY WHAT CAME BACK, exactly as the demo does — and for the reason the demo's own
   // note gives: asserting only what we ASKED for leaves the whole voice guarantee resting
@@ -1881,6 +1915,7 @@ export async function respondAndSendWhatsApp(
       inboundWasVoice,
       userMessage,
       tenantDialect: outboundDialect,
+      features: outcome.features,
       // DERIVED FROM THE TURN, NOT FROM PROXIES — the same fix the demo route got, on the
       // surface that matters more. `escalate === true` does not identify a safety turn:
       // the ACTIVE ANAPHYLAXIS branch (customer-turn.ts companionEmergencyResult) returns
