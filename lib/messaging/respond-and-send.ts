@@ -642,6 +642,18 @@ export async function maybeSendVoiceNote(
     return; // both primary + fallback failed → text-only (already sent)
   }
 
+  // DID A REAL PROVIDER ANSWER? Declared HERE, above both of its uses, because a previous
+  // pass at this file put a constant below the closure that read it and shipped a
+  // temporal-dead-zone crash that no assertion caught.
+  //
+  // The adapter, never the price. `ttsCostUsd` returns 0 for any model missing from
+  // TTS_RATE_PER_CHAR and `OPENAI_TTS_MODEL` is env-overridable, so "it cost $0" is not
+  // evidence that nothing was bought — that is the false-$0 trap recorded on KIV-95, and it
+  // produced 40 real billed calls against a cap of 10. `TtsAdapterName` is a closed union
+  // and only `mock.ts` emits "mock" without ever touching the network, so this comparison
+  // is compiler-checked: a typo is a type error, not a silent fail-open.
+  const billed = tts.result.adapter !== "mock";
+
   // THE PROVIDER HAS ALREADY BILLED US. Record the spend BEFORE *every* post-synthesis
   // decision — the transmit check and the pin refusal below are the same class of thing,
   // and returning early on either discarded our only record of money already spent.
@@ -651,16 +663,21 @@ export async function maybeSendVoiceNote(
   // money the daily-budget alert cannot see, which is precisely the spend nobody catches.
   // The demo path has carried its `spend` through a post-synthesis refusal since it was
   // written (lib/demo/voice-out.ts, `spentAnyway`); this one now does the same.
-  await admin.from("agent_runs").insert({
-    restaurant_id: args.restaurantId,
-    conversation_id: args.conversationId,
-    trigger: "voice_tts",
-    input: "[voice reply]",
-    output: args.replyText,
-    model: tts.result.model,
-    adapter: tts.result.adapter,
-    cost_usd: tts.result.costUsd,
-  });
+  //
+  // ONLY WHEN SOMETHING WAS ACTUALLY BOUGHT. A mock synthesis is not spend, and writing a
+  // $0 ledger row for it on every turn is write amplification with no reader.
+  if (billed) {
+    await admin.from("agent_runs").insert({
+      restaurant_id: args.restaurantId,
+      conversation_id: args.conversationId,
+      trigger: "voice_tts",
+      input: "[voice reply]",
+      output: args.replyText,
+      model: tts.result.model,
+      adapter: tts.result.adapter,
+      cost_usd: tts.result.costUsd,
+    });
+  }
 
   /** Charge this conversation's daily voice budget for the synthesis we just made.
    *
@@ -693,11 +710,17 @@ export async function maybeSendVoiceNote(
    *  that audio went out. The column governs the per-conversation voice BUDGET, and money
    *  the provider took is spent whether or not we could use what came back. */
   const chargeVoiceBudget = async (delivered: boolean): Promise<void> => {
+    // NOTHING SPENT AND NOTHING SENT IS NOTHING TO RECORD. Without this the mock adapter —
+    // the DEFAULT, and what every unconfigured environment runs — wrote a conversations row
+    // on every triggering turn forever, where it used to be bounded to the cap by burning
+    // the counter. Free, invisible to the customer, and pure write amplification; skipping
+    // it also makes the update a no-op-free path rather than one that rewrites the same
+    // numbers back. `delivered` still forces the write, so a delivered note always counts.
+    if (!delivered && !billed) return;
     // `|| 0` so an out-of-contract adapter returning a non-number cannot write NaN into a
     // NOT NULL numeric column and reject the whole update — which would silently take the
     // counter down with it, re-opening the cap hole this function exists to close.
     const cost = Number(tts.result.costUsd) || 0;
-    const billed = tts.result.adapter !== "mock";
     await admin.from("conversations")
       .update({
         voice_notes_day: today,

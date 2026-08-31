@@ -1510,6 +1510,17 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
       ok(`…and the counter actually advanced to the cap (${row.voice_notes_sent})`, row.voice_notes_sent === CAP);
       ok(`…and it ${expectTransmit ? "delivered" : "delivered nothing"} (transmitted ${transmitted})`,
         expectTransmit ? transmitted === CAP : transmitted === 0);
+      // AND THE COST IS ACTUALLY ACCUMULATED. Nothing in this repo asserted on
+      // `conversations.voice_cost_usd` — hard-coding the accumulated value to 0 left the
+      // whole 216-file suite green, so the per-conversation cost record was defended by
+      // nobody. It is the only place the money spent on ONE conversation is written down.
+      const { ttsCostUsd } = await import("../lib/ai/tts/pricing.ts");
+      const perCall = ttsCostUsd(
+        vars.TTS_ADAPTER === "openai" ? "openai:gpt-4o-mini-tts" : `elevenlabs:${KHALID_VOICE.model}`,
+        "هلا فيك، وش تحب تطلب؟".length
+      );
+      ok(`…and the conversation's cost record accumulated it (${row.voice_cost_usd} = ${CAP}×${perCall})`,
+        perCall > 0 && Math.abs(row.voice_cost_usd - CAP * perCall) < 1e-9);
     }
   }
 
@@ -1527,15 +1538,19 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ["TTS_ADAPTER typo", { TTS_ADAPTER: "elevenlab" }],
   ] as const) {
     const row = { voice_notes_day: null as string | null, voice_notes_sent: 0, voice_cost_usd: 0, is_safety_hold: false };
+    const writes = { ledger: 0, convo: 0 };
     globalThis.fetch = (async () => ({
       ok: true, status: 200, text: async () => "",
       json: async () => ({ messages: [{ id: "m1" }], id: "media-1" }),
       arrayBuffer: async () => new TextEncoder().encode("AUDIO").buffer,
     } as unknown as Response)) as typeof fetch;
-    const admin = { from: () => ({
+    const admin = { from: (table: string) => ({
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { ...row }, error: null }) }) }),
-      insert: async () => ({ data: null, error: null }),
-      update: (patch: Record<string, unknown>) => ({ eq: async () => { Object.assign(row, patch); return { data: null, error: null }; } }),
+      insert: async (r: unknown) => {
+        if (table === "agent_runs" && (r as { trigger?: string })?.trigger === "voice_tts") writes.ledger++;
+        return { data: null, error: null };
+      },
+      update: (patch: Record<string, unknown>) => ({ eq: async () => { if (table === "conversations") writes.convo++; Object.assign(row, patch); return { data: null, error: null }; } }),
     }) } as never;
     for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]) delete process.env[k];
     Object.assign(process.env, {
@@ -1553,6 +1568,13 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     }
     ok(`${label} costs nothing and so burns none of the daily budget (${row.voice_notes_sent})`,
       row.voice_notes_sent === 0);
+    // AND IT WRITES NOTHING AT ALL. Not burning the counter is only half the fix: without
+    // the early return, the mock adapter — the DEFAULT, and what every unconfigured
+    // environment runs — wrote a $0 ledger row AND a conversations row on every triggering
+    // turn forever, where burning the counter had at least bounded it to the cap. Free,
+    // invisible, unbounded write amplification with no reader.
+    ok(`…and writes no rows at all (${writes.ledger} ledger, ${writes.convo} conversation)`,
+      writes.ledger === 0 && writes.convo === 0);
   }
 
   // (5b) A REAL PROVIDER CALL OUR PRICE TABLE DOES NOT KNOW IS STILL REAL MONEY.
