@@ -1539,6 +1539,9 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   ] as const) {
     const row = { voice_notes_day: null as string | null, voice_notes_sent: 0, voice_cost_usd: 0, is_safety_hold: false };
     const writes = { ledger: 0, convo: 0 };
+    const warned: string[] = [];
+    const realWarn = console.warn;
+    console.warn = (...a: unknown[]) => { warned.push(a.map(String).join(" ")); };
     globalThis.fetch = (async () => ({
       ok: true, status: 200, text: async () => "",
       json: async () => ({ messages: [{ id: "m1" }], id: "media-1" }),
@@ -1566,6 +1569,16 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
         features: { voice_notes: true },
       });
     }
+    // WHICH GUARD PRODUCED THE ZERO? `voice_notes_sent === 0` on its own proves nothing:
+    // it passes identically if the code returned at the feature flag, the dialect guard,
+    // the deploy-safe row read, or decideVoiceSend — a reviewer forced the dialect guard to
+    // return unconditionally, turned 22 assertions in this file red, and these three stayed
+    // green. Since aafcb5b the correct behaviour is ALSO zero writes, so the write counters
+    // cannot distinguish it either. The refusal's own log line can: it is emitted at the pin
+    // check and nowhere else, so seeing it proves the turn ran the whole way down and CHOSE
+    // not to count, rather than never arriving.
+    ok(`${label} reaches the pin refusal rather than returning earlier`,
+      warned.some((w) => w.includes("refusing a synthesis that is not the registered voice")));
     ok(`${label} costs nothing and so burns none of the daily budget (${row.voice_notes_sent})`,
       row.voice_notes_sent === 0);
     // AND IT WRITES NOTHING AT ALL. Not burning the counter is only half the fix: without
@@ -1575,6 +1588,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     // invisible, unbounded write amplification with no reader.
     ok(`…and writes no rows at all (${writes.ledger} ledger, ${writes.convo} conversation)`,
       writes.ledger === 0 && writes.convo === 0);
+    console.warn = realWarn;
   }
 
   // (5b) A REAL PROVIDER CALL OUR PRICE TABLE DOES NOT KNOW IS STILL REAL MONEY.
