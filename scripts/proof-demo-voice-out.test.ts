@@ -1513,9 +1513,161 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     }
   }
 
+  // (5) A SYNTHESIS THAT COST NOTHING MUST NOT BURN A REAL CONVERSATION'S BUDGET.
+  //
+  // The first version of the cap fix advanced the counter on EVERY refusal, which was wider
+  // than its own justification. With `TTS_ADAPTER` unset or `mock`, nothing is billed and no
+  // audio can exist — yet ten such turns consumed a live conversation's entire daily budget,
+  // so an operator who then fixed the configuration got silence from that conversation for
+  // the rest of the UTC day. During an activation, that is indistinguishable from the voice
+  // being broken, and it is caused by the guard rather than by the fault.
+  for (const [label, vars] of [
+    ["TTS_ADAPTER unset", { TTS_ADAPTER: undefined }],
+    ["TTS_ADAPTER=mock", { TTS_ADAPTER: "mock" }],
+    ["TTS_ADAPTER typo", { TTS_ADAPTER: "elevenlab" }],
+  ] as const) {
+    const row = { voice_notes_day: null as string | null, voice_notes_sent: 0, voice_cost_usd: 0, is_safety_hold: false };
+    globalThis.fetch = (async () => ({
+      ok: true, status: 200, text: async () => "",
+      json: async () => ({ messages: [{ id: "m1" }], id: "media-1" }),
+      arrayBuffer: async () => new TextEncoder().encode("AUDIO").buffer,
+    } as unknown as Response)) as typeof fetch;
+    const admin = { from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { ...row }, error: null }) }) }),
+      insert: async () => ({ data: null, error: null }),
+      update: (patch: Record<string, unknown>) => ({ eq: async () => { Object.assign(row, patch); return { data: null, error: null }; } }),
+    }) } as never;
+    for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]) delete process.env[k];
+    Object.assign(process.env, {
+      ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
+      OPENAI_API_KEY: "sk-present", WHATSAPP_ACCESS_TOKEN: "wa-token", WHATSAPP_PHONE_NUMBER_ID: "12345",
+      ...vars,
+    });
+    for (let i = 0; i < 12; i++) {
+      await maybeSendVoiceNote(admin, {
+        restaurantId: "r", conversationId: "c", phone: "+966500000000",
+        inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
+        lastInboundAtMs: Date.now(), replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi",
+        features: { voice_notes: true },
+      });
+    }
+    ok(`${label} costs nothing and so burns none of the daily budget (${row.voice_notes_sent})`,
+      row.voice_notes_sent === 0);
+  }
+
+  // (5b) A REAL PROVIDER CALL OUR PRICE TABLE DOES NOT KNOW IS STILL REAL MONEY.
+  //
+  // The cap gate was briefly `costUsd > 0`, and that was worse than the bug it fixed.
+  // `ttsCostUsd` returns 0 for any model absent from TTS_RATE_PER_CHAR, and
+  // `OPENAI_TTS_MODEL` is env-overridable to a real OpenAI model — so `tts-1-hd` produced
+  // genuinely billed syntheses priced at $0, read as "never billed", and the cap never
+  // advanced: 40 real calls against a cap of 10. That is the "unpriced model becomes a
+  // false $0" trap already recorded against this project. Our price table is an ESTIMATE
+  // and can never be the gate on whether money was spent; whether a provider was called can.
+  {
+    const CAP = 10;
+    const row = { voice_notes_day: null as string | null, voice_notes_sent: 0, voice_cost_usd: 0, is_safety_hold: false };
+    let providerCalls = 0;
+    globalThis.fetch = (async (u: RequestInfo | URL) => {
+      const host = new URL(String(u)).host;
+      if (host.includes("openai") || host.includes("elevenlabs")) providerCalls++;
+      return {
+        ok: true, status: 200, text: async () => "",
+        json: async () => ({ messages: [{ id: "m1" }], id: "media-1" }),
+        arrayBuffer: async () => new TextEncoder().encode("AUDIO").buffer,
+      } as unknown as Response;
+    }) as typeof fetch;
+    const admin = { from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { ...row }, error: null }) }) }),
+      insert: async () => ({ data: null, error: null }),
+      update: (patch: Record<string, unknown>) => ({ eq: async () => { Object.assign(row, patch); return { data: null, error: null }; } }),
+    }) } as never;
+    for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]) delete process.env[k];
+    Object.assign(process.env, {
+      // A real OpenAI model that TTS_RATE_PER_CHAR does not carry → ttsCostUsd returns 0.
+      TTS_ADAPTER: "openai", OPENAI_TTS_MODEL: "tts-1-hd",
+      ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
+      OPENAI_API_KEY: "sk-present", WHATSAPP_ACCESS_TOKEN: "wa-token", WHATSAPP_PHONE_NUMBER_ID: "12345",
+    });
+    const { ttsCostUsd } = await import("../lib/ai/tts/pricing.ts");
+    ok("…the scenario is real: this model genuinely prices at $0",
+      ttsCostUsd("openai:tts-1-hd", 100) === 0);
+    for (let i = 0; i < 40; i++) {
+      await maybeSendVoiceNote(admin, {
+        restaurantId: "r", conversationId: "c", phone: "+966500000000",
+        inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
+        lastInboundAtMs: Date.now(), replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi",
+        features: { voice_notes: true },
+      });
+    }
+    ok(`a real provider call priced at $0 is still capped (calls ${providerCalls})`, providerCalls <= CAP);
+    ok(`…and the counter advanced on it (${row.voice_notes_sent})`, row.voice_notes_sent === CAP);
+    delete process.env.OPENAI_TTS_MODEL;
+  }
+
+  // (6) A FAILED TRANSMIT STILL COSTS WHAT THE SYNTHESIS COST, so it must count too.
+  //
+  // A bad WHATSAPP_ACCESS_TOKEN or a failing /media endpoint billed ElevenLabs on every
+  // triggering turn and delivered nothing, uncapped, for as long as it lasted — the spend
+  // row was recorded but the cap never advanced. Same defect as the refusal path, one exit
+  // further down, and pre-existing rather than introduced here.
+  {
+    const CAP = 10;
+    const row = { voice_notes_day: null as string | null, voice_notes_sent: 0, voice_cost_usd: 0, is_safety_hold: false };
+    let billed = 0;
+    globalThis.fetch = (async (u: RequestInfo | URL) => {
+      const host = new URL(String(u)).host;
+      if (host.includes("elevenlabs")) billed++;
+      // Meta's media upload fails; the synthesis above already happened and was paid for.
+      const failing = host.includes("graph.facebook.com");
+      return {
+        ok: !failing, status: failing ? 500 : 200, text: async () => "media upload failed",
+        json: async () => ({}),
+        arrayBuffer: async () => new TextEncoder().encode("AUDIO").buffer,
+      } as unknown as Response;
+    }) as typeof fetch;
+    const admin = { from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { ...row }, error: null }) }) }),
+      insert: async () => ({ data: null, error: null }),
+      update: (patch: Record<string, unknown>) => ({ eq: async () => { Object.assign(row, patch); return { data: null, error: null }; } }),
+    }) } as never;
+    for (const k of ["TTS_ADAPTER", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]) delete process.env[k];
+    Object.assign(process.env, {
+      TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
+      OPENAI_API_KEY: "sk-present", WHATSAPP_ACCESS_TOKEN: "wa-token", WHATSAPP_PHONE_NUMBER_ID: "12345",
+    });
+    for (let i = 0; i < 20; i++) {
+      await maybeSendVoiceNote(admin, {
+        restaurantId: "r", conversationId: "c", phone: "+966500000000",
+        inboundWasVoice: true, userMessage: "أيوه", safetyHold: false, isReceipt: false,
+        lastInboundAtMs: Date.now(), replyText: "هلا فيك، وش تحب تطلب؟", tenantDialect: "saudi",
+        features: { voice_notes: true },
+      });
+    }
+    ok(`a failing WhatsApp transmit is bounded by the cap too (billed ${billed})`, billed <= CAP);
+    ok(`…and the counter advanced despite nothing being delivered (${row.voice_notes_sent})`,
+      row.voice_notes_sent === CAP);
+  }
+
   globalThis.fetch = realFetch;
   for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
   Object.assign(process.env, env);
+}
+
+// ── AN EMPTY PIN MATCHES NOTHING, ON ITS OWN ────────────────────────────────
+//
+// `voiceMatchesPin({adapter:"elevenlabs", voiceId:null}, "")` answered TRUE: "we could not
+// identify the voice" and "the voice is the registered one" were the same answer. Both
+// callers happen to establish a registered voice first, so it was unreachable — which is
+// exactly why it needs its own assertion. This is the comparison the entire voice guarantee
+// rests on; it must fail closed by itself, not because of what another function checked.
+{
+  ok("an empty pin matches nothing, even from an elevenlabs-claiming adapter",
+    !voiceMatchesPin({ adapter: "elevenlabs", voiceId: null }, "") &&
+    !voiceMatchesPin({ adapter: "elevenlabs", voiceId: "" }, "") &&
+    !voiceMatchesPin({ adapter: "elevenlabs", voiceId: undefined }, ""));
+  ok("…while the registered voice against the registered pin still matches",
+    voiceMatchesPin({ adapter: "elevenlabs", voiceId: KHALID_VOICE.voiceId }, KHALID_VOICE.voiceId));
 }
 
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} demo-voice-out: ${pass}/${pass + fail} passed`);

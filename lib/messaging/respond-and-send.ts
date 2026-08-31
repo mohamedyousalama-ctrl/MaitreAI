@@ -642,21 +642,6 @@ export async function maybeSendVoiceNote(
     return; // both primary + fallback failed → text-only (already sent)
   }
 
-  // VERIFY WHAT CAME BACK, exactly as the demo does — and for the reason the demo's own
-  // note gives: asserting only what we ASKED for leaves the whole voice guarantee resting
-  // on a selection made in another file.
-  //
-  // The hole this closes: `TTS_ADAPTER=openai` is an accepted value, so an operator who
-  // writes it — with a perfectly correct ELEVENLABS_VOICE_ID sitting beside it — gets
-  // `onyx` synthesized and TRANSMITTED to a real customer, with the registry never
-  // consulted and `fellBack:false`, so no alert fires either. The dialect guard does not
-  // catch it: it checks the configured ElevenLabs voice, which is correct. The demo has
-  // refused this since it was written (voiceMatchesPin requires adapter === "elevenlabs");
-  // the live path, which reaches actual paying customers, did not.
-  //
-  // SCOPED TO A NON-FALLBACK RESULT. A `fellBack` result IS onyx, deliberately: the
-  // fallback law exists for a provider that is DOWN, and it is bounded and alerted. What
-  // must never happen is a silent substitution nobody chose and nobody is told about.
   // THE PROVIDER HAS ALREADY BILLED US. Record the spend BEFORE *every* post-synthesis
   // decision — the transmit check and the pin refusal below are the same class of thing,
   // and returning early on either discarded our only record of money already spent.
@@ -676,6 +661,51 @@ export async function maybeSendVoiceNote(
     adapter: tts.result.adapter,
     cost_usd: tts.result.costUsd,
   });
+
+  /** Charge this conversation's daily voice budget for the synthesis we just made.
+   *
+   *  `voice_notes_sent` is the ONLY thing bounding how much voice work one conversation can
+   *  cause in a day — `decideVoiceSend` is its only reader in the repo, so no dashboard,
+   *  report or invoice reads it and advancing it here corrupts nothing. Leaving it untouched
+   *  on the non-delivery paths meant a configuration that paid and delivered nothing was
+   *  UNCAPPED: it repeated on every triggering turn, of every conversation, every day.
+   *  Driven at 20 turns: 20 billed syntheses against a cap of 10.
+   *
+   *  ADVANCED ONLY WHEN THE NOTE WAS DELIVERED, OR WHEN A REAL PROVIDER WAS CONTACTED. A
+   *  first version advanced it on every refusal, which was wider than its own justification:
+   *  with `TTS_ADAPTER` unset or `mock` no provider is called and no audio can exist, yet ten
+   *  mock turns burned a real conversation's whole daily budget — so an operator who then
+   *  fixed the configuration got silence from that conversation for the rest of the UTC day,
+   *  which is exactly the confusion an activation does not need.
+   *
+   *  THE TEST IS THE ADAPTER, NOT THE PRICE. A second version used `costUsd > 0`, and that
+   *  was worse than the problem it fixed. `ttsCostUsd` returns 0 for any model absent from
+   *  TTS_RATE_PER_CHAR, and `OPENAI_TTS_MODEL` is env-overridable to a real model — so
+   *  `tts-1-hd` produced REAL billed OpenAI syntheses priced at $0, read as "never billed",
+   *  and the cap never advanced: 40 real syntheses against a cap of 10, uncapped forever.
+   *  That is the "an unpriced model becomes a false $0" trap already recorded against this
+   *  project on KIV-95, and the lesson is that our own price table is an ESTIMATE and can
+   *  never be the gate on whether money was spent. Whether a provider was called can.
+   *  Anything that is not the mock counts, so an adapter we do not recognise fails safe.
+   *
+   *  Counting a paid-but-undelivered synthesis is NOT a claim that a note was sent: no
+   *  `messages` row is written on those paths, so nothing tells the customer or the operator
+   *  that audio went out. The column governs the per-conversation voice BUDGET, and money
+   *  the provider took is spent whether or not we could use what came back. */
+  const chargeVoiceBudget = async (delivered: boolean): Promise<void> => {
+    // `|| 0` so an out-of-contract adapter returning a non-number cannot write NaN into a
+    // NOT NULL numeric column and reject the whole update — which would silently take the
+    // counter down with it, re-opening the cap hole this function exists to close.
+    const cost = Number(tts.result.costUsd) || 0;
+    const billed = tts.result.adapter !== "mock";
+    await admin.from("conversations")
+      .update({
+        voice_notes_day: today,
+        voice_notes_sent: notesSentToday + (delivered || billed ? 1 : 0),
+        voice_cost_usd: Number((costSoFar + cost).toFixed(6)),
+      })
+      .eq("id", args.conversationId);
+  };
 
   // VERIFY WHAT CAME BACK, exactly as the demo does — and for the reason the demo's own
   // note gives: asserting only what we ASKED for leaves the whole voice guarantee resting
@@ -708,20 +738,7 @@ export async function maybeSendVoiceNote(
         `Text-only, and the synthesis was still billed. Whichever of the two differs is ` +
         `the one to fix — TTS_ADAPTER for the adapter, ELEVENLABS_VOICE_ID for the voice.`
     );
-    // AND IT COUNTS AGAINST THE CAP. `voice_notes_sent` is the only thing bounding how much
-    // voice work one conversation can cause in a day, and `decideVoiceSend` is the only
-    // reader of it — so leaving it untouched here meant a configuration that pays and
-    // refuses was UNCAPPED: it repeated on every triggering turn, of every conversation,
-    // every day, forever. Driven at 20 turns: 20 billed syntheses against a cap of 10.
-    //
-    // Counting a refusal is deliberate and is not a claim that a note was sent — no
-    // `messages` row is written on this path, so nothing tells the customer or the operator
-    // that audio went out. What the column actually governs is the per-conversation voice
-    // BUDGET, and a synthesis the provider billed us for spent that budget whether or not
-    // we could use what came back. Bounding real money is worth more than the column's name.
-    await admin.from("conversations")
-      .update({ voice_notes_day: today, voice_notes_sent: notesSentToday + 1, voice_cost_usd: Number((costSoFar + tts.result.costUsd).toFixed(6)) })
-      .eq("id", args.conversationId);
+    await chargeVoiceBudget(false);
     return;
   }
 
@@ -736,13 +753,19 @@ export async function maybeSendVoiceNote(
   }
 
   const audioSend = await sendWhatsAppAudio({ to: args.phone, audio: tts.result.audio, mime: tts.result.mime, lastInboundAtMs: args.lastInboundAtMs });
-  if (audioSend.status !== "sent") return; // transmit failed → the spend above is already recorded
+  if (audioSend.status !== "sent") {
+    // A FAILED TRANSMIT STILL COSTS WHAT THE SYNTHESIS COST. The spend row above already
+    // records it, but the daily cap did not — so a bad WHATSAPP_ACCESS_TOKEN, or Meta's
+    // /media endpoint failing, billed ElevenLabs on every triggering turn and delivered
+    // nothing, uncapped, for as long as it lasted. Driven: ledger 1, conversation updates 0,
+    // counter 0. Same defect as the refusal path above, one exit further down.
+    await chargeVoiceBudget(false);
+    return;
+  }
 
   // Bump the daily counter + accumulate cost (best-effort). Also persist a voice
   // message row + log the per-note synthesis cost to agent_runs (like STT/LLM).
-  await admin.from("conversations")
-    .update({ voice_notes_day: today, voice_notes_sent: notesSentToday + 1, voice_cost_usd: Number((costSoFar + tts.result.costUsd).toFixed(6)) })
-    .eq("id", args.conversationId);
+  await chargeVoiceBudget(true);
   await admin.from("messages").insert({
     restaurant_id: args.restaurantId,
     conversation_id: args.conversationId,

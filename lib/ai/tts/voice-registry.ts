@@ -160,6 +160,14 @@ export function voiceMatchesPin(
   pinnedVoiceId: string
 ): boolean {
   if (result.adapter !== "elevenlabs") return false;
+  // AN EMPTY PIN MATCHES NOTHING. Without this, a caller passing "" — which is what
+  // `lookupVoice(...)?.voiceId ?? ""` yields for an UNREGISTERED voice — was answered
+  // `true` by a result whose own voiceId was null or absent, so "we could not identify the
+  // voice" and "the voice is the registered one" became the same answer. Unreachable today
+  // (both callers establish a registered voice before getting here), and left that way on
+  // purpose: this is the comparison the whole guarantee rests on, and it must fail closed
+  // on its own, not because of what some other function happens to check first.
+  if (!pinnedVoiceId) return false;
   return (result.voiceId ?? "") === pinnedVoiceId;
 }
 

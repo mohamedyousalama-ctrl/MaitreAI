@@ -7,7 +7,7 @@
 //     MIZAN_VOICE_URLS=<path-to-voice-urls.json> node scripts/mizan/mizan-voice.mjs
 //
 // Renders Khalid's SAME captured replies (byte-identical text — no rewriting) in the
-// PRODUCTION voice (ElevenLabs EL-custom-A = Voice A, model eleven_v3 (pinned by lib/ai/tts/voice-registry.ts)), plus a
+// PRODUCTION voice (ElevenLabs EL-custom-A = Voice A), plus a
 // 3-voice comparison of ONE short greeting (A/B/C) for the "which sounds most Saudi?"
 // pick. Uploads mp3s (web/iOS/WhatsApp-playable — same voice as prod, browser-safe
 // container) to the public `mizan-khalid-audio` bucket under unguessable random names,
