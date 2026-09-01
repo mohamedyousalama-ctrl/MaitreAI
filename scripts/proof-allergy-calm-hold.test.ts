@@ -70,12 +70,17 @@ const ok = (name: string, cond: boolean) => { if (cond) pass++; else { fail++; c
   const fn = rs.slice(rs.indexOf("async function handleCalmHeldInbound"), rs.indexOf("/** Send the full web-menu link once"));
   ok("C: held helper is gated on allergy_calm_hold and safety-held state",
     /isFeatureExplicitlyEnabled\("allergy_calm_hold", features\)/.test(fn) && /isSafetyHeld\(\{ ownership_state: ownershipState/.test(fn));
-  ok("C: held helper runs allergen, symptom, phonetic, emergency, and human detectors",
+  // The phonetic near-miss net was the third detector here and is gone by Founder ruling
+  // (lib/ai/phonetic-safety-net.ts). The EXACT detectors are unchanged and still asserted —
+  // "we removed the guessing" and "we removed the safety gate" are different changes, and
+  // only one was authorized.
+  ok("C: held helper runs allergen, symptom, emergency, and human detectors",
     /detectAllergenAvoidance\(messageText\)/.test(fn) &&
     /detectAllergenSymptom\(messageText\)/.test(fn) &&
-    /detectPhoneticSafetyNet\(messageText/.test(fn) &&
     /detectAllergenEmergency\(messageText\)/.test(fn) &&
     /isExplicitHumanRequest\(messageText\)/.test(fn));
+  ok("C: …and no longer guesses at near-misses",
+    !/detectPhoneticSafetyNet\(/.test(fn));
   ok("C: explicit human door is after detector declarations",
     fn.indexOf("const explicitHuman = isExplicitHumanRequest(messageText);") > fn.indexOf("const emergencyHit = detectAllergenEmergency(messageText);"));
   ok("C: new allergy appends the note and acknowledges by template",

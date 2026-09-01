@@ -203,6 +203,10 @@ console.log("\n── THE ROUTE ACTUALLY USES IT, AND ONLY WHEN SILENT ───
   // SCREEN showing the reply while the audio plays, and a chat voice note never struck that
   // bargain. `isPhoneCall` is itself pinned in proof-call-channel.test.ts.
   ok("the call path asks for spoken prices", /spokenPricesAllowed:\s*isPhoneCall/.test(replyCall));
+  ok("…and for the allergy sentence to be SAID, not swallowed",
+    /spokenSafetyAllowed:\s*isPhoneCall/.test(replyCall));
+  ok("…and never grants either waiver unconditionally",
+    !/spokenSafetyAllowed:\s*true/.test(code));
   ok("…and never asks for them unconditionally", !/spokenPricesAllowed:\s*true/.test(code));
   ok("…alongside the safety signals it does NOT waive",
     /safetyHold:\s*voiceSignals\.safetyHold/.test(replyCall) &&
@@ -296,6 +300,51 @@ console.log("\n── THE CARRIER'S OWN GUARD, DRIVEN AGAINST A POISONED STRING 
     ok(`«${weird}» produces silence, not a function`,
       callCarrierFor(weird as never) === null);
   }
+}
+
+console.log("\n── AN ALLERGY DISCLOSURE IS ANSWERED OUT LOUD, ON A CALL ───────");
+{
+  // WHAT SILENCE ACTUALLY DID. Every reply from the allergen gate is marked a safety turn,
+  // and a safety turn was never spoken. On a CALL that meant: the caller says «عندي حساسية
+  // من المكسرات», Khalid composes an honest, careful sentence — and says NOTHING AT ALL.
+  // Dead air, at the one moment someone disclosed something that matters to them. It read to
+  // the Founder as a broken product; it would read to a caller as being ignored.
+  //
+  // The waiver is the SAME bargain the price waiver strikes and stands on the same fact: the
+  // call screen shows the reply while the audio plays, so the sentence is readable at the
+  // moment it is spoken. Mis-hearing is bounded by the text being there. Silence is not.
+  const NOTICE =
+    "خذت بالي إنك ذكرت «المكسرات» 🙏 صحتك تهمّنا. ما أقدر أأكد من عندي إن الصنف يناسبك، " +
+    "بس نقدر نكمّل، أو أوصلك بأحد الزملاء يتأكد لك — وش تحب؟";
+
+  ok("on a call the allergy sentence is spoken",
+    voiceHardZeroReason(NOTICE, {
+      safetyHold: true, isReceipt: false, spokenPricesAllowed: true, spokenSafetyAllowed: true,
+    }) === null);
+
+  // AND NOWHERE ELSE. On WhatsApp the voice note sits in its own bubble with no text beside
+  // it, which is the whole reason the rule exists.
+  ok("on WhatsApp it is still text-only",
+    voiceHardZeroReason(NOTICE, { safetyHold: true, isReceipt: false }) === "safety_hold");
+  ok("…and the waiver must be asked for explicitly, never defaulted",
+    voiceHardZeroReason(NOTICE, {
+      safetyHold: true, isReceipt: false, spokenPricesAllowed: true,
+    }) === "safety_hold");
+
+  // NARROW ON PURPOSE. It waives the SAFETY NOTICE and nothing else — each other category is
+  // decided independently and is untouched by this flag.
+  ok("a receipt is still never spoken, even on a call",
+    voiceHardZeroReason("تم، طلبك رقم 1042", {
+      safetyHold: false, isReceipt: true, spokenSafetyAllowed: true,
+    }) === "receipt");
+  ok("a payment link is still never spoken, even on a call",
+    voiceHardZeroReason("ادفع من هنا https://pay.example.com/x", {
+      safetyHold: false, isReceipt: false, spokenSafetyAllowed: true,
+    }) === "payment_link");
+  ok("…and a money figure still needs its OWN waiver",
+    voiceHardZeroReason("الإجمالي 45 ريال", {
+      safetyHold: false, isReceipt: false, spokenSafetyAllowed: true,
+    }) === "money_figure");
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-carriers: ${pass}/${pass + fails.length} passed`);

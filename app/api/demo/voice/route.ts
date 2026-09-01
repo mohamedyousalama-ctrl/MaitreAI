@@ -44,7 +44,6 @@ import { resolveDemoSession } from "@/lib/demo/session";
 import { closeDemoOrder } from "@/lib/demo/order";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
-import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 import { handleTypedQuantityFill, safetyProbeFired } from "@/lib/messaging/typed-actions";
 
@@ -337,7 +336,6 @@ export async function POST(req: Request) {
   const voiceSafetyProbe = {
     allergenAvoidance: detectAllergenAvoidance(transcript).fired,
     allergenSymptom: detectAllergenSymptom(transcript).fired,
-    phoneticSafetyNet: detectPhoneticSafetyNet(transcript, { sttConfidence, isVoiceTranscript: true }).fired,
     allergenEmergency: detectAllergenEmergency(transcript).fired,
   };
   if (conversationId && !safetyProbeFired(voiceSafetyProbe)) {
@@ -409,6 +407,7 @@ export async function POST(req: Request) {
           safetyHold: heldFromEarlierTurn,
           isReceipt: false,    // a quantity fill is never a receipt
           spokenPricesAllowed: isPhoneCall,
+          spokenSafetyAllowed: isPhoneCall,
         };
         const filledSpoken =
           callDelivery({ isPhoneCall, ticketsAvailable: speechTicketsAvailable() }) === "stream" 
@@ -559,6 +558,14 @@ export async function POST(req: Request) {
       // …ON THE CALL ONLY. The waiver is paid for by the call screen showing this reply
       // while the audio plays; a voice note is not that bargain and keeps the old rule.
       spokenPricesAllowed: isPhoneCall,
+      // …AND THE ALLERGY SENTENCE IS SAID OUT LOUD TOO, on a call only.
+      //
+      // Every reply from the allergen gate was marked a safety turn and a safety turn was
+      // never spoken — so a caller who disclosed an allergy got a careful, honest sentence on
+      // the screen and DEAD AIR in their ear, at the one moment they most needed an answer.
+      // The screen shows it while it plays, which is the same bargain the price waiver
+      // strikes and the same reason it is sound.
+      spokenSafetyAllowed: isPhoneCall,
     };
     let spoken = streamTheCall
       ? demoVoiceTicket(closed.reply, { ...speakOpts, sid: conversationId })

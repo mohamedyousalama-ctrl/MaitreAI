@@ -50,12 +50,16 @@ ok("typed branch is entered for any inbound interactive id",
   /if \(cleanInteractiveId\)/.test(bridge));
 ok("coalesced safety text wins over a trailing tap",
   /burstSafetyTakesPriority/.test(bridge) && /tapSafetyText = coalesced\.count === 1 \? "" : rawText/.test(bridge));
+// The phonetic near-miss net was a fourth sentinel here. It is gone by Founder ruling
+// (lib/ai/phonetic-safety-net.ts); the EXACT ones are unchanged and still required, because
+// removing the guessing and removing the gate are different changes.
 ok("typed branch runs the allergy sentinels on tapSafetyText",
   /const tapSafetyText = coalesced\.count === 1 \? "" : rawText/.test(bridge) &&
   /detectAllergenAvoidance\(tapSafetyText\)\.fired/.test(bridge) &&
   /detectAllergenSymptom\(tapSafetyText\)\.fired/.test(bridge) &&
-  /detectPhoneticSafetyNet\(tapSafetyText, \{ sttConfidence: null, isVoiceTranscript: false \}\)\.fired/.test(bridge) &&
   /detectAllergenEmergency\(tapSafetyText\)\.fired/.test(bridge));
+ok("…and no longer guesses at near-misses",
+  !/detectPhoneticSafetyNet\(/.test(bridge));
 ok("confirm_order delegates to the existing confirm/allergen gate",
   /typedConfirmMessage = typed\.userMessage/.test(bridge));
 ok("non-confirm typed actions return before runCustomerTurn",

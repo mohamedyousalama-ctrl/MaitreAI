@@ -49,9 +49,15 @@ ok("D: a stale streak (older than the 5-min window) does NOT dampen",
 const rs = readFileSync(resolve(process.cwd(), "lib/messaging/respond-and-send.ts"), "utf8");
 ok("E: the dampener is gated on the reply_dampener flag",
   /isFeatureExplicitlyEnabled\("reply_dampener", convFlags\)/.test(rs));
-ok("E: SAFETY-FIRST — allergen avoidance/symptom/phonetic/emergency + human-request all bail before dampening",
-  /const safetyOrHuman =[\s\S]{0,400}?detectAllergenAvoidance\(userMessage\)[\s\S]{0,200}?detectAllergenSymptom\(userMessage\)[\s\S]{0,200}?detectPhoneticSafetyNet\(userMessage[\s\S]{0,200}?detectAllergenEmergency\(userMessage\)[\s\S]{0,120}?isExplicitHumanRequest\(userMessage\)/.test(rs) &&
+// The phonetic near-miss net was a fourth term in this predicate and is gone by Founder
+// ruling (lib/ai/phonetic-safety-net.ts). What this assertion is FOR is unchanged: a safety
+// message or a request for a human must never be swallowed by the dampener, so the exact
+// detectors and the human door are all still required to bail before it.
+ok("E: SAFETY-FIRST — allergen avoidance/symptom/emergency + human-request all bail before dampening",
+  /const safetyOrHuman =[\s\S]{0,400}?detectAllergenAvoidance\(userMessage\)[\s\S]{0,200}?detectAllergenSymptom\(userMessage\)[\s\S]{0,200}?detectAllergenEmergency\(userMessage\)[\s\S]{0,120}?isExplicitHumanRequest\(userMessage\)/.test(rs) &&
   /if \(!safetyOrHuman\)/.test(rs));
+ok("E: …and the dampener does not consult the retired near-miss net",
+  !/detectPhoneticSafetyNet\(/.test(rs));
 ok("E: the dampen check runs BEFORE the Brain turn (runCustomerTurn)",
   rs.indexOf("shouldDampenReply(userMessage") < rs.indexOf("outcome = await runCustomerTurn(") &&
   rs.indexOf("shouldDampenReply(userMessage") > 0);

@@ -72,15 +72,18 @@ export type InteractiveCommand =
 export interface SafetyProbe {
   allergenAvoidance: boolean;
   allergenSymptom: boolean;
-  phoneticSafetyNet: boolean;
   allergenEmergency: boolean;
 }
 
-/** True when ANY detector fired. Reads the four fields BY NAME rather than iterating
+/** True when ANY detector fired. Reads the fields BY NAME rather than iterating
  *  Object.values, so adding a field to SafetyProbe without adding it here is a compile
- *  error instead of a silent gap. */
+ *  error instead of a silent gap.
+ *
+ *  `phoneticSafetyNet` USED TO BE THE THIRD FIELD. It is gone by Founder ruling — see
+ *  lib/ai/phonetic-safety-net.ts. Removed rather than set to `false`, so the compiler
+ *  refuses any caller still passing it instead of quietly ignoring the value. */
 export function safetyProbeFired(probe: SafetyProbe): boolean {
-  return probe.allergenAvoidance || probe.allergenSymptom || probe.phoneticSafetyNet || probe.allergenEmergency;
+  return probe.allergenAvoidance || probe.allergenSymptom || probe.allergenEmergency;
 }
 
 export type TypedInteractiveActionResult =

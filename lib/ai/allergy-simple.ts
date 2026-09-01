@@ -18,7 +18,6 @@
 import type { LlmMessage } from "./llm/types";
 import { detectAllergenAvoidance, normalizeAr } from "./allergen-gate";
 import { detectAllergenSymptom } from "./allergen-gate-symptoms";
-import { detectPhoneticSafetyNet } from "./phonetic-safety-net";
 import { detectAllergenEmergency } from "./allergen-emergency";
 import { canonicalizeAllergens } from "./allergen-canonical";
 
@@ -52,17 +51,18 @@ export function mentionsDiseaseCondition(text: string | null | undefined): boole
 }
 
 /**
- * The COMPOSED allergy/disease detector — the exact union the rest of the engine uses (avoidance,
- * symptom, phonetic net, emergency) plus the additive disease-condition input check. REUSES the
- * detectors verbatim; adds no allergen terms.
+ * The COMPOSED allergy/disease detector — the exact union the rest of the engine uses
+ * (avoidance, symptom, emergency) plus the additive disease-condition input check. REUSES the
+ * detectors verbatim; adds no allergen terms. The phonetic near-miss net was part of this
+ * union and is no longer — see lib/ai/phonetic-safety-net.ts.
  */
 export function detectAllergyOrDiseaseMention(text: string, opts?: DetectOpts): AllergyMentionHit {
   const a = detectAllergenAvoidance(text);
   if (a.fired) return { fired: true, term: a.term ?? null, kind: "allergy" };
   const s = detectAllergenSymptom(text);
   if (s.fired) return { fired: true, term: s.term ?? null, kind: "allergy" };
-  const p = detectPhoneticSafetyNet(text, { sttConfidence: opts?.sttConfidence, isVoiceTranscript: opts?.isVoiceTranscript });
-  if (p.fired) return { fired: true, term: p.term ?? null, kind: "allergy" };
+  // The phonetic near-miss net used to sit here. Removed by Founder ruling — see
+  // lib/ai/phonetic-safety-net.ts. The exact detectors above are unchanged.
   const e = detectAllergenEmergency(text);
   if (e.fired) return { fired: true, term: e.label ?? null, kind: "allergy" };
   if (mentionsDiseaseCondition(text)) return { fired: true, term: null, kind: "disease" };

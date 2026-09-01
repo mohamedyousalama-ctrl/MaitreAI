@@ -143,13 +143,33 @@ export function voiceHardZeroReason(
      *  NARROW ON PURPOSE. This waives the MONEY FIGURE only. A payment LINK is still never
      *  spoken (a URL cannot be said usefully and a mis-heard one goes somewhere else), a
      *  receipt/order number is still never spoken (a mis-heard order number is an
-     *  operational problem, not a cosmetic one), and a SAFETY HOLD is untouched and
-     *  unreachable from here — it returns above this flag and always will. */
+     *  operational problem, not a cosmetic one). */
     spokenPricesAllowed?: boolean;
+    /** A LIVE PHONE CALL, and the reply is a SAFETY NOTICE.
+     *
+     *  WHAT SILENCE ACTUALLY DID. Every reply from the allergen gate is marked a safety
+     *  turn, and a safety turn was never spoken. On WhatsApp that is right: the sentence is
+     *  already in the customer's hand, and a mis-heard safety message is a new hazard for no
+     *  gain. On a CALL it produced the opposite of care — the caller mentions an allergy,
+     *  Khalid composes an honest, careful sentence («خذت بالي إنك ذكرت المكسرات… ما أقدر
+     *  أأكد من عندي إن الصنف يناسبك…») and then says NOTHING AT ALL. Dead air, at the exact
+     *  moment someone disclosed something that matters to them. It read to the Founder as a
+     *  broken product and would read to a caller as being ignored.
+     *
+     *  THE SAME COMPENSATING CONTROL AS THE MONEY WAIVER, and that is the whole
+     *  justification: the call screen displays the reply while the audio plays, so the
+     *  sentence is readable at the moment it is spoken. Mis-hearing is bounded by the text
+     *  being right there. Silence is bounded by nothing.
+     *
+     *  NARROW ON PURPOSE. This waives the SAFETY NOTICE only, and only where the caller can
+     *  read along. A receipt, a payment link and a money figure are each decided
+     *  independently below and are untouched by this flag. On WhatsApp it is never set. */
+    spokenSafetyAllowed?: boolean;
   }
 ): VoiceZeroReason | null {
-  // FIRST, AND NOT WAIVABLE. Whatever the channel, a safety turn is text-only.
-  if (signals.safetyHold) return "safety_hold";
+  // FIRST. On every surface but a live call, a safety turn is text-only and that is not
+  // negotiable. On a call, silence is not the safe answer — see `spokenSafetyAllowed`.
+  if (signals.safetyHold && signals.spokenSafetyAllowed !== true) return "safety_hold";
   if (signals.isReceipt) return "receipt";
   const t = moneyScanText(String(replyText ?? ""));
   if (PAY_LINK_RE.test(t)) return "payment_link";

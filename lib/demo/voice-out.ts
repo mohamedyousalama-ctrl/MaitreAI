@@ -210,6 +210,10 @@ export interface DemoVoiceOpts {
   /** A live phone call, where this same screen shows the reply as text while the audio
    *  plays — see the note on `voiceHardZeroReason`. Waives the money figure ONLY. */
   spokenPricesAllowed?: boolean;
+  /** The same call, for a SAFETY NOTICE. An allergy reply used to be answered with total
+   *  silence — the caller discloses an allergy and hears nothing at all. See the note on
+   *  `voiceHardZeroReason`; the compensating control is the same screen. */
+  spokenSafetyAllowed?: boolean;
 }
 
 /** May we speak this reply, and in whose voice? */
@@ -254,6 +258,7 @@ export function demoVoiceDecision(replyText: string, opts?: DemoVoiceOpts): Demo
     safetyHold: o.safetyHold === true,
     isReceipt: o.isReceipt === true,
     spokenPricesAllowed: o.spokenPricesAllowed === true,
+    spokenSafetyAllowed: o.spokenSafetyAllowed === true,
   });
   if (hardZero) return no(hardZero);
 

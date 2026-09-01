@@ -35,7 +35,6 @@
 
 import { detectAllergenAvoidance, normalizeAr } from "../allergen-gate";
 import { detectAllergenSymptom } from "../allergen-gate-symptoms";
-import { detectPhoneticSafetyNet } from "../phonetic-safety-net";
 import { detectAllergenEmergency } from "../allergen-emergency";
 
 /** Would this word, heard in an allergy sentence, name an allergen?
@@ -99,7 +98,6 @@ function stripProclitic(word: string): string {
  *  on: a dropped name costs one clarifying question, a manufactured allergy costs the whole
  *  conversation. */
 function tripsASafetyHold(name: string): boolean {
-  if (detectPhoneticSafetyNet(name, { sttConfidence: null, isVoiceTranscript: true }).fired) return true;
   if (detectAllergenEmergency(name).fired) return true;
   if (detectAllergenSymptom(name).fired) return true;
   return false;

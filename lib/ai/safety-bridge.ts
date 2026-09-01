@@ -18,7 +18,6 @@
 
 import { detectAllergenAvoidance } from "./allergen-gate";
 import { detectAllergenSymptom } from "./allergen-gate-symptoms";
-import { detectPhoneticSafetyNet } from "./phonetic-safety-net";
 import { detectAllergenEmergency } from "./allergen-emergency";
 
 /** Operator-quiet window (minutes) after which a safety inbound during HUMAN_ACTIVE is treated
@@ -41,10 +40,8 @@ export function isSafetyClassInbound(
   return (
     detectAllergenAvoidance(text).fired ||
     detectAllergenSymptom(text).fired ||
-    detectPhoneticSafetyNet(text, {
-      sttConfidence: opts?.sttConfidence,
-      isVoiceTranscript: opts?.isVoiceTranscript,
-    }).fired ||
+    // The phonetic near-miss net was the third term here. Removed by Founder ruling — see
+    // lib/ai/phonetic-safety-net.ts for what it did and why it is gone.
     detectAllergenEmergency(text).fired
   );
 }

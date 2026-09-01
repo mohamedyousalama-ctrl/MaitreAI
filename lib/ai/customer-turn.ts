@@ -70,7 +70,6 @@ import { recordAllergyEvent, buildBannedPhraseBlockAudit } from "@/lib/db/allerg
 import { asksForMenuLink, asksToSeeMedia, buildAnswerFirstDirective } from "@/lib/ai/media-intent";
 import { CONVERSATION_MEDIA_BUDGET } from "@/lib/messaging/media-guard";
 import { isMediaWindowReset, buildMediaDirective } from "@/lib/messaging/media-window";
-import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { resolveKsaRegion } from "@/lib/ai/personas/khalid";
 // WO-KHALID-STEP2: dialect-leakage QUALITY linter (observability only — NOT the safety
 // gate). Separate lane from allergen-gate/safety-hold/escalation; never blocks a turn.
@@ -1168,9 +1167,12 @@ export async function runCustomerTurn(
   // deterministic hold. The 0.66 STT-confidence floor is a SECONDARY tripwire only.
   // Evaluated last (only when the exact gates did not already fire) so a hold decision
   // is reached before perception/LLM.
-  const phoneticHit = (!allergenHit.fired && !symptomHit.fired)
-    ? detectPhoneticSafetyNet(input.userMessage, { sttConfidence: input.sttConfidence, isVoiceTranscript: input.isVoiceTranscript })
-    : { fired: false, term: null, reason: null as string | null };
+  // THE PHONETIC NEAR-MISS NET IS GONE — Founder ruling, see lib/ai/phonetic-safety-net.ts.
+  // Kept as a never-firing constant rather than deleted outright, because `holdSource` and
+  // the escalation-signal metadata below still name `phonetic_safety_net` as one of their
+  // sources, and stored rows carrying that source predate this change. A reader of an old
+  // `agent_runs` row must still find the name that produced it.
+  const phoneticHit = { fired: false as const, term: null, reason: null as string | null };
   const memoryAllergyHit = (!allergenHit.fired && !symptomHit.fired && !phoneticHit.fired && memoryAllergyGateOn)
     ? detectMemoryAllergyDraftIntersection({
         memoryAllergens: memoryAllergyLabels,

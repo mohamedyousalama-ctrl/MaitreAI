@@ -42,7 +42,6 @@ import { claimTurn, releaseTurn } from "@/lib/db/turn-claim";
 import { shouldDampenReply } from "@/lib/ai/reply-dampener";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
-import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
 // WO-SAFETY-BRIDGE — a safety-class inbound during HUMAN_ACTIVE with nobody attending gets a
 // caution ACK + a loud re-alert (ownership unchanged). Gated on the safety_bridge flag.
@@ -366,11 +365,10 @@ async function handleCalmHeldInbound(
   // Safety-critical detectors run before any human-door branch and are never skipped.
   const allergenHit = detectAllergenAvoidance(messageText);
   const symptomHit = detectAllergenSymptom(messageText);
-  const phoneticHit = detectPhoneticSafetyNet(messageText, { sttConfidence, isVoiceTranscript });
   const emergencyHit = detectAllergenEmergency(messageText);
   const explicitHuman = isExplicitHumanRequest(messageText);
 
-  if (!allergenHit.fired && !symptomHit.fired && !phoneticHit.fired && !emergencyHit.fired && explicitHuman) {
+  if (!allergenHit.fired && !symptomHit.fired && !emergencyHit.fired && explicitHuman) {
     return null;
   }
 
@@ -383,14 +381,13 @@ async function handleCalmHeldInbound(
   const noteTerms: Array<string | null> = [];
   if (allergenHit.fired) noteTerms.push(allergenHit.term);
   if (symptomHit.fired) noteTerms.push(symptomHit.term);
-  if (phoneticHit.fired) noteTerms.push(phoneticHit.term);
   const nextNote = noteTerms.length ? mergeAllergyNote(existingNote, noteTerms) : existingNote;
   if (nextNote && nextNote !== existingNote) {
     await admin.from("conversations").update({ allergy_note: nextNote }).eq("id", conversationId);
   }
 
   const emergency = emergencyHit.fired || symptomHit.fired;
-  const newAllergy = allergenHit.fired || phoneticHit.fired;
+  const newAllergy = allergenHit.fired;
   // WO escalate-mode: the plain HOLD reply rotates across three deterministic
   // templates by the count of hold replies already sent (text-only; hold state is
   // untouched). Read the branch's stored display phone for the T3 direct-contact
@@ -454,7 +451,7 @@ async function handleCalmHeldInbound(
       staffNotified: emergency,
       netReason: emergency
         ? `calm_hold_emergency:${emergencyHit.label ?? symptomHit.term ?? ""}`
-        : `calm_hold_new_allergy:${allergenHit.term ?? phoneticHit.term ?? ""}`,
+        : `calm_hold_new_allergy:${allergenHit.term ?? ""}`,
     }).catch(() => {});
   }
 
@@ -1466,7 +1463,6 @@ export async function respondAndSendWhatsApp(
     const tapSafetyProbe = {
       allergenAvoidance: detectAllergenAvoidance(tapSafetyText).fired,
       allergenSymptom: detectAllergenSymptom(tapSafetyText).fired,
-      phoneticSafetyNet: detectPhoneticSafetyNet(tapSafetyText, { sttConfidence: null, isVoiceTranscript: false }).fired,
       allergenEmergency: detectAllergenEmergency(tapSafetyText).fired,
     };
     const burstSafetyTakesPriority = coalesced.count > 1 && safetyProbeFired(tapSafetyProbe);
@@ -1623,7 +1619,6 @@ export async function respondAndSendWhatsApp(
     const quantitySafetyProbe = {
       allergenAvoidance: detectAllergenAvoidance(rawText).fired,
       allergenSymptom: detectAllergenSymptom(rawText).fired,
-      phoneticSafetyNet: detectPhoneticSafetyNet(rawText, { sttConfidence: null, isVoiceTranscript: false }).fired,
       allergenEmergency: detectAllergenEmergency(rawText).fired,
     };
     let typed;
@@ -1800,7 +1795,6 @@ export async function respondAndSendWhatsApp(
     const safetyOrHuman =
       detectAllergenAvoidance(userMessage).fired ||
       detectAllergenSymptom(userMessage).fired ||
-      detectPhoneticSafetyNet(userMessage, { sttConfidence, isVoiceTranscript: inboundWasVoice }).fired ||
       detectAllergenEmergency(userMessage).fired ||
       isExplicitHumanRequest(userMessage);
     if (!safetyOrHuman) {
