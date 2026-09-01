@@ -304,10 +304,20 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     // Provenance, recorded where an auditor can read it: this voice is a synthetic Voice
     // Design, not a donor recording or a clone. That is the fact G0-R turns on.
     ok("the registered voice is synthetic by provenance", KHALID_VOICE.provenance === "generated");
+    // CHARS ARE WHAT WENT ON THE WIRE, NOT WHAT WENT IN THE BUBBLE. This asserted
+    // `chars === REPLY.length`, which was true only while the provider was handed the
+    // WhatsApp text verbatim. It is now handed the SPOKEN rendering — emoji and markdown
+    // removed, numerals spelled — so the reply length is no longer what anyone is billed
+    // for. Pinning the old number would have made the ledger disagree with the invoice, in
+    // whichever direction the rendering happened to move; asserted against the request body
+    // so the ledger can only ever be right.
+    const wireText = String(sent.text ?? "");
     ok("the reported spend is the model+chars the provider was actually given",
       out.spend !== null && out.spend!.model === KHALID_VOICE.model &&
-      out.spend!.chars === REPLY.length &&
+      out.spend!.chars === wireText.length &&
       Math.abs(out.spend!.costUsd - out.spend!.chars * TTS_RATE_PER_CHAR[`elevenlabs:${KHALID_VOICE.model}`]) < 1e-9);
+    ok("…and the wire text really is the spoken rendering, not the bubble text",
+      wireText !== REPLY && !/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(wireText));
   });
 
   // (b) ELEVENLABS DOWN: refuse, and — the finding this replaces — never BUY the onyx

@@ -30,6 +30,7 @@
 // ============================================================================
 
 import type { TtsAdapter, TtsAudioFormat } from "./types";
+import { toSpokenText } from "./spoken-text";
 import { ttsCostUsd } from "./pricing";
 import { KHALID_VOICE, lookupVoice, normalizeVoiceId, voiceRefusalReason } from "./voice-registry";
 
@@ -88,7 +89,18 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
       );
     }
     const model = voice.model;
-    const body = String(text ?? "");
+
+    // TEXT FOR THE EAR. Everything above this line was composed for a WhatsApp bubble —
+    // emoji, `*bold*`, blank lines as layout, `×`, `—`, bare ASCII numerals — and was
+    // being sent to the provider verbatim. That is why the same voice object sounds worse
+    // here than in the ElevenLabs playground, where a human types clean prose.
+    //
+    // Applied HERE because this is the only choke point both callers pass through: the
+    // demo deliberately bypasses `synthesizeVoiceReply` and calls the adapter directly, so
+    // a layer added in the resolver would silently miss the surface prospects actually see.
+    // It is also downstream of every safety decision and of the text message already being
+    // sent, so it provably cannot alter what any customer reads.
+    const body = toSpokenText(String(text ?? ""));
 
     // THE CONTAINER IS THE CALLER'S TO CHOOSE, and getting it wrong is silent on both ends.
     // Ogg Opus is right for a WhatsApp voice note and unplayable in Safari, so serving it
@@ -107,6 +119,12 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
         body: JSON.stringify({
           text: body,
           model_id: model,
+          // The normalizer otherwise has to infer the language, which it does per-request
+          // and can get wrong on a short or numeral-heavy line. Documented as supported by
+          // v3 and ignored by models that do not take it. This does NOT change the accent —
+          // that comes from the voice object — it decides how numbers, dates and symbols
+          // are read.
+          language_code: "ar",
           voice_settings: {
             stability: voice.settings.stability,
             similarity_boost: voice.settings.similarity_boost,

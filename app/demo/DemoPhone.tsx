@@ -993,8 +993,21 @@ function CallScreen({
       fd.append(
         "history",
         JSON.stringify(
+          // EVERY TURN THAT HAS WORDS, INCLUDING THE ONES KHALID SPOKE.
+          //
+          // This filtered to `kind === "text" || from === "me"`, and a reply Khalid SPEAKS
+          // is pushed as `kind: "voice"` — so every spoken answer was stripped out of the
+          // history sent on the next turn. On a call that is catastrophic and invisible: he
+          // asks «كم وحدة تبي؟», the caller answers, and the model has no record of ever
+          // asking. He re-asks, re-offers the menu, loses the thread, and cannot honour
+          // "repeat that" — while the only turns he DID remember were the ones he never
+          // said out loud, because a text-only turn is pushed as `kind: "text"`.
+          //
+          // Both kinds carry the same `text` (a reply, or a transcript of the visitor), and
+          // nothing else is ever pushed — `stopWith` sets local UI state and does not enter
+          // the thread — so "has words" is the correct test, not "is not audio".
           historyRef.current
-            .filter((m) => m.kind === "text" || m.from === "me")
+            .filter((m) => typeof m.text === "string" && m.text.trim() !== "")
             .map((m) => ({ role: m.from === "me" ? "user" : "assistant", content: m.text })),
         ),
       );

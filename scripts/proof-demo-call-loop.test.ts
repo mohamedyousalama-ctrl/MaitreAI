@@ -219,11 +219,17 @@ async function runScreen(opts: {
   const CallScreen = loadCallScreen(rt.React);
   const pushed: Array<Record<string, unknown>> = [];
   let ended = false;
+  const historyRef = { current: (opts.history ?? [{ from: "me", kind: "text", text: "سلام" }]) as Record<string, unknown>[] };
   const props = {
     convId: { current: null as string | null },
     onSession: () => {},
-    push: (m: Record<string, unknown>) => { pushed.push(m); return m; },
-    historyRef: { current: (opts.history ?? [{ from: "me", kind: "text", text: "سلام" }]) as unknown[] },
+    // PUSHING APPENDS TO THE HISTORY, because in the real parent it does: `push` calls
+    // setMsgs, an effect mirrors msgs into msgsRef, and msgsRef IS the historyRef handed to
+    // this screen (DemoPhone.tsx:197-204, :627). A harness whose push and history were
+    // disconnected could not observe the turn-to-turn memory of the conversation at all —
+    // which is exactly how a filter that erased every reply Khalid SPOKE stayed green.
+    push: (m: Record<string, unknown>) => { pushed.push(m); historyRef.current.push(m); return m; },
+    historyRef,
     audioUrls: { current: [] as string[] },
     // THE ELEMENT THE OPENING TAP UNLOCKED. Supplied by the parent because Safari only
     // permits playback it can attribute to a gesture, and that permission is long gone by
@@ -290,6 +296,26 @@ async function runScreen(opts: {
   const hist = (r.log.voiceRequests[0] ?? []).find((f: string[]) => f[0] === "history")?.[1] ?? "";
   ok("…and the history is the real thread, not an empty array",
     hist.includes("سلام") && hist !== "[]");
+
+  // AND KHALID REMEMBERS WHAT HE SAID OUT LOUD.
+  //
+  // The filter kept `kind === "text" || from === "me"`, and a reply Khalid SPEAKS is pushed
+  // as `kind: "voice"` — so every spoken answer was stripped from the history sent on the
+  // next turn. He asks «كم وحدة تبي؟», the caller answers, and the model has no record of
+  // asking: he re-asks, re-offers the menu, and cannot honour "repeat that". Invisible on
+  // WhatsApp (where replies are text) and ruinous on a call, which is why it survived.
+  //
+  // Driven on the SECOND turn's payload, because turn one cannot show it. The reply the
+  // fixture speaks on turn one must appear as an assistant message on turn two.
+  const hist2 = (r.log.voiceRequests[1] ?? []).find((f: string[]) => f[0] === "history")?.[1] ?? "";
+  ok("turn two carries a history at all", hist2 !== "" && hist2 !== "[]");
+  ok("…and it contains the reply Khalid SPOKE on turn one",
+    hist2.includes("تمام، كبسة وحدة"));
+  ok("…as an assistant turn, not attributed to the visitor",
+    /"role"\s*:\s*"assistant"\s*,\s*"content"\s*:\s*"تمام، كبسة وحدة"/.test(hist2));
+  // …and the visitor's own spoken turn is still there, as the user.
+  ok("…and the visitor's transcribed words are still carried as the user",
+    /"role"\s*:\s*"user"\s*,\s*"content"\s*:\s*"أبغى كبسة"/.test(hist2));
 
   ok("the reply is played", r.log.played.length >= 1);
 

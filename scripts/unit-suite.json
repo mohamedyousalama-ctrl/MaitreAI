@@ -210,6 +210,7 @@
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-saudi-prompt-register.test.ts",
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-demo-voice-out.test.ts",
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-demo-call-loop.test.ts",
+  "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-spoken-text.test.ts",
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-mizan-voice-registry.test.ts",
   "node --experimental-strip-types scripts/proof-whatsapp-markup.test.ts",
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-demo-interactive-rail.test.ts",
