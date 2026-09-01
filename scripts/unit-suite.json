@@ -224,5 +224,6 @@
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-demo-interactive-rail.test.ts",
   "node --experimental-strip-types scripts/proof-tax-mode-integrity.test.ts",
   "node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-tools-dialect.test.ts",
-  "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-phonetic-net-unwired.test.ts"
+  "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-phonetic-net-unwired.test.ts",
+  "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-allergy-false-positives.test.ts"
 ]

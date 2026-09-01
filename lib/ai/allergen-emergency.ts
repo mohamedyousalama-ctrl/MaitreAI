@@ -71,12 +71,45 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string]> = [
   // now") — someone asking for emergency help without naming a verb first — fired NOTHING.
   // Written in the un-normalized spelling, which is the natural one to type, in a list whose
   // header says it is matched against normalized text.
-  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغى|اتصلوا ?ب|كلموا|طلبوا) ?(?:ال)?اسعاف|(?:ودينا|وديناه|وديناها|رحنا|راح|دخلنا|دخلوه) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)|٩٩٧|997|911|١١٢|112/, "طلب إسعاف / طوارئ"],
+  // THE PREPOSITION WAS MANDATORY AND SHOULD NEVER HAVE BEEN. This read «اتصلوا ?ب», so it
+  // needed the plural verb AND the ب: «اتصلوا بالإسعاف» fired and «اتصلوا الإسعاف» — the same
+  // sentence, said the way people say it — fired nothing at all. Nor did the SINGULAR «اتصل
+  // بالإسعاف», which is the exact wording Khalid himself uses when he tells someone to call
+  // one. Verb forms widened, ب and ال both optional; «اسعاف» is still required, and there is
+  // no ordinary restaurant sentence that asks for an ambulance.
+  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغى|اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|نادو|نادوا|طلبو|طلبوا) ?ب? ?(?:ال)?اسعاف|(?:ودينا|وديناه|وديناها|رحنا|راح|دخلنا|دخلوه) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)/, "طلب إسعاف / طوارئ"],
 ];
 
 // English / mixed — tested on the RAW (case-insensitive) text.
 const EMERGENCY_EN_RE =
   /\b(can'?t breathe|cannot breathe|can not breathe|throat (?:is )?(?:closing|swelling|closed)|(?:lips?|face|tongue|throat) (?:is |are )?swelling|swelling (?:up )?now|anaphylaxis|anaphylactic|allergic reaction now|call (?:an )?ambulance|call 9-?1-?1|emergency now)\b/i;
+
+// --- EMERGENCY NUMBERS — the ones that were firing on phone numbers ------------
+//
+// «٩٩٧|997|911|١١٢|112» used to be five bare alternatives inside the pattern above, with no
+// digit boundary and no context. Every one of these ordinary messages raised a full ALLERGY
+// EMERGENCY on the live WhatsApp path:
+//
+//   «رقمي 0559971234»   a Saudi mobile number — 997 sits inside almost any long digit run
+//   «الطلب رقم 112»     an order number
+//   «العنوان شارع 911»  a street address
+//   «الحساب 112 ريال»   a bill
+//
+// A customer sending their own phone number is the single most routine thing that happens in
+// this product, and it was escalating to a human as a life-threatening allergic reaction.
+//
+// TWO CONDITIONS NOW, AND BOTH ARE HONEST. The digits must stand alone — a number inside a
+// longer run is a phone number, never a call for help — AND either someone is CALLING (the
+// verb is present) or the message is nothing but the number, which is what a person types
+// when they are panicking and have no words left. Every genuine phrasing this file already
+// caught («نبي إسعاف»، «ودّونا الطوارئ»، «call 911») is matched by the rules above and does
+// not depend on these digits at all.
+const EMERGENCY_NUMBER_RE = /(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])/;
+/** A calling verb or an emergency service by name. NOT «طلب» — that is the ordinary word for
+ *  a restaurant order, and «الطلب رقم 112» is how every customer refers to one. */
+const EMERGENCY_CALL_FRAME_RE = /اتصل|اتصلو|كلمو|نادو|اسعاف|طواري|انقاذ|نجده|هلال ?احمر/;
+/** The message is the number and nothing else. */
+const BARE_EMERGENCY_NUMBER_RE = /^[\s]*(?:997|911|112|٩٩٧|٩١١|١١٢)[\s!؟?.،,]*$/;
 
 /**
  * Detect an ACTIVE allergy emergency (present tense). Pure + deterministic.
@@ -98,5 +131,11 @@ export function detectAllergenEmergency(text: string): EmergencyHit {
   for (const [re, label] of EMERGENCY_PATTERNS) {
     if (re.test(n)) return { fired: true, label };
   }
+
+  // The emergency numbers, which need the message as a whole and not just a pattern.
+  if (EMERGENCY_NUMBER_RE.test(n) && (EMERGENCY_CALL_FRAME_RE.test(n) || BARE_EMERGENCY_NUMBER_RE.test(n))) {
+    return { fired: true, label: "طلب إسعاف / طوارئ" };
+  }
+
   return NO_HIT;
 }

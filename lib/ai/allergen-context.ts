@@ -69,8 +69,21 @@ const PHRASES = [
 /** English / Franco allergy context, tested case-insensitively on the RAW text. */
 const ENGLISH_ALLERGY_RE = /\b(allerg(y|ic)|anaphylax|epipen|lactose\s*intoleran|gluten\s*free)\b/i;
 
-/** Harm verbs — «تأذيني» / «يضرني» / «يوذيني». Only a hit ALONGSIDE an allergen noun. */
-const HARM_CONTEXT_RE = /تاذ|تضر|يضر|اذي|يوذ/;
+/** Harm verbs — «تأذيني» / «يضرني» / «يؤذيني». Only a hit ALONGSIDE an allergen noun.
+ *
+ *  THE OBJECT PRONOUN IS REQUIRED, AND THAT IS A BUG FIX. This read `تاذ|تضر|يضر|اذي|يوذ` —
+ *  bare stems, no boundary — and the alternative «اذي» sits inside «هاذي», the ordinary Najdi
+ *  word for "this". Every sentence starting «هاذي…» carried a harm verb as far as this rule
+ *  was concerned, so «هاذي الرز الأبيض زين» ("this white rice is good") and «هاذي اللبن
+ *  الرايب» ("this is the laban rayeb") each raised an allergy hold on a compliment about
+ *  food. That is precisely the false-positive class the Founder retired the phonetic net
+ *  for, reintroduced by me in the file that replaced it.
+ *
+ *  A real harm statement names WHO is harmed: «يضرني»، «تأذيني»، «يؤذيني» — the pronoun is
+ *  not decoration, it is what makes the sentence about the speaker instead of about the
+ *  world. «صحتي»/«معدتي»/«بطني» stand in for it in the other natural phrasing. */
+const HARM_CONTEXT_RE =
+  /(?:ضر|اذي|وذي)(?:ني|نا|ها|هم|هن|كم|ك)|(?:يضر|تضر|بيضر|يوذي|تاذي|ياذي|توذي) ?(?:صحتي|معدتي|بطني)/;
 
 /** The nouns that turn a harm verb into a safety sentence. Not a gate of their own. */
 const ALLERGEN_NOUNS = [
@@ -88,6 +101,19 @@ function hasToken(normalized: string, term: string): boolean {
   const after = normalized[i + term.length];
   const isLetter = (c: string | undefined) => !!c && /[؀-ۿ]/.test(c);
   return !isLetter(before) && !isLetter(after);
+}
+
+/** Is this allergen noun present as a WORD (its own token, or one carrying the article and a
+ *  leading conjunction/preposition)? Multi-word nouns — «فول سوداني»، «عين جمل» — are long
+ *  enough that containment is not a guess and are matched whole. */
+function hasNoun(normalized: string, noun: string): boolean {
+  if (!noun) return false;
+  if (noun.includes(" ")) return normalized.includes(noun);
+  for (const tok of normalized.split(/[^\u0600-\u06FF]+/)) {
+    if (!tok) continue;
+    if (tok === noun || stripLeading(tok) === noun) return true;
+  }
+  return false;
 }
 
 /**
@@ -123,13 +149,15 @@ export function detectAllergyContext(text: string): AllergyContextHit {
   // A harm verb ALONGSIDE an allergen noun. Either alone is ordinary language — «يضر» is a
   // common word and «لبن» is a menu item — so both are required.
   //
-  // CONTAINMENT, NOT A TOKEN BOUNDARY, for the noun. Arabic glues the article and prepositions
-  // onto the front — «اللبن يضرني» is the natural way to say it and a boundary check misses
-  // every one of those. The harm verb is what makes containment safe here: this is a sentence
-  // about being hurt by a food, not a mention of a food.
+  // AFFIX-STRIPPED TOKENS, NOT RAW CONTAINMENT. Arabic glues the article and prepositions onto
+  // the front — «اللبن يضرني» is the natural way to say it — so the match has to tolerate
+  // «ال»، «بال»، «وال». It was written as plain `includes` for that reason, and plain
+  // `includes` also matched «بيض» (egg) inside «الأبيض» (the white one), which is how a plate
+  // of white rice became an allergy. Stripping the affixes off each token gets the tolerance
+  // without the accident: «اللبن»→«لبن» matches, «الابيض»→«ابيض» does not.
   if (HARM_CONTEXT_RE.test(n)) {
     for (const noun of ALLERGEN_NOUNS) {
-      if (noun && n.includes(noun)) return { fired: true, term: noun, reason: "allergy_context" };
+      if (noun && hasNoun(n, noun)) return { fired: true, term: noun, reason: "allergy_context" };
     }
   }
 

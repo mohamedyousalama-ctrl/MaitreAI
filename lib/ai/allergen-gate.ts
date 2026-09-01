@@ -95,7 +95,16 @@ const EXPLICIT_ALLERGY_RE = new RegExp(
  *  term to fire (so «بحب البندق» / «عايز اللوز» do NOT match — no avoidance). */
 const AVOIDANCE_INTENT_RE = new RegExp(
   [
-    "تعب", // اتعب / بتعب / بيتعبني / تعبان لو … (medical "it makes me sick")
+    // «تعب» WAS A BARE STEM, and it is the ordinary word for being tired. Any message
+    // carrying it AND any allergen noun fired: «تعبت من الانتظار، أبغى لبن» ("I'm tired of
+    // waiting, I want laban") became an allergy hold and a staff alert — on the turn a
+    // customer is ALREADY annoyed, which is the worst possible moment to answer with a
+    // safety questionnaire. So did «أنا تعبان اليوم، أبغى حليب».
+    //
+    // The medical sense always says WHO it tires («يتعبني»، «بيتعبني»، «تتعبها») or puts it
+    // under a condition («أتعب لو أكلت بندق»، «تعبان لو شربت حليب»). Bare «تعبت» / «تعبان»
+    // with no object and no «لو» is a person describing their day.
+    "تعب(?:ني|نا|ها|هم|هن|كم|ك)|تعب(?:ان|انه)? ?لو",
     "ب?موت", // بموت لو / هموت لو / بموت من
     "(?:مينفعش|ما ?اقدرش?|ماقدرش|مش ?هقدر|ما ?ينفع) ?اكل", // can't eat
     "مبيناسبنيش|مايناسبنيش|ما ?يناسبني",
@@ -120,13 +129,43 @@ const AVOIDANCE_INTENT_RE = new RegExp(
   ].join("|")
 );
 
+/** «يتعب من <allergen>» — the frame the narrowing above would otherwise have cost.
+ *
+ *  Requiring an object pronoun or «لو» killed «تعبت من الانتظار» (tired of waiting), which is
+ *  what it was for. It also killed «صاحبي بيتعب من البندق» ("my friend gets sick from
+ *  hazelnut"), which is a real third-party disclosure and one of this gate's oldest test
+ *  cases. Both are «تعب … من X»; the ONLY thing separating them is whether X is a food on
+ *  the allergen list.
+ *
+ *  So this reads what comes AFTER «من» instead of guessing from the verb, and it reads it
+ *  with the same article tolerance `termRegex` uses — «الفول السوداني» glues «ال» onto both
+ *  words of the canonical «فول سوداني», and a version of this that only tolerated one article
+ *  missed the most consequential allergen on the list. «تعبت من الانتظار» stays quiet because
+ *  «الانتظار» is not on it, and no amount of «لبن» later in the sentence changes that. */
+const TIRED_FROM_RE = /تعب\S* ?من ?/;
+/** Each allergen term, anchored to the START of what follows «من», article-tolerant on every
+ *  word of a multi-word term. */
+const ALLERGEN_TERMS_ANCHORED = ALLERGEN_TERMS_NORM.map(
+  (t) => new RegExp("^(?:ال)?" + t.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(" (?:ال)?"))
+);
+function tiredFromAllergen(n: string): boolean {
+  const m = TIRED_FROM_RE.exec(n);
+  if (!m) return false;
+  const tail = n.slice(m.index + m[0].length);
+  return ALLERGEN_TERMS_ANCHORED.some((re) => re.test(tail));
+}
+
+/** True iff the (ALREADY normalized via normalizeAr) text carries an allergy INTENT")).join("|")})`
+);
+
 /** True iff the (ALREADY normalized via normalizeAr) text carries an allergy INTENT
  *  signal — an explicit allergy word OR any avoidance/medical marker. This is the
  *  base gate's own intent predicate, EXPORTED so other safety layers (e.g. the
  *  phonetic net's typed short-term near-match exception) share ONE definition of
  *  "allergy intent" instead of re-authoring it. Pass a normalizeAr'd string. */
 export function hasAllergyIntent(normalized: string): boolean {
-  return EXPLICIT_ALLERGY_RE.test(normalized) || AVOIDANCE_INTENT_RE.test(normalized);
+  return EXPLICIT_ALLERGY_RE.test(normalized) || AVOIDANCE_INTENT_RE.test(normalized) ||
+    tiredFromAllergen(normalized);
 }
 
 /** Allergen-safety ASSERTION verbs/claims (for the output guard). */
@@ -164,7 +203,7 @@ export function detectAllergenAvoidance(text: string): AllergenAvoidanceHit {
   // true positive (every clean «بندق/البندق/اللبن/…» still matches, tolerating «ال»).
   const picked = pickAllergenTerm(n);
   const hasAllergen = picked !== null;
-  const intent = AVOIDANCE_INTENT_RE.test(n);
+  const intent = AVOIDANCE_INTENT_RE.test(n) || tiredFromAllergen(n);
   const fired = explicit || (intent && hasAllergen);
   if (!fired) return { fired: false, term: null };
   // Fall back to generic «الحساسية» ONLY on an explicit-allergy hit with no clean

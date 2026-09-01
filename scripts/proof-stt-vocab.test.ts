@@ -178,15 +178,29 @@ console.log("\n── EVERY DETECTOR THE ROUTE RUNS, AND NO MORE ─────
   //
   // So there is an honest fixture, and this is it: a menu item whose name fires the emergency
   // detector, and a filter that must refuse the token and keep the dish.
-  ok("a real menu name CAN fire the emergency detector", detectAllergenEmergency("برجر 911").fired);
-  ok("…and its safe half alone does not", !detectAllergenEmergency("برجر").fired);
-  const emgMenu = safeSttVocabulary(["برجر 911", "جريش"]);
-  ok("…the filter drops the trigger token", !emgMenu.some((k) => k.includes("911")));
-  ok("…and keeps the dish word it was primed for", emgMenu.includes("برجر"));
-  ok("…while the safe dish beside it survives", emgMenu.includes("جريش"));
-  // A single-token name that IS the trigger has nothing safe left, and goes entirely.
-  ok("a name that is nothing but the trigger is dropped whole",
-    !safeSttVocabulary(["997", "جريش"]).includes("997"));
+  // A NAME THAT IS AN EMERGENCY NUMBER IS DROPPED WHOLE — the emergency arm, driven.
+  //
+  // This assertion used to read the SOURCE of safe-vocab.ts for the string
+  // "detectAllergenEmergency(name).fired", on the stated grounds that "an emergency detector
+  // needs emergency PHRASING, which no dish name has, so there is no honest fixture". Reading
+  // source is not a test: deleting the call and leaving a comment would have kept it green.
+  //
+  // There IS an honest fixture, because the detector hears a bare emergency number standing
+  // on its own — «997», «911», «112» — and a menu item can be nothing but a number.
+  ok("an emergency number alone fires the detector", detectAllergenEmergency("911").fired);
+  ok("…and the filter refuses that name", !safeSttVocabulary(["911", "جريش"]).includes("911"));
+  ok("…and the same for 997", !safeSttVocabulary(["997", "جريش"]).includes("997"));
+  ok("…while the safe dish beside it survives", safeSttVocabulary(["911", "جريش"]).includes("جريش"));
+
+  // AND «برجر 911» IS KEPT WHOLE, WHICH IS THE CORRECT ANSWER AND WAS NOT ALWAYS.
+  //
+  // The digits used to fire with no boundary and no context, so this name was split and
+  // «911» withheld — along with every customer's phone number being read as an ambulance
+  // call (see lib/ai/allergen-emergency.ts). A burger named after a car is a burger. The
+  // filter now keeps the name, and the recognizer gets the whole thing.
+  ok("«برجر 911» does not fire the detector", !detectAllergenEmergency("برجر 911").fired);
+  ok("…so the filter keeps it whole", safeSttVocabulary(["برجر 911", "جريش"]).includes("برجر 911"));
+
   ok(`…and the menu is now MORE primed than before the ruling (${kept.length}/${MENU.length})`,
     kept.length >= MENU.length - 4);
 }
