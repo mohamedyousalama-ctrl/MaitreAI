@@ -24,6 +24,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
+import { expectedAnswerClass, CLASS_PRIORITY_TERMS } from "@/lib/ai/voice-aliases";
 import { demoVoiceReply, demoVoiceSignalsFor, demoVoiceSilenceKind } from "@/lib/demo/voice-out";
 import { presentationForCall } from "@/lib/demo/call-presentation";
 import { callCarrierFor } from "@/lib/demo/call-carriers";
@@ -51,6 +52,33 @@ export const dynamic = "force-dynamic";
 // and the visitor just sees a generic error. Set explicitly, as the admin voice routes do.
 export const maxDuration = 60;
 
+// ── THE DEMO MENU, CACHED ───────────────────────────────────────────────────
+//
+// Read once per window and reused, because it is fetched BEFORE transcription on every
+// turn and a database round trip in that position is latency the caller hears as dead air
+// before Khalid answers. The demo tenant's menu is a seeded fixture; a short TTL is the
+// honest trade between freshness nobody needs and a delay every caller feels.
+let demoMenuCache: { names: string[]; at: number } | null = null;
+const DEMO_MENU_TTL_MS = 5 * 60_000;
+
+async function demoMenuNames(admin: ReturnType<typeof createAdminClient>): Promise<string[]> {
+  if (demoMenuCache && Date.now() - demoMenuCache.at < DEMO_MENU_TTL_MS) return demoMenuCache.names;
+  try {
+    const { data } = await admin!
+      .from("menu_items")
+      .select("name")
+      .eq("restaurant_id", DEMO_RESTAURANT_ID)
+      .limit(200);
+    const names = ((data ?? []) as Array<{ name?: string | null }>).map((r) => r.name ?? "").filter(Boolean);
+    demoMenuCache = { names, at: Date.now() };
+    return names;
+  } catch {
+    // Best-effort, exactly as the WhatsApp path treats it: no bias is a worse transcript,
+    // never a failed turn.
+    return demoMenuCache?.names ?? [];
+  }
+}
+
 function clientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for") ?? "";
   return xff.split(",")[0].trim() || req.headers.get("x-real-ip") || "unknown";
@@ -61,6 +89,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  // Turn clock — see the timing line at the end of the turn.
+  const tTurn = Date.now();
   const ip = clientIp(req);
   const rl = rateLimit(`demo-voice:${ip}`, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS);
   if (!rl.ok) {
@@ -149,11 +179,32 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: stopped ? "demo_unavailable" : "rate_limited" }, { status: stopped ? 503 : 429 });
   }
 
+  // ── THE TRANSCRIBER IS TOLD WHAT IT IS LIKELY TO HEAR ─────────────────────
+  //
+  // PARITY WITH THE CHAT PATH, WHICH HAD THIS AND THE CALL DID NOT. The WhatsApp webhook
+  // primes STT with the tenant's menu names and with the words the last question invites
+  // (`transcribeWhatsAppVoice(..., sttMenuNames, sttPriorityTerms)`); this route called
+  // `transcribeAudioBytes(buf, mime)` with neither. So «جريش»، «لقيمات»، «مندي» — proper
+  // nouns no general model has strong priors for — were transcribed unbiased on the ONE
+  // surface a prospect is watching, and the resulting low confidence then tripped the
+  // garble ladder, which asked the caller to TYPE. Cause and punishment both in the call.
+  //
+  // CACHED, because this runs before STT and a database round trip here is latency the
+  // caller hears as dead air. The demo tenant's menu is a fixture that changes when someone
+  // edits a seed script, so a short TTL is honest and costs one query per window.
+  const menuNames = await demoMenuNames(admin);
+  // …and the state bias comes from the history the CLIENT already posted, so it costs no
+  // query at all: the last thing Khalid said is what decides which answers to expect.
+  const lastAssistant = [...history].reverse().find((h) => h.role === "assistant")?.content ?? "";
+  const answerClass = expectedAnswerClass(lastAssistant);
+  const priorityTerms = answerClass ? CLASS_PRIORITY_TERMS[answerClass] : [];
+
   let transcript: string;
   let sttConfidence: number | null = null;
   let sttCost: { model: string; adapter: string; costUsd: number };
+  const tStt = Date.now();
   try {
-    const stt = await transcribeAudioBytes(buf, mime);
+    const stt = await transcribeAudioBytes(buf, mime, menuNames, priorityTerms);
     transcript = String(stt.text ?? "").trim().slice(0, DEMO_MAX_CHARS);
     sttConfidence = typeof stt.confidence === "number" ? stt.confidence : null;
     sttCost = { model: stt.model, adapter: stt.adapter, costUsd: stt.costUsd };
@@ -192,6 +243,8 @@ export async function POST(req: Request) {
     console.error("[demo/voice] spend accounting failed — refusing", e);
     return NextResponse.json({ error: "demo_unavailable" }, { status: 503 });
   }
+  const msStt = Date.now() - tStt;
+
   if (!transcript) {
     // WHY THERE WERE NO WORDS. An empty transcript has two completely different causes and
     // this returned 422 with no evidence of either: the visitor genuinely said nothing (the
@@ -348,6 +401,7 @@ export async function POST(req: Request) {
   }
 
   try {
+    const tBrain = Date.now();
     const out = await runCustomerTurn(admin, {
       restaurantId: DEMO_RESTAURANT_ID,
       conversationId,
@@ -399,7 +453,9 @@ export async function POST(req: Request) {
     // string — so the reply telling a visitor to call an ambulance was synthesized and
     // played aloud. voiceSignalsForTurn reads stopReason, which that branch does set, and
     // fails closed on any stop reason nobody has listed as safe to speak.
+    const msBrain = Date.now() - tBrain;
     const voiceSignals = demoVoiceSignalsFor(out, closed);
+    const tTts = Date.now();
     let spoken = await demoVoiceReply(closed.reply, {
       inboundWasVoice: true,
       safetyHold: voiceSignals.safetyHold,
@@ -431,6 +487,18 @@ export async function POST(req: Request) {
         }
       }
     }
+    // ── WHERE THE SECONDS ACTUALLY GO ─────────────────────────────────────
+    //
+    // A call turn is three sequential network round trips — transcribe, think, speak — and
+    // the Founder reports it is too slow. Optimizing before measuring is how the wrong one
+    // gets tuned, so every turn now reports its own breakdown. This is a timing line, not
+    // an alert, and carries no visitor words: four durations and a character count.
+    const msTts = Date.now() - tTts;
+    console.log(
+      `[demo/voice] timing stt=${msStt}ms brain=${msBrain}ms tts=${msTts}ms ` +
+        `total=${Date.now() - tTurn}ms chars=${closed.reply.length} model=${out.model ?? "?"}`
+    );
+
     // `not_triggered` and `mock_pinned` are deliberate configurations, not faults.
     if (spoken.skipped && spoken.skipped !== "not_triggered" && spoken.skipped !== "mock_pinned") {
       console.warn("[demo/voice] spoken reply skipped", { reason: spoken.skipped });
