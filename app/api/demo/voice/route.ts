@@ -25,6 +25,7 @@ import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
 import { demoVoiceReply, demoVoiceSignalsFor, demoVoiceSilenceKind } from "@/lib/demo/voice-out";
+import { presentationForCall } from "@/lib/demo/call-presentation";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
 import { mustWrite } from "@/lib/db/checked";
 import { rateLimit } from "@/lib/rate-limit";
@@ -329,9 +330,12 @@ export async function POST(req: Request) {
           // design — an unexplained silence must not be dressed up as a product rule — so
           // leaving it out of ONE of the route's two exits ended the call on that exit.
           replyAudioSilence: demoVoiceSilenceKind(filledSpoken.skipped),
-          presentation: filled.presentation
-            ? formatCustomerVisiblePresentation(filled.presentation, filled.dialect)
-            : null,
+          // Same rule on the quantity rail — it is the ONE flow that already behaved like
+          // a phone call, and it must not be the exit that quietly reintroduces buttons.
+          presentation: presentationForCall(
+            filled.presentation ? formatCustomerVisiblePresentation(filled.presentation, filled.dialect) : null,
+            transcript,
+          ),
           photoRequests: [],
         });
       }
@@ -357,6 +361,12 @@ export async function POST(req: Request) {
       // voice note is exactly what that net exists to catch.
       sttConfidence,
       isVoiceTranscript: true,
+      // THIS TURN WILL ONLY EVER BE HEARD. Distinct from `isVoiceTranscript`, which says
+      // the INPUT was audio — also true of a WhatsApp voice note whose reply is read on a
+      // screen. Without it the model was told to be "tap-first" and to hand off to «the
+      // list shown below», and it obeyed: asking for the menu on the phone pushed a
+      // tappable list to a screen hidden behind the call overlay and said «تفضّل 👇» aloud.
+      channel: "voice_call",
     });
     // A spoken «أكد الطلب» closes an order exactly like a typed one — same real order
     // number, same honest "this is a demo, nothing was charged" line.
@@ -464,9 +474,16 @@ export async function POST(req: Request) {
       // digitStyle:"western" and the live demo was answering «الإجمالي: ٧٠.١٥ ر.س»
       // and «برقم #١٠٠١» in Arabic-Indic — the digit style the tenant bans.
       // The presentation carries prices in its row descriptions, so it needs the same pass.
-      presentation: out.presentation
-        ? formatCustomerVisiblePresentation(out.presentation, out.dialect)
-        : out.presentation,
+      // A CALLER IS ONLY SENT SOMETHING TO LOOK AT WHEN THEY ASKED TO SEE IT.
+      // The call screen is a full-screen overlay and this payload lands in the thread
+      // UNDERNEATH it, so «تفضّل، هذي قائمتنا 👇» was spoken aloud while the content it
+      // pointed at went somewhere the caller could not reach. Withheld by default: the
+      // reply text is still delivered and still spoken, and half an answer plus a pointer
+      // to nothing is worse than a whole answer in words.
+      presentation: presentationForCall(
+        out.presentation ? formatCustomerVisiblePresentation(out.presentation, out.dialect) : out.presentation,
+        transcript,
+      ),
       photoRequests: out.photoRequests,
     });
   } catch (e) {

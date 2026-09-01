@@ -170,6 +170,23 @@ export interface CustomerTurnInput {
    *
    *  Undefined ⇒ normal tenant traffic ⇒ every write is byte-identical to before. */
   demoRun?: boolean;
+  /** WO-CALL-CHANNEL — this turn is a live, hands-free VOICE CALL, not a typed message
+   *  and not a voice note.
+   *
+   *  Everything else in this interface describes what the turn WAS; this describes how the
+   *  answer will be DELIVERED, and it is the one thing the pipeline had no way to know. A
+   *  call turn therefore produced byte-identical output to a typed one: the model was told
+   *  to be "tap-first", to hand off to "the list shown below", and to end with «تفضّل 👇» —
+   *  on a surface where there is nothing below and nothing to tap. Asking for the menu on
+   *  the phone pushed a tappable list to a screen behind a full-screen call overlay and
+   *  said, aloud, "here you go", pointing at nothing.
+   *
+   *  `isVoiceTranscript` is NOT the same signal and cannot substitute: it says the INPUT
+   *  arrived as audio, which is also true of a WhatsApp voice note whose reply is read on a
+   *  screen. This says the OUTPUT will only ever be heard.
+   *
+   *  Undefined ⇒ every existing caller is unchanged, byte for byte. */
+  channel?: "voice_call";
 }
 
 export interface CustomerTurnOutcome {
@@ -1107,6 +1124,9 @@ export async function runCustomerTurn(
     // WO-SIMPLIFY (PART A) — the simple allergy posture. Default OFF → the legacy allergy
     // engine runs byte-identical; read ONLY by respond.ts / customer-turn.ts, never the prompt.
     allergySimple: allergySimpleOn,
+    // WO-CALL-CHANNEL — the reply will only ever be heard. Drives the prompt's call
+    // section; undefined for every other caller, so their prompt is byte-identical.
+    voiceCall: input.channel === "voice_call",
   };
 
   // Karim Pro P3 — per-turn PERCEPTION (gated on the narrow `perception` flag;

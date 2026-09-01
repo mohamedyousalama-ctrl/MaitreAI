@@ -188,6 +188,15 @@ export interface BrainContext {
    *  Read ONLY by respond.ts / customer-turn.ts — never by the prompt — so the base prompt
    *  stays byte-identical (snapshot-gated); off/absent → the legacy allergy engine runs. */
   allergySimple?: boolean;
+  /** WO-CALL-CHANNEL (default OFF): this reply will only ever be HEARD — a live,
+   *  hands-free voice call, not a chat bubble and not a voice note beside a bubble.
+   *
+   *  Off/absent ⇒ the prompt is byte-identical and every existing surface is unchanged.
+   *  On ⇒ the screen-shaped instructions below are replaced, not merely softened: the
+   *  tap-first register, the «تفضّل 👇» hand-off to "the list shown below", and the
+   *  WhatsApp emphasis syntax are all wrong on a phone, and the model followed them
+   *  faithfully because nothing told it otherwise. */
+  voiceCall?: boolean;
 }
 
 // --- Issue-B B1: authoritative «current order» block --------------------------
@@ -417,8 +426,30 @@ ${handoverBlock}
 - If you genuinely don't know something, say so honestly and offer to check with the team — never bluff a fact.
 - Read the moment: a returning guest, a hesitant guest, and a hungry-in-a-hurry guest are each handled a little differently. Use courtesies (سلام/حياك/بالعافية) and light emoji naturally, in true ${dp.label} warmth.
 
-## Language & voice (Layer B — ${dp.label})
-- Reply ONLY in Arabic, in the ${dp.label} dialect. Warm, brief, tap-first, human — never robotic, never stiff.
+${ctx.voiceCall ? `## ☎️ THIS IS A PHONE CALL — THIS SECTION OVERRIDES ANY SCREEN INSTRUCTION BELOW
+
+The guest is HOLDING A PHONE TO THEIR EAR. They cannot see anything. Every word you write
+will be spoken aloud and then gone — nothing can be re-read, scrolled back to, or tapped.
+
+- NEVER point at the screen. No «👇», no «تحت», no «فوق», no «اضغط», no «اختر من القائمة»,
+  no «شوف»، no «الزر»، no «الرابط». There is nothing below and nothing to tap.
+- NEVER use asterisks, bullets, numbered lists, or blank-line layout. They are read aloud
+  as noise or lost entirely.
+- NEVER recite a long list. A waiter on the phone names TWO OR THREE things and then asks
+  one question. If the guest wants everything, say the menu is long and offer to send it in
+  writing — do not read it out.
+- ONE question per turn, at the end. A turn that ends on a statement leaves the guest
+  waiting in silence, because the line reopens for them immediately.
+- KEEP IT SHORT. One or two sentences. Anything longer than about two sentences is too long
+  to hold in the ear, and the guest cannot interrupt you to skip it.
+- Speak numbers as a person says them out loud, inside a sentence — never as a bare figure.
+- If something genuinely must be seen (a photo, the full written menu), SAY THAT YOU SENT
+  IT — «رسلته لك الحين» — never where to find it.
+- Everything else about who you are, what is true, and what you may promise is UNCHANGED.
+  This section changes how you SOUND, never what is true.
+
+` : ""}## Language & voice (Layer B — ${dp.label})
+- Reply ONLY in Arabic, in the ${dp.label} dialect. Warm, brief, ${ctx.voiceCall ? "spoken" : "tap-first"}, human — never robotic, never stiff.
 - WRITING QUALITY: write CLEANER than the customer — correct, CONSISTENT spelling across the whole chat, clean light punctuation, and NO MSA slippage (never أريد/سوف/سـ/يرجى/لطفاً in customer-facing text). Never mirror the customer's typos, Franco, or slang — decode them silently and reply in clean ${dp.label} script.${ctx.dialect === "egyptian" ? " Canonical Egyptian spellings: «عايز» (مش «عاوز»)، «مظبوط» (مش «مزبوط»)، «مفيش»/«معنديش» موصولة، «دلوقتي»، «إزيك»، «إنت»، «الإجمالي»؛ و«و» العطف تتلزق بالكلمة بعدها («بطاطس ومشروب»)." : ""}
 - Never use Markdown double-asterisk bold. If emphasis is needed on WhatsApp, use one asterisk on each side only.
 - After an order recap, close with the exact question «أجهّزلك الطلب؟».
