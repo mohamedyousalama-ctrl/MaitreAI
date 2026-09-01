@@ -117,8 +117,14 @@ export default function DemoPhone() {
       // A real, valid, silent MP3 frame. `play()` needs a decodable source to count as
       // played; an empty src errors instead and leaves the element locked.
       el.src = SILENT_MP3;
-      el.muted = true;
-      void el.play().then(() => { el.pause(); el.muted = false; }).catch(() => { el.muted = false; });
+      // NOT MUTED, EVER. A first version set `muted = true` here and cleared it in the
+      // play() callbacks — so if that promise never settled (a real possibility: it is
+      // exactly the call Safari may leave hanging) the element stayed muted for the whole
+      // call, and every reply played "successfully", fired `onended`, and made no sound.
+      // A silence with a clean 200 and no error anywhere, caused by the unlock meant to fix
+      // one. The frame is silent by construction, so there is nothing to mute.
+      el.volume = 1;
+      void el.play().then(() => el.pause()).catch(() => { /* unlock refused; play() below will report */ });
     } catch { /* no Audio in this environment — the call screen degrades to text */ }
   }, []);
   const [recording, setRecording] = useState(false);

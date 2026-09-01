@@ -189,7 +189,23 @@ export async function POST(req: Request) {
     console.error("[demo/voice] spend accounting failed — refusing", e);
     return NextResponse.json({ error: "demo_unavailable" }, { status: 503 });
   }
-  if (!transcript) return NextResponse.json({ error: "stt_empty" }, { status: 422 });
+  if (!transcript) {
+    // WHY THERE WERE NO WORDS. An empty transcript has two completely different causes and
+    // this returned 422 with no evidence of either: the visitor genuinely said nothing (the
+    // clip is real audio of a quiet room), or the clip never contained usable audio at all
+    // (a recorder that produced a near-empty blob, or a container this provider will not
+    // decode). The byte count separates them at a glance, and the mime says whether the
+    // browser handed us what we expected — a MediaRecorder falls back to whatever it
+    // supports, which differs per browser and is not something the client reports.
+    //
+    // The visitor's WORDS are deliberately not logged — there are none — and neither is
+    // anything identifying: this is a size, a container and a model name.
+    console.warn(
+      `[demo/voice] empty transcript — bytes=${buf.length} mime=${JSON.stringify(String(mime).slice(0, 60))} ` +
+        `adapter=${sttCost.adapter} model=${sttCost.model} confidence=${sttConfidence ?? "n/a"}`
+    );
+    return NextResponse.json({ error: "stt_empty" }, { status: 422 });
+  }
 
   // Same ephemeral session as the typed route, resolved the same way — tenant AND
   // channel pinned — so a visitor who types «أبغى كبسة» and then says «وزيدها لبن» is

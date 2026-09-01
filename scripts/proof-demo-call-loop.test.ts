@@ -343,9 +343,20 @@ async function runScreen(opts: {
     const src = readFileSync(resolve(process.cwd(), "app/demo/DemoPhone.tsx"), "utf8");
     ok("the call button unlocks the player in the same handler that opens the screen",
       /onClick=\{\(\) => \{ unlockPlayer\(\); setInCall\(true\); \}\}/.test(src));
+    // TWO SEPARATE FACTS, not one window. The first version spanned both with a bounded
+    // `[\s\S]{0,120}`, so adding a comment between them failed an assertion about code
+    // that had not changed — a distance check masquerading as a behaviour check.
     ok("…and the unlock plays a real, decodable source, not an empty one",
       /const SILENT_MP3\s*=\s*\n?\s*"data:audio\/mpeg;base64,[A-Za-z0-9+/=]{200,}"/.test(src) &&
-      /el\.src = SILENT_MP3;[\s\S]{0,120}\.play\(\)/.test(src));
+      /el\.src = SILENT_MP3;/.test(src) &&
+      /unlockPlayer = useCallback\([\s\S]*?el\.play\(\)/.test(src));
+    // AND IT MUST NEVER LEAVE THE ELEMENT MUTED. A version of this set `muted = true`
+    // before play() and cleared it only in the promise callbacks, so a play() that never
+    // settled — the exact call Safari may leave hanging — kept the element muted for the
+    // whole call: every reply "played", fired onended, and made no sound. The frame is
+    // silent by construction, so nothing here has any reason to touch `muted`.
+    ok("…and the unlock never mutes the element it is unlocking",
+      !/el\.muted/.test(src));
     ok("…and the unlocked element is handed to the call screen",
       /player=\{unlockedPlayer\}/.test(src));
   }
