@@ -207,6 +207,8 @@ async function runScreen(opts: {
   player?: unknown;
   /** Make every play() reject with NotAllowedError — Safari's autoplay refusal. */
   playRejects?: boolean;
+  /** Fail only these play() attempts (1-indexed) — see the harness note. */
+  playRejectTurns?: number[];
   /** How long a reply takes to play. Needed for anything that happens DURING a reply. */
   playbackMs?: number;
 }) {
@@ -217,6 +219,7 @@ async function runScreen(opts: {
     server: opts.server ?? (() => ({ status: 200, body: AUDIO_OK })),
     serverDelayMs: opts.serverDelayMs ?? 0,
     playRejects: opts.playRejects ?? false,
+    playRejectTurns: opts.playRejectTurns ?? null,
     playbackMs: opts.playbackMs ?? 0,
   });
   const CallScreen = loadCallScreen(rt.React);
@@ -481,15 +484,47 @@ async function runScreen(opts: {
       r.everSaw("ما سمعت شي"));
   }
 
-  // A REJECTED play() ENDS THE CALL HONESTLY rather than looping in silence. This is the
-  // Safari behaviour itself: the call must say the voice is not working, not keep listening
-  // while claiming a safety rule caused the quiet.
+  // A VOICE THAT WILL NOT PLAY IS SAID OUT LOUD — after one, not zero, forgiveness.
+  //
+  // The call must never loop in silence while the screen reads «يتكلم…», and it must never
+  // dress a broken voice up as a safety rule. That has not changed. What HAS changed is
+  // where the line sits: the reply's audio is now usually STREAMED, fetched by the player
+  // as a separate request, so it has failure modes the turn itself does not — a ticket that
+  // expired while the caller was being thought about, a rate limit, one dropped connection.
+  // Ending a live demo in front of a prospect over one of those is a worse answer than a
+  // person would give, and the reply is already on their screen as text.
+  //
+  // So: the first failure costs one spoken sentence and the call continues. A SECOND in a
+  // row is a broken voice and ends the call honestly. `playRejects` fails EVERY turn, which
+  // is the persistent case, so it must still end — and must take two turns to do it.
   {
-    const blocked = await runScreen({ ms: 5200, playRejects: true });
-    ok("a rejected play() ends the call rather than looping silently",
-      blocked.log.voiceRequests.length === 1);
-    ok("…and the visitor is told the voice is not working, not fed a safety-rule excuse",
-      blocked.everSaw("الصوت") && !blocked.everSaw("سياسة"));
+    const blocked = await runScreen({ ms: 8000, playRejects: true });
+    ok(`a persistently rejected play() still ends the call (${blocked.log.voiceRequests.length} turns)`,
+      blocked.everSaw("الصوت"));
+    ok("…and never blames a safety rule for it", !blocked.everSaw("سياسة"));
+    // THE FORGIVENESS IS REAL, NOT A COMMENT. If the first failure ended the call as before,
+    // exactly one turn would ever be uploaded; absorbing it means a second turn happens.
+    ok(`…but it forgives the first failure and tries once more (${blocked.log.voiceRequests.length} turns)`,
+      blocked.log.voiceRequests.length >= 2);
+    // …AND IT DOES NOT FORGIVE FOREVER. A call that keeps uploading while nothing can be
+    // heard is the silent loop this assertion has always existed to forbid.
+    ok(`…and does not loop indefinitely (${blocked.log.voiceRequests.length} turns)`,
+      blocked.log.voiceRequests.length <= 3);
+  }
+
+  // …AND "TWO IN A ROW" MEANS IN A ROW.
+  //
+  // A counter that never resets turns "two consecutive failures" into "two failures ever",
+  // so a call that lost one sentence on turn 2 would die on a second blip twenty turns
+  // later — for a voice that has been working the whole time. Driven: removing the reset
+  // survived every other assertion in this file, because `playRejects` fails EVERY turn and
+  // therefore cannot tell a run from a total. This fails the 1st and 3rd playbacks with a
+  // good one between them, which is the shape that separates them.
+  {
+    const flaky = await runScreen({ ms: 9000, playRejectTurns: [1, 3] });
+    ok(`two NON-consecutive failures do not end the call (${flaky.log.voiceRequests.length} turns)`,
+      !flaky.everSaw("الصوت"));
+    ok("…and it is still going, not stuck", flaky.log.voiceRequests.length >= 3);
   }
   // OBJECT URLs SURVIVE THE CALL. Revoking the previous turn's URL destroyed audio the
   // THREAD was still rendering: every call bubble but the last played "الصوت ما اشتغل"

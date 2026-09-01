@@ -23,9 +23,17 @@
 // THE RULE. Bias toward dish names, never toward anything that can trigger a safety hold.
 // The filter asks the allergen lexicon itself rather than keeping a second list, because a
 // second list would drift from the first and this is precisely where drift is expensive.
+//
+// AND IT LIVES HERE, NOT IN lib/demo. It was written for the demo, applied at the demo
+// route, and proven there — while the LIVE WhatsApp path went on priming Whisper with the
+// tenant's raw menu, for every real restaurant whose menu contains a dairy, nut or egg
+// word. That is the same defect on the surface where a manufactured allergy reaches a
+// paying customer instead of a visitor. It is now applied inside `buildSttPromptVocab`,
+// which is the one function both callers pass through — the same reasoning that put the
+// ear-rendering pass inside the ElevenLabs adapter rather than in one of its two callers.
 // ============================================================================
 
-import { detectAllergenAvoidance, normalizeAr } from "@/lib/ai/allergen-gate";
+import { detectAllergenAvoidance, normalizeAr } from "../allergen-gate";
 
 /** Would this word, heard in an allergy sentence, name an allergen?
  *

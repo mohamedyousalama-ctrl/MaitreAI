@@ -324,8 +324,17 @@ ok("typed-actions imports the shared draft-freshness constant",
   //   2. voiceHardZeroReason still scans the reply for money / link / receipt;
   //   3. the conversation's PERSISTED is_safety_hold is folded in, so a calm-hold opened on
   //      an EARLIER turn still silences this one — the probe cannot see previous turns.
+  // BY WHICHEVER DELIVERY THE CHANNEL USES. On a call the reply is now STREAMED — the
+  // player fetches a signed URL and plays it while the provider is still speaking, which is
+  // where 1.8-5.5 measured seconds of dead air went — and everywhere else it is still
+  // buffered inline. This rail must not be the exit that keeps the old wait: it answers
+  // «كم قطعة تحب؟» → «خمسة», the most common spoken turn in the demo, so it is exactly the
+  // turn that needs to feel immediate.
   ok("a deterministic fill is synthesized, not skipped",
-    /const filledSpoken = await demoVoiceReply\(/.test(voice));
+    /const filledSpoken = isPhoneCall && speechTicketsAvailable\(\)/.test(voice));
+  ok("…streamed on a call, and buffered on a chat voice note",
+    /\?\s*demoVoiceTicket\(filledText,/.test(voice) &&
+    /:\s*await demoVoiceReply\(filledText, filledSpeakOpts\)/.test(voice));
   ok("…and it always reports WHY it was silent, so the loop cannot read it as a failure",
     /replyAudioSilence: demoVoiceSilenceKind\(filledSpoken\.skipped\)/.test(voice));
   ok("…and a safety hold from an EARLIER turn still silences it",

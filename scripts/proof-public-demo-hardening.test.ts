@@ -400,9 +400,93 @@ for (const probe of [
 ]) {
   ok(`the containment pattern still detects: ${probe.slice(0, 46)}…`, REACHES_PROVIDER.test(probe));
 }
-const bypassers = demoSurface.filter((f) => f !== DEMO_TTS_WRAPPER && REACHES_PROVIDER.test(codeOf(f)));
-ok(`no demo file reaches a voice provider except through the pinned wrapper${bypassers.length ? ` — bypassed by: ${bypassers.join(", ")}` : ""}`,
+// ── THE SANCTIONED SET, AND WHAT EACH MEMBER OWES ──────────────────────────
+//
+// This was "exactly one file may reach a provider", which was the right invariant while
+// there was one way to deliver audio. There are now two: buffer the whole synthesis and
+// return base64 (a chat voice note), or stream it so a caller on a live phone call hears
+// the first word while the last is still being made. Streaming needs a GET an <audio>
+// element can point at — the only progressive path on an iPhone — so a second file
+// necessarily talks to the provider.
+//
+// THE ANSWER IS NOT TO WIDEN THE LIST AND MOVE ON. A named exemption with nothing behind
+// it is how a guard becomes a comment. So the set is small, closed, and every member must
+// SHOW that it still enforces the two things this guard exists for:
+//
+//   THE VOICE IS PINNED — an unpinned adapter silently selects OpenAI `onyx`, an American
+//   male reading Najdi Arabic, reporting no error at all.
+//   THE INPUT IS CAPPED — TTS bills per character and this page is unauthenticated.
+//
+// Each file below is checked for how IT closes both, because they close them differently.
+const DEMO_TTS_WRAPPERS = new Map<string, { pin: RegExp; cap: RegExp; why: string }>([
+  [DEMO_TTS_WRAPPER, {
+    // The buffered path chooses an adapter, so it must assert which one it chose.
+    pin: /demoVoiceProviderPinned\s*\(|voiceMatchesPin\s*\(/,
+    cap: /DEMO_TTS_MAX_CHARS/,
+    why: "chooses the adapter, so it pins and re-checks the voice it got back",
+  }],
+  ["lib/demo/speech-ticket.ts", {
+    // The ticket minter never decides anything itself: it asks the SAME decision function
+    // the buffered path asks, which is what makes the two deliveries inseparable.
+    pin: /demoVoiceDecision\s*\(/,
+    cap: /DEMO_TTS_MAX_CHARS/,
+    why: "defers every gate to demoVoiceDecision, shared with the buffered path",
+  }],
+  ["app/api/demo/speak/route.ts", {
+    // The streaming endpoint cannot select a provider at all — it names the ElevenLabs
+    // function directly, so there is no adapter lookup for `onyx` to win. Its cap comes
+    // from the ticket verifier, which re-reads the length rather than trusting the minter.
+    pin: /elevenlabsSpeechStream\s*\(/,
+    cap: /verifySpeechTicket\s*\(/,
+    why: "names ElevenLabs directly (no adapter to mis-select) and re-verifies the ticket",
+  }],
+]);
+
+const bypassers = demoSurface.filter((f) => !DEMO_TTS_WRAPPERS.has(f) && REACHES_PROVIDER.test(codeOf(f)));
+ok(`no demo file reaches a voice provider except through the sanctioned set${bypassers.length ? ` — bypassed by: ${bypassers.join(", ")}` : ""}`,
   bypassers.length === 0);
+ok(`the sanctioned set is small and named (${DEMO_TTS_WRAPPERS.size})`, DEMO_TTS_WRAPPERS.size <= 3);
+
+for (const [file, { pin, cap, why }] of DEMO_TTS_WRAPPERS) {
+  const src = codeOf(file);
+  ok(`${file} exists and is scanned`, src.length > 0);
+  ok(`…and it pins the voice (${why})`, pin.test(src));
+  ok(`…and it bounds the input`, cap.test(src));
+  // AND NONE OF THEM MAY REACH OPENAI. That is the substitution this whole guard exists
+  // to prevent, and it must be impossible from every member, not only the original one.
+  ok(`…and it never reaches OpenAI speech`,
+    !/api\.openai\.com|\/v1\/audio\/speech/.test(src));
+}
+
+// ── AND THE STREAMING ENDPOINT NEVER SPEAKS THE CALLER'S OWN WORDS ─────────
+//
+// The dangerous version of that route is one line different from the safe one:
+// `/speak?text=…` is a free, unauthenticated text-to-speech oracle on a public page, in our
+// name, on our card, in our registered voice — and it routes around every control in this
+// repo, because all of them live on the POST path an <audio> element never touches.
+//
+// What must hold is that the ONLY text reaching the provider came out of a ticket WE
+// signed. Asserted on the source because this route needs a live provider to execute.
+{
+  const speak = codeOf("app/api/demo/speak/route.ts");
+  ok("the streaming route reads no text from the request",
+    !/searchParams\.get\(\s*["'](text|q|say|body|reply)["']\s*\)/.test(speak) &&
+    !/req\.(json|text|formData)\s*\(/.test(speak));
+  // The synthesizer is fed the VERIFIED payload and nothing else.
+  const call = (() => {
+    const at = speak.indexOf("elevenlabsSpeechStream(");
+    return at >= 0 ? speak.slice(at, at + 320) : "";
+  })();
+  ok("…and it synthesizes the verified ticket's own text",
+    /elevenlabsSpeechStream\(\s*verdict\.payload\.text/.test(call));
+  ok("…in the verified ticket's own voice, never one from the query string",
+    /voiceId:\s*verdict\.payload\.voiceId/.test(call));
+  ok("…and it refuses before synthesizing when the ticket does not verify",
+    speak.indexOf("if (!verdict.ok)") > 0 &&
+    speak.indexOf("if (!verdict.ok)") < speak.indexOf("elevenlabsSpeechStream("));
+  ok("…and it is host-gated like every other demo route", /isDemoHost/.test(speak));
+  ok("…and rate-limited, so a ticket cannot be replayed in bulk", /rateLimit\(/.test(speak));
+}
 
 // A browser-synthesized voice is an unchosen voice — the same defect as onyx, client-side,
 // and it evades the wrapper completely because it never touches the server.

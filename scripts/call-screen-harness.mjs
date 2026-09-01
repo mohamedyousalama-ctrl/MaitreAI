@@ -192,7 +192,9 @@ function loadTs(rel) {
  * `server` is called for every /api/demo/voice request and returns `{status, body}`.
  * `capabilities` is the boolean the probe reports.
  */
-export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0, playRejects = false, playbackMs = 0 } = {}) {
+export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0, playRejects = false, playRejectTurns = null, playbackMs = 0 } = {}) {
+  // Counts every play() attempt, so a test can fail a SPECIFIC one. See the note in play().
+  let playAttempts = 0;
   const log = {
     micPrompts: 0,
     tracksOpened: 0,
@@ -283,7 +285,16 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
     get src() { return this._src; }
     set src(v) { this._src = v; }
     async play() {
-      if (playRejects) { const e = new Error("play() blocked"); e.name = "NotAllowedError"; throw e; }
+      // WHICH PLAYBACKS FAIL, not just whether any do. `playRejects` fails every one, which
+      // is the persistently-broken-voice case. `playRejectTurns` fails only the listed
+      // attempts (1-indexed), which is the case a total switch cannot express at all: a
+      // transient failure, then a good reply, then another transient failure. The screen
+      // forgives ONE failure in a row and ends the call on two, so "not in a row" is a
+      // distinct behaviour — and without this the reset that makes it true was untested.
+      playAttempts += 1;
+      const rejectThis = playRejects ||
+        (Array.isArray(playRejectTurns) && playRejectTurns.includes(playAttempts));
+      if (rejectThis) { const e = new Error("play() blocked"); e.name = "NotAllowedError"; throw e; }
       log.played.push(this._src || this.url);
       // REAL PLAYBACK TAKES TIME, and with `playbackMs: 0` this resolved on a microtask —
       // so nothing that happens DURING a reply could ever be observed. Barge-in is exactly

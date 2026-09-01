@@ -17,7 +17,7 @@
 // contains no protected value at all.
 // ============================================================================
 
-import { callCarrierFor, ALL_CARRIER_REASONS } from "../lib/demo/call-carriers.ts";
+import { callCarrierFor, ALL_CARRIER_REASONS, carrierIsSafeToSpeak } from "../lib/demo/call-carriers.ts";
 import { voiceHardZeroReason } from "../lib/messaging/voice-budget.ts";
 import { toSpokenText } from "../lib/ai/tts/spoken-text.ts";
 
@@ -167,9 +167,18 @@ console.log("\n── THE ROUTE ACTUALLY USES IT, AND ONLY WHEN SILENT ───
   // looking at the reply, so an acknowledgement in place of it is not a rescue — it is a
   // second voice note saying less than the bubble beside it.
   ok("…and only on a phone call, never on a chat voice note",
-    /if \(isPhoneCall && spoken\.skipped && !spoken\.audioBase64\)/.test(code));
-  ok("…and only if the carrier itself synthesized, never a substitute voice",
-    /if \(carrierAudio\.audioBase64\)/.test(code));
+    /if \(isPhoneCall && spoken\.skipped && !spoken\.audioBase64 && !spoken\.speechUrl\)/.test(code));
+  // BOTH DELIVERIES COUNT AS AUDIO. A call now normally receives `speechUrl` — a signed URL
+  // the browser plays while the provider is still synthesizing — and not `audioBase64`.
+  // Asking only about the inline field would fire a carrier over a perfectly good streamed
+  // answer, so «كم سعر المندي؟» would be answered with «تمام، أرسلت لك التفاصيل» INSTEAD of
+  // the price. That is the same defect the carrier was built to fix, arriving from the
+  // other side.
+  ok("…and it asks about BOTH deliveries, not just the inline one",
+    /!spoken\.audioBase64 && !spoken\.speechUrl/.test(code) &&
+    /carrierAudio\.audioBase64 \|\| carrierAudio\.speechUrl/.test(code));
+  ok("…and only if the carrier itself produced audio, never a substitute voice",
+    /if \(carrierAudio\.audioBase64 \|\| carrierAudio\.speechUrl\)/.test(code));
 
   // AND THE CALL PATH MUST STILL ASK FOR SPOKEN PRICES. Deleting that one line puts the
   // Founder's exact complaint straight back — Khalid answering «كم سعر المندي؟» with an
@@ -177,10 +186,19 @@ console.log("\n── THE ROUTE ACTUALLY USES IT, AND ONLY WHEN SILENT ───
   // confirmed nothing else in the suite notices. Anchored INSIDE the demoVoiceReply call so
   // a mention elsewhere cannot satisfy it, and paired with the safety signals so it is
   // visible that this sits alongside them rather than replacing them.
+  // ANCHORED ON THE SHARED OPTIONS. The reply is now delivered two ways — buffered
+  // (`demoVoiceReply`) or streamed (`demoVoiceTicket`) — and both are handed the SAME
+  // `speakOpts` object. Pinning that object is what makes this assertion true of whichever
+  // delivery runs, instead of true of one of them and silent about the other.
   const replyCall = (() => {
-    const at = code.indexOf("demoVoiceReply(closed.reply");
+    const at = code.indexOf("const speakOpts = {");
     return at >= 0 ? code.slice(at, at + 500) : "";
   })();
+  ok("both deliveries are handed the same options object", replyCall.length > 0);
+  ok("…and the streamed delivery is the one the call uses",
+    /streamTheCall\s*\n?\s*\?\s*demoVoiceTicket\(closed\.reply, \{ \.\.\.speakOpts/.test(code));
+  ok("…with the buffered delivery kept for everything else",
+    /:\s*await demoVoiceReply\(closed\.reply, speakOpts\)/.test(code));
   // Gated on the channel, not handed to everyone: the waiver is paid for by the CALL
   // SCREEN showing the reply while the audio plays, and a chat voice note never struck that
   // bargain. `isPhoneCall` is itself pinned in proof-call-channel.test.ts.
@@ -196,6 +214,50 @@ console.log("\n── THE ROUTE ACTUALLY USES IT, AND ONLY WHEN SILENT ───
   const ras = readFileSync(resolve(process.cwd(), "lib/messaging/respond-and-send.ts"), "utf8");
   ok("the live WhatsApp path never asks for spoken prices",
     !/spokenPricesAllowed/.test(ras));
+}
+
+console.log("\n── THE CARRIER'S OWN GUARD, DRIVEN AGAINST A POISONED STRING ────");
+{
+  // THE GUARD WAS NEVER EXERCISED, AND ONE QUARTER OF IT DID NOTHING.
+  //
+  // `CARRIERS` is a module constant, so the only strings that ever reached these four
+  // checks were the three we already know are clean. A guard tested only on inputs that
+  // pass it is not tested. Underneath, `NUMBER_WORD` was anchored with `\b` — JavaScript's
+  // word boundary is defined over [A-Za-z0-9_], so between two Arabic letters there is no
+  // boundary and the pattern matched NOTHING it was written for. A carrier edited to
+  // «تمام، اعتمدنا طلبك رقم مية وواحد» was spoken, while the header promised the check held
+  // "even if someone later edits it carelessly" — the only case it exists for.
+  //
+  // The predicate is exported now so the poisoned strings can actually be fed to it.
+  for (const poisoned of [
+    "تمام، اعتمدنا طلبك رقم مية وواحد",     // spelled number — the case that was inert
+    "تمام، الحساب صار خمسة وثلاثين",
+    "أرسلت لك المبلغ، ألف تمام",
+    "تمام، أرسلت لك التفاصيل ٤٥",           // Arabic-Indic digit
+    "تمام، أرسلت لك التفاصيل 45",           // ASCII digit
+    "تمام، المبلغ بالريال",                  // currency word
+    "تمام، أرسلت لك رابط الدفع",             // link word
+    "تفضل https://pay.example.com",
+    "",                                      // nothing to say is not a carrier
+    "   ",
+  ]) {
+    ok(`«${poisoned.slice(0, 34)}» is refused`, carrierIsSafeToSpeak(poisoned) === false);
+  }
+
+  // …AND IT STILL PASSES THE LINES WE ACTUALLY SHIP. A guard that refuses everything is the
+  // same outage as one that refuses nothing, arriving from the other side — it would make
+  // every price turn silent again, which is the defect the carrier was built to fix.
+  for (const reason of ["money_figure", "payment_link", "receipt"] as const) {
+    const line = callCarrierFor(reason);
+    ok(`the shipped «${reason}» carrier exists`, typeof line === "string" && line.length > 0);
+    ok(`…and passes its own guard`, line !== null && carrierIsSafeToSpeak(line) === true);
+  }
+
+  // AND «الواحد» IS NOT «واحد». Over-matching inside a longer word would refuse ordinary
+  // Arabic prose and silently disable the whole feature — the same failure mode the STT
+  // vocabulary filter was bitten by when its probe matched its own scaffolding.
+  ok("a number word inside a longer word is not a number",
+    carrierIsSafeToSpeak("تمام، الواحد منهم جاهز") === true);
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-carriers: ${pass}/${pass + fails.length} passed`);

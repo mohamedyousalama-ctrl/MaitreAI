@@ -25,10 +25,11 @@ import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
 import { expectedAnswerClass, CLASS_PRIORITY_TERMS } from "@/lib/ai/voice-aliases";
-import { safeSttVocabulary } from "@/lib/demo/stt-vocab";
+import { safeSttVocabulary } from "@/lib/ai/stt/safe-vocab";
 import { demoVoiceReply, demoVoiceSignalsFor, demoVoiceSilenceKind } from "@/lib/demo/voice-out";
 import { presentationForCall } from "@/lib/demo/call-presentation";
 import { isPhoneCallChannel } from "@/lib/demo/call-channel";
+import { demoVoiceTicket, speechTicketsAvailable } from "@/lib/demo/speech-ticket";
 import { callCarrierFor } from "@/lib/demo/call-carriers";
 import type { VoiceZeroReason } from "@/lib/messaging/voice-budget";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
@@ -384,11 +385,19 @@ export async function POST(req: Request) {
         }
 
         const filledText = formatCustomerVisibleText(filled.reply, filled.dialect);
-        const filledSpoken = await demoVoiceReply(filledText, {
+        // THE SAME DELIVERY AS THE OTHER EXIT. This rail is the one flow that already
+        // behaved like a phone call, so leaving it on the buffered path would give the same
+        // caller progressive audio when they ask a question and 1.8-5.5s of silence when
+        // they answer «حبتين» — which is the turn that most needs to feel immediate.
+        const filledSpeakOpts = {
           inboundWasVoice: true,
           safetyHold: heldFromEarlierTurn,
           isReceipt: false,    // a quantity fill is never a receipt
-        });
+          spokenPricesAllowed: isPhoneCall,
+        };
+        const filledSpoken = isPhoneCall && speechTicketsAvailable()
+          ? demoVoiceTicket(filledText, { ...filledSpeakOpts, sid: conversationId })
+          : await demoVoiceReply(filledText, filledSpeakOpts);
         if (filledSpoken.spend) {
           try {
             await mustWrite<{ id: string }>(
@@ -415,6 +424,7 @@ export async function POST(req: Request) {
           transcript,
           reply: filledText,
           replyAudio: filledSpoken.audioBase64,
+          replyAudioUrl: filledSpoken.speechUrl,
           replyAudioMime: filledSpoken.mime,
           // Never omitted. The client's default for a missing field is "unavailable", by
           // design — an unexplained silence must not be dressed up as a product rule — so
@@ -501,7 +511,23 @@ export async function POST(req: Request) {
     const msClose = Date.now() - tClose;
     const voiceSignals = demoVoiceSignalsFor(out, closed);
     const tTts = Date.now();
-    let spoken = await demoVoiceReply(closed.reply, {
+    // STREAM ON A CALL, BUFFER EVERYWHERE ELSE.
+    //
+    // `demoVoiceReply` waits for the provider to finish speaking the entire reply before it
+    // returns a byte. Measured here in production, that is 1807-5472ms of a caller holding
+    // a phone to their ear and hearing nothing — on audio ElevenLabs had already started
+    // producing. `demoVoiceTicket` does the identical decision and hands back a URL instead,
+    // so playback begins while the sentence is still being synthesized.
+    //
+    // The CHAT voice note keeps the buffered path deliberately: it is read on the screen it
+    // was recorded on, progressive playback buys it nothing, and it is the delivery that has
+    // been proven in front of visitors. A latency fix has no business changing it.
+    //
+    // Both call `demoVoiceDecision`, so the two deliveries cannot disagree about whether a
+    // reply may be spoken — only about how the bytes travel. And a missing signing key means
+    // no ticket, so this falls back to the buffered path rather than to silence.
+    const streamTheCall = isPhoneCall && speechTicketsAvailable();
+    const speakOpts = {
       inboundWasVoice: true,
       safetyHold: voiceSignals.safetyHold,
       isReceipt: voiceSignals.isReceipt,
@@ -512,7 +538,10 @@ export async function POST(req: Request) {
       // …ON THE CALL ONLY. The waiver is paid for by the call screen showing this reply
       // while the audio plays; a voice note is not that bargain and keeps the old rule.
       spokenPricesAllowed: isPhoneCall,
-    });
+    };
+    let spoken = streamTheCall
+      ? demoVoiceTicket(closed.reply, { ...speakOpts, sid: conversationId })
+      : await demoVoiceReply(closed.reply, speakOpts);
 
     // DEAD AIR IS NOT AN ACCEPTABLE ANSWER ON A PHONE CALL.
     //
@@ -528,13 +557,18 @@ export async function POST(req: Request) {
     // merits. It says the turn happened; the protected value still goes only to text.
     //
     // A SAFETY HOLD GETS NO CARRIER and stays completely silent — see call-carriers.ts.
-    if (isPhoneCall && spoken.skipped && !spoken.audioBase64) {
+    // `!spoken.audioBase64 && !spoken.speechUrl` — BOTH deliveries. Asking only about the
+    // base64 would have fired a carrier over a perfectly good streamed reply, so the caller
+    // would hear «تمام، أرسلت لك التفاصيل» INSTEAD of the answer.
+    if (isPhoneCall && spoken.skipped && !spoken.audioBase64 && !spoken.speechUrl) {
       const carrier = callCarrierFor(spoken.skipped as VoiceZeroReason);
       if (carrier) {
-        const carrierAudio = await demoVoiceReply(carrier, { inboundWasVoice: true });
+        const carrierAudio = streamTheCall
+          ? demoVoiceTicket(carrier, { inboundWasVoice: true, sid: conversationId })
+          : await demoVoiceReply(carrier, { inboundWasVoice: true });
         // Only if the carrier ITSELF produced audio. If synthesis fails here we are back to
         // the silence we started with, which is correct — never a substitute voice.
-        if (carrierAudio.audioBase64) {
+        if (carrierAudio.audioBase64 || carrierAudio.speechUrl) {
           spoken = { ...carrierAudio, spend: carrierAudio.spend ?? spoken.spend };
         } else if (carrierAudio.spend) {
           // A REFUSAL AFTER A PAID SYNTHESIS IS STILL A CHARGE. `wrong_voice` is decided by
@@ -621,6 +655,11 @@ export async function POST(req: Request) {
       // Base64 rather than a URL: no object to store, nothing to expire, and no public
       // artifact of a stranger's session left behind. Null whenever we chose not to speak.
       replyAudio: spoken.audioBase64,
+      // EXACTLY ONE OF THESE TWO IS EVER SET. `replyAudio` is the whole clip inline, which
+      // is what a chat voice note wants; `replyAudioUrl` is a signed, one-minute URL the
+      // player fetches, so a caller hears the first word while the last is still being
+      // synthesized. The client picks whichever it was given.
+      replyAudioUrl: spoken.speechUrl,
       replyAudioMime: spoken.mime,
       // WHY there is no audio, in two coarse shapes: "rule" (this reply is text-only on
       // purpose — safety, money, a payment link, a receipt) or "unavailable" (the voice is

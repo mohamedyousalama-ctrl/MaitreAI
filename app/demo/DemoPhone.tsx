@@ -892,6 +892,9 @@ function CallScreen({
   /** One silent turn is a pause; two in a row is a dropped line. Reset whenever the
    *  visitor is actually heard, so a long call gets a fresh chance each time. */
   const reprompted = useRef(false);
+  // CONSECUTIVE playback failures — see the note where it is read. Reset by any reply that
+  // actually plays, so this counts a run of failures, never a total.
+  const speechFailures = useRef(0);
   // `player` is now a PROP — the element the opening tap unlocked. It was a local ref
   // holding a fresh `new Audio()` per turn, which is precisely what Safari refuses to play.
   const abort = useRef<AbortController | null>(null);
@@ -1094,7 +1097,7 @@ function CallScreen({
 
       const data = (await res.json()) as {
         conversationId?: string; transcript?: string; reply?: string;
-        replyAudio?: string | null; replyAudioMime?: string | null;
+        replyAudio?: string | null; replyAudioUrl?: string | null; replyAudioMime?: string | null;
         replyAudioSilence?: SilenceKind;
         presentation?: Presentation | null;
       };
@@ -1108,7 +1111,16 @@ function CallScreen({
       const reply = String(data.reply ?? "");
       setLastText(reply);
 
-      const action = callResponseAction(res.status, !!data.replyAudio, data.replyAudioSilence ?? "none");
+      // EITHER DELIVERY COUNTS AS AUDIO. `replyAudio` is the whole clip inline; a call now
+      // usually gets `replyAudioUrl` instead — a signed one-minute URL that plays WHILE the
+      // provider is still synthesizing, which is where 1.8-5.5 seconds of dead air went.
+      // Asking only about the inline field would have read every streamed reply as "the
+      // voice is not working" and ended the call on turn one.
+      const action = callResponseAction(
+        res.status,
+        !!data.replyAudio || !!data.replyAudioUrl,
+        data.replyAudioSilence ?? "none",
+      );
       if (action.kind === "end") {
         // The voice is not working. Say THAT — do not keep recording while telling the
         // visitor a safety rule caused the silence, which is a fabricated demonstration of
@@ -1129,25 +1141,46 @@ function CallScreen({
       }
 
       // ── speak ─────────────────────────────────────────────────────────────
-      // decodeReplyAudio, not a second inline atob: this module exists because a bad
-      // payload used to throw and silently drop a reply, and it is driven with real bytes
-      // in the demo proof. A private copy here would be a second thing to get wrong.
-      const decoded = decodeReplyAudio(data.replyAudio, data.replyAudioMime);
-      if (!decoded) {
-        // Audio arrived and would not decode. That is the voice failing, not a product
-        // rule, and it must not borrow the rule's explanation.
-        push({ from: "khalid", kind: "text", text: reply, presentation: data.presentation ?? null });
-        stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));
-        return;
+      //
+      // TWO DELIVERIES, ONE PLAYER.
+      //
+      // STREAMED (the call's normal path): the server hands back a URL and the browser
+      // fetches it itself, so the first bytes play while the provider is still speaking the
+      // rest. This is the whole latency fix — an <audio> element pointed at a URL is also
+      // the ONLY progressive path on an iPhone, which has no MediaSource, and iPhones are
+      // most of who is shown this page.
+      //
+      // INLINE (the fallback, and what a chat voice note always uses): the whole clip
+      // arrives as base64 and is decoded into a blob, exactly as before.
+      let url: string;
+      if (data.replyAudioUrl) {
+        url = data.replyAudioUrl;
+        // NOT registered in `audioUrls`: that list exists to revoke object URLs, and
+        // revoking is meaningless for an ordinary HTTP URL. It is also why the thread's
+        // record of this reply stays playable — the URL is signed for a minute, so a bubble
+        // pressed later falls back to its text rather than to a broken player. The reply
+        // text itself is pushed below either way, which is what the record is for.
+      } else {
+        // decodeReplyAudio, not a second inline atob: this module exists because a bad
+        // payload used to throw and silently drop a reply, and it is driven with real bytes
+        // in the demo proof. A private copy here would be a second thing to get wrong.
+        const decoded = decodeReplyAudio(data.replyAudio, data.replyAudioMime);
+        if (!decoded) {
+          // Audio arrived and would not decode. That is the voice failing, not a product
+          // rule, and it must not borrow the rule's explanation.
+          push({ from: "khalid", kind: "text", text: reply, presentation: data.presentation ?? null });
+          stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));
+          return;
+        }
+        url = URL.createObjectURL(new Blob([decoded.bytes], { type: decoded.type }));
+        // REGISTERED WITH THE PARENT, NOT REVOKED PER TURN. Revoking the previous turn's URL
+        // destroyed audio the THREAD was still rendering: every call bubble but the last
+        // played «الصوت ما اشتغل» the moment anyone pressed it, because SpokenReply uses
+        // preload="none" and only fetches on press. The commit's own reason for pushing
+        // these into the thread is to leave a record of what was said; half of it was being
+        // deleted on the way out. The parent already revokes this list on unmount.
+        audioUrls.current.push(url);
       }
-      const url = URL.createObjectURL(new Blob([decoded.bytes], { type: decoded.type }));
-      // REGISTERED WITH THE PARENT, NOT REVOKED PER TURN. Revoking the previous turn's URL
-      // destroyed audio the THREAD was still rendering: every call bubble but the last
-      // played «الصوت ما اشتغل» the moment anyone pressed it, because SpokenReply uses
-      // preload="none" and only fetches on press. The commit's own reason for pushing
-      // these into the thread is to leave a record of what was said; half of it was being
-      // deleted on the way out. The parent already revokes this list on unmount.
-      audioUrls.current.push(url);
       push({ from: "khalid", kind: "voice", text: reply, audioUrl: url, presentation: data.presentation ?? null });
 
       setPhase("speaking");
@@ -1250,7 +1283,35 @@ function CallScreen({
       // visitor the voice is broken — because they spoke. Cheap, and the failure it
       // prevents is the worst one on this screen.
       if (barged) { void runTurn(); return; }
-      if (!played) { stopWith(endMessage({ kind: "end", reason: "voice_unavailable" })); return; }
+
+      // ONE BAD TURN IS NOT A BROKEN VOICE, AND TWO IS.
+      //
+      // This ended the call on the first failure, which was right when the audio arrived
+      // inside the turn's own JSON: if those bytes would not play, nothing would. A streamed
+      // reply is fetched SEPARATELY by the player, so it has failure modes the turn does not
+      // — a ticket that expired while the caller was still being thought about, a rate limit,
+      // a dropped connection on one request. Ending a live demo over one of those is a
+      // worse answer than a person would give.
+      //
+      // So the first failure is absorbed: the reply is already on the screen as text, the
+      // call keeps going, and the visitor loses one spoken sentence. A SECOND failure in a
+      // row is a broken voice and is still said out loud — the rule this screen has always
+      // held is that a call which cannot speak must not pretend it is fine, and running
+      // silently turn after turn while the screen reads «يتكلم…» is exactly that pretence.
+      if (!played) {
+        speechFailures.current += 1;
+        if (speechFailures.current >= 2) {
+          stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));
+          return;
+        }
+        setTextOnly(true);
+        setPhase("speaking");
+        await new Promise((r) => setTimeout(r, 900));
+        if (live.current) void runTurn();
+        return;
+      }
+      // It played. Whatever went wrong last turn is over.
+      speechFailures.current = 0;
       void runTurn();
     } catch (err) {
       if ((err as Error)?.name === "AbortError") return;

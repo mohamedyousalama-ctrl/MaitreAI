@@ -50,10 +50,43 @@ const CARRIERS: Readonly<Record<CarrierReason, string>> = {
  *  independently of `voiceHardZeroReason` because that function is tuned for model prose,
  *  and a carrier is a fixed string we control: it should be held to the stricter bar. */
 const ANY_DIGIT = /[0-9٠-٩۰-۹]/;
+// `\b` CANNOT ANCHOR BESIDE ARABIC SCRIPT. JavaScript's word boundary is defined over
+// [A-Za-z0-9_], so between two Arabic letters there is no boundary at all and this pattern
+// matched NOTHING it was written to catch. Driven: a carrier edited to «تمام، اعتمدنا طلبك
+// رقم مية وواحد» passed straight through and would have been spoken, while the header
+// promised the check held "even if someone later edits it carelessly" — which is the only
+// scenario it exists for. Three-quarters of the guard worked (digits, currency, links); the
+// number words were decoration.
+//
+// `(?<![\p{L}\p{N}])…(?![\p{L}\p{N}])` with the `u` flag is the same intent expressed over
+// every script: not preceded or followed by a letter or a digit, so «واحد» is caught and
+// «الواحد» is not spuriously matched inside a longer word.
 const NUMBER_WORD =
-  /\b(واحد|اثنين|ثنتين|ثلاثة|أربعة|خمسة|ستة|سبعة|ثمانية|تسعة|عشرة|عشرين|ثلاثين|أربعين|خمسين|ستين|سبعين|ثمانين|تسعين|مية|مئة|ألف)\b/;
+  /(?<![\p{L}\p{N}])(واحد|اثنين|ثنتين|ثلاثة|أربعة|خمسة|ستة|سبعة|ثمانية|تسعة|عشرة|عشرين|ثلاثين|أربعين|خمسين|ستين|سبعين|ثمانين|تسعين|مية|مئة|ألف)(?![\p{L}\p{N}])/u;
 const CURRENCY = /ر\.?\s?س|ريال|جنيه|SAR|EGP/i;
 const LINKISH = /https?:|www\.|\.com|رابط|لينك/i;
+
+/**
+ * May this exact sentence be spoken as a carrier?
+ *
+ * EXPORTED SO IT CAN BE DRIVEN. Inline, these four checks were unreachable from any proof:
+ * `CARRIERS` is a module constant, so the only strings that ever reached them were the
+ * three we already know are clean, and a guard tested only against inputs that pass it is
+ * not tested at all. That is precisely how `NUMBER_WORD` shipped with a `\b` that JavaScript
+ * cannot anchor beside Arabic script — matching nothing, for as long as it existed, while
+ * the header promised it caught a careless edit.
+ *
+ * Held to a STRICTER bar than `voiceHardZeroReason`, which is tuned for model prose. A
+ * carrier is a fixed string we author, so no digit in any script, no spelled number, no
+ * currency and no link may appear in one — and then it must pass the product's own gate on
+ * its own merits as well.
+ */
+export function carrierIsSafeToSpeak(carrier: string): boolean {
+  const t = String(carrier ?? "");
+  if (!t.trim()) return false;
+  if (ANY_DIGIT.test(t) || NUMBER_WORD.test(t) || CURRENCY.test(t) || LINKISH.test(t)) return false;
+  return voiceHardZeroReason(t, { safetyHold: false, isReceipt: false }) === null;
+}
 
 /**
  * The line a caller hears for a turn whose real reply may not be spoken — or null.
@@ -74,12 +107,7 @@ export function callCarrierFor(reason: VoiceZeroReason | null | undefined): stri
   // currency or a link into one of these strings would defeat the entire point, and the
   // failure would be silent and audible to a customer. Verified on every call rather than
   // trusted at authoring time.
-  if (ANY_DIGIT.test(carrier) || NUMBER_WORD.test(carrier) || CURRENCY.test(carrier) || LINKISH.test(carrier)) {
-    return null;
-  }
-  // And through the product's own gate, on its own merits.
-  if (voiceHardZeroReason(carrier, { safetyHold: false, isReceipt: false }) !== null) return null;
-  return carrier;
+  return carrierIsSafeToSpeak(carrier) ? carrier : null;
 }
 
 /** Every carrier, for a proof that wants to check them all without knowing the keys. */

@@ -60,6 +60,15 @@ export type DemoVoiceOutSkip =
 export interface DemoVoiceOut {
   /** base64 audio for the browser, or null with a reason the caller may log. */
   audioBase64: string | null;
+  /** …OR a URL the browser fetches, which plays while it is still being synthesized.
+   *
+   *  Exactly one of these two is ever set. `audioBase64` is the buffered delivery a chat
+   *  voice note wants — the whole clip in the turn's JSON, playable offline, unchanged
+   *  since it shipped. `speechUrl` is for a live phone call, where waiting for the last
+   *  byte of the last word costs the caller between 1.8 and 5.5 measured seconds of
+   *  silence. Both are produced from the SAME `demoVoiceDecision`, so the two deliveries
+   *  cannot answer "may we say this?" differently — only "how do the bytes travel". */
+  speechUrl: string | null;
   mime: string | null;
   skipped: DemoVoiceOutSkip | null;
   /** What the synthesis actually cost, for agent_runs. Null whenever we stayed silent.
@@ -194,20 +203,37 @@ export function demoVoiceSignalsFor(
 }
 
 
-/** Synthesize the demo's spoken reply, or explain why it stayed silent. Never throws. */
-export async function demoVoiceReply(
-  replyText: string,
-  opts?: {
-    inboundWasVoice?: boolean;
-    safetyHold?: boolean;
-    isReceipt?: boolean;
-    /** A live phone call, where this same screen shows the reply as text while the audio
-     *  plays — see the note on `voiceHardZeroReason`. Waives the money figure ONLY. */
-    spokenPricesAllowed?: boolean;
-  }
-): Promise<DemoVoiceOut> {
-  const none = (skipped: DemoVoiceOutSkip): DemoVoiceOut =>
-    ({ audioBase64: null, mime: null, skipped, spend: null });
+export interface DemoVoiceOpts {
+  inboundWasVoice?: boolean;
+  safetyHold?: boolean;
+  isReceipt?: boolean;
+  /** A live phone call, where this same screen shows the reply as text while the audio
+   *  plays — see the note on `voiceHardZeroReason`. Waives the money figure ONLY. */
+  spokenPricesAllowed?: boolean;
+}
+
+/** May we speak this reply, and in whose voice? */
+export type DemoVoiceDecision =
+  | { speak: true; text: string; voiceId: string }
+  | { speak: false; skipped: DemoVoiceOutSkip };
+
+/**
+ * EVERY REASON TO STAY SILENT, IN ONE PLACE — asked before a provider is reached.
+ *
+ * Extracted from `demoVoiceReply` because there are now TWO ways to turn a reply into
+ * sound: buffer the whole thing and hand back base64 (what WhatsApp-shaped callers want),
+ * and stream it so a caller hears the first word while the last one is still being made.
+ * Those two must never be able to answer "may we say this?" differently.
+ *
+ * This repo has already paid for the other arrangement more than once — the note in
+ * elevenlabs.ts on why the voice allow-list lives in the adapter says it plainly: "a guard
+ * that protects one of two callers protects neither in the case that matters." So the
+ * gates are not copied into the streaming path; there is one copy and both paths call it.
+ *
+ * Never throws.
+ */
+export function demoVoiceDecision(replyText: string, opts?: DemoVoiceOpts): DemoVoiceDecision {
+  const no = (skipped: DemoVoiceOutSkip): DemoVoiceDecision => ({ speak: false, skipped });
 
   // Defaulted rather than destructured: the docstring promises this never throws, and a
   // missing argument used to make it throw on property access.
@@ -215,11 +241,11 @@ export async function demoVoiceReply(
 
   // Speak only when spoken to. A voice note back to a typed message is not what WhatsApp
   // does and not what a visitor expects.
-  if (o.inboundWasVoice !== true) return none("not_triggered");
+  if (o.inboundWasVoice !== true) return no("not_triggered");
 
   const text = String(replyText ?? "").trim();
-  if (!text || !text.replace(INVISIBLE_RE, "").trim()) return none("empty");
-  if (text.length > DEMO_TTS_MAX_CHARS) return none("too_long");
+  if (!text || !text.replace(INVISIBLE_RE, "").trim()) return no("empty");
+  if (text.length > DEMO_TTS_MAX_CHARS) return no("too_long");
 
   // HARD-ZERO SUPPRESSION, before any provider is reached — so a suppressed turn also
   // costs nothing. Safety first, then receipt, then a payment link, then a money figure.
@@ -229,25 +255,45 @@ export async function demoVoiceReply(
     isReceipt: o.isReceipt === true,
     spokenPricesAllowed: o.spokenPricesAllowed === true,
   });
-  if (hardZero) return none(hardZero);
+  if (hardZero) return no(hardZero);
 
-  if (!demoVoiceProviderPinned()) return none("provider_unpinned");
+  if (!demoVoiceProviderPinned()) return no("provider_unpinned");
 
-  const adapter = getTtsAdapter();
   // A pinned `mock` is a deliberate no-voice configuration, not a failure — say so, rather
   // than logging a cause that is not true.
-  if (adapter.name === "mock") return none("mock_pinned");
+  if (getTtsAdapter().name === "mock") return no("mock_pinned");
+
+  // THE CANONICAL ID, not what was typed. The registry tolerates case and invisible
+  // characters so a correct id pasted from a dashboard is not read as an unknown voice, but
+  // ElevenLabs ids are case-sensitive; everything downstream uses the registered spelling.
+  const voiceId = lookupVoice(envTrim("ELEVENLABS_VOICE_ID"))?.voiceId ?? "";
+  return { speak: true, text, voiceId };
+}
+
+/** Synthesize the demo's spoken reply, or explain why it stayed silent. Never throws. */
+export async function demoVoiceReply(
+  replyText: string,
+  opts?: DemoVoiceOpts
+): Promise<DemoVoiceOut> {
+  const none = (skipped: DemoVoiceOutSkip): DemoVoiceOut =>
+    ({ audioBase64: null, speechUrl: null, mime: null, skipped, spend: null });
+
+  // ONE SET OF GATES, SHARED WITH THE STREAMING PATH. See demoVoiceDecision.
+  const decision = demoVoiceDecision(replyText, opts);
+  if (!decision.speak) return none(decision.skipped);
+  const { text, voiceId: pinnedVoiceId } = decision;
+
+  const adapter = getTtsAdapter();
 
   // PASS THE ID WE VALIDATED, and below, verify the one that came back. Calling
   // synthesize(text) with no options left the adapter to re-read ELEVENLABS_VOICE_ID
   // itself, so the value checked here and the value actually spoken were never the same
   // value — a default injected in the adapter shipped ElevenLabs' stock "Rachel" to a
   // visitor with skipped:null and every proof green.
-  // THE CANONICAL ID, not what was typed. The adapter now puts the registry's spelling on
-  // the wire and echoes that back, so comparing against the raw env value made a correct
-  // id with a zero-width character — the exact paste the registry tolerates on purpose —
-  // BUY a synthesis and then discard it as `wrong_voice`, every turn, forever.
-  const pinnedVoiceId = lookupVoice(envTrim("ELEVENLABS_VOICE_ID"))?.voiceId ?? "";
+  // (The canonical id came from the decision above. Comparing against the RAW env value
+  // instead made a correct id carrying a zero-width character — the exact paste the
+  // registry tolerates on purpose — BUY a synthesis and then discard it as `wrong_voice`,
+  // every turn, forever.)
   let result;
   try {
     // MP3, NOT OGG OPUS. This is a BROWSER, and Safari cannot decode Ogg Opus — so the
@@ -295,7 +341,7 @@ export async function demoVoiceReply(
     model: result.model, adapter: result.adapter,
   };
   const refuse = (why: DemoVoiceOutSkip): DemoVoiceOut =>
-    ({ audioBase64: null, mime: null, skipped: why, spend: spentAnyway });
+    ({ audioBase64: null, speechUrl: null, mime: null, skipped: why, spend: spentAnyway });
 
   // THE PROVIDER *AND* THE VOICE. Right company, wrong person is still a stranger reading
   // Najdi Arabic to a prospect. Exported as a pure function because inline it was
@@ -305,6 +351,7 @@ export async function demoVoiceReply(
 
   return {
     audioBase64: Buffer.from(result.audio).toString("base64"),
+    speechUrl: null,
     mime: result.mime,
     skipped: null,
     spend: {

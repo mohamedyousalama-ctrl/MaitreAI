@@ -20,7 +20,7 @@
 // recognizer biased toward a word hears that word, and one biased word trips a safety gate.
 // ============================================================================
 
-import { safeSttVocabulary } from "../lib/demo/stt-vocab.ts";
+import { safeSttVocabulary } from "../lib/ai/stt/safe-vocab.ts";
 import { detectAllergenAvoidance, normalizeAr } from "../lib/ai/allergen-gate.ts";
 
 let pass = 0;
@@ -125,6 +125,41 @@ console.log("\n── THE ROUTE FILTERS BEFORE IT CACHES ───────�
   ok("the route filters the vocabulary", /safeSttVocabulary\(/.test(code));
   ok("…before storing it in the cache",
     code.indexOf("safeSttVocabulary(") < code.indexOf("demoMenuCache = {"));
+}
+
+console.log("\n── AND THE LIVE WHATSAPP PATH IS COVERED, NOT ONLY THE DEMO ────");
+{
+  // THE FIX ORIGINALLY STOPPED AT THE DEMO. The filter was applied at the demo route and
+  // proven there, while `transcribeWhatsAppVoice` went on priming Whisper with the tenant's
+  // RAW menu — so every real restaurant whose menu names a dairy, nut or egg product kept
+  // the exact bug, on the surface where a manufactured allergy reaches a paying customer
+  // waiting on an order rather than a visitor clicking around a sales page.
+  //
+  // Both callers pass through `buildSttPromptVocab`, so that is where it belongs — the same
+  // reasoning that put the ear-rendering pass inside the TTS adapter instead of in one of
+  // its two callers. Driven on the real builder, not read off the source.
+  const { buildSttPromptVocab } = await import("../lib/ai/voice-quality.ts");
+
+  const prompt = buildSttPromptVocab(DEMO_MENU);
+  ok("the shared builder drops the word that caused it", !prompt.includes("لبن"));
+  for (const kept of ["كبسة", "مندي", "جريش", "لقيمات"]) {
+    ok(`…and still biases toward «${kept}»`, prompt.includes(kept));
+  }
+
+  // A TENANT MENU THAT IS NOTHING BUT ALLERGENS still yields a usable prompt: the generic
+  // ordering words survive, so the recognizer is not left worse off than unbiased.
+  const allergenic = buildSttPromptVocab(["لبن بارد", "مكسرات مشكلة", "بيض مسلوق"]);
+  for (const term of ["لبن", "مكسرات", "بيض"]) {
+    ok(`«${term}» never reaches the recognizer`, !allergenic.includes(term));
+  }
+  ok("…and the ordering words still do", allergenic.includes("منيو"));
+
+  // PRIORITY TERMS ARE NOT MENU NAMES and must not be filtered — they are the closed,
+  // repo-owned answer-class table (quantities, sizes), which contains no allergen. Filtering
+  // them would silently weaken the aliases feature to fix a menu problem.
+  const withPriority = buildSttPromptVocab(DEMO_MENU, 200, ["حبة", "حبتين"]);
+  ok("state-aware priority terms survive the filter",
+    withPriority.includes("حبة") && withPriority.includes("حبتين"));
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} stt-vocab: ${pass}/${pass + fails.length} passed`);

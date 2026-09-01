@@ -20,6 +20,7 @@
 // disclosure escalates (fail-closed), it is never dismissed as "unclear".
 // ============================================================================
 
+import { safeSttVocabulary } from "./stt/safe-vocab";
 import { normalizeAr } from "./allergen-gate";
 import { scanBannedAllergyPhrases } from "./allergen-companion";
 import { parseCanonicalQuantity } from "./stt/slots";
@@ -93,7 +94,16 @@ export function buildSttPromptVocab(
   };
   // State-aware priority terms first (survive the cap), then item names, then ordering words.
   for (const p of priorityTerms ?? []) push(p);
-  for (const n of itemNames) push(n);
+  // FILTERED HERE, WHERE BOTH CALLERS PASS. Biasing a recognizer toward a word makes it hear
+  // that word — and a menu containing «لبن بارد» turned the greeting «هلا والله» into a
+  // dairy allergen and a safety hold nobody could leave. The deterministic gate fired
+  // CORRECTLY on what it was handed; the defect was in the composition.
+  //
+  // The demo route filtered its own list and the fix stopped there, so every real tenant
+  // whose menu names a dairy, nut or egg product kept the bug — on the surface where the
+  // consequence lands on a paying customer rather than a visitor. One choke point, both
+  // callers, exactly as the ear-rendering pass is applied inside the TTS adapter.
+  for (const n of safeSttVocabulary(itemNames)) push(n);
   // A few human-readable ordering words (raw, not normalized — the prompt biases the
   // model's own orthography).
   for (const w of ["منيو", "قائمة", "أطلب", "توصيل", "استلام", "كاش", "شبكة"]) push(w);

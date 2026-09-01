@@ -37,10 +37,46 @@ import { KHALID_VOICE, lookupVoice, normalizeVoiceId, voiceRefusalReason } from 
 /** Marker for a 4xx: something is MISCONFIGURED, and no other voice fixes it. */
 export const TTS_CONFIG_FAULT = "ElevenLabs TTS configuration fault";
 
-export const elevenlabsTtsAdapter: TtsAdapter = {
-  name: "elevenlabs",
-  async synthesize(text, opts) {
-    // TRIMMED AT THE POINT OF USE. A caller that validated a TRIMMED env value while this
+/** Everything that goes on the wire for one synthesis, decided in one place. */
+export interface ElevenLabsRequest {
+  url: string;
+  init: RequestInit;
+  /** The text as the provider will receive it — rendered for the ear, and what we bill on. */
+  body: string;
+  /** What this request will cost, priced from the model and the input length.
+   *
+   *  Carried here so the buffered and streamed paths cannot price the same synthesis
+   *  differently, and so a caller can charge BEFORE the audio exists — ElevenLabs bills per
+   *  character of input, which is known the moment the request is built. */
+  costUsd: number;
+  mime: string;
+  model: string;
+  voiceId: string;
+}
+
+/**
+ * BUILD THE REQUEST. Pure, and the single source of what ElevenLabs is asked for.
+ *
+ * There are two ways to reach this provider — buffer the whole synthesis (`synthesize`), or
+ * stream it so a caller on a live phone call hears the first word while the last is still
+ * being made. Everything that makes Khalid sound like Khalid is decided here rather than at
+ * either call site: the allow-listed voice, the accepted model, the exact voice settings
+ * KIV-313 froze, the one pronunciation rule, the language code, and the container.
+ *
+ * That matters most for the STREAMING path, which cannot check afterwards what it got. The
+ * buffered path verifies the provider's echo of the voice id (`voiceMatchesPin`); a stream
+ * is raw audio bytes with no metadata to check, so there is nothing to catch a wrong voice
+ * after the fact. Building both requests from one function is what replaces that check: the
+ * id on the wire is the REGISTRY'S id, by construction, for both.
+ *
+ * Throws — with the config-fault marker where it applies — rather than returning a partly
+ * built request, so a misconfiguration can never be half-applied.
+ */
+export function buildElevenLabsRequest(
+  text: string,
+  opts?: { voiceId?: string; format?: TtsAudioFormat; stream?: boolean }
+): ElevenLabsRequest {
+  // TRIMMED AT THE POINT OF USE. A caller that validated a TRIMMED env value while this
     // file read the RAW one produced two different strings: `ELEVENLABS_TTS_MODEL` with one
     // stray space passed the caller's price check and then priced at $0 here, taking the
     // whole synthesis off the spend ledger; a padded voice id requested
@@ -111,9 +147,16 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
     const mime = format === "mp3" ? "audio/mpeg" : "audio/ogg";
     const accept = format === "mp3" ? "audio/mpeg" : "audio/ogg";
 
-    const res = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${outputFormat}`,
-      {
+    // `/stream` for progressive playback, the plain endpoint otherwise. Identical body.
+    const path = opts?.stream ? "/stream" : "";
+    return {
+      url: `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}${path}?output_format=${outputFormat}`,
+      body,
+      costUsd: ttsCostUsd(`elevenlabs:${model}`, body.length),
+      mime,
+      model,
+      voiceId,
+      init: {
         method: "POST",
         headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: accept },
         body: JSON.stringify({
@@ -141,36 +184,100 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
             },
           ],
         }),
-      }
-    );
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      // A 4xx IS A CONFIGURATION FAULT, NOT AN OUTAGE, and the difference decides whether
-      // the fallback law applies. A revoked key, a plan without `eleven_v3`, an unknown
-      // dictionary locator, an exhausted quota — all are PERMANENT until someone changes
-      // something, so answering them by buying an OpenAI voice ships an American male
-      // reading Arabic to a real customer on EVERY turn, forever, while paging the Founder
-      // each time. Tagged so `synthesizeVoiceReply` can tell the two apart; 5xx and network
-      // failures stay outages, which is what the fallback exists for.
-      // ANYTHING THAT IS NOT A 5xx IS NOT AN OUTAGE. 4xx is the reachable case (bad key, wrong
-      // plan, unknown dictionary, exhausted quota); a 3xx reaching here would mean a redirect
-      // fetch did not follow, which is also a configuration fact rather than a provider that
-      // is down. Only 5xx earns the fallback.
-      const kind = res.status < 500 ? TTS_CONFIG_FAULT : "ElevenLabs TTS";
-      throw new Error(`${kind} ${res.status}: ${detail.slice(0, 200)}`);
-    }
+      },
+    };
+}
+
+/**
+ * Turn a non-2xx into the right KIND of error.
+ *
+ * A 4xx IS A CONFIGURATION FAULT, NOT AN OUTAGE, and the difference decides whether the
+ * fallback law applies. A revoked key, a plan without `eleven_v3`, an unknown dictionary
+ * locator, an exhausted quota — all are PERMANENT until someone changes something, so
+ * answering them by buying an OpenAI voice ships an American male reading Arabic to a real
+ * customer on EVERY turn, forever, while paging the Founder each time. Tagged so
+ * `synthesizeVoiceReply` can tell the two apart.
+ *
+ * ANYTHING THAT IS NOT A 5xx IS NOT AN OUTAGE. 4xx is the reachable case; a 3xx arriving
+ * here would mean a redirect the fetch did not follow, which is also a configuration fact
+ * rather than a provider that is down. Only 5xx earns the fallback.
+ *
+ * Shared by both paths so a streamed synthesis cannot classify the same failure differently
+ * from a buffered one.
+ */
+export async function elevenLabsHttpError(res: Response): Promise<Error> {
+  const detail = await res.text().catch(() => "");
+  const kind = res.status < 500 ? TTS_CONFIG_FAULT : "ElevenLabs TTS";
+  return new Error(`${kind} ${res.status}: ${detail.slice(0, 200)}`);
+}
+
+export const elevenlabsTtsAdapter: TtsAdapter = {
+  name: "elevenlabs",
+  async synthesize(text, opts) {
+    const req = buildElevenLabsRequest(text, opts);
+    const res = await fetch(req.url, req.init);
+    if (!res.ok) throw await elevenLabsHttpError(res);
     const audio = Buffer.from(await res.arrayBuffer());
     return {
       audio,
-      mime,
-      model,
+      mime: req.mime,
+      model: req.model,
       adapter: "elevenlabs",
-      chars: body.length,
-      costUsd: ttsCostUsd(`elevenlabs:${model}`, body.length),
-      voiceId,
+      chars: req.body.length,
+      costUsd: req.costUsd,
+      voiceId: req.voiceId,
     };
   },
 };
+
+/** What a streamed synthesis hands back: bytes as they arrive, plus what it will cost. */
+export interface ElevenLabsStream {
+  stream: ReadableStream<Uint8Array>;
+  mime: string;
+  model: string;
+  chars: number;
+  costUsd: number;
+  voiceId: string;
+}
+
+/**
+ * SYNTHESIZE WITHOUT WAITING FOR THE END OF THE SENTENCE.
+ *
+ * `synthesize` above buffers: `res.arrayBuffer()` resolves only when the provider has
+ * finished speaking the whole reply. Measured on the live demo, that is between 1.8 and 5.5
+ * seconds during which a caller holding a phone to their ear hears nothing, on audio the
+ * provider began producing almost immediately.
+ *
+ * This returns the response body instead, so the first bytes can reach a browser while the
+ * last words are still being generated. Everything else is identical — same builder, same
+ * voice, same settings, same dictionary, same error classification — because the reason to
+ * stream is latency and nothing else about the voice may change with it.
+ *
+ * The cost is known up front: ElevenLabs bills per CHARACTER of input, and the input is in
+ * hand before a byte comes back. So the caller can charge, and check a cap, without waiting
+ * for the audio — which is what lets the spend guard stay in front of the spend.
+ */
+export async function elevenlabsSpeechStream(
+  text: string,
+  opts?: { voiceId?: string; format?: TtsAudioFormat }
+): Promise<ElevenLabsStream> {
+  const req = buildElevenLabsRequest(text, { ...opts, stream: true });
+  const res = await fetch(req.url, req.init);
+  if (!res.ok) throw await elevenLabsHttpError(res);
+  if (!res.body) {
+    // 2xx with nothing to read. Distinguished from a transport failure so the log does not
+    // send someone hunting a key that is fine.
+    throw new Error(`${TTS_CONFIG_FAULT}: ElevenLabs returned no stream body`);
+  }
+  return {
+    stream: res.body,
+    mime: req.mime,
+    model: req.model,
+    chars: req.body.length,
+    costUsd: req.costUsd,
+    voiceId: req.voiceId,
+  };
+}
 
 /** Re-exported so callers and proofs read the pin from one place. */
 export { KHALID_VOICE };
