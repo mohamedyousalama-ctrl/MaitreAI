@@ -192,7 +192,7 @@ function loadTs(rel) {
  * `server` is called for every /api/demo/voice request and returns `{status, body}`.
  * `capabilities` is the boolean the probe reports.
  */
-export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0 } = {}) {
+export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0, playRejects = false } = {}) {
   const log = {
     micPrompts: 0,
     tracksOpened: 0,
@@ -204,6 +204,9 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
     voiceRequests: [],
     capabilityRequests: 0,
     played: [],
+    /** How many Audio elements the COMPONENT built. One per turn means the element the tap
+     *  unlocked is being thrown away, which is the Safari autoplay failure. */
+    audioConstructed: 0,
   };
 
   let urlSeq = 0;
@@ -252,9 +255,29 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
     async close() { if (!this.closed) { this.closed = true; log.ctxClosed++; } }
   };
 
+  // TRACKS CONSTRUCTIONS AND `src`, not just plays. The component used to build a fresh
+  // `new Audio(url)` for every turn, which Safari refuses: playback permission belongs to
+  // the tap that opened the screen and is long expired by the time a turn has audio. The
+  // fix reuses the element the parent unlocked, so "how many were constructed" and "what
+  // src was played" are now the two facts that distinguish fixed from broken — and a stub
+  // that only recorded a constructor argument could see neither.
   globalThis.Audio = class {
-    constructor(url) { this.url = url; this.onended = null; this.onerror = null; }
-    async play() { log.played.push(this.url); queueMicrotask(() => this.onended?.()); }
+    constructor(url) {
+      log.audioConstructed++;
+      this.url = url;
+      this._src = url ?? "";
+      this.onended = null;
+      this.onerror = null;
+      this.error = null;
+      this.muted = false;
+    }
+    get src() { return this._src; }
+    set src(v) { this._src = v; }
+    async play() {
+      if (playRejects) { const e = new Error("play() blocked"); e.name = "NotAllowedError"; throw e; }
+      log.played.push(this._src || this.url);
+      queueMicrotask(() => this.onended?.());
+    }
     pause() {}
   };
 

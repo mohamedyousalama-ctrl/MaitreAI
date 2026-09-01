@@ -28,6 +28,8 @@ import {
   ABSOLUTE_FLOOR, SPEECH_RATIO, HANGOVER_MS, NO_SPEECH_MS, CALIBRATION_MS, FLOOR_MAX,
 } from "../lib/demo/call-loop.ts";
 import { makeRuntime, loadCallScreen, installBrowser, visibleText, findByLabel } from "./call-screen-harness.mjs";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 let pass = 0;
 const fails: string[] = [];
@@ -201,6 +203,10 @@ async function runScreen(opts: {
   /** Press the hangup BUTTON rather than unmounting — they are different code paths. */
   pressHangUpAfterMs?: number;
   serverDelayMs?: number;
+  /** The element the opening tap unlocked, as the parent supplies it. */
+  player?: unknown;
+  /** Make every play() reject with NotAllowedError — Safari's autoplay refusal. */
+  playRejects?: boolean;
 }) {
   const rt = makeRuntime();
   const log = installBrowser({
@@ -208,6 +214,7 @@ async function runScreen(opts: {
     rmsScript: opts.rmsScript ?? SPEAKS,
     server: opts.server ?? (() => ({ status: 200, body: AUDIO_OK })),
     serverDelayMs: opts.serverDelayMs ?? 0,
+    playRejects: opts.playRejects ?? false,
   });
   const CallScreen = loadCallScreen(rt.React);
   const pushed: Array<Record<string, unknown>> = [];
@@ -218,6 +225,13 @@ async function runScreen(opts: {
     push: (m: Record<string, unknown>) => { pushed.push(m); return m; },
     historyRef: { current: (opts.history ?? [{ from: "me", kind: "text", text: "سلام" }]) as unknown[] },
     audioUrls: { current: [] as string[] },
+    // THE ELEMENT THE OPENING TAP UNLOCKED. Supplied by the parent because Safari only
+    // permits playback it can attribute to a gesture, and that permission is long gone by
+    // the time a turn has audio: a fresh `new Audio()` per turn was rejected on every turn
+    // of every call for every Apple visitor, while the server logged a clean 200.
+    // `null` here on purpose — CallScreen must still work when the parent gave it nothing,
+    // which is what a non-Safari browser and the pre-unlock path both look like.
+    player: { current: (opts.player ?? null) as unknown },
     onEnd: () => { ended = true; },
   };
   // SAMPLE WHAT THE VISITOR SAW OVER TIME, not only at the end. A call screen moves through
@@ -278,6 +292,74 @@ async function runScreen(opts: {
     hist.includes("سلام") && hist !== "[]");
 
   ok("the reply is played", r.log.played.length >= 1);
+
+  // ── THE ELEMENT THE TAP UNLOCKED IS THE ONE THAT PLAYS ────────────────────
+  //
+  // Found in production, after the key and the container were both already fixed. Safari
+  // only permits audio it can attribute to a user gesture, and that permission expires
+  // seconds after the tap. A call turn spends far longer than that before it has anything
+  // to play — capability probe, microphone prompt, the visitor actually speaking, then a
+  // network round trip — so `new Audio(url).play()` was rejected on every turn of every
+  // call for every Apple visitor, while the server logged a clean 200 and the page said
+  // only that the voice was not working.
+  //
+  // An element played DURING a gesture stays unlocked, so the parent creates one inside the
+  // click and this screen reuses it. Asserted by CONSTRUCTION COUNT, because "it played"
+  // is true in a permissive test environment either way — the whole defect is invisible
+  // except in the one browser that enforces the rule.
+  {
+    const provided = { url: undefined as string | undefined, _src: "", played: [] as string[],
+      onended: null as null | (() => void), onerror: null as null | (() => void), error: null, muted: false,
+      get src() { return this._src; }, set src(v: string) { this._src = v; },
+      async play() { this.played.push(this._src); queueMicrotask(() => this.onended?.()); },
+      pause() {} };
+    const withPlayer = await runScreen({ ms: 5200, player: provided });
+    ok("with an unlocked element supplied, the screen constructs NO new Audio",
+      withPlayer.log.audioConstructed === 0);
+    ok("…and every turn played through that same element",
+      provided.played.length >= 1 && provided.played.every((u) => u.startsWith("blob:demo/")));
+    ok("…and it played the object URL created for that turn, not a stale one",
+      provided.played[provided.played.length - 1] === withPlayer.log.urlsCreated[provided.played.length - 1]);
+  }
+
+  // AND IT STILL WORKS WITH NOTHING SUPPLIED, so a browser that never needed unlocking —
+  // and the path before the parent has created one — is not broken by the fix.
+  {
+    const none = await runScreen({ ms: 3000, player: null });
+    ok("with no element supplied the screen still plays", none.log.played.length >= 1);
+  }
+
+  // ── THE PARENT MUST UNLOCK ON THE TAP, AND ONLY THE TAP WILL DO ───────────
+  //
+  // SOURCE-LEVEL, AND SAID PLAINLY: this harness mounts CallScreen, not the parent, so the
+  // parent's half of the fix is checked by reading. That is the weaker kind of test this
+  // file exists to warn about, and it is recorded as a known gap rather than dressed up —
+  // removing `unlockPlayer()` from the click reproduces the Safari bug and nothing here
+  // executes it. What is pinned is the part a regex can genuinely establish: that the
+  // unlock happens in the SAME handler that opens the screen (an unlock anywhere else is
+  // outside the gesture and therefore useless), and that it plays a decodable source
+  // rather than an empty one, which would fire `error` and leave the element locked.
+  {
+    const src = readFileSync(resolve(process.cwd(), "app/demo/DemoPhone.tsx"), "utf8");
+    ok("the call button unlocks the player in the same handler that opens the screen",
+      /onClick=\{\(\) => \{ unlockPlayer\(\); setInCall\(true\); \}\}/.test(src));
+    ok("…and the unlock plays a real, decodable source, not an empty one",
+      /const SILENT_MP3\s*=\s*\n?\s*"data:audio\/mpeg;base64,[A-Za-z0-9+/=]{200,}"/.test(src) &&
+      /el\.src = SILENT_MP3;[\s\S]{0,120}\.play\(\)/.test(src));
+    ok("…and the unlocked element is handed to the call screen",
+      /player=\{unlockedPlayer\}/.test(src));
+  }
+
+  // A REJECTED play() ENDS THE CALL HONESTLY rather than looping in silence. This is the
+  // Safari behaviour itself: the call must say the voice is not working, not keep listening
+  // while claiming a safety rule caused the quiet.
+  {
+    const blocked = await runScreen({ ms: 5200, playRejects: true });
+    ok("a rejected play() ends the call rather than looping silently",
+      blocked.log.voiceRequests.length === 1);
+    ok("…and the visitor is told the voice is not working, not fed a safety-rule excuse",
+      blocked.everSaw("الصوت") && !blocked.everSaw("سياسة"));
+  }
   // OBJECT URLs SURVIVE THE CALL. Revoking the previous turn's URL destroyed audio the
   // THREAD was still rendering: every call bubble but the last played "الصوت ما اشتغل"
   // when pressed, because the player only fetches on press.

@@ -74,6 +74,15 @@ const GREETING =
 /** Where the visitor's demo session id lives between turns. */
 const SESSION_KEY = "kivo.demo.session";
 
+/** A valid, decodable, silent MP3 frame as a data URI.
+ *
+ *  Used only to UNLOCK playback during the tap that opens the call screen. It must be real
+ *  audio: `play()` on an empty or invalid `src` fires `error` instead of playing, which
+ *  leaves the element locked and defeats the whole point. Kept tiny and inline because a
+ *  network fetch would not resolve inside the gesture window it exists to use. */
+const SILENT_MP3 =
+  "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tAwAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDA//////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAUHAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//sQxAADwAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//sQxCmDwAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//sQxFMDwAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//sQxH2DwAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
+
 export default function DemoPhone() {
   // The greeting's timestamp is filled on the client only. Computing it in the
   // initializer renders UTC on the server and Riyadh in the browser, which fails
@@ -85,6 +94,33 @@ export default function DemoPhone() {
   const [draft, setDraft] = useState("");
   const [typing, setTyping] = useState(false);
   const [inCall, setInCall] = useState(false);
+
+  // ── THE ELEMENT MUST BE UNLOCKED BY THE TAP ITSELF ────────────────────────
+  //
+  // Safari only lets a page play audio it can attribute to a user gesture, and that
+  // permission expires seconds after the tap. A call turn spends far longer than that
+  // before it has anything to play: the capability probe, the microphone permission
+  // prompt, several seconds of the visitor actually speaking, then a network round trip.
+  // By the time `play()` was finally called the activation was long gone, so Safari
+  // rejected it — on every turn, of every call, for every Apple visitor. The server was
+  // logging a clean 200 the whole time, because nothing on our side had failed.
+  //
+  // An element that has been played DURING a gesture stays unlocked for later programmatic
+  // plays. So one element is created and started here, inside the click, and reused for
+  // every turn by swapping its `src`. Creating a fresh `new Audio()` per turn — which is
+  // what this did — throws that permission away each time.
+  const unlockedPlayer = useRef<HTMLAudioElement | null>(null);
+  const unlockPlayer = useCallback(() => {
+    try {
+      const el = unlockedPlayer.current ?? new Audio();
+      unlockedPlayer.current = el;
+      // A real, valid, silent MP3 frame. `play()` needs a decodable source to count as
+      // played; an empty src errors instead and leaves the element locked.
+      el.src = SILENT_MP3;
+      el.muted = true;
+      void el.play().then(() => { el.pause(); el.muted = false; }).catch(() => { el.muted = false; });
+    } catch { /* no Audio in this environment — the call screen degrades to text */ }
+  }, []);
   const [recording, setRecording] = useState(false);
   const [recSecs, setRecSecs] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -494,7 +530,7 @@ export default function DemoPhone() {
             </div>
             <div style={S.presence}>{typing ? "يكتب…" : "متصل الآن"}</div>
           </div>
-          <button style={S.iconBtn} onClick={() => setInCall(true)} aria-label="مكالمة صوتية">
+          <button style={S.iconBtn} onClick={() => { unlockPlayer(); setInCall(true); }} aria-label="مكالمة صوتية">
             <PhoneIcon />
           </button>
         </div>
@@ -584,6 +620,7 @@ export default function DemoPhone() {
             push={push}
             historyRef={msgsRef}
             audioUrls={audioUrls}
+            player={unlockedPlayer}
             onEnd={() => setInCall(false)}
           />
         )}
@@ -806,7 +843,7 @@ function endMessage(action: CallAction): string {
 }
 
 function CallScreen({
-  convId, onSession, push, historyRef, audioUrls, onEnd,
+  convId, onSession, push, historyRef, audioUrls, player, onEnd,
 }: {
   convId: React.MutableRefObject<string | null>;
   onSession: (id?: string) => void;
@@ -815,6 +852,10 @@ function CallScreen({
   historyRef: React.MutableRefObject<Msg[]>;
   /** The parent's registry of spoken-reply object URLs, revoked once on unmount. */
   audioUrls: React.MutableRefObject<string[]>;
+  /** The element unlocked by the tap that opened this screen — see unlockPlayer(). Every
+   *  turn reuses it; a fresh `new Audio()` per turn is rejected by Safari's autoplay rules
+   *  because the gesture that authorized playback expired seconds ago. */
+  player: React.MutableRefObject<HTMLAudioElement | null>;
   onEnd: () => void;
 }) {
   type Phase = "checking" | "unavailable" | "listening" | "thinking" | "speaking" | "ended";
@@ -829,7 +870,8 @@ function CallScreen({
   const stream = useRef<MediaStream | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
-  const player = useRef<HTMLAudioElement | null>(null);
+  // `player` is now a PROP — the element the opening tap unlocked. It was a local ref
+  // holding a fresh `new Audio()` per turn, which is precisely what Safari refuses to play.
   const abort = useRef<AbortController | null>(null);
   const started = useRef(false);
 
@@ -1019,8 +1061,11 @@ function CallScreen({
       push({ from: "khalid", kind: "voice", text: reply, audioUrl: url, presentation: data.presentation ?? null });
 
       setPhase("speaking");
-      const el = new Audio(url);
+      // THE ELEMENT THE TAP UNLOCKED, not a new one. See unlockPlayer() in the parent: a
+      // fresh `new Audio()` here carries no user activation, and Safari rejects its play().
+      const el = player.current ?? new Audio();
       player.current = el;
+      el.src = url;
       // A FAILURE TO PLAY IS NOT A TURN THAT WENT FINE. Treating `onerror` and a rejected
       // play() the same as `onended` meant that on any client which cannot decode Ogg/Opus
       // the entire call ran silently, turn after turn, with the screen reading «يتكلم…»
@@ -1029,8 +1074,20 @@ function CallScreen({
       // rechecked rather than resolving on a third path.
       const played = await new Promise<boolean>((done) => {
         el.onended = () => done(true);
-        el.onerror = () => done(false);
-        void el.play().catch(() => done(false));
+        // SAY WHY, HERE TOO. This discarded the reason, exactly as the server's catch did,
+        // so a silent call produced no evidence anywhere on either side — the request
+        // logged a clean 200 and the page just said the voice was not working. The two
+        // causes need opposite fixes and are indistinguishable without this: a decode
+        // failure is the wrong container, a NotAllowedError is the autoplay rules.
+        el.onerror = () => {
+          console.warn("[demo/call] audio element error", el.error?.code, el.error?.message, el.src.slice(0, 24));
+          done(false);
+        };
+        void el.play().catch((e: unknown) => {
+          const err = e as { name?: string; message?: string };
+          console.warn(`[demo/call] play() rejected: ${err?.name ?? "unknown"} — ${err?.message ?? ""}`);
+          done(false);
+        });
       });
       if (!live.current) return;
       if (!played) { stopWith(endMessage({ kind: "end", reason: "voice_unavailable" })); return; }
