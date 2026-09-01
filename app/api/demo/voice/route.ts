@@ -26,6 +26,8 @@ import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
 import { demoVoiceReply, demoVoiceSignalsFor, demoVoiceSilenceKind } from "@/lib/demo/voice-out";
 import { presentationForCall } from "@/lib/demo/call-presentation";
+import { callCarrierFor } from "@/lib/demo/call-carriers";
+import type { VoiceZeroReason } from "@/lib/messaging/voice-budget";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
 import { mustWrite } from "@/lib/db/checked";
 import { rateLimit } from "@/lib/rate-limit";
@@ -398,11 +400,37 @@ export async function POST(req: Request) {
     // played aloud. voiceSignalsForTurn reads stopReason, which that branch does set, and
     // fails closed on any stop reason nobody has listed as safe to speak.
     const voiceSignals = demoVoiceSignalsFor(out, closed);
-    const spoken = await demoVoiceReply(closed.reply, {
+    let spoken = await demoVoiceReply(closed.reply, {
       inboundWasVoice: true,
       safetyHold: voiceSignals.safetyHold,
       isReceipt: voiceSignals.isReceipt,
     });
+
+    // DEAD AIR IS NOT AN ACCEPTABLE ANSWER ON A PHONE CALL.
+    //
+    // Four reply categories are text-only by product rule, and that rule is unchanged: the
+    // authoritative reply carrying the price, the total, the link or the order number is
+    // never synthesized. On WhatsApp that costs nothing — the text is already in the
+    // customer's hand. On a CALL nobody is holding anything, so «كم سعر الكبسة؟» — the most
+    // common question a restaurant caller asks — produced three seconds of thinking and
+    // then silence, and the demo looked broken while behaving exactly as designed.
+    //
+    // So a FIXED, figure-free acknowledgement is spoken instead: no digit, no number word,
+    // no currency, no link, no order number, and it passes voiceHardZeroReason on its own
+    // merits. It says the turn happened; the protected value still goes only to text.
+    //
+    // A SAFETY HOLD GETS NO CARRIER and stays completely silent — see call-carriers.ts.
+    if (spoken.skipped && !spoken.audioBase64) {
+      const carrier = callCarrierFor(spoken.skipped as VoiceZeroReason);
+      if (carrier) {
+        const carrierAudio = await demoVoiceReply(carrier, { inboundWasVoice: true });
+        // Only if the carrier ITSELF produced audio. If synthesis fails here we are back to
+        // the silence we started with, which is correct — never a substitute voice.
+        if (carrierAudio.audioBase64) {
+          spoken = { ...carrierAudio, spend: carrierAudio.spend ?? spoken.spend };
+        }
+      }
+    }
     // `not_triggered` and `mock_pinned` are deliberate configurations, not faults.
     if (spoken.skipped && spoken.skipped !== "not_triggered" && spoken.skipped !== "mock_pinned") {
       console.warn("[demo/voice] spoken reply skipped", { reason: spoken.skipped });

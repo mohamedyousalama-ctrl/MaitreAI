@@ -161,10 +161,17 @@ console.log("\n── THE CHANNEL SIGNAL ACTUALLY REACHES THE MODEL ────
     !/PHONE CALL/i.test(typed));
   ok("…and the call prompt is the typed prompt PLUS a section, not a rewrite",
     spoken.length > typed.length);
-  const typedTail = typed.slice(typed.indexOf("## Language & voice"));
-  const spokenTail = spoken.slice(spoken.indexOf("## Language & voice"));
-  ok("…with the register line the only difference in the shared body",
-    typedTail.replace("tap-first", "spoken") === spokenTail);
+  // ADDITIVE, PROVEN AS A SUBSEQUENCE. A first version asserted the register word was the
+  // ONLY difference, which was true of one call-only block and broke the moment a second
+  // was added — a brittleness check, not the property I care about. What must hold is that
+  // the call prompt is the typed prompt PLUS call-only lines: every typed line still
+  // present, in order, so nothing a WhatsApp tenant relies on was removed or reordered.
+  const typedLines = typed.split("\n").map((l) => l.replace("tap-first", "spoken"));
+  const spokenLines = spoken.split("\n");
+  let i = 0;
+  for (const line of spokenLines) if (i < typedLines.length && line === typedLines[i]) i++;
+  ok(`every line of the typed prompt survives, in order (${i}/${typedLines.length})`,
+    i === typedLines.length);
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-presentation: ${pass}/${pass + fails.length} passed`);
