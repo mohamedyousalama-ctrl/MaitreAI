@@ -91,9 +91,15 @@ console.log("\n── BOTH ROUTE EXITS ARE COVERED, NOT JUST THE MODEL PATH ─�
 
   const gated = (code.match(/presentationForCall\(/g) ?? []).length;
   ok(`every presentation-bearing exit is gated (${gated} found)`, gated >= 2);
-  ok("…and no exit still passes a raw formatted presentation straight through",
-    !/presentation:\s*(out|filled)\.presentation\s*$/m.test(code) &&
-    !/presentation:\s*formatCustomerVisiblePresentation\(/.test(code));
+  // RESTATED, because the property changed when the chat microphone was separated out.
+  // "No exit ever passes a formatted presentation through" is no longer true and should not
+  // be: the chat note is SUPPOSED to receive one — that rail is the demo's whole affordance
+  // and withholding it there was the regression. What must hold now is narrower and is the
+  // thing that actually protects a caller: every exit that can emit a presentation asks
+  // `presentationForCall` first WHEN THE CHANNEL IS A CALL, and no exit reaches the
+  // formatter on the call branch without going through the gate.
+  ok("…and no exit reaches the formatter on the call branch except through the gate",
+    (code.match(/isPhoneCall\s*\n?\s*\?\s*presentationForCall\(/g) ?? []).length === gated);
   ok("the gate is fed the CALLER'S OWN WORDS, not a constant",
     /presentationForCall\([\s\S]{0,220}transcript,/.test(code));
 
@@ -110,10 +116,17 @@ console.log("\n── BOTH ROUTE EXITS ARE COVERED, NOT JUST THE MODEL PATH ─�
   // `runCustomerTurn({` matched nothing and the assertion failed against correct code.
   const callAt = code.indexOf("await runCustomerTurn(");
   const turnCall = callAt >= 0 ? code.slice(callAt, callAt + 1600) : "";
+  // AND IT DECLARES IT ONLY FOR THE CALL. This route also serves the press-and-hold
+  // microphone in the chat composer, which sends a byte-identical body; when the
+  // declaration was unconditional every chat voice note was told it was a phone call and
+  // lost the tap-first rail. `isPhoneCall`, its default direction, and which client sends
+  // the field are all pinned in proof-call-channel.test.ts.
   ok("the route declares the voice channel on its turn",
-    /channel:\s*"voice_call"/.test(turnCall));
+    /channel:\s*isPhoneCall \? "voice_call" : undefined/.test(turnCall));
   ok("…alongside the transcript signals, in the same call",
-    /isVoiceTranscript:\s*true/.test(turnCall) && /channel:\s*"voice_call"/.test(turnCall));
+    /isVoiceTranscript:\s*true/.test(turnCall) && /channel:\s*isPhoneCall/.test(turnCall));
+  ok("…and never unconditionally, which would reclassify the chat microphone",
+    !/channel:\s*"voice_call"/.test(code));
 
   // …and the pipeline must MAP it. A route that declares a channel nobody reads is the
   // same defect one layer down.

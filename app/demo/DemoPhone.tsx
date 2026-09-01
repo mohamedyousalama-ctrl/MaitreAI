@@ -390,8 +390,15 @@ export default function DemoPhone() {
         fd.append(
           "history",
           JSON.stringify(
+            // SAME TEST AS THE CALL SCREEN: has words. `kind === "text" || from === "me"`
+            // is correct today only by accident — the chat path happens to push Khalid's
+            // spoken replies as `kind: "text"` with an `audioUrl` hung off them. The moment
+            // anyone pushes one as `kind: "voice"`, as the call screen does, it disappears
+            // from the history silently and Khalid forgets what he just said. That exact
+            // bug already happened once on the call path; leaving the trap armed on the
+            // other path is how it happens a second time.
             msgs
-              .filter((m) => m.kind === "text" || m.from === "me")
+              .filter((m) => typeof m.text === "string" && m.text.trim() !== "")
               .map((m) => ({ role: m.from === "me" ? "user" : "assistant", content: m.text })),
           ),
         );
@@ -972,7 +979,18 @@ function CallScreen({
       const stopped = new Promise<VadVerdict>((resolve) => {
         const tick = setInterval(() => {
           if (!live.current) { clearInterval(tick); resolve("silent"); return; }
-          analyser.getByteTimeDomainData(frame);
+          // GUARDED LIKE THE PLAYBACK WATCHER IS. Both loops read the SAME analyser, and
+          // since the AudioContext became call-lifetime (so a barge can be heard) that
+          // analyser now outlives the turn that made it — a closing context, a revoked
+          // track, a tab suspended and resumed all make this call throw. A throw inside a
+          // setInterval callback escapes to nowhere: `stopped` never resolves, the turn
+          // hangs with the microphone OPEN, and the screen sits on «يسمعك…» forever.
+          // Treated as silence, which is the same thing an unreadable microphone means.
+          try {
+            analyser.getByteTimeDomainData(frame);
+          } catch {
+            clearInterval(tick); resolve("silent"); return;
+          }
           let sum = 0;
           for (let i = 0; i < frame.length; i++) { const x = (frame[i] - 128) / 128; sum += x * x; }
           const verdict = vadStep(vad, Math.sqrt(sum / frame.length), Date.now(), MAX_MS);
@@ -993,8 +1011,11 @@ function CallScreen({
         // A PERSON SAYS "HELLO?" BEFORE HANGING UP. Eight seconds of quiet used to END the
         // call outright, on the first pause — so a visitor who stopped to think, or who
         // waited to be greeted, killed the demo on turn one and was told, in text they were
-        // not looking at, that nothing was heard. One re-prompt costs one short synthesis
-        // and is what makes the difference between a dropped line and a conversation.
+        // not looking at, that nothing was heard. Listening a second time costs NOTHING —
+        // nothing is uploaded, nothing is synthesized and nothing is said; the screen simply
+        // goes back to listening. (An earlier comment here claimed "one short synthesis",
+        // which was never true of this code and made a free retry look like a spend
+        // decision.) It is the difference between a dropped line and a conversation.
         if (!reprompted.current) {
           reprompted.current = true;
           setNote("");
@@ -1055,6 +1076,13 @@ function CallScreen({
         ),
       );
       if (convId.current) fd.append("conversationId", convId.current);
+      // THIS IS THE CALL, and it is the only caller that says so. The same route also
+      // serves the press-and-hold microphone in the chat composer, which sends a
+      // byte-identical body — for one release that made every chat voice note behave like a
+      // phone call: the call prompt, no prices, and the tap-first rail withheld from the
+      // one surface that actually displays it. The route defaults to the note, so this line
+      // is what makes a call a call.
+      fd.append("channel", "call");
       abort.current = new AbortController();
       const res = await fetch("/api/demo/voice", { method: "POST", body: fd, signal: abort.current.signal });
       if (!live.current) return;
@@ -1167,7 +1195,13 @@ function CallScreen({
       // The proof caught it by hanging too, which is the same defect seen from outside.
       let settle: ((v: boolean) => void) | null = null;
       const bargeWatch = setInterval(() => {
-        if (!live.current || !bargeAnalyser || !bargeFrame) return;
+        // STOP THE TIMER, DO NOT JUST SKIP THE FRAME. This returned without clearing, and
+        // the `clearInterval` after the playback promise is unreachable on a hangup:
+        // `release()` PAUSES the element, and pause fires neither `ended` nor `error`, so
+        // the promise never settles. One 60ms interval was left running for the life of the
+        // page per call ended mid-reply, each holding the element, the analyser and the
+        // frame buffer. Invisible, and it accumulates.
+        if (!live.current || !bargeAnalyser || !bargeFrame) { clearInterval(bargeWatch); return; }
         try {
           bargeAnalyser.getByteTimeDomainData(bargeFrame);
           let sum = 0;
@@ -1202,9 +1236,19 @@ function CallScreen({
       });
       clearInterval(bargeWatch);
       if (!live.current) return;
-      // AN INTERRUPTION IS NOT A PLAYBACK FAILURE. `pause()` fires neither `ended` nor
-      // `error`, so without this the promise would resolve false and the call would end
-      // claiming the voice was broken — the visitor talking would kill the call.
+      // AN INTERRUPTION IS NOT A PLAYBACK FAILURE, and this is the net for the one race
+      // where that could still be mistaken.
+      //
+      // Said accurately: on the ordinary barge this line changes nothing. The watcher
+      // already called `settle?.(true)`, so `played` is true and the fall-through below
+      // reaches the same `runTurn()`. Deleting it is observably a no-op and a driven
+      // mutation confirms the suite does not notice — the earlier comment here claimed it
+      // was what kept the call alive, which overstated it.
+      //
+      // What it does cover is the race: if `onerror` fires around the pause, `played` is
+      // FALSE while `barged` is true, and without this the call would end telling the
+      // visitor the voice is broken — because they spoke. Cheap, and the failure it
+      // prevents is the worst one on this screen.
       if (barged) { void runTurn(); return; }
       if (!played) { stopWith(endMessage({ kind: "end", reason: "voice_unavailable" })); return; }
       void runTurn();

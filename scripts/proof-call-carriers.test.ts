@@ -161,7 +161,13 @@ console.log("\n── THE ROUTE ACTUALLY USES IT, AND ONLY WHEN SILENT ───
   // ONLY when there is no audio. A carrier spoken INSTEAD of a real reply would replace
   // Khalid's actual answer with an acknowledgement — the opposite defect, and a silent one.
   ok("…only on a turn that produced no audio",
-    /if \(spoken\.skipped && !spoken\.audioBase64\)/.test(code));
+    /spoken\.skipped && !spoken\.audioBase64/.test(code));
+  // AND ONLY ON A CALL. The carrier exists because a caller holding a phone to their ear
+  // hears nothing on a price turn. A visitor who pressed the microphone in the CHAT is
+  // looking at the reply, so an acknowledgement in place of it is not a rescue — it is a
+  // second voice note saying less than the bubble beside it.
+  ok("…and only on a phone call, never on a chat voice note",
+    /if \(isPhoneCall && spoken\.skipped && !spoken\.audioBase64\)/.test(code));
   ok("…and only if the carrier itself synthesized, never a substitute voice",
     /if \(carrierAudio\.audioBase64\)/.test(code));
 
@@ -175,7 +181,11 @@ console.log("\n── THE ROUTE ACTUALLY USES IT, AND ONLY WHEN SILENT ───
     const at = code.indexOf("demoVoiceReply(closed.reply");
     return at >= 0 ? code.slice(at, at + 500) : "";
   })();
-  ok("the call path asks for spoken prices", /spokenPricesAllowed:\s*true/.test(replyCall));
+  // Gated on the channel, not handed to everyone: the waiver is paid for by the CALL
+  // SCREEN showing the reply while the audio plays, and a chat voice note never struck that
+  // bargain. `isPhoneCall` is itself pinned in proof-call-channel.test.ts.
+  ok("the call path asks for spoken prices", /spokenPricesAllowed:\s*isPhoneCall/.test(replyCall));
+  ok("…and never asks for them unconditionally", !/spokenPricesAllowed:\s*true/.test(code));
   ok("…alongside the safety signals it does NOT waive",
     /safetyHold:\s*voiceSignals\.safetyHold/.test(replyCall) &&
     /isReceipt:\s*voiceSignals\.isReceipt/.test(replyCall));

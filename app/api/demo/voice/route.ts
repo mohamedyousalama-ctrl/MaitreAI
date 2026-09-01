@@ -28,6 +28,7 @@ import { expectedAnswerClass, CLASS_PRIORITY_TERMS } from "@/lib/ai/voice-aliase
 import { safeSttVocabulary } from "@/lib/demo/stt-vocab";
 import { demoVoiceReply, demoVoiceSignalsFor, demoVoiceSilenceKind } from "@/lib/demo/voice-out";
 import { presentationForCall } from "@/lib/demo/call-presentation";
+import { isPhoneCallChannel } from "@/lib/demo/call-channel";
 import { callCarrierFor } from "@/lib/demo/call-carriers";
 import type { VoiceZeroReason } from "@/lib/messaging/voice-budget";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
@@ -65,11 +66,24 @@ const DEMO_MENU_TTL_MS = 5 * 60_000;
 async function demoMenuNames(admin: ReturnType<typeof createAdminClient>): Promise<string[]> {
   if (demoMenuCache && Date.now() - demoMenuCache.at < DEMO_MENU_TTL_MS) return demoMenuCache.names;
   try {
-    const { data } = await admin!
+    const { data, error } = await admin!
       .from("menu_items")
       .select("name")
       .eq("restaurant_id", DEMO_RESTAURANT_ID)
       .limit(200);
+    // A POSTGREST ERROR IS NOT AN EMPTY MENU, and this is the difference between a bad
+    // minute and a bad five minutes. The client RESOLVES on failure — it does not throw —
+    // handing back `{ data: null, error }`, so ignoring `error` read a timeout, an RLS
+    // refusal and a dropped connection as "this tenant has no dishes", cached the empty
+    // result under a fresh timestamp, and switched transcriber priming off for EVERY caller
+    // until the TTL expired. The `catch` below, written for exactly this, never ran.
+    //
+    // Nothing is cached on a failure: the previous names are reused if we have them, and
+    // the next turn tries again.
+    if (error) {
+      console.warn(`[demo/voice] menu lookup failed — keeping previous vocabulary: ${String(error.message ?? error).slice(0, 200)}`);
+      return demoMenuCache?.names ?? [];
+    }
     // FILTERED BEFORE IT IS CACHED, so a name that can trip a safety gate never enters the
     // vocabulary at all. «لبن بارد» is on this menu, and biasing the recognizer toward it
     // turned «هلا والله» into a dairy allergen and a safety hold — see lib/demo/stt-vocab.ts.
@@ -140,6 +154,20 @@ export async function POST(req: Request) {
   // spoken turn and a typed turn share one basket. Attacker-controlled like everything
   // else here; resolved with the tenant AND channel pinned below, never used as given.
   let rawSessionId: unknown = null;
+  // WHICH SURFACE IS SPEAKING. This route has TWO callers and they are not the same
+  // product: the press-and-hold microphone in the CHAT composer, and the full-screen CALL
+  // overlay. They send byte-identical bodies, so for one release this route treated every
+  // chat voice note as a phone call — the visitor held the mic while looking straight at
+  // the thread, and got the call prompt («the guest is HOLDING A PHONE TO THEIR EAR… they
+  // cannot see anything… never recite a long list») plus `presentation: null`. The
+  // tap-first rail — categories, items, quantity buttons, confirm/cancel — is the demo's
+  // flagship affordance and it was silently withheld from the surface that shows it.
+  //
+  // DEFAULTS TO THE CHAT NOTE, and that direction is the whole point: a missing, unknown or
+  // malformed value lands on the behaviour this route had before the call work existed and
+  // that every earlier proof covers. The CALL is the opt-in, because the call is the one
+  // that removes things from the screen.
+  let isPhoneCall = false;
   try {
     const form = await req.formData();
     const audio = form.get("audio");
@@ -151,6 +179,7 @@ export async function POST(req: Request) {
       history = capDemoHistory(JSON.parse(rawHistory) as unknown);
     }
     rawSessionId = form.get("conversationId");
+    isPhoneCall = isPhoneCallChannel(form.get("channel"));
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
@@ -393,10 +422,14 @@ export async function POST(req: Request) {
           replyAudioSilence: demoVoiceSilenceKind(filledSpoken.skipped),
           // Same rule on the quantity rail — it is the ONE flow that already behaved like
           // a phone call, and it must not be the exit that quietly reintroduces buttons.
-          presentation: presentationForCall(
-            filled.presentation ? formatCustomerVisiblePresentation(filled.presentation, filled.dialect) : null,
-            transcript,
-          ),
+          presentation: isPhoneCall
+            ? presentationForCall(
+                filled.presentation ? formatCustomerVisiblePresentation(filled.presentation, filled.dialect) : null,
+                transcript,
+              )
+            : filled.presentation
+              ? formatCustomerVisiblePresentation(filled.presentation, filled.dialect)
+              : null,
           photoRequests: [],
         });
       }
@@ -428,8 +461,14 @@ export async function POST(req: Request) {
       // screen. Without it the model was told to be "tap-first" and to hand off to «the
       // list shown below», and it obeyed: asking for the menu on the phone pushed a
       // tappable list to a screen hidden behind the call overlay and said «تفضّل 👇» aloud.
-      channel: "voice_call",
+      // …and ONLY on the call. A chat voice note is read on the screen it was recorded
+      // on, so it keeps the typed prompt and the tap-first rail it has always had.
+      channel: isPhoneCall ? "voice_call" : undefined,
     });
+    // THE BRAIN ENDS HERE, not after the order write. Read the note on the timing line.
+    const msBrain = Date.now() - tBrain;
+
+    const tClose = Date.now();
     // A spoken «أكد الطلب» closes an order exactly like a typed one — same real order
     // number, same honest "this is a demo, nothing was charged" line.
     const closed = await closeDemoOrder(admin, {
@@ -459,8 +498,7 @@ export async function POST(req: Request) {
     // string — so the reply telling a visitor to call an ambulance was synthesized and
     // played aloud. voiceSignalsForTurn reads stopReason, which that branch does set, and
     // fails closed on any stop reason nobody has listed as safe to speak.
-    const msBrain = Date.now() - tBrain;
-    const tAfter = Date.now();
+    const msClose = Date.now() - tClose;
     const voiceSignals = demoVoiceSignalsFor(out, closed);
     const tTts = Date.now();
     let spoken = await demoVoiceReply(closed.reply, {
@@ -471,7 +509,9 @@ export async function POST(req: Request) {
       // price here made Khalid answer «كم سعر المندي؟» with an acknowledgement while the
       // price sat visible beside him — the Founder's report was "what Khalid said is not
       // what is written". Money only; links, receipts and safety holds are unchanged.
-      spokenPricesAllowed: true,
+      // …ON THE CALL ONLY. The waiver is paid for by the call screen showing this reply
+      // while the audio plays; a voice note is not that bargain and keeps the old rule.
+      spokenPricesAllowed: isPhoneCall,
     });
 
     // DEAD AIR IS NOT AN ACCEPTABLE ANSWER ON A PHONE CALL.
@@ -488,7 +528,7 @@ export async function POST(req: Request) {
     // merits. It says the turn happened; the protected value still goes only to text.
     //
     // A SAFETY HOLD GETS NO CARRIER and stays completely silent — see call-carriers.ts.
-    if (spoken.skipped && !spoken.audioBase64) {
+    if (isPhoneCall && spoken.skipped && !spoken.audioBase64) {
       const carrier = callCarrierFor(spoken.skipped as VoiceZeroReason);
       if (carrier) {
         const carrierAudio = await demoVoiceReply(carrier, { inboundWasVoice: true });
@@ -496,6 +536,14 @@ export async function POST(req: Request) {
         // the silence we started with, which is correct — never a substitute voice.
         if (carrierAudio.audioBase64) {
           spoken = { ...carrierAudio, spend: carrierAudio.spend ?? spoken.spend };
+        } else if (carrierAudio.spend) {
+          // A REFUSAL AFTER A PAID SYNTHESIS IS STILL A CHARGE. `wrong_voice` is decided by
+          // reading what the provider sent back, which means the money is already gone —
+          // `voice-out.ts` carries the spend on that path precisely so the ledger sees it,
+          // and this branch used to drop it on the floor because the audio was null.
+          // Keeping the carrier's spend without keeping its (absent) audio is the whole
+          // point: we stay silent AND we stay honest about what it cost.
+          spoken = { ...spoken, spend: carrierAudio.spend };
         }
       }
     }
@@ -506,16 +554,22 @@ export async function POST(req: Request) {
     // gets tuned, so every turn now reports its own breakdown. This is a timing line, not
     // an alert, and carries no visitor words: four durations and a character count.
     const msTts = Date.now() - tTts;
-    const msAfter = tTts - tAfter;
     console.log(
       // BROKEN DOWN FURTHER, because the first measurement indicted nothing: stt 233ms +
       // brain 840ms accounted for barely half of a 2062ms turn, and the rest was invisible.
       // `intake` is everything before transcription — host gate, rate limit, body parse,
       // the durable spend guard, the mock-adapter check; `vocab` is the menu lookup;
-      // `after` is the session, order close and spend accounting between the brain and the
-      // synthesis. Optimizing what you have not measured is how the wrong thing gets tuned.
+      // `close` is the order write.
+      //
+      // AND `close` IS SPLIT OUT BECAUSE IT WAS HIDING INSIDE `brain`. The first version
+      // stopped the brain clock AFTER `closeDemoOrder` and then measured a segment named
+      // `after` that spanned one synchronous function call — so it printed `after=0ms` on
+      // every turn, always, while a database write sat silently inside the number this
+      // whole line exists to attribute. The next person to read `brain=6244ms` would have
+      // tuned a model over a value that was partly a round trip to Postgres. A measurement
+      // that names the wrong thing is worse than no measurement, because it is believed.
       `[demo/voice] timing intake=${msIntake}ms vocab=${msVocab}ms stt=${msStt}ms ` +
-        `brain=${msBrain}ms tts=${msTts}ms after=${msAfter}ms ` +
+        `brain=${msBrain}ms close=${msClose}ms tts=${msTts}ms ` +
         // `calls` decides where the ~5s of thinking can be cut. One model call means the cost
       // is the reply itself over a 17k-token prompt, and the lever is TTS streaming; two or
       // three means tool round-trips, and the lever is the call channel's tool policy. The
@@ -600,10 +654,14 @@ export async function POST(req: Request) {
       // pointed at went somewhere the caller could not reach. Withheld by default: the
       // reply text is still delivered and still spoken, and half an answer plus a pointer
       // to nothing is worse than a whole answer in words.
-      presentation: presentationForCall(
-        out.presentation ? formatCustomerVisiblePresentation(out.presentation, out.dialect) : out.presentation,
-        transcript,
-      ),
+      presentation: isPhoneCall
+        ? presentationForCall(
+            out.presentation ? formatCustomerVisiblePresentation(out.presentation, out.dialect) : out.presentation,
+            transcript,
+          )
+        : out.presentation
+          ? formatCustomerVisiblePresentation(out.presentation, out.dialect)
+          : out.presentation,
       photoRequests: out.photoRequests,
     });
   } catch (e) {

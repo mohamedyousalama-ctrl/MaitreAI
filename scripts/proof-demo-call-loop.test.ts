@@ -425,11 +425,27 @@ async function runScreen(opts: {
     // but it is also exactly what a caller in a permanently noisy room would experience.
     const r = await runScreen({ ms: 8000, rmsScript: LOUD, playbackMs: 900 });
     ok(`speech over the reply pauses it (${r.atHangup.paused} pauses)`, r.atHangup.paused >= 1);
-    // ALIVE, not "did another full turn". A second complete upload needs another
-    // calibrate-speak-stop cycle, which is a property of the waveform script rather than of
-    // barge-in; requiring it tested the fixture. What barge-in must guarantee is that the
-    // interruption did NOT end the call — the failure it replaces is precisely a call that
-    // dies when the visitor talks.
+
+    // THE FLOOR MUST COME BACK, AND THAT IS THE ASSERTION THAT WAS MISSING.
+    //
+    // The three checks here used to be: it paused, the call did not end, and no broken-voice
+    // message appeared. Every one of them is ALSO TRUE OF A CALL THAT FROZE — pausing
+    // satisfies the first, and a call that never reaches any ending satisfies the other two
+    // by never getting there. Driven: deleting `settle?.(true)` from the barge watcher (the
+    // exact first-version bug the component's own comment describes, where `pause()` fires
+    // neither `ended` nor `error` so the playback promise never settles) left this file at
+    // 108/108 PASS while the real call died on the visitor's first interruption —
+    // microphone shut, nothing playing, nothing to end it but hanging up.
+    //
+    // A negative cannot catch a freeze, because a freeze is the absence of everything. Only
+    // a POSITIVE can: after being interrupted, the screen must START LISTENING AGAIN.
+    //
+    // And this one does not test the fixture. `recorderStarts` counts the top of `runTurn`,
+    // which needs no further speech from the waveform — a second complete UPLOAD would need
+    // another calibrate-speak-stop cycle and that was the right thing to refuse. Handing the
+    // floor back is barge-in's entire promise, so it is the thing to require.
+    ok(`…and the floor comes back — it listens again after the interruption (${r.log.recorderStarts} turns)`,
+      r.log.recorderStarts >= 2);
     ok("…and the call is still live, not ended by the interruption",
       !r.everSaw("انتهت المحادثة"));
     ok("…and it is not reported as a broken voice",

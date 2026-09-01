@@ -73,12 +73,59 @@ console.log("\n── NUMBERS ARE SPELLED, AND THEIR VALUE IS PRESERVED ──�
 
   // THE VALUE IS NEVER CHANGED. This layer may re-word for the ear; it may not restate a
   // different fact. Every integer 0-99 must round-trip to exactly itself.
-  let valueSafe = true;
+  //
+  // AND THIS IS CHECKED BY READING THE WORD BACK, which is the only thing that makes the
+  // sentence above true. The first version asserted the spelling was NON-EMPTY and called
+  // that a round trip — so mutating the table to spell 5 as «ستة» left the whole suite at
+  // 220/220 green while «عندنا 5 أصناف» was spoken to a paying customer as «عندنا ستة
+  // أصناف». That reply is not hard-zeroed; nothing downstream would have caught it. An
+  // assertion that does not implement its own comment protects nothing.
+  //
+  // The reader below is written from the language, NOT from lib/ai/tts/spoken-text.ts, and
+  // deliberately keeps its own table: an inverse copied from the thing it inverts agrees
+  // with every mistake it makes.
+  const R_ONES: Record<string, number> = {
+    "صفر": 0, "واحد": 1, "اثنين": 2, "ثلاثة": 3, "أربعة": 4,
+    "خمسة": 5, "ستة": 6, "سبعة": 7, "ثمانية": 8, "تسعة": 9,
+    "عشرة": 10, "أحد عشر": 11, "اثنا عشر": 12, "ثلاثة عشر": 13, "أربعة عشر": 14,
+    "خمسة عشر": 15, "ستة عشر": 16, "سبعة عشر": 17, "ثمانية عشر": 18, "تسعة عشر": 19,
+  };
+  const R_TENS: Record<string, number> = {
+    "عشرين": 20, "ثلاثين": 30, "أربعين": 40, "خمسين": 50,
+    "ستين": 60, "سبعين": 70, "ثمانين": 80, "تسعين": 90,
+  };
+  /** Arabic words back to the number they say, or null if they say nothing we recognise. */
+  const readArabicNumberWord = (w: string): number | null => {
+    const t = w.trim().replace(/\s+/g, " ");
+    if (t in R_ONES) return R_ONES[t]!;
+    if (t in R_TENS) return R_TENS[t]!;
+    // «خمسة وثلاثين» — the ones word, «و», then the tens word.
+    const m = t.match(/^(.+?) و(.+)$/);
+    if (!m) return null;
+    const ones = R_ONES[m[1]!.trim()];
+    const tens = R_TENS[m[2]!.trim()];
+    if (ones === undefined || tens === undefined || ones < 1 || ones > 9) return null;
+    return tens + ones;
+  };
+
+  const misread: string[] = [];
   for (let n = 0; n <= 99; n++) {
     const w = arabicNumberWord(n);
-    if (!w || w.trim() === "") { valueSafe = false; break; }
+    if (!w || w.trim() === "") { misread.push(`${n}: no spelling`); continue; }
+    const back = readArabicNumberWord(w);
+    if (back !== n) misread.push(`${n} → «${w}» → ${back === null ? "unreadable" : back}`);
   }
-  ok("every integer 0-99 has an exact spelling — none silently dropped", valueSafe);
+  ok(`every integer 0-99 says exactly itself when read back${misread.length ? ` — ${misread.slice(0, 4).join("; ")}` : ""}`,
+    misread.length === 0);
+  // …and through the real pipeline, not only the helper: the substitution in toSpokenText
+  // is where a caller actually hears it, and it has its own guard rails around it.
+  const throughPipeline: string[] = [];
+  for (let n = 0; n <= 99; n++) {
+    const said = toSpokenText(`عندنا ${n} أصناف`).replace(/^عندنا /, "").replace(/ أصناف$/, "");
+    if (readArabicNumberWord(said) !== n) throughPipeline.push(`${n} → «${said}»`);
+  }
+  ok(`…and says itself through toSpokenText too${throughPipeline.length ? ` — ${throughPipeline.slice(0, 4).join("; ")}` : ""}`,
+    throughPipeline.length === 0);
   ok("nothing outside that range is invented",
     arabicNumberWord(100) === null && arabicNumberWord(-1) === null && arabicNumberWord(1.5) === null);
 }
@@ -101,13 +148,47 @@ console.log("\n── IT IS SUBTRACTIVE: NO WORD IS EVER ADDED OR CHANGED ──
   // remove presentation and respell a numeral, and it may do nothing else. Checked by
   // stripping both strings to their Arabic letters and requiring the sequence to be a
   // subsequence — so a dropped word fails, and an invented word fails.
+  // AND THE CORPUS IS THE REAL ONE. Four hand-written strings were not enough and were
+  // not representative: none of them was a BULLET LIST — the exact shape the list stripper
+  // exists for — so widening that stripper by one token (`[-•·–—]+[ \t]*\S+[ \t]+`, an
+  // entirely realistic slip) left the proof at 38/38 while every dish name on a real menu
+  // reply silently lost its first word: «- **كبسة دجاج** — 35 ر.س» spoken as «دجاج، خمسة
+  // وثلاثين ريال». The repo already ships the 14 replies Khalid actually produced, with
+  // their real bullets, bold, emoji, blank lines, em-dashes and prices. Test on those.
+  const { ACTIVE_PACKET_DATA } = await import("../lib/mizan/active-packet-data.ts");
+  const realReplies: string[] = (ACTIVE_PACKET_DATA.items ?? [])
+    .flatMap((i: { replies?: string[] }) => i.replies ?? [])
+    .filter((r: string) => typeof r === "string" && r.trim() !== "");
+  ok(`the real captured replies are loaded (${realReplies.length})`, realReplies.length >= 13);
+
   const cases = [
     "تمام، وجبتين، كل وجبة معها بطاطس ومشروب.",
     "الموظف يتأكد لك من المكونات قبل ما نعتمد الطلب.",
     "🚨 اتصل بالإسعاف 997 الحين إذا فيه ضيق تنفس أو تورم. أنا معك.",
     "*مندي دجاج* متوفر الحين 👌",
+    ...realReplies,
   ];
-  const letters = (t: string) => (t.match(/[؀-ۿ]+/g) ?? []).join(" ");
+  // THE EXPECTATION CARRIES THE DOCUMENTED SUBSTITUTIONS, AND ONLY THOSE. «ر.س» is read
+  // aloud as «ريال» on purpose — an abbreviation is a thing for the eye — so the letters
+  // «ر» and «س» are legitimately replaced rather than dropped, and the expectation applies
+  // that same rule before comparing. Everything the layer is NOT licensed to change is
+  // therefore still a failure. Spelled numerals need no such treatment: they only ADD
+  // words, and an added word is already permitted below.
+  const declared = (t: string) => t
+    .replace(/\s*ر\s*\.\s*س/g, " ريال ")
+    .replace(/\s*ج\s*\.\s*م/g, " جنيه ");
+  // LETTERS MEANS LETTERS. `[؀-ۿ]` is the whole Arabic block, which also contains the
+  // comma «،», the semicolon «؛», the question mark «؟» and the Arabic-Indic digits — so
+  // this used to glue punctuation onto words and then compare the result. Against the four
+  // hand-written cases that was invisible, because their commas happened to sit in the same
+  // places on both sides. Against a real reply it is not: «أبشر — عندنا» becomes «أبشر،
+  // عندنا», the token «أبشر» becomes «أبشر،», and the check reports a lost word where
+  // nothing was lost. Punctuation is presentation and this layer is allowed to change it;
+  // Arabic-Indic digits are deliberately respelled. Both are removed before comparing, so
+  // what remains is only what must not change.
+  const ARABIC_NON_LETTER = /[\u060C\u061B\u061F\u066A-\u066D\u06D4\u0660-\u0669\u06F0-\u06F9]/g;
+  const letters = (t: string) =>
+    (declared(t).replace(ARABIC_NON_LETTER, " ").match(/[؀-ۿ]+/g) ?? []).join(" ");
   let allKept = true;
   for (const c of cases) {
     const before = letters(c).split(" ").filter(Boolean);
@@ -116,9 +197,13 @@ console.log("\n── IT IS SUBTRACTIVE: NO WORD IS EVER ADDED OR CHANGED ──
     // permitted; a missing or altered word is not.
     let i = 0;
     for (const w of after) if (i < before.length && w === before[i]) i++;
-    if (i !== before.length) { allKept = false; console.log(`   lost words in: ${c}`); }
+    if (i !== before.length) {
+      allKept = false;
+      console.log(`   lost words in: ${c.slice(0, 90).replace(/\n/g, " ")}`);
+      console.log(`      stopped at «${before[i]}» (${i}/${before.length})`);
+    }
   }
-  ok("every Arabic word of the original survives, in order", allKept);
+  ok(`every Arabic word of the original survives, in order (${cases.length} replies)`, allKept);
 
   // AND THE EMERGENCY NUMBER IS NOT RESPELLED. 997 is above the spelling range on purpose:
   // this is the one sentence in the product where a mis-read digit has a physical
