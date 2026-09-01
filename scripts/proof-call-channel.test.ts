@@ -99,6 +99,16 @@ console.log("\n── ALL FOUR CALL-ONLY BEHAVIOURS ARE BEHIND THAT ONE ANSWER �
   ok(`4. both presentation exits are gated on the channel (${gated} found)`, gated === 2);
   ok("…and presentationForCall is never reached on a chat note",
     (code.match(/presentationForCall\(/g) ?? []).length === gated);
+
+  // 5. PHOTOS ARE A SCREEN PAYLOAD TOO, and were the one thing left outside the switch.
+  // `photoRequests` was returned unconditionally while `presentation` was withheld — inert
+  // only because the call screen's response type omits the field, which is a guarantee
+  // resting on a client omission that nothing tested. A caller who did not ask to see
+  // anything gets nothing to look at, on both payload kinds, by the same rule.
+  ok("5. dish photos are withheld from a caller who did not ask to see them",
+    /photoRequests:\s*isPhoneCall && !callerAskedToSee\(transcript\)/.test(code));
+  ok("…and never withheld from the chat, which is where they are drawn",
+    !/photoRequests:\s*\[\]\s*,\s*$/m.test(code.split("photoRequests: isPhoneCall")[1] ?? ""));
 }
 
 console.log("\n── THE CALL SCREEN SENDS IT; THE CHAT MICROPHONE DOES NOT ──────");

@@ -253,11 +253,49 @@ console.log("\n── THE CARRIER'S OWN GUARD, DRIVEN AGAINST A POISONED STRING 
     ok(`…and passes its own guard`, line !== null && carrierIsSafeToSpeak(line) === true);
   }
 
-  // AND «الواحد» IS NOT «واحد». Over-matching inside a longer word would refuse ordinary
-  // Arabic prose and silently disable the whole feature — the same failure mode the STT
-  // vocabulary filter was bitten by when its probe matched its own scaffolding.
-  ok("a number word inside a longer word is not a number",
-    carrierIsSafeToSpeak("تمام، الواحد منهم جاهز") === true);
+  // THE ARTICLE FORM IS A NUMBER TOO. «الخمسة» is «خمسة» wearing «ال», and the lookbehind
+  // treated «ال» as an ordinary letter — so «طلبك رقم الخمسة» passed the very guard written
+  // to stop that sentence. The allergen gate's `termRegex` has tolerated the article since
+  // it was written; this is the same fix one file later.
+  for (const withArticle of [
+    "تمام، اعتمدنا طلبك رقم الخمسة",
+    "تمام، طلبك رقم المية جاهز",
+    "تمام، اعتمدنا طلبك رقم الألف",
+  ]) {
+    ok(`«${withArticle.slice(0, 34)}» is refused`, carrierIsSafeToSpeak(withArticle) === false);
+  }
+  // Said plainly: tolerating the article also refuses «الواحد منهم» ("each of them"), where
+  // no count is meant. That is the direction to be wrong in for a string WE author — three
+  // fixed sentences, and a refusal shows up immediately as the shipped-carrier assertions
+  // above going red, whereas a spoken order number does not show up at all.
+
+  // AND ORDINARY ARABIC IS NOT A PRICE. «ر.س» is an abbreviation, and unanchored it matched
+  // «رس» ANYWHERE — inside «أرسلت»، «رسالة»، «مدرسة»، «درس». The route's own comment uses
+  // «تمام، أرسلت لك التفاصيل» as its example of a carrier, and that string was being
+  // refused as if it carried a price. A refused carrier is the DEAD AIR this whole file
+  // exists to remove, so a guard that fails toward silence on ordinary words is not strict,
+  // it is broken.
+  for (const ordinary of [
+    "تمام، أرسلت لك التفاصيل",
+    "تمام، رسالة وصلتك",
+    "تمام، الدرس خلص",
+  ]) {
+    ok(`«${ordinary.slice(0, 30)}» is not mistaken for a price`, carrierIsSafeToSpeak(ordinary) === true);
+  }
+  // …while the abbreviation itself still is one, on both spellings.
+  for (const money of ["السعر 35 ر.س", "السعر ر س", "المبلغ ريال", "المبلغ جنيه"]) {
+    ok(`«${money}» is refused`, carrierIsSafeToSpeak(money) === false);
+  }
+
+  // AN UNRECOGNISED REASON IS SILENCE, INCLUDING THE ONES EVERY OBJECT ANSWERS TO. A plain
+  // object literal returns a FUNCTION for `__proto__`, `constructor`, `toString` and
+  // `valueOf`, so the docstring's "fail-closed on an unrecognised reason" held only because
+  // the type system never let those through. A guarantee that depends on a type the runtime
+  // never sees is not the guarantee that was written down.
+  for (const weird of ["__proto__", "constructor", "toString", "valueOf", "hasOwnProperty"]) {
+    ok(`«${weird}» produces silence, not a function`,
+      callCarrierFor(weird as never) === null);
+  }
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-carriers: ${pass}/${pass + fails.length} passed`);

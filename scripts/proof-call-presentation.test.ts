@@ -167,6 +167,16 @@ console.log("\n── THE CHANNEL SIGNAL ACTUALLY REACHES THE MODEL ────
   ok("…and requires one question per turn", /ONE question per turn/i.test(spoken));
   ok("…and keeps business truth explicitly unchanged",
     /never what is true/i.test(spoken));
+  // AND IT DOES NOT SEND A CALLER TO ANOTHER APP. The receipt rule tells the model to
+  // confirm with «تأكد من رسائل واتساب» — on a call that is untrue twice: the guest is on
+  // the phone rather than in a chat, and on this demo nothing is re-sent to WhatsApp at all
+  // (`receiptResendRequested` has no consumer in either demo route). A promise the guest
+  // cannot check is the one thing this product may never make, so the call section overrides
+  // it explicitly rather than hoping the model notices the contradiction.
+  ok("…and never sends a caller to WhatsApp to read something",
+    /NEVER SEND THE GUEST TO ANOTHER APP/i.test(spoken));
+  ok("…while the typed prompt still confirms the way it always has",
+    /تأكد من رسائل واتساب/.test(typed) && !/NEVER SEND THE GUEST TO ANOTHER APP/i.test(typed));
 
   // THE OTHER SURFACES MUST BE BYTE-IDENTICAL. This section is additive by construction;
   // if the typed prompt changed at all, every WhatsApp tenant's behaviour just moved.

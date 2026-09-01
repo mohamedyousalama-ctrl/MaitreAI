@@ -543,8 +543,19 @@ ok("the spoken-reply route goes through the pinned wrapper",
 // The Brain has always built photoRequests and BOTH demo routes have always returned them.
 // The client dropped the field, so asking to see a dish produced text and no picture — the
 // server did the work and the browser threw it away.
-ok("both demo routes return the photos the Brain built",
-  /photoRequests: out\.photoRequests/.test(route) && /photoRequests: out\.photoRequests/.test(voice));
+//
+// …AND A PHONE CALL IS THE ONE PLACE THEY ARE WITHHELD, for the same reason a tappable list
+// is: the caller is holding a phone to their ear and the thread is behind a full-screen
+// overlay. A payload nobody can look at is worse than none, because the model then composes
+// a sentence pointing at it. The typed route keeps them unconditionally; the voice route
+// withholds them only on a call, only when the caller did not ask to see something —
+// `callerAskedToSee` is the same detector that gates the presentation.
+ok("the typed demo route returns the photos the Brain built",
+  /photoRequests: out\.photoRequests/.test(route));
+ok("…and so does a chat voice note",
+  /photoRequests: isPhoneCall && !callerAskedToSee\(transcript\) \? \[\] : out\.photoRequests/.test(voice));
+ok("…while a caller who asked for nothing to look at is sent nothing",
+  /isPhoneCall && !callerAskedToSee/.test(voice));
 // BOTH call sites. The client pushes Khalid's reply in two places — the typed turn and the
 // voice turn — and a single-match assertion passed while one of them dropped the photos.
 {

@@ -69,14 +69,24 @@ export const maxDuration = 60;
 //
 //   PER TICKET is the one that actually stops replay, because replay is per-ticket by
 //   definition. A legitimate player fetches a given URL ONCE; the allowance is two so a
-//   browser that retries a failed request still gets its audio. Held in memory, so on a
-//   multi-instance deploy a determined caller could get one extra synthesis per instance —
-//   a small multiple, not an open door, and the per-IP limit below is what bounds that.
+//   browser that retries a failed request still gets its audio.
 //
 //   PER IP is the outer bound, now on the SAME window as the POST route so the two can be
 //   compared at all. A caller can legitimately reach at most one GET per spoken turn, i.e.
 //   20/hour; 60 leaves room for browser retries and range probes while staying the same
 //   order as the ~40 syntheses/hour the POST route already permits that IP.
+//
+// AND BOTH COUNTERS ARE PER-INSTANCE. `lib/rate-limit.ts` says so in its own header: the
+// buckets are process-local and NOT shared across concurrent Vercel instances. So with N
+// warm instances the real ceiling is 20 x 2N rather than 20 x 2, and because `isRepeatFetch`
+// is per-instance too, the FIRST fetch on each instance is booked at mint but not re-booked
+// here — up to N-1 syntheses per ticket can still miss the ledger.
+//
+// An earlier draft said the per-IP limit "bounds that". It cannot: it is the same
+// process-local mechanism, so it multiplies by N alongside the thing it was supposed to
+// cap. Written down rather than fixed because the honest fix is a durable check on the
+// REPEAT path — which already pays a database round trip, so it costs the fast path
+// nothing — and that is a change worth making on its own rather than folded into this one.
 //
 // AND A REPEAT FETCH IS PUT ON THE LEDGER. The turn that minted the ticket books the first
 // synthesis; a second fetch is money `lib/monitoring/sweep.ts` would otherwise never see.

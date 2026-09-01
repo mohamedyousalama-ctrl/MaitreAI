@@ -61,9 +61,21 @@ const ANY_DIGIT = /[0-9٠-٩۰-۹]/;
 // `(?<![\p{L}\p{N}])…(?![\p{L}\p{N}])` with the `u` flag is the same intent expressed over
 // every script: not preceded or followed by a letter or a digit, so «واحد» is caught and
 // «الواحد» is not spuriously matched inside a longer word.
+// …AND THE ARTICLE COMES WITH IT. «الخمسة» is «خمسة» wearing «ال», and the lookbehind
+// refused it as a letter — so «طلبك رقم الخمسة» passed a guard that exists to stop exactly
+// that sentence. The allergen gate's own `termRegex` has carried `(?:ال)?` for this reason
+// since it was written; this is the same fix, one file later.
 const NUMBER_WORD =
-  /(?<![\p{L}\p{N}])(واحد|اثنين|ثنتين|ثلاثة|أربعة|خمسة|ستة|سبعة|ثمانية|تسعة|عشرة|عشرين|ثلاثين|أربعين|خمسين|ستين|سبعين|ثمانين|تسعين|مية|مئة|ألف)(?![\p{L}\p{N}])/u;
-const CURRENCY = /ر\.?\s?س|ريال|جنيه|SAR|EGP/i;
+  /(?<![\p{L}\p{N}])(?:ال)?(واحد|اثنين|ثنتين|ثلاثة|أربعة|خمسة|ستة|سبعة|ثمانية|تسعة|عشرة|عشرين|ثلاثين|أربعين|خمسين|ستين|سبعين|ثمانين|تسعين|مية|مئة|ألف)(?![\p{L}\p{N}])/u;
+
+// «ر.س» IS AN ABBREVIATION, NOT A LETTER PAIR. Unanchored, `ر\.?\s?س` matched «رس»
+// ANYWHERE — including inside «أرسلت»، «رسالة»، «مدرسة»، «درس». So a carrier reading
+// «تمام، أرسلت لك التفاصيل» — which is the phrase the route's own comment uses as its
+// example — was refused as if it contained a price, and a refused carrier is the DEAD AIR
+// this whole file exists to remove. A guard that fails toward silence on ordinary Arabic is
+// not a strict guard, it is a broken one. Boundaries on both sides; «ريال» and the ISO
+// codes stay as they were, since those are whole words already.
+const CURRENCY = /(?<![\p{L}])ر\s*\.?\s*س(?![\p{L}])|ريال|جنيه|SAR|EGP/iu;
 const LINKISH = /https?:|www\.|\.com|رابط|لينك/i;
 
 /**
@@ -100,8 +112,15 @@ export function callCarrierFor(reason: VoiceZeroReason | null | undefined): stri
   // The safety hold is deliberately absent from CARRIERS; this is the line that keeps it
   // that way if someone adds a key without reading the header.
   if (reason === "safety_hold") return null;
-  const carrier = CARRIERS[reason as CarrierReason];
-  if (!carrier) return null;
+  // OWN PROPERTIES ONLY. A plain object literal answers `__proto__`, `constructor`,
+  // `toString` and `valueOf` with something truthy, so a lookup by an unexpected key
+  // returned a FUNCTION where the docstring promises `null` — and `carrierIsSafeToSpeak`
+  // says yes to `Object.prototype`. Unreachable today, because `skipped` is a closed union
+  // and TypeScript will not let anything else in. Fixed anyway: the docstring says
+  // "fail-closed on an unrecognised reason", and a guarantee that holds only because of a
+  // type the runtime never sees is not the guarantee that was written down.
+  const carrier = Object.hasOwn(CARRIERS, reason) ? CARRIERS[reason as CarrierReason] : undefined;
+  if (!carrier || typeof carrier !== "string") return null;
 
   // THE CARRIER IS HELD TO ITS OWN RULE. A future edit that put a price, a number word, a
   // currency or a link into one of these strings would defeat the entire point, and the

@@ -99,6 +99,58 @@ console.log("\n── IT FAILS TOWARD LESS BIAS, NEVER MORE ──────�
   }
 }
 
+console.log("\n── EVERY DETECTOR THE ROUTE RUNS, NOT JUST THE FIRST ONE ───────");
+{
+  // FOUR DETECTORS GATE A VOICE TURN, and this filter asked ONE of them for three versions.
+  // `detectAllergenAvoidance` is the one the original incident went through, so it was the
+  // one consulted — while the PHONETIC SAFETY NET fires on words that merely SOUND like an
+  // allergen and routes, in its own words, "to the same deterministic allergen hold as a
+  // typed allergy mention":
+  //
+  //     «كنافة بالجبن» → لبن      «موز» → لوز      «رز أبيض» → بيض
+  //
+  // And it fires on the bare word inside ANY sentence — «هلا والله جبن» trips it. So biasing
+  // a recognizer toward «جبن» raises the chance of «جبن» turning up in an utterance that was
+  // never about cheese, and that transcript then holds the conversation. That is the exact
+  // incident this file was written for, one detector over.
+  //
+  // The earlier reasoning for keeping «كنافة بالجبن» — that «جبن» is not in the avoidance
+  // lexicon, so nothing can fire on it — was true of ONE detector and false of the product.
+  const { detectPhoneticSafetyNet } = await import("../lib/ai/phonetic-safety-net.ts");
+  const { detectAllergenEmergency } = await import("../lib/ai/allergen-emergency.ts");
+  const { detectAllergenSymptom } = await import("../lib/ai/allergen-gate-symptoms.ts");
+
+  for (const soundalike of ["كنافة بالجبن", "موز", "رز أبيض", "صلصة بيضاء", "لوزين"]) {
+    ok(`«${soundalike}» really does trip a hold on its own`,
+      detectPhoneticSafetyNet(soundalike, { sttConfidence: null, isVoiceTranscript: true }).fired);
+    ok(`…so it is never offered to the recognizer`,
+      !safeSttVocabulary([soundalike, "جريش"]).includes(soundalike));
+  }
+
+  // AND THE FILTER AGREES WITH ALL FOUR, on a realistic menu — asserted as the agreement so
+  // that adding a fifth detector to the route without adding it here fails HERE.
+  const MENU = [
+    "كنافة بالجبن", "موز", "رز أبيض", "زبدة الفول السوداني", "لبن بارد", "سليق باللبن",
+    "كبسة دجاج", "مندي لحم", "جريش", "لقيمات", "قهوة عربية", "تمر سكري", "شيش طاووق",
+    "سلطة خضراء", "فتوش", "حمص", "متبل", "عصير برتقال", "شاي أحمر", "هريس", "مرقوق",
+  ];
+  const kept = safeSttVocabulary(MENU);
+  let leaked = "";
+  for (const name of kept) {
+    const trips =
+      detectPhoneticSafetyNet(name, { sttConfidence: null, isVoiceTranscript: true }).fired ||
+      detectAllergenEmergency(name).fired ||
+      detectAllergenSymptom(name).fired ||
+      detectAllergenAvoidance(`عندي حساسية من ${name}`).fired &&
+        normalizeAr(name).includes(normalizeAr(detectAllergenAvoidance(`عندي حساسية من ${name}`).term ?? "؟؟"));
+    if (trips) leaked = name;
+  }
+  ok(`no kept name can trip any detector the route runs${leaked ? ` — «${leaked}» can` : ""}`,
+    leaked === "");
+  ok(`…and the menu is still mostly primed (${kept.length}/${MENU.length})`,
+    kept.length >= MENU.length - 8);
+}
+
 console.log("\n── THE ALLERGEN GATE ITSELF IS UNTOUCHED ───────────────────────");
 {
   // The fix must NOT be "make the gate less sensitive". A real allergy declaration must
@@ -185,6 +237,41 @@ console.log("\n── AND A PREFIXED NAME IS STILL AN ALLERGEN ─────�
   for (const risky of ["سليق باللبن", "شاي كرك بالحليب", "شكشوكة بالبيض", "معمول بالتمر والمكسرات"]) {
     ok(`«${risky}» is dropped despite the prefix`, !safeSttVocabulary(REAL_MENU).includes(risky));
   }
+
+  // AND A MULTI-WORD TERM BEHIND AN ARTICLE — the case that survived the first fix.
+  //
+  // `detectAllergenAvoidance` tolerates «ال» when MATCHING and returns the CANONICAL,
+  // article-free term. For «زبدة الفول السوداني» that term is «فول سوداني»: two words. Word-
+  // by-word stripping catches «باللبن» → «لبن» and can never catch this, so peanut butter —
+  // the single most consequential allergen in a Gulf menu — was kept in the recognizer's
+  // bias while «لبن بارد» was dropped. The containment test now also runs against the whole
+  // name with the glue off every word.
+  for (const risky of ["زبدة الفول السوداني", "الحليب المحلى", "زبدة فول سوداني", "الفول السوداني"]) {
+    ok(`«${risky}» is dropped — a multi-word term behind an article is still an allergen`,
+      !safeSttVocabulary([risky, "جريش"]).includes(risky));
+  }
+  ok("…and the safe dish beside it survives", safeSttVocabulary(["زبدة الفول السوداني", "جريش"]).includes("جريش"));
+
+  // AND EVERY DROPPED NAME EARNS IT. Over-dropping is the other failure and it is silent:
+  // it would disable priming for a whole menu while the file's comment claimed it worked.
+  // Each name the filter refuses must be one a bare transcript really would fire on.
+  {
+    const GULF_MENU = [
+      "زبدة الفول السوداني", "لبن بارد", "شاي كرك بالحليب", "شكشوكة بالبيض", "سمك هامور",
+      "كبسة دجاج", "مندي لحم", "جريش", "لقيمات", "قهوة عربية", "تمر سكري", "شيش طاووق",
+      "سلطة خضراء", "فتوش", "حمص", "متبل", "عصير برتقال", "شاي أحمر", "كنافة بالجبن",
+    ];
+    const kept = safeSttVocabulary(GULF_MENU);
+    const dropped = GULF_MENU.filter((m) => !kept.includes(m));
+    let unearned = "";
+    for (const d of dropped) {
+      if (!detectAllergenAvoidance(`عندي حساسية من ${d}`).fired) unearned = d;
+    }
+    ok(`every dropped name really does name an allergen${unearned ? ` — «${unearned}» does not` : ""}`,
+      unearned === "");
+    ok(`…and most of a real menu still primes the recognizer (${kept.length}/${GULF_MENU.length})`,
+      kept.length >= GULF_MENU.length - 6);
+  }
   const prompt = buildSttPromptVocab(REAL_MENU);
   for (const sub of ["لبن", "حليب", "بيض", "مكسرات"]) {
     ok(`the recognizer is not primed for «${sub}» through a prefix`, !prompt.includes(sub));
@@ -199,21 +286,17 @@ console.log("\n── AND A PREFIXED NAME IS STILL AN ALLERGEN ─────�
   // recognition quality for no safety gain. Asserted as the AGREEMENT rather than as a
   // hand-picked list, so if the lexicon ever gains that word this fails and the filter
   // follows it.
+  // …AND «كنافة بالجبن» IS DROPPED TOO, for a reason the avoidance gate cannot see.
+  //
+  // An earlier version of this block compared the filter against `detectAllergenAvoidance`
+  // ALONE and asserted they must agree — which said «كنافة بالجبن» should be KEPT, because
+  // «جبن» is not in that lexicon. That was true of one detector and false of the product:
+  // the PHONETIC SAFETY NET fires on «جبن» (nearest «لبن») and routes to the same hold. The
+  // agreement that matters is with every detector the route runs, and it is asserted as such
+  // in its own block below rather than against whichever one was checked first.
   for (const compound of ["كنافة بالجبن", "سليق باللبن", "شكشوكة بالبيض"]) {
-    const gateCanFire = (() => {
-      for (const word of normalizeAr(compound).split(/\s+/)) {
-        for (const p of ["", "بال", "وال", "ال", "ب", "و", "ل"]) {
-          const form = p && word.startsWith(p) ? word.slice(p.length) : word;
-          const hit = detectAllergenAvoidance(`عندي حساسية من ${form}`);
-          const picked = hit.term ? normalizeAr(hit.term) : "";
-          if (picked !== "" && form.includes(picked)) return true;
-        }
-      }
-      return false;
-    })();
-    const dropped = !safeSttVocabulary([compound]).includes(compound);
-    ok(`«${compound}»: filter and gate agree (gate=${gateCanFire}, dropped=${dropped})`,
-      gateCanFire === dropped);
+    ok(`«${compound}» is dropped — some detector on the live path can fire on it`,
+      !safeSttVocabulary([compound]).includes(compound));
   }
 }
 

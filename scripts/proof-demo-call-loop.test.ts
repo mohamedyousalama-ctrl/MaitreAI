@@ -193,6 +193,21 @@ const AUDIO_OK = {
   replyAudioMime: "audio/ogg", replyAudioSilence: "none",
 };
 
+// WHAT A CALL ACTUALLY RECEIVES NOW, and what every scenario in this file was missing.
+//
+// A phone call's reply is delivered as `replyAudioUrl` — a signed URL the player fetches so
+// playback starts while the provider is still speaking. The only fixture here sent
+// `replyAudio` (inline base64), so NO assertion in the repo ever drove the streamed branch
+// of the client. Driven: deleting `|| !!data.replyAudioUrl` from the client's
+// `callResponseAction` call left the whole 222-file suite green while EVERY CALL DIED ON
+// TURN ONE, telling a prospect the voice was broken.
+const STREAMED_OK = {
+  conversationId: "c1", transcript: "أبغى كبسة", reply: "تمام، كبسة وحدة",
+  replyAudio: null,
+  replyAudioUrl: "/api/demo/speak?t=TICKET&s=c1",
+  replyAudioMime: "audio/mpeg", replyAudioSilence: "none",
+};
+
 async function runScreen(opts: {
   capabilities?: boolean;
   server?: (n: number) => { status: number; body?: unknown };
@@ -490,6 +505,48 @@ async function runScreen(opts: {
       r.everSaw("ما سمعت شي"));
   }
 
+  // ── THE STREAMED DELIVERY, WHICH IS WHAT A REAL CALL GETS ────────────────
+  {
+    const streamed = await runScreen({ ms: 11_000, server: () => ({ status: 200, body: STREAMED_OK }) });
+    ok("a streamed reply is played, not read as a broken voice",
+      streamed.log.played.some((u: string) => u.includes("/api/demo/speak")));
+    ok("…and the call keeps going", !streamed.everSaw("انتهت المحادثة"));
+    ok("…and is never reported as a broken voice", !streamed.everSaw("الصوت مو شغّال"));
+    ok(`…and the loop continues (${streamed.log.voiceRequests.length} turns)`,
+      streamed.log.voiceRequests.length >= 2);
+
+    // NO OBJECT URL IS MINTED FOR IT, and none is revoked. `URL.revokeObjectURL` on an
+    // ordinary HTTP URL is meaningless, and registering one in the revoke list would mean
+    // the thread's cleanup pass runs against something it does not own.
+    ok("no object URL is created for a streamed reply", streamed.log.urlsCreated.length === 0);
+    ok("…and none is revoked", streamed.log.urlsRevoked.length === 0);
+    ok("…and nothing is registered for revocation", streamed.props.audioUrls.current.length === 0);
+
+    // THE THREAD KEEPS THE WORDS, NOT A URL THAT DIES IN A MINUTE. The ticket expires in 60
+    // seconds; a bubble pressed after the call would answer 204, which a media element
+    // renders as «الصوت ما اشتغل» — the exact symptom an earlier commit removed, and this
+    // time for every bubble, permanently.
+    const khalidBubbles = streamed.pushed.filter((m: { from: string }) => m.from === "khalid");
+    ok(`Khalid's streamed replies are recorded in the thread (${khalidBubbles.length})`,
+      khalidBubbles.length >= 1);
+    ok("…as TEXT, with no player pointed at an expiring URL",
+      khalidBubbles.every((m: { kind: string; audioUrl?: string }) =>
+        m.kind === "text" && !m.audioUrl));
+    ok("…and the words themselves are kept",
+      khalidBubbles.every((m: { text?: string }) => (m.text ?? "").includes("كبسة")));
+  }
+
+  // …AND THE BUFFERED DELIVERY IS UNCHANGED, because the chat voice note still uses it.
+  {
+    const buffered = await runScreen({ ms: 9000, server: () => ({ status: 200, body: AUDIO_OK }) });
+    const khalidBubbles = buffered.pushed.filter((m: { from: string }) => m.from === "khalid");
+    ok("a buffered reply still becomes a playable bubble",
+      khalidBubbles.some((m: { kind: string; audioUrl?: string }) => m.kind === "voice" && !!m.audioUrl));
+    ok("…from an object URL the parent will clean up",
+      buffered.props.audioUrls.current.length === buffered.log.urlsCreated.length &&
+      buffered.log.urlsCreated.length > 0);
+  }
+
   // A VOICE THAT WILL NOT PLAY IS SAID OUT LOUD — after one, not zero, forgiveness.
   //
   // The call must never loop in silence while the screen reads «يتكلم…», and it must never
@@ -607,6 +664,70 @@ async function runScreen(opts: {
     // AFTER the 7s stall, which is past this scenario's clock — and it already has its own
     // block above. Asserting it here would have been a scenario testing another scenario's
     // property with a window too short to see it.
+  }
+
+  // …AND A NOISY ROOM DOES NOT HIDE A SILENT CALL.
+  //
+  // The stall exit alone was not enough, and a quiet-room test could never show it. The
+  // microphone is open during those seven seconds and the barge watcher is live, so ambient
+  // noise — a restaurant, a café, a table of people, which is where this page is actually
+  // shown — settles the playback promise as an INTERRUPTION before the stall timer fires.
+  // `played` was then true, the `barged` branch returned above the failure branch, and the
+  // call ran on: driven, FIVE turns, zero audio ever produced, the visitor told nothing and
+  // the call never ending. A barge only counts as an interruption if there was something to
+  // interrupt.
+  {
+    const NOISY = [
+      ...Array(7).fill(0.005),   // calibrate
+      ...Array(10).fill(0.20),   // the visitor speaks
+      ...Array(22).fill(0.004),  // …and stops, ending the turn
+      ...Array(40).fill(0.25),   // …then the room is loud while nothing plays
+    ];
+    const noisy = await runScreen({ ms: 20_000, playStallTurns: [1, 2, 3, 4, 5], rmsScript: NOISY });
+    ok("a call that never makes a sound ends honestly, even in a loud room",
+      noisy.everSaw("الصوت مو شغّال"));
+    ok("…rather than running on turn after turn in silence",
+      noisy.log.voiceRequests.length <= 3);
+    ok("…and never blames a safety rule for it",
+      !noisy.everSaw("حساسية أو مبالغ أو إيصال"));
+  }
+
+  // AND A LONG REPLY THAT IS GENUINELY PLAYING IS NEVER CUT OFF.
+  //
+  // The stall ceiling is seven seconds and a reply can legitimately run longer than that, so
+  // the claim the comment makes — "it bounds SILENCE, not duration" — rests entirely on the
+  // timer re-arming from progress events. That was unprovable until the harness's audio
+  // element started reporting `playing` and `timeupdate` the way a real one does; before, a
+  // nine-second reply and a nine-second stall were the same thing to every scenario here.
+  {
+    // Speak once, then stay quiet for the whole nine seconds of playback — a caller
+    // listening. `QUIET_ROOM` alone never produces a "spoke" verdict, so nothing is ever
+    // uploaded and nothing plays: the first version asserted this against a call that had
+    // not reached the point where a reply exists.
+    const LISTENING = [
+      ...Array(7).fill(0.005),    // calibrate
+      ...Array(10).fill(0.20),    // the visitor speaks
+      ...Array(22).fill(0.004),   // …and stops, ending the turn
+      ...Array(220).fill(0.003),  // …then listens in silence for the whole reply
+    ];
+    const long = await runScreen({ ms: 16_000, playbackMs: 9000, rmsScript: LISTENING });
+    ok(`a nine-second reply outlives the seven-second stall ceiling (${long.log.played.length} played)`,
+      long.log.played.length >= 1 && !long.everSaw("الصوت تعثّر"));
+    ok("…and is never reported as a broken voice", !long.everSaw("الصوت مو شغّال"));
+  }
+
+  // AND A REAL INTERRUPTION IS STILL A REAL INTERRUPTION. The counter must distinguish
+  // "noise during dead air" from "the visitor spoke over an audible reply" — treating the
+  // second as a failure would end a working call on the visitor's second interruption.
+  {
+    const LOUD = [
+      ...Array(7).fill(0.005), ...Array(10).fill(0.20), ...Array(22).fill(0.004),
+      ...Array(20).fill(0.30), ...Array(25).fill(0.004),
+    ];
+    const real = await runScreen({ ms: 12_000, rmsScript: LOUD, playbackMs: 900 });
+    ok(`interrupting an audible reply is never counted as a failure (${real.atHangup.paused} pauses)`,
+      real.atHangup.paused >= 1 && !real.everSaw("الصوت مو شغّال"));
+    ok("…and the visitor is not told the voice stumbled", !real.everSaw("الصوت تعثّر"));
   }
 
   {

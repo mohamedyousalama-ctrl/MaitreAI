@@ -1299,9 +1299,19 @@ function CallScreen({
       // is genuinely playing is never cut off; it bounds SILENCE, not duration.
       const STALL_MS = 7000;
       let stallTimer: ReturnType<typeof setTimeout> | null = null;
+      // DID THE VISITOR ACTUALLY HEAR ANYTHING? Not the same question as "did the promise
+      // resolve true", and the difference is what the stall exit alone could not see: the
+      // microphone is open during those seven seconds and the barge watcher is live, so
+      // ambient noise — a restaurant, a café, a table of people, which is where this page is
+      // shown — settles the promise as an INTERRUPTION before the stall timer ever fires.
+      // `played` is then true, the `barged` branch returns above the failure branch, and a
+      // call that produced no sound at all runs on turn after turn telling the visitor
+      // nothing. Driven in a noisy room: five turns, zero audio, no note, no ending.
+      let heardAnything = false;
       const played = await new Promise<boolean>((done) => {
         settle = done;
         const armStall = () => {
+          heardAnything = true;
           if (stallTimer) clearTimeout(stallTimer);
           stallTimer = setTimeout(() => {
             console.warn(`[demo/call] audio stalled — no progress in ${STALL_MS}ms, giving up on this reply`);
@@ -1309,10 +1319,14 @@ function CallScreen({
             done(false);
           }, STALL_MS);
         };
+        // The first arm is the deadline for the FIRST sound, so it must not claim one was
+        // heard. Every later arm comes from a real progress event and does.
+        heardAnything = false;
         armStall();
+        heardAnything = false;
         el.onplaying = armStall;
         el.ontimeupdate = armStall;
-        el.onended = () => done(true);
+        el.onended = () => { heardAnything = true; done(true); };
         // SAY WHY, HERE TOO. This discarded the reason, exactly as the server's catch did,
         // so a silent call produced no evidence anywhere on either side — the request
         // logged a clean 200 and the page just said the voice was not working. The two
@@ -1347,7 +1361,12 @@ function CallScreen({
       // FALSE while `barged` is true, and without this the call would end telling the
       // visitor the voice is broken — because they spoke. Cheap, and the failure it
       // prevents is the worst one on this screen.
-      if (barged) { void runTurn(); return; }
+      // AN INTERRUPTION ONLY COUNTS AS ONE IF THERE WAS SOMETHING TO INTERRUPT. A barge over
+      // audible speech is the visitor taking their turn — hand the floor back and move on. A
+      // "barge" during dead air is ambient noise arriving before the stall timer, and the
+      // turn still produced no sound: it falls through to the failure path below, so it is
+      // counted, explained, and eventually ends the call honestly.
+      if (barged && heardAnything) { void runTurn(); return; }
 
       // ONE BAD TURN IS NOT A BROKEN VOICE, AND TWO IS.
       //
@@ -1363,7 +1382,7 @@ function CallScreen({
       // row is a broken voice and is still said out loud — the rule this screen has always
       // held is that a call which cannot speak must not pretend it is fine, and running
       // silently turn after turn while the screen reads «يتكلم…» is exactly that pretence.
-      if (!played) {
+      if (!played || !heardAnything) {
         speechFailures.current += 1;
         if (speechFailures.current >= 2) {
           stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));

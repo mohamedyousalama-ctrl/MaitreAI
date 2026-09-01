@@ -27,7 +27,7 @@ import { transcribeAudioBytes } from "@/lib/messaging/voice";
 import { expectedAnswerClass, CLASS_PRIORITY_TERMS } from "@/lib/ai/voice-aliases";
 import { safeSttVocabulary } from "@/lib/ai/stt/safe-vocab";
 import { demoVoiceReply, demoVoiceSignalsFor, demoVoiceSilenceKind } from "@/lib/demo/voice-out";
-import { presentationForCall } from "@/lib/demo/call-presentation";
+import { presentationForCall, callerAskedToSee } from "@/lib/demo/call-presentation";
 import { isPhoneCallChannel } from "@/lib/demo/call-channel";
 import { demoVoiceTicket, speechTicketsAvailable } from "@/lib/demo/speech-ticket";
 import { callCarrierFor } from "@/lib/demo/call-carriers";
@@ -239,7 +239,12 @@ export async function POST(req: Request) {
   let sttConfidence: number | null = null;
   let sttCost: { model: string; adapter: string; costUsd: number };
   const tStt = Date.now();
-  let msSttProvider = 0;
+  // NULL, NOT ZERO. `msSttProvider || …` falls through on a sub-millisecond transcription and
+  // folds the `agent_runs` write straight back into `stt=` — the exact mis-attribution this
+  // was split out to remove, hiding behind a falsy zero. Unreachable at real STT latencies
+  // (217-806ms measured), and a measurement that is right only while the numbers are large
+  // is not a measurement.
+  let msSttProvider: number | null = null;
   try {
     const stt = await transcribeAudioBytes(buf, mime, menuNames, priorityTerms);
     // THE TRANSCRIBER IS DONE HERE. Everything after this line in the block is OUR
@@ -286,7 +291,7 @@ export async function POST(req: Request) {
     console.error("[demo/voice] spend accounting failed — refusing", e);
     return NextResponse.json({ error: "demo_unavailable" }, { status: 503 });
   }
-  const msStt = msSttProvider || Date.now() - tStt;
+  const msStt = msSttProvider ?? Date.now() - tStt;
   // The ledger write that used to hide inside `stt=`.
   const msSttWrite = Date.now() - tStt - msStt;
 
@@ -578,7 +583,23 @@ export async function POST(req: Request) {
         // Only if the carrier ITSELF produced audio. If synthesis fails here we are back to
         // the silence we started with, which is correct — never a substitute voice.
         if (carrierAudio.audioBase64 || carrierAudio.speechUrl) {
-          spoken = { ...carrierAudio, spend: carrierAudio.spend ?? spoken.spend };
+          // SUMMED, NOT CHOSEN BETWEEN. `??` keeps the carrier's spend and DISCARDS the
+          // first synthesis whenever both exist — and both existing is precisely the case
+          // this branch is for: a reply that was refused AFTER being paid for, followed by a
+          // carrier that was also paid for. Unreachable today (the only skip carrying a
+          // spend is `wrong_voice`, which gets no carrier), and money silently leaving the
+          // ledger is not a thing to leave resting on that.
+          spoken = {
+            ...carrierAudio,
+            spend: spoken.spend && carrierAudio.spend
+              ? {
+                  costUsd: spoken.spend.costUsd + carrierAudio.spend.costUsd,
+                  chars: spoken.spend.chars + carrierAudio.spend.chars,
+                  model: carrierAudio.spend.model,
+                  adapter: carrierAudio.spend.adapter,
+                }
+              : carrierAudio.spend ?? spoken.spend,
+          };
         } else if (carrierAudio.spend) {
           // A REFUSAL AFTER A PAID SYNTHESIS IS STILL A CHARGE. `wrong_voice` is decided by
           // reading what the provider sent back, which means the money is already gone —
@@ -715,7 +736,14 @@ export async function POST(req: Request) {
         : out.presentation
           ? formatCustomerVisiblePresentation(out.presentation, out.dialect)
           : out.presentation,
-      photoRequests: out.photoRequests,
+      // A PHOTO IS SOMETHING TO LOOK AT, exactly like a presentation. This was returned
+      // unconditionally while `presentation` was withheld — the one screen-only payload
+      // outside the discriminator. It is inert today only because the call screen's response
+      // type omits the field and never calls `usablePhotos`, which means the guarantee rests
+      // on a client omission that nothing tests. `presentationForCall`'s own argument
+      // applies verbatim: a payload nobody can look at is worse than no payload, because the
+      // model composes a sentence pointing at it.
+      photoRequests: isPhoneCall && !callerAskedToSee(transcript) ? [] : out.photoRequests,
     });
   } catch (e) {
     if (e instanceof CustomerTurnError && e.code === "restaurant_not_found") {

@@ -804,9 +804,21 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   const fillStart = route.indexOf('if (filled.kind === "handled")');
   const fill = route.slice(fillStart, route.indexOf("} catch (e) {", fillStart));
   ok("the deterministic quantity-fill reply is synthesized, not skipped",
-    /demoVoiceReply\(/.test(fill));
+    /demoVoiceReply\(/.test(fill) || /demoVoiceTicket\(/.test(fill));
+  ok("…by whichever delivery the channel uses, streamed on a call and buffered otherwise",
+    /isPhoneCall && speechTicketsAvailable\(\)/.test(fill));
   ok("…and its spend reaches the ledger like any other synthesis",
     /trigger: "voice_tts"/.test(fill));
+  // AND THE WRITE IS ACTUALLY GUARDED. `if (filledSpoken.spend)` wrapped in `if (false && …)`
+  // survived the whole 222-file suite: the model exit's equivalent write is pinned, this one
+  // was not, so ONE of the two exits could stop recording spend with CI green. That is the
+  // "25 turns → $0.00" shape, and it is why the guard is asserted per exit rather than once.
+  ok("…behind a condition, so a spend is never written for a turn that had none",
+    /if \(filledSpoken\.spend\) \{/.test(fill));
+  ok("…written through mustWrite, which fails closed rather than losing the row",
+    /mustWrite</.test(fill) && /exactRows: 1/.test(fill));
+  ok("…and the row carries the real cost, not a constant",
+    /cost_usd: filledSpoken\.spend\.costUsd/.test(fill));
 }
 
 // ── THE TWO LIVE-PATH GUARDS THAT NOTHING PINNED ────────────────────────────

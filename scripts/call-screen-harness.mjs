@@ -279,6 +279,9 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
       this._src = url ?? "";
       this.onended = null;
       this.onerror = null;
+      this.onplaying = null;
+      this.ontimeupdate = null;
+      this._progress = null;
       this.error = null;
       this.muted = false;
     }
@@ -312,8 +315,21 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
       // that: a watcher on the microphone while the audio plays. A stub that finishes
       // instantly reports "no interruption" for a component that never got the chance.
       this._paused = false;
+      // A REAL ELEMENT REPORTS PROGRESS. `playing` on start and `timeupdate` roughly four
+      // times a second is what a browser does, and the component now depends on it: the
+      // stall exit re-arms on progress, so without these a genuinely playing reply looks
+      // identical to a stream delivering nothing. Modelling only `ended` made the difference
+      // between "playing" and "silent" invisible to every scenario in the suite.
+      queueMicrotask(() => { if (!this._paused) this.onplaying?.(); });
       if (playbackMs > 0) {
-        this._timer = setTimeout(() => { if (!this._paused) this.onended?.(); }, playbackMs);
+        this._progress = setInterval(() => {
+          if (this._paused) { clearInterval(this._progress); return; }
+          this.ontimeupdate?.();
+        }, 250);
+        this._timer = setTimeout(() => {
+          if (this._progress) { clearInterval(this._progress); this._progress = null; }
+          if (!this._paused) this.onended?.();
+        }, playbackMs);
       } else {
         queueMicrotask(() => this.onended?.());
       }
@@ -322,6 +338,7 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
       log.paused++;
       this._paused = true;
       if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+      if (this._progress) { clearInterval(this._progress); this._progress = null; }
     }
   };
 

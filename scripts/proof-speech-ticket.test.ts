@@ -67,6 +67,19 @@ console.log("\n── A TICKET WE SIGNED ROUND-TRIPS ─────────
   ok("the ticket contains no secret material", !String(t).includes(SECRET));
   ok("…and is url-safe, since it travels in a query string",
     /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(String(t)));
+
+  // EVERY TICKET IS ITS OWN TICKET. Without a nonce a ticket is a pure function of (text,
+  // voice, session, millisecond) — so two identical replies in the same millisecond mint the
+  // SAME STRING, and the streaming route's per-ticket replay cap, which is keyed on the
+  // signature, would let one turn spend another's allowance. Found by driving the route: two
+  // fresh mints in a tight loop collided and the second was refused as a replay.
+  const many = new Set(
+    Array.from({ length: 200 }, () =>
+      String(signSpeechTicket({ text: SPEAKABLE, voiceId: KHALID_VOICE.voiceId, sid: "sess-1" })))
+  );
+  ok(`200 mints of the same reply produce 200 distinct tickets (${many.size})`, many.size === 200);
+  ok("…and every one of them still verifies",
+    [...many].every((x) => verifySpeechTicket(x, { sid: "sess-1" }).ok === true));
 }
 
 console.log("\n── NOBODY ELSE CAN PUT WORDS IN KHALID'S MOUTH ─────────────────");
@@ -149,6 +162,56 @@ console.log("\n── THE VERIFIER READS THE TEXT ITSELF, SIGNATURE OR NOT ─�
     signSpeechTicket({ text: "ا".repeat(DEMO_TTS_MAX_CHARS + 1), voiceId: KHALID_VOICE.voiceId }) === null);
   ok("…and refuses to mint without a voice",
     signSpeechTicket({ text: SPEAKABLE, voiceId: "" }) === null);
+}
+
+console.log("\n── A REAL SIGNATURE IS NOT A PERMISSION SLIP ───────────────────");
+{
+  // EVERY ONE OF THESE IS AUTHENTIC — forged with the real key, so the signature check has
+  // nothing to say about them. They are the cases where the verifier has to hold a property
+  // ITSELF rather than defer it, and each was accepted before: an audit that had the key
+  // walked all of them through.
+  const authentic = (p: Record<string, unknown>) =>
+    forge({ text: SPEAKABLE, voiceId: KHALID_VOICE.voiceId, sid: null, exp: Date.now() + 30_000, nonce: "n", ...p });
+
+  // A VOICE WE NEVER REGISTERED. `buildElevenLabsRequest` refuses it downstream, so this is
+  // depth — but the claim made about the streaming route is that the voice comes from the
+  // registry, and a verifier handing back an arbitrary string has deferred that, not checked it.
+  for (const voiceId of ["21m00Tcm4TlvDq8ikWAM", "../../v1/user", "", "x".repeat(200)]) {
+    ok(`an unregistered voice «${voiceId.slice(0, 22)}» is refused`,
+      verifySpeechTicket(authentic({ voiceId })).ok === false);
+  }
+
+  // A LIFE LONGER THAN THE CEILING. The minter clamps `ttlMs`; only the minter did.
+  for (const exp of [Date.now() + 3_600_000, Date.now() + 86_400_000 * 365, Number.MAX_SAFE_INTEGER]) {
+    const v = verifySpeechTicket(authentic({ exp }));
+    ok(`an over-long ticket is refused (exp +${Math.round((exp - Date.now()) / 1000)}s)`, v.ok === false);
+    ok("…as expired, which is what it is", (v as { reason: string }).reason === "expired");
+  }
+
+  // SHEDDING THE SESSION BINDING BY MAKING IT FALSY. `payload.sid ? … : null` read `0`, `""`
+  // and `false` as "this ticket was never bound", so a forger could unbind one by editing a
+  // field rather than removing it.
+  for (const sid of [0, "", false, {}, [], 123]) {
+    ok(`sid=${JSON.stringify(sid)} is refused rather than read as unbound`,
+      verifySpeechTicket(authentic({ sid }), { sid: "anything" }).ok === false);
+  }
+  ok("…while an explicitly unbound ticket still works", verifySpeechTicket(authentic({ sid: null })).ok === true);
+
+  // ENCODING MALLEABILITY. base64url tolerates padding and unused trailing bits, so several
+  // distinct strings decode to identical bytes — each a different ticket to anything keyed on
+  // the string, which is how a per-ticket replay counter gets handed a fresh key for the same
+  // payload.
+  const good = String(signSpeechTicket({ text: SPEAKABLE, voiceId: KHALID_VOICE.voiceId }));
+  const [gb, gs] = good.split(".");
+  ok("the canonical form verifies", verifySpeechTicket(good).ok === true);
+  ok("…but a padded body does not", verifySpeechTicket(`${gb}=.${gs}`).ok === false);
+  ok("…nor does one with whitespace", verifySpeechTicket(`${gb} .${gs}`).ok === false);
+
+  // INVISIBLE-ONLY IS EMPTY, in both readers. `trim()` leaves zero-width and bidi marks, so
+  // a reply of one U+200B is blank to a reader and a billable character to a provider.
+  for (const blank of ["\u200B", "\u200B\u200E\uFEFF", "\u2066\u2069"]) {
+    ok("an invisible-only reply is refused", verifySpeechTicket(authentic({ text: blank })).ok === false);
+  }
 }
 
 console.log("\n── NO KEY MEANS NO AUDIO, NOT A WIDE-OPEN DOOR ─────────────────");

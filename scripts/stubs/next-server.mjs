@@ -6,7 +6,13 @@ export class NextResponse {
   constructor(body = null, init = {}) {
     this.body = body;
     this.status = init.status ?? 200;
-    this.headers = new Map(Object.entries(init.headers ?? {}));
+    // A REAL `Headers`, NOT A `Map`. A Map is case-SENSITIVE, so a route that sets
+    // `"Content-Type"` and a proof that reads `"content-type"` disagreed here and agreed in
+    // production — the stub inventing a failure. It also hides the opposite mistake: two
+    // headers differing only in case are one header to a browser and two entries in a Map.
+    // `Headers` supports `.get`, `.has`, `.entries` and `.forEach`, so nothing that treated
+    // this as a Map notices, except the case-folding it should have had all along.
+    this.headers = new Headers(init.headers ?? {});
   }
   static json(obj, init = {}) {
     const r = new NextResponse(JSON.stringify(obj), init);

@@ -34,6 +34,9 @@
 // ============================================================================
 
 import { detectAllergenAvoidance, normalizeAr } from "../allergen-gate";
+import { detectAllergenSymptom } from "../allergen-gate-symptoms";
+import { detectPhoneticSafetyNet } from "../phonetic-safety-net";
+import { detectAllergenEmergency } from "../allergen-emergency";
 
 /** Would this word, heard in an allergy sentence, name an allergen?
  *
@@ -82,11 +85,68 @@ function formNamesAnAllergen(form: string): boolean {
   return term.length > 0 && form.includes(term);
 }
 
+/** The word with its longest matching proclitic removed, or unchanged. */
+function stripProclitic(word: string): string {
+  for (const p of PROCLITICS) {
+    if (word.length > p.length + 1 && word.startsWith(p)) return word.slice(p.length);
+  }
+  return word;
+}
+
+/** Would this name, heard on its own, trip any of the four safety detectors the voice
+ *  routes actually run?
+ *
+ *  THE FIRST THREE VERSIONS ASKED ONE DETECTOR. `detectAllergenAvoidance` is the one the
+ *  original incident went through, so it was the one consulted — but the route runs FOUR,
+ *  and the phonetic safety net fires on words that merely SOUND like an allergen:
+ *
+ *      «كنافة بالجبن» → لبن      «موز» → لوز      «رز أبيض» → بيض
+ *
+ *  Each of those is a safety HOLD, by that file's own words: "a trip is a SAFETY-POSITIVE:
+ *  it routes to the same deterministic allergen hold as a typed allergy mention." And it
+ *  fires on the bare word inside any sentence — «هلا والله جبن» trips it — which is the
+ *  incident that started all of this, arriving one detector over. Biasing a recognizer
+ *  toward «جبن» raises the chance of «جبن» appearing in an utterance that was never about
+ *  cheese, and that transcript then holds the conversation.
+ *
+ *  These three ask the name DIRECTLY rather than through a carrier sentence: they are
+ *  fail-closed nets that fire on a mention, so there is no allergy-intent scaffolding to
+ *  strip and no term-containment check to apply — firing at all is the answer. Measured on
+ *  a realistic menu this drops a handful more names, and that is the right side to be wrong
+ *  on: a dropped name costs one clarifying question, a manufactured allergy costs the whole
+ *  conversation. */
+function tripsASafetyHold(name: string): boolean {
+  if (detectPhoneticSafetyNet(name, { sttConfidence: null, isVoiceTranscript: true }).fired) return true;
+  if (detectAllergenEmergency(name).fired) return true;
+  if (detectAllergenSymptom(name).fired) return true;
+  return false;
+}
+
 function namesAnAllergen(name: string): boolean {
-  for (const word of normalizeAr(name).split(/\s+/)) {
-    for (const form of wordForms(word)) {
-      if (formNamesAnAllergen(form)) return true;
-    }
+  if (tripsASafetyHold(name)) return true;
+  const n = normalizeAr(name);
+  if (!n) return false;
+  const words = n.split(/\s+/).filter(Boolean);
+
+  // THE TERM CAN BE LONGER THAN A WORD, WHICH IS WHERE THE SECOND VERSION STILL FAILED.
+  //
+  // Probing word by word catches «باللبن» → «لبن». It cannot catch «زبدة الفول السوداني»:
+  // the detector's `termRegex` tolerates the article and hands back the CANONICAL, article-
+  // free «فول سوداني» — two words — so no single stripped word ever contains it, and the
+  // most consequential allergen on the list was kept while «لبن بارد» was dropped.
+  //
+  // So the containment test runs against the whole name too, with the glue off every word.
+  // The tolerance that lets the detector SEE the allergen is the same tolerance the check
+  // has to apply, or the two disagree on exactly the names that matter.
+  const variants = new Set<string>([n, words.map(stripProclitic).join(" ")]);
+  const probes = new Set<string>([n, ...words.flatMap(wordForms)]);
+
+  for (const probe of probes) {
+    const hit = detectAllergenAvoidance(`عندي حساسية من ${probe}`);
+    if (!hit.term) continue;
+    const term = normalizeAr(hit.term);
+    if (!term) continue;
+    for (const v of variants) if (v.includes(term)) return true;
   }
   return false;
 }

@@ -49,9 +49,10 @@
 // on a screen that is already showing it.
 // ============================================================================
 
-import { createHmac, hkdfSync, timingSafeEqual } from "crypto";
+import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from "crypto";
 import { voiceHardZeroReason } from "@/lib/messaging/voice-budget";
 import { buildElevenLabsRequest } from "@/lib/ai/tts/elevenlabs";
+import { lookupVoice } from "@/lib/ai/tts/voice-registry";
 import {
   DEMO_TTS_MAX_CHARS, demoVoiceDecision,
   type DemoVoiceOpts, type DemoVoiceOut,
@@ -71,6 +72,14 @@ export interface SpeechTicketPayload {
   sid: string | null;
   /** Expiry, epoch ms. */
   exp: number;
+  /** Random, and the reason is not secrecy — the signature already provides that.
+   *
+   *  Without it a ticket is a pure function of (text, voice, session, millisecond), so two
+   *  replies that happen to be identical in the same millisecond mint the SAME STRING. The
+   *  streaming route's per-ticket replay cap is keyed on the signature, and two distinct
+   *  turns sharing one key means one legitimately spends the other's allowance. Making every
+   *  ticket unique is what lets "this ticket has been redeemed" mean what it says. */
+  nonce: string;
 }
 
 export type SpeechTicketRefusal =
@@ -132,7 +141,13 @@ const b64u = (b: Buffer): string => b.toString("base64url");
  *  audio plays, which is the compensating control a WhatsApp voice note never had. */
 function verifierRefusal(text: string): SpeechTicketRefusal | null {
   const t = String(text ?? "");
-  if (!t.trim()) return "empty";
+  // INVISIBLE-ONLY IS EMPTY. `trim()` does not remove zero-width or bidi characters, so a
+  // reply of one U+200B is blank to a reader and a billable character to a provider —
+  // `demoVoiceDecision` has refused it since it was written, and this second reader did not,
+  // which meant the two disagreed on what "empty" means. They are the same question.
+  if (!t.trim() || !t.replace(/[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]/g, "").trim()) {
+    return "empty";
+  }
   if (t.length > DEMO_TTS_MAX_CHARS) return "too_long";
   const hard = voiceHardZeroReason(t, { safetyHold: false, isReceipt: false, spokenPricesAllowed: true });
   return hard ? "refused_text" : null;
@@ -164,6 +179,7 @@ export function signSpeechTicket(
     voiceId,
     sid: input?.sid ? String(input.sid) : null,
     exp: Date.now() + Math.max(1_000, Math.min(ttl, SPEECH_TICKET_TTL_MS)),
+    nonce: randomBytes(9).toString("base64url"),
   };
 
   // ENCODE FIRST, THEN SIGN THE ENCODED BYTES. Signing the object and encoding afterwards
@@ -193,6 +209,22 @@ export function verifySpeechTicket(
   const body = raw.slice(0, dot);
   const given = raw.slice(dot + 1);
 
+  // THE ENCODING MUST BE CANONICAL. base64url tolerates padding and unused trailing bits, so
+  // several distinct strings decode to identical bytes — and each is a different `body`, a
+  // different signature input, and therefore a different ticket to anything keyed on the
+  // string. That is not a signature forgery, but it does hand a replay counter a fresh key
+  // for the same payload. Re-encoding the decoded bytes and requiring a match removes the
+  // whole family at once.
+  let decoded: Buffer;
+  try {
+    decoded = Buffer.from(body, "base64url");
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+  if (decoded.length === 0 || decoded.toString("base64url") !== body) {
+    return { ok: false, reason: "malformed" };
+  }
+
   const expected = b64u(createHmac("sha256", key).update(body).digest());
   // Length first: timingSafeEqual THROWS on a length mismatch, and a throw here would be a
   // 500 on the audio element instead of a quiet, texted fallback.
@@ -202,7 +234,7 @@ export function verifySpeechTicket(
 
   let payload: SpeechTicketPayload;
   try {
-    const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as SpeechTicketPayload;
+    const parsed = JSON.parse(decoded.toString("utf8")) as SpeechTicketPayload;
     if (!parsed || typeof parsed !== "object") return { ok: false, reason: "malformed" };
     if (typeof parsed.text !== "string" || typeof parsed.voiceId !== "string" ||
         typeof parsed.exp !== "number" || !Number.isFinite(parsed.exp)) {
@@ -215,10 +247,31 @@ export function verifySpeechTicket(
 
   const now = Number.isFinite(ctx?.now) ? Number(ctx?.now) : Date.now();
   if (now > payload.exp) return { ok: false, reason: "expired" };
+  // AND THE CEILING IS ENFORCED HERE TOO, not only where tickets are minted. The minter
+  // clamps `ttlMs`, so an over-long life could only come from something that bypassed the
+  // minter — but "only the writer checks it" is exactly the arrangement that put a ticket's
+  // whole validity in one place. A one-minute window is a property of the ticket, so the
+  // reader holds it as well.
+  if (payload.exp - now > SPEECH_TICKET_TTL_MS) return { ok: false, reason: "expired" };
+
+  // THE VOICE MUST STILL BE ONE WE ALLOW. `buildElevenLabsRequest` refuses an unregistered
+  // id downstream, so this is defence in depth rather than the only guard — but the claim
+  // made about this route is that the voice comes from the registry, and a verifier that
+  // hands back an arbitrary string has not checked that claim, it has deferred it.
+  if (!lookupVoice(payload.voiceId)) return { ok: false, reason: "malformed" };
 
   // BOUND TO ITS SESSION. Strict on purpose: a ticket that names a session and is redeemed
   // without one is refused rather than waved through, because "accept when absent" is a
   // control an attacker removes by deleting a field.
+  // `sid` IS EITHER A REAL SESSION OR EXPLICITLY NONE. `payload.sid ? … : null` read `0`,
+  // `""` and `false` as "unbound", so a forged ticket could shed its session binding by
+  // setting the field to something falsy rather than by removing it. A ticket legitimately
+  // carries `null` when `resolveDemoSession` failed soft; anything else that is not a
+  // non-empty string is malformed.
+  if (payload.sid !== null && payload.sid !== undefined &&
+      (typeof payload.sid !== "string" || payload.sid === "")) {
+    return { ok: false, reason: "malformed" };
+  }
   const sid = payload.sid ? String(payload.sid) : null;
   if (sid && String(ctx?.sid ?? "") !== sid) return { ok: false, reason: "wrong_session" };
 
