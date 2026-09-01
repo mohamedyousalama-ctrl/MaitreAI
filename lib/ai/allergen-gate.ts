@@ -155,9 +155,6 @@ function tiredFromAllergen(n: string): boolean {
   return ALLERGEN_TERMS_ANCHORED.some((re) => re.test(tail));
 }
 
-/** True iff the (ALREADY normalized via normalizeAr) text carries an allergy INTENT")).join("|")})`
-);
-
 /** True iff the (ALREADY normalized via normalizeAr) text carries an allergy INTENT
  *  signal — an explicit allergy word OR any avoidance/medical marker. This is the
  *  base gate's own intent predicate, EXPORTED so other safety layers (e.g. the
