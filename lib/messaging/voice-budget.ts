@@ -161,15 +161,30 @@ export function voiceHardZeroReason(
      *  sentence is readable at the moment it is spoken. Mis-hearing is bounded by the text
      *  being right there. Silence is bounded by nothing.
      *
-     *  NARROW ON PURPOSE. This waives the SAFETY NOTICE only, and only where the caller can
-     *  read along. A receipt, a payment link and a money figure are each decided
-     *  independently below and are untouched by this flag. On WhatsApp it is never set. */
+     *  NARROW, AND THE NARROWNESS IS ENFORCED BY `stopReason`, NOT BY THIS FLAG.
+     *
+     *  Saying "this waives the safety notice only" was not enough, and an audit proved it:
+     *  the flag alone waived `safetyHold`, which is ALSO set for active anaphylaxis, for a
+     *  calm hold, for an escalation, and for any unlisted stop reason. Driven, the demo call
+     *  channel synthesized «🚨 اتصل بالإسعاف 997 الحين…». A comment claiming a scope the code
+     *  does not enforce is the defect, not the mitigation. Both are now required: the channel
+     *  must allow it AND the branch must be on the list. */
     spokenSafetyAllowed?: boolean;
+    /** Which branch produced this reply. Required to speak a safety turn at all — see
+     *  `CALL_SPEAKABLE_SAFETY_STOPS`. Absent or unrecognised means silent. */
+    stopReason?: string | null;
   }
 ): VoiceZeroReason | null {
   // FIRST. On every surface but a live call, a safety turn is text-only and that is not
-  // negotiable. On a call, silence is not the safe answer — see `spokenSafetyAllowed`.
-  if (signals.safetyHold && signals.spokenSafetyAllowed !== true) return "safety_hold";
+  // negotiable. On a call, ONE named branch may be spoken — the honest notice that continues
+  // the conversation — because silence there is not the safe answer either. Everything else,
+  // including a branch invented after this line was written, stays text-only.
+  if (signals.safetyHold) {
+    const speakable =
+      signals.spokenSafetyAllowed === true &&
+      CALL_SPEAKABLE_SAFETY_STOPS.has(String(signals.stopReason ?? ""));
+    if (!speakable) return "safety_hold";
+  }
   if (signals.isReceipt) return "receipt";
   const t = moneyScanText(String(replyText ?? ""));
   if (PAY_LINK_RE.test(t)) return "payment_link";
@@ -212,7 +227,26 @@ const RECEIPT_STOP_REASONS: ReadonlySet<string> = new Set([
   "dup_order_reference", "old_draft_restatement",
 ]);
 
-export interface VoiceTurnSignals { safetyHold: boolean; isReceipt: boolean }
+/** The ONLY safety branches a live call may say out loud.
+ *
+ *  AN ALLOW LIST, AND IT HAS TO BE. A first version waived `safetyHold` wholesale on a call,
+ *  which was described as narrow and was not: `safetyHold` is ALSO true for the active
+ *  anaphylaxis branch, for a calm hold, for an escalation, and — by the fail-closed default
+ *  below — for any stop reason nobody has listed. An audit drove it and found the demo call
+ *  channel synthesizing «🚨 اتصل بالإسعاف 997 الحين…»: the one sentence in this product where
+ *  a mis-heard digit has a physical consequence, and the exact category two files forbid by
+ *  name. It also re-opened a hold from an earlier turn, including the case where the hold
+ *  flag could not be READ and fails closed on purpose.
+ *
+ *  So the question is not "is this a call" but "is this the reply we actually meant". Only
+ *  the notify-without-hold branch is here — the honest «خذت بالي إنك ذكرت…» that continues
+ *  the conversation. A branch added later is SILENT until someone lists it, which is the
+ *  same discipline as the speakable-stop-reason table above and for the same reason. */
+const CALL_SPEAKABLE_SAFETY_STOPS: ReadonlySet<string> = new Set([
+  "allergen_gate_notify",
+]);
+
+export interface VoiceTurnSignals { safetyHold: boolean; isReceipt: boolean; stopReason: string }
 
 /** Derive the hard-zero signals from a completed turn. Pure. */
 export function voiceSignalsForTurn(turn: {
@@ -231,5 +265,5 @@ export function voiceSignalsForTurn(turn: {
     /^deterministic_allerg/.test(model);
   // FAIL CLOSED: a stop reason nobody listed is treated as a safety turn.
   const unknown = !VOICE_SPEAKABLE_STOP_REASONS.has(stop) && !isReceipt;
-  return { safetyHold: namedSafety || unknown, isReceipt };
+  return { safetyHold: namedSafety || unknown, isReceipt, stopReason: stop };
 }

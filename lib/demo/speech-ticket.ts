@@ -133,8 +133,19 @@ const b64u = (b: Buffer): string => b.toString("base64url");
 
 /** The text-only refusals the VERIFIER can evaluate on its own.
  *
- *  It cannot re-derive `safetyHold` or `isReceipt` — those are turn signals, and a turn
- *  carrying them never got a ticket in the first place. What it CAN read is the text, and
+ *  It cannot re-derive `safetyHold` or `isReceipt`: those are facts about the TURN, and the
+ *  text alone does not carry them.
+ *
+ *  THE SECOND HALF OF THAT SENTENCE USED TO READ "and a turn carrying them never got a
+ *  ticket in the first place". That was true when it was written and is not true now — a
+ *  call may speak ONE safety branch, the honest allergy notice, so a turn with
+ *  `safetyHold: true` can and does reach this function with a valid ticket. Passing
+ *  `safetyHold: false` below is therefore not a restatement of that invariant; it is this
+ *  reader declining to answer a question it cannot see, and leaving that question to the
+ *  SIGNATURE. A ticket exists only because `demoVoiceDecision` already allowed this exact
+ *  text on this channel with the real turn signals in hand, and the HMAC is what says so.
+ *
+ *  What this reader CAN read is the text, and
  *  on this channel that means a payment link must never be spoken: a link is useless to an
  *  ear and reading a URL aloud is a phishing-shaped act. Prices ARE allowed here, by the
  *  same ruling the call route runs under — the call screen displays the reply while the

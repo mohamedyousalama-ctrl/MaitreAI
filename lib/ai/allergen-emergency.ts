@@ -61,7 +61,17 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string]> = [
   // Active allergic reaction happening right now («الحين»/«دلوقتي»/«الآن»).
   [/(?:صار|جاني|جاله|جالها|جالي|صارت|بيصير|صاير) ?.{0,12}?(?:تحسس|حساسيه|حساسيت|رد ?فعل|طفح) ?.{0,8}?(?:الحين|دلوقتي|الان|توه|هسه|هلا)|(?:تحسس|حساسيه) ?(?:الحين|دلوقتي|الان|توه|هسه)/, "رد فعل تحسسي نشط"],
   // Emergency call / hospital NOW.
-  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغى|اتصلوا ?ب|كلموا|طلبوا) ?(?:ال)?اسعاف|(?:ودينا|وديناه|وديناها|رحنا|راح|دخلنا|دخلوه) ?(?:ال)?(?:مستشفي|مستشفى|طوارئ|طواري)|طوارئ ?الحين|٩٩٧|997|911|١١٢|112/, "طلب إسعاف / طوارئ"],
+  // NORMALIZED SPELLINGS ONLY — three alternatives here were unreachable.
+  //
+  // These patterns run over `normalizeAr` output, which folds ئ→ي and ى→ي. So «طوارئ» is
+  // «طواري» and «مستشفى» is «مستشفي» by the time this regex sees them, and the literals
+  // «طوارئ» and «مستشفى» could never match anything. Harmless inside the hospital group,
+  // where «طواري» and «مستشفي» were listed beside them — but «طوارئ ?الحين» was its OWN
+  // alternative with no normalized twin, so the standalone phrase «طوارئ الحين» ("emergency,
+  // now") — someone asking for emergency help without naming a verb first — fired NOTHING.
+  // Written in the un-normalized spelling, which is the natural one to type, in a list whose
+  // header says it is matched against normalized text.
+  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغى|اتصلوا ?ب|كلموا|طلبوا) ?(?:ال)?اسعاف|(?:ودينا|وديناه|وديناها|رحنا|راح|دخلنا|دخلوه) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)|٩٩٧|997|911|١١٢|112/, "طلب إسعاف / طوارئ"],
 ];
 
 // English / mixed — tested on the RAW (case-insensitive) text.

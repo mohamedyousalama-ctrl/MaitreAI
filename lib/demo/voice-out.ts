@@ -212,8 +212,14 @@ export interface DemoVoiceOpts {
   spokenPricesAllowed?: boolean;
   /** The same call, for a SAFETY NOTICE. An allergy reply used to be answered with total
    *  silence — the caller discloses an allergy and hears nothing at all. See the note on
-   *  `voiceHardZeroReason`; the compensating control is the same screen. */
+   *  `voiceHardZeroReason`; the compensating control is the same screen.
+   *
+   *  NOT SUFFICIENT ON ITS OWN. It must be paired with a `stopReason` on the call-speakable
+   *  list, or the turn stays silent. The flag alone once waived active anaphylaxis. */
   spokenSafetyAllowed?: boolean;
+  /** Which branch produced this reply. Decides, with the flag above, whether a safety turn
+   *  may be spoken at all. */
+  stopReason?: string | null;
 }
 
 /** May we speak this reply, and in whose voice? */
@@ -259,6 +265,7 @@ export function demoVoiceDecision(replyText: string, opts?: DemoVoiceOpts): Demo
     isReceipt: o.isReceipt === true,
     spokenPricesAllowed: o.spokenPricesAllowed === true,
     spokenSafetyAllowed: o.spokenSafetyAllowed === true,
+    stopReason: o.stopReason ?? null,
   });
   if (hardZero) return no(hardZero);
 

@@ -105,16 +105,23 @@ assertSrc(
   "combinedAllergenHit set from allergenHit, symptomHit, phonetic net, or memory gate",
   /combinedAllergenHit\s*=\s*allergenHit\.fired\s*\?\s*allergenHit\s*:\s*\(\s*symptomHit\.fired\s*\?\s*symptomHit\s*:\s*\(\s*phoneticHit\.fired\s*\?\s*phoneticHit\s*:\s*memoryAllergyHit\s*\)\s*\)/
 );
-// THE PHONETIC NET NO LONGER RUNS AT ALL — Founder ruling, see
-// lib/ai/phonetic-safety-net.ts. It fired on words that merely SOUND like an allergen
-// («موز»→لوز, «كنافة بالجبن»→لبن) and turned «هلا والله» into an allergy hold in front of
-// the Founder. `phoneticHit` survives as a never-firing constant because `holdSource` and
-// stored `agent_runs` rows still name it. The assertion that it runs unconditionally is
-// replaced by its opposite, so re-wiring it fails here as well as in
-// proof-phonetic-net-unwired.
+// THE GUESSING IS GONE; THE EXACT WORDS ARE NOT.
+//
+// The phonetic near-miss net was retired by Founder ruling — it fired on words that merely
+// SOUND like an allergen («موز»→لوز, «كنافة بالجبن»→لبن) and turned «هلا والله» into an
+// allergy hold in front of the Founder. But three of its four firing modes were EXACT
+// matches, and an audit drove 110 cases showing nothing else carried them: «الدكتور منع
+// عني»، «ما أتحمل»، «حلقي ينتفخ»، «عندي ضيق نفس»، «gluten free». Those are restored by
+// lib/ai/allergen-context.ts, which has no distance function and takes no confidence.
+//
+// So the slot still runs, and what runs in it must be the EXACT detector — never the net.
 assertSrc(
-  "the phonetic net is NOT called — it is a never-firing constant",
-  /const phoneticHit = \{ fired: false as const/
+  "the slot runs the exact-context detector",
+  /const phoneticHit = \(!allergenHit\.fired && !symptomHit\.fired\)[\s\S]{0,120}detectAllergyContext/
+);
+assertSrc(
+  "…and never the retired near-miss net",
+  /^(?![\s\S]*detectPhoneticSafetyNet\s*\()/
 );
 assertSrc(
   "combinedAllergenHit.fired controls escalation branch",

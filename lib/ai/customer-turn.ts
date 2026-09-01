@@ -62,6 +62,7 @@ import {
 import { decideSessionFreshness } from "@/lib/ai/session-freshness";
 import { buildMenuListPresentation } from "@/lib/ai/tools";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
+import { detectAllergyContext } from "@/lib/ai/allergen-context";
 import { decideVoiceLadder, garbledVoiceReply, confirmVoiceReply, isVoiceAssent, wasVoiceLadderConfirm } from "@/lib/ai/voice-quality";
 import { resolveVoiceCandidates, expectedAnswerClass, type VoiceCandidate } from "@/lib/ai/voice-aliases";
 import { applyCompanionSideEffects } from "@/lib/db/allergy-companion-effects";
@@ -336,7 +337,7 @@ function forcedAllergenSafetyResult(
   dialect: string,
   initialDraft: OrderDraft | null,
   currency: string,
-  source: "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" | "memory_allergy_gate" = "allergen_gate",
+  source: "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" | "allergy_context" | "memory_allergy_gate" = "allergen_gate",
   netReason: string | null = null,
   // PUBLIC DEMO. On a demo turn there is no conversation, so the kitchen note is not
   // written and no staff alert fires — the two things the sentence below promises.
@@ -527,7 +528,10 @@ function companionEmergencyResult(
   };
 }
 
-type CalmHoldSource = "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" | "memory_allergy_gate" | "emergency";
+// `phonetic_safety_net` is kept in the union for STORED rows: escalation reasons written
+// before that detector was retired still carry it, and a reader of an old row must find
+// the name that produced it. Nothing writes it any more; `allergy_context` replaced it.
+type CalmHoldSource = "allergen_gate" | "allergen_symptom" | "phonetic_safety_net" | "allergy_context" | "memory_allergy_gate" | "emergency";
 
 function calmHoldReason(decision: CompanionDecision, source: CalmHoldSource): string {
   const label = decision.term ?? decision.emergencyLabel ?? "حساسية";
@@ -1167,12 +1171,16 @@ export async function runCustomerTurn(
   // deterministic hold. The 0.66 STT-confidence floor is a SECONDARY tripwire only.
   // Evaluated last (only when the exact gates did not already fire) so a hold decision
   // is reached before perception/LLM.
-  // THE PHONETIC NEAR-MISS NET IS GONE — Founder ruling, see lib/ai/phonetic-safety-net.ts.
-  // Kept as a never-firing constant rather than deleted outright, because `holdSource` and
-  // the escalation-signal metadata below still name `phonetic_safety_net` as one of their
-  // sources, and stored rows carrying that source predate this change. A reader of an old
-  // `agent_runs` row must still find the name that produced it.
-  const phoneticHit = { fired: false as const, term: null, reason: null as string | null };
+  // THE GUESSING IS GONE; THE EXACT WORDS ARE NOT. The phonetic near-miss net used to sit
+  // here and was retired by Founder ruling (lib/ai/phonetic-safety-net.ts) — but three of its
+  // four firing modes were EXACT matches, not near-misses, and nothing else carries them.
+  // Removing the module took «الدكتور منع عني»، «ما أتحمل»، «حلقي ينتفخ»، «عندي ضيق نفس» and
+  // «gluten free» out of every posture with no replacement; an audit drove 110 such cases.
+  // lib/ai/allergen-context.ts restores those, with no distance function and no confidence
+  // input, so it cannot drift back into a matcher.
+  const phoneticHit = (!allergenHit.fired && !symptomHit.fired)
+    ? detectAllergyContext(input.userMessage)
+    : { fired: false, term: null, reason: null as string | null };
   const memoryAllergyHit = (!allergenHit.fired && !symptomHit.fired && !phoneticHit.fired && memoryAllergyGateOn)
     ? detectMemoryAllergyDraftIntersection({
         memoryAllergens: memoryAllergyLabels,
@@ -1188,7 +1196,7 @@ export async function runCustomerTurn(
     : symptomHit.fired
       ? "allergen_symptom"
       : phoneticHit.fired
-        ? "phonetic_safety_net"
+        ? "allergy_context"
         : "memory_allergy_gate";
   // WO-EMERGENCY-OVERRIDE — computed on EVERY posture, not just companion/calm-hold.
   // It used to be gated on `(companionOn || calmHoldOn)`, so on an `allergy_simple`
@@ -1295,7 +1303,6 @@ export async function runCustomerTurn(
     ? decideAllergySimple({
         history: input.history,
         userMessage: input.userMessage,
-        detectOpts: { sttConfidence: input.sttConfidence, isVoiceTranscript: input.isVoiceTranscript },
       })
     : null;
   // WO-CONTEXT (PART B) — retraction gate. A denial that walks back the allergy claim
@@ -1573,7 +1580,7 @@ export async function runCustomerTurn(
     // FLAG OFF — today's deterministic safety escalation, EXACT code untouched.
     result = forcedAllergenSafetyResult(
       combinedAllergenHit.term, dialect, initialDraft, ctx.profile.currency,
-      holdSource, holdSource === "phonetic_safety_net" ? phoneticHit.reason : null,
+      holdSource, holdSource === "allergy_context" ? phoneticHit.reason : null,
       input.demoRun === true,
       isExplicitAllergyDenial(input.userMessage, combinedAllergenHit.term)
     );

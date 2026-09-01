@@ -18,6 +18,7 @@
 
 import { detectAllergenAvoidance } from "./allergen-gate";
 import { detectAllergenSymptom } from "./allergen-gate-symptoms";
+import { detectAllergyContext } from "./allergen-context";
 import { detectAllergenEmergency } from "./allergen-emergency";
 
 /** Operator-quiet window (minutes) after which a safety inbound during HUMAN_ACTIVE is treated
@@ -32,16 +33,18 @@ export const SAFETY_BRIDGE_WINDOW_MINUTES = 3;
  * caution ack + a loud alert, never harm). Mirrors the reply-dampener safety pre-check so the
  * SAME signals the Brain treats as safety are the ones the bridge acknowledges.
  */
-export function isSafetyClassInbound(
-  text: string,
-  opts?: { sttConfidence?: number | null; isVoiceTranscript?: boolean }
-): boolean {
+// NO OPTIONS PARAMETER. This took `sttConfidence` and `isVoiceTranscript` for the phonetic
+// near-miss net; the net is retired and no caller ever passed either. Keeping the parameter
+// would advertise a tightening that does not happen. See lib/ai/allergy-simple.ts.
+export function isSafetyClassInbound(text: string): boolean {
   if (!text || !text.trim()) return false;
   return (
     detectAllergenAvoidance(text).fired ||
     detectAllergenSymptom(text).fired ||
-    // The phonetic near-miss net was the third term here. Removed by Founder ruling — see
-    // lib/ai/phonetic-safety-net.ts for what it did and why it is gone.
+    // The phonetic near-miss net was the third term here and is retired (Founder ruling).
+    // Its EXACT halves are not — «ما أتحمل»، «حلقي ينتفخ»، «gluten free» are plain statements
+    // of an allergy that nothing else carries. See lib/ai/allergen-context.ts.
+    detectAllergyContext(text).fired ||
     detectAllergenEmergency(text).fired
   );
 }

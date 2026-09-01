@@ -166,14 +166,27 @@ console.log("\n── EVERY DETECTOR THE ROUTE RUNS, AND NO MORE ─────
   ok("…while the safe dish beside it survives",
     safeSttVocabulary(["طفح جلدي", "جريش"]).includes("جريش"));
 
-  // The EMERGENCY arm is defence in depth and is deliberately not claimed as tested: an
-  // emergency detector needs emergency PHRASING («ما أقدر أتنفس»), which no dish name has, so
-  // there is no honest fixture for it. It stays because the cost is one call and the thing it
-  // guards against — a menu word that becomes an emergency trigger — is exactly the shape
-  // nobody predicts. Said here rather than covered by a fixture that would prove nothing.
-  ok("the emergency detector is still consulted by the filter",
-    readFileSync(resolve(process.cwd(), "lib/ai/stt/safe-vocab.ts"), "utf8")
-      .includes("detectAllergenEmergency(name).fired"));
+  // THE EMERGENCY ARM, DRIVEN — AND IT USED NOT TO BE.
+  //
+  // This assertion read the SOURCE of safe-vocab.ts for the string
+  // "detectAllergenEmergency(name).fired", on the stated grounds that "an emergency detector
+  // needs emergency PHRASING, which no dish name has, so there is no honest fixture". The
+  // reasoning was wrong and the assertion was worthless: deleting the call and leaving a
+  // comment behind would have kept it green, and — more to the point — the detector's own
+  // emergency-call family matches on BARE DIGITS: «997», «911», «112» and their Arabic-
+  // numeral forms. «برجر 911» is a real restaurant name, not a constructed one.
+  //
+  // So there is an honest fixture, and this is it: a menu item whose name fires the emergency
+  // detector, and a filter that must refuse the token and keep the dish.
+  ok("a real menu name CAN fire the emergency detector", detectAllergenEmergency("برجر 911").fired);
+  ok("…and its safe half alone does not", !detectAllergenEmergency("برجر").fired);
+  const emgMenu = safeSttVocabulary(["برجر 911", "جريش"]);
+  ok("…the filter drops the trigger token", !emgMenu.some((k) => k.includes("911")));
+  ok("…and keeps the dish word it was primed for", emgMenu.includes("برجر"));
+  ok("…while the safe dish beside it survives", emgMenu.includes("جريش"));
+  // A single-token name that IS the trigger has nothing safe left, and goes entirely.
+  ok("a name that is nothing but the trigger is dropped whole",
+    !safeSttVocabulary(["997", "جريش"]).includes("997"));
   ok(`…and the menu is now MORE primed than before the ruling (${kept.length}/${MENU.length})`,
     kept.length >= MENU.length - 4);
 }

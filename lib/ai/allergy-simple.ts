@@ -18,6 +18,7 @@
 import type { LlmMessage } from "./llm/types";
 import { detectAllergenAvoidance, normalizeAr } from "./allergen-gate";
 import { detectAllergenSymptom } from "./allergen-gate-symptoms";
+import { detectAllergyContext } from "./allergen-context";
 import { detectAllergenEmergency } from "./allergen-emergency";
 import { canonicalizeAllergens } from "./allergen-canonical";
 
@@ -30,10 +31,15 @@ export interface AllergyMentionHit {
   kind: AllergyMentionKind;
 }
 
-export interface DetectOpts {
-  sttConfidence?: number | null;
-  isVoiceTranscript?: boolean;
-}
+// DetectOpts WAS HERE, AND IT WAS A LIE BY THE END.
+//
+// It carried `sttConfidence` and `isVoiceTranscript` — the two inputs the phonetic near-miss
+// net used to widen or tighten its guessing. When that net was retired the last reader of
+// both fields went with it, and the parameter stayed: accepted, threaded through two
+// signatures, and dropped on the floor. A caller passing a 0.3 confidence would reasonably
+// believe it had tightened the safety check; it had done nothing at all. A parameter that
+// silently ignores what you give it is worse than no parameter, so it is gone, and the
+// compiler now says so at every call site instead of the reader having to notice.
 
 // Health/disease CONDITION mention on INBOUND (additive — the allergen detector is untouched).
 // Matches a customer stating a condition («عندي سكر», «مريض ضغط», «قلبي», «حامل»), the wording the
@@ -56,13 +62,15 @@ export function mentionsDiseaseCondition(text: string | null | undefined): boole
  * detectors verbatim; adds no allergen terms. The phonetic near-miss net was part of this
  * union and is no longer — see lib/ai/phonetic-safety-net.ts.
  */
-export function detectAllergyOrDiseaseMention(text: string, opts?: DetectOpts): AllergyMentionHit {
+export function detectAllergyOrDiseaseMention(text: string): AllergyMentionHit {
   const a = detectAllergenAvoidance(text);
   if (a.fired) return { fired: true, term: a.term ?? null, kind: "allergy" };
   const s = detectAllergenSymptom(text);
   if (s.fired) return { fired: true, term: s.term ?? null, kind: "allergy" };
-  // The phonetic near-miss net used to sit here. Removed by Founder ruling — see
-  // lib/ai/phonetic-safety-net.ts. The exact detectors above are unchanged.
+  // The phonetic near-miss net used to sit here; its GUESSING is retired and its EXACT
+  // halves live in lib/ai/allergen-context.ts. This is the same union, minus the Levenshtein.
+  const c = detectAllergyContext(text);
+  if (c.fired) return { fired: true, term: c.term ?? null, kind: "allergy" };
   const e = detectAllergenEmergency(text);
   if (e.fired) return { fired: true, term: e.label ?? null, kind: "allergy" };
   if (mentionsDiseaseCondition(text)) return { fired: true, term: null, kind: "disease" };
@@ -243,9 +251,8 @@ export const REOFFER_THROTTLE_TURNS = 5;
 export function decideAllergySimple(args: {
   history: LlmMessage[];
   userMessage: string;
-  detectOpts?: DetectOpts;
 }): AllergySimpleDecision {
-  const hit = detectAllergyOrDiseaseMention(args.userMessage, args.detectOpts);
+  const hit = detectAllergyOrDiseaseMention(args.userMessage);
   const prior = countPriorAllergyMentions(args.history);
   const variantIndex = prior % DEFLECTION_EG.length;
   const directQ = isDirectIngredientOrSafetyQuestion(args.userMessage);

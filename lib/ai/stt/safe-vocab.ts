@@ -36,6 +36,7 @@
 import { detectAllergenAvoidance, normalizeAr } from "../allergen-gate";
 import { detectAllergenSymptom } from "../allergen-gate-symptoms";
 import { detectAllergenEmergency } from "../allergen-emergency";
+import { detectAllergyContext } from "../allergen-context";
 
 /** Would this word, heard in an allergy sentence, name an allergen?
  *
@@ -79,17 +80,18 @@ function stripProclitic(word: string): string {
  *  routes actually run?
  *
  *  THE FIRST THREE VERSIONS ASKED ONE DETECTOR. `detectAllergenAvoidance` is the one the
- *  original incident went through, so it was the one consulted — but the route runs FOUR,
- *  and the phonetic safety net fires on words that merely SOUND like an allergen:
+ *  original incident went through, so it was the one consulted — but the route runs FOUR of
+ *  them, and any one of the four holds the conversation. Biasing a recognizer toward a word
+ *  raises the chance of that word appearing in an utterance it was never in, and a
+ *  transcript carrying it is a hold nobody said out loud.
  *
- *      «كنافة بالجبن» → لبن      «موز» → لوز      «رز أبيض» → بيض
- *
- *  Each of those is a safety HOLD, by that file's own words: "a trip is a SAFETY-POSITIVE:
- *  it routes to the same deterministic allergen hold as a typed allergy mention." And it
- *  fires on the bare word inside any sentence — «هلا والله جبن» trips it — which is the
- *  incident that started all of this, arriving one detector over. Biasing a recognizer
- *  toward «جبن» raises the chance of «جبن» appearing in an utterance that was never about
- *  cheese, and that transcript then holds the conversation.
+ *  THE FOURTH USED TO BE THE PHONETIC NEAR-MISS NET, and this paragraph used to be about it:
+ *  it fired on words that merely SOUND like an allergen — «كنافة بالجبن»→لبن, «موز»→لوز,
+ *  «رز أبيض»→بيض — so those names had to be withheld from the recognizer too. That net was
+ *  retired by Founder ruling (lib/ai/phonetic-safety-net.ts) and its place here is taken by
+ *  `detectAllergyContext`, which is exact. The sound-alikes are offered to the recognizer
+ *  again; only names that trip an EXACT detector are still withheld. Kept as history because
+ *  the reason this function asks all four, rather than the one, has not changed.
  *
  *  These three ask the name DIRECTLY rather than through a carrier sentence: they are
  *  fail-closed nets that fire on a mention, so there is no allergy-intent scaffolding to
@@ -100,6 +102,7 @@ function stripProclitic(word: string): string {
 function tripsASafetyHold(name: string): boolean {
   if (detectAllergenEmergency(name).fired) return true;
   if (detectAllergenSymptom(name).fired) return true;
+  if (detectAllergyContext(name).fired) return true;
   return false;
 }
 
@@ -146,9 +149,13 @@ function namesAnAllergen(name: string): boolean {
  *
  *  Refusing «كنافة بالجبن» outright costs the recognizer «كنافة» — a proper noun no general
  *  model has priors for, and the exact kind of word this priming exists for. Measured on a
- *  café menu, whole-name dropping removed 39% of the items, and four of those were
- *  collateral: «موز» (banana, near «لوز»), «رز أبيض» (white rice, near «بيض»), «صلصة بيضاء»,
- *  «بان كيك». The trigger is one token; the recognition value is in the others.
+ *  café menu, whole-name dropping removed 39% of the items. The trigger is one token; the
+ *  recognition value is in the others.
+ *
+ *  (Four of that 39% were the retired net's collateral — «موز» near «لوز», «رز أبيض» near
+ *  «بيض», «صلصة بيضاء», «بان كيك». Those names are no longer dropped at all, so the measured
+ *  figure is a HIGH-WATER MARK from before the ruling, not today's rate. The word-level
+ *  retry still earns its place on the names that carry a real allergen.)
  *
  *  So a name that trips is retried without the words that trip. What comes back is offered
  *  only if it is safe ON ITS OWN — the remainder is re-asked, never assumed. A name with

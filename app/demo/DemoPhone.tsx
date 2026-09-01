@@ -1479,18 +1479,74 @@ function CallScreen({
     let cancelled = false;
     (async () => {
       let can = false;
+      let greeting: { text?: string; url?: string } | null = null;
       try {
         const res = await fetch("/api/demo/capabilities", { cache: "no-store" });
         can = res.ok && !!(await res.json())?.voiceCall;
       } catch { can = false; }
       if (cancelled || !live.current) return;
       if (!can) { setPhase("unavailable"); return; }
+
+      // THE GREETING IS A SECOND ROUND TRIP, ON PURPOSE. It was folded into the capability
+      // probe first, and a proof rejected that: the probe promises ONE boolean and does no
+      // I/O, and a speech ticket both carries the voice id and costs money to mint. See
+      // app/api/demo/greeting/route.ts. Asked only once the call is known to be possible, so
+      // nothing is minted for a screen about to say "unavailable".
+      //
+      // The session id goes with it so the ticket is bound to the session that will redeem
+      // it — the same rule as every other spoken reply.
+      try {
+        const q = convId.current ? `?s=${encodeURIComponent(convId.current)}` : "";
+        const res = await fetch(`/api/demo/greeting${q}`, { cache: "no-store" });
+        greeting = res.ok ? ((await res.json())?.greeting ?? null) : null;
+      } catch { greeting = null; }
+      if (cancelled || !live.current) return;
       if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
         setPhase("unavailable");
         return;
       }
       if (started.current) return;
       started.current = true;
+
+      // ── KHALID SPEAKS FIRST ───────────────────────────────────────────────
+      //
+      // The screen used to open straight into "listening", so the visitor faced a silent
+      // line and had to talk first. Nobody answers a phone that way. It also started the
+      // eight-second no-speech clock immediately, so a visitor who hesitated — which is what
+      // a person does when a line goes quiet — burned the re-prompt before the conversation
+      // had begun.
+      //
+      // AWAITED, NOT FIRED AND FORGOTTEN: the microphone must not open while he is speaking,
+      // or his own greeting is the first thing it hears. The wait is bounded, because a
+      // greeting that will not play must never be the reason a call does not start.
+      //
+      // AND EVERY FAILURE PATH IS THE OLD BEHAVIOUR. No key, no ticket, a refused fetch, a
+      // player that will not start — the call opens listening, exactly as it did before this
+      // existed. A greeting is worth adding; it is not worth a call that will not start.
+      if (greeting?.url) {
+        setPhase("speaking");
+        setLastText(String(greeting.text ?? ""));
+        const el = player.current ?? new Audio();
+        player.current = el;
+        try {
+          el.src = greeting.url;
+          await Promise.race([
+            new Promise<void>((done) => {
+              el.onended = () => done();
+              el.onerror = () => done();
+              void el.play().catch(() => done());
+            }),
+            // A greeting is ~2s. Six is generous enough for a slow first byte and short
+            // enough that a stalled one costs a pause rather than the call.
+            new Promise<void>((done) => setTimeout(done, 6000)),
+          ]);
+        } catch { /* the call starts listening either way */ }
+        try { el.pause(); } catch { /* already stopped */ }
+        el.onended = null;
+        el.onerror = null;
+        if (cancelled || !live.current) return;
+      }
+
       void runTurn();
     })();
     return () => { cancelled = true; live.current = false; release(); };

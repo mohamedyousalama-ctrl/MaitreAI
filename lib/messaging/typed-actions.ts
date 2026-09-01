@@ -72,6 +72,10 @@ export type InteractiveCommand =
 export interface SafetyProbe {
   allergenAvoidance: boolean;
   allergenSymptom: boolean;
+  /** The EXACT allergy phrases and markers the vocabulary gate does not carry —
+   *  «ما أتحمل»، «حلقي ينتفخ»، «gluten free». See lib/ai/allergen-context.ts. This is NOT the
+   *  retired phonetic net: it has no distance function and takes no confidence. */
+  allergyContext: boolean;
   allergenEmergency: boolean;
 }
 
@@ -83,7 +87,7 @@ export interface SafetyProbe {
  *  lib/ai/phonetic-safety-net.ts. Removed rather than set to `false`, so the compiler
  *  refuses any caller still passing it instead of quietly ignoring the value. */
 export function safetyProbeFired(probe: SafetyProbe): boolean {
-  return probe.allergenAvoidance || probe.allergenSymptom || probe.allergenEmergency;
+  return probe.allergenAvoidance || probe.allergenSymptom || probe.allergyContext || probe.allergenEmergency;
 }
 
 export type TypedInteractiveActionResult =

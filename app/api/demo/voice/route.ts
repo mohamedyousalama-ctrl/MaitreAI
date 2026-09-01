@@ -45,6 +45,7 @@ import { closeDemoOrder } from "@/lib/demo/order";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
+import { detectAllergyContext } from "@/lib/ai/allergen-context";
 import { handleTypedQuantityFill, safetyProbeFired } from "@/lib/messaging/typed-actions";
 
 export const runtime = "nodejs";
@@ -336,6 +337,7 @@ export async function POST(req: Request) {
   const voiceSafetyProbe = {
     allergenAvoidance: detectAllergenAvoidance(transcript).fired,
     allergenSymptom: detectAllergenSymptom(transcript).fired,
+    allergyContext: detectAllergyContext(transcript).fired,
     allergenEmergency: detectAllergenEmergency(transcript).fired,
   };
   if (conversationId && !safetyProbeFired(voiceSafetyProbe)) {
@@ -407,7 +409,12 @@ export async function POST(req: Request) {
           safetyHold: heldFromEarlierTurn,
           isReceipt: false,    // a quantity fill is never a receipt
           spokenPricesAllowed: isPhoneCall,
+          // The quantity rail has no model stop reason — it is a deterministic fill — so it
+          // is never on the call-speakable safety list, and a hold carried over from an
+          // earlier turn (including one whose flag could not be READ, which fails closed on
+          // purpose) stays silent exactly as it did before the waiver existed.
           spokenSafetyAllowed: isPhoneCall,
+          stopReason: null,
         };
         const filledSpoken =
           callDelivery({ isPhoneCall, ticketsAvailable: speechTicketsAvailable() }) === "stream" 
@@ -565,7 +572,12 @@ export async function POST(req: Request) {
       // the screen and DEAD AIR in their ear, at the one moment they most needed an answer.
       // The screen shows it while it plays, which is the same bargain the price waiver
       // strikes and the same reason it is sound.
+      //
+      // AND IT IS NOT ENOUGH ON ITS OWN. The branch has to be on the call-speakable list in
+      // voice-budget.ts as well — the flag alone once waived active anaphylaxis, and the demo
+      // call channel was driven synthesizing «اتصل بالإسعاف 997».
       spokenSafetyAllowed: isPhoneCall,
+      stopReason: voiceSignals.stopReason,
     };
     let spoken = streamTheCall
       ? demoVoiceTicket(closed.reply, { ...speakOpts, sid: conversationId })

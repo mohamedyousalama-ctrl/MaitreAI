@@ -79,14 +79,19 @@ ok("«safety_signal» and «flag_off» are declared pass-through reasons, not ad
 // REMOVED from the struct rather than set to `false`, so any caller still passing it is a
 // compile error instead of a value quietly ignored — the same reasoning that made this a
 // closed struct in the first place.
-ok("SafetyProbe is a closed struct with every remaining detector required",
-  /export interface SafetyProbe \{[\s\S]{0,220}allergenAvoidance: boolean;[\s\S]{0,220}allergenSymptom: boolean;[\s\S]{0,220}allergenEmergency: boolean;/.test(typed) &&
+// FOUR AGAIN, but not the same four. `phoneticSafetyNet` is gone — the near-miss GUESSING
+// was retired — and `allergyContext` took the slot: the EXACT phrases and markers the
+// vocabulary gate does not carry, with no distance function and no confidence input. The
+// struct stays closed so adding a detector without wiring `safetyProbeFired` is a compile
+// error rather than a silently ignored field.
+ok("SafetyProbe is a closed struct with every detector required",
+  /export interface SafetyProbe \{[\s\S]{0,400}allergenAvoidance: boolean;[\s\S]{0,400}allergenSymptom: boolean;[\s\S]{0,400}allergyContext: boolean;[\s\S]{0,400}allergenEmergency: boolean;/.test(typed) &&
   !/phoneticSafetyNet: boolean;/.test(typed) &&
   !/safetyProbe: Record<string, unknown>/.test(typed));
 // Reading the four fields BY NAME means adding a fifth detector without wiring it here is
 // a compile error, rather than a silently-ignored field.
 ok("safetyProbeFired reads every field by name, not via Object.values",
-  /export function safetyProbeFired\(probe: SafetyProbe\): boolean \{\s*return probe\.allergenAvoidance \|\| probe\.allergenSymptom \|\| probe\.allergenEmergency;/.test(typed));
+  /export function safetyProbeFired\(probe: SafetyProbe\): boolean \{\s*return probe\.allergenAvoidance \|\| probe\.allergenSymptom \|\| probe\.allergyContext \|\| probe\.allergenEmergency;/.test(typed));
 // The kill switch: a flag that cannot switch a surface off is not a kill switch. It was
 // checked only at the WhatsApp call site, so the public demo stayed on the rail.
 ok("the handler itself honours typed_quantity_fill, so both callers are covered",

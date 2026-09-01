@@ -13,7 +13,8 @@
 // ============================================================================
 
 import { normalizeAr } from "./allergen-gate";
-import { levenshtein, stripAffix, nearestSafetyTerm } from "./phonetic-safety-net";
+import { levenshtein, stripAffix } from "./phonetic-safety-net";
+import { exactSafetyToken } from "./allergen-context";
 
 // Per-tenant alias SEED (garbled/heard → canonical menu-ish token). Auto-variants come
 // from normalizeAr at match time. In V1 this ships as a shared seed; a per-tenant table
@@ -147,9 +148,15 @@ export function resolveVoiceCandidates(
   const out: VoiceCandidate[] = [];
   const seen = new Set<string>();
   for (const tok of tokens) {
-    // HARD LAW — an allergen-class token is NEVER a menu candidate (nearestSafetyTerm
-    // handles affixes internally). Route it to the safety net, never a menu candidate.
-    if (nearestSafetyTerm(tok)) continue;
+    // HARD LAW — an allergen-class token is NEVER a menu candidate. Route it to the safety
+    // path, never a menu candidate.
+    //
+    // EXACT, NOT NEAR, AND THAT IS A FIX. This asked `nearestSafetyTerm` — the retired
+    // near-matcher — so it also deleted every token within EDIT DISTANCE of a safety word.
+    // «موز» (banana) is one edit from «لوز» (almond): a banana order lost the word here, and
+    // once the net was retired from the safety path it was caught by nothing else either —
+    // no candidate, no hold, no note. See lib/ai/allergen-context.ts.
+    if (exactSafetyToken(tok)) continue;
     // WO-VOICE-PRECISION (finding 1) — greeting/courtesy words never source a candidate.
     if (isGreetingStop(tok)) continue;
     // Alias lookup on the RAW token (stripping a legit leading ب/ك/و/ف/ل — «بطاطه»,
