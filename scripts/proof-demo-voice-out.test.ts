@@ -1706,5 +1706,91 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     voiceMatchesPin({ adapter: "elevenlabs", voiceId: KHALID_VOICE.voiceId }, KHALID_VOICE.voiceId));
 }
 
+// ── A FAILED ACTIVATION MUST SAY WHY, ON THE DEMO SURFACE TOO ───────────────
+//
+// This was found in production, on the founder's first real call. The whole chain worked —
+// speech recognised, reply composed, text delivered — and ElevenLabs threw. The only
+// evidence anywhere was `[demo/voice] spoken reply skipped { reason: 'synth_failed' }`,
+// because the catch took no binding and dropped the error. A revoked key, a plan without
+// the pinned model, a pronunciation dictionary the account cannot reach, an output format
+// above the tier and an exhausted quota are five different fixes, and that line cannot tell
+// them apart. The demo is the surface that gets configured FIRST, so it fails first.
+{
+  const { demoVoiceReply } = await import("../lib/demo/voice-out.ts");
+  const realFetch = globalThis.fetch;
+  const env = { ...process.env };
+  const warned: string[] = [];
+  const realWarn = console.warn;
+
+  async function synthFailingWith(status: number, body: string): Promise<string[]> {
+    warned.length = 0;
+    console.warn = (...a: unknown[]) => { warned.push(a.map(String).join(" ")); };
+    globalThis.fetch = (async () => ({
+      ok: false, status, text: async () => body,
+      json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response)) as typeof fetch;
+    Object.assign(process.env, {
+      TTS_ADAPTER: "elevenlabs", ELEVENLABS_API_KEY: "el-key",
+      ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
+    });
+    // `inboundWasVoice: true` is REQUIRED, and omitting it is how this block first passed
+    // for the wrong reason: demoVoiceReply returns `not_triggered` before any provider is
+    // reached, so every "it refused" assertion was green while the synthesis never ran.
+    // The skip reason is asserted for exactly that — `synth_failed` proves it got there.
+    const out = await demoVoiceReply("هلا فيك، وش تحب تطلب؟", { inboundWasVoice: true });
+    console.warn = realWarn;
+    ok(`a ${status} refuses to speak, and REACHED the synthesis to do it (${out.skipped})`,
+      out.audioBase64 === null && out.skipped === "synth_failed");
+    return [...warned];
+  }
+
+  // The five causes an operator actually hits, each of which needs a DIFFERENT fix.
+  const dictionaryMissing = await synthFailingWith(400, '{"detail":{"status":"pronunciation_dictionary_not_found","message":"dictionary rv3aw4bY6zoL4iWxJlDk not found"}}');
+  ok("a missing pronunciation dictionary is named in the log",
+    dictionaryMissing.some((w) => w.includes("synthesis threw") && w.includes("pronunciation_dictionary_not_found")));
+
+  const badKey = await synthFailingWith(401, '{"detail":{"status":"invalid_api_key"}}');
+  ok("a rejected key is named in the log", badKey.some((w) => w.includes("synthesis threw") && w.includes("invalid_api_key")));
+
+  const quota = await synthFailingWith(429, '{"detail":{"status":"quota_exceeded"}}');
+  ok("an exhausted quota is named in the log", quota.some((w) => w.includes("synthesis threw") && w.includes("quota_exceeded")));
+
+  const tier = await synthFailingWith(400, '{"detail":{"status":"invalid_output_format","message":"opus_48000_64 requires a higher tier"}}');
+  ok("an output format above the tier is named in the log",
+    tier.some((w) => w.includes("synthesis threw") && w.includes("invalid_output_format")));
+
+  // AND THE THREE ARE DISTINGUISHABLE FROM EACH OTHER — the whole point. Before this, all
+  // five produced the identical single line and an operator had nothing to act on.
+  ok("…and the four causes produce four DIFFERENT log lines",
+    new Set([dictionaryMissing, badKey, quota, tier].map((w) =>
+      w.find((l) => l.includes("synthesis threw")) ?? "")).size === 4);
+
+  // BOUNDED AND SINGLE-LINE. The provider body is attacker-adjacent input to a log.
+  const huge = await synthFailingWith(400, `{"detail":"${"A".repeat(5000)}\nSECOND LINE"}`);
+  const line = huge.find((w) => w.includes("synthesis threw")) ?? "";
+  ok("the logged reason is clipped and stays on one line",
+    line.length < 420 && !line.includes("\n"));
+
+  // A 2xx WITH AN EMPTY BODY IS A DIFFERENT FAULT WITH THE SAME NAME, and must not send
+  // someone hunting a key that is fine.
+  warned.length = 0;
+  console.warn = (...a: unknown[]) => { warned.push(a.map(String).join(" ")); };
+  globalThis.fetch = (async () => ({
+    ok: true, status: 200, text: async () => "",
+    json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0),
+  } as unknown as Response)) as typeof fetch;
+  const empty = await demoVoiceReply("هلا فيك", { inboundWasVoice: true });
+  console.warn = realWarn;
+  ok("an empty 2xx body is reported as no-audio, not as a thrown error",
+    empty.audioBase64 === null && empty.skipped === "synth_failed" &&
+    warned.some((w) => w.includes("returned no audio")) &&
+    !warned.some((w) => w.includes("synthesis threw")));
+
+  globalThis.fetch = realFetch;
+  console.warn = realWarn;
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
+}
+
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} demo-voice-out: ${pass}/${pass + fail} passed`);
 process.exit(fail === 0 ? 0 : 1);

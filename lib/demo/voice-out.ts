@@ -243,14 +243,35 @@ export async function demoVoiceReply(
   let result;
   try {
     result = await adapter.synthesize(text, { voiceId: pinnedVoiceId });
-  } catch {
+  } catch (e) {
+    // SAY WHY, NOT JUST THAT. This `catch` took no binding and discarded the error, so a
+    // failed activation produced exactly one line — `reason: 'synth_failed'` — for a revoked
+    // key, a plan without the pinned model, a pronunciation dictionary the account cannot
+    // reach, an output format above the tier, and an exhausted quota alike. Five different
+    // fixes behind one indistinguishable word, on the surface a prospect is watching.
+    //
+    // The live WhatsApp path was given this exact treatment already (`[voice] … synthesis
+    // produced nothing — text-only`, with what to check); the demo, which is the surface
+    // that gets configured FIRST and therefore fails first, was left guessing.
+    //
+    // The adapter's message is safe to print: it is either our own refusal text or the
+    // provider's response body, which never echoes the key. Clipped and flattened anyway,
+    // because it reaches a log and an unbounded provider payload is a 4KB log line.
+    const why = (e instanceof Error ? e.message : String(e)).replace(/[\r\n\t]+/g, " ");
+    console.warn(`[demo/voice] synthesis threw: ${why.slice(0, 300)}`);
     // No fallback is attempted, and none is bought. On WhatsApp falling back to onyx is
     // right — a customer waiting on an order is better served by any voice than silence.
     // On a sales page the voice IS the thing being demonstrated, so the wrong one is worse
     // than none, and the visitor still has the full text reply either way.
     return none("synth_failed");
   }
-  if (!result?.audio?.length) return none("synth_failed");
+  if (!result?.audio?.length) {
+    // A DIFFERENT FAULT WITH THE SAME NAME. The provider answered 2xx and handed back an
+    // empty body; distinguished here so the log does not send someone hunting a key that
+    // is fine.
+    console.warn(`[demo/voice] synthesis returned no audio (adapter=${result?.adapter ?? "none"}, model=${result?.model ?? "none"})`);
+    return none("synth_failed");
+  }
 
   // THE PROVIDER'S OWN ACCOUNT OF ITSELF, checked after the fact. getTtsAdapter() is a
   // shared file on the WhatsApp path; asserting only what we ASKED for left the demo's
