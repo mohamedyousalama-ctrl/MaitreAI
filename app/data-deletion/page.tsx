@@ -91,7 +91,7 @@ export default function DataDeletionPage() {
         </div>
 
         <div className="mt-12 border-t border-slate-100 pt-8 text-xs text-slate-400 text-center" dir="ltr">
-          <p>Kivo is a product of City Baker LLC — Commercial Register No. 216565 — Cairo, Egypt</p>
+          <p>Kivo is a product of مؤسسة عمر حجاب المطيري للتجارة — Unified National Number 7055031913 — Riyadh, Saudi Arabia</p>
         </div>
       </main>
       <SiteFooter />

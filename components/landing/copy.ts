@@ -159,7 +159,7 @@ export const COPY: Record<Lang, Copy> = {
     },
     footer: {
       tagline: "خلّي طلباتك ماشية",
-      legal: "City Baker LLC",
+      legal: "مؤسسة عمر حجاب المطيري للتجارة",
       links: { privacy: "الخصوصية", terms: "الشروط", dataDeletion: "حذف البيانات", contact: "تواصل" },
       rights: "كل الطلبات على واتساب، من غير عمولة وسطاء",
     },
@@ -236,7 +236,7 @@ export const COPY: Record<Lang, Copy> = {
     },
     footer: {
       tagline: "Keep every order moving",
-      legal: "City Baker LLC",
+      legal: "مؤسسة عمر حجاب المطيري للتجارة",
       links: { privacy: "Privacy", terms: "Terms", dataDeletion: "Data deletion", contact: "Contact" },
       rights: "Every order on WhatsApp, with no aggregator commission",
     },

@@ -51,7 +51,7 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-semibold text-slate-900 mb-2">١. من نحن ونطاق الخدمة</h2>
             <p>
               Kivo (كيفو) مساعد ذكي لاستقبال طلبات المطاعم عبر واتساب، يديره وكيلُ محادثة (كريم في مصر، خالد في السعودية).
-              Kivo منتج من شركة سيتي بيكر (ش.ذ.م.م)، سجل تجاري رقم ٢١٦٥٦٥، ١٤٩ شارع النصر، المعادي، القاهرة، مصر.
+              Kivo منتج من مؤسسة عمر حجاب المطيري للتجارة، الرقم الوطني الموحد ٧٠٥٥٠٣١٩١٣، الرياض، المملكة العربية السعودية.
               نخدم مطاعم في مصر والمملكة العربية السعودية، ونلتزم في السعودية بروح نظام حماية البيانات الشخصية (PDPL)،
               وفي مصر بقانون حماية البيانات الشخصية رقم ١٥١ لسنة ٢٠٢٠.
               للتواصل: <a href="mailto:info@getkivo.io" className="text-emerald-700 underline" dir="ltr">info@getkivo.io</a>
@@ -176,8 +176,8 @@ export default function PrivacyPage() {
           <section>
             <h3 className="text-base font-semibold text-slate-900 mb-1">Who we are &amp; scope</h3>
             <p className="text-sm">
-              Kivo is a WhatsApp-based AI ordering assistant for restaurants (agent “Karim” in Egypt, “Khalid” in Saudi Arabia), a product of City Baker LLC
-              (Commercial Register No. 216565, Cairo, Egypt). We serve restaurants in Egypt and Saudi Arabia and align with Saudi PDPL and Egypt’s Data Protection Law 151/2020.
+              Kivo is a WhatsApp-based AI ordering assistant for restaurants (agent “Karim” in Egypt, “Khalid” in Saudi Arabia), a product of مؤسسة عمر حجاب المطيري للتجارة
+              (Unified National Number 7055031913, Riyadh, Saudi Arabia). We serve restaurants in Egypt and Saudi Arabia and align with Saudi PDPL and Egypt’s Data Protection Law 151/2020.
             </p>
           </section>
           <section>
@@ -214,7 +214,7 @@ export default function PrivacyPage() {
         </div>
 
         <div className="mt-12 border-t border-slate-100 pt-8 text-xs text-slate-400 text-center" dir="ltr">
-          <p>Kivo is a product of City Baker LLC — Commercial Register No. 216565 — Cairo, Egypt</p>
+          <p>Kivo is a product of مؤسسة عمر حجاب المطيري للتجارة — Unified National Number 7055031913 — Riyadh, Saudi Arabia</p>
         </div>
       </main>
       <SiteFooter />

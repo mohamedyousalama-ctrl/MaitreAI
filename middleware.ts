@@ -10,7 +10,7 @@
 // (maitre.chat, *.vercel.app) falls through to the normal auth flow UNCHANGED.
 //
 // Operator host "/" (e.g. console.wesayachicken.com): the root marketing landing is
-// MaitreAI's OWN company site (logo, City Baker legal footer) and must not show
+// MaitreAI's OWN company site (logo, legal footer) and must not show
 // on a client's operator domain. There, "/" redirects to /login; the auth helper
 // then bounces an already-signed-in operator from /login to /dashboard (existing
 // behavior), so authed staff still reach their app. maitre.chat keeps the landing.

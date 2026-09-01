@@ -36,12 +36,12 @@ export default function ContactPage() {
           <h2 dir="rtl" className="text-sm font-semibold text-slate-700">بيانات الشركة — Company Details</h2>
           <div className="mt-3 space-y-2 text-sm leading-relaxed text-slate-600">
             <p dir="rtl">
-              Kivo هو منتج من شركة سيتي بيكر (ش.ذ.م.م) — سجل تجاري رقم ٢١٦٥٦٥ — ١٤٩ شارع النصر،
-              المعادي، القاهرة، مصر
+              Kivo هو منتج من مؤسسة عمر حجاب المطيري للتجارة — الرقم الوطني الموحد ٧٠٥٥٠٣١٩١٣ —
+              الرياض، المملكة العربية السعودية
             </p>
             <p dir="ltr">
-              Kivo is a product of City Baker LLC — Commercial Register No. 216565 — 149 El-Nasr
-              St., Maadi, Cairo, Egypt
+              Kivo is a product of مؤسسة عمر حجاب المطيري للتجارة — Unified National Number
+              7055031913 — Riyadh, Saudi Arabia
             </p>
           </div>
         </section>
