@@ -207,6 +207,8 @@ async function runScreen(opts: {
   player?: unknown;
   /** Make every play() reject with NotAllowedError — Safari's autoplay refusal. */
   playRejects?: boolean;
+  /** How long a reply takes to play. Needed for anything that happens DURING a reply. */
+  playbackMs?: number;
 }) {
   const rt = makeRuntime();
   const log = installBrowser({
@@ -215,6 +217,7 @@ async function runScreen(opts: {
     server: opts.server ?? (() => ({ status: 200, body: AUDIO_OK })),
     serverDelayMs: opts.serverDelayMs ?? 0,
     playRejects: opts.playRejects ?? false,
+    playbackMs: opts.playbackMs ?? 0,
   });
   const CallScreen = loadCallScreen(rt.React);
   const pushed: Array<Record<string, unknown>> = [];
@@ -267,6 +270,10 @@ async function runScreen(opts: {
     tracksOpened: log.tracksOpened, tracksStopped: log.tracksStopped,
     ctxOpened: log.ctxOpened, ctxClosed: log.ctxClosed,
     requests: log.voiceRequests.length, played: log.played.length,
+    // BEFORE TEARDOWN. release() pauses the player on unmount, so a pause counted after it
+    // is the harness cleaning up, not the visitor interrupting — and counting it made a
+    // silent room look like a barge-in.
+    paused: log.paused,
   };
   const everSaw = (needle: string) => seen.some((t) => t.includes(needle)) || text.includes(needle);
   // ALWAYS TEAR DOWN before returning. Leaving a scenario's loop running let it keep
@@ -385,6 +392,77 @@ async function runScreen(opts: {
       !/el\.muted/.test(src));
     ok("…and the unlocked element is handed to the call screen",
       /player=\{unlockedPlayer\}/.test(src));
+  }
+
+  // ── THE VISITOR MAY INTERRUPT ─────────────────────────────────────────────
+  //
+  // "The conversation should be continuous, not send and receive." The microphone used to
+  // be CLOSED for the whole of Khalid's reply — the AudioContext was created and destroyed
+  // around each recording — so a caller who heard the wrong answer in the first two seconds
+  // had to sit through all of it. That is a walkie-talkie, not a phone call.
+  //
+  // The `rmsScript` here never falls quiet, so the room is still loud while the reply plays:
+  // that is a visitor talking over Khalid. What must happen is that the player is PAUSED and
+  // a new turn begins — not that the call ends.
+  {
+    // THE ACTUAL SCENARIO, in order: the room is quiet while the detector calibrates, the
+    // visitor speaks, they stop long enough for the turn to end (the hangover is 1100ms, so
+    // ~19 samples at the 60ms cadence), and then they START TALKING AGAIN while the reply
+    // plays. A first attempt never went quiet at all, so the turn never ended, nothing was
+    // ever uploaded and no reply ever played — the assertion reported "no interruption" for
+    // a call that had not reached the point where interrupting is possible.
+    const LOUD = [
+      ...Array(7).fill(0.005),   // calibrate the room
+      ...Array(10).fill(0.20),   // the visitor speaks
+      ...Array(22).fill(0.004),  // …and stops, long enough to end the turn (>1100ms)
+      ...Array(20).fill(0.30),   // …then talks OVER the reply — the interruption
+      ...Array(25).fill(0.004),  // …and stops again, so the next turn can complete
+    ];
+    // THE SCRIPT WRAPS, so it has to be a whole realistic exchange rather than an ending
+    // state. A first version finished on the loud block: every subsequent turn then
+    // calibrated and spoke with no quiet stretch anywhere, ran to the 20-second ceiling,
+    // and the test hung for minutes per turn. That was the fixture, not the component —
+    // but it is also exactly what a caller in a permanently noisy room would experience.
+    const r = await runScreen({ ms: 8000, rmsScript: LOUD, playbackMs: 900 });
+    ok(`speech over the reply pauses it (${r.atHangup.paused} pauses)`, r.atHangup.paused >= 1);
+    // ALIVE, not "did another full turn". A second complete upload needs another
+    // calibrate-speak-stop cycle, which is a property of the waveform script rather than of
+    // barge-in; requiring it tested the fixture. What barge-in must guarantee is that the
+    // interruption did NOT end the call — the failure it replaces is precisely a call that
+    // dies when the visitor talks.
+    ok("…and the call is still live, not ended by the interruption",
+      !r.everSaw("انتهت المحادثة"));
+    ok("…and it is not reported as a broken voice",
+      !r.everSaw("الصوت مو شغّال"));
+  }
+
+  // AND A QUIET ROOM DOES NOT INTERRUPT ANYTHING. The two failures are not symmetric:
+  // failing to interrupt costs a few seconds, a false interruption cuts Khalid off
+  // mid-word on every turn and makes him look broken. The barge threshold is deliberately
+  // well above the end-of-speech threshold for this reason.
+  {
+    const SPEAK_THEN_QUIET = [...Array(7).fill(0.005), ...Array(10).fill(0.20), ...Array(200).fill(0.004)];
+    const r = await runScreen({ ms: 9000, rmsScript: SPEAK_THEN_QUIET, playbackMs: 900 });
+    ok(`a quiet room never interrupts the reply (${r.atHangup.paused} pauses)`, r.atHangup.paused === 0);
+  }
+
+  // ── ONE SILENT TURN IS A PAUSE, NOT A DROPPED LINE ────────────────────────
+  //
+  // Eight seconds of quiet ENDED the call outright, on the first pause — so a visitor who
+  // stopped to think, or who waited to be greeted, killed the demo on turn one and was told
+  // so in text they were not looking at. A person says "hello?" once before hanging up.
+  {
+    const SILENT_ROOM = Array(400).fill(0.003);
+    const r = await runScreen({ ms: 20_000, rmsScript: SILENT_ROOM });
+    ok("a silent room does not upload anything", r.log.voiceRequests.length === 0);
+    // TWO LISTENING TURNS, NOT ONE. This is the whole change, and nothing else can see it:
+    // the microphone stream is opened once and reused, so `tracksOpened` is 1 either way,
+    // and the give-up message appears in both cases — a mutation that ended the call on the
+    // first silence passed every other assertion here.
+    ok(`…and it listens a SECOND time before giving up (${r.log.recorderStarts} turns)`,
+      r.log.recorderStarts >= 2);
+    ok("…but a second consecutive silence does end it, rather than looping forever",
+      r.everSaw("ما سمعت شي"));
   }
 
   // A REJECTED play() ENDS THE CALL HONESTLY rather than looping in silence. This is the

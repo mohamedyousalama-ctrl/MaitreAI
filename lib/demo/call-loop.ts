@@ -54,7 +54,19 @@ export const FLOOR_MAX = 0.035;
 export const SPEECH_RMS = ABSOLUTE_FLOOR;
 /** Quiet for this long AFTER speech began ends the turn. A pause between words in Arabic
  *  running speech is comfortably under a second; a turn-ending pause is longer. Too short
- *  and the visitor gets interrupted mid-sentence, which is the failure people notice. */
+ *  and the visitor gets interrupted mid-sentence, which is the failure people notice.
+ *
+ *  TRIED AT 700 TO CUT PERCEIVED LATENCY, AND PUT BACK. It is the largest single
+ *  contributor to the wait — time spent after the visitor has stopped talking, before the
+ *  request is even sent — so it is the obvious thing to shorten. But this file's own proof
+ *  asserts that 800ms and 1000ms gaps are PAUSES, not turn ends, and that is a claim about
+ *  how Najdi running speech is actually spoken, not a tuning preference. At 700ms a visitor
+ *  drawing breath mid-sentence gets cut off and loses the rest of it — and barge-in does
+ *  not rescue that, because the clip has already been uploaded.
+ *
+ *  Editing the assertion to match a faster constant would have traded a real guarantee for
+ *  a number. The latency is being taken out of the ~1s of server work that happens BEFORE
+ *  the brain is even called, which costs the visitor nothing. */
 export const HANGOVER_MS = 1100;
 /** Nobody spoke at all. Ends the turn WITHOUT uploading, because a clip of silence still
  *  costs a transcription and still counts against the visitor's turn budget. */

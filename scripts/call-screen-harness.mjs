@@ -192,7 +192,7 @@ function loadTs(rel) {
  * `server` is called for every /api/demo/voice request and returns `{status, body}`.
  * `capabilities` is the boolean the probe reports.
  */
-export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0, playRejects = false } = {}) {
+export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0, playRejects = false, playbackMs = 0 } = {}) {
   const log = {
     micPrompts: 0,
     tracksOpened: 0,
@@ -207,6 +207,12 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
     /** How many Audio elements the COMPONENT built. One per turn means the element the tap
      *  unlocked is being thrown away, which is the Safari autoplay failure. */
     audioConstructed: 0,
+    /** How many times playback was stopped mid-reply — i.e. the visitor interrupted. */
+    paused: 0,
+    /** How many LISTENING turns actually began. The microphone stream is opened once and
+     *  reused, so `tracksOpened` cannot tell one listening turn from five — which made a
+     *  silent room that re-prompts indistinguishable from one that gives up immediately. */
+    recorderStarts: 0,
   };
 
   let urlSeq = 0;
@@ -224,7 +230,7 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
 
   globalThis.MediaRecorder = class {
     constructor() { this.state = "inactive"; this.ondataavailable = null; this.onstop = null; }
-    start() { this.state = "recording"; }
+    start() { this.state = "recording"; log.recorderStarts++; }
     stop() {
       this.state = "inactive";
       this.ondataavailable?.({ data: new Blob([new Uint8Array(64)], { type: "audio/webm" }) });
@@ -261,6 +267,9 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
   // fix reuses the element the parent unlocked, so "how many were constructed" and "what
   // src was played" are now the two facts that distinguish fixed from broken — and a stub
   // that only recorded a constructor argument could see neither.
+  // The player must be PAUSABLE and must report that it was paused, because barge-in works
+  // by pausing mid-reply — and `pause()` fires neither `ended` nor `error`, which is exactly
+  // the case a naive stub cannot represent.
   globalThis.Audio = class {
     constructor(url) {
       log.audioConstructed++;
@@ -276,9 +285,22 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
     async play() {
       if (playRejects) { const e = new Error("play() blocked"); e.name = "NotAllowedError"; throw e; }
       log.played.push(this._src || this.url);
-      queueMicrotask(() => this.onended?.());
+      // REAL PLAYBACK TAKES TIME, and with `playbackMs: 0` this resolved on a microtask —
+      // so nothing that happens DURING a reply could ever be observed. Barge-in is exactly
+      // that: a watcher on the microphone while the audio plays. A stub that finishes
+      // instantly reports "no interruption" for a component that never got the chance.
+      this._paused = false;
+      if (playbackMs > 0) {
+        this._timer = setTimeout(() => { if (!this._paused) this.onended?.(); }, playbackMs);
+      } else {
+        queueMicrotask(() => this.onended?.());
+      }
     }
-    pause() {}
+    pause() {
+      log.paused++;
+      this._paused = true;
+      if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+    }
   };
 
   globalThis.fetch = async (url, init) => {

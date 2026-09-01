@@ -876,6 +876,15 @@ function CallScreen({
   const stream = useRef<MediaStream | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
+  /** Kept for the life of the call so playback can watch the microphone for an
+   *  interruption. See the barge-in note in the playback block. */
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  /** The speech threshold the LAST listening turn calibrated for this room. Carried so
+   *  barge-in scales to a noisy restaurant instead of using one constant everywhere. */
+  const roomThreshold = useRef<number>(0.06);
+  /** One silent turn is a pause; two in a row is a dropped line. Reset whenever the
+   *  visitor is actually heard, so a long call gets a fresh chance each time. */
+  const reprompted = useRef(false);
   // `player` is now a PROP — the element the opening tap unlocked. It was a local ref
   // holding a fresh `new Audio()` per turn, which is precisely what Safari refuses to play.
   const abort = useRef<AbortController | null>(null);
@@ -920,7 +929,15 @@ function CallScreen({
     let chunks: Blob[] = [];
     try {
       if (!stream.current) {
-        stream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // ECHO CANCELLATION IS LOAD-BEARING HERE, not a nicety. The microphone stays open
+        // while Khalid speaks so the visitor can interrupt him — and without cancellation
+        // the loudest thing that microphone hears IS Khalid, so every reply would interrupt
+        // itself on the first syllable. Requested explicitly rather than relying on the
+        // browser's default for `audio: true`, because that default is not guaranteed and
+        // the failure it produces looks like a broken call rather than a missing flag.
+        stream.current = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
         if (!live.current) { release(); return; }
       }
       const mr = new MediaRecorder(stream.current);
@@ -932,10 +949,21 @@ function CallScreen({
       // read the waveform: RMS above the floor means speech, and a continuous stretch of
       // quiet AFTER speech has started ends the turn. Requiring speech first is what stops
       // a silent room from firing an empty clip at the transcriber on a loop.
-      audioCtx.current = new AudioContext();
-      const analyser = audioCtx.current.createAnalyser();
-      analyser.fftSize = 512;
-      audioCtx.current.createMediaStreamSource(stream.current).connect(analyser);
+      // ONE CONTEXT FOR THE WHOLE CALL, not one per turn. It used to be created and closed
+      // around each recording, which made barge-in impossible: nothing was watching the
+      // microphone while Khalid spoke, so the visitor could not interrupt him and had to
+      // sit through every reply to its end. It is released in release(), on hangup.
+      if (!audioCtx.current) {
+        audioCtx.current = new AudioContext();
+        const a = audioCtx.current.createAnalyser();
+        a.fftSize = 512;
+        audioCtx.current.createMediaStreamSource(stream.current).connect(a);
+        analyserRef.current = a;
+      }
+      // Safari suspends a context created outside a gesture; a suspended analyser reads
+      // pure silence, which looks exactly like a visitor who never spoke.
+      try { void audioCtx.current.resume?.(); } catch { /* not suspended */ }
+      const analyser = analyserRef.current!;
       const frame = new Uint8Array(analyser.fftSize);
 
       const MAX_MS = Math.min(DEMO_MAX_RECORD_SECONDS, 20) * 1000;
@@ -954,15 +982,30 @@ function CallScreen({
 
       mr.start();
       const outcome = await stopped;
+      // Carry this room's measured speech level to the playback watcher below.
+      if (Number.isFinite(vad.threshold) && vad.threshold > 0) roomThreshold.current = vad.threshold;
       await new Promise<void>((done) => { mr.onstop = () => done(); try { mr.stop(); } catch { done(); } });
-      try { void audioCtx.current?.close(); } catch { /* already closed */ }
-      audioCtx.current = null;
+      // The context stays OPEN — it is what listens for an interruption while Khalid
+      // speaks. release() closes it when the call ends.
       if (!live.current) { release(); return; }
 
       if (outcome !== "spoke") {
+        // A PERSON SAYS "HELLO?" BEFORE HANGING UP. Eight seconds of quiet used to END the
+        // call outright, on the first pause — so a visitor who stopped to think, or who
+        // waited to be greeted, killed the demo on turn one and was told, in text they were
+        // not looking at, that nothing was heard. One re-prompt costs one short synthesis
+        // and is what makes the difference between a dropped line and a conversation.
+        if (!reprompted.current) {
+          reprompted.current = true;
+          setNote("");
+          void runTurn();
+          return;
+        }
         stopWith("ما سمعت شي 🙏 تقدر تبدأ المكالمة من جديد، أو تكتب لي في المحادثة.");
         return;
       }
+      // Heard them — the next silence gets its own second chance.
+      reprompted.current = false;
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
       stopWith(
@@ -1091,7 +1134,56 @@ function CallScreen({
       // and nothing anywhere recording it. The sibling voice-note player says so out loud;
       // this must too. `pause()` on hangup fires neither event, which is why `live` is
       // rechecked rather than resolving on a third path.
+      // ── BARGE-IN: THE VISITOR MAY INTERRUPT ───────────────────────────────
+      //
+      // "The conversation should be continuous, not send and receive." Until now the
+      // microphone was closed for the whole of Khalid's reply, so a caller who heard the
+      // wrong answer in the first two seconds had to sit through all of it — which is not
+      // how a phone call works, and is the single thing that makes this feel like a walkie
+      // -talkie rather than a conversation.
+      //
+      // The analyser stays open now, so while the audio plays we watch the room. Speech
+      // over the reply stops it and hands the floor straight back.
+      //
+      // DELIBERATELY HARDER TO TRIGGER THAN THE END-OF-SPEECH DETECTOR. The two failures
+      // are not symmetric: failing to interrupt costs a few seconds of listening, while a
+      // false interruption cuts Khalid off mid-word and makes him look broken. So it needs
+      // a level well above the room AND several consecutive frames — a cough, a door, or a
+      // single loud syllable of echo will not do it. Echo cancellation is requested on the
+      // stream for the same reason: without it the loudest thing the microphone hears while
+      // Khalid speaks is Khalid.
+      const BARGE_RMS = Math.max(0.06, roomThreshold.current * 1.6);
+      const BARGE_FRAMES = 4;
+      let bargeRun = 0;
+      let barged = false;
+      const bargeAnalyser = analyserRef.current;
+      const bargeFrame = bargeAnalyser ? new Uint8Array(bargeAnalyser.fftSize) : null;
+      // THE WATCHER MUST RESOLVE THE WAIT, NOT JUST STOP THE SOUND.
+      //
+      // `pause()` fires NEITHER `ended` NOR `error`. A first version set a flag and paused,
+      // and the promise below — whose only three exits are those two events and a rejected
+      // play() — never settled. The call froze permanently on the visitor's first
+      // interruption: microphone shut, nothing playing, nothing to end it but hanging up.
+      // The proof caught it by hanging too, which is the same defect seen from outside.
+      let settle: ((v: boolean) => void) | null = null;
+      const bargeWatch = setInterval(() => {
+        if (!live.current || !bargeAnalyser || !bargeFrame) return;
+        try {
+          bargeAnalyser.getByteTimeDomainData(bargeFrame);
+          let sum = 0;
+          for (let i = 0; i < bargeFrame.length; i++) { const x = (bargeFrame[i] - 128) / 128; sum += x * x; }
+          bargeRun = Math.sqrt(sum / bargeFrame.length) > BARGE_RMS ? bargeRun + 1 : 0;
+          if (bargeRun >= BARGE_FRAMES) {
+            barged = true;
+            clearInterval(bargeWatch);
+            try { el.pause(); } catch { /* already stopped */ }
+            settle?.(true);
+          }
+        } catch { /* analyser gone — the call is ending */ }
+      }, 60);
+
       const played = await new Promise<boolean>((done) => {
+        settle = done;
         el.onended = () => done(true);
         // SAY WHY, HERE TOO. This discarded the reason, exactly as the server's catch did,
         // so a silent call produced no evidence anywhere on either side — the request
@@ -1108,7 +1200,12 @@ function CallScreen({
           done(false);
         });
       });
+      clearInterval(bargeWatch);
       if (!live.current) return;
+      // AN INTERRUPTION IS NOT A PLAYBACK FAILURE. `pause()` fires neither `ended` nor
+      // `error`, so without this the promise would resolve false and the call would end
+      // claiming the voice was broken — the visitor talking would kill the call.
+      if (barged) { void runTurn(); return; }
       if (!played) { stopWith(endMessage({ kind: "end", reason: "voice_unavailable" })); return; }
       void runTurn();
     } catch (err) {

@@ -196,7 +196,9 @@ export async function POST(req: Request) {
   // CACHED, because this runs before STT and a database round trip here is latency the
   // caller hears as dead air. The demo tenant's menu is a fixture that changes when someone
   // edits a seed script, so a short TTL is honest and costs one query per window.
+  const msIntake = Date.now() - tTurn;
   const menuNames = await demoMenuNames(admin);
+  const msVocab = Date.now() - tTurn - msIntake;
   // …and the state bias comes from the history the CLIENT already posted, so it costs no
   // query at all: the last thing Khalid said is what decides which answers to expect.
   const lastAssistant = [...history].reverse().find((h) => h.role === "assistant")?.content ?? "";
@@ -458,6 +460,7 @@ export async function POST(req: Request) {
     // played aloud. voiceSignalsForTurn reads stopReason, which that branch does set, and
     // fails closed on any stop reason nobody has listed as safe to speak.
     const msBrain = Date.now() - tBrain;
+    const tAfter = Date.now();
     const voiceSignals = demoVoiceSignalsFor(out, closed);
     const tTts = Date.now();
     let spoken = await demoVoiceReply(closed.reply, {
@@ -498,8 +501,16 @@ export async function POST(req: Request) {
     // gets tuned, so every turn now reports its own breakdown. This is a timing line, not
     // an alert, and carries no visitor words: four durations and a character count.
     const msTts = Date.now() - tTts;
+    const msAfter = tTts - tAfter;
     console.log(
-      `[demo/voice] timing stt=${msStt}ms brain=${msBrain}ms tts=${msTts}ms ` +
+      // BROKEN DOWN FURTHER, because the first measurement indicted nothing: stt 233ms +
+      // brain 840ms accounted for barely half of a 2062ms turn, and the rest was invisible.
+      // `intake` is everything before transcription — host gate, rate limit, body parse,
+      // the durable spend guard, the mock-adapter check; `vocab` is the menu lookup;
+      // `after` is the session, order close and spend accounting between the brain and the
+      // synthesis. Optimizing what you have not measured is how the wrong thing gets tuned.
+      `[demo/voice] timing intake=${msIntake}ms vocab=${msVocab}ms stt=${msStt}ms ` +
+        `brain=${msBrain}ms tts=${msTts}ms after=${msAfter}ms ` +
         `total=${Date.now() - tTurn}ms chars=${closed.reply.length} model=${out.model ?? "?"}`
     );
 
