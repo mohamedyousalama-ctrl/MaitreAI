@@ -511,7 +511,11 @@ export async function POST(req: Request) {
       // synthesis. Optimizing what you have not measured is how the wrong thing gets tuned.
       `[demo/voice] timing intake=${msIntake}ms vocab=${msVocab}ms stt=${msStt}ms ` +
         `brain=${msBrain}ms tts=${msTts}ms after=${msAfter}ms ` +
-        `total=${Date.now() - tTurn}ms chars=${closed.reply.length} model=${out.model ?? "?"}`
+        // `calls` decides where the ~5s of thinking can be cut. One model call means the cost
+      // is the reply itself over a 17k-token prompt, and the lever is TTS streaming; two or
+      // three means tool round-trips, and the lever is the call channel's tool policy. The
+      // difference is not visible from outside and guessing it picks the wrong fix.
+      `total=${Date.now() - tTurn}ms calls=${out.callsUsed ?? "?"} chars=${closed.reply.length} model=${out.model ?? "?"}`
     );
 
     // `not_triggered` and `mock_pinned` are deliberate configurations, not faults.
