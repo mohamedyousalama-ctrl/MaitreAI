@@ -10,7 +10,10 @@
 
 /** ElevenLabs returns opus in an ogg container (`output_format=opus_48000_64`). Defaulting
  *  to audio/mpeg mislabels those bytes and is itself a decode failure. */
-export const DEMO_AUDIO_DEFAULT_MIME = "audio/ogg";
+// MP3, because this constant is the fallback for a BROWSER player. It was audio/ogg — the
+// WhatsApp voice-note format — which Safari cannot decode, so a payload arriving without an
+// explicit mime was labelled unplayable on every Apple device.
+export const DEMO_AUDIO_DEFAULT_MIME = "audio/mpeg";
 
 export interface DecodedReplyAudio {
   bytes: Uint8Array<ArrayBuffer>;

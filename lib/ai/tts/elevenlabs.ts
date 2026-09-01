@@ -29,7 +29,7 @@
 // guard that protects one of two callers protects neither in the case that matters.
 // ============================================================================
 
-import type { TtsAdapter } from "./types";
+import type { TtsAdapter, TtsAudioFormat } from "./types";
 import { ttsCostUsd } from "./pricing";
 import { KHALID_VOICE, lookupVoice, normalizeVoiceId, voiceRefusalReason } from "./voice-registry";
 
@@ -90,11 +90,20 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
     const model = voice.model;
     const body = String(text ?? "");
 
+    // THE CONTAINER IS THE CALLER'S TO CHOOSE, and getting it wrong is silent on both ends.
+    // Ogg Opus is right for a WhatsApp voice note and unplayable in Safari, so serving it
+    // to the browser demo produced a successful synthesis, delivered bytes, an empty log
+    // and no sound — for every iPhone and iPad visitor, since iOS has no other engine.
+    const format: TtsAudioFormat = opts?.format ?? "ogg_opus";
+    const outputFormat = format === "mp3" ? "mp3_44100_128" : "opus_48000_64";
+    const mime = format === "mp3" ? "audio/mpeg" : "audio/ogg";
+    const accept = format === "mp3" ? "audio/mpeg" : "audio/ogg";
+
     const res = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=opus_48000_64`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${outputFormat}`,
       {
         method: "POST",
-        headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/ogg" },
+        headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: accept },
         body: JSON.stringify({
           text: body,
           model_id: model,
@@ -135,7 +144,7 @@ export const elevenlabsTtsAdapter: TtsAdapter = {
     const audio = Buffer.from(await res.arrayBuffer());
     return {
       audio,
-      mime: "audio/ogg",
+      mime,
       model,
       adapter: "elevenlabs",
       chars: body.length,

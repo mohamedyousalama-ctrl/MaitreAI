@@ -242,7 +242,12 @@ export async function demoVoiceReply(
   const pinnedVoiceId = lookupVoice(envTrim("ELEVENLABS_VOICE_ID"))?.voiceId ?? "";
   let result;
   try {
-    result = await adapter.synthesize(text, { voiceId: pinnedVoiceId });
+    // MP3, NOT OGG OPUS. This is a BROWSER, and Safari cannot decode Ogg Opus — so the
+    // previous default produced a successful synthesis, delivered bytes, an empty log and
+    // total silence for every Safari, iPhone and iPad visitor, which on a page built to be
+    // shown to restaurant owners on their phones is most of them. WhatsApp keeps Ogg Opus,
+    // which is what a voice note there must be; the format is now per-caller.
+    result = await adapter.synthesize(text, { voiceId: pinnedVoiceId, format: "mp3" });
   } catch (e) {
     // SAY WHY, NOT JUST THAT. This `catch` took no binding and discarded the error, so a
     // failed activation produced exactly one line — `reason: 'synth_failed'` — for a revoked

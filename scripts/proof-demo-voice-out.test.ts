@@ -531,7 +531,14 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
 {
   const mod = read("lib/demo/voice-out.ts");
   ok("the validated voice id is PASSED to the adapter, not re-read by it",
-    /adapter\.synthesize\(text, \{ voiceId: pinnedVoiceId \}\)/.test(mod));
+    /adapter\.synthesize\(text, \{ voiceId: pinnedVoiceId, format: "mp3" \}\)/.test(mod));
+  // AND THE BROWSER FORMAT IS PART OF THAT CALL. Ogg Opus — the WhatsApp voice-note
+  // container, and the adapter's default — is undecodable in Safari, so the demo asking for
+  // the default produced a paid, successful, delivered synthesis that made no sound on any
+  // Apple device, with nothing wrong in any log. Pinned in the same expression as the voice
+  // id because both are properties of THIS caller that the adapter cannot infer.
+  ok("…and so is the browser-playable container",
+    /format: "mp3"/.test(mod) && !/synthesize\(text, \{ voiceId: pinnedVoiceId \}\)/.test(mod));
   // The comparison itself is driven below; that its RESULT is acted on is source-anchored,
   // and deliberately so: no env configuration can make the value we ask for differ from
   // the value the adapter echoes, so only a lying adapter reaches the branch — which is
@@ -648,8 +655,14 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   const good = decodeReplyAudio(b64, "audio/ogg");
   ok("a valid payload decodes to the provider's actual bytes",
     !!good && Buffer.from(good.bytes).toString() === "OGG-BYTES");
-  ok("the MIME defaults to ogg, not mpeg — the provider returns opus in an ogg container",
-    decodeReplyAudio(b64, null)?.type === DEMO_AUDIO_DEFAULT_MIME && DEMO_AUDIO_DEFAULT_MIME === "audio/ogg");
+  // MPEG, NOT OGG — AND THIS ASSERTION USED TO SAY THE OPPOSITE. It pinned audio/ogg with
+  // the rationale "the provider returns opus in an ogg container", which was true of the
+  // WhatsApp path and wrong for this one: this constant is the fallback for a BROWSER
+  // player, and Safari cannot decode Ogg Opus. The demo now requests mp3, so a payload that
+  // arrives without an explicit mime must be labelled mp3 or it is unplayable on every
+  // Apple device — which is how a correct-looking assertion protected a silent demo.
+  ok("the MIME defaults to mpeg — this is a browser player, and Safari cannot decode ogg",
+    decodeReplyAudio(b64, null)?.type === DEMO_AUDIO_DEFAULT_MIME && DEMO_AUDIO_DEFAULT_MIME === "audio/mpeg");
   for (const [why, val] of [
     ["a null payload", null], ["an empty string", ""], ["a non-string", 42],
     ["malformed base64", "!!!not-base64!!!"],
@@ -1788,6 +1801,64 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
 
   globalThis.fetch = realFetch;
   console.warn = realWarn;
+  for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
+  Object.assign(process.env, env);
+}
+
+// ── THE CONTAINER EACH SURFACE ACTUALLY GETS, ON THE WIRE ───────────────────
+//
+// Found in production, on the founder's second real call. The key was right, the synthesis
+// SUCCEEDED, the bytes were delivered, every log line was clean — and the page was silent.
+// The demo was serving Ogg Opus, the WhatsApp voice-note container, which **Safari cannot
+// decode**. iOS has no non-Safari engine, so that is every iPhone and iPad visitor to a page
+// whose entire purpose is being shown to a restaurant owner on their phone.
+//
+// Nothing detected it because nothing FAILED: our side did everything right and the browser
+// quietly declined to play the result. Driven here on the URL and the response mime, per
+// surface, because the two must differ and a single default cannot serve both.
+{
+  const { elevenlabsTtsAdapter } = await import("../lib/ai/tts/elevenlabs.ts");
+  const realFetch = globalThis.fetch;
+  const env = { ...process.env };
+  Object.assign(process.env, {
+    ELEVENLABS_API_KEY: "el-key", ELEVENLABS_VOICE_ID: KHALID_VOICE.voiceId,
+  });
+
+  async function askFor(format?: "mp3" | "ogg_opus"): Promise<{ url: string; mime: string }> {
+    let url = "";
+    globalThis.fetch = (async (u: RequestInfo | URL) => {
+      url = String(u);
+      return {
+        ok: true, status: 200, text: async () => "",
+        arrayBuffer: async () => new TextEncoder().encode("AUDIO").buffer,
+      } as unknown as Response;
+    }) as typeof fetch;
+    const r = await elevenlabsTtsAdapter.synthesize("هلا فيك", format ? { format } : undefined);
+    return { url, mime: r.mime };
+  }
+
+  const browser = await askFor("mp3");
+  ok("a browser caller gets mp3 ON THE WIRE, not just in a comment",
+    browser.url.includes("output_format=mp3_44100_128"));
+  ok("…and the bytes are labelled audio/mpeg, which Safari can actually play",
+    browser.mime === "audio/mpeg");
+
+  const whatsapp = await askFor("ogg_opus");
+  ok("a WhatsApp caller still gets ogg opus, which is what a voice note must be",
+    whatsapp.url.includes("output_format=opus_48000_64") && whatsapp.mime === "audio/ogg");
+
+  // THE DEFAULT MUST STAY OGG. WhatsApp is the caller that must not change, and it passes
+  // no format — so a default flipped to mp3 would silently reshape every voice note sent to
+  // a real customer while this file stayed green on the two explicit cases above.
+  const defaulted = await askFor(undefined);
+  ok("the DEFAULT is ogg opus, so the WhatsApp path is unchanged by this",
+    defaulted.url.includes("output_format=opus_48000_64") && defaulted.mime === "audio/ogg");
+
+  // AND THE TWO SURFACES MUST DIFFER. One shared container is exactly the bug: whichever
+  // one it is, the other surface is broken.
+  ok("…and the two surfaces genuinely differ", browser.mime !== whatsapp.mime);
+
+  globalThis.fetch = realFetch;
   for (const k of Object.keys(process.env)) if (!(k in env)) delete process.env[k];
   Object.assign(process.env, env);
 }

@@ -12,11 +12,27 @@
 
 export type TtsAdapterName = "mock" | "elevenlabs" | "openai";
 
+/** Which container the caller can actually PLAY.
+ *
+ *  `ogg_opus` is what WhatsApp wants for a voice note, and it was the only option — so the
+ *  browser demo served Ogg Opus too, and **Safari cannot decode it**. The synthesis
+ *  succeeded, the bytes arrived, and the page was silent, with nothing in any log because
+ *  nothing failed on our side. iOS has no non-Safari engine, so that is every iPhone and
+ *  iPad visitor to a page built to be shown to restaurant owners on their phones.
+ *
+ *  `mp3` plays everywhere — Safari, iOS, Chrome, Firefox, Android. The Mizan review script
+ *  already chose it for exactly this reason ("web/iOS/WhatsApp-playable — browser-safe
+ *  container"); the demo never got the same treatment. */
+export type TtsAudioFormat = "ogg_opus" | "mp3";
+
 export interface TtsSynthesizeOptions {
   /** Provider voice id (ElevenLabs) — read from config, never hardcoded. */
   voiceId?: string;
   /** BCP-47 language hint. */
   languageHint?: string;
+  /** Container to request. Defaults to `ogg_opus` — the WhatsApp voice-note format, which
+   *  is the caller that must not change. A BROWSER caller must ask for `mp3`. */
+  format?: TtsAudioFormat;
 }
 
 export interface TtsResult {
