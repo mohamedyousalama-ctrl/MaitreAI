@@ -25,6 +25,7 @@ import { runCustomerTurn, CustomerTurnError } from "@/lib/ai/customer-turn";
 import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/lib/util/customer-visible-format";
 import { transcribeAudioBytes } from "@/lib/messaging/voice";
 import { expectedAnswerClass, CLASS_PRIORITY_TERMS } from "@/lib/ai/voice-aliases";
+import { safeSttVocabulary } from "@/lib/demo/stt-vocab";
 import { demoVoiceReply, demoVoiceSignalsFor, demoVoiceSilenceKind } from "@/lib/demo/voice-out";
 import { presentationForCall } from "@/lib/demo/call-presentation";
 import { callCarrierFor } from "@/lib/demo/call-carriers";
@@ -69,7 +70,10 @@ async function demoMenuNames(admin: ReturnType<typeof createAdminClient>): Promi
       .select("name")
       .eq("restaurant_id", DEMO_RESTAURANT_ID)
       .limit(200);
-    const names = ((data ?? []) as Array<{ name?: string | null }>).map((r) => r.name ?? "").filter(Boolean);
+    // FILTERED BEFORE IT IS CACHED, so a name that can trip a safety gate never enters the
+    // vocabulary at all. «لبن بارد» is on this menu, and biasing the recognizer toward it
+    // turned «هلا والله» into a dairy allergen and a safety hold — see lib/demo/stt-vocab.ts.
+    const names = safeSttVocabulary(((data ?? []) as Array<{ name?: string | null }>).map((r) => r.name));
     demoMenuCache = { names, at: Date.now() };
     return names;
   } catch {
