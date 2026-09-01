@@ -43,7 +43,22 @@ const HYPOTHETICAL_Q_RE = /(?:ممكن|يمكن|هل|ينفع|يصير|احتم�
 // --- INCLUDES — present-tense emergency signal families ----------------------
 // Each entry is [regex-over-normalized-text, audit-label]. Order: airway, swelling,
 // active reaction, emergency-call, English/mixed.
-const EMERGENCY_PATTERNS: Array<[RegExp, string]> = [
+// HARD vs SOFT — which families an exclusion is allowed to veto.
+//
+// THE EXCLUSIONS USED TO VETO EVERYTHING, AND THAT SILENCED PEOPLE WHO COULD NOT BREATHE.
+//
+// `PAST_RE` matches «زمان» anywhere in the message. «زمان، مو قادر أتنفس» is not a history —
+// it is "for a while now, I can't breathe" — and it returned NO_HIT. So did «قبل كده صار لي
+// كذا، الحين مو قادر أتنفس» and «سابقا ما صار، بس الحين حلقي يقفل»: both name the past in one
+// clause and an airway closing in the NEXT, and the veto read the first and threw away the
+// second. This file's own header says missing an active emergency is not acceptable.
+//
+// An exclusion answers "is this a story about the past". It cannot answer "is this person
+// breathing". So it no longer gets to: the airway, throat and active-swelling families fire
+// whatever frame surrounds them, and the exclusions keep their job over the softer signals —
+// a hospital visit, a reaction reported, an emergency number — where a history really is the
+// common reading and the cost of over-firing is a human interrupted for nothing.
+const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
   // Airway / breathing NOW (Najdi + Gulf + Egyptian). «ما اقدر اتنفس» / «مو قادر اتنفس» /
   // «مش عارف اتنفس» / «نفسي ضاق/يضيق/ضايق» / «حلقي|زوري|حنجرتي يقفل/يضيق/يتورم».
   //
@@ -53,13 +68,16 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string]> = [
   // way for this agent's core customer to say "I can't breathe" — «مو قادر أتنفس» — did not
   // fire the emergency path at all, while «ما أقدر أتنفس» did. Added with «موب» and «ماني»,
   // the other two Najdi/Gulf negators, and the feminine «قادرة».
-  [/ما ?اقدر ?(?:ا|ال)?تنفس|مش ?(?:عارف|عارفه|قادر|قادره) ?(?:ا|ال)?تنفس|(?:مب|مو|موب|ماني|مني) ?(?:قادر|قادره|قادرة)? ?(?:ا|ال)?تنفس|صعوبه في ?التنفس|ما ?اقدر ?اخذ ?نفس/, "صعوبة تنفس"],
-  [/نفسي ?(?:ضاق|يضيق|بيضيق|ضايق|مسدود|واقف|بيقف)/, "ضيق نفس"],
-  [/(?:حلقي|زوري|حنجرتي|بلعومي) ?(?:يقفل|يتقفل|بيقفل|بتقفل|يضيق|يتضيق|بيضيق|يتورم|بيتورم|مسدود|قافل|بيسكر|يسكر)/, "انسداد الحلق"],
+  [/ما ?اقدر ?(?:ا|ال)?تنفس|مش ?(?:عارف|عارفه|قادر|قادره) ?(?:ا|ال)?تنفس|(?:مب|مو|موب|ماني|مني) ?(?:قادر|قادره|قادرة)? ?(?:ا|ال)?تنفس|صعوبه في ?التنفس|ما ?اقدر ?اخذ ?نفس/, "صعوبة تنفس", "hard"],
+  // «نفسي ضايق» is BOTH "my breath is tight" and the idiom "I am fed up". What follows says
+  // which: a body reading never takes «من الخدمة» / «من التأخير» after it. Without this,
+  // «نفسي ضايق من الخدمة» — a complaint — opened the ambulance path.
+  [/نفسي ?(?:ضاق|يضيق|بيضيق|ضايق|مسدود|واقف|بيقف)(?! ?من ?(?:ال)?(?:خدمه|تعامل|انتظار|تاخير|وضع|كلام|رد|سوالف|طريق|زحمه))/, "ضيق نفس", "hard"],
+  [/(?:حلقي|زوري|حنجرتي|بلعومي) ?(?:يقفل|يتقفل|بيقفل|بتقفل|يضيق|يتضيق|بيضيق|يتورم|بيتورم|مسدود|قافل|بيسكر|يسكر)/, "انسداد الحلق", "hard"],
   // Swelling NOW — lips / tongue / face / throat actively swelling.
-  [/(?:شفايفي|شفتي|لساني|وشي|وجهي|عيني|حلقي) ?(?:تورم|تتورم|يتورم|بيتورم|ورم|بيورم|منتفخ|انتفخ|بينتفخ|كبرت)/, "تورم"],
+  [/(?:شفايفي|شفتي|لساني|وشي|وجهي|عيني|حلقي) ?(?:تورم|تتورم|يتورم|بيتورم|ورم|بيورم|منتفخ|انتفخ|ينتفخ|بينتفخ|تنتفخ|كبرت)/, "تورم", "hard"],
   // Active allergic reaction happening right now («الحين»/«دلوقتي»/«الآن»).
-  [/(?:صار|جاني|جاله|جالها|جالي|صارت|بيصير|صاير) ?.{0,12}?(?:تحسس|حساسيه|حساسيت|رد ?فعل|طفح) ?.{0,8}?(?:الحين|دلوقتي|الان|توه|هسه|هلا)|(?:تحسس|حساسيه) ?(?:الحين|دلوقتي|الان|توه|هسه)/, "رد فعل تحسسي نشط"],
+  [/(?:صار|جاني|جاله|جالها|جالي|صارت|بيصير|صاير) ?.{0,12}?(?:تحسس|حساسيه|حساسيت|رد ?فعل|طفح) ?.{0,8}?(?:الحين|دلوقتي|الان|توه|هسه|هلا)|(?:تحسس|حساسيه) ?(?:الحين|دلوقتي|الان|توه|هسه)/, "رد فعل تحسسي نشط", "soft"],
   // Emergency call / hospital NOW.
   // NORMALIZED SPELLINGS ONLY — three alternatives here were unreachable.
   //
@@ -77,39 +95,65 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string]> = [
   // بالإسعاف», which is the exact wording Khalid himself uses when he tells someone to call
   // one. Verb forms widened, ب and ال both optional; «اسعاف» is still required, and there is
   // no ordinary restaurant sentence that asks for an ambulance.
-  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغى|اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|نادو|نادوا|طلبو|طلبوا) ?ب? ?(?:ال)?اسعاف|(?:ودينا|وديناه|وديناها|رحنا|راح|دخلنا|دخلوه) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)/, "طلب إسعاف / طوارئ"],
+  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغى|اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|نادو|نادوا|طلبو|طلبوا) ?ب? ?(?:ال)?اسعاف|(?:ودينا|ودونا|وديتوني|وديناه|وديناها|رحنا|راح|دخلنا|دخلوه) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)/, "طلب إسعاف / طوارئ", "soft"],
 ];
 
 // English / mixed — tested on the RAW (case-insensitive) text.
 const EMERGENCY_EN_RE =
-  /\b(can'?t breathe|cannot breathe|can not breathe|throat (?:is )?(?:closing|swelling|closed)|(?:lips?|face|tongue|throat) (?:is |are )?swelling|swelling (?:up )?now|anaphylaxis|anaphylactic|allergic reaction now|call (?:an )?ambulance|call 9-?1-?1|emergency now)\b/i;
+  /\b(can'?t breathe|cannot breathe|can not breathe|throat (?:is )?(?:closing|swelling|closed)|(?:lips?|face|tongue|throat) (?:is |are )?swelling|swelling (?:up )?now|anaphylaxis|anaphylactic|allergic reaction now|call (?:an )?ambulance|call (?:9-?1-?1|997|112)|emergency now)\b/i;
 
-// --- EMERGENCY NUMBERS — the ones that were firing on phone numbers ------------
+// --- EMERGENCY NUMBERS — the hardest rule in this file to get right --------------
 //
-// «٩٩٧|997|911|١١٢|112» used to be five bare alternatives inside the pattern above, with no
-// digit boundary and no context. Every one of these ordinary messages raised a full ALLERGY
-// EMERGENCY on the live WhatsApp path:
+// «٩٩٧|997|911|١١٢|112» began as five bare alternatives with no digit boundary and no
+// context, and every one of these ordinary messages raised a full allergy EMERGENCY on the
+// live WhatsApp path: «رقمي 0559971234» (a Saudi mobile — 997 sits inside a great many of
+// them), «الطلب رقم 112», «العنوان شارع 911», «الحساب 112 ريال».
 //
-//   «رقمي 0559971234»   a Saudi mobile number — 997 sits inside almost any long digit run
-//   «الطلب رقم 112»     an order number
-//   «العنوان شارع 911»  a street address
-//   «الحساب 112 ريال»   a bill
+// THE FIRST FIX WAS TWO-THIRDS RIGHT AND ITS TWO REMAINING HOLES WERE BOTH REAL.
 //
-// A customer sending their own phone number is the single most routine thing that happens in
-// this product, and it was escalating to a human as a life-threatening allergic reaction.
+//   The digit boundary only saw digits. «055 997 1234» and «055-997-1234» — how a Saudi
+//   actually writes that number — put spaces around the 997, so the boundary was satisfied
+//   and the number fired again. The proof passed because it only tested the unseparated
+//   form: an assertion green because a different spelling satisfied it.
 //
-// TWO CONDITIONS NOW, AND BOTH ARE HONEST. The digits must stand alone — a number inside a
-// longer run is a phone number, never a call for help — AND either someone is CALLING (the
-// verb is present) or the message is nothing but the number, which is what a person types
-// when they are panicking and have no words left. Every genuine phrasing this file already
-// caught («نبي إسعاف»، «ودّونا الطوارئ»، «call 911») is matched by the rules above and does
-// not depend on these digits at all.
+//   The context word could sit ANYWHERE. «اتصل» is the most ordinary verb in delivery, so
+//   «الطلب رقم 112 اتصل علي لما توصل» ("order 112, call me when you arrive") re-opened the
+//   whole family. «طلب» had already been left out for exactly this reason; «اتصل» is no
+//   different. And «نجده» was on the list for the rescue service «نجدة» — but normalizeAr
+//   folds ة→ه, so it is also the everyday verb "we find it": «الطلب 112 ما نجده» fired.
+//
+// So: the digits are collapsed first, so a separated phone number reads as one run; and the
+// calling verb must come BEFORE the number and close to it, which is where a verb sits when
+// the number is what you are calling. A bare number, alone or with an urgency word, still
+// fires — that is what someone types with no words left.
+//
+// «الله يخليك 997» is knowingly not covered. A leading courtesy phrase with no verb is rare,
+// and the alternative is a heuristic on message length that would let «الطلب رقم 112 اتصل
+// علي» back in. Anyone in that state says something else too, and everything else in this
+// file fires on it.
+
+/** Join digit groups a person separated with spaces or hyphens, so «055 997 1234» reads as
+ *  one ten-digit run and the boundary below sees it that way. */
+function collapseDigitGroups(n: string): string {
+  let out = n;
+  for (let i = 0; i < 6; i++) {
+    const next = out.replace(/([0-9٠-٩])[\s\u00A0-]+([0-9٠-٩])/g, (_m, a, b) => a + b);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
 const EMERGENCY_NUMBER_RE = /(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])/;
-/** A calling verb or an emergency service by name. NOT «طلب» — that is the ordinary word for
- *  a restaurant order, and «الطلب رقم 112» is how every customer refers to one. */
-const EMERGENCY_CALL_FRAME_RE = /اتصل|اتصلو|كلمو|نادو|اسعاف|طواري|انقاذ|نجده|هلال ?احمر/;
-/** The message is the number and nothing else. */
-const BARE_EMERGENCY_NUMBER_RE = /^[\s]*(?:997|911|112|٩٩٧|٩١١|١١٢)[\s!؟?.،,]*$/;
+/** A calling verb, immediately before the number. NOT «طلب» (the ordinary word for a
+ *  restaurant order) and NOT «نجده» (which normalizes onto "we find it"). */
+const CALL_THEN_NUMBER_RE =
+  /(?:اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|اطلب|اطلبو|اطلبوا|نادو|نادوا)(?:\s+\S{1,12}){0,2}\s*(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])/;
+/** An emergency service named outright. */
+const EMERGENCY_SERVICE_RE = /اسعاف|طواري|انقاذ|هلال ?احمر/;
+/** The message is the number, alone or with one word of urgency. */
+const BARE_EMERGENCY_NUMBER_RE =
+  /^[\s]*(?:997|911|112|٩٩٧|٩١١|١١٢)[\s]*(?:الحين|حالا|الان|بسرعه|بسرعة|please|now|quick(?:ly)?)?[\s!؟?.،,]*$/i;
 
 /**
  * Detect an ACTIVE allergy emergency (present tense). Pure + deterministic.
@@ -125,15 +169,28 @@ export function detectAllergenEmergency(text: string): EmergencyHit {
   // an English "anaphylaxis"/"can't breathe" is always treated as active (fail-safe).
   if (EMERGENCY_EN_RE.test(raw)) return { fired: true, label: "emergency (EN)" };
 
-  // Arabic: an explicit PAST or HYPOTHETICAL frame disqualifies (it's a history/what-if).
-  if (PAST_RE.test(n) || HYPOTHETICAL_RE.test(n) || HYPOTHETICAL_Q_RE.test(n)) return NO_HIT;
+  // Arabic: an explicit PAST or HYPOTHETICAL frame disqualifies the SOFT families only —
+  // it is a history or a what-if. It has never been able to tell us whether someone is
+  // breathing right now, so it no longer gets a vote on the families that answer that.
+  const excluded = PAST_RE.test(n) || HYPOTHETICAL_RE.test(n) || HYPOTHETICAL_Q_RE.test(n);
 
-  for (const [re, label] of EMERGENCY_PATTERNS) {
-    if (re.test(n)) return { fired: true, label };
+  // HARD families first, BEFORE the exclusions are consulted at all.
+  for (const [re, label, kind] of EMERGENCY_PATTERNS) {
+    if (kind === "hard" && re.test(n)) return { fired: true, label };
+  }
+  if (excluded) return NO_HIT;
+  for (const [re, label, kind] of EMERGENCY_PATTERNS) {
+    if (kind === "soft" && re.test(n)) return { fired: true, label };
   }
 
   // The emergency numbers, which need the message as a whole and not just a pattern.
-  if (EMERGENCY_NUMBER_RE.test(n) && (EMERGENCY_CALL_FRAME_RE.test(n) || BARE_EMERGENCY_NUMBER_RE.test(n))) {
+  const collapsed = collapseDigitGroups(n);
+  if (
+    EMERGENCY_NUMBER_RE.test(collapsed) &&
+    (CALL_THEN_NUMBER_RE.test(collapsed) ||
+      EMERGENCY_SERVICE_RE.test(collapsed) ||
+      BARE_EMERGENCY_NUMBER_RE.test(collapsed))
+  ) {
     return { fired: true, label: "طلب إسعاف / طوارئ" };
   }
 

@@ -226,5 +226,143 @@ console.log("\n── THE QUIET CASES ARE QUIET THROUGH THE COMPOSED READERS TOO
   }
 }
 
+
+console.log("\n── NARROWING IS THE OTHER WAY TO BREAK A SAFETY GATE ────────────");
+{
+  // EVERY CASE HERE WAS BROKEN BY THE COMMIT THAT FIXED THE FALSE POSITIVES ABOVE, AND WAS
+  // FOUND BY AN AUDIT RATHER THAN BY THIS FILE.
+  //
+  // The first pass narrowed «تعب» to "an object pronoun, or the conditional «لو»" and the
+  // harm verb to "an object pronoun". Both narrowed by FORM. Form is not what separates a
+  // disclosure from a complaint, so the result was a gate that had stopped hearing:
+  //
+  //   Arabic has FIVE common conditionals and only «لو» was implemented — the sibling file
+  //   lib/ai/allergen-emergency.ts already listed all five, one directory away.
+  //
+  //   «اللبن يتعب معدتي» — the most ordinary way a Gulf speaker states lactose intolerance —
+  //   names the organ, not the person, so it carried no pronoun and went silent.
+  //
+  //   «اللبن يضر ابني» names the child as a separate word. A parent disclosing a child's
+  //   allergy is the case this gate's ancestor was written for, and it went silent.
+  //
+  // The rules now ask whether the thing doing the harm is FOOD, which is the actual question.
+  const MUST_HEAR = [
+    // conditional on eating — all five conditionals
+    "أتعب لو أكلت بندق", "أتعب إذا أكلت بندق", "اتعب اذا اكلت بندق", "أتعب إن أكلت بندق",
+    "بتعب لما آكل بيض", "أتعب في حال أكلت بندق", "ولدي يتعب إذا أكل مكسرات",
+    "تعبان لو شربت حليب",
+    // the organ frame
+    "اللبن يتعب معدتي", "الحليب يتعب بطني", "المكسرات تتعب معدتي", "الحليب يتعب صحتي",
+    "الحليب يضر معدتي",
+    // the food tires ME, in both word orders
+    "اللبن يتعبني", "بيتعبني الحليب", "البيض بيتعبني",
+    // tired FROM a food, including the two-word canonical with the article on both halves
+    "صاحبي بيتعب من البندق", "بيتعب من الفول السوداني",
+    // third-person harm, where the person is a separate word
+    "اللبن يضر ابني", "البيض يضر الأطفال عندنا", "الفول السوداني يضر زوجتي",
+    "المكسرات تضر بنتي",
+    // the Gulf spelling of egg the lexicon did not carry
+    "بتعبني البيظ", "البيظ يتعبني",
+  ];
+  for (const t of MUST_HEAR) {
+    ok(`«${t}» is heard${anyDetectorFires(t) ? "" : " — NOTHING FIRED"}`, anyDetectorFires(t));
+    ok(`  …and the safety bridge agrees`, isSafetyClassInbound(t));
+  }
+
+  // AND THE COURTESY THE NARROWING WAS SUPPOSED TO EXCLUDE AND DID NOT. «تعبناك» / «تعبكم
+  // معنا» is Gulf for "sorry for the trouble" — and it carries the very object pronoun the
+  // first narrowing asked for, so it kept firing throughout.
+  for (const t of [
+    "ما قصرتوا، تعبكم معنا. أبغى لبن",
+    "الله يعطيكم العافية تعبناكم، وحدة حليب",
+    "تعبناك معنا يا خالد، أبغى كوب حليب",
+    // WITHOUT THE PUNCTUATION, which is what makes this a real test. Every courtesy case
+    // above happens to carry a comma or a full stop, and the clause boundary alone keeps
+    // them quiet — a driven mutation widened the object pronoun to «نا»/«كم»/«ك» and this
+    // file stayed green. Spoken Arabic in a chat window rarely punctuates.
+    "تعبناك معنا أبغى كوب حليب",
+    "تعبكم معنا أبغى لبن",
+    "تعبناكم وحدة حليب",
+    // …and the clause boundary that keeps two separate complaints separate
+    "تعبنا من التأخير، الحليب بارد",
+    "تعبنا من الانتظار الحليب بارد",
+  ]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+}
+
+console.log("\n── AN EXCLUSION CANNOT TELL US WHETHER SOMEONE IS BREATHING ────");
+{
+  // `PAST_RE` matched «زمان» anywhere in the message and vetoed the WHOLE detector. «زمان،
+  // مو قادر أتنفس» is not a history — it is "for a while now, I can't breathe" — and it
+  // returned nothing. Two more said the past in one clause and an airway closing in the
+  // next, and the veto read the first and threw the second away.
+  for (const t of [
+    "زمان، مو قادر أتنفس",
+    "قبل كده صار لي كذا، الحين مو قادر أتنفس",
+    "سابقا ما صار، بس الحين حلقي يقفل",
+    "لساني ينتفخ",
+  ]) {
+    ok(`«${t}» reaches the emergency path`, detectAllergenEmergency(t).fired);
+  }
+  // …while a genuine history still does not. The exclusions keep their job over the softer
+  // signals, where a story about last year really is the common reading.
+  for (const t of [
+    "قبل سنه رحت المستشفى من الفول",
+    "من زمان ودوني المستشفى بسبب الفول",
+    "لو أكلت بندق يصير لي تحسس؟",
+    "هل ممكن يصير تحسس؟",
+  ]) {
+    ok(`«${t}» is not an emergency`, !detectAllergenEmergency(t).fired);
+  }
+  // «نفسي ضايق» is both "my breath is tight" and "I am fed up". What follows says which.
+  for (const t of ["نفسي ضايق من الخدمة", "نفسي ضايق من التأخير"]) {
+    ok(`«${t}» is a complaint, not an airway`, !detectAllergenEmergency(t).fired);
+  }
+  ok("…while «نفسي ضايق» on its own still is an airway", detectAllergenEmergency("نفسي ضايق").fired);
+}
+
+console.log("\n── THE SAUDI AMBULANCE NUMBER, IN ENGLISH AND IN ARABIC ────────");
+{
+  // The English arm knew «call 911» — the AMERICAN number — and not «call 997», which is the
+  // one in the country this agent serves. The first number fix removed the bare digits and
+  // did not notice the asymmetry it left behind.
+  for (const t of ["call 997", "Call 997 now please", "call 112", "call 911", "call an ambulance"]) {
+    ok(`«${t}» is heard`, detectAllergenEmergency(t).fired);
+  }
+  // A number alone, or with one word of urgency, or called by a verb.
+  for (const t of ["997", "٩٩٧", "997 بسرعة", "997 الحين", "اتصلوا 997", "اطلبوا 997", "اتصل بالإسعاف 997"]) {
+    ok(`«${t}» is heard`, detectAllergenEmergency(t).fired);
+  }
+  // «ودّونا الطوارئ» — the plural this list never carried, named in a comment as covered.
+  ok("«ودّونا الطوارئ» is heard", detectAllergenEmergency("ودّونا الطوارئ").fired);
+
+  // A SEPARATED PHONE NUMBER IS STILL A PHONE NUMBER. The digit boundary only saw digits, so
+  // «055 997 1234» — how a Saudi actually writes it — put spaces around the 997 and fired.
+  // The corpus passed because it only ever tested the unseparated form.
+  for (const t of [
+    "اتصل على رقمي 055 997 1234", "055-997-1234", "كلموني على 055 997 1234",
+    "رقمي ٠٥٥ ٩٩٧ ١٢٣٤", "جوالي 055 911 2233",
+    // WITH THE CALLING VERB RIGHT BEFORE IT — the case that actually needs the digits
+    // joined. Everywhere else the verb-proximity rule already stops the message on its own,
+    // so a driven mutation removed the collapse entirely and this file stayed green. "Call
+    // me on 055 997 1234" puts the verb one word from a 997 the boundary would otherwise
+    // accept as standing alone.
+    "اتصل 055 997 1234", "اتصل علي 055 997 1234", "اتصلوا 055 911 2233", "كلمني 0559971234",
+  ]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+  // AND THE CALLING VERB HAS TO BE CALLING THE NUMBER. «اتصل» is the most ordinary verb in
+  // delivery; anywhere-in-the-message was enough to re-open the whole family.
+  for (const t of [
+    "الطلب رقم 112 اتصل علي لما توصل", "العمارة 911 اتصل قبل ما توصل", "شقة 112 اتصل لما تجي",
+    // «نجده» was listed for the rescue service «نجدة» — normalizeAr folds ة→ه, so it is also
+    // the everyday verb "we find it".
+    "الطلب 112 ما نجده", "رقم 911 ما نجده في السيستم",
+  ]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+}
+
 console.log(`\n${fails.length ? "FAIL" : "PASS"} allergy-false-positives: ${pass}/${pass + fails.length} passed`);
 if (fails.length) { for (const f of fails) console.log(`   ✗ ${f}`); process.exit(1); }

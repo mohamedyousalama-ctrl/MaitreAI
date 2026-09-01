@@ -71,19 +71,25 @@ const ENGLISH_ALLERGY_RE = /\b(allerg(y|ic)|anaphylax|epipen|lactose\s*intoleran
 
 /** Harm verbs — «تأذيني» / «يضرني» / «يؤذيني». Only a hit ALONGSIDE an allergen noun.
  *
- *  THE OBJECT PRONOUN IS REQUIRED, AND THAT IS A BUG FIX. This read `تاذ|تضر|يضر|اذي|يوذ` —
- *  bare stems, no boundary — and the alternative «اذي» sits inside «هاذي», the ordinary Najdi
- *  word for "this". Every sentence starting «هاذي…» carried a harm verb as far as this rule
- *  was concerned, so «هاذي الرز الأبيض زين» ("this white rice is good") and «هاذي اللبن
- *  الرايب» ("this is the laban rayeb") each raised an allergy hold on a compliment about
- *  food. That is precisely the false-positive class the Founder retired the phonetic net
- *  for, reintroduced by me in the file that replaced it.
+ *  ANCHORED TO THE START OF A WORD, WHICH IS THE WHOLE FIX AND THE WHOLE STORY.
  *
- *  A real harm statement names WHO is harmed: «يضرني»، «تأذيني»، «يؤذيني» — the pronoun is
- *  not decoration, it is what makes the sentence about the speaker instead of about the
- *  world. «صحتي»/«معدتي»/«بطني» stand in for it in the other natural phrasing. */
-const HARM_CONTEXT_RE =
-  /(?:ضر|اذي|وذي)(?:ني|نا|ها|هم|هن|كم|ك)|(?:يضر|تضر|بيضر|يوذي|تاذي|ياذي|توذي) ?(?:صحتي|معدتي|بطني)/;
+ *  This read `تاذ|تضر|يضر|اذي|يوذ` — bare stems, matched anywhere — and «اذي» sits inside
+ *  «هاذي», the ordinary Najdi word for "this". Every «هاذي …» sentence carried a harm verb,
+ *  so «هاذي اللبن الرايب» ("this is the laban rayeb") raised an allergy hold on a remark
+ *  about a drink.
+ *
+ *  THE FIRST FIX WAS WORSE THAN THE BUG. It required an object pronoun glued to the verb —
+ *  «يضرني» — on the reasoning that a real harm statement names who is harmed. It does; it
+ *  just does not always glue the name on. «اللبن يضر ابني» ("laban harms my son"), «البيض
+ *  يضر الأطفال عندنا», «الفول السوداني يضر زوجتي» all name the person as a separate word,
+ *  and all three went silent: no hold, no kitchen note, no alert. A parent disclosing a
+ *  child's allergy is the single case this file's ancestor was written for.
+ *
+ *  The actual difference between «يضرني» and «هاذي» is not the pronoun. It is that one is a
+ *  VERB and the other is a word that merely contains its letters. So the stem is anchored to
+ *  a word start, allowing only the prefixes Arabic actually puts on a verb (ي/ت/ب/ن), and
+ *  the object is not required at all. «هاذي» does not match, because «ه» is not one of them. */
+const HARM_CONTEXT_RE = /(?:^|[^ء-ي])[بيتن]?(?:اذي|وذي|ضر)/;
 
 /** The nouns that turn a harm verb into a safety sentence. Not a gate of their own. */
 const ALLERGEN_NOUNS = [

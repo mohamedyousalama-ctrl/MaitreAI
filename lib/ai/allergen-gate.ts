@@ -40,8 +40,19 @@ const ALLERGEN_TERMS = [
   // allergen-vocab.ts (already aliases; now gateTerms too) — the vocab test asserts it.
   "لاكتوز", // lactose — dairy
   "طحينه",  // tahini — sesame (normalizeAr maps ة→ه, so «طحينة»→«طحينه»)
+  // «بيظ» — how «بيض» (egg) is written when it is spelled the way the Gulf says it, with
+  // ض→ظ. Two proofs of the retired phonetic net leaned on that module's edit-distance to
+  // reach it («بتعبني البيظ»), so the LIVE gate never had it: driven on both sides of this
+  // change, «بتعبني البيظ» was silent before and after, on every surface. It is a real
+  // spelling of a real allergen, and it belongs in the lexicon rather than in a matcher.
+  "بيظ",
 ];
 const ALLERGEN_TERMS_NORM = ALLERGEN_TERMS.map((t) => normalizeAr(t));
+
+/** Escape a literal for embedding in a RegExp source string. */
+function escapeRe(w: string): string {
+  return w.replace(/[.*+?^${}()|[\]\\]/g, (c) => "\\" + c);
+}
 
 /** Escape a normalized term for use inside a RegExp. */
 function escapeReg(s: string): string {
@@ -95,16 +106,10 @@ const EXPLICIT_ALLERGY_RE = new RegExp(
  *  term to fire (so «بحب البندق» / «عايز اللوز» do NOT match — no avoidance). */
 const AVOIDANCE_INTENT_RE = new RegExp(
   [
-    // «تعب» WAS A BARE STEM, and it is the ordinary word for being tired. Any message
-    // carrying it AND any allergen noun fired: «تعبت من الانتظار، أبغى لبن» ("I'm tired of
-    // waiting, I want laban") became an allergy hold and a staff alert — on the turn a
-    // customer is ALREADY annoyed, which is the worst possible moment to answer with a
-    // safety questionnaire. So did «أنا تعبان اليوم، أبغى حليب».
-    //
-    // The medical sense always says WHO it tires («يتعبني»، «بيتعبني»، «تتعبها») or puts it
-    // under a condition («أتعب لو أكلت بندق»، «تعبان لو شربت حليب»). Bare «تعبت» / «تعبان»
-    // with no object and no «لو» is a person describing their day.
-    "تعب(?:ني|نا|ها|هم|هن|كم|ك)|تعب(?:ان|انه)? ?لو",
+    // «تعب» IS NOT IN THIS LIST, DELIBERATELY. It is the ordinary word for being tired, and
+    // this list only needs an allergen SOMEWHERE in the same message — so «تعبت من الانتظار،
+    // أبغى لبن» ("tired of waiting, I want laban") was a hold and a staff alert. It has its
+    // own predicate, `tiredByFood`, below.
     "ب?موت", // بموت لو / هموت لو / بموت من
     "(?:مينفعش|ما ?اقدرش?|ماقدرش|مش ?هقدر|ما ?ينفع) ?اكل", // can't eat
     "مبيناسبنيش|مايناسبنيش|ما ?يناسبني",
@@ -129,26 +134,72 @@ const AVOIDANCE_INTENT_RE = new RegExp(
   ].join("|")
 );
 
-/** «يتعب من <allergen>» — the frame the narrowing above would otherwise have cost.
+/** Is the thing that tires this customer a FOOD?
  *
- *  Requiring an object pronoun or «لو» killed «تعبت من الانتظار» (tired of waiting), which is
- *  what it was for. It also killed «صاحبي بيتعب من البندق» ("my friend gets sick from
- *  hazelnut"), which is a real third-party disclosure and one of this gate's oldest test
- *  cases. Both are «تعب … من X»; the ONLY thing separating them is whether X is a food on
- *  the allergen list.
+ *  THIS IS THE THIRD ATTEMPT AND THE FIRST ONE ASKED IN THE RIGHT UNITS.
  *
- *  So this reads what comes AFTER «من» instead of guessing from the verb, and it reads it
- *  with the same article tolerance `termRegex` uses — «الفول السوداني» glues «ال» onto both
- *  words of the canonical «فول سوداني», and a version of this that only tolerated one article
- *  missed the most consequential allergen on the list. «تعبت من الانتظار» stays quiet because
- *  «الانتظار» is not on it, and no amount of «لبن» later in the sentence changes that. */
+ *  «تعب» began as a bare alternative in the avoidance list above, which needs only an
+ *  allergen somewhere in the same message — so an ordinary complaint about waiting became an
+ *  allergy hold on the turn a customer was already unhappy.
+ *
+ *  The second attempt required the object pronoun («يتعبني») or the conditional «لو». That
+ *  narrowed by FORM, and form is not what separates these sentences. It went deaf to the four
+ *  other Arabic conditionals — «أتعب إذا أكلت بندق»، «بتعب لما آكل بيض»، «أتعب في حال أكلت
+ *  بندق»، «ولدي يتعب إذا أكل مكسرات» — while the sibling file already listed all five
+ *  (lib/ai/allergen-emergency.ts, HYPOTHETICAL_RE). It went deaf to the organ frame «اللبن
+ *  يتعب معدتي», the most ordinary way a Gulf speaker states lactose intolerance. And it STILL
+ *  fired on «تعبكم معنا» and «تعبناك» — Gulf courtesy for "sorry for the trouble" — because
+ *  those carry the very pronoun it was asking for.
+ *
+ *  The question that actually separates them is whether the tiredness is predicated on FOOD.
+ *  Four shapes say it is; nothing else does.
+ *
+ *    1. tired IF/WHEN eating      «أتعب لو/إذا/إن/لما/في حال أكلت بندق»
+ *    2. tired FROM <allergen>     «صاحبي بيتعب من البندق»
+ *    3. <allergen> tires …        «اللبن يتعبني»، «الحليب يتعب بطني»
+ *    4. tires ME, then <allergen> «بيتعبني الحليب»
+ *
+ *  Shapes 3 and 4 stay inside one clause, which is what keeps «تعبنا من التأخير، الحليب
+ *  بارد» quiet: there the tiredness and the milk are two separate complaints. */
+
+/** Shape 1 — tiredness conditional on eating or drinking. All five Arabic conditionals. */
+const TIRED_IF_EATING_RE =
+  /تعب\S*\s+(?:لو|اذا|ان|لما|في\s+حال|يعني\s+لو)\s+(?:ما\s+)?\S{0,2}(?:اكل|كل|شرب|تناول|ذقت|ذاق)/;
+
+/** Shape 2 — «تعب … من <allergen>», with the allergen anchored to what follows «من». */
 const TIRED_FROM_RE = /تعب\S* ?من ?/;
-/** Each allergen term, anchored to the START of what follows «من», article-tolerant on every
- *  word of a multi-word term. */
+
+/** One allergen alternation, article-tolerant on EVERY word of a multi-word term. «الفول
+ *  السوداني» glues «ال» onto both halves of the canonical «فول سوداني», and a version that
+ *  tolerated only one article missed the most consequential allergen on the list. */
+const ALLERGEN_ALT = ALLERGEN_TERMS_NORM
+  .map((t) => t.split(/\s+/).map(escapeRe).join(" (?:ال)?"))
+  .join("|");
+
+/** The same terms anchored to the START of a string, for shape 2's tail. */
 const ALLERGEN_TERMS_ANCHORED = ALLERGEN_TERMS_NORM.map(
-  (t) => new RegExp("^(?:ال)?" + t.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(" (?:ال)?"))
+  (t) => new RegExp("^(?:ال)?" + t.split(/\s+/).map(escapeRe).join(" (?:ال)?"))
 );
-function tiredFromAllergen(n: string): boolean {
+
+/** Shape 3 — an allergen, then a tiring verb close behind it, in the same clause. */
+const ALLERGEN_THEN_TIRES_RE = new RegExp(
+  "(?:ال)?(?:" + ALLERGEN_ALT + ")[^.،,؛!؟\\n]{0,12}?[بيت]?تعب"
+);
+
+/** Shape 4 — the mirror: the verb first, the food after.
+ *
+ *  ONLY THE FIRST-PERSON OBJECT «ني», and that restriction is load-bearing. «نا» and «كم» are
+ *  what Gulf courtesy uses — «تعبناكم»، «تعبكم معنا» — and accepting any object pronoun fired
+ *  on a customer apologising for taking up staff time and then ordering a laban. Someone
+ *  stating their own intolerance says it tires ME. */
+const TIRES_ME_THEN_ALLERGEN_RE = new RegExp(
+  "[بيت]?تعبني[^.،,؛!؟\\n]{0,12}?(?:ال)?(?:" + ALLERGEN_ALT + ")"
+);
+
+function tiredByFood(n: string): boolean {
+  if (TIRED_IF_EATING_RE.test(n)) return true;
+  if (ALLERGEN_THEN_TIRES_RE.test(n)) return true;
+  if (TIRES_ME_THEN_ALLERGEN_RE.test(n)) return true;
   const m = TIRED_FROM_RE.exec(n);
   if (!m) return false;
   const tail = n.slice(m.index + m[0].length);
@@ -162,7 +213,7 @@ function tiredFromAllergen(n: string): boolean {
  *  "allergy intent" instead of re-authoring it. Pass a normalizeAr'd string. */
 export function hasAllergyIntent(normalized: string): boolean {
   return EXPLICIT_ALLERGY_RE.test(normalized) || AVOIDANCE_INTENT_RE.test(normalized) ||
-    tiredFromAllergen(normalized);
+    tiredByFood(normalized);
 }
 
 /** Allergen-safety ASSERTION verbs/claims (for the output guard). */
@@ -200,7 +251,7 @@ export function detectAllergenAvoidance(text: string): AllergenAvoidanceHit {
   // true positive (every clean «بندق/البندق/اللبن/…» still matches, tolerating «ال»).
   const picked = pickAllergenTerm(n);
   const hasAllergen = picked !== null;
-  const intent = AVOIDANCE_INTENT_RE.test(n) || tiredFromAllergen(n);
+  const intent = AVOIDANCE_INTENT_RE.test(n) || tiredByFood(n);
   const fired = explicit || (intent && hasAllergen);
   if (!fired) return { fired: false, term: null };
   // Fall back to generic «الحساسية» ONLY on an explicit-allergy hit with no clean
