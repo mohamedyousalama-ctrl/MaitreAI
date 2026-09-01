@@ -133,5 +133,34 @@ console.log("\n── THE CALL SCREEN SENDS IT; THE CHAT MICROPHONE DOES NOT ─
     composerBlock.length > 0 && !/fd\.append\("channel"/.test(composerBlock));
 }
 
+console.log("\n── ALL THREE PATHS REMEMBER THE SAME CONVERSATION ──────────────");
+{
+  // ONE THREAD, THREE SENDERS. The typed turn, the chat microphone and the call overlay all
+  // build their history from the SAME `msgs` array, and the call overlay pushes Khalid's
+  // spoken replies into it as `kind: "voice"`. Any sender still filtering on `kind` drops
+  // exactly those — so Khalid arrives at the next turn with his own half of the conversation
+  // missing: he re-asks what he just asked, re-offers the menu, and cannot honour "the one
+  // you just said".
+  //
+  // That bug was found and fixed on the call path, then found again on the chat path, and
+  // was STILL live on the typed path — the busiest of the three, because it is where a
+  // visitor types after hanging up. Three separate discoveries of one filter. It is asserted
+  // structurally now so there is no fourth.
+  const ui = readFileSync(resolve(process.cwd(), "app/demo/DemoPhone.tsx"), "utf8");
+  const code = ui.split("\n").filter((l) => {
+    const t = l.trimStart();
+    return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*");
+  }).join("\n");
+
+  const hasWords = (code.match(/\.filter\(\(m\) => typeof m\.text === "string" && m\.text\.trim\(\) !== ""\)/g) ?? []).length;
+  ok(`every history sender uses the has-words test (${hasWords} found)`, hasWords === 3);
+  ok("…and none of them still filters on the message KIND",
+    !/\.filter\(\(m\) => m\.kind === "text"/.test(code));
+
+  // And the scan is not vacuous: there really are three places building a history.
+  const senders = (code.match(/role: m\.from === "me" \? "user" : "assistant"/g) ?? []).length;
+  ok(`…and three senders is the real count (${senders})`, senders === 3);
+}
+
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-channel: ${pass}/${pass + fails.length} passed`);
 if (fails.length) { for (const f of fails) console.log(`   ✗ ${f}`); process.exit(1); }

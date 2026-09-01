@@ -209,6 +209,8 @@ async function runScreen(opts: {
   playRejects?: boolean;
   /** Fail only these play() attempts (1-indexed) — see the harness note. */
   playRejectTurns?: number[];
+  /** Let these play() attempts resolve and then deliver nothing, forever. */
+  playStallTurns?: number[];
   /** How long a reply takes to play. Needed for anything that happens DURING a reply. */
   playbackMs?: number;
 }) {
@@ -220,6 +222,7 @@ async function runScreen(opts: {
     serverDelayMs: opts.serverDelayMs ?? 0,
     playRejects: opts.playRejects ?? false,
     playRejectTurns: opts.playRejectTurns ?? null,
+    playStallTurns: opts.playStallTurns ?? null,
     playbackMs: opts.playbackMs ?? 0,
   });
   const CallScreen = loadCallScreen(rt.React);
@@ -287,7 +290,10 @@ async function runScreen(opts: {
   // A test double that bleeds between cases invents defects as readily as it hides them.
   rt.unmount();
   await new Promise((r) => setTimeout(r, 120));
-  return { log, pushed, ended, props, text, everSaw, atHangup };
+  // `seen` is returned so a failing assertion can SAY what was on the screen instead of
+  // just that a string was absent. A screen assertion that fails with no screen in the
+  // message costs a full instrumented re-run to diagnose.
+  return { log, pushed, ended, props, text, everSaw, atHangup, seen };
 }
 
 // (a) THE HAPPY PATH — and the two things it must carry.
@@ -499,9 +505,28 @@ async function runScreen(opts: {
   // is the persistent case, so it must still end — and must take two turns to do it.
   {
     const blocked = await runScreen({ ms: 8000, playRejects: true });
+    // THE END MESSAGE ITSELF, not the bare word «الصوت» — the one-failure note now contains
+    // that word too, so the substring stopped telling "the call ended, the voice is broken"
+    // apart from "one reply stumbled and we carried on".
     ok(`a persistently rejected play() still ends the call (${blocked.log.voiceRequests.length} turns)`,
-      blocked.everSaw("الصوت"));
-    ok("…and never blames a safety rule for it", !blocked.everSaw("سياسة"));
+      blocked.everSaw("الصوت مو شغّال"));
+    // ASSERTED ON THE SENTENCE THE COMPONENT ACTUALLY RENDERS.
+    //
+    // This used to check for «سياسة» — a word that appears NOWHERE in DemoPhone.tsx or
+    // anywhere under lib/demo (`grep -c` → 0), so the assertion could not fail and was
+    // green while the screen really did explain a broken voice as the product's safety
+    // guarantee: «الرسائل اللي فيها حساسية أو مبالغ أو إيصال نعرضها مكتوبة دايماً» shown for
+    // a reply like «تمام، كبسة وحدة», which has no allergen, no amount and no receipt in it.
+    // On the page that sells that guarantee to restaurant owners.
+    //
+    // The strings below are the ones in the component. If either is renamed, this fails —
+    // which is the point.
+    ok("…and never borrows the safety-rule sentence to explain it",
+      !blocked.everSaw("حساسية أو مبالغ أو إيصال"));
+    ok("…and never claims the reply was withheld on purpose",
+      !blocked.everSaw("هذي نعرضها مكتوبة"));
+    ok("…but does say, in our own words, that the voice stumbled",
+      blocked.everSaw("الصوت تعثّر"));
     // THE FORGIVENESS IS REAL, NOT A COMMENT. If the first failure ended the call as before,
     // exactly one turn would ever be uploaded; absorbing it means a second turn happens.
     ok(`…but it forgives the first failure and tries once more (${blocked.log.voiceRequests.length} turns)`,
@@ -521,9 +546,73 @@ async function runScreen(opts: {
   // therefore cannot tell a run from a total. This fails the 1st and 3rd playbacks with a
   // good one between them, which is the shape that separates them.
   {
+    // ONE FORGIVEN FAILURE MUST ALSO NOT BORROW THE SAFETY SENTENCE. This is the path a
+    // visitor is most likely to hit — one bad fetch in an otherwise working call — and it
+    // is the one where a fabricated explanation does the most damage, because the call then
+    // CARRIES ON as if the product had demonstrated something it did not.
+    const forgiven = await runScreen({ ms: 6000, playRejectTurns: [1] });
+    ok("a single forgiven failure never shows the safety-rule sentence",
+      !forgiven.everSaw("حساسية أو مبالغ أو إيصال"));
+    ok("…and says the voice stumbled instead", forgiven.everSaw("الصوت تعثّر"));
+    ok("…and the call keeps going", !forgiven.everSaw("انتهت المحادثة"));
+  }
+
+  // A STREAM THAT STARTS AND THEN STOPS ARRIVING MUST NOT FREEZE THE CALL.
+  //
+  // The playback wait has three exits — `ended`, `error`, a rejected `play()` — and a
+  // stalled stream hits NONE of them. That state was unreachable while the audio was a
+  // local blob (`play()` either worked or failed at once) and became reachable the moment
+  // the player started fetching a URL: a slow provider, a hung route sitting until its 60s
+  // ceiling, a body that stalls without closing. Driven before the fix, the screen sat on
+  // «يتكلم…» indefinitely with the microphone shut and nothing to end it but hanging up —
+  // the same shape as the barge-in freeze, arriving from the network instead of the mic.
+  //
+  // 15s of wall clock: the first turn has to reach playback (calibrate, speak, the 1100ms
+  // hangover, upload), THEN the component's 7s no-progress ceiling has to expire, and the
+  // recovery it triggers has to render. At 11s the stall fired on the way out and the
+  // recovery landed after the window closed — the freeze assertions passed and the one
+  // about what the caller is TOLD failed, which is the window being too short rather than
+  // the component being wrong. Deliberately not shortened by making the ceiling
+  // configurable: a timeout proven at a value the product does not use is not proven.
+  {
+    // A QUIET ROOM, ON PURPOSE. The first attempt used the default waveform and the
+    // assertion about what the caller is TOLD failed while the freeze assertions passed —
+    // because a stalled playback lasts seven seconds, and on a noisy script the barge-in
+    // watcher fires inside that window, settles the promise as an INTERRUPTION and hands
+    // the floor back. That is correct behaviour (a visitor who talks over dead air should
+    // be heard) and it is not the case under test: it rescues the very freeze this exists
+    // to prove is survivable on its own. The caller has to say nothing, which is exactly
+    // what a person does while waiting for someone to start speaking.
+    const STALL_ROOM = [
+      ...Array(7).fill(0.005),    // calibrate
+      ...Array(10).fill(0.20),    // the visitor speaks
+      ...Array(22).fill(0.004),   // …and stops, ending the turn
+      ...Array(200).fill(0.003),  // …then waits in silence while nothing arrives
+    ];
+    const stalled = await runScreen({ ms: 15_000, playStallTurns: [1], rmsScript: STALL_ROOM });
+    // THE ANTI-FREEZE PROPERTY IS THAT THE FLOOR COMES BACK, not that another turn is
+    // uploaded. A first version asserted a second upload and failed at 1 — correctly: the
+    // room is deliberately silent after the stall, and a silent turn uploads NOTHING by
+    // design (that is its own assertion elsewhere). Requiring an upload here would have been
+    // testing the waveform, and the same mistake the barge-in block already made once.
+    ok(`a stalled stream does not freeze the call — it listens again (${stalled.log.recorderStarts} turns)`,
+      stalled.log.recorderStarts >= 2);
+    ok("…and does not end stuck on «يتكلم…»", !stalled.text.includes("يتكلم…"));
+    ok(`…and the caller is told the voice stumbled, not that a rule withheld it ` +
+       `[${[...new Set(stalled.seen)].slice(-4).join(" ⏵ ").slice(0, 220)}]`,
+      stalled.everSaw("الصوت تعثّر") && !stalled.everSaw("حساسية أو مبالغ أو إيصال"));
+    ok("…and one stall does not end the call", !stalled.everSaw("الصوت مو شغّال"));
+    // …and it is LISTENING again, which is the state a frozen call can never reach. The
+    // warm close after two silences is not asserted here: it needs two 8s no-speech windows
+    // AFTER the 7s stall, which is past this scenario's clock — and it already has its own
+    // block above. Asserting it here would have been a scenario testing another scenario's
+    // property with a window too short to see it.
+  }
+
+  {
     const flaky = await runScreen({ ms: 9000, playRejectTurns: [1, 3] });
     ok(`two NON-consecutive failures do not end the call (${flaky.log.voiceRequests.length} turns)`,
-      !flaky.everSaw("الصوت"));
+      !flaky.everSaw("الصوت مو شغّال") && !flaky.everSaw("انتهت المحادثة"));
     ok("…and it is still going, not stuck", flaky.log.voiceRequests.length >= 3);
   }
   // OBJECT URLs SURVIVE THE CALL. Revoking the previous turn's URL destroyed audio the

@@ -486,6 +486,48 @@ for (const [file, { pin, cap, why }] of DEMO_TTS_WRAPPERS) {
     speak.indexOf("if (!verdict.ok)") < speak.indexOf("elevenlabsSpeechStream("));
   ok("…and it is host-gated like every other demo route", /isDemoHost/.test(speak));
   ok("…and rate-limited, so a ticket cannot be replayed in bulk", /rateLimit\(/.test(speak));
+
+  // ── WHAT REPLAY CAN COST, CHECKED AS ARITHMETIC AND NOT AS A CLAIM ───────
+  //
+  // The first version bounded this per-IP at 10 per MINUTE while its comment claimed that
+  // was "strictly less than what the same IP can already spend through the POST route" —
+  // inverted, and by 30x (the POST route allows 20 per HOUR). The numbers are read out of
+  // the source here and compared, so a bound that contradicts its own comment fails rather
+  // than reads convincingly.
+  const num = (re: RegExp): number => {
+    const m = speak.match(re);
+    return m ? Number(m[1]!.replace(/_/g, "")) : NaN;
+  };
+  const perIp = num(/SPEAK_PER_IP\s*=\s*([\d_]+)/);
+  const perTicket = num(/SPEAK_PER_TICKET\s*=\s*([\d_]+)/);
+  const { DEMO_PER_IP_TURNS } = await import("../lib/demo/config.ts");
+
+  ok("the per-IP allowance is on the SAME window as the turn cap, so the two compare",
+    /rateLimit\(`demo-speak:\$\{ip\}`,\s*SPEAK_PER_IP,\s*DEMO_WINDOW_MS\)/.test(speak));
+  ok(`…and is the same order as the syntheses that IP can already buy (${perIp}/hr vs ~${DEMO_PER_IP_TURNS * 2}/hr)`,
+    Number.isFinite(perIp) && perIp <= DEMO_PER_IP_TURNS * 4);
+
+  // THE LIMIT THAT ACTUALLY STOPS REPLAY IS PER TICKET, because replay is per-ticket by
+  // definition — an attacker rotating IPs walks around a per-IP bound entirely.
+  ok("there is a per-TICKET limit, not only a per-IP one",
+    /rateLimit\(`demo-speak-ticket:/.test(speak));
+  ok(`…allowing a retry but not a flood (${perTicket})`,
+    Number.isFinite(perTicket) && perTicket >= 1 && perTicket <= 3);
+  ok("…counted only AFTER the ticket verified, so an unverified string cannot burn it",
+    speak.indexOf("if (!verdict.ok)") < speak.indexOf("demo-speak-ticket:"));
+  ok("…and keyed on the signature, which is public, never on the payload",
+    /\.split\("\."\)\[1\]/.test(speak));
+
+  // AND THE SECOND SYNTHESIS REACHES THE LEDGER. sweep.ts sums agent_runs.cost_usd; the
+  // mint books ONE synthesis, so an un-booked repeat is spend the only monitor cannot see —
+  // the exact shape of "25 turns → $0.00".
+  ok("a repeat fetch is written to the spend ledger", /trigger: "voice_tts"/.test(speak));
+  ok("…before the audio is handed back, since work after a serverless response may not run",
+    speak.indexOf('trigger: "voice_tts"') < speak.indexOf("new NextResponse(speech.stream"));
+  ok("…and only on a repeat, so the fast path pays nothing for it",
+    /if \(isRepeatFetch\)/.test(speak));
+  ok("…and a failed write never withholds audio that was already paid for",
+    /catch \(e\) \{[\s\S]{0,160}replay spend accounting failed/.test(speak));
 }
 
 // A browser-synthesized voice is an unchosen voice — the same defect as onyx, client-side,

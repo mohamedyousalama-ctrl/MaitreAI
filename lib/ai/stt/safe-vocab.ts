@@ -46,13 +46,49 @@ import { detectAllergenAvoidance, normalizeAr } from "../allergen-gate";
  *  scaffolding and every dish on the menu was filtered out. The feature would have been
  *  silently disabled while its comment claimed it worked, which is worse than the bug it
  *  replaced. Comparing against the NAME is what makes the answer about the name. */
-function namesAnAllergen(name: string): boolean {
-  const probe = `عندي حساسية من ${name}`;
-  const hit = detectAllergenAvoidance(probe);
+/** Arabic proclitics that glue onto a noun: «باللبن» is «ب» + «ال» + «لبن».
+ *
+ *  A recognizer biased toward «سليق باللبن» is biased toward the SUBWORD «لبن», because
+ *  prompt bias works on tokens and tokens do not respect our word boundaries. So the
+ *  question is never "does this name contain a bare allergen" — it is "does any word in it
+ *  become one once the glue comes off". Longest first, so «بال» is tried before «ب». */
+const PROCLITICS = ["وبال", "فبال", "بال", "وال", "فال", "كال", "لل", "ال", "و", "ف", "ب", "ك", "ل"];
+
+/** Every form a single word could be biasing the recognizer toward. */
+function wordForms(word: string): string[] {
+  const w = normalizeAr(word);
+  if (!w) return [];
+  const forms = new Set<string>([w]);
+  for (const p of PROCLITICS) {
+    if (w.length > p.length + 1 && w.startsWith(p)) forms.add(w.slice(p.length));
+  }
+  return [...forms];
+}
+
+/** Does this exact form name an allergen?
+ *
+ *  THE PROBE CANNOT BE ALLOWED TO ANSWER ITSELF. «الحساسية» is in the lexicon, so the
+ *  carrier sentence always produces SOME term; requiring the picked term to appear in the
+ *  form is what makes the answer about the form. The first version stopped there and was
+ *  therefore correct only for BARE names: for «سليق باللبن» the detector's first hit is its
+ *  own scaffolding word, `includes` is false, and the dish was kept — so «لبن»، «جبن»،
+ *  «حليب»، «بيض» and «مكسرات» were all still whispered to the recognizer for any menu that
+ *  writes them the way Arabic normally does. That is the whole exposure this file exists to
+ *  close, and it stayed open for the commonest shape on a real menu. */
+function formNamesAnAllergen(form: string): boolean {
+  const hit = detectAllergenAvoidance(`عندي حساسية من ${form}`);
   if (!hit.term) return false;
-  const n = normalizeAr(name);
   const term = normalizeAr(hit.term);
-  return term.length > 0 && n.includes(term);
+  return term.length > 0 && form.includes(term);
+}
+
+function namesAnAllergen(name: string): boolean {
+  for (const word of normalizeAr(name).split(/\s+/)) {
+    for (const form of wordForms(word)) {
+      if (formNamesAnAllergen(form)) return true;
+    }
+  }
+  return false;
 }
 
 /**

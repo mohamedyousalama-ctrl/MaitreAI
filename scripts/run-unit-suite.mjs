@@ -54,10 +54,34 @@ for (const [i, cmd] of commands.entries()) {
   // --import ./scripts/ts-ext-loader.mjs (extensionless imports) and several need
   // --conditions=react-server (modules that import "server-only"). Running bare
   // `node` against them produces FALSE failures, so the command is run verbatim.
-  const r = spawnSync(cmd, { shell: true, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-  const ok = r.status === 0;
+  // A HANG MUST FAIL, NOT WAIT FOREVER.
+  //
+  // Several proofs drive the real call screen on REAL timers, and the defects they exist to
+  // catch are freezes — a playback promise that never settles, a stalled stream, a barge
+  // that never hands the floor back. Every one of those, if it regresses, presents as the
+  // test itself never finishing. With no ceiling, `npm run test:unit` then hangs
+  // indefinitely instead of reporting: locally it looks like a slow machine, and in CI it
+  // burns the job's whole budget and reports nothing about which file did it.
+  //
+  // The slowest file in the suite currently takes about 140 seconds; five minutes is
+  // comfortably clear of that and unmistakably a hang rather than slowness.
+  const TIMEOUT_MS = 5 * 60_000;
+  const r = spawnSync(cmd, {
+    shell: true, encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
+    timeout: TIMEOUT_MS, killSignal: "SIGKILL",
+  });
+  const timedOut = r.error?.code === "ETIMEDOUT" || r.signal === "SIGKILL";
+  const ok = !timedOut && r.status === 0;
   if (ok) passed++;
-  else failures.push({ file, cmd, status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() });
+  else {
+    failures.push({
+      file, cmd, status: timedOut ? "TIMEOUT" : r.status,
+      out: timedOut
+        ? `TIMED OUT after ${TIMEOUT_MS / 1000}s — a proof that never finishes is a freeze, ` +
+          `which is exactly what several of these exist to catch.\n${`${r.stdout ?? ""}${r.stderr ?? ""}`.trim()}`
+        : `${r.stdout ?? ""}${r.stderr ?? ""}`.trim(),
+    });
+  }
 
   const n = String(i + 1).padStart(3, " ");
   console.log(`${ok ? "  ok  " : "  FAIL"} ${n}/${commands.length}  ${file}`);

@@ -219,7 +219,16 @@ export default function DemoPhone() {
         // The BASKET is not in it: that lives server-side against `conversationId`,
         // because a transcript capped at DEMO_MAX_HISTORY turns cannot hold an order.
         const history = msgs
-          .filter((m) => m.kind === "text" || m.from === "me")
+          // SAME TEST AS THE OTHER TWO PATHS: has words. This was the last place still
+          // reading `kind === "text" || from === "me"` — and after a call it is the busiest
+          // one, because a visitor who has just hung up types their follow-up here. The call
+          // screen pushes Khalid's spoken replies into this same `msgs` as `kind: "voice"`,
+          // so every one of them was stripped out and the typed turn arrived with Khalid's
+          // half of the conversation missing: he re-asks what he already asked, and cannot
+          // honour "the one you just said". A comment on another path said "leaving the trap
+          // armed on the other path is how it happens a second time" — it was armed here
+          // while that comment was being written.
+          .filter((m) => typeof m.text === "string" && m.text.trim() !== "")
           .map((m) => ({ role: m.from === "me" ? "user" : "assistant", content: m.text }));
         const res = await fetch("/api/demo/turn", {
           method: "POST",
@@ -876,6 +885,10 @@ function CallScreen({
   const [note, setNote] = useState<string>("");
   const [lastText, setLastText] = useState<string>("");
   const [textOnly, setTextOnly] = useState(false);
+  // WHY the reply is on the screen instead of in the ear. "rule" is the product guarantee
+  // (allergy, amount, receipt); "stumble" is our own voice failing. They must never share a
+  // sentence — see the note where this is rendered.
+  const [textOnlyReason, setTextOnlyReason] = useState<"rule" | "stumble">("rule");
 
   // Every async path checks this. A hangup mid-request must not resume the loop, re-open
   // the microphone, or play audio into a screen the visitor has already left.
@@ -1133,6 +1146,7 @@ function CallScreen({
         // BY DESIGN on a safety / money / payment-link / receipt turn. Say so and keep
         // going; silence here would look like a failure of the very rule being shown.
         push({ from: "khalid", kind: "text", text: reply, presentation: data.presentation ?? null });
+        setTextOnlyReason("rule");
         setTextOnly(true);
         setPhase("speaking");
         await new Promise((r) => setTimeout(r, 2600));
@@ -1153,13 +1167,13 @@ function CallScreen({
       // INLINE (the fallback, and what a chat voice note always uses): the whole clip
       // arrives as base64 and is decoded into a blob, exactly as before.
       let url: string;
+      // Whether this reply's audio is a one-minute signed URL rather than a local blob. It
+      // decides what goes into the THREAD — see the push below.
+      const streamed = !!data.replyAudioUrl;
       if (data.replyAudioUrl) {
         url = data.replyAudioUrl;
         // NOT registered in `audioUrls`: that list exists to revoke object URLs, and
-        // revoking is meaningless for an ordinary HTTP URL. It is also why the thread's
-        // record of this reply stays playable — the URL is signed for a minute, so a bubble
-        // pressed later falls back to its text rather than to a broken player. The reply
-        // text itself is pushed below either way, which is what the record is for.
+        // revoking is meaningless for an ordinary HTTP URL.
       } else {
         // decodeReplyAudio, not a second inline atob: this module exists because a bad
         // payload used to throw and silently drop a reply, and it is driven with real bytes
@@ -1181,7 +1195,27 @@ function CallScreen({
         // deleted on the way out. The parent already revokes this list on unmount.
         audioUrls.current.push(url);
       }
-      push({ from: "khalid", kind: "voice", text: reply, audioUrl: url, presentation: data.presentation ?? null });
+
+      // WHAT THE THREAD KEEPS. A blob lives as long as the page, so a buffered reply goes
+      // into the thread as a playable bubble. A STREAMED reply's URL is a signed ticket that
+      // expires in sixty seconds — and the whole reason these bubbles exist is to leave a
+      // record the visitor can come back to after hanging up, which is exactly when the
+      // ticket is dead.
+      //
+      // Handing it over anyway put a player in every call bubble that answers 204 a minute
+      // later, and `SpokenReply` renders that as «الصوت ما اشتغل». That is the precise
+      // symptom a previous commit was written to remove — "every call bubble but the last
+      // played «الصوت ما اشتغل» the moment anyone pressed it" — reintroduced, and this time
+      // for ALL of them, permanently.
+      //
+      // So a streamed reply is recorded as TEXT. The words are the record; the audio was
+      // for the moment it was said. Nothing is lost that was ever going to work, and a
+      // broken player promising sound is worse than a bubble that never promised it.
+      push(
+        streamed
+          ? { from: "khalid", kind: "text", text: reply, presentation: data.presentation ?? null }
+          : { from: "khalid", kind: "voice", text: reply, audioUrl: url, presentation: data.presentation ?? null }
+      );
 
       setPhase("speaking");
       // THE ELEMENT THE TAP UNLOCKED, not a new one. See unlockPlayer() in the parent: a
@@ -1249,8 +1283,35 @@ function CallScreen({
         } catch { /* analyser gone — the call is ending */ }
       }, 60);
 
+      // A STREAM THAT NEVER ARRIVES MUST NOT BE A CALL THAT NEVER ENDS.
+      //
+      // The promise below has exactly three exits: `ended`, `error`, and a rejected
+      // `play()`. A stream that OPENS and then delivers nothing hits none of them. That was
+      // unreachable while the audio was a local blob — `play()` either worked or failed
+      // immediately — and it became reachable the moment the player started fetching a URL:
+      // a slow provider, a hung `/api/demo/speak` sitting until its 60s ceiling, or a body
+      // that stalls without closing. Driven, the screen sat on «يتكلم…» indefinitely with
+      // the microphone shut and nothing to end it but hanging up.
+      //
+      // So a fourth exit: if no audio makes PROGRESS for this long, treat it as a playback
+      // failure — which the one-failure forgiveness above then absorbs, so a slow turn costs
+      // a sentence rather than the call. Reset on every `timeupdate`, so a long reply that
+      // is genuinely playing is never cut off; it bounds SILENCE, not duration.
+      const STALL_MS = 7000;
+      let stallTimer: ReturnType<typeof setTimeout> | null = null;
       const played = await new Promise<boolean>((done) => {
         settle = done;
+        const armStall = () => {
+          if (stallTimer) clearTimeout(stallTimer);
+          stallTimer = setTimeout(() => {
+            console.warn(`[demo/call] audio stalled — no progress in ${STALL_MS}ms, giving up on this reply`);
+            try { el.pause(); } catch { /* already stopped */ }
+            done(false);
+          }, STALL_MS);
+        };
+        armStall();
+        el.onplaying = armStall;
+        el.ontimeupdate = armStall;
         el.onended = () => done(true);
         // SAY WHY, HERE TOO. This discarded the reason, exactly as the server's catch did,
         // so a silent call produced no evidence anywhere on either side — the request
@@ -1268,6 +1329,10 @@ function CallScreen({
         });
       });
       clearInterval(bargeWatch);
+      if (stallTimer) clearTimeout(stallTimer);
+      // Detached so a settled element cannot re-arm the timer from a late event.
+      el.onplaying = null;
+      el.ontimeupdate = null;
       if (!live.current) return;
       // AN INTERRUPTION IS NOT A PLAYBACK FAILURE, and this is the net for the one race
       // where that could still be mistaken.
@@ -1304,6 +1369,9 @@ function CallScreen({
           stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));
           return;
         }
+        // OUR FAULT, AND SAID AS OURS. Not the safety sentence — nothing about this reply
+        // was withheld by a rule; the audio simply did not play.
+        setTextOnlyReason("stumble");
         setTextOnly(true);
         setPhase("speaking");
         await new Promise((r) => setTimeout(r, 900));
@@ -1375,7 +1443,8 @@ function CallScreen({
   const status =
     phase === "listening" ? "يسمعك…"
     : phase === "thinking" ? "يفكر…"
-    : phase === "speaking" ? (textOnly ? "هذي نعرضها مكتوبة" : "يتكلم…")
+    : phase === "speaking"
+      ? (textOnly ? (textOnlyReason === "rule" ? "هذي نعرضها مكتوبة" : "الصوت تعثّر") : "يتكلم…")
     : "انتهت المحادثة";
 
   return (
@@ -1390,9 +1459,19 @@ function CallScreen({
           <Dot d={0} /><Dot d={0.15} /><Dot d={0.3} />
         </div>
       )}
+      {/* A BROKEN VOICE MUST NEVER BE EXPLAINED AS A SAFETY GUARANTEE.
+          This rendered the allergy/amount/receipt sentence for BOTH reasons, so a reply
+          like «تمام، كبسة وحدة» — no allergen, no amount, no receipt — whose audio simply
+          failed to play told a restaurant owner, on the page selling them that guarantee,
+          that the guarantee was why they heard nothing. `callResponseAction` calls that
+          exact substitution "a fabricated demonstration of the guarantee this page exists
+          to sell", and `demoVoiceSilenceKind` was written to stop the server making it. The
+          client was making it too, one layer later. */}
       {textOnly && (
         <p style={S.callNote}>
-          الرسائل اللي فيها حساسية أو مبالغ أو إيصال نعرضها مكتوبة دايماً — عشان تقراها بنفسك.
+          {textOnlyReason === "rule"
+            ? "الرسائل اللي فيها حساسية أو مبالغ أو إيصال نعرضها مكتوبة دايماً — عشان تقراها بنفسك."
+            : "الصوت تعثّر بهالرد — هذي مكتوبة، وكمّلنا."}
         </p>
       )}
       {lastText && <p style={S.callTranscript}>{lastText}</p>}

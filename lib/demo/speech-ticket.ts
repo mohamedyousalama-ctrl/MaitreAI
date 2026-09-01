@@ -30,8 +30,11 @@
 //   1. The text is OURS. It is signed, so it cannot be edited into anything else. This is
 //      the whole control; everything below only bounds the blast radius.
 //   2. It expires in a minute. A ticket is for the turn it was minted for.
-//   3. The spend is booked when the ticket is ISSUED, not when the audio is fetched — so a
-//      replay inside the TTL cannot outrun the durable daily cap, which stays the backstop.
+//   3. The FIRST synthesis is booked when the ticket is issued, not when the audio is
+//      fetched, so the durable cap runs ahead of the money instead of behind it. A REPEAT
+//      fetch is a second real synthesis, and `/api/demo/speak` both refuses it past a small
+//      per-ticket allowance and writes what it does permit to the ledger — because the cap
+//      counts TURNS, and a replay consumes no turn, so the cap alone would never see it.
 //   4. The verifier RE-RUNS the text-only refusals itself. Not because the issuer is
 //      expected to get them wrong, but because "a guard that protects one of two callers
 //      protects neither in the case that matters" is a lesson this repo has now paid for

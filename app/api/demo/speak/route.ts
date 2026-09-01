@@ -44,8 +44,10 @@
 
 import { NextResponse } from "next/server";
 import { elevenlabsSpeechStream } from "@/lib/ai/tts/elevenlabs";
-import { verifySpeechTicket } from "@/lib/demo/speech-ticket";
-import { isDemoHost } from "@/lib/demo/config";
+import { verifySpeechTicket, SPEECH_TICKET_TTL_MS } from "@/lib/demo/speech-ticket";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { mustWrite } from "@/lib/db/checked";
+import { isDemoHost, DEMO_RESTAURANT_ID, DEMO_WINDOW_MS } from "@/lib/demo/config";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -54,14 +56,34 @@ export const dynamic = "force-dynamic";
 // speaking a 600-character reply before the body closes.
 export const maxDuration = 60;
 
-// A LEGITIMATE CALLER NEEDS ONE OF THESE PER TURN. Browsers sometimes re-request a media
-// URL (a retry, a second range probe), so the allowance is a few, not one — but it is small
-// on purpose. A ticket is replayable until it expires, and each replay is a real synthesis
-// we would be billed for even though the ledger already recorded it once. This bounds that
-// window to strictly less than what the same IP can already spend through the POST route,
-// which is the honest test for whether a new surface widens the exposure.
-const SPEAK_PER_IP = 10;
-const SPEAK_WINDOW_MS = 60_000;
+// ── HOW MUCH THIS CAN COST, WITH THE ARITHMETIC WRITTEN DOWN ───────────────
+//
+// A ticket is replayable until it expires, and every replay is a REAL synthesis ElevenLabs
+// bills us for. The first version bounded it per-IP at 10 per MINUTE and its comment claimed
+// that was "strictly less than what the same IP can already spend through the POST route".
+// That was inverted, and by 30x: the POST route allows `DEMO_PER_IP_TURNS = 20` per
+// `DEMO_WINDOW_MS = one hour`, and 10/minute is 600/hour. A bound stated backwards is worse
+// than no bound, because it is the sentence the next person reads instead of checking.
+//
+// TWO LIMITS, EACH DOING A DIFFERENT JOB.
+//
+//   PER TICKET is the one that actually stops replay, because replay is per-ticket by
+//   definition. A legitimate player fetches a given URL ONCE; the allowance is two so a
+//   browser that retries a failed request still gets its audio. Held in memory, so on a
+//   multi-instance deploy a determined caller could get one extra synthesis per instance —
+//   a small multiple, not an open door, and the per-IP limit below is what bounds that.
+//
+//   PER IP is the outer bound, now on the SAME window as the POST route so the two can be
+//   compared at all. A caller can legitimately reach at most one GET per spoken turn, i.e.
+//   20/hour; 60 leaves room for browser retries and range probes while staying the same
+//   order as the ~40 syntheses/hour the POST route already permits that IP.
+//
+// AND A REPEAT FETCH IS PUT ON THE LEDGER. The turn that minted the ticket books the first
+// synthesis; a second fetch is money `lib/monitoring/sweep.ts` would otherwise never see.
+// The write happens ONLY on a repeat, so the common path — the one this whole endpoint
+// exists to make fast — pays nothing for it.
+const SPEAK_PER_IP = 60;
+const SPEAK_PER_TICKET = 2;
 
 function clientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for") ?? "";
@@ -83,7 +105,7 @@ export async function GET(req: Request) {
   }
 
   const ip = clientIp(req);
-  const rl = rateLimit(`demo-speak:${ip}`, SPEAK_PER_IP, SPEAK_WINDOW_MS);
+  const rl = rateLimit(`demo-speak:${ip}`, SPEAK_PER_IP, DEMO_WINDOW_MS);
   if (!rl.ok) {
     return new NextResponse(null, {
       status: 429,
@@ -105,6 +127,29 @@ export async function GET(req: Request) {
     return silent(verdict.reason);
   }
 
+  // PER-TICKET, AND ONLY AFTER IT VERIFIED. Counting an unverified string would let anyone
+  // exhaust an allowance for a ticket they do not hold. Keyed on the SIGNATURE, which is
+  // short, unforgeable without the key, and already public in this URL — so nothing secret
+  // reaches the limiter or its keyspace.
+  const sig = String(url.searchParams.get("t") ?? "").split(".")[1] ?? "";
+  const perTicket = rateLimit(`demo-speak-ticket:${sig}`, SPEAK_PER_TICKET, SPEECH_TICKET_TTL_MS);
+  if (!perTicket.ok) {
+    console.warn("[demo/speak] refused: ticket replayed");
+    return new NextResponse(null, {
+      status: 429,
+      headers: { "Retry-After": String(perTicket.retryAfterSec), "X-Kivo-Silent": "ticket_replayed" },
+    });
+  }
+  // The first fetch of a ticket is already on the ledger, booked by the turn that minted it.
+  // Anything after that is a synthesis nobody has accounted for.
+  const isRepeatFetch = perTicket.remaining < SPEAK_PER_TICKET - 1;
+
+  // WHERE THE SYNTHESIS TIME ACTUALLY IS NOW. Moving the wait out of the turn moved it out
+  // of the turn's timing line too, and this route logged nothing at all on success — so the
+  // instrument added specifically to find the five seconds went blind on the one segment
+  // this whole endpoint exists to shorten. `headers` is the provider's time-to-first-byte,
+  // which is what a caller actually waits for; the rest streams while they listen.
+  const tSpeak = Date.now();
   let speech;
   try {
     // THE VOICE COMES FROM THE TICKET, WHICH GOT IT FROM THE REGISTRY. Never from the query
@@ -131,6 +176,43 @@ export async function GET(req: Request) {
     return silent("synth_failed");
   }
 
+  // A REPEAT FETCH IS MONEY THE LEDGER HAS NOT SEEN. `lib/monitoring/sweep.ts` sums
+  // `agent_runs.cost_usd`, and the mint booked exactly one synthesis; this is the second.
+  // Written BEFORE the stream is handed back, because work scheduled after a serverless
+  // response is not guaranteed to run — and an unrecorded charge is the failure mode this
+  // repo has already paid for twice ("25 turns → $0.00").
+  //
+  // A failure to record does NOT refuse the audio: the money is already spent either way,
+  // and staying silent would cost the caller their answer without saving a cent.
+  if (isRepeatFetch) {
+    try {
+      const admin = createAdminClient();
+      if (admin) {
+        await mustWrite<{ id: string }>(
+          admin.from("agent_runs").insert({
+            restaurant_id: DEMO_RESTAURANT_ID,
+            conversation_id: null,
+            trigger: "voice_tts",
+            input: null,
+            output: null,
+            model: speech.model,
+            adapter: "elevenlabs",
+            cost_usd: speech.costUsd,
+          }).select("id"),
+          "demo_speak.tts_cost_replay",
+          { exactRows: 1 },
+        );
+      }
+    } catch (e) {
+      console.error("[demo/speak] replay spend accounting failed", e);
+    }
+  }
+
+  console.log(
+    `[demo/speak] timing headers=${Date.now() - tSpeak}ms chars=${speech.chars} ` +
+      `model=${speech.model} repeat=${isRepeatFetch}`
+  );
+
   return new NextResponse(speech.stream, {
     status: 200,
     headers: {
@@ -142,8 +224,12 @@ export async function GET(req: Request) {
       // Never cached anywhere. A per-turn synthesis behind a signed ticket has no business
       // in a CDN, a proxy, or a browser's disk cache.
       "Cache-Control": "no-store, no-transform",
-      // Read by the client's diagnostics, and by anyone reading a HAR to find out which
-      // voice actually answered. No text, no visitor words.
+      // FOR A HUMAN READING A HAR, and nothing else. An earlier comment said "read by the
+      // client's diagnostics" — which is not merely unimplemented but unreachable: an
+      // <audio> element does not expose response headers to JavaScript at all, and an
+      // <audio> element is the only thing that fetches this URL. Kept because it answers
+      // "which voice actually spoke?" from a network log without opening a server log. No
+      // text, no visitor words.
       "X-Kivo-Voice": speech.voiceId,
       "X-Kivo-Model": speech.model,
     },

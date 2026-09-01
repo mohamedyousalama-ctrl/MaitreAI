@@ -79,23 +79,23 @@ console.log("\n── IT FAILS TOWARD LESS BIAS, NEVER MORE ──────�
     ok(`«${risky}» is refused`, !kept.includes(risky) && kept.includes("جريش"));
   }
 
-  // AND THE FILTER IS EXACTLY AS WIDE AS THE GATE — no wider, no narrower.
+  // A PREFIXED ALLERGEN IS STILL AN ALLERGEN — and the earlier version of this block
+  // argued the opposite, which is why the bug survived.
   //
-  // «عصير فراولة باللبن» is KEPT, and that is correct rather than a miss: the gate is
-  // boundary-aware, so it cannot pick «لبن» out of the prefixed «باللبن» either. A word the
-  // gate can never fire on cannot be turned into a false allergy by biasing toward it, and
-  // dropping it would cost recognition quality for no safety gain. The two must agree, so
-  // this asserts the agreement rather than a hand-picked list — if the lexicon later starts
-  // matching prefixed forms, this fails and the filter must follow it.
+  // It reasoned: «عصير فراولة باللبن» is KEPT and that is CORRECT, because the gate is
+  // boundary-aware and cannot pick «لبن» out of «باللبن» either — "a word the gate can never
+  // fire on cannot be turned into a false allergy by biasing toward it".
+  //
+  // The premise is true and the conclusion does not follow. The gate's boundary-awareness
+  // governs what it READS. Prompt bias governs what the recognizer EMITS, and it works on
+  // tokens, which do not respect our word boundaries: prime Whisper with «باللبن» and it is
+  // measurably likelier to emit the bare «لبن» — in a LATER utterance, on its own, where
+  // the gate reads it exactly as it reads any other bare allergen and fires correctly. That
+  // is the whole mechanism this file was written for, arriving through the one spelling the
+  // filter was blind to. And Arabic menus write dishes this way as a matter of course.
   for (const compound of ["عصير فراولة باللبن", "كيك بالبيض", "سلطة بالمكسرات"]) {
-    const gateCanFire = (() => {
-      const hit = detectAllergenAvoidance(`عندي حساسية من ${compound}`);
-      const picked = hit.term ? normalizeAr(hit.term) : "";
-      return picked !== "" && normalizeAr(compound).includes(picked);
-    })();
-    const dropped = !safeSttVocabulary([compound]).includes(compound);
-    ok(`«${compound}»: filter and gate agree (gate=${gateCanFire}, dropped=${dropped})`,
-      gateCanFire === dropped);
+    ok(`«${compound}» is dropped — the prefix does not make it safe`,
+      !safeSttVocabulary([compound]).includes(compound));
   }
 }
 
@@ -160,6 +160,61 @@ console.log("\n── AND THE LIVE WHATSAPP PATH IS COVERED, NOT ONLY THE DEMO �
   const withPriority = buildSttPromptVocab(DEMO_MENU, 200, ["حبة", "حبتين"]);
   ok("state-aware priority terms survive the filter",
     withPriority.includes("حبة") && withPriority.includes("حبتين"));
+}
+
+console.log("\n── AND A PREFIXED NAME IS STILL AN ALLERGEN ────────────────────");
+{
+  // THE SHAPE THE FIRST CORPUS DID NOT HAVE. Every risky name tested here was BARE —
+  // «لبن بارد», «مكسرات مشكلة», «بيض مسلوق» — and those are exactly the shape the probe
+  // already handled. Arabic menus do not write dishes that way. They write «سليق باللبن»,
+  // «شاي كرك بالحليب», «شكشوكة بالبيض», and for those the detector's first hit was its own
+  // scaffolding word «الحساسية», `name.includes(term)` was false, and the dish was KEPT.
+  //
+  // Prompt bias works on tokens, and tokens do not respect our word boundaries: a
+  // recognizer primed with «باللبن» is primed for «لبن». So every one of these was still
+  // being whispered to Whisper — on the LIVE WhatsApp path, for any real tenant whose menu
+  // names a dairy, nut or egg dish the way Arabic normally does.
+  //
+  // This is the same criticism the spoken-text corpus earned: four hand-picked strings,
+  // none of them the shape the code exists for.
+  const { buildSttPromptVocab } = await import("../lib/ai/voice-quality.ts");
+  const REAL_MENU = [
+    "سليق باللبن", "شاي كرك بالحليب", "شكشوكة بالبيض", "معمول بالتمر والمكسرات",
+    "كبسة دجاج", "مندي لحم", "جريش", "لقيمات", "قهوة عربية",
+  ];
+  for (const risky of ["سليق باللبن", "شاي كرك بالحليب", "شكشوكة بالبيض", "معمول بالتمر والمكسرات"]) {
+    ok(`«${risky}» is dropped despite the prefix`, !safeSttVocabulary(REAL_MENU).includes(risky));
+  }
+  const prompt = buildSttPromptVocab(REAL_MENU);
+  for (const sub of ["لبن", "حليب", "بيض", "مكسرات"]) {
+    ok(`the recognizer is not primed for «${sub}» through a prefix`, !prompt.includes(sub));
+  }
+  for (const kept of ["كبسة دجاج", "مندي لحم", "جريش", "لقيمات"]) {
+    ok(`…while «${kept}» is still offered`, prompt.includes(kept));
+  }
+
+  // AND THE FILTER IS STILL EXACTLY AS WIDE AS THE GATE, NOT WIDER. «جبن» is NOT in the
+  // allergen lexicon — the gate can never fire on it — so a dish named «كنافة بالجبن»
+  // cannot be turned into a false allergy by biasing toward it, and dropping it would cost
+  // recognition quality for no safety gain. Asserted as the AGREEMENT rather than as a
+  // hand-picked list, so if the lexicon ever gains that word this fails and the filter
+  // follows it.
+  for (const compound of ["كنافة بالجبن", "سليق باللبن", "شكشوكة بالبيض"]) {
+    const gateCanFire = (() => {
+      for (const word of normalizeAr(compound).split(/\s+/)) {
+        for (const p of ["", "بال", "وال", "ال", "ب", "و", "ل"]) {
+          const form = p && word.startsWith(p) ? word.slice(p.length) : word;
+          const hit = detectAllergenAvoidance(`عندي حساسية من ${form}`);
+          const picked = hit.term ? normalizeAr(hit.term) : "";
+          if (picked !== "" && form.includes(picked)) return true;
+        }
+      }
+      return false;
+    })();
+    const dropped = !safeSttVocabulary([compound]).includes(compound);
+    ok(`«${compound}»: filter and gate agree (gate=${gateCanFire}, dropped=${dropped})`,
+      gateCanFire === dropped);
+  }
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} stt-vocab: ${pass}/${pass + fails.length} passed`);

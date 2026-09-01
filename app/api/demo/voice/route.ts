@@ -239,8 +239,15 @@ export async function POST(req: Request) {
   let sttConfidence: number | null = null;
   let sttCost: { model: string; adapter: string; costUsd: number };
   const tStt = Date.now();
+  let msSttProvider = 0;
   try {
     const stt = await transcribeAudioBytes(buf, mime, menuNames, priorityTerms);
+    // THE TRANSCRIBER IS DONE HERE. Everything after this line in the block is OUR
+    // bookkeeping — an `agent_runs` insert — and it was being counted as `stt=`. That is
+    // the same mis-attribution this route just split out of `brain=`, one segment earlier
+    // and left in place: a Postgres round trip wearing a provider's name. The timing line's
+    // own comment says a measurement that names the wrong thing is worse than none.
+    msSttProvider = Date.now() - tStt;
     transcript = String(stt.text ?? "").trim().slice(0, DEMO_MAX_CHARS);
     sttConfidence = typeof stt.confidence === "number" ? stt.confidence : null;
     sttCost = { model: stt.model, adapter: stt.adapter, costUsd: stt.costUsd };
@@ -279,7 +286,9 @@ export async function POST(req: Request) {
     console.error("[demo/voice] spend accounting failed — refusing", e);
     return NextResponse.json({ error: "demo_unavailable" }, { status: 503 });
   }
-  const msStt = Date.now() - tStt;
+  const msStt = msSttProvider || Date.now() - tStt;
+  // The ledger write that used to hide inside `stt=`.
+  const msSttWrite = Date.now() - tStt - msStt;
 
   if (!transcript) {
     // WHY THERE WERE NO WORDS. An empty transcript has two completely different causes and
@@ -603,7 +612,12 @@ export async function POST(req: Request) {
       // tuned a model over a value that was partly a round trip to Postgres. A measurement
       // that names the wrong thing is worse than no measurement, because it is believed.
       `[demo/voice] timing intake=${msIntake}ms vocab=${msVocab}ms stt=${msStt}ms ` +
-        `brain=${msBrain}ms close=${msClose}ms tts=${msTts}ms ` +
+        `sttwrite=${msSttWrite}ms brain=${msBrain}ms close=${msClose}ms ` +
+        // LABELLED, BECAUSE THE TWO NUMBERS MEAN OPPOSITE THINGS. On a call `tts` is now the
+        // ticket MINT — measured at ~3ms — and the synthesis it stands for happens later, in
+        // /api/demo/speak, which logs its own line. Printed bare, that 3ms reads as
+        // "synthesis is free" to exactly the person who came here to find the five seconds.
+        `tts=${msTts}ms(${streamTheCall ? "mint" : "buffered"}) ` +
         // `calls` decides where the ~5s of thinking can be cut. One model call means the cost
       // is the reply itself over a 17k-token prompt, and the lever is TTS streaming; two or
       // three means tool round-trips, and the lever is the call channel's tool policy. The

@@ -192,7 +192,7 @@ function loadTs(rel) {
  * `server` is called for every /api/demo/voice request and returns `{status, body}`.
  * `capabilities` is the boolean the probe reports.
  */
-export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0, playRejects = false, playRejectTurns = null, playbackMs = 0 } = {}) {
+export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0, playRejects = false, playRejectTurns = null, playStallTurns = null, playbackMs = 0 } = {}) {
   // Counts every play() attempt, so a test can fail a SPECIFIC one. See the note in play().
   let playAttempts = 0;
   const log = {
@@ -295,6 +295,17 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
       const rejectThis = playRejects ||
         (Array.isArray(playRejectTurns) && playRejectTurns.includes(playAttempts));
       if (rejectThis) { const e = new Error("play() blocked"); e.name = "NotAllowedError"; throw e; }
+
+      // A STREAM THAT OPENS AND THEN DELIVERS NOTHING. `play()` RESOLVES — so this is not a
+      // rejection and not an error — and then no `ended`, no `error`, no `timeupdate` ever
+      // arrives. Unreachable while the audio was a local blob; entirely reachable once the
+      // player fetches a URL from a provider. Without a stall exit in the component the
+      // call sits on «يتكلم…» forever, which no rejection-based option can reproduce.
+      if (Array.isArray(playStallTurns) && playStallTurns.includes(playAttempts)) {
+        log.played.push(this._src || this.url);
+        this._paused = false;
+        return; // resolves, and then nothing. Ever.
+      }
       log.played.push(this._src || this.url);
       // REAL PLAYBACK TAKES TIME, and with `playbackMs: 0` this resolved on a microtask —
       // so nothing that happens DURING a reply could ever be observed. Barge-in is exactly
