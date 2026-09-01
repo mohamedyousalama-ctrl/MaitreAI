@@ -714,7 +714,9 @@ async function runScreen(opts: {
     ];
     const starved = await runScreen({ ms: 32_000, playStarveMs: 400, rmsScript: NOISY });
     ok("a stream that starts and then starves still ends the call honestly",
-      starved.everSaw("الصوت مو شغّال"));
+      starved.everSaw("يبدو إن الصوت ما يوصل زين"));
+    ok("…without claiming the voice is broken, which it cannot know",
+      !starved.everSaw("الصوت مو شغّال"));
     ok(`…rather than running on indefinitely (${starved.log.voiceRequests.length} turns)`,
       starved.log.voiceRequests.length <= 6);
     ok("…and never blames a safety rule for it",
@@ -757,6 +759,26 @@ async function runScreen(opts: {
     ok(`interrupting an audible reply is never counted as a failure (${real.atHangup.paused} pauses)`,
       real.atHangup.paused >= 1 && !real.everSaw("الصوت مو شغّال"));
     ok("…and the visitor is not told the voice stumbled", !real.everSaw("الصوت تعثّر"));
+  }
+
+  // AND A WORKING VOICE IN A LOUD ROOM IS NEVER CALLED BROKEN.
+  //
+  // The counter above cannot tell "the stream is starving" from "the room is loud and the
+  // barge detector trips a few hundred milliseconds into every reply" — driven, a perfectly
+  // good six-second reply in a persistently noisy room produces the SAME four thin turns as
+  // a starved one. So the call may end, but it must not tell a restaurant owner sitting in
+  // a restaurant that the product is broken. Adding a discriminator was tried and reopens
+  // the starvation hole; the fix is the sentence, not the logic.
+  {
+    const LOUD_THROUGHOUT = [
+      ...Array(7).fill(0.005), ...Array(10).fill(0.20), ...Array(22).fill(0.004),
+      ...Array(60).fill(0.28),
+    ];
+    const noisyButFine = await runScreen({ ms: 24_000, playbackMs: 6000, rmsScript: LOUD_THROUGHOUT });
+    ok("a working reply in a loud room is never called a broken voice",
+      !noisyButFine.everSaw("الصوت مو شغّال"));
+    ok("…and if the call does end, it says only what is true of both causes",
+      !noisyButFine.everSaw("انتهت المحادثة") || noisyButFine.everSaw("يبدو إن الصوت ما يوصل زين"));
   }
 
   {

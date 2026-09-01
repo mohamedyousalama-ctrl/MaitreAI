@@ -161,7 +161,24 @@ export type CallAction =
   /** Show the reply as text, then listen again — a hard-zero turn, working as intended. */
   | { kind: "show_text"; note: "text_only" }
   /** Stop the loop and tell the visitor why. */
-  | { kind: "end"; reason: "rate_limited" | "stopped" | "voice_unavailable" | "error" };
+  | {
+      kind: "end";
+      reason:
+        | "rate_limited"
+        | "stopped"
+        // The voice really is not working: playback was refused, errored, or never started.
+        | "voice_unavailable"
+        // NOTHING WAS AUDIBLE, AND WE CANNOT SAY WHY. Reached when several turns in a row
+        // delivered almost no sound. Two very different things produce that and the code
+        // cannot tell them apart: a provider stream that keeps starving, and a LOUD ROOM,
+        // where ambient noise trips the barge detector a few hundred milliseconds into every
+        // reply. Driven, a perfectly working six-second reply in a persistently noisy room
+        // is byte-identical in outcome to a broken one — so claiming «الصوت مو شغّال» there
+        // tells a restaurant owner, sitting in a restaurant, that the product is broken when
+        // it is not. This reason says only what is true of both.
+        | "kept_getting_cut_off"
+        | "error";
+    };
 
 /** What the server said about a missing audio track. `rule` = text-only on purpose;
  *  `unavailable` = the voice is not working. */

@@ -859,6 +859,12 @@ function endMessage(action: CallAction): string {
       return "التجربة موقوفة مؤقتاً 🙏 كمّل معي بالكتابة في المحادثة.";
     case "voice_unavailable":
       return "الصوت مو شغّال الحين 🙏 كمّل معي بالكتابة — نفس خالد، نفس الردود.";
+    // TRUE OF BOTH CAUSES, WHICH IS THE WHOLE POINT. See the union's note: several turns in
+    // a row with nothing audible is either a starving stream or a loud room, and the code
+    // cannot distinguish them. Naming the wrong one to a prospect is the defect; naming
+    // neither is honest and still ends the call.
+    case "kept_getting_cut_off":
+      return "يبدو إن الصوت ما يوصل زين 🙏 نكمّل بالكتابة — نفس خالد، نفس الردود.";
     default:
       return "صار خلل بسيط 🙏 كمّل معي بالكتابة في المحادثة.";
   }
@@ -1418,7 +1424,12 @@ function CallScreen({
       if (secondsDelivered >= THIN_S || (played && !barged)) thinTurns.current = 0;
       else thinTurns.current += 1;
       if (thinTurns.current >= THIN_LIMIT) {
-        stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));
+        // NOT `voice_unavailable`. This counter fires for a starving stream AND for a room
+        // loud enough to trip the barge detector on every reply — and a working
+        // six-second reply in a noisy restaurant produces exactly the same four turns as a
+        // broken one. The discriminator does not exist (adding one reopens the starvation
+        // hole; that was driven and confirmed), so the message must not claim a cause.
+        stopWith(endMessage({ kind: "end", reason: "kept_getting_cut_off" }));
         return;
       }
 
