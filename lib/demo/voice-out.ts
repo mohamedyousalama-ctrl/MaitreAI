@@ -197,7 +197,14 @@ export function demoVoiceSignalsFor(
 /** Synthesize the demo's spoken reply, or explain why it stayed silent. Never throws. */
 export async function demoVoiceReply(
   replyText: string,
-  opts?: { inboundWasVoice?: boolean; safetyHold?: boolean; isReceipt?: boolean }
+  opts?: {
+    inboundWasVoice?: boolean;
+    safetyHold?: boolean;
+    isReceipt?: boolean;
+    /** A live phone call, where this same screen shows the reply as text while the audio
+     *  plays — see the note on `voiceHardZeroReason`. Waives the money figure ONLY. */
+    spokenPricesAllowed?: boolean;
+  }
 ): Promise<DemoVoiceOut> {
   const none = (skipped: DemoVoiceOutSkip): DemoVoiceOut =>
     ({ audioBase64: null, mime: null, skipped, spend: null });
@@ -220,6 +227,7 @@ export async function demoVoiceReply(
   const hardZero = voiceHardZeroReason(text, {
     safetyHold: o.safetyHold === true,
     isReceipt: o.isReceipt === true,
+    spokenPricesAllowed: o.spokenPricesAllowed === true,
   });
   if (hardZero) return none(hardZero);
 

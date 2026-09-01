@@ -467,6 +467,11 @@ export async function POST(req: Request) {
       inboundWasVoice: true,
       safetyHold: voiceSignals.safetyHold,
       isReceipt: voiceSignals.isReceipt,
+      // THIS IS A CALL, AND THE SCREEN SHOWS THIS REPLY WHILE IT PLAYS. Suppressing the
+      // price here made Khalid answer «كم سعر المندي؟» with an acknowledgement while the
+      // price sat visible beside him — the Founder's report was "what Khalid said is not
+      // what is written". Money only; links, receipts and safety holds are unchanged.
+      spokenPricesAllowed: true,
     });
 
     // DEAD AIR IS NOT AN ACCEPTABLE ANSWER ON A PHONE CALL.

@@ -105,6 +105,48 @@ console.log("\n── THE CARRIER SURVIVES THE SPEECH LAYER UNCHANGED IN MEANING
   }
 }
 
+console.log("\n── ON A CALL, A PRICE IS SPOKEN — AND ONLY A PRICE ──────────────");
+{
+  // THE FOUNDER'S REPORT: "what Khalid said is not what is written in this screenshot."
+  // He asked the price of the mandi; the screen showed the full reply with «بـ 30 ر.س»
+  // and Khalid said the acknowledgement instead. Confirmed from production:
+  // `hardZero: money_figure`, one model call, TTS ran on the carrier.
+  //
+  // The money rule is right for WhatsApp — a voice note sits in its own bubble, the text is
+  // already in the customer's hand, and a mis-heard figure could become a wrong charge for
+  // nothing gained. A CALL is not that shape: this screen displays the reply while the audio
+  // plays, so the authoritative figure is visible and readable at the moment it is spoken.
+  // Suppressing it there did not remove the risk, it just made Khalid dodge the question.
+  const REPLY = "عندنا مندي دجاج بـ 30 ر.س. تحب أضيفه لطلبك؟";
+
+  ok("on WhatsApp the price is still text-only — that channel is unchanged",
+    voiceHardZeroReason(REPLY, { safetyHold: false, isReceipt: false }) === "money_figure");
+  ok("on a call the price may be spoken",
+    voiceHardZeroReason(REPLY, { safetyHold: false, isReceipt: false, spokenPricesAllowed: true }) === null);
+
+  // AND IT WAIVES NOTHING ELSE. This is the whole risk of the change: a flag that quietly
+  // opened the other three categories would be a safety regression wearing a UX fix.
+  ok("a SAFETY HOLD is still silent on a call — not waivable",
+    voiceHardZeroReason(REPLY, { safetyHold: true, isReceipt: false, spokenPricesAllowed: true }) === "safety_hold");
+  ok("a RECEIPT is still silent on a call",
+    voiceHardZeroReason(REPLY, { safetyHold: false, isReceipt: true, spokenPricesAllowed: true }) === "receipt");
+  ok("a PAYMENT LINK is still silent on a call",
+    voiceHardZeroReason("رابط الدفع جاهز https://pay.example/x", { safetyHold: false, isReceipt: false, spokenPricesAllowed: true }) === "payment_link");
+  // …and the link check runs BEFORE the money waiver, so a reply carrying both is refused.
+  ok("a reply with a link AND a price is still refused for the link",
+    voiceHardZeroReason("ادفع 30 ر.س من رابط الدفع", { safetyHold: false, isReceipt: false, spokenPricesAllowed: true }) === "payment_link");
+
+  // AND THE SPOKEN PRICE MUST SOUND LIKE A PRICE. «ر.س» is how it is WRITTEN; read as
+  // letters it is noise, and a number that sounds right beside a currency that sounds like
+  // nothing is worse than not saying it.
+  const spoken = toSpokenText(REPLY);
+  ok(`the currency is a spoken word, not two letters (${spoken})`,
+    spoken.includes("ريال") && !spoken.includes("ر.س"));
+  ok("…and the figure is spelled", spoken.includes("ثلاثين") && !/\d/.test(spoken));
+  ok("…and the sentence break survives, so it is not run together",
+    /ريال\s*\./.test(spoken));
+}
+
 console.log("\n── THE ROUTE ACTUALLY USES IT, AND ONLY WHEN SILENT ────────────");
 {
   const { readFileSync } = await import("node:fs");
@@ -122,6 +164,28 @@ console.log("\n── THE ROUTE ACTUALLY USES IT, AND ONLY WHEN SILENT ───
     /if \(spoken\.skipped && !spoken\.audioBase64\)/.test(code));
   ok("…and only if the carrier itself synthesized, never a substitute voice",
     /if \(carrierAudio\.audioBase64\)/.test(code));
+
+  // AND THE CALL PATH MUST STILL ASK FOR SPOKEN PRICES. Deleting that one line puts the
+  // Founder's exact complaint straight back — Khalid answering «كم سعر المندي؟» with an
+  // acknowledgement while the price sits visible on the same screen — and a driven mutation
+  // confirmed nothing else in the suite notices. Anchored INSIDE the demoVoiceReply call so
+  // a mention elsewhere cannot satisfy it, and paired with the safety signals so it is
+  // visible that this sits alongside them rather than replacing them.
+  const replyCall = (() => {
+    const at = code.indexOf("demoVoiceReply(closed.reply");
+    return at >= 0 ? code.slice(at, at + 500) : "";
+  })();
+  ok("the call path asks for spoken prices", /spokenPricesAllowed:\s*true/.test(replyCall));
+  ok("…alongside the safety signals it does NOT waive",
+    /safetyHold:\s*voiceSignals\.safetyHold/.test(replyCall) &&
+    /isReceipt:\s*voiceSignals\.isReceipt/.test(replyCall));
+
+  // …and ONLY the call path. The live WhatsApp path must never pass it: there the voice
+  // note sits in its own bubble with no visible text beside it, which is the whole reason
+  // the money rule exists.
+  const ras = readFileSync(resolve(process.cwd(), "lib/messaging/respond-and-send.ts"), "utf8");
+  ok("the live WhatsApp path never asks for spoken prices",
+    !/spokenPricesAllowed/.test(ras));
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-carriers: ${pass}/${pass + fails.length} passed`);

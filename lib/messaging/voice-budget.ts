@@ -123,13 +123,39 @@ const PAY_LINK_RE = /(رابط\s*الدفع|ادفع|الدفع\s*الآن|check
  */
 export function voiceHardZeroReason(
   replyText: string,
-  signals: { safetyHold: boolean; isReceipt: boolean }
+  signals: {
+    safetyHold: boolean;
+    isReceipt: boolean;
+    /** A LIVE PHONE CALL, where the same screen also shows this reply as text.
+     *
+     *  The money rule exists because a spoken figure can be MIS-HEARD — "thirty" for
+     *  "thirteen" — and a wrong number a customer acted on is a real dispute. On WhatsApp
+     *  the voice note sits in its own bubble and there is no reason to take that risk: the
+     *  text is already in their hand and suppressing the audio costs nothing.
+     *
+     *  A CALL IS NOT THAT SHAPE. The call screen displays the reply text at the same moment
+     *  the audio plays, so the authoritative figure is on screen and readable while it is
+     *  spoken — the compensating control WhatsApp's voice notes never had. Suppressing it
+     *  there does not remove the risk; it just makes Khalid answer «كم سعر المندي؟» with
+     *  something other than the price while the price sits visible beside him. The Founder
+     *  reported exactly that: "what Khalid said is not what is written."
+     *
+     *  NARROW ON PURPOSE. This waives the MONEY FIGURE only. A payment LINK is still never
+     *  spoken (a URL cannot be said usefully and a mis-heard one goes somewhere else), a
+     *  receipt/order number is still never spoken (a mis-heard order number is an
+     *  operational problem, not a cosmetic one), and a SAFETY HOLD is untouched and
+     *  unreachable from here — it returns above this flag and always will. */
+    spokenPricesAllowed?: boolean;
+  }
 ): VoiceZeroReason | null {
+  // FIRST, AND NOT WAIVABLE. Whatever the channel, a safety turn is text-only.
   if (signals.safetyHold) return "safety_hold";
   if (signals.isReceipt) return "receipt";
   const t = moneyScanText(String(replyText ?? ""));
   if (PAY_LINK_RE.test(t)) return "payment_link";
-  if (MONEY_RE.test(t) || BARE_PRICE_RE.test(t)) return "money_figure";
+  if (MONEY_RE.test(t) || BARE_PRICE_RE.test(t)) {
+    return signals.spokenPricesAllowed ? null : "money_figure";
+  }
   return null;
 }
 

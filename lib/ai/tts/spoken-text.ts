@@ -112,6 +112,22 @@ export function toSpokenText(input: string): string {
   s = s.replace(/\n{2,}/g, "... ");
   s = s.replace(/\n+/g, ". ");
 
+  // CURRENCY IS AN ABBREVIATION, AND ABBREVIATIONS ARE READ AS LETTERS. «ر.س» is how a
+  // Saudi price is WRITTEN; spoken, it is «ريال». Left alone, a price the caller can now
+  // actually hear on a call came out as the two letter names, which is worse than not
+  // saying it — the number sounds right and the currency sounds like noise.
+  //
+  // «ريال» in the singular is also the correct spoken form after the numbers this product
+  // deals in: Arabic uses the singular accusative from eleven upward («ثلاثين ريال»), and
+  // for the small counts below that the item name usually carries the sense anyway.
+  // The trailing dot is NOT consumed. A first version swallowed it with `\.?` and took the
+  // sentence break with it — «بـ ثلاثين ريال تحب أضيفه؟» ran two sentences together, which
+  // is precisely the pacing this layer exists to preserve. The whitespace cleanup below
+  // reattaches the period.
+  s = s.replace(/\s*ر\s*\.\s*س/g, " ريال ");
+  s = s.replace(/\s*ج\s*\.\s*م/g, " جنيه ");
+  s = s.replace(/\bSAR\b/gi, " ريال ");
+
   // Symbols that have no spoken form. `×` in a recap line means "times"; read literally it
   // is a letter. Em dashes and guillemets are typography.
   s = s.replace(/\s*[×✕✖]\s*/g, " في ");
