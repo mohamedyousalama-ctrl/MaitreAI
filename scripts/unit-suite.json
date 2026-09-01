@@ -213,6 +213,7 @@
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-spoken-text.test.ts",
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-call-presentation.test.ts",
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-call-channel.test.ts",
+  "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-call-delivery.test.ts",
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-speech-ticket.test.ts",
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-demo-speak-route.test.ts",
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-call-carriers.test.ts",

@@ -192,7 +192,7 @@ function loadTs(rel) {
  * `server` is called for every /api/demo/voice request and returns `{status, body}`.
  * `capabilities` is the boolean the probe reports.
  */
-export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0, playRejects = false, playRejectTurns = null, playStallTurns = null, playbackMs = 0 } = {}) {
+export function installBrowser({ capabilities = true, server, rmsScript = [], serverDelayMs = 0, playRejects = false, playRejectTurns = null, playStallTurns = null, playStarveMs = null, playbackMs = 0 } = {}) {
   // Counts every play() attempt, so a test can fail a SPECIFIC one. See the note in play().
   let playAttempts = 0;
   const log = {
@@ -282,6 +282,12 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
       this.onplaying = null;
       this.ontimeupdate = null;
       this._progress = null;
+      // THE ELEMENT'S OWN CLOCK. The component asks `currentTime` rather than latching a
+      // flag on `playing`, because `playing` only means the browser STARTED — a stream that
+      // starts and immediately starves fires it and produces nothing audible. Advanced by
+      // the progress ticks below, so a stub that never plays reports 0 exactly as a real
+      // element does.
+      this.currentTime = 0;
       this.error = null;
       this.muted = false;
     }
@@ -309,6 +315,28 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
         this._paused = false;
         return; // resolves, and then nothing. Ever.
       }
+
+      // STARTS, THEN STARVES — the harder half, and the one a stall-only option cannot
+      // express. `playing` fires, the clock moves for a moment, and then the body stops
+      // arriving: no more `timeupdate`, no `ended`, no `error`. For a proxied provider
+      // stream behind a serverless function this is an ordinary failure, and a component
+      // that latches "it started" on the first event calls that a delivered reply.
+      if (playStarveMs != null) {
+        log.played.push(this._src || this.url);
+        this._paused = false;
+        this.currentTime = 0;
+        queueMicrotask(() => { if (!this._paused) this.onplaying?.(); });
+        if (this._progress) clearInterval(this._progress);
+        const startedAt = Date.now();
+        this._progress = setInterval(() => {
+          if (this._paused || Date.now() - startedAt >= playStarveMs) {
+            clearInterval(this._progress); this._progress = null; return;
+          }
+          this.currentTime += 0.25;
+          this.ontimeupdate?.();
+        }, 250);
+        return;
+      }
       log.played.push(this._src || this.url);
       // REAL PLAYBACK TAKES TIME, and with `playbackMs: 0` this resolved on a microtask —
       // so nothing that happens DURING a reply could ever be observed. Barge-in is exactly
@@ -320,10 +348,15 @@ export function installBrowser({ capabilities = true, server, rmsScript = [], se
       // stall exit re-arms on progress, so without these a genuinely playing reply looks
       // identical to a stream delivering nothing. Modelling only `ended` made the difference
       // between "playing" and "silent" invisible to every scenario in the suite.
+      this.currentTime = 0;
       queueMicrotask(() => { if (!this._paused) this.onplaying?.(); });
       if (playbackMs > 0) {
+        // Defensive: `play()` called twice without an intervening pause would otherwise
+        // leave the first interval running, and it would advance the NEXT turn's clock.
+        if (this._progress) clearInterval(this._progress);
         this._progress = setInterval(() => {
           if (this._paused) { clearInterval(this._progress); return; }
+          this.currentTime += 0.25;
           this.ontimeupdate?.();
         }, 250);
         this._timer = setTimeout(() => {

@@ -805,8 +805,12 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   const fill = route.slice(fillStart, route.indexOf("} catch (e) {", fillStart));
   ok("the deterministic quantity-fill reply is synthesized, not skipped",
     /demoVoiceReply\(/.test(fill) || /demoVoiceTicket\(/.test(fill));
-  ok("…by whichever delivery the channel uses, streamed on a call and buffered otherwise",
-    /isPhoneCall && speechTicketsAvailable\(\)/.test(fill));
+  // …BY THE SHARED DECISION, not a second inline condition. The choice lives in
+  // lib/demo/call-delivery.ts and is driven there over its whole truth table, because
+  // inline it was one appended token away from switching streaming off with the suite
+  // green — see proof-call-delivery.test.ts.
+  ok("…by whichever delivery the channel uses, decided in one place",
+    /callDelivery\(\{ isPhoneCall, ticketsAvailable: speechTicketsAvailable\(\) \}\) === "stream"/.test(fill));
   ok("…and its spend reaches the ledger like any other synthesis",
     /trigger: "voice_tts"/.test(fill));
   // AND THE WRITE IS ACTUALLY GUARDED. `if (filledSpoken.spend)` wrapped in `if (false && …)`

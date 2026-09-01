@@ -151,6 +151,57 @@ console.log("\n── EVERY DETECTOR THE ROUTE RUNS, NOT JUST THE FIRST ONE ─�
     kept.length >= MENU.length - 8);
 }
 
+console.log("\n── DROP THE TRIGGER WORD, KEEP THE DISH ────────────────────────");
+{
+  // REFUSING A WHOLE NAME COSTS THE WORD THE PRIMING EXISTS FOR. «كنافة بالجبن» trips on
+  // «جبن»; the recognition value is in «كنافة», a proper noun no general model has priors
+  // for. Measured on a café menu, whole-name dropping removed 39% of the items — and four of
+  // those were collateral rather than allergen-bearing («موز» near «لوز», «رز أبيض» near
+  // «بيض», «صلصة بيضاء», «بان كيك»). The trigger is one token.
+  const { detectPhoneticSafetyNet } = await import("../lib/ai/phonetic-safety-net.ts");
+  const CAFE = [
+    "كنافة بالجبن", "بان كيك", "سليق باللبن", "موز", "رز أبيض", "صلصة بيضاء",
+    "زبدة الفول السوداني", "لبن بارد", "كيك شوكولاتة", "قهوة عربية", "لاتيه",
+    "كابتشينو", "تشيز كيك", "براوني", "تمر سكري", "شاي أحمر", "عصير برتقال", "ماء",
+  ];
+  const kept = safeSttVocabulary(CAFE);
+  ok(`the dish survives its trigger word (${kept.length}/${CAFE.length} kept)`,
+    kept.length >= CAFE.length - 3);
+  ok("…«كنافة» is kept even though «بالجبن» is not",
+    kept.includes("كنافة") && !kept.some((k) => k.includes("جبن")));
+  ok("…«سليق» is kept even though «باللبن» is not",
+    kept.includes("سليق") && !kept.some((k) => k.includes("لبن")));
+
+  // A SINGLE-WORD NAME THAT TRIPS HAS NOTHING TO KEEP, and is still dropped outright.
+  ok("«موز» has no safe remainder and is dropped", !kept.includes("موز"));
+
+  // AND EVERY REMAINDER IS RE-ASKED, NEVER ASSUMED. A fragment that still trips would be the
+  // same bug with a shorter string.
+  let leaked = "";
+  for (const k of kept) {
+    if (detectPhoneticSafetyNet(`هلا والله ${k}`, { sttConfidence: null, isVoiceTranscript: true }).fired) leaked = k;
+  }
+  ok(`no kept fragment trips a hold inside an ordinary sentence${leaked ? ` — «${leaked}» does` : ""}`,
+    leaked === "");
+
+  // AND IT IS MEMOISED, because this now runs on every LIVE WhatsApp voice note: four
+  // detectors over every word of every menu item, uncached, on the hot path.
+  const big = Array.from({ length: 200 }, (_, i) => `طبق رقم ${i} بالحليب`);
+  const t0 = Date.now();
+  safeSttVocabulary(big);
+  const cold = Date.now() - t0;
+  const t1 = Date.now();
+  for (let i = 0; i < 50; i++) safeSttVocabulary(big);
+  const warm = Date.now() - t1;
+  ok(`repeated calls on the same menu are cached (cold ${cold}ms, 50 warm ${warm}ms)`, warm <= cold);
+  // …and the cache returns a COPY, so a caller that mutates the result cannot poison the
+  // next tenant's vocabulary.
+  const a = safeSttVocabulary(big);
+  a.push("لبن");
+  ok("…and a caller mutating the result cannot poison the cache",
+    !safeSttVocabulary(big).includes("لبن"));
+}
+
 console.log("\n── THE ALLERGEN GATE ITSELF IS UNTOUCHED ───────────────────────");
 {
   // The fix must NOT be "make the gate less sensitive". A real allergy declaration must
@@ -246,7 +297,13 @@ console.log("\n── AND A PREFIXED NAME IS STILL AN ALLERGEN ─────�
   // the single most consequential allergen in a Gulf menu — was kept in the recognizer's
   // bias while «لبن بارد» was dropped. The containment test now also runs against the whole
   // name with the glue off every word.
-  for (const risky of ["زبدة الفول السوداني", "الحليب المحلى", "زبدة فول سوداني", "الفول السوداني"]) {
+  // «طبق المأكولات البحرية» IS THE CASE THAT PINS THE WHOLE-NAME BRANCH. The peanut names
+  // above all survive a mutation that deletes it, because «سوداني» is separately in the
+  // lexicon and the per-WORD probe catches them anyway. This one is caught ONLY by the
+  // article-stripped whole-name variant: the lexicon term is multi-word and the name writes
+  // it with «ال», so no single stripped word contains it. Without that branch the dish is
+  // offered to the recognizer and the assertion that would notice does not exist.
+  for (const risky of ["طبق المأكولات البحرية", "زبدة الفول السوداني", "الحليب المحلى", "زبدة فول سوداني", "الفول السوداني"]) {
     ok(`«${risky}» is dropped — a multi-word term behind an article is still an allergen`,
       !safeSttVocabulary([risky, "جريش"]).includes(risky));
   }

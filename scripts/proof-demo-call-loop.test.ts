@@ -226,6 +226,8 @@ async function runScreen(opts: {
   playRejectTurns?: number[];
   /** Let these play() attempts resolve and then deliver nothing, forever. */
   playStallTurns?: number[];
+  /** Let playback START and then starve after this many ms — no more progress, no end. */
+  playStarveMs?: number;
   /** How long a reply takes to play. Needed for anything that happens DURING a reply. */
   playbackMs?: number;
 }) {
@@ -238,6 +240,7 @@ async function runScreen(opts: {
     playRejects: opts.playRejects ?? false,
     playRejectTurns: opts.playRejectTurns ?? null,
     playStallTurns: opts.playStallTurns ?? null,
+    playStarveMs: opts.playStarveMs ?? null,
     playbackMs: opts.playbackMs ?? 0,
   });
   const CallScreen = loadCallScreen(rt.React);
@@ -690,6 +693,32 @@ async function runScreen(opts: {
       noisy.log.voiceRequests.length <= 3);
     ok("…and never blames a safety rule for it",
       !noisy.everSaw("حساسية أو مبالغ أو إيصال"));
+  }
+
+  // A STREAM THAT STARTS AND THEN STARVES IS NOT A REPLY.
+  //
+  // The harder half of the same failure, and the one that defeated two earlier signals. A
+  // boolean latched on `playing` says "heard" forever after the first frame — but `playing`
+  // only means the browser started the clock, so a body that delivers enough to begin and
+  // then stops counts as a delivered reply. A minimum on `currentTime` catches that and
+  // breaks something worse: a barge needs only 4 x 60ms, so a prompt interruption into a
+  // perfectly good reply falls under any threshold worth setting and is scored as a failure.
+  //
+  // What separates them is RECENCY — is the element moving RIGHT NOW. Driven here in a loud
+  // room, so ambient noise settles the promise as a barge before the stall ceiling and the
+  // recency check is the only thing that can tell the difference.
+  {
+    const NOISY = [
+      ...Array(7).fill(0.005), ...Array(10).fill(0.20), ...Array(22).fill(0.004),
+      ...Array(40).fill(0.25),
+    ];
+    const starved = await runScreen({ ms: 32_000, playStarveMs: 400, rmsScript: NOISY });
+    ok("a stream that starts and then starves still ends the call honestly",
+      starved.everSaw("الصوت مو شغّال"));
+    ok(`…rather than running on indefinitely (${starved.log.voiceRequests.length} turns)`,
+      starved.log.voiceRequests.length <= 6);
+    ok("…and never blames a safety rule for it",
+      !starved.everSaw("حساسية أو مبالغ أو إيصال"));
   }
 
   // AND A LONG REPLY THAT IS GENUINELY PLAYING IS NEVER CUT OFF.

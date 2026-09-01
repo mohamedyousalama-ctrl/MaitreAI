@@ -504,8 +504,33 @@ for (const [file, { pin, cap, why }] of DEMO_TTS_WRAPPERS) {
 
   ok("the per-IP allowance is on the SAME window as the turn cap, so the two compare",
     /rateLimit\(`demo-speak:\$\{ip\}`,\s*SPEAK_PER_IP,\s*DEMO_WINDOW_MS\)/.test(speak));
-  ok(`…and is the same order as the syntheses that IP can already buy (${perIp}/hr vs ~${DEMO_PER_IP_TURNS * 2}/hr)`,
-    Number.isFinite(perIp) && perIp <= DEMO_PER_IP_TURNS * 4);
+  // EXACTLY THREE FETCHES PER TURN THAT IP MAY TAKE, and pinned as that arithmetic rather
+  // than as a range. A range lets the number drift upward one nudge at a time — 60 to 69
+  // survived a whole suite — and the bound is only meaningful if it stays tied to the thing
+  // it is a multiple of.
+  ok(`the per-IP ceiling is exactly 3x the turn cap (${perIp} vs ${DEMO_PER_IP_TURNS} turns/hr)`,
+    perIp === DEMO_PER_IP_TURNS * 3);
+
+  // AND THE FILE THAT OWNS THE CAP MUST STATE THE CEILING THIS CREATES.
+  //
+  // `lib/demo/config.ts` carries a worst-day figure and an instruction on itself: "THIS
+  // SENTENCE IS THE ONE THAT GOES STALE… If you change the model or the rate, change it
+  // HERE too, or delete it." It had gone stale twice on rate changes, and a third time here
+  // — not on a rate change at all, but because one turn can now buy SPEAK_PER_TICKET
+  // syntheses instead of one, and the sentence still said "$60/day … under $95".
+  //
+  // Derived and compared, so the paragraph cannot drift from the constants again.
+  const cfg = readFileSync(resolve(ROOT, "lib/demo/config.ts"), "utf8");
+  const { DEMO_GLOBAL_DAILY_TURNS } = await import("../lib/demo/config.ts");
+  const { TTS_RATE_PER_CHAR } = await import("../lib/ai/tts/pricing.ts");
+  const { KHALID_VOICE } = await import("../lib/ai/tts/voice-registry.ts");
+  const rate = TTS_RATE_PER_CHAR[`elevenlabs:${KHALID_VOICE.model}`] ?? 0;
+  const worstTts = Math.round(DEMO_GLOBAL_DAILY_TURNS * perTicket * 600 * rate);
+  ok(`the daily TTS ceiling is derivable (${worstTts})`, worstTts > 0);
+  ok(`…and lib/demo/config.ts states it ($${worstTts}/day)`,
+    cfg.includes(`$${worstTts}/day of TTS`));
+  ok("…and no longer states the pre-streaming figure",
+    !/\$60\/day of TTS/.test(cfg) && !/under \$95 on the worst/.test(cfg));
 
   // THE LIMIT THAT ACTUALLY STOPS REPLAY IS PER TICKET, because replay is per-ticket by
   // definition — an attacker rotating IPs walks around a per-IP bound entirely.

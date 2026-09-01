@@ -331,7 +331,7 @@ ok("typed-actions imports the shared draft-freshness constant",
   // «كم قطعة تحب؟» → «خمسة», the most common spoken turn in the demo, so it is exactly the
   // turn that needs to feel immediate.
   ok("a deterministic fill is synthesized, not skipped",
-    /const filledSpoken = isPhoneCall && speechTicketsAvailable\(\)/.test(voice));
+    /const filledSpoken =\s*\n?\s*callDelivery\(/.test(voice));
   ok("…streamed on a call, and buffered on a chat voice note",
     /\?\s*demoVoiceTicket\(filledText,/.test(voice) &&
     /:\s*await demoVoiceReply\(filledText, filledSpeakOpts\)/.test(voice));

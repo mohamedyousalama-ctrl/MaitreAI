@@ -50,9 +50,13 @@ export const DEMO_WINDOW_MS = 60 * 60 * 1000;
  *   page the COLD turn is the normal case, billing at the cache-WRITE rate.
  *
  *   v3 (voice-out): "and more with voice" is now a number. TTS bills per character:
- *   DEMO_TTS_MAX_CHARS (600) x elevenlabs:eleven_v3 at $0.0001/char = $0.06 a spoken reply,
- *   so 1,000 spoken turns is $60/day of TTS. Added to the text worst case that is roughly
- *   $91 on the worst day the caps physically permit.
+ *   DEMO_TTS_MAX_CHARS (600) x elevenlabs:eleven_v3 at $0.0001/char = $0.06 a spoken reply.
+ *
+ *   v4 (streaming): a spoken reply on a phone call is FETCHED rather than delivered inside
+ *   the turn, so one turn can buy up to SPEAK_PER_TICKET (3) syntheses — $0.18 a turn, and
+ *   1,000 spoken turns is $180/day of TTS. Added to the text worst case that is roughly
+ *   $211 on the worst day the caps physically permit. The summary below carries the caveats
+ *   about what the ledger does and does not see.
  *
  *   RE-RUN THIS WHENEVER THE MODEL OR THE RATE CHANGES, AND RE-READ THE SUMMARY LINE. This
  *   paragraph has now been wrong twice in one week, both times in the same way: the numbers
@@ -71,12 +75,34 @@ export const DEMO_WINDOW_MS = 60 * 60 * 1000;
  *   writes an agent_runs row with trigger 'voice_tts' that lib/monitoring/sweep.ts sums.
  *
  * So the honest bound at 1,000 turns is roughly $31/day of text, plus STT, plus up to
- * $60/day of TTS if every one of those turns is spoken — call it under $95 on the worst
- * day the caps physically permit.
+ * $180/day of TTS if every one of those turns is spoken AND every spoken reply is fetched
+ * the maximum number of times — call it around $215 on the worst day the caps physically
+ * permit.
+ *
+ * WHY IT TRIPLED, AND IT IS NOT A NEW RATE. A spoken reply on a phone call is no longer
+ * delivered inside the turn's own response; the turn mints a signed ticket and the browser
+ * FETCHES the audio from /api/demo/speak, so playback can start before synthesis finishes
+ * (app/api/demo/speak/route.ts). One turn can therefore buy more than one synthesis, capped
+ * by SPEAK_PER_TICKET — currently 3, sized so an iOS range probe plus one retry cannot
+ * refuse a legitimate caller. 1,000 turns x 3 x $0.06 = $180.
+ *
+ * TWO HONEST CAVEATS, because this paragraph is the one people believe:
+ *   • Those extra syntheses ARE on the ledger. The turn books the first; /api/demo/speak
+ *     writes an agent_runs row for every repeat before it serves the audio. But the counter
+ *     that decides "repeat" is process-local (lib/rate-limit.ts), so on N warm instances the
+ *     ceiling is 1,000 x 3N and up to N-1 per ticket can go unbooked. sweep.ts therefore
+ *     sees at least half of whatever is spent, never all of it on a multi-instance deploy.
+ *   • The ledger is also wrong in the OTHER direction: the cost is booked when the ticket is
+ *     minted, so a caller who hangs up before playback, or a provider outage, books a
+ *     synthesis nobody heard. That is deliberate — it keeps the cap ahead of the money — and
+ *     it means the recorded figure is an upper bound on a normal day and a lower bound on a
+ *     contested one.
  *
  * THIS SENTENCE IS THE ONE THAT GOES STALE. It is what a reader actually carries away, and
- * twice now it has kept a number the arithmetic above had already corrected. If you change
- * the model or the rate, change it HERE too, or delete it.
+ * THREE times now it has kept a number the arithmetic above had already corrected — twice on
+ * a model or rate change, and once when the delivery changed underneath it without the rate
+ * moving at all. If you change the model, the rate, or how many times one reply can be
+ * fetched, change it HERE too, or delete it.
  * Sustained traffic warms the cache and costs far less per turn, so a genuinely busy day
  * is cheaper per turn than the cold-start tests above — the worst case is "1,000 cold
  * turns", which is unlikely but is what a cap has to survive.

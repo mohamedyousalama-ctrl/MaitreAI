@@ -68,23 +68,6 @@ function wordForms(word: string): string[] {
   return [...forms];
 }
 
-/** Does this exact form name an allergen?
- *
- *  THE PROBE CANNOT BE ALLOWED TO ANSWER ITSELF. «الحساسية» is in the lexicon, so the
- *  carrier sentence always produces SOME term; requiring the picked term to appear in the
- *  form is what makes the answer about the form. The first version stopped there and was
- *  therefore correct only for BARE names: for «سليق باللبن» the detector's first hit is its
- *  own scaffolding word, `includes` is false, and the dish was kept — so «لبن»، «جبن»،
- *  «حليب»، «بيض» and «مكسرات» were all still whispered to the recognizer for any menu that
- *  writes them the way Arabic normally does. That is the whole exposure this file exists to
- *  close, and it stayed open for the commonest shape on a real menu. */
-function formNamesAnAllergen(form: string): boolean {
-  const hit = detectAllergenAvoidance(`عندي حساسية من ${form}`);
-  if (!hit.term) return false;
-  const term = normalizeAr(hit.term);
-  return term.length > 0 && form.includes(term);
-}
-
 /** The word with its longest matching proclitic removed, or unchanged. */
 function stripProclitic(word: string): string {
   for (const p of PROCLITICS) {
@@ -161,19 +144,64 @@ function namesAnAllergen(name: string): boolean {
  * dropping one is a clarifying question and the cost of keeping one is a fabricated
  * allergy.
  */
+/** Drop the offending WORD, keep the dish.
+ *
+ *  Refusing «كنافة بالجبن» outright costs the recognizer «كنافة» — a proper noun no general
+ *  model has priors for, and the exact kind of word this priming exists for. Measured on a
+ *  café menu, whole-name dropping removed 39% of the items, and four of those were
+ *  collateral: «موز» (banana, near «لوز»), «رز أبيض» (white rice, near «بيض»), «صلصة بيضاء»,
+ *  «بان كيك». The trigger is one token; the recognition value is in the others.
+ *
+ *  So a name that trips is retried without the words that trip. What comes back is offered
+ *  only if it is safe ON ITS OWN — the remainder is re-asked, never assumed. A name with
+ *  nothing safe left is dropped exactly as before. */
+function safeRemainder(name: string): string | null {
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return null;
+  const kept = words.filter((w) => !namesAnAllergen(w));
+  if (kept.length === 0 || kept.length === words.length) return null;
+  const remainder = kept.join(" ").trim();
+  if (!remainder) return null;
+  return namesAnAllergen(remainder) ? null : remainder;
+}
+
+// MEMOISED, because this now runs on every LIVE WhatsApp voice note. Four detectors over
+// every word of every menu item measured 56ms on a 200-item menu (up from 8ms when it asked
+// one detector), and `transcribeWhatsAppVoice` calls `buildSttPromptVocab` uncached on every
+// transcription — the demo caches its filtered list, the live path does not. Small against a
+// 217-806ms STT round trip and pure waste to repeat. Bounded, because a per-tenant cache
+// keyed on menu content is otherwise a slow leak in a long-lived server.
+const CACHE_MAX = 64;
+const cache = new Map<string, string[]>();
+
 export function safeSttVocabulary(names: Array<string | null | undefined>): string[] {
+  const cleaned = (names ?? []).map((n) => String(n ?? "").trim()).filter(Boolean);
+  const key = cleaned.join("\u0000");
+  const hit = cache.get(key);
+  if (hit) {
+    // Refresh recency: delete and re-set moves it to the end of the insertion order.
+    cache.delete(key);
+    cache.set(key, hit);
+    return [...hit];
+  }
+
   const out: string[] = [];
-  for (const raw of names ?? []) {
-    const name = String(raw ?? "").trim();
-    if (!name) continue;
+  for (const name of cleaned) {
     try {
-      if (namesAnAllergen(name)) continue;
+      if (!namesAnAllergen(name)) { out.push(name); continue; }
+      const remainder = safeRemainder(name);
+      if (remainder) out.push(remainder);
     } catch {
       // A detector that throws on some input must not take the turn down with it, and an
       // unchecked name is exactly the one we must not bias toward.
       continue;
     }
-    out.push(name);
   }
+
+  if (cache.size >= CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, [...out]);
   return out;
 }

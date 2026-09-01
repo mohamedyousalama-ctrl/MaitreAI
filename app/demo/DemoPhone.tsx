@@ -908,6 +908,10 @@ function CallScreen({
   // CONSECUTIVE playback failures — see the note where it is read. Reset by any reply that
   // actually plays, so this counts a run of failures, never a total.
   const speechFailures = useRef(0);
+  // CONSECUTIVE TURNS THAT DELIVERED ALMOST NO SOUND — see where it is read. Separate from
+  // `speechFailures` because these turns did not FAIL; they were interrupted, and an
+  // interruption is a normal thing that should never end a call on its own.
+  const thinTurns = useRef(0);
   // `player` is now a PROP — the element the opening tap unlocked. It was a local ref
   // holding a fresh `new Audio()` per turn, which is precisely what Safari refuses to play.
   const abort = useRef<AbortController | null>(null);
@@ -1307,11 +1311,37 @@ function CallScreen({
       // `played` is then true, the `barged` branch returns above the failure branch, and a
       // call that produced no sound at all runs on turn after turn telling the visitor
       // nothing. Driven in a noisy room: five turns, zero audio, no note, no ending.
-      let heardAnything = false;
+      //
+      // ASKED AS "IS IT STILL PRODUCING SOUND RIGHT NOW", not "did it ever start".
+      //
+      // Two wrong answers were tried before this one. A boolean latched on `playing` says
+      // yes forever after the first frame — but `playing` only means the BROWSER STARTED THE
+      // CLOCK (readyState reached HAVE_FUTURE_DATA), so a stream that delivers just enough to
+      // begin and then starves fires it, produces nothing audible, and is counted as a
+      // reply. That is an ordinary failure for a proxied provider stream behind a serverless
+      // function, which is exactly what this route is.
+      //
+      // A minimum on `currentTime` fixes that and breaks something better: a barge needs
+      // only 4 x 60ms of the visitor talking, so an interruption at 300ms into a perfectly
+      // good reply falls under any threshold worth setting, gets counted as a FAILURE, and
+      // two prompt interruptions end a working call. Punishing a visitor for interrupting
+      // quickly is punishing the feature.
+      //
+      // What separates all three cases is RECENCY. A healthy reply progressed milliseconds
+      // ago, however briefly it has been playing. A stream that never started never
+      // progressed. A stream that starved progressed once and then stopped. So: did the
+      // element move within the last moment?
+      // 600ms, and the number comes from the spec rather than taste: a playing media element
+      // fires `timeupdate` at AT LEAST 4Hz, so two and a half missed ticks means it is not
+      // producing. A wider window (1500ms was tried) lets a barge land inside the gap left by
+      // a stream that has already starved, and the interruption path swallows the turn.
+      const PROGRESS_FRESH_MS = 600;
+      let lastProgressAt = 0;
+      const progressingNow = () => lastProgressAt > 0 && Date.now() - lastProgressAt < PROGRESS_FRESH_MS;
       const played = await new Promise<boolean>((done) => {
         settle = done;
         const armStall = () => {
-          heardAnything = true;
+          lastProgressAt = Date.now();
           if (stallTimer) clearTimeout(stallTimer);
           stallTimer = setTimeout(() => {
             console.warn(`[demo/call] audio stalled — no progress in ${STALL_MS}ms, giving up on this reply`);
@@ -1319,14 +1349,12 @@ function CallScreen({
             done(false);
           }, STALL_MS);
         };
-        // The first arm is the deadline for the FIRST sound, so it must not claim one was
-        // heard. Every later arm comes from a real progress event and does.
-        heardAnything = false;
         armStall();
-        heardAnything = false;
+        // The first arm is the deadline for the FIRST sound, not evidence of one.
+        lastProgressAt = 0;
         el.onplaying = armStall;
         el.ontimeupdate = armStall;
-        el.onended = () => { heardAnything = true; done(true); };
+        el.onended = () => done(true);
         // SAY WHY, HERE TOO. This discarded the reason, exactly as the server's catch did,
         // so a silent call produced no evidence anywhere on either side — the request
         // logged a clean 200 and the page just said the voice was not working. The two
@@ -1366,7 +1394,35 @@ function CallScreen({
       // "barge" during dead air is ambient noise arriving before the stall timer, and the
       // turn still produced no sound: it falls through to the failure path below, so it is
       // counted, explained, and eventually ends the call honestly.
-      if (barged && heardAnything) { void runTurn(); return; }
+      // `ended` is heard by definition — a reply that ran to completion made its sound.
+      const heard = played && !barged ? true : progressingNow();
+      const secondsDelivered = Number(el.currentTime) || 0;
+
+      // AND A CALL WHERE NOTHING IS EVER AUDIBLE MUST END, however each turn settled.
+      //
+      // The recency check above answers "is it producing sound right now", and that is the
+      // best a single turn can do — but it cannot see a stream that starves and is then
+      // barged inside the same tick, because starvation is only observable AFTER the moment
+      // you have to decide. Driven: a body that delivers 400ms and stops, in a loud room,
+      // settles every turn as an interruption and the call runs on with nothing audible.
+      //
+      // Across turns it is obvious. A real conversation has turns that play out; a broken
+      // voice has none. So a turn that delivered almost nothing is counted, a turn that
+      // delivered real audio clears the count, and four in a row is a voice that is not
+      // working — said out loud, like every other way of arriving there.
+      //
+      // FOUR, not two: interrupting quickly is a feature, and a visitor who barges early
+      // twice must not lose their call for it. Four consecutive is not a conversation.
+      const THIN_S = 1.0;
+      const THIN_LIMIT = 4;
+      if (secondsDelivered >= THIN_S || (played && !barged)) thinTurns.current = 0;
+      else thinTurns.current += 1;
+      if (thinTurns.current >= THIN_LIMIT) {
+        stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));
+        return;
+      }
+
+      if (barged && heard) { void runTurn(); return; }
 
       // ONE BAD TURN IS NOT A BROKEN VOICE, AND TWO IS.
       //
@@ -1382,7 +1438,7 @@ function CallScreen({
       // row is a broken voice and is still said out loud — the rule this screen has always
       // held is that a call which cannot speak must not pretend it is fine, and running
       // silently turn after turn while the screen reads «يتكلم…» is exactly that pretence.
-      if (!played || !heardAnything) {
+      if (!played || !heard) {
         speechFailures.current += 1;
         if (speechFailures.current >= 2) {
           stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));

@@ -33,7 +33,46 @@ process.env.ELEVENLABS_VOICE_ID = KHALID_VOICE.voiceId;
 delete process.env.ELEVENLABS_TTS_MODEL;
 
 const { signSpeechTicket } = await import("../lib/demo/speech-ticket.ts");
+const { __setTestAdminClient } = await import("../lib/supabase/admin.ts");
+const { ttsCostUsd } = await import("../lib/ai/tts/pricing.ts");
 const { GET } = await import("../app/api/demo/speak/route.ts");
+
+// ── A FAKE LEDGER ───────────────────────────────────────────────────────────
+//
+// The purpose-built injection seam in lib/supabase/admin.ts, used here for the block that
+// makes the money VISIBLE. Without it `createAdminClient()` returns null in a proof, the
+// whole replay-ledger branch is dead, and four separate one-line changes to it each survive
+// the entire suite: never marking a fetch a repeat, booking `cost_usd: 0`, dropping
+// `mustWrite` for an unchecked insert, and deferring the write past the response (where a
+// serverless function may never run it). Each of those makes a paid synthesis invisible to
+// `lib/monitoring/sweep.ts`, which is the only spend monitor there is.
+type LedgerRow = Record<string, unknown>;
+const ledger: LedgerRow[] = [];
+let ledgerFails = false;
+__setTestAdminClient({
+  from(table: string) {
+    const builder: Record<string, unknown> = {};
+    builder.insert = (row: LedgerRow) => {
+      if (!ledgerFails) ledger.push({ __table: table, ...row });
+      return builder;
+    };
+    // `mustWrite(..., { exactRows: 1 })` reads `data` and `error` off the awaited builder.
+    builder.select = () => builder;
+    // A REAL WRITE TAKES TIME, and that is what makes the ordering observable. Resolving on
+    // a microtask makes "written before the response" and "written after it" indistinguishable
+    // to any assertion — so a write deferred into a floating promise, which a serverless
+    // function may kill before it runs, looks identical to one that was awaited.
+    builder.then = (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+      new Promise((r) => setTimeout(r, 15))
+        .then(() =>
+          ledgerFails
+            ? { data: null, error: { message: "ledger unavailable" } }
+            : { data: [{ id: "row-1" }], error: null },
+        )
+        .then(res, rej);
+    return builder;
+  },
+});
 
 let pass = 0;
 const fails: string[] = [];
@@ -144,8 +183,18 @@ console.log("\n── A TICKET IS NOT A SEASON PASS ─────────�
   const seen: number[] = [];
   for (let i = 0; i < 6; i++) seen.push((await call({ ticket: t })).status);
   const paid = seen.filter((s) => s === 200).length;
-  ok(`one ticket buys at most a retry, not a flood (${paid} paid of 6)`, paid <= 2);
-  ok("…and the rest are refused", seen.filter((s) => s === 429).length >= 4);
+  // READ FROM THE ROUTE, not hardcoded: the allowance moved from 2 to 3 (iOS plausibly
+  // spends one on a range probe, and a hardcoded 2 turned that into a 429 → a playback
+  // failure → a stumble, our own limiter causing the worst outcome on the browser the whole
+  // design was built around). The property is "a retry, not a flood", so the assertion
+  // follows the constant and still caps how loose it may become.
+  const { readFileSync } = await import("node:fs");
+  const routeSrc = readFileSync(new URL("../app/api/demo/speak/route.ts", import.meta.url), "utf8");
+  const allowance = Number((routeSrc.match(/SPEAK_PER_TICKET\s*=\s*(\d+)/) ?? [])[1] ?? NaN);
+  ok(`the per-ticket allowance is small and stated (${allowance})`,
+    Number.isFinite(allowance) && allowance >= 1 && allowance <= 3);
+  ok(`one ticket buys at most that, not a flood (${paid} paid of 6)`, paid <= allowance);
+  ok("…and the rest are refused", seen.filter((s) => s === 429).length >= 6 - allowance);
 
   // A DIFFERENT ticket from the same visitor is a different turn and must still work.
   ok("a fresh ticket is not punished for the last one's replays",
@@ -169,7 +218,66 @@ console.log("\n── AND THE PER-IP CEILING IS REAL ─────────
     paid <= DEMO_PER_IP_TURNS * 4);
 }
 
+console.log("\n── A SECOND FETCH IS MONEY, AND THE LEDGER SEES IT ─────────────");
+{
+  // THE GUARANTEE THE WHOLE REPLAY FIX RESTS ON. The turn that minted the ticket books ONE
+  // synthesis; the durable cap counts TURNS and a replay consumes none, so a second fetch is
+  // spend that nothing else in the system can ever see. Driven end to end against a fake
+  // ledger, because asserting the block's presence is what let four separate one-line
+  // regressions through.
+  ledger.length = 0;
+  const t = mint();
+  const ip = "192.0.2.99";
+
+  const first = await call({ ticket: t, ip });
+  ok("the first fetch is served", first.status === 200);
+  ok("…and writes NOTHING, because the mint already booked it",
+    ledger.length === 0);
+
+  const second = await call({ ticket: t, ip });
+  ok("a repeat fetch is still served — the money is spent either way", second.status === 200);
+  // BEFORE THE RESPONSE, NOT AFTER IT. Checked the instant `GET` resolves and with no
+  // intervening await, because work scheduled after a serverless response is not guaranteed
+  // to run at all — a write deferred into a floating promise is a row that may simply never
+  // exist, and it reads identically to a correct one unless the ordering is asserted.
+  ok(`…and the row is already written when the response is handed back (${ledger.length})`,
+    ledger.length === 1);
+  ok("…to the spend ledger", ledger[0]?.__table === "agent_runs");
+  ok("…tagged as a synthesis", ledger[0]?.trigger === "voice_tts");
+  ok("…naming the provider that will bill us", ledger[0]?.adapter === "elevenlabs");
+  ok("…and the registered model", ledger[0]?.model === KHALID_VOICE.model);
+
+  // THE REAL COST, NOT A PLACEHOLDER. A row that books $0 is worse than no row: it tells the
+  // monitor the synthesis was free.
+  const expected = ttsCostUsd(`elevenlabs:${KHALID_VOICE.model}`, calls[calls.length - 1]!.body.text as string
+    ? String(calls[calls.length - 1]!.body.text).length : 0);
+  ok(`…for what it actually cost, not zero (${ledger[0]?.cost_usd})`,
+    typeof ledger[0]?.cost_usd === "number" && (ledger[0]?.cost_usd as number) > 0 &&
+    Math.abs((ledger[0]?.cost_usd as number) - expected) < 1e-9);
+
+  // AND A FAILED WRITE IS NOTICED, NOT SWALLOWED. Supabase RESOLVES on failure — it does not
+  // throw — so an unchecked `.insert()` returns `{ data: null, error }` and carries on
+  // silently. `mustWrite` is what turns that into something a human sees; without it the
+  // money is gone AND nobody knows. Asserted through the log line, because a silent
+  // no-op has no other observable difference.
+  ledgerFails = true;
+  const errors: string[] = [];
+  const realError = console.error;
+  console.error = (...a: unknown[]) => { errors.push(a.map(String).join(" ")); };
+  const rt = mint();
+  const rip = "192.0.2.100";
+  await call({ ticket: rt, ip: rip });          // first fetch — booked at mint, no write
+  const third = await call({ ticket: rt, ip: rip }); // repeat — the write fails
+  console.error = realError;
+  ledgerFails = false;
+
+  ok("a failed ledger write still serves the audio", third.status === 200);
+  ok(`…and is reported, never swallowed (${errors.length} logged)`,
+    errors.some((e) => e.includes("replay spend accounting failed")));
+}
+
 globalThis.fetch = realFetch;
+__setTestAdminClient(undefined);
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} demo-speak-route: ${pass}/${pass + fails.length} passed`);
 if (fails.length) { for (const f of fails) console.log(`   ✗ ${f}`); process.exit(1); }

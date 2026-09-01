@@ -69,7 +69,16 @@ export const maxDuration = 60;
 //
 //   PER TICKET is the one that actually stops replay, because replay is per-ticket by
 //   definition. A legitimate player fetches a given URL ONCE; the allowance is two so a
-//   browser that retries a failed request still gets its audio.
+//   browser that retries a failed request still gets its audio. THREE, not two: a
+//   legitimate player needs one; iOS Safari plausibly needs two (a range probe and the real
+//   fetch — the behaviour nobody here can test); one transient retry needs three. At two,
+//   the first thing that goes wrong past a Safari probe is a 429, which the client now reads
+//   as a playback failure, and two of those in a row end the call telling a prospect the
+//   voice is broken — our own limiter causing the worst outcome on this page, on the browser
+//   the whole design was built around. Being wrong the other way is now cheap: a repeat past
+//   the allowance is refused, every repeat that IS served is written to the ledger, and the
+//   per-IP bound still binds at 60/hour.  in this route's timing line is the
+//   evidence that settles it on real iPhone traffic.
 //
 //   PER IP is the outer bound, now on the SAME window as the POST route so the two can be
 //   compared at all. A caller can legitimately reach at most one GET per spoken turn, i.e.
@@ -93,7 +102,7 @@ export const maxDuration = 60;
 // The write happens ONLY on a repeat, so the common path — the one this whole endpoint
 // exists to make fast — pays nothing for it.
 const SPEAK_PER_IP = 60;
-const SPEAK_PER_TICKET = 2;
+const SPEAK_PER_TICKET = 3;
 
 function clientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for") ?? "";

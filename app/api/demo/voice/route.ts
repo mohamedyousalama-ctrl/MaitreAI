@@ -30,6 +30,7 @@ import { demoVoiceReply, demoVoiceSignalsFor, demoVoiceSilenceKind } from "@/lib
 import { presentationForCall, callerAskedToSee } from "@/lib/demo/call-presentation";
 import { isPhoneCallChannel } from "@/lib/demo/call-channel";
 import { demoVoiceTicket, speechTicketsAvailable } from "@/lib/demo/speech-ticket";
+import { callDelivery } from "@/lib/demo/call-delivery";
 import { callCarrierFor } from "@/lib/demo/call-carriers";
 import type { VoiceZeroReason } from "@/lib/messaging/voice-budget";
 import { resolveSttAdapterName } from "@/lib/ai/stt";
@@ -409,7 +410,8 @@ export async function POST(req: Request) {
           isReceipt: false,    // a quantity fill is never a receipt
           spokenPricesAllowed: isPhoneCall,
         };
-        const filledSpoken = isPhoneCall && speechTicketsAvailable()
+        const filledSpoken =
+          callDelivery({ isPhoneCall, ticketsAvailable: speechTicketsAvailable() }) === "stream" 
           ? demoVoiceTicket(filledText, { ...filledSpeakOpts, sid: conversationId })
           : await demoVoiceReply(filledText, filledSpeakOpts);
         if (filledSpoken.spend) {
@@ -540,7 +542,12 @@ export async function POST(req: Request) {
     // Both call `demoVoiceDecision`, so the two deliveries cannot disagree about whether a
     // reply may be spoken — only about how the bytes travel. And a missing signing key means
     // no ticket, so this falls back to the buffered path rather than to silence.
-    const streamTheCall = isPhoneCall && speechTicketsAvailable();
+    // THE DECISION IS A FUNCTION, NOT A CONDITION HERE. Inline, `&& false` — one token —
+    // put every call back on the buffered path and left all 223 proofs green, because the
+    // only thing asserting it was a regex on the shape of the ternary below. See
+    // lib/demo/call-delivery.ts.
+    const streamTheCall =
+      callDelivery({ isPhoneCall, ticketsAvailable: speechTicketsAvailable() }) === "stream";
     const speakOpts = {
       inboundWasVoice: true,
       safetyHold: voiceSignals.safetyHold,
