@@ -1246,7 +1246,27 @@ function CallScreen({
           : { from: "khalid", kind: "voice", text: reply, audioUrl: url, presentation: data.presentation ?? null }
       );
 
-      setPhase("speaking");
+      // THE SCREEN USED TO ANNOUNCE SPEECH BEFORE THERE WAS ANY, AND THAT IS THE GAP.
+      //
+      // «يتكلم…» was set HERE — the moment the turn's JSON arrived, before the audio URL was
+      // even assigned, let alone fetched. The reply text is free (it is already in the JSON);
+      // the voice costs a second same-origin GET and the provider's time-to-first-byte. So on
+      // a phone on cellular the screen said "he is speaking" and then nothing was audible for
+      // as long as that took. The founder reported it from an iPhone 12 as the voice lagging
+      // the script; the script was never early, the LABEL was lying.
+      //
+      // This file already condemns exactly this at :1470 — "running silently turn after turn
+      // while the screen reads «يتكلم…» is exactly that pretence" — and only guarded the case
+      // where audio never arrives at all, not the ordinary case where it merely has not
+      // arrived yet.
+      //
+      // So the phase now follows the SOUND, not the response. Until the element reports real
+      // progress the label stays «يفكر…», which is what a pause on a phone call actually is.
+      // Nothing is delayed to achieve this: the fetch still starts on the next line, the text
+      // card is still set at :1154 the instant the JSON parses, and no reply is held back.
+      // The only thing that changed is that the screen stops claiming a thing that has not
+      // happened.
+      //
       // THE ELEMENT THE TAP UNLOCKED, not a new one. See unlockPlayer() in the parent: a
       // fresh `new Audio()` here carries no user activation, and Safari rejects its play().
       const el = player.current ?? new Audio();
@@ -1377,8 +1397,22 @@ function CallScreen({
         armStall();
         // The first arm is the deadline for the FIRST sound, not evidence of one.
         lastProgressAt = 0;
-        el.onplaying = armStall;
-        el.ontimeupdate = armStall;
+        // AND FOR THE SAME REASON IT DOES NOT ANNOUNCE SPEECH. The flip to «يتكلم…» hangs off
+        // the EVENTS below, never off this synthetic first arm — arming a deadline is the one
+        // call here that is explicitly not evidence of sound, and driving the label from it
+        // would rebuild the lie one line lower.
+        //
+        // CHAINED, NOT REPLACED. `onplaying` is a single slot and `armStall` already owns it;
+        // assigning a phase handler over the top would silently disarm the stall timer, and
+        // `lastProgressAt` would then only advance on the first `timeupdate` — which is enough
+        // to make a fast barge-in score as "never heard" and start ending healthy calls.
+        let announcedSpeech = false;
+        const onRealProgress = () => {
+          if (!announcedSpeech) { announcedSpeech = true; setPhase("speaking"); }
+          armStall();
+        };
+        el.onplaying = onRealProgress;
+        el.ontimeupdate = onRealProgress;
         el.onended = () => done(true);
         // SAY WHY, HERE TOO. This discarded the reason, exactly as the server's catch did,
         // so a silent call produced no evidence anywhere on either side — the request
