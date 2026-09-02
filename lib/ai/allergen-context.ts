@@ -34,6 +34,7 @@
 // ============================================================================
 
 import { normalizeAr } from "./allergen-gate";
+import { FRAME_WORDS, NOT_A_PERSON } from "./symptom-frames";
 import { englishAllergyFullyDenied } from "./allergen-gate-symptoms";
 
 export interface AllergyContextHit {
@@ -98,8 +99,14 @@ const ALLERGY_MARKERS = [
 const SYMPTOM_SINGLE = ["ينتفخ", "تنتفخ", "منتفخ", "تورم", "متورم", "حكه", "كتمه"].map(normalizeAr);
 
 /** A body part or a first-person possessive, which is what turns a swelling into a symptom. */
+// POSSESSIVE FORMS, BECAUSE THE BARE FRAGMENTS SIT INSIDE ORDINARY WORDS. «يد» is inside
+// «أكيد» — the commonest filler in Arabic chat — and «الجديد» and «يزيد»; «خد» is inside
+// «الخدمة»; «وش» is the Najdi word for "what". All three were bare, so «الخبز ينتفخ أكيد»
+// ("the bread rises, for sure") and «الجو كتمه والخدمة بطيئة» were allergy holds. That is the
+// exact family this file's header claims to have closed — and the commit that removed «وش»
+// from two body lists one file over left it in this one.
 const BODY_RE =
-  /(?:حلق|زور|حنجر|بلعوم|لسان|شفا|شفت|وجه|وش|خد|عين|عيون|جلد|بشر|جسم|ايد|يد|رجل|رقب|صدر|بطن|معد|انف|منخار)/;
+  /(?:حلق|زور|حنجر|بلعوم|لسان|شفا|شفت|وجه|وشي|وشه|وشها|خدي|خده|خدها|عين|عيون|جلد|بشر|جسم|ايدي|ايده|ايدها|يدي|يده|يدها|رجلي|رجله|رقب|صدر|بطن|معد|انف|منخار)/;
 
 /** …OR THE FRAME ARABIC USES TO REPORT ONE, WHICH IS THE OTHER HALF AND WAS MISSING.
  *
@@ -111,9 +118,33 @@ const BODY_RE =
  *
  *  A person naming a symptom says either WHERE it is or THAT THEY HAVE IT. A stuffy room and
  *  over-proved dough do neither. */
-/** The same frames, anchored to the END of what precedes the symptom. */
-const FRAME_TAIL_RE =
-  /(?:عندي|فيني|جاني|جالي|جاتني|جتني|صار\s*لي|طلع\s*لي|ظهر\s*لي|طالع\s*لي|احس\s*ب?|حاسس\s*ب?|حاس\s*ب?|اشكي\s*من|اعاني\s*من)\s*(?:ال)?$/;
+/** The frame Arabic reports a symptom in — WHO has it, in EITHER person.
+ *
+ *  FIRST PERSON ONLY WAS THE BUG, AND IT SILENCED THE CASE THIS GATE EXISTS FOR.
+ *
+ *  Arabic reports someone ELSE's symptom with «عنده»، «عندها»، «فيه»، «جاله»، «طلع له», and a
+ *  parent disclosing a child's reaction is what this gate's ancestor was built for. «ابني
+ *  عنده كتمة الحين» ("my son has shortness of breath, now") is an AIRWAY report; it fires on
+ *  the version running in production today and produced NOTHING here — no hold, no kitchen
+ *  note, no staff page. So did «بنتي فيها حكة»، «ولدي عنده تورم»، «زوجتي عندها تورم بعد
+ *  الوجبة». Past tense went with them: «حسيت بتورم».
+ *
+ *  A NEAR-ANCHOR, NOT AN ANCHOR. Requiring the frame to touch the symptom also cost «عندي
+ *  شوية تورم». Driven, that anchoring bought exactly ONE case — «أحس بالجو كتمه», where the
+ *  frame is real and what follows it is the ROOM. So the room is named and excluded, and one
+ *  short word is allowed through, which is what the language actually does. */
+
+
+const FRAME_TAIL_RE = new RegExp("(?:" + FRAME_WORDS + ")\\s*(?:(?:ال)?\\S{1,6}\\s+)?(?:ال)?$");
+
+/** A place named in the same breath means the frame is about the ROOM, not a person.
+ *
+ *  Widening the frames to the third person brought «فيه»/«فيها» with them, and «الجو فيه
+ *  كتمة» ("the air in here is close") is that shape exactly. A lookahead after the frame is
+ *  not enough either — «أحس بالجو كتمه» puts the place BETWEEN the frame and the symptom. The
+ *  whole window in front of the symptom is the right unit: if a place is named beside it,
+ *  nobody is reporting their own body. */
+const PLACE_RE = new RegExp(NOT_A_PERSON);
 
 const REPORT_FRAME_RE =
   /(?:عندي|فيني|جاني|جالي|جاتني|جتني|صار\s*لي|طلع\s*لي|ظهر\s*لي|طالع\s*لي|احس\s*ب?|حاسس\s*ب?|حاس\s*ب?|اشكي\s*من|اعاني\s*من)/;
@@ -147,6 +178,12 @@ const PHRASES = [
  *  That makes this a safety NET rather than a gate: `detectAllergenAvoidance` already
  *  catches «ما أتحمل اللبن» through its own intent list, and this catches the phrasings that
  *  list happens to miss. Which is what this whole file is — the exact half of a retired net. */
+/** What these phrases are ordinarily used to complain about. «ما أتحمل الانتظار» is an angry
+ *  customer; «ما أتحمل الكنافة» is a disclosure. The difference is the object, and only a
+ *  short, closed list of non-foods separates them. */
+const NOT_A_FOOD_RE =
+  /(?:انتظار|تاخير|زحم|حر\b|حراره|برد|وضع|كلام|خدم|صوت|ضجه|ريح|رايح|الم|وجع|شغل|دوام|طريق|سواق|ناس|احد|بعد|كثر|هالجو|الجو|الاكل\s*الحار|الحار)/;
+
 const AVOIDANCE_PHRASES = [
   "ما اقدر اكل", "مو قادر اكل", "مب قادر اكل", "ما يصير اكل", "ما ينفع اكل",
   "معادر اكل", // elided Najdi «مو قادر» → «معادر»
@@ -155,6 +192,10 @@ const AVOIDANCE_PHRASES = [
 
 /** English / Franco allergy context, tested case-insensitively on the RAW text. */
 const ENGLISH_ALLERGY_RE = /\b(allerg(y|ic)|anaphylax|epipen|lactose\s*intoleran|gluten\s*free)\b/i;
+
+/** A conditional followed by an eating verb: «لو أكلت»، «إذا شربت»، «كل ما آكل». */
+const IF_EATING_RE =
+  /(?:لو|اذا|ان|لما|مت[يى]\s+ما|كل\s+ما|في\s+حال)\s+(?:ما\s+)?\S{0,2}(?:اكل|كل|شرب|تناول|ذقت|ذاق)\S*\s*/;
 
 /** Harm verbs — «تأذيني» / «يضرني» / «يؤذيني». Only a hit ALONGSIDE an allergen noun.
  *
@@ -258,8 +299,8 @@ function symptomOnABody(n: string, term: string): boolean {
     // air is close") reads as a report: the frame is real, but what follows it is the ROOM.
     // A person naming their own symptom puts the two words together.
     const before = n.slice(Math.max(0, i - 24), i);
-    const frame = FRAME_TAIL_RE.exec(before);
-    if (frame) return true;
+    if (PLACE_RE.test(before)) continue;
+    if (FRAME_TAIL_RE.test(before)) return true;
   }
   return false;
 }
@@ -313,7 +354,12 @@ export function detectAllergyContext(text: string): AllergyContextHit {
     if (p && hasPhrase(n, p)) return { fired: true, term: p, reason: "allergy_context" };
   }
 
-  // …and the "can't eat / can't tolerate" family only when a FOOD follows it closely.
+  // …and the "can't eat / can't tolerate" family, which needs to know WHAT.
+  //
+  // REQUIRING A LEXICON ALLERGEN WAS TOO STRICT. «ما أتحمل الكنافة» and «ما أقدر آكل هذا
+  // الصنف» name a DISH, not one of the twenty canonical allergens — and «الدكتور منع عني
+  // الكنافة», the headline case this file restored, is a dish too. So a named object counts,
+  // and the stop list carries what these phrases are ordinarily used to complain about.
   for (const p of AVOIDANCE_PHRASES) {
     if (!p) continue;
     const at = phraseIndex(n, p);
@@ -321,6 +367,11 @@ export function detectAllergyContext(text: string): AllergyContextHit {
     const after = n.slice(at + p.length, at + p.length + 28);
     const noun = ALLERGEN_NOUNS.find((x) => x && hasNoun(after, x));
     if (noun) return { fired: true, term: noun, reason: "allergy_context" };
+    // No canonical allergen — is the object a NAMED thing that is not a complaint?
+    const object = after.trim().split(/\s+/).slice(0, 2).join(" ");
+    if (!object || NOT_A_FOOD_RE.test(object)) continue;
+    const named = /^(?:هذا|هذي|هاذا|هاذي|ذا|ذي)?\s*(?:ال)\S{2,}/.test(object);
+    if (named) return { fired: true, term: object.replace(/^(?:هذا|هذي|هاذا|هاذي|ذا|ذي)\s*/, ""), reason: "allergy_context" };
   }
 
   for (const m of ALLERGY_MARKERS) {
@@ -328,6 +379,27 @@ export function detectAllergyContext(text: string): AllergyContextHit {
   }
   for (const s of SYMPTOM_SINGLE) {
     if (hasToken(n, s) && symptomOnABody(n, s)) return { fired: true, term: s, reason: "symptom" };
+  }
+
+  // A CONDITIONAL ON EATING, WITH AN ALLERGEN — an allergy statement that is not an emergency.
+  //
+  // «لو أكلت مكسرات حلقي يقفل» ("if I eat nuts my throat closes") is the most ordinary way
+  // anyone states an allergy. The emergency detector correctly refuses it — a conditional is
+  // not a report of someone struggling to breathe right now — and once that veto was restored
+  // NOTHING else heard it: the avoidance gate's intent list has no conditional, and the
+  // symptom families live in the emergency table. So the sentence went from an ambulance
+  // instruction straight past "heard" to silence.
+  //
+  // The same shape as `TIRED_IF_EATING_RE` in the vocabulary gate, minus the tiredness: a
+  // conditional, an eating verb, and a real allergen close behind. Without the allergen it is
+  // «لو أكلت برجر» and nothing fires.
+  {
+    const m = IF_EATING_RE.exec(n);
+    if (m) {
+      const after = n.slice(m.index + m[0].length, m.index + m[0].length + 32);
+      const noun = ALLERGEN_NOUNS.find((x) => x && hasNoun(after, x));
+      if (noun) return { fired: true, term: noun, reason: "allergy_context" };
+    }
   }
 
   // A harm verb ALONGSIDE an allergen noun. Either alone is ordinary language — «يضر» is a

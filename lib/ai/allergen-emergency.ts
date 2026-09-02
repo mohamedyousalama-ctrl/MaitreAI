@@ -36,7 +36,7 @@ const PAST_RE =
   /قبل (?:سنه|سنوات|كام سنه|فتره|مده|كذا سنه|شهر|شهور|اسبوع|يومين)|من زمان|زمان|السنه اللي فاتت|قبل كده|قبل فتره|سابقا/;
 // Hypothetical framing ("if I eat…") — a what-if, not a now.
 const HYPOTHETICAL_RE =
-  /(?:لو|اذا|إن|لما|في حال|يعني لو) (?:اكلت|كلت|اكل|تناولت|صار|جاني|حصل|اتحسست)/;
+  /(?:لو|اذا|ان|لما|في حال|يعني لو) (?:اكلت|كلت|اكل|تناولت|صار|جاني|حصل|اتحسست)/;
 // A pure question about whether a reaction COULD happen (not a report that it is).
 const HYPOTHETICAL_Q_RE = /(?:ممكن|يمكن|هل|ينفع|يصير|احتمال) .*تحسس.*\؟|.*تحسس.*(?:ممكن|احتمال).*\؟/;
 
@@ -186,15 +186,37 @@ export function detectAllergenEmergency(text: string): EmergencyHit {
   // an English "anaphylaxis"/"can't breathe" is always treated as active (fail-safe).
   if (EMERGENCY_EN_RE.test(raw)) return { fired: true, label: "emergency (EN)" };
 
-  // Arabic: an explicit PAST or HYPOTHETICAL frame disqualifies the SOFT families only —
-  // it is a history or a what-if. It has never been able to tell us whether someone is
-  // breathing right now, so it no longer gets a vote on the families that answer that.
-  const excluded = PAST_RE.test(n) || HYPOTHETICAL_RE.test(n) || HYPOTHETICAL_Q_RE.test(n);
+  // A CONDITIONAL IS NEVER A REPORT, AND LETTING THE HARD FAMILIES IGNORE THAT WAS A
+  // REGRESSION AGAINST THE VERSION IN PRODUCTION.
+  //
+  // The hard/soft split was written so a past-tense word could not silence someone who cannot
+  // breathe. It went further than that and let the HYPOTHETICAL veto go too — so «لو أكلت
+  // مكسرات حلقي يقفل» ("if I eat nuts my throat closes"), the single most ordinary way anyone
+  // states an allergy, became an ACTIVE ANAPHYLAXIS: «🚨 اتصل بالإسعاف 997 الحين» to a calm
+  // customer, plus an alert row, an email and a WhatsApp to a real human phone. So did «إذا
+  // أكلت بيض وجهي يتورم» and «ممكن لو أكلت لوز ما أقدر أتنفس؟».
+  //
+  // No reading of «لو أكلت» is "this person is not breathing". The hypothetical veto covers
+  // every family again, and the gate still HEARS the disclosure — it is an allergy statement,
+  // just not an emergency.
+  if (HYPOTHETICAL_RE.test(n) || HYPOTHETICAL_Q_RE.test(n)) return NO_HIT;
 
-  // HARD families first, BEFORE the exclusions are consulted at all.
+  // THE PAST VETO IS CLAUSE-SCOPED, which is what the split was actually reaching for.
+  //
+  // «زمان، مو قادر أتنفس» is a past word and a present airway in two clauses, and the whole
+  // point was to stop the first from eating the second. Scoping it to its own clause does
+  // that without handing the hard families a blanket exemption — the same technique this
+  // branch invented for the English denial one file over.
+  const clauses = n.split(/[.،,؛!؟\n]|\s+بس\s+|\s+لكن\s+/).filter((c) => c.trim() !== "");
   for (const [re, label, kind] of EMERGENCY_PATTERNS) {
-    if (kind === "hard" && re.test(n)) return { fired: true, label };
+    if (kind !== "hard") continue;
+    for (const c of clauses) {
+      if (re.test(c) && !PAST_RE.test(c)) return { fired: true, label };
+    }
   }
+
+  const excluded = PAST_RE.test(n);
+
   if (excluded) return NO_HIT;
   for (const [re, label, kind] of EMERGENCY_PATTERNS) {
     if (kind === "soft" && re.test(n)) return { fired: true, label };

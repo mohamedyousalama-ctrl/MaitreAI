@@ -775,5 +775,88 @@ console.log("\n── THE INFLECTIONS THAT ARE THE DISCLOSURE ──────
   }
 }
 
+
+console.log("\n── A CONDITIONAL IS NOT AN AMBULANCE ───────────────────────────");
+{
+  // THE HARD/SOFT SPLIT LET THE HYPOTHETICAL VETO GO TOO, AND THAT WAS A REGRESSION.
+  //
+  // The split was written so a past-tense word could not silence someone who cannot breathe.
+  // It also stopped `HYPOTHETICAL_RE` vetoing the hard families — so «لو أكلت مكسرات حلقي
+  // يقفل» ("if I eat nuts my throat closes"), the most ordinary way anyone states an allergy,
+  // became an ACTIVE ANAPHYLAXIS on the live path: «🚨 اتصل بالإسعاف 997 الحين» to a calm
+  // customer, plus an alert row, an email, and a WhatsApp to a real human phone.
+  for (const t of [
+    "لو أكلت مكسرات حلقي يقفل", "إذا أكلت بيض وجهي يتورم", "ممكن لو أكلت لوز ما أقدر أتنفس؟",
+    "إن أكلت بندق حلقي يقفل", "زمان كان وجهي يتورم من البيض",
+    "سابقاً وجهي تورم من الكاجو، بس الحين تمام",
+  ]) {
+    ok(`«${t}» is not an emergency`, !detectAllergenEmergency(t).fired);
+  }
+  // …AND IT IS STILL A DISCLOSURE. Restoring the veto took the sentence past "heard" into
+  // silence: the avoidance gate's intent list has no conditional and the throat families live
+  // in the emergency table, so nothing else caught it.
+  for (const t of ["لو أكلت مكسرات حلقي يقفل", "إذا أكلت بيض وجهي يتورم", "إن أكلت بندق حلقي يقفل"]) {
+    ok(`«${t}» is heard as an allergy${anyDetectorFires(t) ? "" : " — NOTHING FIRED"}`, anyDetectorFires(t));
+  }
+  ok("…and a conditional with no allergen is nothing", !anyDetectorFires("لو أكلت برجر أشبع"));
+
+  // THE PAST VETO IS CLAUSE-SCOPED, so a past word in one clause cannot eat an airway in the
+  // next — which is what the split was actually reaching for.
+  for (const t of [
+    "زمان، مو قادر أتنفس", "قبل كده صار لي كذا، الحين مو قادر أتنفس",
+    "سابقا ما صار، بس الحين حلقي يقفل", "ما أقدر أتنفس", "حلقي يقفل الحين",
+  ]) {
+    ok(`«${t}» is still an emergency`, detectAllergenEmergency(t).fired);
+  }
+}
+
+console.log("\n── A PARENT REPORTING A CHILD ──────────────────────────────────");
+{
+  // EVERY FRAME LIST WRITTEN FOR THE LAST ROUND WAS FIRST-PERSON SINGULAR ONLY.
+  //
+  // Arabic reports someone else's symptom with «عنده»، «عندها»، «فيه»، «جاله»، «طلع له», and
+  // a parent disclosing a child's reaction is the case this gate's ancestor was built for.
+  // «ابني عنده كتمة الحين» is an AIRWAY report; it fires in production today and produced
+  // nothing here — no hold, no kitchen note, no staff page.
+  for (const t of [
+    "ابني عنده طفح بعد ما أكل الكيك", "ابني عنده كتمة الحين", "بنتي عندها كتمة من شوي",
+    "ولدي عنده تورم", "ابني عنده احمرار من الأكل", "زوجتي عندها تورم بعد الوجبة",
+    "الطفل عنده حكة من الأكل", "ابني فيه طفح", "بنتي فيها حكة", "ابني جاله طفح",
+    "ابني طلع له طفح",
+    // past tense, and one short word of slack — both lost to a hard anchor
+    "حسيت بتورم", "حسيت بكتمة", "عندي شوية تورم",
+  ]) {
+    ok(`«${t}» is heard${anyDetectorFires(t) ? "" : " — NOTHING FIRED"}`, anyDetectorFires(t));
+  }
+  // …and a PLACE named beside the symptom is still the room, not a person. Widening to the
+  // third person brought «فيه»/«فيها» along, and «الجو فيه كتمة» is that shape exactly.
+  for (const t of [
+    "الجو فيه كتمة", "احس بالجو كتمه", "عندنا كتمه في المحل",
+    "الخبز ينتفخ عندنا في الفرن", "العجين تورم عندنا",
+  ]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+}
+
+console.log("\n── «أكيد» IS NOT A HAND ────────────────────────────────────────");
+{
+  // `BODY_RE` carried the bare fragments «يد», «خد» and «وش». Arabic has no word boundary, so
+  // «يد» sits inside «أكيد» — the commonest filler in the language — and «الجديد» and «يزيد»;
+  // «خد» sits inside «الخدمة»; «وش» is the Najdi word for "what". The commit that removed «وش»
+  // from two body lists one file over left it in this one, which is the file the corpus was
+  // written for.
+  for (const t of [
+    "الخبز ينتفخ أكيد", "أكيد الخبز ينتفخ في الفرن", "العجين يزيد وينتفخ في الفرن",
+    "الخبز الجديد ينتفخ زين", "الجو كتمه والخدمة بطيئة", "الخبز ينتفخ وش السبب",
+    "العجين تورم وش الحل", "عيد مبارك، الخبز ينتفخ زين", "الجو كتمه وش رايك نجلس برا",
+  ]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+  // …while a real body part still reports.
+  for (const t of ["وشي متورم", "وشي ينتفخ", "ايدي فيها احمرار", "خدي متورم"]) {
+    ok(`«${t}» is heard`, anyDetectorFires(t));
+  }
+}
+
 console.log(`\n${fails.length ? "FAIL" : "PASS"} allergy-false-positives: ${pass}/${pass + fails.length} passed`);
 if (fails.length) { for (const f of fails) console.log(`   ✗ ${f}`); process.exit(1); }
