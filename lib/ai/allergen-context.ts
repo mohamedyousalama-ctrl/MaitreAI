@@ -34,6 +34,7 @@
 // ============================================================================
 
 import { normalizeAr } from "./allergen-gate";
+import { ENGLISH_DENIAL_RE } from "./allergen-gate-symptoms";
 
 export interface AllergyContextHit {
   fired: boolean;
@@ -243,7 +244,17 @@ export function detectAllergyContext(text: string): AllergyContextHit {
   if (!n) return NO_HIT;
 
   // English first: it is tested on the RAW text, so normalization cannot eat it.
-  if (ENGLISH_ALLERGY_RE.test(raw)) {
+  //
+  // AND A DENIAL IS NOT A DISCLOSURE — the guard for that was added to the SYMPTOM detector
+  // and stopped there, which made it a no-op. Every live reader composes all four detectors
+  // (safety-bridge.ts, allergy-simple.ts, customer-turn.ts, respond-and-send.ts ×4, both demo
+  // routes), so «no nut allergy here» simply fired HERE instead: the customer who answered
+  // "no" to the allergy question got «خذت بالي إنك ذكرت «allergy»… سجّلت الملاحظة للمطبخ
+  // ونبّهت الفريق» — a kitchen note and a staff alert for an allergy they had just denied.
+  // `isExplicitAllergyDenial` and `detectAllergyRetraction` are Arabic-only and never saw it.
+  //
+  // The regex is shared rather than copied, so the two detectors cannot drift apart again.
+  if (ENGLISH_ALLERGY_RE.test(raw) && !ENGLISH_DENIAL_RE.test(raw)) {
     return { fired: true, term: (raw.match(ENGLISH_ALLERGY_RE) ?? [null])[0], reason: "allergy_context" };
   }
 

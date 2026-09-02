@@ -49,7 +49,7 @@ export interface AllergyMentionHit {
 // «بعاني من القولون» and «أنا مصاب بالسكري», two plain statements of a condition, matched
 // nothing at all. Found while narrowing this rule; it predates that work.
 const DISEASE_INPUT_RE =
-  /(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:سكري|سكر|ضغط|كوليسترول|كليتي|كلاوي|كلى|قلبي|قلب|حامل|حمل|سيلياك|نقرس|قولون|معدتي)(?![ء-ي])/;
+  /(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:سكري|سكر|ضغط|كوليسترول|كليتي|كلاوي|كلي|كلى|قلبي|قلب|حامل|حمل|سيلياك|نقرس|قولون|معدتي)(?![ء-ي])/;
 const DISEASE_CONTEXT_RE = /(?:عندي|مريض|مريضه|مصاب|بعاني|اعاني|حالتي|عانيت|مالي)/;
 
 /** THE TWO HAVE TO BE THE SAME STATEMENT, NOT THE SAME MESSAGE.
@@ -73,7 +73,7 @@ const DISEASE_ADJACENT_RE = new RegExp(
     // Nothing between them but at most one short word, and never a "without" — «بدون سكر» is
     // an instruction about the drink, not a diagnosis.
     "(?:\\s+(?!بدون|بلا|من\\s+غير|ناقص|زياده|زياده|شويه|كثير|قليل)\\S{1,6})?\\s+" +
-    "(?:و|ف|ب|ك|ل)?(?:ال)?(?:سكري|سكر|ضغط|كوليسترول|كليتي|كلاوي|كلى|قلبي|قلب|حامل|حمل|سيلياك|نقرس|قولون|معدتي)(?![ء-ي])"
+    "(?:و|ف|ب|ك|ل)?(?:ال)?(?:سكري|سكر|ضغط|كوليسترول|كليتي|كلاوي|كلي|كلى|قلبي|قلب|حامل|حمل|سيلياك|نقرس|قولون|معدتي)(?![ء-ي])"
 );
 
 /** Pregnancy states itself without any of the context words above — «أنا حامل» is the whole

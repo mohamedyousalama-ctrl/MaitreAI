@@ -174,10 +174,32 @@ const AVOIDANCE_INTENT_RE = new RegExp(
 
 /** Shape 1 — tiredness conditional on eating or drinking. All five Arabic conditionals. */
 const TIRED_IF_EATING_RE =
-  /تعب\S*\s+(?:لو|اذا|ان|لما|في\s+حال|يعني\s+لو)\s+(?:ما\s+)?\S{0,2}(?:اكل|كل|شرب|تناول|ذقت|ذاق)/;
+  /تعب\S*(?:\s+\S{1,8})?\s+(?:لو|اذا|ان|لما|مت[يى]\s+ما|كل\s+ما|في\s+حال|يعني\s+لو)\s+(?:ما\s+)?\S{0,2}(?:اكل|كل|شرب|تناول|ذقت|ذاق)/;
 
-/** Shape 2 — «تعب … من <allergen>», with the allergen anchored to what follows «من». */
-const TIRED_FROM_RE = /تعب\S* ?من ?/;
+/** Shape 2 — «تعب … من <allergen>». THE ALLERGEN IS RARELY THE VERY NEXT WORD.
+ *
+ *  This required the allergen to start immediately after «من», and an audit drove eleven real
+ *  disclosures straight past it — every one of which fired before this branch touched the
+ *  gate:
+ *
+ *    «أتعب من أكل البندق»                  the eating verb sits in between
+ *    «أتعب من شرب الحليب»                  so does the drinking verb
+ *    «أتعب من هذا الحليب»                  so does a demonstrative
+ *    «أتعب من أي شي فيه لبن»               "anything with laban in it"
+ *    «أتعب من المنتجات اللي فيها حليب»      "products that have milk in them"
+ *    «أتعب كثير من اللبن»                   an adverb before «من»
+ *    «ابني يتعب من أكل المكسرات»            the parent frame this gate was written for
+ *
+ *  The corpus that was supposed to protect this only carried «صاحبي بيتعب من البندق» and
+ *  «بيتعب من الفول السوداني» — both of them allergen-adjacent-to-«من». It was written to the
+ *  implementation rather than to the language, so it agreed with the bug.
+ *
+ *  A CONNECTOR WHITELIST, NOT A WINDOW. A plain "allergen within N characters" would take
+ *  «تعبت من كثر ما أطلب لبن» ("tired of how often I order laban") back with it. What sits
+ *  between «من» and the food in a real disclosure is a small, closed set: an eating verb, a
+ *  demonstrative, or a "anything containing" frame. Anything else is a different sentence. */
+const TIRED_FROM_RE =
+  /تعب\S*(?:\s+\S{1,8})?\s*من\s*(?:(?:ما\s+)?(?:ال)?(?:اكل|اكلت|كل|شرب|شربت|تناول|تناولت|هذا|هذي|هاذي|هاذا|ذا)\s+|(?:اي|كل|ايه)\s+(?:شي|شيء|حاجه)\s+(?:فيه|فيها|في)\s+|(?:ال)?(?:منتجات|اصناف|اطباق|اكلات|وجبات)\s+(?:اللي|الي)\s+(?:فيه|فيها)\s+)?/;
 
 /** One allergen alternation, article-tolerant on EVERY word of a multi-word term. «الفول
  *  السوداني» glues «ال» onto both halves of the canonical «فول سوداني», and a version that

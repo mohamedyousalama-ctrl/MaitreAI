@@ -95,7 +95,7 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
   // بالإسعاف», which is the exact wording Khalid himself uses when he tells someone to call
   // one. Verb forms widened, ب and ال both optional; «اسعاف» is still required, and there is
   // no ordinary restaurant sentence that asks for an ambulance.
-  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغى|اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|نادو|نادوا|طلبو|طلبوا) ?ب? ?(?:ال)?اسعاف|(?:ودينا|ودونا|وديتوني|وديناه|وديناها|رحنا|راح|دخلنا|دخلوه) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)/, "طلب إسعاف / طوارئ", "soft"],
+  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغي|ابغى|اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|نادو|نادوا|طلبو|طلبوا) ?ب? ?(?:ال)?اسعاف|(?:ودينا|ودونا|وديتوني|وديناه|وديناها|رحنا|راح|دخلنا|دخلوه) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)/, "طلب إسعاف / طوارئ", "soft"],
 ];
 
 // English / mixed — tested on the RAW (case-insensitive) text.
@@ -149,8 +149,19 @@ const EMERGENCY_NUMBER_RE = /(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)
  *  restaurant order) and NOT «نجده» (which normalizes onto "we find it"). */
 const CALL_THEN_NUMBER_RE =
   /(?:اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|اطلب|اطلبو|اطلبوا|نادو|نادوا)(?:\s+\S{1,12}){0,2}\s*(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])/;
-/** An emergency service named outright. */
-const EMERGENCY_SERVICE_RE = /اسعاف|طواري|انقاذ|هلال ?احمر/;
+/** An emergency service named NEXT TO the number — proximity required, and it was not.
+ *
+ *  This was "anywhere in the message", which is the exact hole closed one line above for
+ *  «اتصل» ("the context word could sit ANYWHERE"), left open in the very next rule. Saudi
+ *  addresses are given by landmark, so «قريب من الإسعاف، شقة 911» ("near the ambulance
+ *  station, flat 911") and «عندي طوارئ في الشغل، ألغي الطلب رقم 112» ("I have an emergency
+ *  at work, cancel order 112") both raised a full allergy emergency with a staff alert.
+ *
+ *  A service word that is genuinely about THIS number sits beside it. One that is describing
+ *  where you live, or why you are cancelling, does not. */
+const EMERGENCY_SERVICE_NEAR_NUMBER_RE =
+  // SERVICE THEN NUMBER: a clause of slack is fine — «الإسعاف 997 بسرعة», «اتصل بالإسعاف 997».
+  /(?:اسعاف|طواري|انقاذ|هلال ?احمر)[^.،,؛!؟\n]{0,16}(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])|(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)\s{0,2}(?:لل|ال|ل|بال)?(?:اسعاف|طواري|انقاذ)/;
 /** The message is the number, alone or with one word of urgency. */
 const BARE_EMERGENCY_NUMBER_RE =
   /^[\s]*(?:997|911|112|٩٩٧|٩١١|١١٢)[\s]*(?:الحين|حالا|الان|بسرعه|بسرعة|please|now|quick(?:ly)?)?[\s!؟?.،,]*$/i;
@@ -188,7 +199,7 @@ export function detectAllergenEmergency(text: string): EmergencyHit {
   if (
     EMERGENCY_NUMBER_RE.test(collapsed) &&
     (CALL_THEN_NUMBER_RE.test(collapsed) ||
-      EMERGENCY_SERVICE_RE.test(collapsed) ||
+      EMERGENCY_SERVICE_NEAR_NUMBER_RE.test(collapsed) ||
       BARE_EMERGENCY_NUMBER_RE.test(collapsed))
   ) {
     return { fired: true, label: "طلب إسعاف / طوارئ" };

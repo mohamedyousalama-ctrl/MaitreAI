@@ -408,11 +408,14 @@ console.log("\n── \"NO\" IS AN ANSWER, NOT A DISCLOSURE ──────�
   // The English arm matched `allerg…` and never looked left of it, so a customer ANSWERING
   // the allergy question was held as if they had said yes. The Arabic denial paths
   // (`isExplicitAllergyDenial`, `detectAllergyRetraction`) had no English counterpart at all.
+  // ASSERTED THROUGH THE UNION, NOT ONE DETECTOR — see the dedicated section further down.
+  // This block drove `detectAllergenSymptom` alone, which is how a guard that only existed in
+  // that one detector passed here for two commits while every live path still fired.
   for (const t of [
     "I am not allergic to anything", "no nut allergy here", "not allergic", "no allergies",
     "nut free please", "without any allergy",
   ]) {
-    ok(`«${t}» is a denial`, !detectAllergenSymptom(t).fired);
+    ok(`«${t}» is a denial, through the union`, !anyDetectorFires(t));
   }
   // …AND A DENIAL SILENCES THE VOCABULARY ONLY, NEVER A SYMPTOM. The first version of this
   // guard covered the whole English arm and shipped with a comment claiming this case still
@@ -537,6 +540,101 @@ console.log("\n── A PRICE IS NOT AN AMBULANCE NUMBER ───────�
     ok(`«${t}» is refused`, voiceHardZeroReason(t, CALL) === "emergency_number");
     ok(`  …and as a rule, not a failure`, demoVoiceSilenceKind("emergency_number" as never) === "rule");
   }
+}
+
+
+console.log("\n── A GUARD IN ONE DETECTOR IS NOT A GUARD ──────────────────────");
+{
+  // THE ENGLISH DENIAL GUARD WAS A NO-OP ON EVERY LIVE PATH.
+  //
+  // It was added to `detectAllergenSymptom`, and this file asserted it there — the only block
+  // in the corpus that drove ONE detector instead of the union. But `allergen-context.ts` has
+  // its own English regex with no denial check, and every live reader composes all four:
+  // safety-bridge.ts, allergy-simple.ts, customer-turn.ts, respond-and-send.ts ×4, and both
+  // demo routes. So «no nut allergy here» simply fired one detector over, and the customer
+  // who answered "no" to the allergy question got «خذت بالي إنك ذكرت «allergy»… سجّلت
+  // الملاحظة للمطبخ ونبّهت الفريق» — a kitchen note and a staff alert for an allergy they had
+  // just denied. The Arabic denial paths never saw it; they are Arabic-only.
+  for (const t of [
+    "no nut allergy here", "I am not allergic to anything", "not allergic", "no allergies",
+    "nut free please", "without any allergy", "no allergy",
+  ]) {
+    ok(`«${t}» is a denial, through the UNION${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`,
+      !anyDetectorFires(t));
+    ok(`  …and the safety bridge stays quiet`, !isSafetyClassInbound(t));
+  }
+  // …and a denial still never silences a SYMPTOM.
+  ok("«I'm not allergic to nuts but my throat is closing» is still heard",
+    anyDetectorFires("I'm not allergic to nuts but my throat is closing"));
+}
+
+console.log("\n── THE FOOD IS RARELY THE VERY NEXT WORD ───────────────────────");
+{
+  // `TIRED_FROM_RE` anchored the allergen immediately after «من», and eleven real disclosures
+  // went silent — every one of which fired before this branch touched the gate. The corpus
+  // that was supposed to protect it carried only «صاحبي بيتعب من البندق» and «بيتعب من الفول
+  // السوداني», both allergen-adjacent-to-«من»: written to the implementation, not to the
+  // language, so it agreed with the bug.
+  for (const t of [
+    "أتعب من أكل البندق", "أتعب من شرب الحليب", "أتعب من أكل الفول السوداني",
+    "بتعب من أكل البيض", "أتعب من هذا الحليب", "أتعب من أي شي فيه لبن",
+    "أتعب من المنتجات اللي فيها حليب", "أتعب كثير من اللبن", "أتعب دايم من الحليب",
+    "ابني يتعب من أكل المكسرات", "أتعب متى ما أكلت بيض", "أتعب كل ما أكلت بندق",
+  ]) {
+    ok(`«${t}» is heard${anyDetectorFires(t) ? "" : " — NOTHING FIRED"}`, anyDetectorFires(t));
+  }
+  // …and the complaint that shares its shape is still quiet. A plain "allergen within N
+  // characters" would have taken this back with it, which is why the connector list is a
+  // closed set rather than a window.
+  for (const t of ["تعبت من كثر ما أطلب لبن", "تعبت من الانتظار، أبغى لبن", "تعبنا من التأخير، الحليب بارد"]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+}
+
+console.log("\n── A LEADING «و» IS NOT A DIFFERENT WORD ───────────────────────");
+{
+  // Three skin rules tolerated «ال» but not the conjunction every sibling regex in the file
+  // tolerates, and one had a body list twice as long in one direction as the other.
+  for (const t of [
+    "عندي احمرار وحكة",      // «وحكة» — the conjunction
+    "بحكة في جسمي",           // «بحكة» — the preposition
+    "طلعت لي حبوب من الأكل",  // names the CAUSE instead of the place
+    "ايدي فيها احمرار",       // «ايد» was in the other half of the same regex
+    "رقبتي فيها احمرار",
+  ]) {
+    ok(`«${t}» is heard${anyDetectorFires(t) ? "" : " — NOTHING FIRED"}`, anyDetectorFires(t));
+  }
+  // …and the ordinary sentences stay quiet.
+  for (const t of ["الخبز ينتفخ في الفرن عندكم؟", "طفح الكيل من التأخير هذا", "احمرار في اللحم يعني مو مستوي", "عندكم خبز حبوب كاملة؟"]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+}
+
+console.log("\n── A LANDMARK IS NOT A CALL FOR HELP ───────────────────────────");
+{
+  // `EMERGENCY_SERVICE_RE` had no proximity requirement — the same hole closed for «اتصل» one
+  // rule above, left open in the next. Saudi addresses are given by landmark.
+  for (const t of [
+    "عندي طوارئ في الشغل، ألغي الطلب رقم 112",
+    "قريب من الإسعاف، شقة 911",
+    "شقة 112 قريبة من الطوارئ",
+    "العمارة 911 جنب الهلال الأحمر",
+  ]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+  for (const t of ["اتصل بالإسعاف 997", "الإسعاف 997 بسرعة", "997", "اتصلوا 997", "call 997"]) {
+    ok(`«${t}» is heard`, detectAllergenEmergency(t).fired);
+  }
+
+  // UNREACHABLE NORMALIZED SPELLINGS — three of them, the same class each time. These
+  // patterns run over normalizeAr output, which folds ى→ي, so a literal written with ى can
+  // never match. «ابغى إسعاف» is the most Najdi way to ask for an ambulance and fired
+  // nothing; «كلى» meant kidney disease was invisible; and «متى ما» was written into a NEW
+  // pattern in the same session that swept the other two.
+  ok("«أبغى إسعاف» is heard", detectAllergenEmergency("أبغى إسعاف").fired);
+  ok("«عندي كلى» is a condition", mentionsDiseaseCondition("عندي كلى"));
+  ok("«مريض كلى» is a condition", mentionsDiseaseCondition("مريض كلى"));
+  ok("«أتعب متى ما أكلت بيض» is heard", anyDetectorFires("أتعب متى ما أكلت بيض"));
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} allergy-false-positives: ${pass}/${pass + fails.length} passed`);

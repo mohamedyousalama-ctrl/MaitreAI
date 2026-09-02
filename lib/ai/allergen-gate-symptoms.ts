@@ -101,9 +101,9 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   // «اكزيما» and «هرش» stand alone — eczema and itching-scratching have no second reading.
   // «طفح» and «حكه» need either a body part or the frame Arabic uses to report a symptom
   // («عندي»، «طلع لي»، «جاني»، «صار لي»، «فيني»), which is how anyone actually says it.
-  { re: /(?<![ء-ي])(?:ال)?(?:هرش|اكزيما)(?![ء-ي])/, label: "طفح جلدي" },
-  { re: /(?:(?:عندي|فيني|جاني|جالي|بيجيني|بيجيلي|يجيني|يجيلي|بتجيني|تجيني|بييجي|طلع\s*لي|ظهر\s*لي|صار\s*لي|طالع\s*لي|احس\s*ب|حاسس\s*ب)[^.،,؛!؟\n]{0,20}(?<![ء-ي])(?:ال)?(?:طفح|حكه)(?![ء-ي])|(?<![ء-ي])(?:ال)?(?:طفح|حكه)(?![ء-ي])[^.،,؛!؟\n]{0,20}(?:جلد|بشرت|جسم|وجهي|وشي|ايدي|يدي|رقبت|صدري|بطني|رجلي))/, label: "طفح جلدي" },
-  { re: /(?<![ء-ي])(?:ال)?حبوب(?![ء-ي])(?=[^.،,؛!؟\n]{0,20}(?:جلد|وجهي|وشي|بشرتي|جسمي|ايدي|يدي|رقبتي|صدري))|(?:جلدي|وجهي|وشي|بشرتي|جسمي)[^.،,؛!؟\n]{0,12}(?<![ء-ي])حبوب(?![ء-ي])/, label: "طفح جلدي" },
+  { re: /(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:هرش|اكزيما)(?![ء-ي])/, label: "طفح جلدي" },
+  { re: /(?:(?:عندي|فيني|جاني|جالي|بيجيني|بيجيلي|يجيني|يجيلي|بتجيني|تجيني|بييجي|طلع\s*لي|ظهر\s*لي|صار\s*لي|طالع\s*لي|احس\s*ب|حاسس\s*ب)[^.،,؛!؟\n]{0,20}(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:طفح|حكه)(?![ء-ي])|(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:طفح|حكه)(?![ء-ي])[^.،,؛!؟\n]{0,20}(?:جلد|بشرت|جسم|وجهي|وشي|ايدي|يدي|رقبت|صدري|بطني|رجلي))/, label: "طفح جلدي" },
+  { re: /(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?حبوب(?![ء-ي])(?=[^.،,؛!؟\n]{0,24}(?:جلد|وجه|وش|بشر|جسم|ايد|يدي|رقب|صدر|رجل|من\s+(?:ال)?(?:اكل|طعام|وجب|صنف|طبق)))|(?:جلدي|وجهي|وشي|بشرتي|جسمي|ايدي|رقبتي)[^.،,؛!؟\n]{0,12}(?<![ء-ي])حبوب(?![ء-ي])|(?:طلع|طلعت|ظهر|ظهرت|جاني|جاتني)\s*(?:لي|لنا)?\s*(?:ال)?حبوب(?![ء-ي])/, label: "طفح جلدي" },
   { re: /جلد[ي]?\s+(?:بي?حمر|بيتاثر|بي?تبقع)/, label: "طفح جلدي" },
   // WORD BOUNDARIES, because «rash» is inside «Rasheed» and «hives» is inside «chives».
   // A customer giving their name, or ordering chives on a salad, was reported as a rash.
@@ -112,7 +112,7 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   // Skin reaction — ADDED: احمرار / ارتيكاريا / جسمي بيقلب / بقع حمرا
   // «احمرار» ON A PERSON. In a restaurant the ordinary reading is the food: «احمرار في
   // اللحم يعني مو مستوي» ("redness in the meat means it isn't cooked") was a skin reaction.
-  { re: /(?:احمرار[^.،,؛!؟\n]{0,12}(?:جلد|وجه|وش|بشر|جسم|ايد|يدي|رقب|عيون|عين|شفا|خد)|(?:جلدي|وجهي|بشرتي|جسمي)[^.،,؛!؟\n]{0,12}احمرار|ارتي?كاريا|جسم[يه]\s+بيقلب|بقع\s+حمرا)/, label: "طفح جلدي" },
+  { re: /(?:احمرار[^.،,؛!؟\n]{0,12}(?:جلد|وجه|وش|بشر|جسم|ايد|يدي|رقب|عيون|عين|شفا|خد)|(?:جلد|وجه|وش|بشر|جسم|ايد|يدي|رقب|عيون|عين|شفا|خد|صدر|رجل)\S*[^.،,؛!؟\n]{0,12}احمرار|ارتي?كاريا|جسم[يه]\s+بيقلب|بقع\s+حمرا)/, label: "طفح جلدي" },
 
   // Anaphylaxis / emergency — original
   { re: /(?:epipen|epinephrine|اوتوانجكتور)/, label: "حساسية شديدة" },
@@ -289,7 +289,7 @@ const DOCTOR_AVOIDANCE_RE = /(?:مانع|منع|حذر|قال\s+ما\s*(?:[يت�
  *  Narrow on purpose: only an explicit negation immediately before the allergy word, and
  *  only when nothing else in the message states a symptom. "I'm not allergic to nuts but my
  *  throat is closing" must still fire — and does, through the symptom families above. */
-const ENGLISH_DENIAL_RE =
+export const ENGLISH_DENIAL_RE =
   /\b(?:no|not|non|never|isn'?t|aren'?t|don'?t|doesn'?t|without|free\s+of)\b(?:\s+\w+){0,3}\s*\b(?:allerg(?:ic|y|ies|en|ens)|intoleran(?:t|ce)|sensitiv(?:e|ity))\b/i;
 
 /**
