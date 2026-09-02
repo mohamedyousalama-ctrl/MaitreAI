@@ -146,8 +146,17 @@ const FRAME_TAIL_RE = new RegExp("(?:" + FRAME_WORDS + ")\\s*(?:(?:ال)?\\S{1,6
  *  nobody is reporting their own body. */
 const PLACE_RE = new RegExp(NOT_A_PERSON);
 
-const REPORT_FRAME_RE =
-  /(?:عندي|فيني|جاني|جالي|جاتني|جتني|صار\s*لي|طلع\s*لي|ظهر\s*لي|طالع\s*لي|احس\s*ب?|حاسس\s*ب?|حاس\s*ب?|اشكي\s*من|اعاني\s*من)/;
+// A THIRD COPY OF THE REPORT FRAMES USED TO LIVE HERE, WIRED TO NOTHING.
+//
+// It was dead — declared once, referenced nowhere — but deleting it is not tidying. It was
+// a STALE copy, frozen at the first-person-only shape this file has already been burned by:
+// «عندي|فيني|جاني…» with no «ابني عنده…»، «بنتي فيها…». That exact omission is what once
+// made a parent reporting their child's airway completely inaudible, and a dead regex is
+// only ever dead until somebody wires it back in because it looked ready.
+//
+// The frames live in ONE place — FRAME_WORDS in lib/ai/symptom-frames.ts — which exists
+// precisely because two copies had already drifted apart. If this file ever needs a report
+// frame again, import that one; do not write a fourth.
 
 /** Multi-word phrases, matched by normalized substring containment. STT keeps these fairly
  *  intact when spoken, and a phrase is long enough that containment is not a guess. */

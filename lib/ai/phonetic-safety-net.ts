@@ -1,7 +1,19 @@
 // ============================================================================
 // ⚠️  NOT WIRED INTO ANY LIVE PATH. Founder ruling, this session.
 //
-// This module still works and its proofs still pass. Nothing calls it.
+// This module still works and its proofs still pass. NOTHING CALLS ITS DETECTOR.
+//
+// The line here used to read "Nothing calls it", which was false and is the kind of false
+// that matters: lib/ai/voice-aliases.ts:16 imports `levenshtein` and `stripAffix` from this
+// file on a live path, and four proofs import `detectPhoneticSafetyNet` /
+// `nearestSafetyTerm` to hold the retirement in place. A reader who believed the old
+// sentence would conclude the file is unreachable and safe to delete, and would take a live
+// voice path down with it.
+//
+// What is true: `detectPhoneticSafetyNet` and `nearestSafetyTerm` are wired into NO customer
+// path — scripts/proof-phonetic-net-unwired.test.ts fails the build if either is imported
+// anywhere but a proof. The two pure string helpers are ordinary shared utilities and are
+// deliberately still in use.
 //
 // WHY IT WAS UNWIRED. It fires on words that merely SOUND like an allergen, and the false
 // positives reached customers:
