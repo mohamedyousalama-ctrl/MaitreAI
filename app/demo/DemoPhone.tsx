@@ -1063,6 +1063,15 @@ function CallScreen({
       }
       // Heard them — the next silence gets its own second chance.
       reprompted.current = false;
+      // AND «ألو؟ سامعك…» COMES DOWN, BECAUSE IT WAS NEVER TRUE FOR MORE THAN ONE TURN.
+      //
+      // `note` had exactly two writers: stopWith(), whose messages are terminal and are
+      // SUPPOSED to persist, and the reprompt above, whose message is not. Nothing cleared
+      // it. So one pause anywhere in a call pinned «ألو؟ سامعك…» under every later reply
+      // for the rest of the call — a host still asking whether anyone is there, printed
+      // beneath a conversation that plainly answered him. The line is a prompt, and a
+      // prompt that outlives its answer reads as a bug in the ear, not a person.
+      setNote("");
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
       stopWith(
