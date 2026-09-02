@@ -163,8 +163,13 @@ export async function GET(req: Request): Promise<NextResponse> {
   const modelId = (url.searchParams.get("model") || "").trim();
   const lineId = (url.searchParams.get("line") || "greeting").trim();
 
-  // VALIDATED AGAINST WHAT THE ACCOUNT ACTUALLY HAS, not against a list I typed. An
-  // unknown id is refused before it can be spent on.
+  // REFUSED BEFORE IT CAN BE SPENT ON — against the discovered list when discovery worked,
+  // and against FALLBACK_CANDIDATES when it did not. This comment used to say "validated
+  // against what the account actually has, not against a list I typed", which stopped being
+  // true the moment the fallback was added: the production key lacks `models_read`, so the
+  // fallback IS the normal path, and the normal path validates against exactly a list I
+  // typed. `discovery` in the response says which one is in force; believe that field, not
+  // a sentence.
   if (!modelId || !arabic.some((m) => m.model_id === modelId)) {
     return NextResponse.json(
       { keyPresent: true, error: "unknown_model", discovery, allowed: arabic.map((m) => m.model_id) },
@@ -193,12 +198,37 @@ export async function GET(req: Request): Promise<NextResponse> {
         text: body,
         model_id: modelId,
         language_code: "ar",
+        // THE WHOLE PRODUCTION BODY, AND TWO FIELDS USED TO BE MISSING FROM IT.
+        //
+        // This block claimed "the SAME registry settings — only the model varies" while
+        // dropping `speed` AND the pronunciation dictionary. Both are sent on every real
+        // synthesis (lib/ai/tts/elevenlabs.ts:175-190), so the comparison the Founder
+        // listened to was not the configuration that ships, and the sentence asserting it
+        // was made the reason to trust the result.
+        //
+        // The dictionary is the serious half. It carries the ONE proven correction —
+        // «قهوة» → ɡahwa — and «قهوة» appears in the `menu` line below, so every sample
+        // approved so far mispronounced the exact word the dictionary exists to fix.
+        //
+        // Worse, dictionary support is MODEL-DEPENDENT, and this combination had never
+        // been tried anywhere. If a model rejects the locator the response is a 4xx →
+        // TTS_CONFIG_FAULT → isVoiceGovernanceRefusal() → the OpenAI fallback is
+        // deliberately suppressed → Khalid goes SILENT on WhatsApp voice notes and on the
+        // call, everywhere, not just on long replies. A bake-off that omits the field
+        // cannot see that failure; it can only ship it.
         voice_settings: {
           stability: KHALID_VOICE.settings.stability,
           similarity_boost: KHALID_VOICE.settings.similarity_boost,
           style: KHALID_VOICE.settings.style,
           use_speaker_boost: KHALID_VOICE.settings.use_speaker_boost,
+          speed: KHALID_VOICE.settings.speed,
         },
+        pronunciation_dictionary_locators: [
+          {
+            pronunciation_dictionary_id: KHALID_VOICE.pronunciationDictionary.id,
+            version_id: KHALID_VOICE.pronunciationDictionary.versionId,
+          },
+        ],
       }),
     }
   );
