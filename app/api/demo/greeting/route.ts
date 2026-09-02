@@ -36,8 +36,14 @@ import { mustWrite } from "@/lib/db/checked";
 import { DEMO_RESTAURANT_ID } from "@/lib/demo/config";
 import { demoCallGreeting } from "@/lib/demo/call-greeting";
 import { demoVoiceAudible } from "@/lib/demo/voice-out";
-import { isDemoHost, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS } from "@/lib/demo/config";
+import { isDemoHost, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS, DEMO_GLOBAL_DAILY_TURNS, ipBucket, globalBucket } from "@/lib/demo/config";
 import { rateLimit } from "@/lib/rate-limit";
+
+/** Same one-liner the three sibling demo routes each declare. */
+function clientIp(req: Request): string {
+  const xff = req.headers.get("x-forwarded-for") ?? "";
+  return xff.split(",")[0].trim() || req.headers.get("x-real-ip") || "unknown";
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,6 +72,36 @@ export async function GET(req: Request) {
     return NextResponse.json({ greeting: null }, { headers: { "Cache-Control": "no-store" } });
   }
 
+  // THE DURABLE GUARD, NOT JUST THE PROCESS-LOCAL LIMITER — and this route was outside it.
+  //
+  // `rateLimit` resets on a cold start and is per-instance. `/api/demo/turn` and
+  // `/api/demo/voice` both consume `kv_demo_try_consume`, which carries the per-IP cap, the
+  // GLOBAL daily ceiling, and — the part that matters most — the operator KILL SWITCH. With
+  // the demo switched off in the database, this route still minted and spoke a paid greeting
+  // before the first turn came back 503. Greetings also had no global ceiling at all.
+  //
+  // `/api/demo/speak` is safe without this because a ticket implies a guarded turn already
+  // paid for it. This route mints its own ticket, so that invariant did not hold here.
+  //
+  // FAILS CLOSED, like the two routes it now matches: no guard, no greeting. The call still
+  // opens — the client treats a null greeting as the old silent-line behaviour.
+  const admin = createAdminClient();
+  if (!admin) {
+    console.error("[demo/greeting] spend guard unavailable — no admin client");
+    return NextResponse.json({ greeting: null }, { headers: { "Cache-Control": "no-store" } });
+  }
+  const { data: guard, error: guardErr } = await admin
+    .rpc("kv_demo_try_consume", {
+      p_ip_bucket: ipBucket(clientIp(req)),
+      p_global_bucket: globalBucket(),
+      p_ip_limit: DEMO_PER_IP_TURNS,
+      p_global_limit: DEMO_GLOBAL_DAILY_TURNS,
+    })
+    .maybeSingle<{ allowed: boolean; reason: string | null }>();
+  if (guardErr || !guard || !guard.allowed) {
+    return NextResponse.json({ greeting: null }, { headers: { "Cache-Control": "no-store" } });
+  }
+
   // The session id is the caller's own, echoed from the query string and never trusted: it is
   // used ONLY to bind the ticket to the session that will redeem it, so a wrong value makes
   // the greeting unplayable and nothing else.
@@ -85,14 +121,8 @@ export async function GET(req: Request) {
   //
   // NOT FAIL-CLOSED, deliberately, and the same way /api/demo/voice treats its own TTS row:
   // a ledger outage must not take the greeting down. The failure is logged, loudly.
-  const admin = greeting?.spend ? createAdminClient() : null;
-  // `createAdminClient()` returns null when the service role is unconfigured. Skipping
-  // silently there is how an unledgered charge looks exactly like no charge — the comment
-  // above promises the failure is logged loudly, so it has to be.
-  if (greeting?.spend && !admin) {
-    console.error("[demo/greeting] TTS spend NOT accounted: no admin client (service role unconfigured)");
-  }
-  if (greeting?.spend && admin) {
+  // The admin client was built above for the spend guard; the ledger reuses it.
+  if (greeting?.spend) {
     try {
       await mustWrite<{ id: string }>(
         admin.from("agent_runs").insert({

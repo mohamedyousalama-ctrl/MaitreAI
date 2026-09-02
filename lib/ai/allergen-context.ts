@@ -34,7 +34,7 @@
 // ============================================================================
 
 import { normalizeAr } from "./allergen-gate";
-import { ENGLISH_DENIAL_RE } from "./allergen-gate-symptoms";
+import { englishAllergyFullyDenied } from "./allergen-gate-symptoms";
 
 export interface AllergyContextHit {
   fired: boolean;
@@ -100,6 +100,23 @@ const SYMPTOM_SINGLE = ["ينتفخ", "تنتفخ", "منتفخ", "تورم", "�
 /** A body part or a first-person possessive, which is what turns a swelling into a symptom. */
 const BODY_RE =
   /(?:حلق|زور|حنجر|بلعوم|لسان|شفا|شفت|وجه|وش|خد|عين|عيون|جلد|بشر|جسم|ايد|يد|رجل|رقب|صدر|بطن|معد|انف|منخار)/;
+
+/** …OR THE FRAME ARABIC USES TO REPORT ONE, WHICH IS THE OTHER HALF AND WAS MISSING.
+ *
+ *  Requiring a body part killed the false positives — bread rises, dough swells, a room is
+ *  stuffy — and took «عندي كتمة», «عندي احمرار» and «عندي تورم» with them. Those are the
+ *  plainest ways to say it, they fire on the version running in production today, and «عندي
+ *  تورم» is exactly the EXACT symptom mode this file exists to restore: it came back with a
+ *  body-part requirement bolted on, so it did not come back.
+ *
+ *  A person naming a symptom says either WHERE it is or THAT THEY HAVE IT. A stuffy room and
+ *  over-proved dough do neither. */
+/** The same frames, anchored to the END of what precedes the symptom. */
+const FRAME_TAIL_RE =
+  /(?:عندي|فيني|جاني|جالي|جاتني|جتني|صار\s*لي|طلع\s*لي|ظهر\s*لي|طالع\s*لي|احس\s*ب?|حاسس\s*ب?|حاس\s*ب?|اشكي\s*من|اعاني\s*من)\s*(?:ال)?$/;
+
+const REPORT_FRAME_RE =
+  /(?:عندي|فيني|جاني|جالي|جاتني|جتني|صار\s*لي|طلع\s*لي|ظهر\s*لي|طالع\s*لي|احس\s*ب?|حاسس\s*ب?|حاس\s*ب?|اشكي\s*من|اعاني\s*من)/;
 
 /** Multi-word phrases, matched by normalized substring containment. STT keeps these fairly
  *  intact when spoken, and a phrase is long enough that containment is not a guess. */
@@ -187,10 +204,13 @@ function hasToken(normalized: string, term: string): boolean {
     if (isLetter(after)) continue;
     const before = normalized[i - 1];
     if (!isLetter(before)) return true;
-    // …or the only thing in front of it is the article, optionally with one proclitic:
-    // «التورم» → تورم, «بالتورم» → تورم. Anything else is a different word.
+    // …or the only thing in front of it is glue: a proclitic, the article, or both.
+    // «التورم» → تورم, «بالتورم» → تورم, and «بتورم» → تورم, which the article-only version
+    // missed — so «أحس بتورم» ("I feel a swelling") reported nothing while «أحس بالتورم» did.
+    // The article was made optional after «الابيض» proved the rule has to stay tight: with
+    // «ا» in front of «بيض» the head is «الا», which is not glue, and that stays refused.
     const head = normalized.slice(0, i);
-    if (/(?:^|[^؀-ۿ])(?:[وفبكل])?ال$/.test(head)) return true;
+    if (/(?:^|[^؀-ۿ])(?:[وفبكل])?(?:ال)?$/.test(head) && head !== "") return true;
   }
   return false;
 }
@@ -198,10 +218,24 @@ function hasToken(normalized: string, term: string): boolean {
 /** Where a phrase starts as a WHOLE phrase, or -1. The boundary is only needed at the END:
  *  every phrase here begins at a word start already, and it is the tail that ran on —
  *  «ما اقدر اكل» into «ما اقدر اكلمك». */
+/** First-person and third-person-singular object suffixes a medical phrase really takes.
+ *
+ *  THE BOUNDARY WAS TOO STRICT IN ONE DIRECTION. Requiring a non-letter after the phrase
+ *  killed the false positives it was written for — «ممنوع عليكم تدخلوا», «الدكتور منعنا من
+ *  التدخين» — and it also killed the inflections that ARE the disclosure: «ممنوع عليا»
+ *  (Egyptian "forbidden to me"), «الدكتور منعني», «الدكتور منعها». All three fire on the
+ *  version running in production today.
+ *
+ *  «نا» and «كم» are deliberately NOT here: those are the plural forms the false positives
+ *  use, and «الدكتور منعنا من التدخين» is a rule about the restaurant, not a diagnosis. */
+const PHRASE_SUFFIX_RE = /^(?:ا|ه|ها|ني|ي)(?![؀-ۿ])/;
+
 function phraseIndex(normalized: string, phrase: string): number {
   const isLetter = (c: string | undefined) => !!c && /[؀-ۿ]/.test(c);
   for (let i = normalized.indexOf(phrase); i >= 0; i = normalized.indexOf(phrase, i + 1)) {
-    if (!isLetter(normalized[i + phrase.length])) return i;
+    const tail = normalized.slice(i + phrase.length);
+    if (!isLetter(tail[0])) return i;
+    if (PHRASE_SUFFIX_RE.test(tail)) return i;
   }
   return -1;
 }
@@ -209,11 +243,23 @@ function hasPhrase(normalized: string, phrase: string): boolean {
   return phraseIndex(normalized, phrase) >= 0;
 }
 
-/** Does a symptom word appear WITH a body part, close enough to be the same statement? */
+/** Does a symptom word appear WITH a body part, or with the frame someone reports one in,
+ *  close enough to be the same statement? */
 function symptomOnABody(n: string, term: string): boolean {
   for (let i = n.indexOf(term); i >= 0; i = n.indexOf(term, i + 1)) {
-    const window = n.slice(Math.max(0, i - 24), i + term.length + 24);
-    if (BODY_RE.test(window)) return true;
+    // A BODY PART CAN SIT EITHER SIDE — «تورم في وجهي» and «وجهي متورم» are both reports.
+    const around = n.slice(Math.max(0, i - 24), i + term.length + 24);
+    if (BODY_RE.test(around)) return true;
+    // A FRAME ONLY COUNTS IN FRONT, and a symmetric window undid the whole rule: «عندنا» is
+    // "we have", so «الخبز ينتفخ عندنا في الفرن» ("our bread rises in the oven") and «العجين
+    // تورم عندنا» read as reports when the frame was allowed to trail. Nobody says the
+    // symptom and then who has it.
+    // …AND IT HAS TO BE RIGHT IN FRONT OF IT. With any slack, «أحس بالجو كتمه» ("I feel the
+    // air is close") reads as a report: the frame is real, but what follows it is the ROOM.
+    // A person naming their own symptom puts the two words together.
+    const before = n.slice(Math.max(0, i - 24), i);
+    const frame = FRAME_TAIL_RE.exec(before);
+    if (frame) return true;
   }
   return false;
 }
@@ -254,7 +300,7 @@ export function detectAllergyContext(text: string): AllergyContextHit {
   // `isExplicitAllergyDenial` and `detectAllergyRetraction` are Arabic-only and never saw it.
   //
   // The regex is shared rather than copied, so the two detectors cannot drift apart again.
-  if (ENGLISH_ALLERGY_RE.test(raw) && !ENGLISH_DENIAL_RE.test(raw)) {
+  if (ENGLISH_ALLERGY_RE.test(raw) && !englishAllergyFullyDenied(raw, ENGLISH_ALLERGY_RE)) {
     return { fired: true, term: (raw.match(ENGLISH_ALLERGY_RE) ?? [null])[0], reason: "allergy_context" };
   }
 

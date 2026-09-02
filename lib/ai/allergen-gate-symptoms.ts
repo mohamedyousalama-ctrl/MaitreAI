@@ -67,7 +67,7 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   // Choking / airway emergency — ADDED: covers اختناق / بتخنق / بيخنق / بختنق / بخنق / نفسي بيقف / ربو etc.
   // بخنق = ب+خ+نق; بختنق = ب+خت+نق; بتخنق/بيخنق = بت/بي+خنق — covered by separate alternates.
   // Past-tense اتخنق/اتخنقت / present باتخنق/باتخنقت ADDED (reported after-the-fact incidents).
-  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|ب(?:خت|خ)نق(?:ني)?|(?:ب)?اتخنق[ت]?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة]\s+(?:في\s+)?(?:صدر|نفس|حلق|زور)|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|(?<![ء-ي])(?:ال)?ربو(?![ء-ي]))/, label: "ضيق في التنفس" },
+  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|ب(?:خت|خ)نق(?:ني)?|(?:ب)?اتخنق[ت]?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة](?:\s+(?:في\s+)?(?:صدر|نفس|حلق|زور))|(?:عندي|فيني|جاني|جالي|جاتني|جتني|صار\s*لي|طلع\s*لي|احس\s*ب)\s*كتم[هة]|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|(?<![ء-ي])(?:ال)?ربو(?![ء-ي]))/, label: "ضيق في التنفس" },
 
   // Swelling — original انتفاخ/تورم patterns
   { re: /(?:وجه|وشي?|عيني?|شفايف|شفه|لسان)(?:\s+\S+)?\s*(?:بي?نتفخ|بينتفخ|انتفخ|بتورم|اتورم|بيتورم)/, label: "تورم" },
@@ -102,8 +102,8 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   // «طفح» and «حكه» need either a body part or the frame Arabic uses to report a symptom
   // («عندي»، «طلع لي»، «جاني»، «صار لي»، «فيني»), which is how anyone actually says it.
   { re: /(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:هرش|اكزيما)(?![ء-ي])/, label: "طفح جلدي" },
-  { re: /(?:(?:عندي|فيني|جاني|جالي|بيجيني|بيجيلي|يجيني|يجيلي|بتجيني|تجيني|بييجي|طلع\s*لي|ظهر\s*لي|صار\s*لي|طالع\s*لي|احس\s*ب|حاسس\s*ب)[^.،,؛!؟\n]{0,20}(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:طفح|حكه)(?![ء-ي])|(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:طفح|حكه)(?![ء-ي])[^.،,؛!؟\n]{0,20}(?:جلد|بشرت|جسم|وجهي|وشي|ايدي|يدي|رقبت|صدري|بطني|رجلي))/, label: "طفح جلدي" },
-  { re: /(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?حبوب(?![ء-ي])(?=[^.،,؛!؟\n]{0,24}(?:جلد|وجه|وش|بشر|جسم|ايد|يدي|رقب|صدر|رجل|من\s+(?:ال)?(?:اكل|طعام|وجب|صنف|طبق)))|(?:جلدي|وجهي|وشي|بشرتي|جسمي|ايدي|رقبتي)[^.،,؛!؟\n]{0,12}(?<![ء-ي])حبوب(?![ء-ي])|(?:طلع|طلعت|ظهر|ظهرت|جاني|جاتني)\s*(?:لي|لنا)?\s*(?:ال)?حبوب(?![ء-ي])/, label: "طفح جلدي" },
+  { re: /(?:(?:عندي|فيني|جاني|جالي|بيجيني|بيجيلي|يجيني|يجيلي|بتجيني|تجيني|بييجي|طلع\s*لي|ظهر\s*لي|صار\s*لي|طالع\s*لي|احس\s*ب?|حاسس\s*ب?|حاس\s*ب?)[^.،,؛!؟\n]{0,20}(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:طفح|حكه)(?![ء-ي])|(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:طفح|حكه)(?![ء-ي])[^.،,؛!؟\n]{0,20}(?:جلد|بشرت|جسم|وجهي|وشي|ايدي|يدي|رقبت|صدري|بطني|رجلي)|(?:جلدي|بشرتي|جسمي|وجهي|وشي|ايدي|يدي|رقبتي|صدري|بطني|رجلي)[^.،,؛!؟\n]{0,12}(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:طفح|حكه)(?![ء-ي]))/, label: "طفح جلدي" },
+  { re: /(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?حبوب(?![ء-ي])(?=[^.،,؛!؟\n]{0,24}(?:جلد|وجه|وشي|وشه|بشر|جسم|ايد|يدي|رقب|صدر|رجل|من\s+(?:ال)?(?:اكل|طعام|وجب|صنف|طبق)))|(?:جلدي|وجهي|وشي|بشرتي|جسمي|ايدي|رقبتي)[^.،,؛!؟\n]{0,12}(?<![ء-ي])حبوب(?![ء-ي])|(?:طلع|طلعت|ظهر|ظهرت|جاني|جاتني)\s*(?:لي|لنا)?\s*(?:ال)?حبوب(?![ء-ي])/, label: "طفح جلدي" },
   { re: /جلد[ي]?\s+(?:بي?حمر|بيتاثر|بي?تبقع)/, label: "طفح جلدي" },
   // WORD BOUNDARIES, because «rash» is inside «Rasheed» and «hives» is inside «chives».
   // A customer giving their name, or ordering chives on a salad, was reported as a rash.
@@ -112,7 +112,7 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   // Skin reaction — ADDED: احمرار / ارتيكاريا / جسمي بيقلب / بقع حمرا
   // «احمرار» ON A PERSON. In a restaurant the ordinary reading is the food: «احمرار في
   // اللحم يعني مو مستوي» ("redness in the meat means it isn't cooked") was a skin reaction.
-  { re: /(?:احمرار[^.،,؛!؟\n]{0,12}(?:جلد|وجه|وش|بشر|جسم|ايد|يدي|رقب|عيون|عين|شفا|خد)|(?:جلد|وجه|وش|بشر|جسم|ايد|يدي|رقب|عيون|عين|شفا|خد|صدر|رجل)\S*[^.،,؛!؟\n]{0,12}احمرار|ارتي?كاريا|جسم[يه]\s+بيقلب|بقع\s+حمرا)/, label: "طفح جلدي" },
+  { re: /(?:(?:عندي|عندنا|فيني|جاني|جالي|جاتني|جتني|بيجيني|بيجيلي|يجيني|يجيلي|بتجيني|تجيني|صار\s*لي|طلع\s*لي|ظهر\s*لي|احس\s*ب?|حاسس\s*ب?)[^.،,؛!؟\n]{0,12}احمرار|احمرار[^.،,؛!؟\n]{0,12}(?:جلد|وجه|وشي|وشه|بشر|جسم|ايد|يدي|رقب|عيون|عين|شفا|خدي|خده)|(?:جلد|وجه|وشي|وشه|بشر|جسم|ايد|يدي|رقب|عيون|عين|شفا|خدي|خده|صدر|رجل)\S*[^.،,؛!؟\n]{0,12}احمرار|ارتي?كاريا|جسم[يه]\s+بيقلب|بقع\s+حمرا)/, label: "طفح جلدي" },
 
   // Anaphylaxis / emergency — original
   { re: /(?:epipen|epinephrine|اوتوانجكتور)/, label: "حساسية شديدة" },
@@ -132,7 +132,11 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
 
   // Other anaphylaxis signals — original
   { re: /(?:رد\s+فعل|reaction)\s+(?:تحسسي|allergic)/, label: "رد فعل تحسسي" },
-  { re: /بي?غمى\s+عليه|بفقد\s+وعيي?|بغيب\s+عن\s+الوعي/, label: "رد فعل تحسسي" },
+  // «غمى» COULD NEVER MATCH. This table runs over normalizeAr output, which folds ى→ي, and
+  // there was no «غمي» twin — so «بيغمى عليه» ("he is fainting"), a plain report of losing
+  // consciousness, matched nothing at all. Pre-existing, and the same class as the three
+  // unreachable spellings this branch already swept.
+  { re: /بي?غم[يى]\s+علي|بفقد\s+وعيي?|بغيب\s+عن\s+الوعي/, label: "رد فعل تحسسي" },
 
   // Vomiting linked to specific food — original (narrow)
   { re: /(?:قي[ءئ]|اتقيا?[تث]|بتقيا?[تث])\s+(?:من|بعد|لما)\s+(?:ما\s+)?(?:اكل|اكلت)/, label: "رد فعل تحسسي" },
@@ -289,6 +293,30 @@ const DOCTOR_AVOIDANCE_RE = /(?:مانع|منع|حذر|قال\s+ما\s*(?:[يت�
  *  Narrow on purpose: only an explicit negation immediately before the allergy word, and
  *  only when nothing else in the message states a symptom. "I'm not allergic to nuts but my
  *  throat is closing" must still fire — and does, through the symptom families above. */
+/** Is EVERY English allergy word in this message inside a negated clause?
+ *
+ *  THE DENIAL WAS TESTED AGAINST THE WHOLE MESSAGE, so a sentence that discloses one allergy
+ *  and denies another went silent in every detector:
+ *
+ *    "I have a nut allergy, not a milk allergy"
+ *    "she is allergic to sesame, no nut allergy"
+ *    "My daughter has a nut allergy. I have no allergies."
+ *
+ *  Every one of those fires on the version running in production today. The docstring below
+ *  says the negation must sit "immediately before the allergy word"; it permits three
+ *  intervening words and had no clause scope at all, and that gap between the comment and the
+ *  code was the bug.
+ *
+ *  So the message is split on clause boundaries — punctuation, "but", "though" — and the
+ *  vocabulary arm is suppressed only when NO clause makes a positive claim. One disclosure
+ *  anywhere is a disclosure. */
+export function englishAllergyFullyDenied(raw: string, wordRe: RegExp): boolean {
+  const clauses = String(raw ?? "").split(/[.;,!?—\n]|\bbut\b|\bthough\b|\bhowever\b/i);
+  const carrying = clauses.filter((c) => wordRe.test(c));
+  if (carrying.length === 0) return false;
+  return carrying.every((c) => ENGLISH_DENIAL_RE.test(c));
+}
+
 export const ENGLISH_DENIAL_RE =
   /\b(?:no|not|non|never|isn'?t|aren'?t|don'?t|doesn'?t|without|free\s+of)\b(?:\s+\w+){0,3}\s*\b(?:allerg(?:ic|y|ies|en|ens)|intoleran(?:t|ce)|sensitiv(?:e|ity))\b/i;
 
@@ -354,9 +382,13 @@ export function detectAllergenSymptom(text: string): SymptomHit {
   // SYMPTOMS FIRST, and they are not deniable. «I'm not allergic to nuts but my throat is
   // closing» denies the allergy and reports the airway; the airway is what matters.
   if (ENGLISH_SYMPTOM_RE.test(text)) return { fired: true, term: "حساسية" };
-  const englishDenial = ENGLISH_DENIAL_RE.test(text);
-  if (ENGLISH_NUT_ALLERGY_RE.test(text) && !englishDenial) return { fired: true, term: "حساسية المكسرات" };
-  if (ENGLISH_ALLERGY_WORDS_RE.test(text) && !englishDenial) return { fired: true, term: "حساسية" };
+  // PER CLAUSE, not per message — see englishAllergyFullyDenied.
+  if (ENGLISH_NUT_ALLERGY_RE.test(text) && !englishAllergyFullyDenied(text, ENGLISH_NUT_ALLERGY_RE)) {
+    return { fired: true, term: "حساسية المكسرات" };
+  }
+  if (ENGLISH_ALLERGY_WORDS_RE.test(text) && !englishAllergyFullyDenied(text, ENGLISH_ALLERGY_WORDS_RE)) {
+    return { fired: true, term: "حساسية" };
+  }
   if (FRANCO_AR_RE.test(text)) return { fired: true, term: "حساسية" };
 
   if (detectChildAllergenPattern(n)) return { fired: true, term: "حساسية الطفل" };

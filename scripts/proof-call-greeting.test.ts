@@ -274,7 +274,17 @@ console.log("\n── THE GREETING IS BOUGHT, SO IT GOES ON THE LEDGER ───
   ok("…and NOT fail-closed, so a ledger outage cannot take the greeting down",
     /catch \(e\) \{\s*console\.error\("\[demo\/greeting\] TTS spend accounting failed"/.test(routeSrc));
   ok("…and no row is written when there was no spend to record",
-    /greeting\?\.spend \? createAdminClient\(\) : null/.test(routeSrc));
+    /if \(greeting\?\.spend\) \{/.test(routeSrc));
+  // THE DURABLE GUARD, which this route was outside. `rateLimit` is process-local and resets
+  // on a cold start; `kv_demo_try_consume` carries the per-IP cap, the GLOBAL daily ceiling
+  // and the operator KILL SWITCH. With the demo switched off in the database this route still
+  // minted and spoke a paid greeting before the first turn came back 503.
+  ok("the greeting consumes the same durable spend guard as a turn",
+    /kv_demo_try_consume/.test(routeSrc));
+  ok("…with the global daily ceiling, not just the per-IP one",
+    /p_global_limit: DEMO_GLOBAL_DAILY_TURNS/.test(routeSrc));
+  ok("…and fails closed, so no guard means no greeting",
+    /if \(guardErr \|\| !guard \|\| !guard\.allowed\) \{[\s\S]{0,160}greeting: null/.test(routeSrc));
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-greeting: ${pass}/${pass + fails.length} passed`);

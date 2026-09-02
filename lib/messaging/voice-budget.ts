@@ -292,7 +292,17 @@ const EMERGENCY_NUMBER_RE = /(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)
  *  total is not one. So a price context exempts it — and only a price context: «اتصل 997»
  *  and «الرقم 911 للطوارئ» carry no currency and are still refused. */
 const PRICE_CONTEXT_RE =
-  /(?:المجموع|الاجمالي|الإجمالي|السعر|المبلغ|الحساب|صار|بـ?)\s*(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])|(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)\s*(?:ريال|ريالا|ر\.?\s?س|هلل[هة]|جنيه|درهم|دينار)/;
+  // «بـ?» WAS AN ALTERNATIVE HERE AND IT UNDID THE WHOLE GUARD. A bare «ب» with an optional
+  // tatweel, unanchored, means ANY word ending in «ب» before the number counted as a price
+  // context — so «اتصل بـ997 الحين» and «اطلب 997» («اطلب» ends in ب) were SPOKEN ALOUD on a
+  // call. That is the preposition form, which is how anyone actually writes it, and the
+  // docstring above claimed those exact sentences were still refused.
+  //
+  // The price nouns are enough: a total says «المجموع» or ends in a currency.
+  // BOTH SPELLINGS OF EVERY WORD. This regex runs on RAW reply text, not normalized — so
+  // «الإجمالي» with the hamza and «الاجمالي» without are different strings, and trimming the
+  // list to one of them put a normal bill back into silence on the other.
+  /(?:المجموع|الاجمالي|الإجمالي|السعر|المبلغ|الحساب|صار|صارت)\s*(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])|(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)\s*(?:ريال|ريالا|ر\.?\s?س|هلل[هة]|جنيه|درهم|دينار)/;
 
 export interface VoiceTurnSignals { safetyHold: boolean; isReceipt: boolean; stopReason: string }
 

@@ -160,9 +160,15 @@ const CALL_THEN_NUMBER_RE =
  *  A service word that is genuinely about THIS number sits beside it. One that is describing
  *  where you live, or why you are cancelling, does not. */
 const EMERGENCY_SERVICE_NEAR_NUMBER_RE =
-  // SERVICE THEN NUMBER: a clause of slack is fine — «الإسعاف 997 بسرعة», «اتصل بالإسعاف 997».
-  /(?:اسعاف|طواري|انقاذ|هلال ?احمر)[^.،,؛!؟\n]{0,16}(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])|(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)\s{0,2}(?:لل|ال|ل|بال)?(?:اسعاف|طواري|انقاذ)/;
-/** The message is the number, alone or with one word of urgency. */
+  // SERVICE THEN NUMBER — but never with an ADDRESS between them. «قريب من الاسعاف شقة 911»
+  // ("near the ambulance station, flat 911") only stayed quiet because the corpus wrote it
+  // with a comma; Arabic in a chat window rarely has one, and without it the sixteen-character
+  // window closed over «شقة». Saudi addresses are given by landmark, so the landmark and the
+  // flat number sit next to each other by nature. An address noun between the two is the tell.
+  /(?:اسعاف|طواري|انقاذ|هلال ?احمر)(?:(?!شقه|شقة|عماره|عمارة|شارع|مبني|مبنى|حي |طريق|دور |مكتب|فيلا|برج)[^.،,؛!؟\n]){0,16}(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])|(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)\s{0,2}(?:لل|ال|ل|بال)?(?:اسعاف|طواري|انقاذ)/;
+
+/** The message is the number, alone or with one word of urgency — what someone types when
+ *  they have no words left. */
 const BARE_EMERGENCY_NUMBER_RE =
   /^[\s]*(?:997|911|112|٩٩٧|٩١١|١١٢)[\s]*(?:الحين|حالا|الان|بسرعه|بسرعة|please|now|quick(?:ly)?)?[\s!؟?.،,]*$/i;
 

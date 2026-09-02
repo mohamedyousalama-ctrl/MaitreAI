@@ -665,5 +665,115 @@ console.log("\n── A LANDMARK IS NOT A CALL FOR HELP ────────
   ok("«أتعب متى ما أكلت بيض» is heard", anyDetectorFires("أتعب متى ما أكلت بيض"));
 }
 
+
+console.log("\n── A SYMPTOM IS REPORTED TWO WAYS, AND ONLY ONE SURVIVED ───────");
+{
+  // Requiring a BODY PART killed the false positives and took the other half of the language
+  // with it. Arabic reports a symptom by saying WHERE it is, or THAT YOU HAVE IT. Twenty
+  // plain reports went silent — every one fires on the version running in production today —
+  // and the corpus block that was supposed to pair the narrowing with its true positives was
+  // satisfied by a DIFFERENT DETECTOR in all ten cases, so the narrowed arm was unproven.
+  for (const t of [
+    "عندي تورم", "صار لي تورم", "جاني تورم", "فيني تورم", "طلع لي تورم",
+    "عندي تورم من الأكل", "أحس بتورم",
+    "عندي كتمة", "عندي كتمه", "جاني كتمة", "صار لي كتمة", "فيني كتمة",
+    "جلدي فيه طفح", "وجهي فيه طفح", "جسمي فيه طفح",
+    "عندي احمرار", "طلع لي احمرار", "جاني احمرار",
+    "احس بحكه", "احس بالحكه", "حاسس بطفح",
+    "بيغمى عليه",
+  ]) {
+    ok(`«${t}» is heard${anyDetectorFires(t) ? "" : " — NOTHING FIRED"}`, anyDetectorFires(t));
+  }
+
+  // …AND THE FRAME ONLY COUNTS IN FRONT, AND ADJACENT. A symmetric window let «عندنا» ("we
+  // have") trail the symptom, so a bakery describing its own oven read as a patient; a loose
+  // one let «أحس بالجو كتمه» through, where the frame is real but what follows it is the ROOM.
+  for (const t of [
+    "الخبز ينتفخ عندنا في الفرن", "العجين تورم عندنا", "عندنا كتمه في المحل",
+    "احس بالجو كتمه", "الجو فيه كتمة", "كتمه في المطعم، شغلوا المكيف",
+    "احمرار في اللحم يعني مو مستوي", "طفح الكيل من التأخير هذا",
+  ]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+  // WITHOUT PUNCTUATION, which is how Arabic is actually typed in a chat window. The corpus
+  // cases all carried a «؟» or a «،», and «وش» — the Najdi word for "what" — was sitting in
+  // two body lists as a shortening of «وشي» ("my face"), so removing the punctuation put them
+  // back. Three of the fixed families were punctuation-dependent.
+  for (const t of [
+    "عندكم خبز حبوب كاملة وش الأنواع",
+    "وش سبب الاحمرار في اللحم",
+    "قريب من الاسعاف شقة 911",
+  ]) {
+    ok(`«${t}» is quiet unpunctuated${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`,
+      !anyDetectorFires(t));
+  }
+}
+
+console.log("\n── «اطلب 997» IS NOT A PRICE ───────────────────────────────────");
+{
+  // `PRICE_CONTEXT_RE` carried «بـ?» — a bare, unanchored «ب» with an optional tatweel — so
+  // ANY word ending in ب before the number counted as a price context. «اتصل بـ997» is the
+  // preposition form, which is how anyone writes it, and «اطلب» ("dial") simply ends in ب.
+  // Both were SPOKEN ALOUD on a call, and «اطلب 997» was spoken on WhatsApp too. The guard's
+  // own docstring claimed those exact sentences were refused, and the two proofs that cover
+  // it used five strings, not one of which had a ب next to the digits.
+  const CALL = {
+    safetyHold: false, isReceipt: false,
+    spokenPricesAllowed: true, spokenSafetyAllowed: true, stopReason: "end_turn",
+  } as const;
+  for (const t of [
+    "اتصل بـ997 على طول", "اتصل ب 997", "اتصل ب997", "اطلب 997", "اطلب 997 الحين",
+    "لو حسيت بأي أعراض اطلب 997", "خلّي أحد يطلب 112", "خذ الرقم: اتصل بـ911",
+  ]) {
+    ok(`«${t}» is refused on a call`, voiceHardZeroReason(t, CALL) === "emergency_number");
+    ok(`  …and on WhatsApp too`, voiceHardZeroReason(t, { safetyHold: false, isReceipt: false }) !== null);
+  }
+  // …AND A REAL BILL IS STILL SPOKEN, IN BOTH SPELLINGS. This regex runs on RAW text, so
+  // «الإجمالي» with the hamza and «الاجمالي» without are different strings; trimming the list
+  // to one put a normal total back into silence on the other.
+  for (const t of ["الإجمالي 112 👍", "الاجمالي 112 👍", "المجموع 997 ريال", "الحساب 112 ريال"]) {
+    ok(`«${t}» is spoken`, voiceHardZeroReason(t, CALL) === null);
+  }
+}
+
+console.log("\n── ONE DISCLOSURE ANYWHERE IS A DISCLOSURE ─────────────────────");
+{
+  // The English denial was tested against the WHOLE message and vetoed the whole English arm,
+  // so a sentence that denies one allergy and states another went silent in every detector.
+  // `allergen-gate.ts` states this exact invariant for Arabic — a denial and an affirmation in
+  // one breath must still fire — and the English twin had no such guard.
+  for (const t of [
+    "not allergic to fish, allergic to shellfish",
+    "no allergy to milk, allergic to eggs",
+    "kid has no milk allergy, but a serious egg allergy",
+    "never had an allergy before, but today I am allergic",
+    "I have a nut allergy, not a milk allergy",
+    "she is allergic to sesame, no nut allergy",
+    "My daughter has a nut allergy. I have no allergies.",
+  ]) {
+    ok(`«${t}» is heard${anyDetectorFires(t) ? "" : " — NOTHING FIRED"}`, anyDetectorFires(t));
+  }
+  // …and a message that is ONLY a denial is still a denial.
+  for (const t of ["no nut allergy here", "I am not allergic to anything", "no allergies"]) {
+    ok(`«${t}» is quiet`, !anyDetectorFires(t));
+  }
+}
+
+console.log("\n── THE INFLECTIONS THAT ARE THE DISCLOSURE ─────────────────────");
+{
+  // The phrase boundary was written for «ممنوع عليكم» and «الدكتور منعنا» — plural forms that
+  // are rules about the restaurant. It also refused the singular inflections that ARE the
+  // disclosure, all of which fire in production today.
+  for (const t of [
+    "ممنوع عليا الجلوتين", "الدكتور منعني من هذا الصنف", "الدكتور منعها من الكنافة",
+    "ممنوع علي البيض", "الدكتور منع عني الكنافة",
+  ]) {
+    ok(`«${t}» is heard${anyDetectorFires(t) ? "" : " — NOTHING FIRED"}`, anyDetectorFires(t));
+  }
+  for (const t of ["ممنوع عليكم تدخلوا السيارة داخل الحي", "الدكتور منعنا من التدخين جوه المطعم"]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+}
+
 console.log(`\n${fails.length ? "FAIL" : "PASS"} allergy-false-positives: ${pass}/${pass + fails.length} passed`);
 if (fails.length) { for (const f of fails) console.log(`   ✗ ${f}`); process.exit(1); }

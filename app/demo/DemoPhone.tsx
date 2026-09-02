@@ -1044,7 +1044,17 @@ function CallScreen({
         // decision.) It is the difference between a dropped line and a conversation.
         if (!reprompted.current) {
           reprompted.current = true;
-          setNote("");
+          // AND HE SAYS SOMETHING, WHICH HE DID NOT BEFORE.
+          //
+          // The comment above is proud that a second listen "costs NOTHING — nothing is
+          // uploaded, nothing is synthesized and nothing is said". That is honest about money
+          // and wrong about phone calls. A visitor who hesitated got another eight seconds of
+          // silence and then a line of Arabic they were not looking at. A person says «ألو؟».
+          //
+          // It is the same argument this branch used to justify speaking the allergy notice —
+          // silence is not the safe answer either — applied to the one place it was not.
+          // Shown, not synthesized: no ticket, no spend, no extra round trip.
+          setNote("ألو؟ سامعك…");
           void runTurn();
           return;
         }
@@ -1486,6 +1496,21 @@ function CallScreen({
       } catch { can = false; }
       if (cancelled || !live.current) return;
       if (!can) { setPhase("unavailable"); return; }
+
+      // THE PERMISSION PROMPT STILL LANDS AFTER THE GREETING, AND THAT IS A KNOWN GAP.
+      //
+      // `getUserMedia` is first called inside `runTurn()`, so the sequence a visitor sees is:
+      // Khalid asks «وش أقدر أخدمك؟» → the browser drops a permission dialog over him → their
+      // answer goes into a microphone that is not open yet. Adding the greeting is what put
+      // those two next to each other.
+      //
+      // A warm-up call here was tried and REVERTED. It moves the dialog earlier, but it is a
+      // SECOND `getUserMedia` — and scripts/proof-demo-call-loop.test.ts asserts the recorder
+      // is opened once, "without re-prompting for the microphone", which is a guarantee about
+      // the visitor's experience that no test here can check against a real browser. Whether a
+      // second call re-prompts is browser-specific and needs a device to answer. Trading a
+      // proven guarantee for an unverified improvement is how the last three rounds went
+      // wrong, so this waits for a real iPhone rather than shipping on a guess.
 
       // EARS BEFORE MOUTH — and this order used to be the other way round.
       //
