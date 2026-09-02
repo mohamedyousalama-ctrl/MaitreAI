@@ -20,6 +20,16 @@
 // WhatsApp: the allergen gate is the thing this page exists to demonstrate, and speaking
 // that reply would show the feature off in the one modality the product forbids for it.
 //
+// ONE EXCEPTION, ADDED LATER, AND THIS PARAGRAPH DID NOT SAY SO FOR TWO COMMITS.
+// On a live CALL and only there, two things are now spoken: a PRICE, and the honest
+// allergy NOTICE («خذت بالي إنك ذكرت…»). The call screen displays the reply text while
+// the audio plays — the compensating control a WhatsApp voice note never had — and on a
+// call, silence is not the safe answer either: the Founder asked a price and heard
+// nothing, and a caller disclosing an allergy heard nothing. Receipts, payment links,
+// and every other safety branch — ACTIVE ANAPHYLAXIS included, «997» above all — are
+// unchanged and stay text-only on every surface. The scope is enforced by
+// CALL_SPEAKABLE_SAFETY_STOPS in lib/messaging/voice-budget.ts, not by this comment.
+//
 // WE CALL THE ADAPTER DIRECTLY, NOT `synthesizeVoiceReply`. That wrapper's whole feature is
 // the onyx fallback, and this module refuses a fallback anyway — so routing through it
 // meant PAYING OpenAI for an onyx synthesis on every ElevenLabs failure and discarding the

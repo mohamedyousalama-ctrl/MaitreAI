@@ -1609,10 +1609,22 @@ function CallScreen({
           exact substitution "a fabricated demonstration of the guarantee this page exists
           to sell", and `demoVoiceSilenceKind` was written to stop the server making it. The
           client was making it too, one layer later. */}
+      {/* AND THE SENTENCE ITSELF HAD GONE FALSE.
+          It read «الرسائل اللي فيها حساسية أو مبالغ أو إيصال نعرضها مكتوبة دايماً» — "messages
+          with an allergy or an amount or a receipt we ALWAYS show in writing". Two of those
+          three stopped being true on this very screen: a call now speaks the price (so the
+          caller is not asked «كم سعر المندي؟» and answered with an acknowledgement while the
+          figure sits visible beside them) and speaks the honest allergy notice (so a
+          disclosure is not met with dead air). Both were deliberate, both are right, and
+          nobody updated the sentence that promises otherwise — on the page whose whole
+          argument is that the deterministic layer owns the facts, in the copy asserting it.
+          A guarantee that is false about itself is worse than no guarantee.
+          What is STILL always written is the receipt and the payment link, and that is what
+          it now says. */}
       {textOnly && (
         <p style={S.callNote}>
           {textOnlyReason === "rule"
-            ? "الرسائل اللي فيها حساسية أو مبالغ أو إيصال نعرضها مكتوبة دايماً — عشان تقراها بنفسك."
+            ? "الإيصالات وروابط الدفع نعرضها مكتوبة دايماً — عشان تقراها بنفسك."
             : "الصوت تعثّر بهالرد — هذي مكتوبة، وكمّلنا."}
         </p>
       )}

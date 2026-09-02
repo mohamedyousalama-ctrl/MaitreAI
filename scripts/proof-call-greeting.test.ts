@@ -180,5 +180,36 @@ console.log("\n── THE SCREEN SPEAKS BEFORE IT LISTENS ───────�
     /const el = player\.current \?\? new Audio\(\)/.test(code.slice(at, firstTurn)));
 }
 
+console.log("\n── THE GREETING IS BOUGHT, SO IT GOES ON THE LEDGER ────────────");
+{
+  // NOTHING HERE MENTIONED SPEND, AND THE MONEY WAS REAL.
+  //
+  // `demoCallGreeting` computed `out.spend` and dropped it on the next line; the route had no
+  // database client at all, and the tenant-isolation report recorded that approvingly. But a
+  // ticket is redeemed at /api/demo/speak, which treats the FIRST fetch as already paid for
+  // by whoever minted it — true for a turn, because /api/demo/voice writes the row, and false
+  // here. Every greeting on the one endpoint anyone on the internet can hit was an
+  // ElevenLabs charge that lib/monitoring/sweep.ts could not see.
+  const greetSrc = readFileSync(resolve(process.cwd(), "lib/demo/call-greeting.ts"), "utf8");
+  ok("the mint returns its spend rather than dropping it",
+    /spend:\s*out\.spend/.test(greetSrc));
+  ok("…and the type says so, so a caller cannot ignore it silently",
+    /spend:\s*DemoVoiceOut\["spend"\]/.test(greetSrc));
+
+  const routeSrc = readFileSync(resolve(process.cwd(), "app/api/demo/greeting/route.ts"), "utf8");
+  ok("the route writes an agent_runs row for it",
+    /agent_runs/.test(routeSrc) && /trigger:\s*"voice_tts"/.test(routeSrc));
+  ok("…with the real cost, model and adapter from the mint",
+    /cost_usd:\s*greeting\.spend\.costUsd/.test(routeSrc) &&
+    /model:\s*greeting\.spend\.model/.test(routeSrc) &&
+    /adapter:\s*greeting\.spend\.adapter/.test(routeSrc));
+  ok("…checked, so a silent zero-row insert is not mistaken for a write",
+    /mustWrite<\{ id: string \}>/.test(routeSrc) && /exactRows:\s*1/.test(routeSrc));
+  ok("…and NOT fail-closed, so a ledger outage cannot take the greeting down",
+    /catch \(e\) \{\s*console\.error\("\[demo\/greeting\] TTS spend accounting failed"/.test(routeSrc));
+  ok("…and no row is written when there was no spend to record",
+    /greeting\?\.spend \? createAdminClient\(\) : null/.test(routeSrc));
+}
+
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-greeting: ${pass}/${pass + fails.length} passed`);
 if (fails.length) { for (const f of fails) console.log(`   ✗ ${f}`); process.exit(1); }

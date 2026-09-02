@@ -357,10 +357,19 @@ export async function POST(req: Request) {
         // It said: "a deterministic fill produces no synthesis: there is no model turn, so
         // there is no stopReason to classify, and this route speaks only what the
         // classifier has cleared." True about the classifier, wrong about the conclusion —
-        // this branch is reached ONLY when `safetyProbeFired(voiceSafetyProbe)` is false,
-        // and that probe ran the phonetic safety net with the real STT confidence of the
-        // real audio. That is a STRONGER clearance than a model turn's stopReason, not a
-        // missing one. The text is also OUR OWN template rather than model output, and
+        // this branch is reached ONLY when `safetyProbeFired(voiceSafetyProbe)` is false —
+        // and that probe runs all FOUR exact allergy detectors over the transcript.
+        //
+        // THAT SENTENCE USED TO CLAIM MORE THAN IT COULD. It read "the probe ran the
+        // phonetic safety net with the real STT confidence of the real audio … a STRONGER
+        // clearance than a model turn's stopReason". The phonetic net was retired by Founder
+        // ruling and no confidence is passed to anything any more, so the justification for
+        // speaking this reply was resting on a control that no longer exists. The clearance
+        // is still real and still worth stating — four exact detectors over the transcript,
+        // and this turn's stopReason is pinned to null so the shared gate cannot mistake it
+        // for a cleared model turn — but it is the detectors doing the work, not a matcher.
+        //
+        // The text is also OUR OWN template rather than model output, and
         // voiceHardZeroReason still scans it for a money figure, a link or a receipt.
         //
         // Staying silent here killed the call on the flagship flow. «كم قطعة تحب؟» is the
@@ -523,6 +532,16 @@ export async function POST(req: Request) {
     // A HARD-ZERO turn is text-only: a spoken safety message is a fresh mis-hearing
     // surface, and this demo exists to show the allergen gate — speaking that reply
     // would demonstrate the feature in the one modality the product forbids for it.
+    //
+    // ONE EXCEPTION, ADDED LATER, AND THIS PARAGRAPH DID NOT SAY SO FOR TWO COMMITS.
+    // On a live CALL and only there, two things are now spoken: a PRICE, and the honest
+    // allergy NOTICE («خذت بالي إنك ذكرت…»). The call screen displays the reply text while
+    // the audio plays — the compensating control a WhatsApp voice note never had — and on a
+    // call, silence is not the safe answer either: the Founder asked a price and heard
+    // nothing, and a caller disclosing an allergy heard nothing. Receipts, payment links,
+    // and every other safety branch — ACTIVE ANAPHYLAXIS included, «997» above all — are
+    // unchanged and stay text-only on every surface. The scope is enforced by
+    // CALL_SPEAKABLE_SAFETY_STOPS in lib/messaging/voice-budget.ts, not by this comment.
     const allergenGate = out.model === "deterministic_allergen_gate";
     // DERIVED FROM THE TURN, NOT FROM PROXIES. This previously read
     // `safetyHold: allergenGate || out.escalate === true`, and the ACTIVE ANAPHYLAXIS

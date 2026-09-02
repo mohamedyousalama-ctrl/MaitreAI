@@ -31,6 +31,9 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { mustWrite } from "@/lib/db/checked";
+import { DEMO_RESTAURANT_ID } from "@/lib/demo/config";
 import { demoCallGreeting } from "@/lib/demo/call-greeting";
 import { demoVoiceAudible } from "@/lib/demo/voice-out";
 import { isDemoHost, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS } from "@/lib/demo/config";
@@ -64,9 +67,45 @@ export async function GET(req: Request) {
   // used ONLY to bind the ticket to the session that will redeem it, so a wrong value makes
   // the greeting unplayable and nothing else.
   const sid = new URL(req.url).searchParams.get("s");
+  const greeting = demoCallGreeting(sid);
+
+  // THE MONEY GOES ON THE LEDGER HERE, AND UNTIL NOW IT WENT NOWHERE.
+  //
+  // This route was 73 lines with no database client and no write of any kind, and the
+  // tenant-isolation report said so approvingly. What that missed is that the route BUYS
+  // something: the ticket it mints is redeemed by the browser at /api/demo/speak, which
+  // treats the first fetch as already paid for by whoever minted it — correctly, for a turn,
+  // because /api/demo/voice writes the row. Nobody wrote it here. So every greeting on the
+  // only endpoint anyone on the internet can hit was a real ElevenLabs charge that
+  // lib/monitoring/sweep.ts — which sums agent_runs.cost_usd for the daily spend alert —
+  // could not see. The alert cannot fire on money it does not know about.
+  //
+  // NOT FAIL-CLOSED, deliberately, and the same way /api/demo/voice treats its own TTS row:
+  // a ledger outage must not take the greeting down. The failure is logged, loudly.
+  const admin = greeting?.spend ? createAdminClient() : null;
+  if (greeting?.spend && admin) {
+    try {
+      await mustWrite<{ id: string }>(
+        admin.from("agent_runs").insert({
+          restaurant_id: DEMO_RESTAURANT_ID,
+          conversation_id: null,
+          trigger: "voice_tts",
+          input: null,
+          output: null,
+          model: greeting.spend.model,
+          adapter: greeting.spend.adapter,
+          cost_usd: greeting.spend.costUsd,
+        }).select("id"),
+        "demo_greeting.tts_cost",
+        { exactRows: 1 },
+      );
+    } catch (e) {
+      console.error("[demo/greeting] TTS spend accounting failed", e);
+    }
+  }
 
   return NextResponse.json(
-    { greeting: demoCallGreeting(sid) },
+    { greeting },
     // A signed, one-minute, session-bound ticket has no business in any cache.
     { headers: { "Cache-Control": "no-store" } }
   );
