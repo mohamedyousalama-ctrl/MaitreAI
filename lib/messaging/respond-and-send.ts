@@ -360,8 +360,10 @@ async function handleCalmHeldInbound(
   if (!messageText) return null;
   const newestInbound = inboundRows[0];
   const lastInboundAtMs = Math.max(...inboundRows.map((m) => Date.parse(m.created_at)).filter((n) => Number.isFinite(n)));
-  const sttConfidence = (newestInbound.meta as { stt_confidence?: number } | null)?.stt_confidence;
-  const isVoiceTranscript = (newestInbound.meta as { voice?: boolean } | null)?.voice === true;
+  // `sttConfidence` and `isVoiceTranscript` WERE READ HERE and are not any more. The retired
+  // phonetic net was their only consumer; after it went they were computed on every calm-held
+  // inbound and passed to nothing — the same dead-parameter shape this branch removed from
+  // `DetectOpts`, left behind in the one place it was read from a row rather than an argument.
 
   // Safety-critical detectors run before any human-door branch and are never skipped.
   const allergenHit = detectAllergenAvoidance(messageText);

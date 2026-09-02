@@ -43,6 +43,18 @@ import { detectAllergyOrDiseaseMention, mentionsDiseaseCondition } from "../lib/
 import { isSafetyClassInbound } from "../lib/ai/safety-bridge";
 import { voiceHardZeroReason } from "../lib/messaging/voice-budget";
 import { demoVoiceSilenceKind } from "../lib/demo/voice-out";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+/** Drop whole-line and trailing comments, so a NAME sitting in prose cannot satisfy a check
+ *  that is supposed to prove a CALL. This repo has been bitten by that twice. */
+function stripCommentsLite(src: string): string {
+  return src
+    .split("\n")
+    .map((l) => l.replace(/\/\/.*$/, ""))
+    .filter((l) => !l.trimStart().startsWith("*"))
+    .join("\n");
+}
 
 let pass = 0;
 const fails: string[] = [];
@@ -542,6 +554,22 @@ console.log("\n── A PRICE IS NOT AN AMBULANCE NUMBER ───────�
   }
 }
 
+
+console.log("\n── THE CALM-HOLD DOOR ASKS ALL FOUR DETECTORS ──────────────────");
+{
+  // `handleCalmHeldInbound` decides whether a message during an active calm hold is a HUMAN
+  // REQUEST it can pass through, or a new safety statement it must merge into the allergy
+  // note and alert on. It asks four detectors; a driven mutation deleted the context one and
+  // the whole 227-file suite stayed green — so a NEW allergen named during a hold, in the
+  // exact words this file exists to carry («ما أتحمل», «حلقي ينتفخ», «gluten free»),
+  // alongside "let me talk to a human", would have skipped the note merge and the alert.
+  const ras = stripCommentsLite(readFileSync(resolve(process.cwd(), "lib/messaging/respond-and-send.ts"), "utf8"));
+  for (const d of ["detectAllergenAvoidance", "detectAllergenSymptom", "detectAllergyContext", "detectAllergenEmergency"]) {
+    ok(`the calm-hold door calls ${d}`, new RegExp(d + "\\(messageText\\)").test(ras));
+  }
+  ok("…and every one of them can veto the human-request short-circuit",
+    /!allergenHit\.fired && !symptomHit\.fired && !contextHit\.fired && !emergencyHit\.fired && explicitHuman/.test(ras));
+}
 
 console.log("\n── A GUARD IN ONE DETECTOR IS NOT A GUARD ──────────────────────");
 {

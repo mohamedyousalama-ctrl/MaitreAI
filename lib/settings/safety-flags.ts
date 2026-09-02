@@ -18,7 +18,19 @@
  */
 export const SAFETY_FLAGS: readonly string[] = [
   "deterministic_allergen_safety", // #87 allergen euphemism gate — must stay ON
-  "allergen_symptom_detection", // symptom-phrase → allergen escalation
+  // STILL LOCKED, THOUGH IT NO LONGER GATES ANYTHING — and I briefly removed it, which was
+  // backwards. This list is a DENYLIST, not a feature menu: being on it means "no console may
+  // write this", so taking it off does not retire a toggle, it removes a lock. Residual
+  // `feature_flags` rows still carry the key on real tenants, and a console write would have
+  // started succeeding.
+  //
+  // The flag itself is dead: it gated one of the nine call sites for `detectAllergenSymptom`
+  // and was ignored by the other eight, so its OFF position produced a turn that contradicted
+  // itself — the safety bridge telling a customer to hold their order while the Brain kept
+  // taking it. The detector is unconditional now. It stays here so nothing can write a value
+  // that would look like a control and change nothing; the operator-facing description is
+  // gone from the console dictionary, and docs/flags.md records it as removed.
+  "allergen_symptom_detection", // dead flag, kept LOCKED — see above
 ] as const;
 
 const SAFETY_FLAG_SET = new Set<string>(SAFETY_FLAGS);

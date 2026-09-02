@@ -20,6 +20,8 @@
 import { callCarrierFor, ALL_CARRIER_REASONS, carrierIsSafeToSpeak } from "../lib/demo/call-carriers.ts";
 import { voiceHardZeroReason } from "../lib/messaging/voice-budget.ts";
 import { toSpokenText } from "../lib/ai/tts/spoken-text.ts";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 let pass = 0;
 const fails: string[] = [];
@@ -458,6 +460,29 @@ console.log("\n── AN ALLERGY DISCLOSURE IS ANSWERED OUT LOUD, ON A CALL ─�
     voiceHardZeroReason("الإجمالي 45 ريال", {
       safetyHold: false, isReceipt: false, spokenSafetyAllowed: true,
     }) === "money_figure");
+}
+
+console.log("\n── THE WAIVER IS DECIDED BY THE PLUMBING, NOT ONLY THE GATE ────");
+{
+  // EVERY ASSERTION ABOUT THIS WAIVER DROVE `voiceHardZeroReason` WITH EXPLICIT FLAGS.
+  //
+  // That proves the gate honours the flags. It proves nothing about who SETS them — and a
+  // driven mutation made `spokenSafetyAllowed` unconditional in lib/demo/voice-out.ts, which
+  // hands the waiver to the demo's NON-CALL surface (a chat voice note, where the reply is
+  // not on screen beside the audio and the whole bargain fails), and the full 227-file suite
+  // stayed green. The route-level pin above catches the ROUTE passing it wrongly; nothing
+  // caught the library passing it on.
+  const vo = readFileSync(resolve(process.cwd(), "lib/demo/voice-out.ts"), "utf8");
+  ok("voice-out forwards the caller's flag rather than inventing one",
+    /spokenSafetyAllowed:\s*o\.spokenSafetyAllowed === true/.test(vo));
+  ok("…and never asserts it unconditionally", !/spokenSafetyAllowed:\s*true\b/.test(vo));
+  ok("…and the same for the price waiver",
+    /spokenPricesAllowed:\s*o\.spokenPricesAllowed === true/.test(vo) &&
+    !/spokenPricesAllowed:\s*true\b/.test(vo));
+  // The only caller allowed to ask for either is the CALL route, gated on the channel.
+  const routeSrc2 = readFileSync(resolve(process.cwd(), "app/api/demo/voice/route.ts"), "utf8");
+  ok("the route asks for them only on a phone call",
+    /spokenSafetyAllowed:\s*isPhoneCall/.test(routeSrc2) && /spokenPricesAllowed:\s*isPhoneCall/.test(routeSrc2));
 }
 
 console.log("\n── «997» IS NEVER SPOKEN, WHICHEVER PATH WROTE IT ──────────────");

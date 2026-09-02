@@ -202,13 +202,18 @@ export function voiceHardZeroReason(
   // should not depend on which code path produced the sentence. So it is also read out of
   // the TEXT, like the payment link is, and — unlike a price — no flag waives it. The reply
   // is still delivered in full as text; only the audio is withheld.
+  const t = moneyScanText(String(replyText ?? ""));
+
+  // THE LINK IS CHECKED FIRST, AND IT WAS NOT. A checkout id can contain a letter-bounded
+  // «112», so a payment link carrying one was reported as `emergency_number` — the right
+  // outcome (silence) for the wrong reason, which is how a category stops meaning anything.
+  // A link is the more specific fact about the reply, so it wins.
+  if (PAY_LINK_RE.test(t)) return "payment_link";
+
   {
     const rt = String(replyText ?? "");
     if (EMERGENCY_NUMBER_RE.test(rt) && !PRICE_CONTEXT_RE.test(rt)) return "emergency_number";
   }
-
-  const t = moneyScanText(String(replyText ?? ""));
-  if (PAY_LINK_RE.test(t)) return "payment_link";
   if (MONEY_RE.test(t) || BARE_PRICE_RE.test(t)) {
     return signals.spokenPricesAllowed ? null : "money_figure";
   }
