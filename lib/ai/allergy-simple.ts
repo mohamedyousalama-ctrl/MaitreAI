@@ -44,16 +44,57 @@ export interface AllergyMentionHit {
 // Health/disease CONDITION mention on INBOUND (additive — the allergen detector is untouched).
 // Matches a customer stating a condition («عندي سكر», «مريض ضغط», «قلبي», «حامل»), the wording the
 // simple posture also deflects. Boundary-aware over normalizeAr output. NOT a substance list.
+// THE ARTICLE HAS TO BE TOLERATED, OR THE BOUNDARY EXCLUDES THE NORMAL WAY OF SAYING IT.
+// `(?<![ء-ي])` rejected «القولون» and «بالسكري» because a letter precedes the stem — so
+// «بعاني من القولون» and «أنا مصاب بالسكري», two plain statements of a condition, matched
+// nothing at all. Found while narrowing this rule; it predates that work.
 const DISEASE_INPUT_RE =
-  /(?<![ء-ي])(?:سكر|سكري|ضغط|كوليسترول|كليتي|كلاوي|كلى|قلبي|القلب|حامل|حمل|سيلياك|نقرس|قولون|معدتي)(?![ء-ي])/;
+  /(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:سكري|سكر|ضغط|كوليسترول|كليتي|كلاوي|كلى|قلبي|قلب|حامل|حمل|سيلياك|نقرس|قولون|معدتي)(?![ء-ي])/;
 const DISEASE_CONTEXT_RE = /(?:عندي|مريض|مريضه|مصاب|بعاني|اعاني|حالتي|عانيت|مالي)/;
+
+/** THE TWO HAVE TO BE THE SAME STATEMENT, NOT THE SAME MESSAGE.
+ *
+ *  `DISEASE_INPUT_RE` is boundary-aware and careful. `DISEASE_CONTEXT_RE` is not: it is a bare
+ *  alternation containing «عندي», and the two were tested independently anywhere in the
+ *  message. «سكر» is also the ordinary word for SUGAR, so:
+ *
+ *    «الشاي عندي بدون سكر لو سمحت»   my tea without sugar, please   → diabetes
+ *    «عندي سكر زيادة في القهوة»       there's too much sugar in it   → diabetes
+ *    «عندي قلبي يشتهي كبسة لحم»       my heart is set on a kabsa     → heart condition
+ *    «عندي ضغط وقت، أبغى الطلب بسرعة» I'm pressed for time           → blood pressure
+ *
+ *  The first is how a Saudi orders tea. All four fed the durable kitchen ticket and, under
+ *  the simple posture, deflected the order into an ingredients-and-a-human reply.
+ *
+ *  A stated condition puts the two words together — «عندي سكري»، «مريض ضغط» — so the context
+ *  word must be close and nothing may separate them. */
+const DISEASE_ADJACENT_RE = new RegExp(
+  "(?:عندي|عندنا|مريض|مريضه|مصاب|مصابه|بعاني|اعاني|عانيت|حالتي)" +
+    // Nothing between them but at most one short word, and never a "without" — «بدون سكر» is
+    // an instruction about the drink, not a diagnosis.
+    "(?:\\s+(?!بدون|بلا|من\\s+غير|ناقص|زياده|زياده|شويه|كثير|قليل)\\S{1,6})?\\s+" +
+    "(?:و|ف|ب|ك|ل)?(?:ال)?(?:سكري|سكر|ضغط|كوليسترول|كليتي|كلاوي|كلى|قلبي|قلب|حامل|حمل|سيلياك|نقرس|قولون|معدتي)(?![ء-ي])"
+);
+
+/** Pregnancy states itself without any of the context words above — «أنا حامل» is the whole
+ *  sentence. Kept narrow rather than adding «أنا» to the context list, which would have made
+ *  «أنا أبغى سكر» ("I want sugar") a diagnosis. */
+const PREGNANCY_RE = /(?<![ء-ي])(?:انا|احنا|زوجتي|مرتي)\s+حامل|حامل\s+(?:في|بشهر|بالشهر)/;
+
+/** …and the condition word must not be immediately qualified as a FOOD or a TIME. «عندي سكر
+ *  زيادة في القهوة» and «عندي ضغط وقت» both put the two words together and mean neither. */
+const DISEASE_DISQUALIFIER_RE =
+  /(?:سكر|ضغط|قلبي|معدتي)\s*(?:زياده|زايد|زائد|وقت|في\s+(?:ال)?(?:قهوه|شاي|عصير|كوب|طلب)|يشتهي|يبي|يشتاق|خففه|زوده|زود)/;
 
 /** True iff the message states a health CONDITION (disease/diet), reusing a small additive input
  *  vocabulary — never a substance list, so it can never be mistaken for a canonical allergen. */
 export function mentionsDiseaseCondition(text: string | null | undefined): boolean {
   const n = normalizeAr(String(text ?? ""));
   if (!n) return false;
-  return DISEASE_INPUT_RE.test(n) && DISEASE_CONTEXT_RE.test(n);
+  if (PREGNANCY_RE.test(n)) return true;
+  if (!DISEASE_INPUT_RE.test(n) || !DISEASE_CONTEXT_RE.test(n)) return false;
+  if (DISEASE_DISQUALIFIER_RE.test(n)) return false;
+  return DISEASE_ADJACENT_RE.test(n) || PREGNANCY_RE.test(n);
 }
 
 /**

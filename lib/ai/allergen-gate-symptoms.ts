@@ -62,7 +62,7 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   // Choking / airway emergency — ADDED: covers اختناق / بتخنق / بيخنق / بختنق / بخنق / نفسي بيقف / ربو etc.
   // بخنق = ب+خ+نق; بختنق = ب+خت+نق; بتخنق/بيخنق = بت/بي+خنق — covered by separate alternates.
   // Past-tense اتخنق/اتخنقت / present باتخنق/باتخنقت ADDED (reported after-the-fact incidents).
-  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|ب(?:خت|خ)نق(?:ني)?|(?:ب)?اتخنق[ت]?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة](?:\s+في\s+صدري)?|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|ربو)/, label: "ضيق في التنفس" },
+  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|ب(?:خت|خ)نق(?:ني)?|(?:ب)?اتخنق[ت]?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة](?:\s+في\s+صدري)?|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|(?<![ء-ي])(?:ال)?ربو(?![ء-ي]))/, label: "ضيق في التنفس" },
 
   // Swelling — original انتفاخ/تورم patterns
   { re: /(?:وجه|وشي?|عيني?|شفايف|شفه|لسان)(?:\s+\S+)?\s*(?:بي?نتفخ|بينتفخ|انتفخ|بتورم|اتورم|بيتورم)/, label: "تورم" },
@@ -73,12 +73,30 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   { re: /(?:(?:وش|وجه|شفايف|عين|لسان)(?:ي|ه)?\s+(?:ورم[ت]?|بيورم(?:لي|لنا)?)|ورم[ت]?\s+(?:في\s+)?(?:الوجه|الوش|الشفاه|اللسان|العين|الحلق)|بيورم(?:لي|لنا)?|ورمت)/, label: "تورم" },
 
   // Skin reaction — original طفح / حكة
-  { re: /(?:طفح|حبوب|حكه|حكة|هرش|اكزيما)\s*(?:جلدي[هة]?)?/, label: "طفح جلدي" },
+  // A WORD, NOT A RUN OF LETTERS — and for «حبوب», a body as well.
+  //
+  // This read `(?:طفح|حبوب|حكه|حكة|هرش|اكزيما)` with the qualifier OPTIONAL, matched anywhere
+  // in the message. Arabic has no \b, so every one of these fired on an ordinary sentence:
+  //
+  //   «عندكم خبز حبوب كاملة؟»   do you have whole-grain bread?      → skin rash
+  //   «الطبق ده محبوب عندنا»     this dish is popular (محبوب)         → skin rash
+  //   «ضحكة حلوة»                nice laugh (ضحكه contains حكه)       → skin rash
+  //   «طفح الكيل»                enough is enough — a fixed idiom     → skin rash
+  //
+  // «حبوب» is the worst of them: pills, grains AND pimples, and the grain reading is the one
+  // a restaurant hears all day. It now needs a body or a skin word with it. The others need
+  // only to be words rather than fragments.
+  { re: /(?<![ء-ي])(?:ال)?(?:طفح|حكه|هرش|اكزيما)(?![ء-ي])/, label: "طفح جلدي" },
+  { re: /(?<![ء-ي])(?:ال)?حبوب(?![ء-ي])(?=[^.،,؛!؟\n]{0,20}(?:جلد|وجهي|وشي|بشرتي|جسمي|ايدي|يدي|رقبتي|صدري))|(?:جلدي|وجهي|وشي|بشرتي|جسمي)[^.،,؛!؟\n]{0,12}(?<![ء-ي])حبوب(?![ء-ي])/, label: "طفح جلدي" },
   { re: /جلد[ي]?\s+(?:بي?حمر|بيتاثر|بي?تبقع)/, label: "طفح جلدي" },
-  { re: /(?:urticaria|hives|rash)/, label: "طفح جلدي" }, // English
+  // WORD BOUNDARIES, because «rash» is inside «Rasheed» and «hives» is inside «chives».
+  // A customer giving their name, or ordering chives on a salad, was reported as a rash.
+  { re: /\b(?:urticaria|hives|rash|rashes)\b/, label: "طفح جلدي" }, // English
 
   // Skin reaction — ADDED: احمرار / ارتيكاريا / جسمي بيقلب / بقع حمرا
-  { re: /(?:احمرار|ارتي?كاريا|جسم[يه]\s+بيقلب|بقع\s+حمرا)/, label: "طفح جلدي" },
+  // «احمرار» ON A PERSON. In a restaurant the ordinary reading is the food: «احمرار في
+  // اللحم يعني مو مستوي» ("redness in the meat means it isn't cooked") was a skin reaction.
+  { re: /(?:احمرار[^.،,؛!؟\n]{0,12}(?:جلد|وجه|وش|بشر|جسم|ايد|يدي|رقب|عيون|عين|شفا|خد)|(?:جلدي|وجهي|بشرتي|جسمي)[^.،,؛!؟\n]{0,12}احمرار|ارتي?كاريا|جسم[يه]\s+بيقلب|بقع\s+حمرا)/, label: "طفح جلدي" },
 
   // Anaphylaxis / emergency — original
   { re: /(?:epipen|epinephrine|اوتوانجكتور)/, label: "حساسية شديدة" },
@@ -130,28 +148,56 @@ const CONDITION_TERMS: { re: RegExp; label: string }[] = [
   // Favism — ADDED: clinical terminology gap (أنيميا الفول / تفول / نقص الخميرة / بيكسر الدم)
   { re: /انيميا\s+(?:ال)?فول|(?:ال)?فول\s+(?:ال)?انيميا/, label: "مرض الفول" },
   // تفول = G6PD hemolytic crisis from fava beans (Egyptian medical slang)
-  { re: /تفول/, label: "مرض الفول" },
+  // A WORD. «تفول» sits inside the Egyptian «ما تفولش كذا» ("don't say that"). The article
+  // is allowed because «التفول» is how the condition is normally named.
+  { re: /(?<![ء-ي])(?:ال)?تفول(?![ء-ي])/, label: "مرض الفول" },
   // نقص خميرة الدم / نقص الخميرة = G6PD enzyme deficiency
   { re: /نقص\s+(?:ال)?خمير[هة](?:\s+الدم)?/, label: "مرض الفول" },
   // تكسير/بيكسر الدم = red-blood-cell destruction (G6PD hemolysis)
   { re: /(?:تكسير|بيكسر)\s+الدم/, label: "مرض الفول" },
 
-  // Tree-nut allergy (explicit condition statement not in base gate)
-  { re: /nut\s+allergy|tree[\s-]?nut\s+allergy|peanut\s+allergy/, label: "حساسية المكسرات" },
 ];
+
+/** English tree-nut/peanut allergy stated as a condition.
+ *
+ *  MOVED OUT OF THE ARABIC CONDITIONS TABLE. That table is consulted before any English
+ *  handling, so this pattern ran ahead of the denial guard and «no nut allergy here» — a
+ *  customer answering the allergy question with "no" — was held as a disclosure. */
+const ENGLISH_NUT_ALLERGY_RE = /\b(?:tree[\s-]?nut|peanut|nut)\s+allerg(?:y|ies)\b/i;
 
 // ---------------------------------------------------------------------------
 // SET 3: English + Franco-Arabic terms — fire standalone.
 // ---------------------------------------------------------------------------
 
-// English: allergy words (original) + English symptom-only phrases (ADDED)
-const ENGLISH_FRANCO_RE = new RegExp(
+// SPLIT IN TWO, BECAUSE ONLY ONE HALF IS DENIABLE.
+//
+// A denial guard over the whole English arm silenced «I'm not allergic to nuts but my throat
+// is closing» — a sentence that denies one thing and reports another, and the reported thing
+// is an airway. The first version of that guard shipped with a comment claiming this case
+// still fired. It did not.
+//
+// So the VOCABULARY half — "allergic", "intolerant", "sensitive to X" — is deniable, because
+// "no nut allergy here" is an answer to a question. The SYMPTOM half is not: nobody says
+// their throat is closing as a denial, and no negation in the same sentence makes it safe to
+// ignore.
+
+/** English allergy VOCABULARY. A denial in the same message suppresses this half. */
+const ENGLISH_ALLERGY_WORDS_RE = new RegExp(
   [
-    // Allergy vocabulary — original
     String.raw`allerg(?:ic|y|ies|en|ens)`,
-    String.raw`sensitiv(?:e|ity)`,
+    // «sensitive» ON ITS OWN IS NOT AN ALLERGY. "sensitive to price", "a sensitive matter"
+    // — this fired on both. It has to name what the sensitivity is to.
+    String.raw`sensitiv(?:e|ity)\s+to\s+(?:\w+\s+){0,2}(?:food|foods|nut|nuts|peanut|peanuts|dairy|milk|lactose|gluten|wheat|egg|eggs|soy|sesame|shellfish|fish|seafood)`,
+    String.raw`(?:food|nut|peanut|dairy|milk|lactose|gluten|wheat|egg|soy|sesame|shellfish)\s+sensitiv(?:e|ity)`,
     String.raw`intoleran(?:t|ce)`,
-    // English symptom-only — ADDED (ASCII apostrophe U+0027 + curly U+2018/2019 + cannot)
+  ].map((p) => `\\b(?:${p})\\b`).join("|"),
+  "i"
+);
+
+/** English SYMPTOMS. Never suppressed by a denial — see above. */
+const ENGLISH_SYMPTOM_RE = new RegExp(
+  [
+    // ASCII apostrophe U+0027 + curly U+2018/2019 + cannot
     String.raw`can[\u0027\u2018\u2019]?t\s+breathe`,
     String.raw`cannot\s+breathe`,
     String.raw`shortness\s+of\s+breath`,
@@ -194,8 +240,12 @@ const FRANCO_AR_RE = new RegExp(
 
 /** All allergens known to the system (union of base gate + condition terms).
  *  سوداني ADDED: peanuts (فول سوداني) — most common Egyptian peanut term, highest anaphylaxis risk. */
+// EACH TERM A WORD, article and conjunction tolerated. Without the boundary «بيض» matched
+// inside «الأبيض» (the white one), so «ابني ما يقربش الرز الأبيض» ("my son won't go near
+// white rice") satisfied the allergen leg of the child triple and raised a child-allergy
+// hold on a picky eater.
 const ALLERGEN_COMBINED_RE =
-  /بندق|فستق|لوز|كاجو|جوز|مكسرات|فول|سوداني|لبن|البان|حليب|جلوتين|قمح|بيض|سمسم|صويا|سمك|جمبري|قشريات/;
+  /(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?(?:بندق|فستق|لوز|كاجو|جوز|مكسرات|فول|سوداني|لبن|البان|حليب|جلوتين|قمح|بيض|بيظ|سمسم|صويا|سمك|جمبري|قشريات)(?![ء-ي])/;
 
 /** Possessive child / family markers (normalized). */
 const CHILD_MARKER_RE =
@@ -212,6 +262,19 @@ const STRICT_AVOIDANCE_CHILD_RE =
  *  Used in the doctor–child–allergen triple conjunction. */
 const DOCTOR_RE = /(?:الدكتور[هة]?|الطبيب[هة]?)/;
 const DOCTOR_AVOIDANCE_RE = /(?:مانع|منع|حذر|قال\s+ما\s*(?:[يتن](?:اكل|قرب)))/;
+
+/** An English DENIAL of an allergy, which was being read as a disclosure.
+ *
+ *  «I am not allergic to anything» and «no nut allergy here» both fired: the English arm
+ *  matched `allerg…` and nothing looked left of it. The Arabic denial paths
+ *  (`isExplicitAllergyDenial`, `detectAllergyRetraction`) had no English counterpart at all,
+ *  so a customer answering "no" to the allergy question was held as if they had said yes.
+ *
+ *  Narrow on purpose: only an explicit negation immediately before the allergy word, and
+ *  only when nothing else in the message states a symptom. "I'm not allergic to nuts but my
+ *  throat is closing" must still fire — and does, through the symptom families above. */
+const ENGLISH_DENIAL_RE =
+  /\b(?:no|not|non|never|isn'?t|aren'?t|don'?t|doesn'?t|without|free\s+of)\b(?:\s+\w+){0,3}\s*\b(?:allerg(?:ic|y|ies|en|ens)|intoleran(?:t|ce)|sensitiv(?:e|ity))\b/i;
 
 /**
  * Returns true when a child + allergen triple conjunction is detected:
@@ -269,7 +332,15 @@ export function detectAllergenSymptom(text: string): SymptomHit {
   const condition = matchCondition(n);
   if (condition) return { fired: true, term: condition };
 
-  if (ENGLISH_FRANCO_RE.test(text)) return { fired: true, term: "حساسية" };
+  // THE ENGLISH ARM ONLY, and only after the symptom families above have had their say —
+  // so "I'm not allergic to nuts but my throat is closing" still fires, on the throat.
+  // A plain denial is not a disclosure; it was being held as one.
+  // SYMPTOMS FIRST, and they are not deniable. «I'm not allergic to nuts but my throat is
+  // closing» denies the allergy and reports the airway; the airway is what matters.
+  if (ENGLISH_SYMPTOM_RE.test(text)) return { fired: true, term: "حساسية" };
+  const englishDenial = ENGLISH_DENIAL_RE.test(text);
+  if (ENGLISH_NUT_ALLERGY_RE.test(text) && !englishDenial) return { fired: true, term: "حساسية المكسرات" };
+  if (ENGLISH_ALLERGY_WORDS_RE.test(text) && !englishDenial) return { fired: true, term: "حساسية" };
   if (FRANCO_AR_RE.test(text)) return { fired: true, term: "حساسية" };
 
   if (detectChildAllergenPattern(n)) return { fired: true, term: "حساسية الطفل" };

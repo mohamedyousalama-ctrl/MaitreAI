@@ -39,7 +39,7 @@ import { detectAllergenAvoidance } from "../lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "../lib/ai/allergen-gate-symptoms";
 import { detectAllergenEmergency } from "../lib/ai/allergen-emergency";
 import { detectAllergyContext } from "../lib/ai/allergen-context";
-import { detectAllergyOrDiseaseMention } from "../lib/ai/allergy-simple";
+import { detectAllergyOrDiseaseMention, mentionsDiseaseCondition } from "../lib/ai/allergy-simple";
 import { isSafetyClassInbound } from "../lib/ai/safety-bridge";
 
 let pass = 0;
@@ -362,6 +362,92 @@ console.log("\n── THE SAUDI AMBULANCE NUMBER, IN ENGLISH AND IN ARABIC ─�
   ]) {
     ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
   }
+}
+
+
+console.log("\n── THE SYMPTOM FILE NOBODY HAD SWEPT ───────────────────────────");
+{
+  // THE SAME BARE-SUBSTRING BUG, IN A FILE THIS BRANCH NEVER OPENED UNTIL A REVIEW SAID SO.
+  //
+  // Fifteen ordinary sentences out of fifteen fired. Arabic has no `\b`, so every alternation
+  // in this file matched a run of letters wherever it appeared, and the English arm had no
+  // word boundary at all:
+  //
+  //   «عندكم خبز حبوب كاملة؟»  whole-grain bread     «حبوب» is grains, pills AND pimples
+  //   «الطبق ده محبوب عندنا»    this dish is popular  «حبوب» ⊂ «محبوب»
+  //   «ضحكة حلوة»               nice laugh            «حكه» ⊂ «ضحكه»
+  //   «اسمي Rasheed»            my name is Rasheed    `rash` ⊂ `Rasheed`
+  //   «chives على السلطة»       chives on the salad   `hives` ⊂ `chives`
+  //   «كم كربوهيدرات؟»          how many carbs        «ربو» (asthma) ⊂ «كربوهيدرات»
+  //   «الطلب مربوط بالحساب»     linked to the bill    «ربو» ⊂ «مربوط»
+  //   «احمرار في اللحم»         redness in the meat   the meat, not a person
+  //   «ابني ما يقربش الرز الأبيض» won't eat white rice «بيض» ⊂ «الأبيض» → a CHILD allergy hold
+  for (const t of [
+    "عندكم خبز حبوب كاملة؟", "أبغى قهوة حبوب مطحونة", "الحبوب الكاملة صحية",
+    "الطبق ده محبوب عندنا", "ضحكة حلوة", "اسمي Rasheed", "chives على السلطة",
+    "كم كربوهيدرات في الكبسة؟", "الطلب مربوط بالحساب", "احمرار في اللحم يعني مو مستوي",
+    "ابني ما يقربش الرز الأبيض", "sensitive to price", "ما تفولش كذا",
+  ]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+  // AND EVERY REAL SYMPTOM IS STILL HEARD.
+  for (const t of [
+    "عندي طفح جلدي", "طلع لي طفح", "عندي حكة في جسمي", "حبوب في وجهي من الأكل",
+    "hives all over", "I have a rash", "عندي ربو", "التفول عندي", "احمرار في جلدي",
+    "nut allergy", "عندي حساسية", "اكزيما", "gluten sensitivity", "sensitive to dairy",
+  ]) {
+    ok(`«${t}» is heard${detectAllergenSymptom(t).fired ? "" : " — NOTHING FIRED"}`,
+      detectAllergenSymptom(t).fired);
+  }
+}
+
+console.log("\n── \"NO\" IS AN ANSWER, NOT A DISCLOSURE ─────────────────────────");
+{
+  // The English arm matched `allerg…` and never looked left of it, so a customer ANSWERING
+  // the allergy question was held as if they had said yes. The Arabic denial paths
+  // (`isExplicitAllergyDenial`, `detectAllergyRetraction`) had no English counterpart at all.
+  for (const t of [
+    "I am not allergic to anything", "no nut allergy here", "not allergic", "no allergies",
+    "nut free please", "without any allergy",
+  ]) {
+    ok(`«${t}» is a denial`, !detectAllergenSymptom(t).fired);
+  }
+  // …AND A DENIAL SILENCES THE VOCABULARY ONLY, NEVER A SYMPTOM. The first version of this
+  // guard covered the whole English arm and shipped with a comment claiming this case still
+  // fired. It did not: a sentence that denies one thing and reports an airway went quiet.
+  ok("«I'm not allergic to nuts but my throat is closing» is still heard",
+    detectAllergenSymptom("I'm not allergic to nuts but my throat is closing").fired);
+  ok("…and so is «no allergies, but I can't breathe»",
+    detectAllergenSymptom("no allergies, but I can't breathe").fired);
+}
+
+console.log("\n── «سكر» IS ALSO THE WORD FOR SUGAR ────────────────────────────");
+{
+  // `DISEASE_INPUT_RE` was careful and boundary-aware; `DISEASE_CONTEXT_RE` was a bare
+  // alternation containing «عندي», and the two were tested independently anywhere in the
+  // message. «الشاي عندي بدون سكر» — how a Saudi orders tea — was a diabetes disclosure that
+  // fed the durable kitchen ticket.
+  for (const t of [
+    "الشاي عندي بدون سكر لو سمحت", "القهوة عندي بدون سكر", "ابغى شاي بدون سكر",
+    "عندي سكر زيادة في القهوة، خففه", "عندي قلبي يشتهي كبسة لحم",
+    "عندي ضغط وقت، أبغى الطلب بسرعة", "عندي طلب سابق",
+  ]) {
+    ok(`«${t}» is not a diagnosis`, !mentionsDiseaseCondition(t));
+  }
+  // A STATED CONDITION PUTS THE WORDS TOGETHER.
+  for (const t of [
+    "عندي سكري", "عندي سكر", "مريض ضغط", "عندي ضغط", "عندي كوليسترول", "حالتي سكري",
+    "عندي قولون",
+  ]) {
+    ok(`«${t}» is a condition`, mentionsDiseaseCondition(t));
+  }
+  // …AND THESE TWO NEVER MATCHED AT ALL, BECAUSE THE ARTICLE DEFEATED THE BOUNDARY.
+  for (const t of ["انا مصاب بالسكري", "بعاني من القولون", "عندي مشكلة بالقولون"]) {
+    ok(`«${t}» is a condition (article tolerated)`, mentionsDiseaseCondition(t));
+  }
+  // Pregnancy states itself with no context word at all.
+  ok("«أنا حامل» is a condition", mentionsDiseaseCondition("أنا حامل"));
+  ok("…while «أنا أبغى سكر» is an order", !mentionsDiseaseCondition("أنا أبغى سكر"));
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} allergy-false-positives: ${pass}/${pass + fails.length} passed`);
