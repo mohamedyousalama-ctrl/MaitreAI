@@ -145,6 +145,27 @@ export async function GET(req: Request): Promise<NextResponse> {
     arabic = FALLBACK_CANDIDATES.map((id) => ({ model_id: id }));
   }
 
+  // A 200 IS NOT PROOF THE DICTIONARY DID ANYTHING.
+  //
+  // ElevenLabs documents that pronunciation-dictionary PHONEME tags work only on
+  // eleven_flash_v2 and eleven_v3; other models SKIP them and use default pronunciation.
+  // They do not 4xx — they accept the locator and ignore it. So the successful synthesis
+  // that looked like proof proves only that nothing crashed, and «قهوة» may be reverting
+  // to default on every render of the new model. ALIAS rules are unaffected; the repo
+  // never recorded which kind ours is, so the whole model decision rests on an
+  // unrecorded fact about a remote object. This asks.
+  if (url.searchParams.get("dict") === "1") {
+    const d = await fetch(
+      `https://api.elevenlabs.io/v1/pronunciation-dictionaries/${KHALID_VOICE.pronunciationDictionary.id}`,
+      { headers: { "xi-api-key": key, Accept: "application/json" } }
+    );
+    const body = await d.text();
+    return NextResponse.json(
+      { keyPresent: true, status: d.status, rule: KHALID_VOICE.pronunciationDictionary.rule, body: body.slice(0, 1200) },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   if (url.searchParams.get("list") === "1") {
     return NextResponse.json(
       {
