@@ -26,7 +26,7 @@ export function voiceNotesPerDay(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : VOICE_NOTES_PER_DAY_DEFAULT;
 }
 
-export type VoiceZeroReason = "safety_hold" | "money_figure" | "payment_link" | "receipt";
+export type VoiceZeroReason = "safety_hold" | "money_figure" | "payment_link" | "receipt" | "emergency_number";
 
 export interface VoiceBudgetInput {
   /** The voice_notes feature flag (explicit-only). OFF → never any voice. */
@@ -186,6 +186,24 @@ export function voiceHardZeroReason(
     if (!speakable) return "safety_hold";
   }
   if (signals.isReceipt) return "receipt";
+
+  // THE AMBULANCE NUMBER, CHECKED IN THE TEXT AND NEVER WAIVED.
+  //
+  // Everything above this line is decided by the BRANCH: `safetyHold` marks the
+  // active-anaphylaxis reply, and `CALL_SPEAKABLE_SAFETY_STOPS` keeps it out of an ear. That
+  // is correct and it is not enough, because a branch guard only protects the branches it
+  // knows about. A MODEL turn returns `stopReason: "end_turn"`, which is a cleared,
+  // speakable turn — and if that reply happens to contain «997», nothing above stops it: the
+  // money regexes do not match a bare three-digit number and the safety branch was never
+  // entered.
+  //
+  // The product's own rule, written in three files, is that this is "the one sentence in
+  // this product where a mis-heard digit has a physical consequence". A rule that important
+  // should not depend on which code path produced the sentence. So it is also read out of
+  // the TEXT, like the payment link is, and — unlike a price — no flag waives it. The reply
+  // is still delivered in full as text; only the audio is withheld.
+  if (EMERGENCY_NUMBER_RE.test(String(replyText ?? ""))) return "emergency_number";
+
   const t = moneyScanText(String(replyText ?? ""));
   if (PAY_LINK_RE.test(t)) return "payment_link";
   if (MONEY_RE.test(t) || BARE_PRICE_RE.test(t)) {
@@ -245,6 +263,14 @@ const RECEIPT_STOP_REASONS: ReadonlySet<string> = new Set([
 const CALL_SPEAKABLE_SAFETY_STOPS: ReadonlySet<string> = new Set([
   "allergen_gate_notify",
 ]);
+
+/** The emergency service numbers, as digits, in both scripts. Bounded so an order number or
+ *  a price never matches: «1120» and «9970» are not «112» and «997». Deliberately NOT the
+ *  full detector from lib/ai/allergen-emergency.ts — that one answers "is this customer in
+ *  danger" about an INBOUND message and is right to need context. This answers "may we say
+ *  this OUT LOUD" about an OUTBOUND one, where there is no context that makes reading an
+ *  ambulance number to someone a good idea. */
+const EMERGENCY_NUMBER_RE = /(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])/;
 
 export interface VoiceTurnSignals { safetyHold: boolean; isReceipt: boolean; stopReason: string }
 

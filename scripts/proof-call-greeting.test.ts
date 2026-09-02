@@ -175,9 +175,66 @@ console.log("\n── THE SCREEN SPEAKS BEFORE IT LISTENS ───────�
   ok("…with a bounded wait, so a stalled greeting costs a pause and not the call",
     /setTimeout\(done, \d{4}\)/.test(code.slice(at, firstTurn)));
   ok("…and the text is shown while it plays, like every other spoken reply",
-    /setLastText\(String\(greeting\.text/.test(code));
+    /const text = String\(greeting\.text \?\? ""\);/.test(code) && /setLastText\(text\);/.test(code));
   ok("…using the element the visitor's tap unlocked, never a fresh one",
     /const el = player\.current \?\? new Audio\(\)/.test(code.slice(at, firstTurn)));
+}
+
+console.log("\n── HE SAID IT, SO THE CONVERSATION HAS TO KNOW ─────────────────");
+{
+  // THE GREETING EXISTED NOWHERE AFTER IT WAS SPOKEN.
+  //
+  // It was played and never pushed — so it was absent from the thread the visitor scrolls
+  // after hanging up, and absent from `historyRef`, which is what the next turn sends to the
+  // model. Khalid asked «وش أقدر أخدمك؟», the caller answered it, and the model had no
+  // record of having asked: it re-asks, re-offers the menu, and cannot honour "repeat that".
+  // This file already carries a long comment calling that failure "catastrophic and
+  // invisible" — and the one reply that skipped `push` reintroduced it for turn one.
+  const code = readFileSync(resolve(process.cwd(), "app/demo/DemoPhone.tsx"), "utf8")
+    .split("\n").filter((l) => !l.trimStart().startsWith("//") && !l.trimStart().startsWith("*")).join("\n");
+  const at = code.indexOf("if (greeting?.url)");
+  const firstTurn = code.indexOf("void runTurn();", at);
+  ok("the greeting block is still where we think it is", at > 0 && firstTurn > at);
+  const block = code.slice(at, firstTurn);
+
+  ok("the greeting is pushed into the thread",
+    /push\(\{ from: "khalid", kind: "text", text \}\)/.test(block));
+  // …AS TEXT. The audio URL is a ticket that expires in sixty seconds, so a voice bubble
+  // pointing at it is a broken thread a minute after the call — the same defect this file
+  // fixed once already for streamed replies.
+  ok("…as text, never as a voice bubble holding an expiring URL",
+    !/push\([^)]*kind: "voice"/.test(block));
+  ok("…and only when there are words to push",
+    /if \(text\.trim\(\)\) push\(/.test(block));
+  // The same array is the thread AND the model's history — `historyRef={msgsRef}` — so one
+  // push does both. Pinned here because a future split would silently undo half of it.
+  ok("the call screen's history really is the thread it pushes into",
+    /historyRef=\{msgsRef\}/.test(code) && /push=\{push\}/.test(code));
+}
+
+console.log("\n── EARS BEFORE MOUTH, BECAUSE THE MOUTH COSTS MONEY ────────────");
+{
+  // The recorder check used to run AFTER the greeting fetch, so a browser that cannot record
+  // still bought a synthesis for a screen about to say "unavailable" — against the route's
+  // own promise ("ONLY WHEN A CALL CAN ACTUALLY HAPPEN"). Harmless while the spend reached
+  // no ledger; a real charge now that it does.
+  const code = readFileSync(resolve(process.cwd(), "app/demo/DemoPhone.tsx"), "utf8");
+  // SCOPED TO THE CALL SCREEN'S OWN EFFECT, and that is not fussiness. The first version
+  // searched the whole file for the recorder check — and found the CHAT screen's, four
+  // hundred lines earlier and unrelated. A driven mutation deleted the call screen's check
+  // entirely and this assertion still passed, satisfied by a different occurrence. So the
+  // search starts at the capability probe, which is where this effect begins, and the check
+  // it looks for is the one that tests MediaRecorder (the call path's, and only its).
+  const effect = code.indexOf("/api/demo/capabilities");
+  ok("the call effect is where we think it is", effect > 0);
+  const mic = code.indexOf('MediaRecorder === "undefined"', effect);
+  const fetchAt = code.indexOf("/api/demo/greeting", effect);
+  ok("the call screen checks the recorder at all", mic > effect);
+  ok("…and does it before the greeting is minted", mic > 0 && fetchAt > mic);
+
+  // And the stall timer is cleared. Left dangling it fires into a torn-down screen.
+  ok("the six-second stall timer is captured and cleared",
+    /stall = setTimeout\(done, 6000\)/.test(code) && /if \(stall\) clearTimeout\(stall\)/.test(code));
 }
 
 console.log("\n── THE GREETING IS BOUGHT, SO IT GOES ON THE LEDGER ────────────");

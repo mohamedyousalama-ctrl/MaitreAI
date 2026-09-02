@@ -397,10 +397,24 @@ console.log("\n── AN ALLERGY DISCLOSURE IS ANSWERED OUT LOUD, ON A CALL ─�
 
   ok("the ambulance sentence is NOT spoken on a call, both waivers on",
     voiceHardZeroReason(AMBULANCE, { ...CALL, stopReason: "allergen_companion_emergency" }) === "safety_hold");
-  // …and not because of the emoji, the digits or anything in the string: the SAME text
-  // under the one speakable branch would be spoken. It is the branch that is refused.
-  ok("…and it is the BRANCH that is refused, not the wording",
-    voiceHardZeroReason(AMBULANCE, { ...CALL, stopReason: "allergen_gate_notify" }) === null);
+  // TWO INDEPENDENT REASONS NOW REFUSE IT, AND THIS ASSERTION USED TO PROVE ONLY ONE.
+  //
+  // It read: "the SAME text under the one speakable branch would be spoken — it is the BRANCH
+  // that is refused", and asserted `null` for the ambulance sentence under
+  // `allergen_gate_notify`. That was true, and it was a statement about a gap: the text guard
+  // did not look for «997», so a MODEL turn (`stopReason: "end_turn"`, cleared and speakable)
+  // carrying those digits went straight through. That gap is closed further down, so the
+  // ambulance text is refused on EITHER ground and the old assertion is now false.
+  //
+  // The branch logic still has to be proved on its own, or closing the text gap would hide a
+  // regression in it. So it is proved on a sentence with no emergency number in it: the same
+  // words, one branch speakable and one not.
+  const CALM = "خذت بالي إنك ذكرت المكسرات 🙏 نقدر نكمّل، أو أوصلك بأحد الزملاء يتأكد لك.";
+  ok("…the branch alone decides, on a text no other rule touches",
+    voiceHardZeroReason(CALM, { ...CALL, stopReason: "allergen_gate_notify" }) === null &&
+    voiceHardZeroReason(CALM, { ...CALL, stopReason: "allergen_companion_emergency" }) === "safety_hold");
+  ok("…and the ambulance sentence is refused on the branch even before the text is read",
+    voiceHardZeroReason(AMBULANCE, { ...CALL, stopReason: "allergen_companion_emergency" }) === "safety_hold");
   // The mirror of that: the notice's own wording earns nothing on a branch that is held.
   ok("…and the notice's wording earns nothing on a held branch",
     voiceHardZeroReason(NOTICE, { ...CALL, stopReason: "allergen_companion_emergency" }) === "safety_hold");
@@ -444,6 +458,56 @@ console.log("\n── AN ALLERGY DISCLOSURE IS ANSWERED OUT LOUD, ON A CALL ─�
     voiceHardZeroReason("الإجمالي 45 ريال", {
       safetyHold: false, isReceipt: false, spokenSafetyAllowed: true,
     }) === "money_figure");
+}
+
+console.log("\n── «997» IS NEVER SPOKEN, WHICHEVER PATH WROTE IT ──────────────");
+{
+  // THE BRANCH GUARD ONLY PROTECTS THE BRANCHES IT KNOWS ABOUT.
+  //
+  // `CALL_SPEAKABLE_SAFETY_STOPS` keeps the deterministic anaphylaxis reply silent, and the
+  // section above drives that. It cannot help with a MODEL turn: that returns
+  // `stopReason: "end_turn"`, a cleared and speakable turn, so if the model's own words
+  // contain «997» — «لو صار شي اتصل بالإسعاف 997» is a perfectly natural thing for it to
+  // say — nothing stopped it. The money regexes do not match a bare three-digit number and
+  // the safety branch was never entered. So it is now read out of the TEXT as well, like the
+  // payment link is, and no flag waives it.
+  const CALL = {
+    safetyHold: false, isReceipt: false,
+    spokenPricesAllowed: true, spokenSafetyAllowed: true, stopReason: "end_turn",
+  } as const;
+  for (const t of [
+    "لو صار شي اتصل بالإسعاف 997", "اتصل 997", "الرقم 911 للطوارئ", "٩٩٧ هو رقم الإسعاف",
+    "في الطوارئ اتصلوا 112",
+  ]) {
+    ok(`«${t}» from a cleared model turn is refused`,
+      voiceHardZeroReason(t, CALL) === "emergency_number");
+  }
+  // NO WAIVER REACHES IT — not the price waiver, not the safety waiver, not the one branch
+  // that IS allowed to speak. Unlike a price, there is no context that makes reading an
+  // ambulance number into someone's ear a good idea.
+  ok("the allergy branch's own waiver does not speak it either",
+    voiceHardZeroReason("اتصل بالإسعاف 997", {
+      safetyHold: true, isReceipt: false, spokenPricesAllowed: true, spokenSafetyAllowed: true,
+      stopReason: "allergen_gate_notify",
+    }) === "emergency_number");
+  ok("…and on WhatsApp too, where nothing was ever waived",
+    voiceHardZeroReason("اتصل بالإسعاف 997", { safetyHold: false, isReceipt: false }) === "emergency_number");
+
+  // AND IT DOES NOT SWALLOW ORDINARY REPLIES. An order number, a price in halalas, or any
+  // longer digit run containing those three digits must still be speakable — the bound is
+  // the same one the inbound detector uses, for the same reason.
+  for (const t of [
+    "تمام، كبسة وحدة", "طلبك رقم 1120 جاهز", "المبلغ 9970 هللة", "عندنا مندي وكبسة وجريش",
+    "طلبك رقم 9112", "الوقت 11 و 12 دقيقة",
+  ]) {
+    ok(`«${t}» is still speakable`, voiceHardZeroReason(t, CALL) !== "emergency_number");
+  }
+  // SILENCE, NOT A CARRIER. Every other refusal on a call gets a spoken acknowledgement so
+  // the line does not go dead; this one must not — the same reasoning that gives a safety
+  // hold no carrier. It falls through the closed list and produces null.
+  ok("the new reason has no spoken carrier", callCarrierFor("emergency_number" as never) === null);
+  ok("…and a safety hold still has none either", callCarrierFor("safety_hold" as never) === null);
+  ok("…while a money figure still does", typeof callCarrierFor("money_figure" as never) === "string");
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-carriers: ${pass}/${pass + fails.length} passed`);

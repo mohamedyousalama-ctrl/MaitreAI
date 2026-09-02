@@ -1487,6 +1487,18 @@ function CallScreen({
       if (cancelled || !live.current) return;
       if (!can) { setPhase("unavailable"); return; }
 
+      // EARS BEFORE MOUTH — and this order used to be the other way round.
+      //
+      // The greeting was fetched first and the recorder checked after, which meant a browser
+      // that cannot record still bought a synthesis for a screen that was about to say
+      // "unavailable". The route's own header promises the opposite ("ONLY WHEN A CALL CAN
+      // ACTUALLY HAPPEN"), and while the greeting's spend reached no ledger that was merely
+      // untidy. It is now a real `agent_runs` row, so the wrong order is a real charge.
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+        setPhase("unavailable");
+        return;
+      }
+
       // THE GREETING IS A SECOND ROUND TRIP, ON PURPOSE. It was folded into the capability
       // probe first, and a proof rejected that: the probe promises ONE boolean and does no
       // I/O, and a speech ticket both carries the voice id and costs money to mint. See
@@ -1501,10 +1513,6 @@ function CallScreen({
         greeting = res.ok ? ((await res.json())?.greeting ?? null) : null;
       } catch { greeting = null; }
       if (cancelled || !live.current) return;
-      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-        setPhase("unavailable");
-        return;
-      }
       if (started.current) return;
       started.current = true;
 
@@ -1525,9 +1533,28 @@ function CallScreen({
       // existed. A greeting is worth adding; it is not worth a call that will not start.
       if (greeting?.url) {
         setPhase("speaking");
-        setLastText(String(greeting.text ?? ""));
+        const text = String(greeting.text ?? "");
+        setLastText(text);
+
+        // IT GOES INTO THE THREAD, AND IT USED NOT TO.
+        //
+        // The greeting was spoken and then existed nowhere: not in the thread the visitor
+        // scrolls after hanging up, and — the part that actually breaks the conversation —
+        // not in `historyRef`, which is what the NEXT turn sends to the model. So Khalid
+        // asked «وش أقدر أخدمك؟», the caller answered it, and the model had no record of
+        // having asked. That is the same defect the history filter in this file carries a
+        // long comment about ("catastrophic and invisible"), reintroduced for turn one by
+        // the one reply that skips `push`.
+        //
+        // `kind: "text"`, NOT "voice", for the same reason every other spoken reply is: the
+        // audio URL is a ticket that expires in sixty seconds, and a voice bubble pointing
+        // at a dead URL is a broken thread a minute after the call.
+        if (text.trim()) push({ from: "khalid", kind: "text", text });
+
         const el = player.current ?? new Audio();
         player.current = el;
+        // Cleared on every exit path. Left dangling it fires into a torn-down screen.
+        let stall: ReturnType<typeof setTimeout> | undefined;
         try {
           el.src = greeting.url;
           await Promise.race([
@@ -1538,9 +1565,10 @@ function CallScreen({
             }),
             // A greeting is ~2s. Six is generous enough for a slow first byte and short
             // enough that a stalled one costs a pause rather than the call.
-            new Promise<void>((done) => setTimeout(done, 6000)),
+            new Promise<void>((done) => { stall = setTimeout(done, 6000); }),
           ]);
         } catch { /* the call starts listening either way */ }
+        if (stall) clearTimeout(stall);
         try { el.pause(); } catch { /* already stopped */ }
         el.onended = null;
         el.onerror = null;
