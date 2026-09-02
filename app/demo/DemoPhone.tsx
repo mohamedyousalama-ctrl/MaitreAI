@@ -1506,21 +1506,6 @@ function CallScreen({
       if (cancelled || !live.current) return;
       if (!can) { setPhase("unavailable"); return; }
 
-      // THE PERMISSION PROMPT STILL LANDS AFTER THE GREETING, AND THAT IS A KNOWN GAP.
-      //
-      // `getUserMedia` is first called inside `runTurn()`, so the sequence a visitor sees is:
-      // Khalid asks «وش أقدر أخدمك؟» → the browser drops a permission dialog over him → their
-      // answer goes into a microphone that is not open yet. Adding the greeting is what put
-      // those two next to each other.
-      //
-      // A warm-up call here was tried and REVERTED. It moves the dialog earlier, but it is a
-      // SECOND `getUserMedia` — and scripts/proof-demo-call-loop.test.ts asserts the recorder
-      // is opened once, "without re-prompting for the microphone", which is a guarantee about
-      // the visitor's experience that no test here can check against a real browser. Whether a
-      // second call re-prompts is browser-specific and needs a device to answer. Trading a
-      // proven guarantee for an unverified improvement is how the last three rounds went
-      // wrong, so this waits for a real iPhone rather than shipping on a guess.
-
       // EARS BEFORE MOUTH — and this order used to be the other way round.
       //
       // The greeting was fetched first and the recorder checked after, which meant a browser
@@ -1532,6 +1517,41 @@ function CallScreen({
         setPhase("unavailable");
         return;
       }
+
+      // OPEN THE MICROPHONE BEFORE HE SPEAKS, NOT OVER HIM.
+      //
+      // `runTurn()` opens the microphone lazily, so the sequence a visitor used to get was:
+      // Khalid says «وش أقدر أخدمك؟» → the browser drops a permission dialog on top of him →
+      // their answer goes into a microphone that is not open yet. Adding the greeting is what
+      // put those two next to each other.
+      //
+      // AN EARLIER REVERT OF THIS WAS WRONG, and the reasoning is worth keeping because it is
+      // the kind that sounds careful. It said a warm-up would be a SECOND `getUserMedia` and
+      // would break the proof's "opened once, without re-prompting" guarantee. It is not:
+      // runTurn guards its own call with `if (!stream.current)`, so a warm-up that ASSIGNS
+      // `stream.current` is the only `getUserMedia` in the call, and the count stays 1. The
+      // revert traded a real improvement for a risk that the code already ruled out.
+      //
+      // THE CONSTRAINTS ARE COPIED EXACTLY, and that is the part that can actually break.
+      // runTurn asks for echo cancellation because the microphone stays open while Khalid
+      // talks — without it the loudest thing it hears IS Khalid and every reply barges in on
+      // itself. A warm-up with a bare `audio: true` would cache a stream missing that flag and
+      // hand runTurn a microphone that cannot be used for this call. Same constraints, or none.
+      //
+      // BEST-EFFORT: a denial is swallowed here so the existing path still owns the message.
+      // The browser remembers a refusal, so runTurn's own call fails immediately with
+      // NotAllowedError and the visitor gets «ما أعطيتنا إذن المايك 🙏» exactly as before —
+      // one prompt, one refusal, one explanation.
+      try {
+        const warm = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        // The dialog is modal and slow: a visitor can hang up while it is open. Adopting the
+        // stream after that would leave a live microphone on a dead call, so it is stopped.
+        if (cancelled || !live.current) warm.getTracks().forEach((t) => t.stop());
+        else stream.current = warm;
+      } catch { /* denied or unavailable — runTurn reports it in the visitor's own words */ }
+      if (cancelled || !live.current) return;
 
       // THE GREETING IS A SECOND ROUND TRIP, ON PURPOSE. It was folded into the capability
       // probe first, and a proof rejected that: the probe promises ONE boolean and does no
