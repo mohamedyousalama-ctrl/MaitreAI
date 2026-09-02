@@ -19,7 +19,17 @@ export const TTS_RATE_PER_CHAR: Record<string, number> = {
   //   Flash / Turbo    $0.05 / 1K chars
   "elevenlabs:eleven_v3": 0.0001,
   "elevenlabs:eleven_multilingual_v2": 0.0001,
-  "elevenlabs:eleven_flash_v2.5": 0.00005,
+  // THE IDS ARE THE PROVIDER'S, AND THIS ONE WAS WRONG. The key here read
+  // `eleven_flash_v2.5` with a DOT, taken from the dashboard's DISPLAY name ("Flash v2.5").
+  // ElevenLabs model_ids use underscores, and elevenlabs.ts looks the rate up as
+  // `elevenlabs:${model}` with the id it actually sent — so the dotted key could never be
+  // hit. Missing key means ttsCostUsd returns 0 (below), which is not a loud failure: it is
+  // a silent one that makes every Flash synthesis look free to lib/monitoring/sweep.ts, the
+  // job that sums agent_runs.cost_usd for the daily spend alert. Latent while eleven_v3 was
+  // pinned; live the moment anyone switched. Both ids below were VERIFIED by synthesizing
+  // through them in the 2 Sep bake-off, not read off a page.
+  "elevenlabs:eleven_flash_v2_5": 0.00005,
+  "elevenlabs:eleven_turbo_v2_5": 0.00005,
   // OpenAI gpt-4o-mini-tts (the onyx fallback) - ~$0.015 / 1k chars = 0.000015/char.
   "openai:gpt-4o-mini-tts": 0.000015,
 };

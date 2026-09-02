@@ -102,9 +102,21 @@ delete process.env.TTS_ADAPTER;
 delete process.env.ELEVENLABS_API_KEY;
 
 // --- pricing ----------------------------------------------------------------
-ok("EL flash cost > 0 for chars", ttsCostUsd("elevenlabs:eleven_flash_v2.5", 150) > 0);
-ok("onyx cheaper than EL per char", ttsCostUsd("openai:gpt-4o-mini-tts", 150) < ttsCostUsd("elevenlabs:eleven_flash_v2.5", 150));
+// THE ID HERE WAS THE DASHBOARD'S DISPLAY NAME, NOT A MODEL ID — and this pair of
+// assertions is how the mistake survived. They asked ttsCostUsd for
+// `eleven_flash_v2.5` (a DOT) and got a number, because the rate table used the same
+// wrong key. Both agreed, both passed, and neither could ever match what
+// lib/ai/tts/elevenlabs.ts actually sends: it prices `elevenlabs:${model}` with the id
+// it put on the wire, and ElevenLabs ids use UNDERSCORES. A test written against the
+// implementation's own typo confirms the typo. Verified by synthesizing through
+// `eleven_flash_v2_5` in the 2 Sep bake-off.
+ok("EL flash cost > 0 for chars", ttsCostUsd("elevenlabs:eleven_flash_v2_5", 150) > 0);
+ok("onyx cheaper than EL per char", ttsCostUsd("openai:gpt-4o-mini-tts", 150) < ttsCostUsd("elevenlabs:eleven_flash_v2_5", 150));
 eq("unknown model → 0", ttsCostUsd("nope:model", 150), 0);
+// AND THE OLD SPELLING MUST NOW PRICE AT ZERO, which is the assertion that stops the
+// dotted key being quietly re-added beside the real one: two keys for one model is the
+// same silent-zero bug wearing a second coat.
+eq("the dashboard's display spelling is NOT a priced id", ttsCostUsd("elevenlabs:eleven_flash_v2.5", 150), 0);
 
 console.log(`\nVOICE-2 PROOF: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
