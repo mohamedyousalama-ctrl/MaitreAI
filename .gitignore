@@ -43,3 +43,6 @@ exports/
 # under .claude/ (settings, skills, agent definitions) is project config and
 # should stay committable.
 .claude/worktrees/
+
+# TTS bake-off output (scripts/voice/compare-tts-models.ts) — audio samples, never committed.
+voice-bakeoff/
