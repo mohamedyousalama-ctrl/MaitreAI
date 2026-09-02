@@ -141,11 +141,16 @@ ok("…and a non-UUID payload is not a typed action at all",
   isTypedInteractiveActionId("item:11111111-1111-4111-8111-111111111111"));
 ok("…before it even parses a quantity",
   typed.indexOf('reason: "safety_signal"') < typed.indexOf("const qty = quantityFromInteractiveId"));
-ok("the demo computes the same four detectors the WhatsApp path does",
+// THREE, not four. The phonetic near-miss net is gone by Founder ruling — see
+// lib/ai/phonetic-safety-net.ts. What still matters, and is still asserted, is that the demo
+// runs the SAME set as the WhatsApp path: a demo that gates on fewer detectors than
+// production is a demo that demonstrates something the product does not do.
+ok("the demo computes the same detectors the WhatsApp path does",
   /allergenAvoidance: detectAllergenAvoidance\(text\)\.fired/.test(route) &&
   /allergenSymptom: detectAllergenSymptom\(text\)\.fired/.test(route) &&
-  /phoneticSafetyNet: detectPhoneticSafetyNet\(text/.test(route) &&
   /allergenEmergency: detectAllergenEmergency\(text\)\.fired/.test(route));
+ok("…and neither path guesses at near-misses any more",
+  !/detectPhoneticSafetyNet\(/.test(route));
 
 // ── 7. the freshness window is ONE constant, not two ─────────────────────────
 // This module and lib/ai/customer-turn.ts must see the SAME basket; two independently
@@ -229,7 +234,7 @@ ok("typed-actions imports the shared draft-freshness constant",
     messages: [], menu_items: [], menu_categories: [], modifiers: [], menu_item_modifiers: [],
     branches: [], delivery_zones: [], policies: [], faqs: [], promotions: [], conversation_signals: [],
   });
-  const CLEAR = { allergenAvoidance: false, allergenSymptom: false, phoneticSafetyNet: false, allergenEmergency: false };
+  const CLEAR = { allergenAvoidance: false, allergenSymptom: false, allergenEmergency: false };
   const args = (over: Record<string, unknown> = {}) => ({
     restaurantId: DEMO_RESTAURANT_ID, conversationId: CONV,
     features: null, safetyProbe: CLEAR, demoRun: true, ...over,
@@ -249,9 +254,8 @@ ok("typed-actions imports the shared draft-freshness constant",
   ok("(behaviour) safetyProbeFired is true when ANY single detector fires",
     safetyProbeFired({ ...CLEAR, allergenEmergency: true }) &&
     safetyProbeFired({ ...CLEAR, allergenAvoidance: true }) &&
-    safetyProbeFired({ ...CLEAR, allergenSymptom: true }) &&
-    safetyProbeFired({ ...CLEAR, phoneticSafetyNet: true }));
-  ok("(behaviour) …and false only when all four are clear", !safetyProbeFired(CLEAR));
+    safetyProbeFired({ ...CLEAR, allergenSymptom: true }));
+  ok("(behaviour) …and false only when all of them are clear", !safetyProbeFired(CLEAR));
 
   // The quantity rail refuses a safety turn BEFORE touching the database.
   {
@@ -303,12 +307,12 @@ ok("typed-actions imports the shared draft-freshness constant",
     /if \(conversationId && !safetyProbeFired\(voiceSafetyProbe\)\)/.test(voice));
   ok("the probe is passed into the handler as well as gating the rail",
     /safetyProbe: voiceSafetyProbe/.test(voice));
-  // The point of running this on the voice path: the phonetic safety net exists FOR
-  // low-confidence audio. Passing null confidence here would copy the typed route's
-  // blindness onto the one surface that can actually see.
-  ok("the phonetic net gets the REAL stt confidence, not the typed route's nulls",
-    /phoneticSafetyNet: detectPhoneticSafetyNet\(transcript, \{ sttConfidence, isVoiceTranscript: true \}\)/.test(voice));
-  ok("all four detectors run on the transcript",
+  // The phonetic net used to run here with the REAL stt confidence, because it existed for
+  // low-confidence audio. It is gone by Founder ruling, so the confidence has no consumer on
+  // this probe — asserted as its absence, so re-adding it fails here too.
+  ok("the voice probe no longer runs the near-miss net",
+    !/detectPhoneticSafetyNet\(/.test(voice));
+  ok("the exact detectors all run on the transcript",
     /detectAllergenAvoidance\(transcript\)/.test(voice) &&
     /detectAllergenSymptom\(transcript\)/.test(voice) &&
     /detectAllergenEmergency\(transcript\)/.test(voice));

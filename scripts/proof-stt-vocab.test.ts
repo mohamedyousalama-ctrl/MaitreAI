@@ -20,8 +20,11 @@
 // recognizer biased toward a word hears that word, and one biased word trips a safety gate.
 // ============================================================================
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { safeSttVocabulary } from "../lib/ai/stt/safe-vocab.ts";
 import { detectAllergenAvoidance, normalizeAr } from "../lib/ai/allergen-gate.ts";
+import { exactSafetyToken } from "../lib/ai/allergen-context.ts";
 
 let pass = 0;
 const fails: string[] = [];
@@ -99,36 +102,41 @@ console.log("\n── IT FAILS TOWARD LESS BIAS, NEVER MORE ──────�
   }
 }
 
-console.log("\n── EVERY DETECTOR THE ROUTE RUNS, NOT JUST THE FIRST ONE ───────");
+console.log("\n── EVERY DETECTOR THE ROUTE RUNS, AND NO MORE ──────────────────");
 {
-  // FOUR DETECTORS GATE A VOICE TURN, and this filter asked ONE of them for three versions.
-  // `detectAllergenAvoidance` is the one the original incident went through, so it was the
-  // one consulted — while the PHONETIC SAFETY NET fires on words that merely SOUND like an
-  // allergen and routes, in its own words, "to the same deterministic allergen hold as a
-  // typed allergy mention":
+  // THE FILTER IS EXACTLY AS WIDE AS THE LIVE GATE — that is the whole property, and it has
+  // now been wrong in both directions.
   //
-  //     «كنافة بالجبن» → لبن      «موز» → لوز      «رز أبيض» → بيض
+  // It was too NARROW: it asked only `detectAllergenAvoidance`, so «موز» and «كنافة بالجبن»
+  // were offered to the recognizer while the PHONETIC NET could fire a hold on them. Then it
+  // was widened to all four detectors and became too WIDE, because the phonetic net was
+  // itself removed by Founder ruling (lib/ai/phonetic-safety-net.ts) — it fired on words
+  // that merely SOUND like an allergen and turned «هلا والله» into an allergy consultation.
   //
-  // And it fires on the bare word inside ANY sentence — «هلا والله جبن» trips it. So biasing
-  // a recognizer toward «جبن» raises the chance of «جبن» turning up in an utterance that was
-  // never about cheese, and that transcript then holds the conversation. That is the exact
-  // incident this file was written for, one detector over.
-  //
-  // The earlier reasoning for keeping «كنافة بالجبن» — that «جبن» is not in the avoidance
-  // lexicon, so nothing can fire on it — was true of ONE detector and false of the product.
+  // With the net unwired, «موز» and «كنافة بالجبن» can no longer trip anything, so withholding
+  // them from the transcriber costs recognition quality for zero safety gain. They come back.
   const { detectPhoneticSafetyNet } = await import("../lib/ai/phonetic-safety-net.ts");
   const { detectAllergenEmergency } = await import("../lib/ai/allergen-emergency.ts");
   const { detectAllergenSymptom } = await import("../lib/ai/allergen-gate-symptoms.ts");
 
-  for (const soundalike of ["كنافة بالجبن", "موز", "رز أبيض", "صلصة بيضاء", "لوزين"]) {
-    ok(`«${soundalike}» really does trip a hold on its own`,
+  for (const soundalike of ["كنافة بالجبن", "موز", "رز أبيض", "صلصة بيضاء"]) {
+    // The module still WORKS — it is unwired, not broken — so this documents what was given
+    // up. If someone re-wires it, proof-phonetic-net-unwired fails and so does the filter.
+    ok(`«${soundalike}» would have tripped the retired net`,
       detectPhoneticSafetyNet(soundalike, { sttConfidence: null, isVoiceTranscript: true }).fired);
-    ok(`…so it is never offered to the recognizer`,
-      !safeSttVocabulary([soundalike, "جريش"]).includes(soundalike));
+    ok(`…and is now offered to the recognizer again`,
+      safeSttVocabulary([soundalike, "جريش"]).includes(soundalike));
   }
 
-  // AND THE FILTER AGREES WITH ALL FOUR, on a realistic menu — asserted as the agreement so
-  // that adding a fifth detector to the route without adding it here fails HERE.
+  // AND A REAL ALLERGEN IS STILL WITHHELD. The ruling removed the guessing, not the gate.
+  for (const real of ["لبن بارد", "زبدة الفول السوداني", "سليق باللبن", "شكشوكة بالبيض"]) {
+    ok(`«${real}» is still kept away from the recognizer`,
+      !safeSttVocabulary([real, "جريش"]).includes(real));
+  }
+
+  // ASSERTED AS THE AGREEMENT, not a hand-picked list: nothing the filter keeps may trip any
+  // detector the route ACTUALLY RUNS. Adding a fifth detector to the route without adding it
+  // here fails HERE.
   const MENU = [
     "كنافة بالجبن", "موز", "رز أبيض", "زبدة الفول السوداني", "لبن بارد", "سليق باللبن",
     "كبسة دجاج", "مندي لحم", "جريش", "لقيمات", "قهوة عربية", "تمر سكري", "شيش طاووق",
@@ -137,18 +145,96 @@ console.log("\n── EVERY DETECTOR THE ROUTE RUNS, NOT JUST THE FIRST ONE ─�
   const kept = safeSttVocabulary(MENU);
   let leaked = "";
   for (const name of kept) {
+    const hit = detectAllergenAvoidance(`عندي حساسية من ${name}`);
+    const picked = hit.term ? normalizeAr(hit.term) : "";
     const trips =
-      detectPhoneticSafetyNet(name, { sttConfidence: null, isVoiceTranscript: true }).fired ||
       detectAllergenEmergency(name).fired ||
       detectAllergenSymptom(name).fired ||
-      detectAllergenAvoidance(`عندي حساسية من ${name}`).fired &&
-        normalizeAr(name).includes(normalizeAr(detectAllergenAvoidance(`عندي حساسية من ${name}`).term ?? "؟؟"));
+      (picked !== "" && normalizeAr(name).includes(picked));
     if (trips) leaked = name;
   }
   ok(`no kept name can trip any detector the route runs${leaked ? ` — «${leaked}» can` : ""}`,
     leaked === "");
-  ok(`…and the menu is still mostly primed (${kept.length}/${MENU.length})`,
-    kept.length >= MENU.length - 8);
+
+  // THE SYMPTOM ARM IS LOAD-BEARING, and a mutation proved nothing exercised it: dropping a
+  // detector from the filter changed no answer, because no realistic dish name trips one.
+  // Constructed on purpose — «طفح» (rash) is not a dish, and that is the point: the filter
+  // must refuse ANY name a live detector can fire on, not only the ones a menu happens to
+  // contain today.
+  // ASKED OF THE TOKEN, NOT OF A SENTENCE — and that distinction is the fix, not a dodge.
+  //
+  // This drove `detectAllergenSymptom("طفح")`, which answers "does this SENTENCE report a
+  // rash". A bare «طفح» no longer does, deliberately: «طفح الكيل» is the fixed idiom for
+  // "enough is enough" and was raising an allergy hold on the angriest customer in the
+  // queue. What the FILTER needs to know is different and more conservative — "is this word
+  // a safety word at all" — because biasing a transcriber toward «طفح» is how a rash appears
+  // in a transcript nobody spoke. `exactSafetyToken` owns that question.
+  ok("a symptom word is still a safety word for vocabulary purposes",
+    exactSafetyToken("طفح") !== null && exactSafetyToken("حكه") !== null);
+  // …and the sentence-level detector still hears it said the way people say it.
+  ok("…while the sentence detector needs a body or a report frame",
+    detectAllergenSymptom("بيجيلي طفح من المكسرات").fired &&
+    detectAllergenSymptom("عندي طفح").fired &&
+    !detectAllergenSymptom("طفح الكيل").fired);
+  ok("…and the filter refuses it", !safeSttVocabulary(["طفح جلدي", "جريش"]).includes("طفح جلدي"));
+  ok("…while the safe dish beside it survives",
+    safeSttVocabulary(["طفح جلدي", "جريش"]).includes("جريش"));
+
+  // THE EMERGENCY ARM, DRIVEN — AND IT USED NOT TO BE.
+  //
+  // This assertion read the SOURCE of safe-vocab.ts for the string
+  // "detectAllergenEmergency(name).fired", on the stated grounds that "an emergency detector
+  // needs emergency PHRASING, which no dish name has, so there is no honest fixture". The
+  // reasoning was wrong and the assertion was worthless: deleting the call and leaving a
+  // comment behind would have kept it green, and — more to the point — the detector's own
+  // emergency-call family matches on BARE DIGITS: «997», «911», «112» and their Arabic-
+  // numeral forms. «برجر 911» is a real restaurant name, not a constructed one.
+  //
+  // So there is an honest fixture, and this is it: a menu item whose name fires the emergency
+  // detector, and a filter that must refuse the token and keep the dish.
+  // A NAME THAT IS AN EMERGENCY NUMBER IS DROPPED WHOLE — the emergency arm, driven.
+  //
+  // This assertion used to read the SOURCE of safe-vocab.ts for the string
+  // "detectAllergenEmergency(name).fired", on the stated grounds that "an emergency detector
+  // needs emergency PHRASING, which no dish name has, so there is no honest fixture". Reading
+  // source is not a test: deleting the call and leaving a comment would have kept it green.
+  //
+  // There IS an honest fixture, because the detector hears a bare emergency number standing
+  // on its own — «997», «911», «112» — and a menu item can be nothing but a number.
+  ok("an emergency number alone fires the detector", detectAllergenEmergency("911").fired);
+  ok("…and the filter refuses that name", !safeSttVocabulary(["911", "جريش"]).includes("911"));
+  ok("…and the same for 997", !safeSttVocabulary(["997", "جريش"]).includes("997"));
+  ok("…while the safe dish beside it survives", safeSttVocabulary(["911", "جريش"]).includes("جريش"));
+
+  // AND «برجر 911» IS KEPT WHOLE, WHICH IS THE CORRECT ANSWER AND WAS NOT ALWAYS.
+  //
+  // The digits used to fire with no boundary and no context, so this name was split and
+  // «911» withheld — along with every customer's phone number being read as an ambulance
+  // call (see lib/ai/allergen-emergency.ts). A burger named after a car is a burger. The
+  // filter now keeps the name, and the recognizer gets the whole thing.
+  ok("«برجر 911» does not fire the detector", !detectAllergenEmergency("برجر 911").fired);
+  ok("…so the filter keeps it whole", safeSttVocabulary(["برجر 911", "جريش"]).includes("برجر 911"));
+
+  ok(`…and the menu is now MORE primed than before the ruling (${kept.length}/${MENU.length})`,
+    kept.length >= MENU.length - 4);
+}
+
+console.log("\n── AND NEVER KEEP HALF OF A TWO-WORD ALLERGEN ──────────────────");
+{
+  // «زبدة الفول السوداني» CAME BACK AS «زبدة الفول», AND THAT IS WORSE THAN DROPPING IT.
+  //
+  // The retry asks `namesAnAllergen` one word at a time, and «فول» alone is not a term — the
+  // canonical is the two-word «فول سوداني». So «السوداني» was dropped and «زبدة الفول» was
+  // offered to the recognizer as vocabulary bias: a TRUNCATION of the peanut-butter name
+  // with the peanut word missing. Priming toward it makes a peanut-butter order MORE likely
+  // to be transcribed without the word the allergen gate needs. The priming was removing the
+  // allergen.
+  const kept = safeSttVocabulary(["زبدة الفول السوداني", "جريش"]);
+  ok("«زبدة الفول» is not offered to the recognizer",
+    !kept.some((k) => k.includes("فول")));
+  ok("…nor any part of the peanut term", !kept.some((k) => k.includes("سوداني")));
+  ok("…while the harmless half is still primed", kept.includes("زبدة"));
+  ok("…and the safe dish beside it survives", kept.includes("جريش"));
 }
 
 console.log("\n── DROP THE TRIGGER WORD, KEEP THE DISH ────────────────────────");
@@ -158,30 +244,40 @@ console.log("\n── DROP THE TRIGGER WORD, KEEP THE DISH ───────
   // for. Measured on a café menu, whole-name dropping removed 39% of the items — and four of
   // those were collateral rather than allergen-bearing («موز» near «لوز», «رز أبيض» near
   // «بيض», «صلصة بيضاء», «بان كيك»). The trigger is one token.
-  const { detectPhoneticSafetyNet } = await import("../lib/ai/phonetic-safety-net.ts");
+  // EXAMPLES ARE REAL ALLERGENS NOW, not sound-alikes. This block originally used «كنافة
+  // بالجبن» and «موز», which were only ever dropped because of the retired near-miss net —
+  // with that gone they are kept whole, so they no longer exercise the retry at all. A test
+  // whose fixtures stopped reaching the code under test is a test that passes for nothing.
   const CAFE = [
-    "كنافة بالجبن", "بان كيك", "سليق باللبن", "موز", "رز أبيض", "صلصة بيضاء",
-    "زبدة الفول السوداني", "لبن بارد", "كيك شوكولاتة", "قهوة عربية", "لاتيه",
-    "كابتشينو", "تشيز كيك", "براوني", "تمر سكري", "شاي أحمر", "عصير برتقال", "ماء",
+    "كنافة بالفستق", "سليق باللبن", "كيك بالبيض", "زبدة الفول السوداني", "لبن بارد",
+    "كيك شوكولاتة", "قهوة عربية", "لاتيه", "كابتشينو", "تشيز كيك", "براوني",
+    "تمر سكري", "شاي أحمر", "عصير برتقال", "ماء",
   ];
   const kept = safeSttVocabulary(CAFE);
   ok(`the dish survives its trigger word (${kept.length}/${CAFE.length} kept)`,
-    kept.length >= CAFE.length - 3);
-  ok("…«كنافة» is kept even though «بالجبن» is not",
-    kept.includes("كنافة") && !kept.some((k) => k.includes("جبن")));
+    kept.length >= CAFE.length - 2);
+  ok("…«كنافة» is kept even though «بالفستق» is not",
+    kept.includes("كنافة") && !kept.some((k) => k.includes("فستق")));
   ok("…«سليق» is kept even though «باللبن» is not",
     kept.includes("سليق") && !kept.some((k) => k.includes("لبن")));
+  ok("…«كيك» is kept even though «بالبيض» is not",
+    kept.some((k) => k.startsWith("كيك")) && !kept.some((k) => k.includes("بيض")));
 
-  // A SINGLE-WORD NAME THAT TRIPS HAS NOTHING TO KEEP, and is still dropped outright.
-  ok("«موز» has no safe remainder and is dropped", !kept.includes("موز"));
+  // A SINGLE-WORD NAME THAT TRIPS HAS NOTHING TO KEEP, and is dropped outright.
+  ok("«لبن بارد» loses its allergen and keeps only what is left",
+    !kept.includes("لبن بارد") && !kept.some((k) => k.includes("لبن")));
 
   // AND EVERY REMAINDER IS RE-ASKED, NEVER ASSUMED. A fragment that still trips would be the
-  // same bug with a shorter string.
+  // same bug with a shorter string. Checked against the detectors the route ACTUALLY runs.
+  const { detectAllergenEmergency: emg } = await import("../lib/ai/allergen-emergency.ts");
+  const { detectAllergenSymptom: sym } = await import("../lib/ai/allergen-gate-symptoms.ts");
   let leaked = "";
   for (const k of kept) {
-    if (detectPhoneticSafetyNet(`هلا والله ${k}`, { sttConfidence: null, isVoiceTranscript: true }).fired) leaked = k;
+    const hit = detectAllergenAvoidance(`عندي حساسية من ${k}`);
+    const picked = hit.term ? normalizeAr(hit.term) : "";
+    if (emg(k).fired || sym(k).fired || (picked !== "" && normalizeAr(k).includes(picked))) leaked = k;
   }
-  ok(`no kept fragment trips a hold inside an ordinary sentence${leaked ? ` — «${leaked}» does` : ""}`,
+  ok(`no kept fragment trips a live detector${leaked ? ` — «${leaked}» does` : ""}`,
     leaked === "");
 
   // AND IT IS MEMOISED, because this now runs on every LIVE WhatsApp voice note: four
@@ -351,8 +447,12 @@ console.log("\n── AND A PREFIXED NAME IS STILL AN ALLERGEN ─────�
   // the PHONETIC SAFETY NET fires on «جبن» (nearest «لبن») and routes to the same hold. The
   // agreement that matters is with every detector the route runs, and it is asserted as such
   // in its own block below rather than against whichever one was checked first.
-  for (const compound of ["كنافة بالجبن", "سليق باللبن", "شكشوكة بالبيض"]) {
-    ok(`«${compound}» is dropped — some detector on the live path can fire on it`,
+  // «كنافة بالجبن» USED TO BE HERE and is deliberately gone: «جبن» is not in the allergen
+  // lexicon, so with the near-miss net retired nothing on the live path can fire on it, and
+  // withholding it would cost recognition for no safety gain. The two below carry real
+  // lexicon terms behind a prefix, which is the shape this block exists for.
+  for (const compound of ["سليق باللبن", "شكشوكة بالبيض"]) {
+    ok(`«${compound}» is dropped — a live detector can fire on it`,
       !safeSttVocabulary([compound]).includes(compound));
   }
 }

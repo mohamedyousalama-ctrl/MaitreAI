@@ -1,4 +1,48 @@
 // ============================================================================
+// ⚠️  NOT WIRED INTO ANY LIVE PATH. Founder ruling, this session.
+//
+// This module still works and its proofs still pass. NOTHING CALLS ITS DETECTOR.
+//
+// The line here used to read "Nothing calls it", which was false and is the kind of false
+// that matters: lib/ai/voice-aliases.ts:16 imports `levenshtein` and `stripAffix` from this
+// file on a live path, and four proofs import `detectPhoneticSafetyNet` /
+// `nearestSafetyTerm` to hold the retirement in place. A reader who believed the old
+// sentence would conclude the file is unreachable and safe to delete, and would take a live
+// voice path down with it.
+//
+// What is true: `detectPhoneticSafetyNet` and `nearestSafetyTerm` are wired into NO customer
+// path — scripts/proof-phonetic-net-unwired.test.ts fails the build if either is imported
+// anywhere but a proof. The two pure string helpers are ordinary shared utilities and are
+// deliberately still in use.
+//
+// WHY IT WAS UNWIRED. It fires on words that merely SOUND like an allergen, and the false
+// positives reached customers:
+//
+//     «كنافة بالجبن» → لبن      «موز» → لوز      «رز أبيض» → بيض
+//
+// Each of those is a full safety hold, by this file's own doctrine below — "a trip is a
+// SAFETY-POSITIVE: it routes to the same deterministic allergen hold as a typed allergy
+// mention". And because it fires on a bare word inside ANY sentence, «هلا والله» — a plain
+// greeting — became an allergy consultation on the live demo, in front of the Founder. It
+// also forced the STT vocabulary filter to withhold «موز» and «رز أبيض» from the
+// transcriber, degrading recognition of ordinary dishes to protect against its own
+// misfires.
+//
+// The exact detectors are UNTOUCHED and still run everywhere: a real «عندي حساسية من
+// المكسرات» is still caught, still notes the allergy, still offers a human. What is gone is
+// the guessing.
+//
+// THE TRADE, STATED HONESTLY. The bake-off below measured ~0.69 STT recall on safety terms,
+// so roughly one garbled spoken disclosure in three passes the exact gate silently. This net
+// existed to catch those. Removing it accepts that miss in exchange for not manufacturing
+// allergies out of ordinary words. That was the Founder's call, made with the false-positive
+// evidence in front of them.
+//
+// KEPT, NOT DELETED, because the logic is sound and a future ruling may want it back — and
+// because stored `agent_runs` rows still carry `phonetic_safety_net` as a hold source, so
+// the name has to remain findable. `scripts/proof-phonetic-net-unwired.test.ts` asserts
+// nothing imports it, so re-enabling it is a deliberate act that fails a test first.
+// ============================================================================
 // MaitreAI — Fail-closed PHONETIC SAFETY NET (PURE, no LLM, no I/O).
 // WO-VOICE-1, item-38 doctrine (binding, docs/WO_VOICE_0_BAKEOFF.md §fail-closed).
 //

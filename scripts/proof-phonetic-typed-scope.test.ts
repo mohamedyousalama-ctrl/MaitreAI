@@ -14,6 +14,7 @@
 // ============================================================================
 
 import { detectPhoneticSafetyNet } from "../lib/ai/phonetic-safety-net.ts";
+import { detectAllergenAvoidance } from "../lib/ai/allergen-gate.ts";
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.log("  ❌", n); } };
@@ -54,9 +55,29 @@ for (const s of ["عايز البيظ", "عايز الموز", "ممكن الح�
 // 5) LONG-TERM TYPOS — a 1-edit typo of a LONG allergen (≥5) fires typed with NO intent needed.
 for (const s of ["سودني", "مكسرت في الطلب", "جلوتن", "لكتوز", "جمبر"]) ok(`typed-fire (long typo): «${s}»`, typedFires(s));
 
-// 6) DOCUMENTED ACCEPTED FAIL-SAFE — intent word + short near on an innocent surface fires
-//    (rare: needs BOTH an intent word AND a near-allergen typo; over-escalate, never miss).
-ok("typed-fire (documented fail-safe): «تعبان من الحساب»", typedFires("تعبان من الحساب"));
+// 6) THE "DOCUMENTED ACCEPTED FAIL-SAFE" WAS A DOCUMENTED FALSE POSITIVE, AND IT IS FIXED.
+//
+//    «تعبان من الحساب» is "tired of the bill" — a customer complaining about a price. It
+//    fired because «تعب» was a bare stem in the avoidance-intent list (matching «تعبان»,
+//    "tired") and «الحساب» is one edit from «حساس» ("allergic"). Two accidents, one on each
+//    side, and the result was written down here as acceptable: "over-escalate, never miss".
+//
+//    It is not acceptable. The Founder retired this whole net for exactly this — an ordinary
+//    sentence answered as an allergy consultation — and a complaint about the bill is the
+//    worst possible turn to answer with a safety questionnaire. The intent list now reads
+//    «تعب» only with an object pronoun («يتعبني»), under a condition («أتعب لو»), or followed
+//    by «من» AND an actual allergen («يتعب من البندق» still fires, and is asserted in
+//    scripts/test-allergen-gate.test.ts). The near-miss half is retired outright.
+ok("typed-QUIET (the fail-safe that was a false positive): «تعبان من الحساب»",
+  !typedFires("تعبان من الحساب"));
+// …and the genuine third-party disclosure that shares its shape still fires — asserted
+// against the LIVE GATE, not this retired module. `typedFires` is
+// `detectPhoneticSafetyNet`, which reaches no live path any more
+// (scripts/proof-phonetic-net-unwired.test.ts), so a pass or a fail from it says nothing
+// about what a customer experiences. What matters is that the exact gate still hears it.
+ok("the LIVE gate still hears «صاحبي بيتعب من البندق»",
+  detectAllergenAvoidance("صاحبي بيتعب من البندق").fired);
+ok("…and stays quiet on «تعبان من الحساب»", !detectAllergenAvoidance("تعبان من الحساب").fired);
 
 // 7) FAIL-SAFE PRESERVED for typed — exact marker/phrase/English still fire (unchanged).
 ok("typed exact marker: «عندي حساسية»", typedFires("عندي حساسية"));

@@ -22,7 +22,16 @@ const turn = read("lib/ai/customer-turn.ts");
 check("base gate runs unconditionally (no flag ternary on allergenHit)",
   /const allergenHit = detectAllergenAvoidance\(input\.userMessage\);/.test(turn));
 check("no allergenSafetyOn gating remains", !turn.includes("allergenSafetyOn"));
-check("symptom EXTENSION stays flagged", /symptomDetectionOn = isFeatureExplicitlyEnabled\("allergen_symptom_detection", tenantFeatures\)/.test(turn));
+// THE SYMPTOM EXTENSION IS NO LONGER FLAGGED, and this line used to assert that it was.
+//
+// This file's own thesis is that "child safety must not depend on a feature-flag row being
+// present", and it applied that to the base gate while explicitly exempting the symptom
+// layer. The exemption did not survive contact with the other eight call sites, all of which
+// run the symptom detector unconditionally: a tenant with the flag off had the safety bridge
+// telling the customer to hold their order while the Brain kept taking it. Same thesis, one
+// layer further out.
+check("symptom EXTENSION is unconditional too, like the base gate",
+  /const symptomHit = !allergenHit\.fired/.test(turn) && !/symptomDetectionOn/.test(turn.replace(/\/\/[^\n]*/g, "")));
 // WO-SAFETY-MODEL-V3 (SINGLE DOOR): the AUTOMATIC is_safety_hold=true write is GONE — a
 // transfer happens only on an explicit human request and lands HUMAN_ACTIVE with
 // is_safety_hold:false. Child safety is now carried UNCONDITIONALLY by the notify-without-

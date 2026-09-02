@@ -94,7 +94,9 @@ IDEA → DEMO UI → REAL SERVER CORE → PRE-PILOT PRODUCT → SELLABLE OS
 - CI eval gate: tsc + build + 101 unit tests
 
 ### Behind feature flags 🚩
-- `allergen_symptom_detection` — symptom/euphemism detection (per-tenant, default OFF)
+- ~~`allergen_symptom_detection`~~ — symptom/euphemism detection is now UNCONDITIONAL on every
+  tenant. The flag gated one of nine call sites, so turning it off left the safety bridge
+  telling a customer to hold their order while the Brain kept taking it.
 - `deterministic_allergen_safety` — allergen gate (per-tenant, default OFF)
 - `ENABLE_DELIVERY_TRACKING` — delivery dispatch module (env var, default OFF)
 - `handoff_timeout` — auto-return from human takeover after idle period (per-tenant, default OFF)

@@ -20,6 +20,8 @@
 import { callCarrierFor, ALL_CARRIER_REASONS, carrierIsSafeToSpeak } from "../lib/demo/call-carriers.ts";
 import { voiceHardZeroReason } from "../lib/messaging/voice-budget.ts";
 import { toSpokenText } from "../lib/ai/tts/spoken-text.ts";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 let pass = 0;
 const fails: string[] = [];
@@ -126,7 +128,12 @@ console.log("\n── ON A CALL, A PRICE IS SPOKEN — AND ONLY A PRICE ──�
 
   // AND IT WAIVES NOTHING ELSE. This is the whole risk of the change: a flag that quietly
   // opened the other three categories would be a safety regression wearing a UX fix.
-  ok("a SAFETY HOLD is still silent on a call — not waivable",
+  // THE LABEL USED TO SAY "not waivable", AND THAT BECAME FALSE. A safety hold IS waivable
+  // now — by its OWN flag, for ONE named branch (see the allergy section below). What this
+  // line actually proves is narrower and is the thing at stake here: the PRICE waiver does
+  // not reach the safety category. An assertion whose label overstates it is how a real
+  // regression gets read as already covered.
+  ok("the PRICE waiver does not open the safety category",
     voiceHardZeroReason(REPLY, { safetyHold: true, isReceipt: false, spokenPricesAllowed: true }) === "safety_hold");
   ok("a RECEIPT is still silent on a call",
     voiceHardZeroReason(REPLY, { safetyHold: false, isReceipt: true, spokenPricesAllowed: true }) === "receipt");
@@ -135,6 +142,36 @@ console.log("\n── ON A CALL, A PRICE IS SPOKEN — AND ONLY A PRICE ──�
   // …and the link check runs BEFORE the money waiver, so a reply carrying both is refused.
   ok("a reply with a link AND a price is still refused for the link",
     voiceHardZeroReason("ادفع 30 ر.س من رابط الدفع", { safetyHold: false, isReceipt: false, spokenPricesAllowed: true }) === "payment_link");
+
+  // TWO CATEGORIES AT ONCE, WHICH NOTHING HERE HAD EVER DRIVEN. Every case above sets ONE
+  // flag, so the ORDER of the four checks was untested: a reply can easily be both a safety
+  // turn and a receipt (an allergy hold that reads the order back), and the gate returns the
+  // FIRST reason it finds. The order is not cosmetic — it decides which waiver applies. A
+  // reordering that put `isReceipt` first would hand the safety branch's waiver the power to
+  // speak a receipt, and every single-flag case would still have passed.
+  ok("safety hold AND receipt → refused as a SAFETY hold, the stricter reason",
+    voiceHardZeroReason("تم، طلبك رقم 1042", { safetyHold: true, isReceipt: true }) === "safety_hold");
+  ok("…and the safety waiver does not then speak the receipt",
+    voiceHardZeroReason("تم، طلبك رقم 1042", {
+      safetyHold: true, isReceipt: true, spokenSafetyAllowed: true, stopReason: "allergen_gate_notify",
+    }) === "receipt");
+  ok("safety hold AND a payment link → refused as a SAFETY hold",
+    voiceHardZeroReason("ادفع من هنا https://pay.example/x", { safetyHold: true, isReceipt: false }) === "safety_hold");
+  ok("…and the safety waiver does not then speak the link",
+    voiceHardZeroReason("ادفع من هنا https://pay.example/x", {
+      safetyHold: true, isReceipt: false, spokenSafetyAllowed: true, stopReason: "allergen_gate_notify",
+    }) === "payment_link");
+  ok("safety hold AND a money figure → refused as a SAFETY hold",
+    voiceHardZeroReason(REPLY, { safetyHold: true, isReceipt: false }) === "safety_hold");
+  ok("…and the safety waiver alone does not then speak the price",
+    voiceHardZeroReason(REPLY, {
+      safetyHold: true, isReceipt: false, spokenSafetyAllowed: true, stopReason: "allergen_gate_notify",
+    }) === "money_figure");
+  ok("receipt AND a payment link → refused as a RECEIPT, which is checked first",
+    voiceHardZeroReason("طلبك رقم 1042، ادفع من https://pay.example/x", { safetyHold: false, isReceipt: true }) === "receipt");
+  ok("all four at once → still the safety hold",
+    voiceHardZeroReason("طلبك 1042 بـ 30 ر.س، ادفع من https://pay.example/x",
+      { safetyHold: true, isReceipt: true }) === "safety_hold");
 
   // AND THE SPOKEN PRICE MUST SOUND LIKE A PRICE. «ر.س» is how it is WRITTEN; read as
   // letters it is noise, and a number that sounds right beside a currency that sounds like
@@ -203,10 +240,24 @@ console.log("\n── THE ROUTE ACTUALLY USES IT, AND ONLY WHEN SILENT ───
   // SCREEN showing the reply while the audio plays, and a chat voice note never struck that
   // bargain. `isPhoneCall` is itself pinned in proof-call-channel.test.ts.
   ok("the call path asks for spoken prices", /spokenPricesAllowed:\s*isPhoneCall/.test(replyCall));
+  ok("…and for the allergy sentence to be SAID, not swallowed",
+    /spokenSafetyAllowed:\s*isPhoneCall/.test(replyCall));
+  ok("…and never grants either waiver unconditionally",
+    !/spokenSafetyAllowed:\s*true/.test(code));
   ok("…and never asks for them unconditionally", !/spokenPricesAllowed:\s*true/.test(code));
   ok("…alongside the safety signals it does NOT waive",
     /safetyHold:\s*voiceSignals\.safetyHold/.test(replyCall) &&
     /isReceipt:\s*voiceSignals\.isReceipt/.test(replyCall));
+
+  // AND THE BRANCH NAME TRAVELS WITH THEM. `spokenSafetyAllowed` on its own does nothing
+  // useful any more: the gate now requires the stop reason to be on a one-name allow list,
+  // so dropping this field would put the honest allergy notice back into silence — the
+  // exact bug the waiver was built to fix — while every assertion above still passed.
+  ok("…and the branch that produced the reply travels with them",
+    /stopReason:\s*voiceSignals\.stopReason/.test(replyCall));
+  // Never a literal: a hardcoded "allergen_gate_notify" at the call site would hand the
+  // waiver to the ambulance branch again, through the one door the gate cannot see behind.
+  ok("…and never as a hardcoded branch name", !/stopReason:\s*"allergen_gate_notify"/.test(code));
 
   // …and ONLY the call path. The live WhatsApp path must never pass it: there the voice
   // note sits in its own bubble with no visible text beside it, which is the whole reason
@@ -296,6 +347,192 @@ console.log("\n── THE CARRIER'S OWN GUARD, DRIVEN AGAINST A POISONED STRING 
     ok(`«${weird}» produces silence, not a function`,
       callCarrierFor(weird as never) === null);
   }
+}
+
+console.log("\n── AN ALLERGY DISCLOSURE IS ANSWERED OUT LOUD, ON A CALL ───────");
+{
+  // WHAT SILENCE ACTUALLY DID. Every reply from the allergen gate is marked a safety turn,
+  // and a safety turn was never spoken. On a CALL that meant: the caller says «عندي حساسية
+  // من المكسرات», Khalid composes an honest, careful sentence — and says NOTHING AT ALL.
+  // Dead air, at the one moment someone disclosed something that matters to them. It read to
+  // the Founder as a broken product; it would read to a caller as being ignored.
+  //
+  // The waiver is the SAME bargain the price waiver strikes and stands on the same fact: the
+  // call screen shows the reply while the audio plays, so the sentence is readable at the
+  // moment it is spoken. Mis-hearing is bounded by the text being there. Silence is not.
+  const NOTICE =
+    "خذت بالي إنك ذكرت «المكسرات» 🙏 صحتك تهمّنا. ما أقدر أأكد من عندي إن الصنف يناسبك، " +
+    "بس نقدر نكمّل، أو أوصلك بأحد الزملاء يتأكد لك — وش تحب؟";
+
+  ok("on a call the allergy sentence is spoken",
+    voiceHardZeroReason(NOTICE, {
+      safetyHold: true, isReceipt: false, spokenPricesAllowed: true, spokenSafetyAllowed: true,
+      stopReason: "allergen_gate_notify",
+    }) === null);
+
+  // AND NOWHERE ELSE. On WhatsApp the voice note sits in its own bubble with no text beside
+  // it, which is the whole reason the rule exists.
+  ok("on WhatsApp it is still text-only",
+    voiceHardZeroReason(NOTICE, { safetyHold: true, isReceipt: false }) === "safety_hold");
+  ok("…and the waiver must be asked for explicitly, never defaulted",
+    voiceHardZeroReason(NOTICE, {
+      safetyHold: true, isReceipt: false, spokenPricesAllowed: true,
+    }) === "safety_hold");
+
+
+  // ── THE AMBULANCE SENTENCE IS STILL SILENT, ON A CALL, WITH BOTH WAIVERS ON ────────
+  //
+  // THIS IS THE ASSERTION THE FIRST VERSION DID NOT HAVE, AND THE ONE THAT MATTERED.
+  //
+  // The waiver above was written as "it waives the allergy notice", and every test here
+  // agreed, because every test here passed the allergy notice. An audit passed the OTHER
+  // reply that carries the same `safetyHold: true` — the active-anaphylaxis branch — and
+  // the gate spoke it: «🚨 اتصل بالإسعاف 997 …», the one sentence in this product where a
+  // mis-heard digit has a physical consequence, synthesized into a demo call.
+  //
+  // A scope a comment claims and the code does not enforce is worth nothing. So the scope
+  // is now the STOP REASON, and it is driven here — with the real text of the real branch,
+  // both waivers on, on the call channel — for the notice AND for every other safety
+  // branch that shares its flag.
+  const AMBULANCE = "🚨 اتصل بالإسعاف 997 الحين إذا فيه ضيق تنفس أو تورم. بلّغت الفريق فوراً وأنا معك.";
+  const CALL = { safetyHold: true, isReceipt: false, spokenPricesAllowed: true, spokenSafetyAllowed: true } as const;
+
+  ok("the ambulance sentence is NOT spoken on a call, both waivers on",
+    voiceHardZeroReason(AMBULANCE, { ...CALL, stopReason: "allergen_companion_emergency" }) === "safety_hold");
+  // TWO INDEPENDENT REASONS NOW REFUSE IT, AND THIS ASSERTION USED TO PROVE ONLY ONE.
+  //
+  // It read: "the SAME text under the one speakable branch would be spoken — it is the BRANCH
+  // that is refused", and asserted `null` for the ambulance sentence under
+  // `allergen_gate_notify`. That was true, and it was a statement about a gap: the text guard
+  // did not look for «997», so a MODEL turn (`stopReason: "end_turn"`, cleared and speakable)
+  // carrying those digits went straight through. That gap is closed further down, so the
+  // ambulance text is refused on EITHER ground and the old assertion is now false.
+  //
+  // The branch logic still has to be proved on its own, or closing the text gap would hide a
+  // regression in it. So it is proved on a sentence with no emergency number in it: the same
+  // words, one branch speakable and one not.
+  const CALM = "خذت بالي إنك ذكرت المكسرات 🙏 نقدر نكمّل، أو أوصلك بأحد الزملاء يتأكد لك.";
+  ok("…the branch alone decides, on a text no other rule touches",
+    voiceHardZeroReason(CALM, { ...CALL, stopReason: "allergen_gate_notify" }) === null &&
+    voiceHardZeroReason(CALM, { ...CALL, stopReason: "allergen_companion_emergency" }) === "safety_hold");
+  ok("…and the ambulance sentence is refused on the branch even before the text is read",
+    voiceHardZeroReason(AMBULANCE, { ...CALL, stopReason: "allergen_companion_emergency" }) === "safety_hold");
+  // The mirror of that: the notice's own wording earns nothing on a branch that is held.
+  ok("…and the notice's wording earns nothing on a held branch",
+    voiceHardZeroReason(NOTICE, { ...CALL, stopReason: "allergen_companion_emergency" }) === "safety_hold");
+
+  // EVERY OTHER SAFETY BRANCH THAT SHARES THE FLAG. Each of these sets `safetyHold` and
+  // none of them is the notice; a waiver that reaches any of them is the same defect.
+  for (const stop of [
+    "allergen_companion_emergency", "allergy_checkpoint", "allergy_simple_deflection",
+    "allergy_calm_hold", "allergy_calm_hold_emergency", "bulk_handoff",
+  ]) {
+    ok(`«${stop}» stays text-only on a call`,
+      voiceHardZeroReason(NOTICE, { ...CALL, stopReason: stop }) === "safety_hold");
+  }
+
+  // FAIL CLOSED ON EVERYTHING ELSE — including the shapes every object answers to, which
+  // is how the last fail-closed default in this file turned out to be decorative.
+  for (const stop of ["", "   ", "invented_next_year", "__proto__", "constructor", "toString", "valueOf"]) {
+    ok(`an unlisted stop reason «${stop || "(empty)"}» stays text-only`,
+      voiceHardZeroReason(NOTICE, { ...CALL, stopReason: stop }) === "safety_hold");
+  }
+  ok("a MISSING stop reason stays text-only", voiceHardZeroReason(NOTICE, CALL) === "safety_hold");
+  ok("a NULL stop reason stays text-only",
+    voiceHardZeroReason(NOTICE, { ...CALL, stopReason: null }) === "safety_hold");
+  // BOTH halves are required, in both directions: the branch alone is not a call.
+  ok("the right branch without the call channel stays text-only",
+    voiceHardZeroReason(NOTICE, {
+      safetyHold: true, isReceipt: false, spokenPricesAllowed: true, stopReason: "allergen_gate_notify",
+    }) === "safety_hold");
+
+  // NARROW ON PURPOSE. It waives the SAFETY NOTICE and nothing else — each other category is
+  // decided independently and is untouched by this flag.
+  ok("a receipt is still never spoken, even on a call",
+    voiceHardZeroReason("تم، طلبك رقم 1042", {
+      safetyHold: false, isReceipt: true, spokenSafetyAllowed: true,
+    }) === "receipt");
+  ok("a payment link is still never spoken, even on a call",
+    voiceHardZeroReason("ادفع من هنا https://pay.example.com/x", {
+      safetyHold: false, isReceipt: false, spokenSafetyAllowed: true,
+    }) === "payment_link");
+  ok("…and a money figure still needs its OWN waiver",
+    voiceHardZeroReason("الإجمالي 45 ريال", {
+      safetyHold: false, isReceipt: false, spokenSafetyAllowed: true,
+    }) === "money_figure");
+}
+
+console.log("\n── THE WAIVER IS DECIDED BY THE PLUMBING, NOT ONLY THE GATE ────");
+{
+  // EVERY ASSERTION ABOUT THIS WAIVER DROVE `voiceHardZeroReason` WITH EXPLICIT FLAGS.
+  //
+  // That proves the gate honours the flags. It proves nothing about who SETS them — and a
+  // driven mutation made `spokenSafetyAllowed` unconditional in lib/demo/voice-out.ts, which
+  // hands the waiver to the demo's NON-CALL surface (a chat voice note, where the reply is
+  // not on screen beside the audio and the whole bargain fails), and the full 227-file suite
+  // stayed green. The route-level pin above catches the ROUTE passing it wrongly; nothing
+  // caught the library passing it on.
+  const vo = readFileSync(resolve(process.cwd(), "lib/demo/voice-out.ts"), "utf8");
+  ok("voice-out forwards the caller's flag rather than inventing one",
+    /spokenSafetyAllowed:\s*o\.spokenSafetyAllowed === true/.test(vo));
+  ok("…and never asserts it unconditionally", !/spokenSafetyAllowed:\s*true\b/.test(vo));
+  ok("…and the same for the price waiver",
+    /spokenPricesAllowed:\s*o\.spokenPricesAllowed === true/.test(vo) &&
+    !/spokenPricesAllowed:\s*true\b/.test(vo));
+  // The only caller allowed to ask for either is the CALL route, gated on the channel.
+  const routeSrc2 = readFileSync(resolve(process.cwd(), "app/api/demo/voice/route.ts"), "utf8");
+  ok("the route asks for them only on a phone call",
+    /spokenSafetyAllowed:\s*isPhoneCall/.test(routeSrc2) && /spokenPricesAllowed:\s*isPhoneCall/.test(routeSrc2));
+}
+
+console.log("\n── «997» IS NEVER SPOKEN, WHICHEVER PATH WROTE IT ──────────────");
+{
+  // THE BRANCH GUARD ONLY PROTECTS THE BRANCHES IT KNOWS ABOUT.
+  //
+  // `CALL_SPEAKABLE_SAFETY_STOPS` keeps the deterministic anaphylaxis reply silent, and the
+  // section above drives that. It cannot help with a MODEL turn: that returns
+  // `stopReason: "end_turn"`, a cleared and speakable turn, so if the model's own words
+  // contain «997» — «لو صار شي اتصل بالإسعاف 997» is a perfectly natural thing for it to
+  // say — nothing stopped it. The money regexes do not match a bare three-digit number and
+  // the safety branch was never entered. So it is now read out of the TEXT as well, like the
+  // payment link is, and no flag waives it.
+  const CALL = {
+    safetyHold: false, isReceipt: false,
+    spokenPricesAllowed: true, spokenSafetyAllowed: true, stopReason: "end_turn",
+  } as const;
+  for (const t of [
+    "لو صار شي اتصل بالإسعاف 997", "اتصل 997", "الرقم 911 للطوارئ", "٩٩٧ هو رقم الإسعاف",
+    "في الطوارئ اتصلوا 112",
+  ]) {
+    ok(`«${t}» from a cleared model turn is refused`,
+      voiceHardZeroReason(t, CALL) === "emergency_number");
+  }
+  // NO WAIVER REACHES IT — not the price waiver, not the safety waiver, not the one branch
+  // that IS allowed to speak. Unlike a price, there is no context that makes reading an
+  // ambulance number into someone's ear a good idea.
+  ok("the allergy branch's own waiver does not speak it either",
+    voiceHardZeroReason("اتصل بالإسعاف 997", {
+      safetyHold: true, isReceipt: false, spokenPricesAllowed: true, spokenSafetyAllowed: true,
+      stopReason: "allergen_gate_notify",
+    }) === "emergency_number");
+  ok("…and on WhatsApp too, where nothing was ever waived",
+    voiceHardZeroReason("اتصل بالإسعاف 997", { safetyHold: false, isReceipt: false }) === "emergency_number");
+
+  // AND IT DOES NOT SWALLOW ORDINARY REPLIES. An order number, a price in halalas, or any
+  // longer digit run containing those three digits must still be speakable — the bound is
+  // the same one the inbound detector uses, for the same reason.
+  for (const t of [
+    "تمام، كبسة وحدة", "طلبك رقم 1120 جاهز", "المبلغ 9970 هللة", "عندنا مندي وكبسة وجريش",
+    "طلبك رقم 9112", "الوقت 11 و 12 دقيقة",
+  ]) {
+    ok(`«${t}» is still speakable`, voiceHardZeroReason(t, CALL) !== "emergency_number");
+  }
+  // SILENCE, NOT A CARRIER. Every other refusal on a call gets a spoken acknowledgement so
+  // the line does not go dead; this one must not — the same reasoning that gives a safety
+  // hold no carrier. It falls through the closed list and produces null.
+  ok("the new reason has no spoken carrier", callCarrierFor("emergency_number" as never) === null);
+  ok("…and a safety hold still has none either", callCarrierFor("safety_hold" as never) === null);
+  ok("…while a money figure still does", typeof callCarrierFor("money_figure" as never) === "string");
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} call-carriers: ${pass}/${pass + fails.length} passed`);

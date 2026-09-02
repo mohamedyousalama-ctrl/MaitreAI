@@ -1044,7 +1044,17 @@ function CallScreen({
         // decision.) It is the difference between a dropped line and a conversation.
         if (!reprompted.current) {
           reprompted.current = true;
-          setNote("");
+          // AND HE SAYS SOMETHING, WHICH HE DID NOT BEFORE.
+          //
+          // The comment above is proud that a second listen "costs NOTHING — nothing is
+          // uploaded, nothing is synthesized and nothing is said". That is honest about money
+          // and wrong about phone calls. A visitor who hesitated got another eight seconds of
+          // silence and then a line of Arabic they were not looking at. A person says «ألو؟».
+          //
+          // It is the same argument this branch used to justify speaking the allergy notice —
+          // silence is not the safe answer either — applied to the one place it was not.
+          // Shown, not synthesized: no ticket, no spend, no extra round trip.
+          setNote("ألو؟ سامعك…");
           void runTurn();
           return;
         }
@@ -1053,6 +1063,15 @@ function CallScreen({
       }
       // Heard them — the next silence gets its own second chance.
       reprompted.current = false;
+      // AND «ألو؟ سامعك…» COMES DOWN, BECAUSE IT WAS NEVER TRUE FOR MORE THAN ONE TURN.
+      //
+      // `note` had exactly two writers: stopWith(), whose messages are terminal and are
+      // SUPPOSED to persist, and the reprompt above, whose message is not. Nothing cleared
+      // it. So one pause anywhere in a call pinned «ألو؟ سامعك…» under every later reply
+      // for the rest of the call — a host still asking whether anyone is there, printed
+      // beneath a conversation that plainly answered him. The line is a prompt, and a
+      // prompt that outlives its answer reads as a bug in the ear, not a person.
+      setNote("");
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
       stopWith(
@@ -1227,7 +1246,27 @@ function CallScreen({
           : { from: "khalid", kind: "voice", text: reply, audioUrl: url, presentation: data.presentation ?? null }
       );
 
-      setPhase("speaking");
+      // THE SCREEN USED TO ANNOUNCE SPEECH BEFORE THERE WAS ANY, AND THAT IS THE GAP.
+      //
+      // «يتكلم…» was set HERE — the moment the turn's JSON arrived, before the audio URL was
+      // even assigned, let alone fetched. The reply text is free (it is already in the JSON);
+      // the voice costs a second same-origin GET and the provider's time-to-first-byte. So on
+      // a phone on cellular the screen said "he is speaking" and then nothing was audible for
+      // as long as that took. The founder reported it from an iPhone 12 as the voice lagging
+      // the script; the script was never early, the LABEL was lying.
+      //
+      // This file already condemns exactly this at :1470 — "running silently turn after turn
+      // while the screen reads «يتكلم…» is exactly that pretence" — and only guarded the case
+      // where audio never arrives at all, not the ordinary case where it merely has not
+      // arrived yet.
+      //
+      // So the phase now follows the SOUND, not the response. Until the element reports real
+      // progress the label stays «يفكر…», which is what a pause on a phone call actually is.
+      // Nothing is delayed to achieve this: the fetch still starts on the next line, the text
+      // card is still set at :1154 the instant the JSON parses, and no reply is held back.
+      // The only thing that changed is that the screen stops claiming a thing that has not
+      // happened.
+      //
       // THE ELEMENT THE TAP UNLOCKED, not a new one. See unlockPlayer() in the parent: a
       // fresh `new Audio()` here carries no user activation, and Safari rejects its play().
       const el = player.current ?? new Audio();
@@ -1358,8 +1397,22 @@ function CallScreen({
         armStall();
         // The first arm is the deadline for the FIRST sound, not evidence of one.
         lastProgressAt = 0;
-        el.onplaying = armStall;
-        el.ontimeupdate = armStall;
+        // AND FOR THE SAME REASON IT DOES NOT ANNOUNCE SPEECH. The flip to «يتكلم…» hangs off
+        // the EVENTS below, never off this synthetic first arm — arming a deadline is the one
+        // call here that is explicitly not evidence of sound, and driving the label from it
+        // would rebuild the lie one line lower.
+        //
+        // CHAINED, NOT REPLACED. `onplaying` is a single slot and `armStall` already owns it;
+        // assigning a phase handler over the top would silently disarm the stall timer, and
+        // `lastProgressAt` would then only advance on the first `timeupdate` — which is enough
+        // to make a fast barge-in score as "never heard" and start ending healthy calls.
+        let announcedSpeech = false;
+        const onRealProgress = () => {
+          if (!announcedSpeech) { announcedSpeech = true; setPhase("speaking"); }
+          armStall();
+        };
+        el.onplaying = onRealProgress;
+        el.ontimeupdate = onRealProgress;
         el.onended = () => done(true);
         // SAY WHY, HERE TOO. This discarded the reason, exactly as the server's catch did,
         // so a silent call produced no evidence anywhere on either side — the request
@@ -1479,18 +1532,150 @@ function CallScreen({
     let cancelled = false;
     (async () => {
       let can = false;
+      let greeting: { text?: string; url?: string } | null = null;
       try {
         const res = await fetch("/api/demo/capabilities", { cache: "no-store" });
         can = res.ok && !!(await res.json())?.voiceCall;
       } catch { can = false; }
       if (cancelled || !live.current) return;
       if (!can) { setPhase("unavailable"); return; }
+
+      // EARS BEFORE MOUTH — and this order used to be the other way round.
+      //
+      // The greeting was fetched first and the recorder checked after, which meant a browser
+      // that cannot record still bought a synthesis for a screen that was about to say
+      // "unavailable". The route's own header promises the opposite ("ONLY WHEN A CALL CAN
+      // ACTUALLY HAPPEN"), and while the greeting's spend reached no ledger that was merely
+      // untidy. It is now a real `agent_runs` row, so the wrong order is a real charge.
       if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
         setPhase("unavailable");
         return;
       }
+
+      // OPEN THE MICROPHONE BEFORE HE SPEAKS, NOT OVER HIM.
+      //
+      // `runTurn()` opens the microphone lazily, so the sequence a visitor used to get was:
+      // Khalid says «وش أقدر أخدمك؟» → the browser drops a permission dialog on top of him →
+      // their answer goes into a microphone that is not open yet. Adding the greeting is what
+      // put those two next to each other.
+      //
+      // AN EARLIER REVERT OF THIS WAS WRONG, and the reasoning is worth keeping because it is
+      // the kind that sounds careful. It said a warm-up would be a SECOND `getUserMedia` and
+      // would break the proof's "opened once, without re-prompting" guarantee. It is not:
+      // runTurn guards its own call with `if (!stream.current)`, so a warm-up that ASSIGNS
+      // `stream.current` is the only `getUserMedia` in the call, and the count stays 1. The
+      // revert traded a real improvement for a risk that the code already ruled out.
+      //
+      // THE CONSTRAINTS ARE COPIED EXACTLY, and that is the part that can actually break.
+      // runTurn asks for echo cancellation because the microphone stays open while Khalid
+      // talks — without it the loudest thing it hears IS Khalid and every reply barges in on
+      // itself. A warm-up with a bare `audio: true` would cache a stream missing that flag and
+      // hand runTurn a microphone that cannot be used for this call. Same constraints, or none.
+      //
+      // BEST-EFFORT: a denial is swallowed here so the existing path still owns the message.
+      // The browser remembers a refusal, so runTurn's own call fails immediately with
+      // NotAllowedError and the visitor gets «ما أعطيتنا إذن المايك 🙏» exactly as before —
+      // one prompt, one refusal, one explanation.
+      try {
+        const warm = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        // The dialog is modal and slow: a visitor can hang up while it is open. Adopting the
+        // stream after that would leave a live microphone on a dead call, so it is stopped.
+        if (cancelled || !live.current) warm.getTracks().forEach((t) => t.stop());
+        else stream.current = warm;
+      } catch { /* denied or unavailable — runTurn reports it in the visitor's own words */ }
+      if (cancelled || !live.current) return;
+
+      // THE GREETING IS A SECOND ROUND TRIP, ON PURPOSE. It was folded into the capability
+      // probe first, and a proof rejected that: the probe promises ONE boolean and does no
+      // I/O, and a speech ticket both carries the voice id and costs money to mint. See
+      // app/api/demo/greeting/route.ts. Asked only once the call is known to be possible, so
+      // nothing is minted for a screen about to say "unavailable".
+      //
+      // The session id goes with it so the ticket is bound to the session that will redeem
+      // it — the same rule as every other spoken reply.
+      try {
+        const q = convId.current ? `?s=${encodeURIComponent(convId.current)}` : "";
+        const res = await fetch(`/api/demo/greeting${q}`, { cache: "no-store" });
+        greeting = res.ok ? ((await res.json())?.greeting ?? null) : null;
+      } catch { greeting = null; }
+      if (cancelled || !live.current) return;
       if (started.current) return;
       started.current = true;
+
+      // ── KHALID SPEAKS FIRST ───────────────────────────────────────────────
+      //
+      // The screen used to open straight into "listening", so the visitor faced a silent
+      // line and had to talk first. Nobody answers a phone that way. It also started the
+      // eight-second no-speech clock immediately, so a visitor who hesitated — which is what
+      // a person does when a line goes quiet — burned the re-prompt before the conversation
+      // had begun.
+      //
+      // AWAITED, NOT FIRED AND FORGOTTEN: the microphone must not open while he is speaking,
+      // or his own greeting is the first thing it hears. The wait is bounded, because a
+      // greeting that will not play must never be the reason a call does not start.
+      //
+      // AND EVERY FAILURE PATH IS THE OLD BEHAVIOUR. No key, no ticket, a refused fetch, a
+      // player that will not start — the call opens listening, exactly as it did before this
+      // existed. A greeting is worth adding; it is not worth a call that will not start.
+      if (greeting?.url) {
+        setPhase("speaking");
+        const text = String(greeting.text ?? "");
+        setLastText(text);
+
+        // IT GOES INTO THE THREAD, AND IT USED NOT TO.
+        //
+        // The greeting was spoken and then existed nowhere: not in the thread the visitor
+        // scrolls after hanging up, and — the part that actually breaks the conversation —
+        // not in `historyRef`, which is what the NEXT turn sends to the model. So Khalid
+        // asked «وش أقدر أخدمك؟», the caller answered it, and the model had no record of
+        // having asked. That is the same defect the history filter in this file carries a
+        // long comment about ("catastrophic and invisible"), reintroduced for turn one by
+        // the one reply that skips `push`.
+        //
+        // `kind: "text"`, NOT "voice", for the same reason every other spoken reply is: the
+        // audio URL is a ticket that expires in sixty seconds, and a voice bubble pointing
+        // at a dead URL is a broken thread a minute after the call.
+        // …EXCEPT WHEN HE HAS ONLY JUST SAID HELLO. The chat pane seeds the thread with its
+        // own opening line, and pressing "call" straight away then stacked a second, nearly
+        // identical greeting under it — «هلا والله، أنا خالد…» followed by «هلا والله، معك
+        // خالد…». Both went to the model, so its first call turn opened on two assistant
+        // greetings, and the owner scrolling back after hanging up saw Khalid introduce
+        // himself twice with the same first word: the exact tell that this is two systems
+        // rather than one person.
+        //
+        // A thread that is nothing but that seed has had no conversation yet, so the spoken
+        // greeting adds nothing to remember. Once the visitor has said anything at all, the
+        // call greeting IS new information and is pushed normally.
+        const onlyTheSeed =
+          historyRef.current.length === 1 && historyRef.current[0]?.from === "khalid";
+        if (text.trim() && !onlyTheSeed) push({ from: "khalid", kind: "text", text });
+
+        const el = player.current ?? new Audio();
+        player.current = el;
+        // Cleared on every exit path. Left dangling it fires into a torn-down screen.
+        let stall: ReturnType<typeof setTimeout> | undefined;
+        try {
+          el.src = greeting.url;
+          await Promise.race([
+            new Promise<void>((done) => {
+              el.onended = () => done();
+              el.onerror = () => done();
+              void el.play().catch(() => done());
+            }),
+            // A greeting is ~2s. Six is generous enough for a slow first byte and short
+            // enough that a stalled one costs a pause rather than the call.
+            new Promise<void>((done) => { stall = setTimeout(done, 6000); }),
+          ]);
+        } catch { /* the call starts listening either way */ }
+        if (stall) clearTimeout(stall);
+        try { el.pause(); } catch { /* already stopped */ }
+        el.onended = null;
+        el.onerror = null;
+        if (cancelled || !live.current) return;
+      }
+
       void runTurn();
     })();
     return () => { cancelled = true; live.current = false; release(); };
@@ -1553,10 +1738,22 @@ function CallScreen({
           exact substitution "a fabricated demonstration of the guarantee this page exists
           to sell", and `demoVoiceSilenceKind` was written to stop the server making it. The
           client was making it too, one layer later. */}
+      {/* AND THE SENTENCE ITSELF HAD GONE FALSE.
+          It read «الرسائل اللي فيها حساسية أو مبالغ أو إيصال نعرضها مكتوبة دايماً» — "messages
+          with an allergy or an amount or a receipt we ALWAYS show in writing". Two of those
+          three stopped being true on this very screen: a call now speaks the price (so the
+          caller is not asked «كم سعر المندي؟» and answered with an acknowledgement while the
+          figure sits visible beside them) and speaks the honest allergy notice (so a
+          disclosure is not met with dead air). Both were deliberate, both are right, and
+          nobody updated the sentence that promises otherwise — on the page whose whole
+          argument is that the deterministic layer owns the facts, in the copy asserting it.
+          A guarantee that is false about itself is worse than no guarantee.
+          What is STILL always written is the receipt and the payment link, and that is what
+          it now says. */}
       {textOnly && (
         <p style={S.callNote}>
           {textOnlyReason === "rule"
-            ? "الرسائل اللي فيها حساسية أو مبالغ أو إيصال نعرضها مكتوبة دايماً — عشان تقراها بنفسك."
+            ? "الإيصالات وروابط الدفع وبعض ردود السلامة نعرضها مكتوبة — عشان تقراها بنفسك."
             : "الصوت تعثّر بهالرد — هذي مكتوبة، وكمّلنا."}
         </p>
       )}

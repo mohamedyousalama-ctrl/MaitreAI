@@ -50,7 +50,7 @@ tenant. Who may flip: **Kivo Ops** (per-tenant `feature_flags` write).
 | `cadence` | Honest read-receipt + typing indicator fired on each inbound. |
 | `stateful_orders` | Persistent multi-turn order draft/basket state across messages. |
 | `deterministic_allergen_safety` | The deterministic allergen safety gate + the structured `is_safety_hold` flag. |
-| `allergen_symptom_detection` | Symptom-based allergen escalation (companion to the gate). |
+| ~~`allergen_symptom_detection`~~ | **Removed — the detector is unconditional.** It gated one of nine call sites and was ignored by the other eight, so turning it off left the safety bridge telling a customer to hold their order while the Brain kept taking it. There is no runtime kill switch for the symptom lexicon; removing a term is a deploy. |
 | `psp_payments` | PSP (Moyasar) online payment links. |
 | `staff_command_channel` | The staff WhatsApp command lane — registered staff numbers routed to deterministic commands, never the customer lane. |
 | `standing_instructions` | Per-tenant standing instructions injected into the brain prompt. |

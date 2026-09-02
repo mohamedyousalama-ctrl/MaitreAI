@@ -506,6 +506,35 @@ async function runScreen(opts: {
       r.log.recorderStarts >= 2);
     ok("…but a second consecutive silence does end it, rather than looping forever",
       r.everSaw("ما سمعت شي"));
+    ok("…and it says «ألو؟» when he first goes quiet, rather than waiting in silence",
+      r.everSaw("ألو؟ سامعك"));
+  }
+
+  // «ألو؟» IS A QUESTION, AND A QUESTION STOPS BEING TRUE THE MOMENT IT IS ANSWERED.
+  //
+  // `note` had two writers and no eraser: stopWith(), whose messages END the call and are
+  // supposed to persist, and the reprompt, whose message is not. So one pause anywhere in a
+  // call pinned «ألو؟ سامعك…» to the screen for the REST of it — a host still asking whether
+  // anyone is there, printed under a conversation that had plainly answered him.
+  //
+  // Nothing above could see it. The silent-room case never speaks, so the note is correct
+  // when that scenario ends; every other case never goes quiet, so the note is never set.
+  // The defect lived exactly in the gap between them, which is why it needs a room that
+  // does BOTH — hesitates first, then talks.
+  {
+    const HESITATES_THEN_SPEAKS = [
+      ...Array(200).fill(0.003),  // an entire first window with nothing said → «ألو؟ سامعك…»
+      ...Array(7).fill(0.005),    // calibrate
+      ...Array(12).fill(0.20),    // …and then he does speak
+      ...Array(25).fill(0.004),   // …and stops, which ends the turn and uploads it
+    ];
+    const late = await runScreen({ ms: 20_000, rmsScript: HESITATES_THEN_SPEAKS });
+    ok(`a visitor who hesitates is asked «ألو؟» (${late.log.recorderStarts} turns)`,
+      late.everSaw("ألو؟ سامعك"));
+    ok("…and the question comes DOWN once he answers it",
+      !late.text.includes("ألو؟ سامعك"));
+    ok("…and hesitating never ends the call",
+      !late.everSaw("ما سمعت شي"));
   }
 
   // ── THE STREAMED DELIVERY, WHICH IS WHAT A REAL CALL GETS ────────────────
@@ -658,6 +687,18 @@ async function runScreen(opts: {
     ok(`a stalled stream does not freeze the call — it listens again (${stalled.log.recorderStarts} turns)`,
       stalled.log.recorderStarts >= 2);
     ok("…and does not end stuck on «يتكلم…»", !stalled.text.includes("يتكلم…"));
+    // AND IT NEVER SAID «يتكلم…» IN THE FIRST PLACE, WHICH IS THE STRONGER CLAIM.
+    //
+    // The assertion above only caught the screen being STUCK on the label at the end. It
+    // passed happily while the label was set the instant the turn's JSON arrived — before
+    // the audio URL was assigned, let alone fetched — so on a stream that never produced a
+    // sound the screen still announced speech, for seven seconds, and this suite agreed.
+    // That is the gap a founder reported from an iPhone as "the voice lags the script": the
+    // script was never early, the label was lying. `everSaw` is the whole call, not the end
+    // of it, which is the only way to see a claim that was true nowhere and shown anyway.
+    ok(`…and never claimed speech on a stream that made no sound ` +
+       `[${[...new Set(stalled.seen)].slice(0, 4).join(" ⏵ ").slice(0, 160)}]`,
+      !stalled.everSaw("يتكلم…"));
     ok(`…and the caller is told the voice stumbled, not that a rule withheld it ` +
        `[${[...new Set(stalled.seen)].slice(-4).join(" ⏵ ").slice(0, 220)}]`,
       stalled.everSaw("الصوت تعثّر") && !stalled.everSaw("حساسية أو مبالغ أو إيصال"));

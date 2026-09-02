@@ -31,7 +31,7 @@ The product starts with WhatsApp AI ordering (the wedge) and grows into a full R
 | WhatsApp Cloud API webhook (receive/send) | Real (per-tenant, signature-verified) |
 | AI ordering agent (كريم / Karim) | Real (Claude claude-sonnet-4-6, tool-grounded) |
 | Deterministic allergen safety gate | Real (code gate, not prompt-luck; flag-gated on/off) |
-| Allergen symptom detection (v4) | Real (merged, flag OFF pending human review) |
+| Allergen symptom detection (v4) | Real (merged, UNCONDITIONAL — no flag; lexicon still pending human review) |
 | Money guard (no invented prices/totals) | Real |
 | Human takeover + return-to-AI | Real (ownership state machine) |
 | COD cash ledger + settlement | Real (manager-gated routes) |
@@ -57,7 +57,7 @@ The product starts with WhatsApp AI ordering (the wedge) and grows into a full R
 
 | Feature | Flag | Default | Enable / disable |
 |---|---|---|---|
-| Allergen symptom detection | `allergen_symptom_detection` (per-tenant) | OFF | per-tenant record |
+| Allergen symptom detection | *(no flag — unconditional)* | always on | safety gates are not features; the flag was removed because its OFF position produced a self-contradicting turn |
 | Deterministic allergen safety | `deterministic_allergen_safety` (per-tenant) | OFF | per-tenant record |
 | Handoff timeout / auto-return | `handoff_timeout` (per-tenant) | OFF | per-tenant record |
 | Delivery tracking + dispatch | `NEXT_PUBLIC_ENABLE_DELIVERY_TRACKING` (env) | **ON** | set to exactly `"false"` to disable |

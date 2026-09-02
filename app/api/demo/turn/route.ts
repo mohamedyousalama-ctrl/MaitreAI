@@ -63,8 +63,8 @@ import { formatCustomerVisibleText, formatCustomerVisiblePresentation } from "@/
 import { handleTypedInteractiveAction, handleTypedQuantityFill, isTypedInteractiveActionId, safetyProbeFired } from "@/lib/messaging/typed-actions";
 import { detectAllergenAvoidance } from "@/lib/ai/allergen-gate";
 import { detectAllergenSymptom } from "@/lib/ai/allergen-gate-symptoms";
-import { detectPhoneticSafetyNet } from "@/lib/ai/phonetic-safety-net";
 import { detectAllergenEmergency } from "@/lib/ai/allergen-emergency";
+import { detectAllergyContext } from "@/lib/ai/allergen-context";
 import { rateLimit } from "@/lib/rate-limit";
 import { isDemoHost } from "@/lib/demo/config";
 import {
@@ -209,7 +209,7 @@ export async function POST(req: Request) {
   const safetyProbe = {
     allergenAvoidance: detectAllergenAvoidance(text).fired,
     allergenSymptom: detectAllergenSymptom(text).fired,
-    phoneticSafetyNet: detectPhoneticSafetyNet(text, { sttConfidence: null, isVoiceTranscript: false }).fired,
+    allergyContext: detectAllergyContext(text).fired,
     allergenEmergency: detectAllergenEmergency(text).fired,
   };
   const safetyFired = safetyProbeFired(safetyProbe);

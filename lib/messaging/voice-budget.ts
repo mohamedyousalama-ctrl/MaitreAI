@@ -26,7 +26,7 @@ export function voiceNotesPerDay(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : VOICE_NOTES_PER_DAY_DEFAULT;
 }
 
-export type VoiceZeroReason = "safety_hold" | "money_figure" | "payment_link" | "receipt";
+export type VoiceZeroReason = "safety_hold" | "money_figure" | "payment_link" | "receipt" | "emergency_number";
 
 export interface VoiceBudgetInput {
   /** The voice_notes feature flag (explicit-only). OFF → never any voice. */
@@ -143,16 +143,77 @@ export function voiceHardZeroReason(
      *  NARROW ON PURPOSE. This waives the MONEY FIGURE only. A payment LINK is still never
      *  spoken (a URL cannot be said usefully and a mis-heard one goes somewhere else), a
      *  receipt/order number is still never spoken (a mis-heard order number is an
-     *  operational problem, not a cosmetic one), and a SAFETY HOLD is untouched and
-     *  unreachable from here — it returns above this flag and always will. */
+     *  operational problem, not a cosmetic one). */
     spokenPricesAllowed?: boolean;
+    /** A LIVE PHONE CALL, and the reply is a SAFETY NOTICE.
+     *
+     *  WHAT SILENCE ACTUALLY DID. Every reply from the allergen gate is marked a safety
+     *  turn, and a safety turn was never spoken. On WhatsApp that is right: the sentence is
+     *  already in the customer's hand, and a mis-heard safety message is a new hazard for no
+     *  gain. On a CALL it produced the opposite of care — the caller mentions an allergy,
+     *  Khalid composes an honest, careful sentence («خذت بالي إنك ذكرت المكسرات… ما أقدر
+     *  أأكد من عندي إن الصنف يناسبك…») and then says NOTHING AT ALL. Dead air, at the exact
+     *  moment someone disclosed something that matters to them. It read to the Founder as a
+     *  broken product and would read to a caller as being ignored.
+     *
+     *  THE SAME COMPENSATING CONTROL AS THE MONEY WAIVER, and that is the whole
+     *  justification: the call screen displays the reply while the audio plays, so the
+     *  sentence is readable at the moment it is spoken. Mis-hearing is bounded by the text
+     *  being right there. Silence is bounded by nothing.
+     *
+     *  NARROW, AND THE NARROWNESS IS ENFORCED BY `stopReason`, NOT BY THIS FLAG.
+     *
+     *  Saying "this waives the safety notice only" was not enough, and an audit proved it:
+     *  the flag alone waived `safetyHold`, which is ALSO set for active anaphylaxis, for a
+     *  calm hold, for an escalation, and for any unlisted stop reason. Driven, the demo call
+     *  channel synthesized «🚨 اتصل بالإسعاف 997 الحين…». A comment claiming a scope the code
+     *  does not enforce is the defect, not the mitigation. Both are now required: the channel
+     *  must allow it AND the branch must be on the list. */
+    spokenSafetyAllowed?: boolean;
+    /** Which branch produced this reply. Required to speak a safety turn at all — see
+     *  `CALL_SPEAKABLE_SAFETY_STOPS`. Absent or unrecognised means silent. */
+    stopReason?: string | null;
   }
 ): VoiceZeroReason | null {
-  // FIRST, AND NOT WAIVABLE. Whatever the channel, a safety turn is text-only.
-  if (signals.safetyHold) return "safety_hold";
+  // FIRST. On every surface but a live call, a safety turn is text-only and that is not
+  // negotiable. On a call, ONE named branch may be spoken — the honest notice that continues
+  // the conversation — because silence there is not the safe answer either. Everything else,
+  // including a branch invented after this line was written, stays text-only.
+  if (signals.safetyHold) {
+    const speakable =
+      signals.spokenSafetyAllowed === true &&
+      CALL_SPEAKABLE_SAFETY_STOPS.has(String(signals.stopReason ?? ""));
+    if (!speakable) return "safety_hold";
+  }
   if (signals.isReceipt) return "receipt";
+
+  // THE AMBULANCE NUMBER, CHECKED IN THE TEXT AND NEVER WAIVED.
+  //
+  // Everything above this line is decided by the BRANCH: `safetyHold` marks the
+  // active-anaphylaxis reply, and `CALL_SPEAKABLE_SAFETY_STOPS` keeps it out of an ear. That
+  // is correct and it is not enough, because a branch guard only protects the branches it
+  // knows about. A MODEL turn returns `stopReason: "end_turn"`, which is a cleared,
+  // speakable turn — and if that reply happens to contain «997», nothing above stops it: the
+  // money regexes do not match a bare three-digit number and the safety branch was never
+  // entered.
+  //
+  // The product's own rule, written in three files, is that this is "the one sentence in
+  // this product where a mis-heard digit has a physical consequence". A rule that important
+  // should not depend on which code path produced the sentence. So it is also read out of
+  // the TEXT, like the payment link is, and — unlike a price — no flag waives it. The reply
+  // is still delivered in full as text; only the audio is withheld.
   const t = moneyScanText(String(replyText ?? ""));
+
+  // THE LINK IS CHECKED FIRST, AND IT WAS NOT. A checkout id can contain a letter-bounded
+  // «112», so a payment link carrying one was reported as `emergency_number` — the right
+  // outcome (silence) for the wrong reason, which is how a category stops meaning anything.
+  // A link is the more specific fact about the reply, so it wins.
   if (PAY_LINK_RE.test(t)) return "payment_link";
+
+  {
+    const rt = String(replyText ?? "");
+    if (EMERGENCY_NUMBER_RE.test(rt) && !PRICE_CONTEXT_RE.test(rt)) return "emergency_number";
+  }
   if (MONEY_RE.test(t) || BARE_PRICE_RE.test(t)) {
     return signals.spokenPricesAllowed ? null : "money_figure";
   }
@@ -192,7 +253,58 @@ const RECEIPT_STOP_REASONS: ReadonlySet<string> = new Set([
   "dup_order_reference", "old_draft_restatement",
 ]);
 
-export interface VoiceTurnSignals { safetyHold: boolean; isReceipt: boolean }
+/** The ONLY safety branches a live call may say out loud.
+ *
+ *  AN ALLOW LIST, AND IT HAS TO BE. A first version waived `safetyHold` wholesale on a call,
+ *  which was described as narrow and was not: `safetyHold` is ALSO true for the active
+ *  anaphylaxis branch, for a calm hold, for an escalation, and — by the fail-closed default
+ *  below — for any stop reason nobody has listed. An audit drove it and found the demo call
+ *  channel synthesizing «🚨 اتصل بالإسعاف 997 الحين…»: the one sentence in this product where
+ *  a mis-heard digit has a physical consequence, and the exact category two files forbid by
+ *  name. It also re-opened a hold from an earlier turn, including the case where the hold
+ *  flag could not be READ and fails closed on purpose.
+ *
+ *  So the question is not "is this a call" but "is this the reply we actually meant". Only
+ *  the notify-without-hold branch is here — the honest «خذت بالي إنك ذكرت…» that continues
+ *  the conversation. A branch added later is SILENT until someone lists it, which is the
+ *  same discipline as the speakable-stop-reason table above and for the same reason. */
+const CALL_SPEAKABLE_SAFETY_STOPS: ReadonlySet<string> = new Set([
+  "allergen_gate_notify",
+]);
+
+/** The emergency service numbers, as digits, in both scripts. Bounded so an order number or
+ *  a price never matches: «1120» and «9970» are not «112» and «997». Deliberately NOT the
+ *  full detector from lib/ai/allergen-emergency.ts — that one answers "is this customer in
+ *  danger" about an INBOUND message and is right to need context. This answers "may we say
+ *  this OUT LOUD" about an OUTBOUND one, where there is no context that makes reading an
+ *  ambulance number to someone a good idea. */
+const EMERGENCY_NUMBER_RE = /(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])/;
+
+/** …UNLESS THE NUMBER IS A PRICE, WHICH IS THE COMMON CASE AND WAS NOT THOUGHT THROUGH.
+ *
+ *  «تمام، المجموع 112 ريال» is an ordinary Saudi restaurant total, and the first version of
+ *  this guard refused it — on a channel where prices are now deliberately SPOKEN, so the
+ *  money rule no longer catches it first and this one did. A restaurant owner watching the
+ *  demo saw the call end on a normal bill.
+ *
+ *  A number bound to a currency is unambiguous: nobody hears «المجموع مئة واثنا عشر ريال»
+ *  and dials it. The risk this guard exists for is a number a listener could ACT on, and a
+ *  total is not one. So a price context exempts it — and only a price context: «اتصل 997»
+ *  and «الرقم 911 للطوارئ» carry no currency and are still refused. */
+const PRICE_CONTEXT_RE =
+  // «بـ?» WAS AN ALTERNATIVE HERE AND IT UNDID THE WHOLE GUARD. A bare «ب» with an optional
+  // tatweel, unanchored, means ANY word ending in «ب» before the number counted as a price
+  // context — so «اتصل بـ997 الحين» and «اطلب 997» («اطلب» ends in ب) were SPOKEN ALOUD on a
+  // call. That is the preposition form, which is how anyone actually writes it, and the
+  // docstring above claimed those exact sentences were still refused.
+  //
+  // The price nouns are enough: a total says «المجموع» or ends in a currency.
+  // BOTH SPELLINGS OF EVERY WORD. This regex runs on RAW reply text, not normalized — so
+  // «الإجمالي» with the hamza and «الاجمالي» without are different strings, and trimming the
+  // list to one of them put a normal bill back into silence on the other.
+  /(?:المجموع|الاجمالي|الإجمالي|السعر|المبلغ|الحساب|صار|صارت)\s*(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])|(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)\s*(?:ريال|ريالا|ر\.?\s?س|هلل[هة]|جنيه|درهم|دينار)/;
+
+export interface VoiceTurnSignals { safetyHold: boolean; isReceipt: boolean; stopReason: string }
 
 /** Derive the hard-zero signals from a completed turn. Pure. */
 export function voiceSignalsForTurn(turn: {
@@ -211,5 +323,5 @@ export function voiceSignalsForTurn(turn: {
     /^deterministic_allerg/.test(model);
   // FAIL CLOSED: a stop reason nobody listed is treated as a safety turn.
   const unknown = !VOICE_SPEAKABLE_STOP_REASONS.has(stop) && !isReceipt;
-  return { safetyHold: namedSafety || unknown, isReceipt };
+  return { safetyHold: namedSafety || unknown, isReceipt, stopReason: stop };
 }

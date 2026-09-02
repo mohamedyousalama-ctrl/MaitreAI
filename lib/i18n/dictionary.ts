@@ -396,7 +396,7 @@ export const DICTIONARY = {
     "set.flags.error": "تعذّر التغيير — العلم دون تغيير.",
     "set.flags.empty": "لا أعلام قابلة للتبديل لهذا المطعم بعد.",
     "set.flags.desc.deterministic_allergen_safety": "البوابة: قبل النموذج، تحذيرات متطابقة، لا تُتجاوز أبدًا.",
-    "set.flags.desc.allergen_symptom_detection": "عبارات الأعراض تُبقي المحادثة لموظف.",
+
     // Identity (R4) — audited edit.
     "set.id.title": "هوية المطعم",
     "set.id.sub": "الاسم، شخصية الوكيل، المنطقة الزمنية — تغيير مُدقَّق.",
@@ -1571,7 +1571,7 @@ export const DICTIONARY = {
     "set.flags.error": "Couldn’t change it — the flag is unchanged.",
     "set.flags.empty": "No flippable flags for this restaurant yet.",
     "set.flags.desc.deterministic_allergen_safety": "The gate: pre-LLM, byte-identical warnings, never bypassed.",
-    "set.flags.desc.allergen_symptom_detection": "Symptom phrases hold the conversation for a human.",
+
     // Identity (R4) — audited edit.
     "set.id.title": "Tenant identity",
     "set.id.sub": "Name, agent persona, timezone — audited change.",

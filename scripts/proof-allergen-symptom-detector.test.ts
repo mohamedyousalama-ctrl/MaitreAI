@@ -87,27 +87,54 @@ assertSrc(
   "base allergen gate runs UNCONDITIONALLY (WO-SAFE-2, no flag guard)",
   /const\s+allergenHit\s*=\s*detectAllergenAvoidance\s*\(\s*input\.userMessage\s*\)/
 );
-// WO-SAFE-2: symptomDetectionOn is now a STANDALONE explicit-flag check (it no
-// longer requires the base flag as a prerequisite — the base gate is always on).
+// THE FLAG IS GONE FROM THIS LAYER, AND THESE THREE ASSERTIONS RECORDED THE OLD DESIGN.
+//
+// WO-SAFE-2 made `symptomDetectionOn` a standalone explicit-flag check, and that was a
+// reasonable decision at the time. It stopped being reasonable once the detector had eight
+// OTHER call sites — safety-bridge.ts, respond-and-send.ts (four), allergy-simple.ts,
+// stt/safe-vocab.ts and both demo routes — every one of them unconditional.
+//
+// On a tenant with the flag off, «حلقي ينتفخ» therefore fired the SAFETY BRIDGE, which tells
+// the customer the team has been alerted and to hold their order until a human confirms,
+// while the Brain treated the same turn as an ordinary order and carried on taking it. The
+// customer was told to stop and served in the same breath. The flag was not a rollback
+// either: eight of its nine effects happened regardless of its value.
+//
+// A safety gate is not a feature. The base gate has never been flagged, and this layer now
+// matches it and its own eight peers.
 assertSrc(
-  "symptomDetectionOn is a standalone allergen_symptom_detection flag check",
-  /symptomDetectionOn\s*=\s*isFeatureExplicitlyEnabled\s*\(\s*["']allergen_symptom_detection["']/
+  "the symptom layer is no longer flag-gated",
+  /const symptomHit = !allergenHit\.fired\s*\n\s*\? detectAllergenSymptom\(input\.userMessage\)/
+);
+refuteSrc(
+  "…and no allergen_symptom_detection check remains in the turn",
+  /symptomDetectionOn\s*=/
 );
 assertSrc(
-  "symptomDetectionOn checks allergen_symptom_detection flag explicitly",
-  /isFeatureExplicitlyEnabled\s*\(\s*["']allergen_symptom_detection["']/
-);
-assertSrc(
-  "symptomHit only runs when allergenHit did NOT fire",
-  /!allergenHit\.fired\s*&&\s*symptomDetectionOn/
+  "symptomHit still only runs when allergenHit did NOT fire",
+  /const symptomHit = !allergenHit\.fired/
 );
 assertSrc(
   "combinedAllergenHit set from allergenHit, symptomHit, phonetic net, or memory gate",
   /combinedAllergenHit\s*=\s*allergenHit\.fired\s*\?\s*allergenHit\s*:\s*\(\s*symptomHit\.fired\s*\?\s*symptomHit\s*:\s*\(\s*phoneticHit\.fired\s*\?\s*phoneticHit\s*:\s*memoryAllergyHit\s*\)\s*\)/
 );
+// THE GUESSING IS GONE; THE EXACT WORDS ARE NOT.
+//
+// The phonetic near-miss net was retired by Founder ruling — it fired on words that merely
+// SOUND like an allergen («موز»→لوز, «كنافة بالجبن»→لبن) and turned «هلا والله» into an
+// allergy hold in front of the Founder. But three of its four firing modes were EXACT
+// matches, and an audit drove 110 cases showing nothing else carried them: «الدكتور منع
+// عني»، «ما أتحمل»، «حلقي ينتفخ»، «عندي ضيق نفس»، «gluten free». Those are restored by
+// lib/ai/allergen-context.ts, which has no distance function and takes no confidence.
+//
+// So the slot still runs, and what runs in it must be the EXACT detector — never the net.
 assertSrc(
-  "fail-closed phonetic net runs UNCONDITIONALLY (WO-VOICE-1, item-38)",
-  /phoneticHit\s*=\s*\(!allergenHit\.fired\s*&&\s*!symptomHit\.fired\)[\s\S]*?detectPhoneticSafetyNet/
+  "the slot runs the exact-context detector",
+  /const phoneticHit = \(!allergenHit\.fired && !symptomHit\.fired\)[\s\S]{0,120}detectAllergyContext/
+);
+assertSrc(
+  "…and never the retired near-miss net",
+  /^(?![\s\S]*detectPhoneticSafetyNet\s*\()/
 );
 assertSrc(
   "combinedAllergenHit.fired controls escalation branch",

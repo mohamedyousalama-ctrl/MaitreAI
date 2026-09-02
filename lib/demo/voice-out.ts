@@ -20,6 +20,16 @@
 // WhatsApp: the allergen gate is the thing this page exists to demonstrate, and speaking
 // that reply would show the feature off in the one modality the product forbids for it.
 //
+// ONE EXCEPTION, ADDED LATER, AND THIS PARAGRAPH DID NOT SAY SO FOR TWO COMMITS.
+// On a live CALL and only there, two things are now spoken: a PRICE, and the honest
+// allergy NOTICE («خذت بالي إنك ذكرت…»). The call screen displays the reply text while
+// the audio plays — the compensating control a WhatsApp voice note never had — and on a
+// call, silence is not the safe answer either: the Founder asked a price and heard
+// nothing, and a caller disclosing an allergy heard nothing. Receipts, payment links,
+// and every other safety branch — ACTIVE ANAPHYLAXIS included, «997» above all — are
+// unchanged and stay text-only on every surface. The scope is enforced by
+// CALL_SPEAKABLE_SAFETY_STOPS in lib/messaging/voice-budget.ts, not by this comment.
+//
 // WE CALL THE ADAPTER DIRECTLY, NOT `synthesizeVoiceReply`. That wrapper's whole feature is
 // the onyx fallback, and this module refuses a fallback anyway — so routing through it
 // meant PAYING OpenAI for an onyx synthesis on every ElevenLabs failure and discarding the
@@ -52,7 +62,7 @@ export type DemoVoiceOutSkip =
   | "empty"
   | "synth_failed"
   | "wrong_voice"        // the provider that answered is not the one we pinned
-  // The four HARD-ZERO categories, from lib/messaging/voice-budget.ts. A product ruling,
+  // The HARD-ZERO categories (five of them now — see VoiceZeroReason, which owns the list), from lib/messaging/voice-budget.ts. A product ruling,
   // not a budget: a spoken safety message is a new mis-hearing surface, a spoken amount is
   // a misheard charge, a link must be tappable, and a receipt's record of truth is text.
   | VoiceZeroReason;
@@ -166,12 +176,36 @@ export function demoVoiceAudible(): boolean {
  *  text on purpose"; a provider failure means "the voice is not working, stop pretending
  *  to be a call". Collapsing them made every provider failure display the safety-rule
  *  explanation and kept the loop running, uploading a fresh clip each turn. */
+/** EVERY hard-zero reason, mapped explicitly. A TABLE, NOT A CHAIN, AND THAT IS A BUG FIX.
+ *
+ *  This was a hand-written `if` listing four reasons with `unavailable` as the fallthrough.
+ *  A fifth — `emergency_number` — was added to `VoiceZeroReason` and nothing here changed,
+ *  so it fell through to "the voice is not working" and `callResponseAction` ENDED THE CALL.
+ *  Driven: «تمام، المجموع 112 ريال 👍» produced `{kind:"end", reason:"voice_unavailable"}` —
+ *  a deliberate product rule reported to a prospect as a product failure, on an ordinary
+ *  bill. The exact "fabricated demonstration" this codebase argues against, inverted.
+ *
+ *  A `Record` keyed on the union means the compiler refuses the next addition until someone
+ *  decides which side it belongs on — the same discipline typed-actions.ts applies to
+ *  SafetyProbe, and for the same reason: a silent default is how this one got through. */
+const SILENCE_KIND_BY_REASON: Record<VoiceZeroReason, "rule" | "unavailable"> = {
+  safety_hold: "rule",
+  money_figure: "rule",
+  payment_link: "rule",
+  receipt: "rule",
+  // A deliberate rule like the others: the reply is shown, the call continues. It must NOT
+  // be "unavailable" — that hangs up and blames the voice.
+  emergency_number: "rule",
+};
+
 export function demoVoiceSilenceKind(skipped: DemoVoiceOutSkip | null): "none" | "rule" | "unavailable" {
   if (!skipped) return "none";
-  if (skipped === "safety_hold" || skipped === "money_figure" ||
-      skipped === "payment_link" || skipped === "receipt") return "rule";
-  // `too_long` sits here rather than under "rule": the visitor cannot tell it from a
-  // failure, and describing a length cap as a safety guarantee is the same false claim.
+  const known = (SILENCE_KIND_BY_REASON as Record<string, "rule" | "unavailable" | undefined>)[skipped];
+  if (known) return known;
+  // `too_long`, `no_key`, `provider_error` and friends are not VoiceZeroReason members and
+  // land here. `too_long` sits under "unavailable" rather than "rule" deliberately: the
+  // visitor cannot tell it from a failure, and describing a length cap as a safety guarantee
+  // is the same false claim.
   return "unavailable";
 }
 
@@ -210,6 +244,16 @@ export interface DemoVoiceOpts {
   /** A live phone call, where this same screen shows the reply as text while the audio
    *  plays — see the note on `voiceHardZeroReason`. Waives the money figure ONLY. */
   spokenPricesAllowed?: boolean;
+  /** The same call, for a SAFETY NOTICE. An allergy reply used to be answered with total
+   *  silence — the caller discloses an allergy and hears nothing at all. See the note on
+   *  `voiceHardZeroReason`; the compensating control is the same screen.
+   *
+   *  NOT SUFFICIENT ON ITS OWN. It must be paired with a `stopReason` on the call-speakable
+   *  list, or the turn stays silent. The flag alone once waived active anaphylaxis. */
+  spokenSafetyAllowed?: boolean;
+  /** Which branch produced this reply. Decides, with the flag above, whether a safety turn
+   *  may be spoken at all. */
+  stopReason?: string | null;
 }
 
 /** May we speak this reply, and in whose voice? */
@@ -254,6 +298,8 @@ export function demoVoiceDecision(replyText: string, opts?: DemoVoiceOpts): Demo
     safetyHold: o.safetyHold === true,
     isReceipt: o.isReceipt === true,
     spokenPricesAllowed: o.spokenPricesAllowed === true,
+    spokenSafetyAllowed: o.spokenSafetyAllowed === true,
+    stopReason: o.stopReason ?? null,
   });
   if (hardZero) return no(hardZero);
 

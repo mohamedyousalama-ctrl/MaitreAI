@@ -56,6 +56,13 @@ export async function GET(req: Request) {
   // opened a call screen that could never make a noise.
   const voiceOut = demoVoiceAudible();
 
+  // STILL ONE BOOLEAN, DELIBERATELY. The opening greeting was briefly minted here, on the
+  // reasoning that the call screen already asks this question so it would cost no extra
+  // round trip. That was wrong twice, and the proof said so: it made this route disclose the
+  // voice id (inside the ticket payload) to anyone who sends a GET, and — worse — it turned
+  // a handler whose limit is FOUR TIMES the turn cap precisely because "the handler does no
+  // I/O" into one that books a paid synthesis on every hit. The greeting has its own route
+  // with its own limit; see app/api/demo/greeting/route.ts.
   return NextResponse.json(
     { voiceCall: voiceIn && voiceOut },
     // Never cached: this flips with a deployment's configuration, and a CDN holding
