@@ -1549,7 +1549,20 @@ function CallScreen({
         // `kind: "text"`, NOT "voice", for the same reason every other spoken reply is: the
         // audio URL is a ticket that expires in sixty seconds, and a voice bubble pointing
         // at a dead URL is a broken thread a minute after the call.
-        if (text.trim()) push({ from: "khalid", kind: "text", text });
+        // …EXCEPT WHEN HE HAS ONLY JUST SAID HELLO. The chat pane seeds the thread with its
+        // own opening line, and pressing "call" straight away then stacked a second, nearly
+        // identical greeting under it — «هلا والله، أنا خالد…» followed by «هلا والله، معك
+        // خالد…». Both went to the model, so its first call turn opened on two assistant
+        // greetings, and the owner scrolling back after hanging up saw Khalid introduce
+        // himself twice with the same first word: the exact tell that this is two systems
+        // rather than one person.
+        //
+        // A thread that is nothing but that seed has had no conversation yet, so the spoken
+        // greeting adds nothing to remember. Once the visitor has said anything at all, the
+        // call greeting IS new information and is pushed normally.
+        const onlyTheSeed =
+          historyRef.current.length === 1 && historyRef.current[0]?.from === "khalid";
+        if (text.trim() && !onlyTheSeed) push({ from: "khalid", kind: "text", text });
 
         const el = player.current ?? new Audio();
         player.current = el;
@@ -1652,7 +1665,7 @@ function CallScreen({
       {textOnly && (
         <p style={S.callNote}>
           {textOnlyReason === "rule"
-            ? "الإيصالات وروابط الدفع نعرضها مكتوبة دايماً — عشان تقراها بنفسك."
+            ? "الإيصالات وروابط الدفع وبعض ردود السلامة نعرضها مكتوبة — عشان تقراها بنفسك."
             : "الصوت تعثّر بهالرد — هذي مكتوبة، وكمّلنا."}
         </p>
       )}

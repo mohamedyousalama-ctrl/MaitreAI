@@ -202,7 +202,10 @@ export function voiceHardZeroReason(
   // should not depend on which code path produced the sentence. So it is also read out of
   // the TEXT, like the payment link is, and — unlike a price — no flag waives it. The reply
   // is still delivered in full as text; only the audio is withheld.
-  if (EMERGENCY_NUMBER_RE.test(String(replyText ?? ""))) return "emergency_number";
+  {
+    const rt = String(replyText ?? "");
+    if (EMERGENCY_NUMBER_RE.test(rt) && !PRICE_CONTEXT_RE.test(rt)) return "emergency_number";
+  }
 
   const t = moneyScanText(String(replyText ?? ""));
   if (PAY_LINK_RE.test(t)) return "payment_link";
@@ -271,6 +274,20 @@ const CALL_SPEAKABLE_SAFETY_STOPS: ReadonlySet<string> = new Set([
  *  this OUT LOUD" about an OUTBOUND one, where there is no context that makes reading an
  *  ambulance number to someone a good idea. */
 const EMERGENCY_NUMBER_RE = /(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])/;
+
+/** …UNLESS THE NUMBER IS A PRICE, WHICH IS THE COMMON CASE AND WAS NOT THOUGHT THROUGH.
+ *
+ *  «تمام، المجموع 112 ريال» is an ordinary Saudi restaurant total, and the first version of
+ *  this guard refused it — on a channel where prices are now deliberately SPOKEN, so the
+ *  money rule no longer catches it first and this one did. A restaurant owner watching the
+ *  demo saw the call end on a normal bill.
+ *
+ *  A number bound to a currency is unambiguous: nobody hears «المجموع مئة واثنا عشر ريال»
+ *  and dials it. The risk this guard exists for is a number a listener could ACT on, and a
+ *  total is not one. So a price context exempts it — and only a price context: «اتصل 997»
+ *  and «الرقم 911 للطوارئ» carry no currency and are still refused. */
+const PRICE_CONTEXT_RE =
+  /(?:المجموع|الاجمالي|الإجمالي|السعر|المبلغ|الحساب|صار|بـ?)\s*(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])|(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)\s*(?:ريال|ريالا|ر\.?\s?س|هلل[هة]|جنيه|درهم|دينار)/;
 
 export interface VoiceTurnSignals { safetyHold: boolean; isReceipt: boolean; stopReason: string }
 

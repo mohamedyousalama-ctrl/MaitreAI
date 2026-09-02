@@ -6,7 +6,12 @@
 //     familiar with food-allergy terminology. That review is tracked (with the exact
 //     terms + a sign-off checklist) in docs/ALLERGEN_SYMPTOM_REVIEW.md — NOT buried here.
 //
-//     The `allergen_symptom_detection` flag is currently ON in prod for Wesaya. This
+//     NO LONGER FLAG-GATED. `allergen_symptom_detection` was checked in one of the nine
+//     places that call this detector and ignored in the other eight, so its OFF position
+//     produced a turn that contradicted itself — the safety bridge telling the customer to
+//     hold while the Brain took the order. It is unconditional now, which also means there
+//     is no runtime kill switch for the lists below: removing a term is a deploy.
+//     The `allergen_symptom_detection` flag was previously ON in prod for Wesaya. This
 //     is SAFE pending review because of the FAIL-SAFE CONTRACT below; the review
 //     improves recall + reduces over-escalation, it does not gate a safety regression.
 //
@@ -62,7 +67,7 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   // Choking / airway emergency — ADDED: covers اختناق / بتخنق / بيخنق / بختنق / بخنق / نفسي بيقف / ربو etc.
   // بخنق = ب+خ+نق; بختنق = ب+خت+نق; بتخنق/بيخنق = بت/بي+خنق — covered by separate alternates.
   // Past-tense اتخنق/اتخنقت / present باتخنق/باتخنقت ADDED (reported after-the-fact incidents).
-  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|ب(?:خت|خ)نق(?:ني)?|(?:ب)?اتخنق[ت]?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة](?:\s+في\s+صدري)?|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|(?<![ء-ي])(?:ال)?ربو(?![ء-ي]))/, label: "ضيق في التنفس" },
+  { re: /(?:اختناق|(?:بت|بي)خنق(?:ني)?|ب(?:خت|خ)نق(?:ني)?|(?:ب)?اتخنق[ت]?|خنق[هة]|نفسي\s+(?:بيقف|بيتقطع)|مش\s+لاحق\s+نفسي|كتم[هة]\s+(?:في\s+)?(?:صدر|نفس|حلق|زور)|صدري\s+بيقفل|صفير\s+في\s+النفس|ازم[هة]\s+صدر|(?<![ء-ي])(?:ال)?ربو(?![ء-ي]))/, label: "ضيق في التنفس" },
 
   // Swelling — original انتفاخ/تورم patterns
   { re: /(?:وجه|وشي?|عيني?|شفايف|شفه|لسان)(?:\s+\S+)?\s*(?:بي?نتفخ|بينتفخ|انتفخ|بتورم|اتورم|بيتورم)/, label: "تورم" },
@@ -86,7 +91,18 @@ const SYMPTOM_TERMS: { re: RegExp; label: string }[] = [
   // «حبوب» is the worst of them: pills, grains AND pimples, and the grain reading is the one
   // a restaurant hears all day. It now needs a body or a skin word with it. The others need
   // only to be words rather than fragments.
-  { re: /(?<![ء-ي])(?:ال)?(?:طفح|حكه|هرش|اكزيما)(?![ء-ي])/, label: "طفح جلدي" },
+  // A PERSON HAS TO BE IN THE SENTENCE — and the fix note above claimed this was already
+  // handled. It was not: it said «طفح الكيل» was covered because "the others need only to be
+  // words rather than fragments", and «طفح» in «طفح الكيل» IS a word. «طفح الكيل من التأخير
+  // هذا» ("enough of this delay") is the single most likely sentence from a customer who has
+  // had it with a late order, and it was answered with an allergy questionnaire, a kitchen
+  // note and a page to a human.
+  //
+  // «اكزيما» and «هرش» stand alone — eczema and itching-scratching have no second reading.
+  // «طفح» and «حكه» need either a body part or the frame Arabic uses to report a symptom
+  // («عندي»، «طلع لي»، «جاني»، «صار لي»، «فيني»), which is how anyone actually says it.
+  { re: /(?<![ء-ي])(?:ال)?(?:هرش|اكزيما)(?![ء-ي])/, label: "طفح جلدي" },
+  { re: /(?:(?:عندي|فيني|جاني|جالي|بيجيني|بيجيلي|يجيني|يجيلي|بتجيني|تجيني|بييجي|طلع\s*لي|ظهر\s*لي|صار\s*لي|طالع\s*لي|احس\s*ب|حاسس\s*ب)[^.،,؛!؟\n]{0,20}(?<![ء-ي])(?:ال)?(?:طفح|حكه)(?![ء-ي])|(?<![ء-ي])(?:ال)?(?:طفح|حكه)(?![ء-ي])[^.،,؛!؟\n]{0,20}(?:جلد|بشرت|جسم|وجهي|وشي|ايدي|يدي|رقبت|صدري|بطني|رجلي))/, label: "طفح جلدي" },
   { re: /(?<![ء-ي])(?:ال)?حبوب(?![ء-ي])(?=[^.،,؛!؟\n]{0,20}(?:جلد|وجهي|وشي|بشرتي|جسمي|ايدي|يدي|رقبتي|صدري))|(?:جلدي|وجهي|وشي|بشرتي|جسمي)[^.،,؛!؟\n]{0,12}(?<![ء-ي])حبوب(?![ء-ي])/, label: "طفح جلدي" },
   { re: /جلد[ي]?\s+(?:بي?حمر|بيتاثر|بي?تبقع)/, label: "طفح جلدي" },
   // WORD BOUNDARIES, because «rash» is inside «Rasheed» and «hives» is inside «chives».

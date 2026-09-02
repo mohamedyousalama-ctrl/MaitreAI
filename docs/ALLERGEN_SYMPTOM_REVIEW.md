@@ -1,5 +1,15 @@
 # Allergen SYMPTOM detector — human review (REQUIRED)
 
+> **The flag no longer controls this.** `allergen_symptom_detection` was checked in ONE of
+> the nine places that call `detectAllergenSymptom`; the other eight — the safety bridge, the
+> reply dampener, four safety probes, the STT vocabulary filter and both demo routes — always
+> ran it. A tenant with the flag off therefore had the safety bridge telling the customer to
+> hold their order while the Brain kept taking it: one turn, two answers. The detector is now
+> unconditional everywhere, like the base allergen gate has always been.
+>
+> **So there is no runtime kill switch for this list.** If a review here removes a term, that
+> is a code change and a deploy. Said plainly because this document used to promise a flag.
+
 **Status: ⏳ PENDING HUMAN/MEDICAL REVIEW.** The `allergen_symptom_detection`
 feature flag is **ON in production for Wesaya** (`feature_flags.allergen_symptom_detection = true`),
 but the Arabic symptom/condition term list below has **not** had a documented
@@ -110,6 +120,8 @@ Additions / changes requested (free text):
 - **Approve / approve-with-additions:** make the term-list edits the reviewer
   specifies (a separate, reviewed change), then update the status banner at the top
   of `lib/ai/allergen-gate-symptoms.ts` to "REVIEWED <date> by <name>".
-- **Turn OFF until revised:** set `feature_flags.allergen_symptom_detection = false`
+- **Remove the term and deploy.** (This line used to read "Turn OFF until revised: set
+  `feature_flags.allergen_symptom_detection = false`". That flag no longer gates anything —
+  see the note at the top of this file — so the only lever is the lexicon itself.)
   for the tenant (DB change — requires Mohamed's approval, per the migration/flag
   governance). The base allergen gate stays ON regardless.

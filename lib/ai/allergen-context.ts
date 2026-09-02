@@ -42,12 +42,18 @@ export interface AllergyContextHit {
   /** Which of the three exact modes fired — kept distinct so a live false-positive rate is
    *  watchable per mode rather than as one number.
    *
-   *  WHERE IT ACTUALLY LANDS, because a review traced it and concluded it was dropped:
-   *  `customer-turn.ts` passes it as `netReason` on the `notify_without_hold` signal, and
-   *  `typed-actions.ts` inserts every signal into `conversation_signals` with its `detail`
-   *  jsonb intact. So the query is one `detail->>'netReason'` away, grouped by mode, on the
-   *  live path. The review followed the `recordAllergyEvent` path instead, which is a
-   *  different table and genuinely does not carry it.
+   *  WHERE IT LANDS, AND WHERE IT DOES NOT — stated precisely, because the previous version
+   *  of this paragraph was confidently wrong in two ways and a review caught both.
+   *
+   *  It lands on the `notify_without_hold` signal as `netReason`, written by
+   *  `customer-turn.ts` and inserted into `conversation_signals.detail` — so the query is one
+   *  `detail->>'netReason'` away, grouped by mode.
+   *
+   *  BUT ONLY ON THE FLAG-OFF BRANCH. `forcedAllergenSafetyResult` is reached when neither
+   *  `allergy_companion_mode` nor `allergy_simple` is on. The one named production tenant has
+   *  both, plus `allergy_calm_hold` — so on THAT tenant the calm-hold and companion writers
+   *  run instead, and they record a coarse path label without the mode. The metric is real
+   *  for flag-off tenants and absent for the tenant most likely to be asked about.
    *
    *  NOT ON THE DEMO, deliberately: `typed-actions.ts` skips the insert when `demoRun`, and a
    *  public demo persisting a visitor's words is a worse problem than a missing metric. */
@@ -57,23 +63,76 @@ export interface AllergyContextHit {
 const NO_HIT: AllergyContextHit = { fired: false, term: null, reason: null };
 
 /** Single-token ALLERGY markers. EXACT only — no near budget, ever. */
+// «حساس» / «حساسه» / «حساسين» ARE NOT HERE, AND THEY WERE THE WORST ENTRY IN THIS FILE.
+//
+// «حساس» is the everyday Arabic adjective *sensitive*. «الموضوع حساس شوي، تكلم مع المدير»
+// ("it's a sensitive matter, speak to the manager") and «الطلب حساس للوقت» ("the order is
+// time-sensitive") both raised an allergy hold — which on the live path also writes a kitchen
+// note and fires `recordCriticalAlert`, an email and a WhatsApp to a human phone.
+//
+// AND NOTHING IS LOST BY REMOVING THEM, which I drove rather than assumed: «أنا حساس من
+// اللبن»، «حساس من المكسرات»، «أنا حساسة من البيض»، «حساسين من الفول السوداني» are every one
+// of them already caught by `detectAllergenAvoidance`, WITH the correct allergen term — which
+// this file never named anyway. The bare adjective was contributing false positives and no
+// recall at all. The unambiguous NOUNS stay.
 const ALLERGY_MARKERS = [
-  "حساسيه", "حساسيتي", "حساس", "حساسه", "حساسين", "تحسس", "اتحسس",
-  "يتحسس", "الرجيا", "الرجي",
+  "حساسيه", "حساسيتي", "تحسس", "اتحسس", "يتحسس", "الرجيا", "الرجي",
 ].map(normalizeAr);
 
-/** Single-token SYMPTOM markers — a medical context stated plainly. */
-const SYMPTOM_SINGLE = ["ينتفخ", "تورم", "طفح", "حكه", "كتمه"].map(normalizeAr);
+/** Single-token SYMPTOM markers — and each needs a BODY in the same breath.
+ *
+ *  These were bare. Bread rises, dough swells, a restaurant is stuffy, and «طفح الكيل» is the
+ *  fixed idiom for "enough is enough" — the single most likely sentence from a customer who
+ *  has had it with a late order. All four raised an allergy hold:
+ *
+ *    «الخبز ينتفخ في الفرن عندكم؟»  "does your bread rise in the oven?"
+ *    «العجين تورم زيادة»            "the dough over-swelled"
+ *    «كتمه في المطعم، شغلوا المكيف» "it's stuffy, turn on the AC"
+ *    «طفح الكيل من التأخير هذا»     "enough of this delay"
+ *
+ *  A symptom is something that happens TO A PERSON, and Arabic says whose: «حلقي ينتفخ»,
+ *  «وجهي متورم», «كتمة في صدري». Requiring that costs nothing real — «عندي طفح» and «عندي
+ *  كتمة في صدري» are both caught by `detectAllergenSymptom` regardless, which is why bare
+ *  «طفح» is gone from here entirely. */
+const SYMPTOM_SINGLE = ["ينتفخ", "تنتفخ", "منتفخ", "تورم", "متورم", "حكه", "كتمه"].map(normalizeAr);
+
+/** A body part or a first-person possessive, which is what turns a swelling into a symptom. */
+const BODY_RE =
+  /(?:حلق|زور|حنجر|بلعوم|لسان|شفا|شفت|وجه|وش|خد|عين|عيون|جلد|بشر|جسم|ايد|يد|رجل|رقب|صدر|بطن|معد|انف|منخار)/;
 
 /** Multi-word phrases, matched by normalized substring containment. STT keeps these fairly
  *  intact when spoken, and a phrase is long enough that containment is not a guess. */
+/** Phrases that mean an allergy ON THEIR OWN — a medical frame with no other reading.
+ *
+ *  MATCHED AS WHOLE PHRASES, NOT AS PREFIXES. This list was tested with a raw `includes`,
+ *  and three of its entries are prefixes of ordinary sentences:
+ *
+ *    «ما اقدر اكل» ⊂ «ما أقدر أكلمك الحين»   "I can't call you right now"
+ *    «ممنوع علي»   ⊂ «ممنوع عليكم تدخلوا»     "you may not drive in"
+ *    «الدكتور منع» ⊂ «الدكتور منعنا من التدخين» "the doctor stopped us smoking"
+ *
+ *  The sibling rule in this same file was given exactly this treatment for «الأبيض» in the
+ *  commit that introduced it; this list was left as raw containment. */
 const PHRASES = [
-  // avoidance
+  "ممنوع علي", "الدكتور منع",
+  // symptom — unambiguous as written
+  "ضيق نفس", "ما اقدر اتنفس", "حلقي يضيق", "انيميا الفول",
+].map(normalizeAr);
+
+/** The "can't eat / can't tolerate" family, which needs to know WHAT.
+ *
+ *  «ما اتحمل» and «ما اقدر اكل» are only about an allergy when the thing named is a food.
+ *  «ما اتحمل الانتظار» ("I can't stand the waiting") and «مو قادر آكل بعد، شبعت» ("I can't
+ *  eat any more, I'm full") are an angry customer and a full one, and both were answered
+ *  with a safety questionnaire. So the phrase must be followed, closely, by an allergen.
+ *
+ *  That makes this a safety NET rather than a gate: `detectAllergenAvoidance` already
+ *  catches «ما أتحمل اللبن» through its own intent list, and this catches the phrasings that
+ *  list happens to miss. Which is what this whole file is — the exact half of a retired net. */
+const AVOIDANCE_PHRASES = [
   "ما اقدر اكل", "مو قادر اكل", "مب قادر اكل", "ما يصير اكل", "ما ينفع اكل",
   "معادر اكل", // elided Najdi «مو قادر» → «معادر»
-  "ما اتحمل", "ممنوع علي", "الدكتور منع",
-  // symptom
-  "ضيق نفس", "ما اقدر اتنفس", "حلقي يضيق", "انيميا الفول",
+  "ما اتحمل",
 ].map(normalizeAr);
 
 /** English / Franco allergy context, tested case-insensitively on the RAW text. */
@@ -108,15 +167,54 @@ const ALLERGEN_NOUNS = [
   "قمح", "بيض", "سمسم", "طحينه", "صويا", "سمك", "جمبري", "قشريات",
 ].map(normalizeAr);
 
-/** Word-boundary containment for Arabic, which `\b` cannot express. */
+/** Word-boundary containment for Arabic, which `\b` cannot express.
+ *
+ *  TWO BUGS FIXED HERE, both found by an audit rather than by this file.
+ *
+ *  IT NEVER TOLERATED THE ARTICLE. `stripLeading` and `hasNoun`, twenty lines away, both do —
+ *  and this did not, so «التورم في وجهي» ("the swelling in my face") matched nothing, in any
+ *  detector, on any surface. A plain report of a swollen face was silent.
+ *
+ *  AND IT STOPPED AT THE FIRST OCCURRENCE. `indexOf` finds one position; if that one fails
+ *  the boundary test the function returned false even when a later, valid occurrence existed.
+ *  «العجين تورم، وجهي تورم» would have been decided by the first «تورم» alone. */
 function hasToken(normalized: string, term: string): boolean {
   if (!term) return false;
-  const i = normalized.indexOf(term);
-  if (i < 0) return false;
-  const before = normalized[i - 1];
-  const after = normalized[i + term.length];
   const isLetter = (c: string | undefined) => !!c && /[؀-ۿ]/.test(c);
-  return !isLetter(before) && !isLetter(after);
+  for (let i = normalized.indexOf(term); i >= 0; i = normalized.indexOf(term, i + 1)) {
+    const after = normalized[i + term.length];
+    if (isLetter(after)) continue;
+    const before = normalized[i - 1];
+    if (!isLetter(before)) return true;
+    // …or the only thing in front of it is the article, optionally with one proclitic:
+    // «التورم» → تورم, «بالتورم» → تورم. Anything else is a different word.
+    const head = normalized.slice(0, i);
+    if (/(?:^|[^؀-ۿ])(?:[وفبكل])?ال$/.test(head)) return true;
+  }
+  return false;
+}
+
+/** Where a phrase starts as a WHOLE phrase, or -1. The boundary is only needed at the END:
+ *  every phrase here begins at a word start already, and it is the tail that ran on —
+ *  «ما اقدر اكل» into «ما اقدر اكلمك». */
+function phraseIndex(normalized: string, phrase: string): number {
+  const isLetter = (c: string | undefined) => !!c && /[؀-ۿ]/.test(c);
+  for (let i = normalized.indexOf(phrase); i >= 0; i = normalized.indexOf(phrase, i + 1)) {
+    if (!isLetter(normalized[i + phrase.length])) return i;
+  }
+  return -1;
+}
+function hasPhrase(normalized: string, phrase: string): boolean {
+  return phraseIndex(normalized, phrase) >= 0;
+}
+
+/** Does a symptom word appear WITH a body part, close enough to be the same statement? */
+function symptomOnABody(n: string, term: string): boolean {
+  for (let i = n.indexOf(term); i >= 0; i = n.indexOf(term, i + 1)) {
+    const window = n.slice(Math.max(0, i - 24), i + term.length + 24);
+    if (BODY_RE.test(window)) return true;
+  }
+  return false;
 }
 
 /** Is this allergen noun present as a WORD (its own token, or one carrying the article and a
@@ -151,15 +249,28 @@ export function detectAllergyContext(text: string): AllergyContextHit {
 
   // Phrases before single tokens: a phrase is the more specific statement, and naming it in
   // the kitchen note is more use to a cook than the word inside it.
+  //
+  // AS WHOLE PHRASES. `includes` made «ممنوع علي» match «ممنوع عليكم» and «الدكتور منع» match
+  // «الدكتور منعنا» — see the list's own comment.
   for (const p of PHRASES) {
-    if (p && n.includes(p)) return { fired: true, term: p, reason: "allergy_context" };
+    if (p && hasPhrase(n, p)) return { fired: true, term: p, reason: "allergy_context" };
+  }
+
+  // …and the "can't eat / can't tolerate" family only when a FOOD follows it closely.
+  for (const p of AVOIDANCE_PHRASES) {
+    if (!p) continue;
+    const at = phraseIndex(n, p);
+    if (at < 0) continue;
+    const after = n.slice(at + p.length, at + p.length + 28);
+    const noun = ALLERGEN_NOUNS.find((x) => x && hasNoun(after, x));
+    if (noun) return { fired: true, term: noun, reason: "allergy_context" };
   }
 
   for (const m of ALLERGY_MARKERS) {
     if (hasToken(n, m)) return { fired: true, term: m, reason: "allergy_marker" };
   }
   for (const s of SYMPTOM_SINGLE) {
-    if (hasToken(n, s)) return { fired: true, term: s, reason: "symptom" };
+    if (hasToken(n, s) && symptomOnABody(n, s)) return { fired: true, term: s, reason: "symptom" };
   }
 
   // A harm verb ALONGSIDE an allergen noun. Either alone is ordinary language — «يضر» is a
@@ -197,10 +308,24 @@ export function detectAllergyContext(text: string): AllergyContextHit {
 // the safety words — not "near one".
 
 /** Every single-token safety word, with its class. Exact strings only. */
+/** Symptom words for TOKEN SUPPRESSION, which is a different question from firing a hold.
+ *
+ *  `SYMPTOM_SINGLE` above no longer carries «طفح» or «حكه», because a sentence only reports a
+ *  symptom when it names a body or uses the frame Arabic reports symptoms with — bread rises
+ *  and «طفح الكيل» means "enough is enough".
+ *
+ *  None of that applies here. This list answers "is this WORD a safety word", and it is used
+ *  to keep such words out of the menu-candidate matcher and out of the speech recognizer's
+ *  vocabulary bias. A menu item called «طفح» is not a dish, and biasing a transcriber toward
+ *  a symptom word is how a symptom appears in a transcript nobody said. The conservative
+ *  answer is right here and the specific answer is right there; conflating them broke four
+ *  proofs at once, which was the tell. */
+const SUPPRESSED_SYMPTOM_WORDS = ["طفح", "حكه", "هرش"].map(normalizeAr);
+
 const EXACT_SAFETY_TOKENS: ReadonlyArray<{ term: string; cls: "allergen" | "marker" | "symptom" }> = [
   ...ALLERGEN_NOUNS.filter((t) => !t.includes(" ")).map((term) => ({ term, cls: "allergen" as const })),
   ...ALLERGY_MARKERS.map((term) => ({ term, cls: "marker" as const })),
-  ...SYMPTOM_SINGLE.map((term) => ({ term, cls: "symptom" as const })),
+  ...[...SYMPTOM_SINGLE, ...SUPPRESSED_SYMPTOM_WORDS].map((term) => ({ term, cls: "symptom" as const })),
 ];
 
 /** Strip a leading conjunction/preposition (و ف ب ك ل) and the definite article, so

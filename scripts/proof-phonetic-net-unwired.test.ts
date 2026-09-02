@@ -289,7 +289,7 @@ console.log("\n── THE VOICE MATCHER SUPPRESSES EXACTLY, NOT NEARLY ───
   // copy can drift silently, so the CONTRACT is asserted instead of the function: whatever
   // `stripAffix` reduces to a safety term, `exactSafetyToken` must also refuse.
   const TERMS = ["لوز", "مكسرات", "بندق", "فستق", "لبن", "حليب", "بيض", "قمح", "سمك", "صويا",
-    "جلوتين", "سمسم", "طحينه", "جمبري", "حساسيتي", "تحسس", "ينتفخ", "تورم", "طفح"];
+    "جلوتين", "سمسم", "طحينه", "جمبري", "حساسيتي", "تحسس", "ينتفخ", "تورم", "طفح", "حكه"];
   for (const term of TERMS) {
     const t = normalizeAr(term);
     for (const prefix of ["", "و", "ف", "ب", "ك", "ل", "ال", "وال", "بال", "كال", "فال"]) {

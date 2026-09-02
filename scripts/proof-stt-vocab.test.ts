@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { safeSttVocabulary } from "../lib/ai/stt/safe-vocab.ts";
 import { detectAllergenAvoidance, normalizeAr } from "../lib/ai/allergen-gate.ts";
+import { exactSafetyToken } from "../lib/ai/allergen-context.ts";
 
 let pass = 0;
 const fails: string[] = [];
@@ -160,8 +161,21 @@ console.log("\n── EVERY DETECTOR THE ROUTE RUNS, AND NO MORE ─────
   // Constructed on purpose — «طفح» (rash) is not a dish, and that is the point: the filter
   // must refuse ANY name a live detector can fire on, not only the ones a menu happens to
   // contain today.
-  ok("a name carrying a symptom word really does trip a live detector",
-    detectAllergenSymptom("طفح").fired);
+  // ASKED OF THE TOKEN, NOT OF A SENTENCE — and that distinction is the fix, not a dodge.
+  //
+  // This drove `detectAllergenSymptom("طفح")`, which answers "does this SENTENCE report a
+  // rash". A bare «طفح» no longer does, deliberately: «طفح الكيل» is the fixed idiom for
+  // "enough is enough" and was raising an allergy hold on the angriest customer in the
+  // queue. What the FILTER needs to know is different and more conservative — "is this word
+  // a safety word at all" — because biasing a transcriber toward «طفح» is how a rash appears
+  // in a transcript nobody spoke. `exactSafetyToken` owns that question.
+  ok("a symptom word is still a safety word for vocabulary purposes",
+    exactSafetyToken("طفح") !== null && exactSafetyToken("حكه") !== null);
+  // …and the sentence-level detector still hears it said the way people say it.
+  ok("…while the sentence detector needs a body or a report frame",
+    detectAllergenSymptom("بيجيلي طفح من المكسرات").fired &&
+    detectAllergenSymptom("عندي طفح").fired &&
+    !detectAllergenSymptom("طفح الكيل").fired);
   ok("…and the filter refuses it", !safeSttVocabulary(["طفح جلدي", "جريش"]).includes("طفح جلدي"));
   ok("…while the safe dish beside it survives",
     safeSttVocabulary(["طفح جلدي", "جريش"]).includes("جريش"));

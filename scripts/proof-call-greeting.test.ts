@@ -205,7 +205,16 @@ console.log("\n── HE SAID IT, SO THE CONVERSATION HAS TO KNOW ────�
   ok("…as text, never as a voice bubble holding an expiring URL",
     !/push\([^)]*kind: "voice"/.test(block));
   ok("…and only when there are words to push",
-    /if \(text\.trim\(\)\) push\(/.test(block));
+    /if \(text\.trim\(\) && !onlyTheSeed\) push\(/.test(block));
+  // …AND NOT TWICE IN A ROW. The chat pane seeds the thread with its own opening line, so
+  // pressing "call" immediately stacked a second, nearly identical greeting under it — «هلا
+  // والله، أنا خالد…» then «هلا والله، معك خالد…» — both sent to the model, both visible in
+  // the transcript after hanging up. Two greetings with the same first word is the tell that
+  // this is two systems rather than one person.
+  ok("…and not on top of the chat pane's own opening greeting",
+    /const onlyTheSeed =\s*\n?\s*historyRef\.current\.length === 1 && historyRef\.current\[0\]\?\.from === "khalid";/.test(block));
+  // Once the visitor has said anything, the spoken greeting IS new and is pushed normally.
+  ok("…the guard is on the SEED only, not on every call", /length === 1 &&/.test(block));
   // The same array is the thread AND the model's history — `historyRef={msgsRef}` — so one
   // push does both. Pinned here because a future split would silently undo half of it.
   ok("the call screen's history really is the thread it pushes into",

@@ -48,9 +48,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  // THE TURN CAP, NOT THE PROBE'S. Every hit here books a synthesis, so this belongs on the
-  // same allowance as the thing that spends: one greeting per call, and a caller cannot open
-  // more calls in an hour than they can take turns.
+  // THE TURN CAP'S SIZE, IN ITS OWN BUCKET — and the difference matters, so say it plainly.
+  // Every hit here books a synthesis, so the allowance is sized like the thing that spends
+  // rather than like the capability probe's 4×. It is NOT the same bucket: `demo-greet:` is
+  // counted separately from turns, so a caller gets this many greetings ON TOP of their
+  // turns, not out of them. An earlier version of this comment said "the same allowance",
+  // which is a different and stronger claim than the code makes.
   const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0]!.trim() || "unknown";
   const rl = rateLimit(`demo-greet:${ip}`, DEMO_PER_IP_TURNS, DEMO_WINDOW_MS);
   if (!rl.ok) {
@@ -83,6 +86,12 @@ export async function GET(req: Request) {
   // NOT FAIL-CLOSED, deliberately, and the same way /api/demo/voice treats its own TTS row:
   // a ledger outage must not take the greeting down. The failure is logged, loudly.
   const admin = greeting?.spend ? createAdminClient() : null;
+  // `createAdminClient()` returns null when the service role is unconfigured. Skipping
+  // silently there is how an unledgered charge looks exactly like no charge — the comment
+  // above promises the failure is logged loudly, so it has to be.
+  if (greeting?.spend && !admin) {
+    console.error("[demo/greeting] TTS spend NOT accounted: no admin client (service role unconfigured)");
+  }
   if (greeting?.spend && admin) {
     try {
       await mustWrite<{ id: string }>(

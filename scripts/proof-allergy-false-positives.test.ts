@@ -41,6 +41,8 @@ import { detectAllergenEmergency } from "../lib/ai/allergen-emergency";
 import { detectAllergyContext } from "../lib/ai/allergen-context";
 import { detectAllergyOrDiseaseMention, mentionsDiseaseCondition } from "../lib/ai/allergy-simple";
 import { isSafetyClassInbound } from "../lib/ai/safety-bridge";
+import { voiceHardZeroReason } from "../lib/messaging/voice-budget";
+import { demoVoiceSilenceKind } from "../lib/demo/voice-out";
 
 let pass = 0;
 const fails: string[] = [];
@@ -448,6 +450,93 @@ console.log("\n── «سكر» IS ALSO THE WORD FOR SUGAR ──────�
   // Pregnancy states itself with no context word at all.
   ok("«أنا حامل» is a condition", mentionsDiseaseCondition("أنا حامل"));
   ok("…while «أنا أبغى سكر» is an order", !mentionsDiseaseCondition("أنا أبغى سكر"));
+}
+
+
+console.log("\n── THE SENTENCES THE CORPUS ITSELF DID NOT COVER ────────────────");
+{
+  // THIS FILE'S HEADER READ AS A COMPLETED SWEEP AND IT HAD SWEPT TWO FILES OF FOUR.
+  //
+  // A review drove thirty ordinary restaurant sentences through the same union the routes
+  // run and fourteen raised an allergy safety turn — on EVERY tenant, because the same branch
+  // had just been unflagged. Three separate bugs, each the bare-substring shape this corpus
+  // was written to catch, in the file that replaced the retired net:
+  //
+  //   «حساس» is the ordinary adjective SENSITIVE, listed as an allergy marker.
+  //   `PHRASES` used raw `includes`, so three entries matched as PREFIXES.
+  //   `SYMPTOM_SINGLE` was bare, so bread rises, dough swells and a room is stuffy.
+  //
+  // It matters more than a wrong answer: `customer-turn.ts` fires `recordCriticalAlert` on
+  // every notify-without-hold, which emails and WhatsApps a human phone. «طفح الكيل من
+  // التأخير» — the most likely sentence from a customer who has had enough — paged a person.
+  for (const t of [
+    "ما اتحمل الانتظار، أبغى ألغي",
+    "ما أقدر أكلمك الحين، أرسل لي رسالة",
+    "الموضوع حساس شوي، تكلم مع المدير",
+    "الطلب حساس للوقت لأني مسافر",
+    "طفح الكيل من التأخير هذا",
+    "طفح الكيل",
+    "الخبز ينتفخ في الفرن عندكم؟",
+    "العجين تورم زيادة",
+    "كتمه في المطعم، شغلوا المكيف",
+    "الجو فيه كتمة",
+    "ممنوع عليكم تدخلوا السيارة داخل الحي",
+    "الدكتور منعنا من التدخين جوه المطعم",
+    "ما اتحمل الأكل الحار",
+    "مو قادر آكل بعد، شبعت",
+    "حكة الرأس من الشعر؟",
+  ]) {
+    ok(`«${t}» is quiet${anyDetectorFires(t) ? ` — ${whichFired(t)} fired` : ""}`, !anyDetectorFires(t));
+  }
+
+  // AND REMOVING THE BARE ADJECTIVE COSTS NOTHING, which is why it could go. Every «حساس»
+  // disclosure is caught by the vocabulary gate — WITH the allergen named, which the context
+  // file never did.
+  for (const [t, term] of [
+    ["أنا حساس من اللبن", "لبن"], ["حساس من المكسرات", "مكسرات"],
+    ["أنا حساسة من البيض", "بيض"], ["حساسين من الفول السوداني", "فول سوداني"],
+  ] as Array<[string, string]>) {
+    ok(`«${t}» is still heard, and names «${term}»`, detectAllergenAvoidance(t).term === term);
+  }
+
+  // A SYMPTOM NEEDS A BODY, and these are the ones that have one.
+  for (const t of [
+    "حلقي ينتفخ", "لساني ينتفخ", "وجهي متورم", "عندي طفح", "طلع لي طفح",
+    "جاني طفح من الأكل", "عندي حكة في جسمي", "عندي كتمة في صدري", "اكزيما", "عندي هرش",
+  ]) {
+    ok(`«${t}» is heard${anyDetectorFires(t) ? "" : " — NOTHING FIRED"}`, anyDetectorFires(t));
+  }
+  // …INCLUDING THE ONE THAT WAS SILENT EVERYWHERE. `hasToken` never tolerated the article, so
+  // «التورم في وجهي» ("the swelling in my face") matched nothing, in any detector, on any
+  // surface — a plain report of a swollen face.
+  ok("«التورم في وجهي» is heard at last", anyDetectorFires("التورم في وجهي"));
+
+  // The medical phrases still work, whole.
+  for (const t of ["ما أتحمل اللبن", "ممنوع علي البيض", "ما أقدر آكل لبن", "الدكتور منع عني الكنافة"]) {
+    ok(`«${t}» is heard`, anyDetectorFires(t));
+  }
+}
+
+console.log("\n── A PRICE IS NOT AN AMBULANCE NUMBER ──────────────────────────");
+{
+  // The `emergency_number` hard-zero fired on «تمام، المجموع 112 ريال» — an ordinary Saudi
+  // total — and `demoVoiceSilenceKind` had never been told the reason existed, so it fell
+  // through to "unavailable" and `callResponseAction` ENDED THE CALL saying the voice was
+  // broken. A deliberate product rule, reported to a prospect as a product failure, on a
+  // normal bill. Prices are SPOKEN on a call now, so the money rule no longer caught it first.
+  const CALL = {
+    safetyHold: false, isReceipt: false,
+    spokenPricesAllowed: true, spokenSafetyAllowed: true, stopReason: "end_turn",
+  } as const;
+  for (const t of ["تمام، المجموع 112 ريال 👍", "الإجمالي 997 ريال", "صار 911 ريال", "السعر 112 ر.س"]) {
+    ok(`«${t}» is spoken`, voiceHardZeroReason(t, CALL) === null);
+  }
+  // …and a number someone could DIAL is still refused, as a RULE (text shown, call continues),
+  // never as "the voice is not working".
+  for (const t of ["اتصل 997", "الرقم 911 للطوارئ", "لو صار شي اتصل بالإسعاف 997"]) {
+    ok(`«${t}» is refused`, voiceHardZeroReason(t, CALL) === "emergency_number");
+    ok(`  …and as a rule, not a failure`, demoVoiceSilenceKind("emergency_number" as never) === "rule");
+  }
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} allergy-false-positives: ${pass}/${pass + fails.length} passed`);
