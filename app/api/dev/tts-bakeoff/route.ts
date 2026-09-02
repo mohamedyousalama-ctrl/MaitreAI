@@ -14,7 +14,7 @@
 // everything except custom domains) is a SECOND lock, not the first — a protection
 // setting is a dashboard toggle someone can flip, and this must not depend on it.
 //
-// THE TEXT IS OURS, NEVER THE CALLER'S. Three fixed lines, chosen by id. A `text=`
+// THE TEXT IS OURS, NEVER THE CALLER'S. Four fixed lines, chosen by id. A `text=`
 // parameter would make this a free text-to-speech oracle in Khalid's registered voice —
 // the exact thing app/api/demo/speak/route.ts refuses to be, and the reason that route
 // only ever speaks a server-signed ticket.
@@ -92,35 +92,58 @@ export async function GET(req: Request): Promise<NextResponse> {
     );
   }
 
-  let models: ProviderModel[];
+  // DISCOVERY IS PREFERRED AND OPTIONAL, BECAUSE THE KEY MAY NOT BE ALLOWED TO DISCOVER.
+  //
+  // Asking /v1/models first is the honest way to get model ids: they are the provider's to
+  // define, and a list I typed from memory can contain something this account cannot use.
+  // But the production key is least-privilege and lacks `models_read` — it may synthesize
+  // and nothing else. That is a GOOD key, and widening it for a measurement would be the
+  // wrong trade.
+  //
+  // So when discovery is refused we fall back to ElevenLabs' PUBLISHED ids, clearly marked
+  // as unverified, and let the attempt decide. That is not the guessing I was avoiding: a
+  // wrong id returns a provider error naming itself, which is a RESULT ("this account
+  // cannot use that model") rather than a silent substitution. The thing that must never
+  // be guessed is what a model SOUNDS like or how fast it is — and both of those are
+  // measured here, never assumed.
+  const FALLBACK_CANDIDATES = [
+    "eleven_v3",
+    "eleven_multilingual_v2",
+    "eleven_turbo_v2_5",
+    "eleven_flash_v2_5",
+  ];
+
+  let arabic: Array<{ model_id: string; name?: string }> = [];
+  let discovery: "listed" | "fallback" = "listed";
+  let discoveryDetail: string | null = null;
   try {
     const res = await fetch("https://api.elevenlabs.io/v1/models", {
       headers: { "xi-api-key": key, Accept: "application/json" },
     });
-    if (!res.ok) {
-      // The provider's own words, clipped — a revoked key, a plan without the model and a
-      // quota wall are three different fixes and one word for all of them sends whoever
-      // is reading this hunting the wrong one. The key is never echoed.
-      return NextResponse.json(
-        { keyPresent: true, error: `models_${res.status}`, detail: (await res.text()).slice(0, 300) },
-        { status: 200, headers: { "Cache-Control": "no-store" } }
-      );
+    if (res.ok) {
+      const models = (await res.json()) as ProviderModel[];
+      // Arabic-capable text-to-speech only. "Is it fast?" without "can it say this?" is
+      // how a bake-off produces a confident wrong answer.
+      arabic = models
+        .filter(
+          (m) =>
+            m.can_do_text_to_speech !== false &&
+            (m.languages ?? []).some((l) => (l.language_id ?? "").toLowerCase().startsWith("ar"))
+        )
+        .map((m) => ({ model_id: m.model_id, name: m.name }));
+    } else {
+      // The provider's own words, clipped — a revoked key, a missing permission and a quota
+      // wall are three different fixes, and one word for all of them sends whoever reads
+      // this hunting the wrong one. The key is never echoed.
+      discovery = "fallback";
+      discoveryDetail = `models_${res.status}: ${(await res.text()).slice(0, 200)}`;
+      arabic = FALLBACK_CANDIDATES.map((id) => ({ model_id: id }));
     }
-    models = (await res.json()) as ProviderModel[];
   } catch (e) {
-    return NextResponse.json(
-      { keyPresent: true, error: "models_unreachable", detail: (e as Error).message.slice(0, 200) },
-      { status: 200, headers: { "Cache-Control": "no-store" } }
-    );
+    discovery = "fallback";
+    discoveryDetail = `models_unreachable: ${(e as Error).message.slice(0, 160)}`;
+    arabic = FALLBACK_CANDIDATES.map((id) => ({ model_id: id }));
   }
-
-  // Arabic-capable text-to-speech only. "Is it fast?" without "can it say this?" is how a
-  // bake-off produces a confident wrong answer.
-  const arabic = models.filter(
-    (m) =>
-      m.can_do_text_to_speech !== false &&
-      (m.languages ?? []).some((l) => (l.language_id ?? "").toLowerCase().startsWith("ar"))
-  );
 
   if (url.searchParams.get("list") === "1") {
     return NextResponse.json(
@@ -129,7 +152,8 @@ export async function GET(req: Request): Promise<NextResponse> {
         current: KHALID_VOICE.model,
         voiceId: KHALID_VOICE.voiceId,
         lines: Object.keys(LINES),
-        totalModels: models.length,
+        discovery,
+        discoveryDetail,
         arabicModels: arabic.map((m) => ({ id: m.model_id, name: m.name ?? null })),
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }
@@ -143,7 +167,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   // unknown id is refused before it can be spent on.
   if (!modelId || !arabic.some((m) => m.model_id === modelId)) {
     return NextResponse.json(
-      { keyPresent: true, error: "unknown_model", allowed: arabic.map((m) => m.model_id) },
+      { keyPresent: true, error: "unknown_model", discovery, allowed: arabic.map((m) => m.model_id) },
       { status: 400, headers: { "Cache-Control": "no-store" } }
     );
   }
