@@ -49,6 +49,16 @@ const ALLERGEN_TERMS = [
 ];
 const ALLERGEN_TERMS_NORM = ALLERGEN_TERMS.map((t) => normalizeAr(t));
 
+/** The WORDS that make up the multi-word allergen terms — «فول», «سوداني», «عين», «جمل»,
+ *  «ماكولات», «بحريه». Exported because a single word of a two-word term is not an allergen
+ *  by itself, so anything filtering word by word will keep it and think it is safe. The one
+ *  place that matters today is the STT vocabulary retry: it kept «زبدة الفول» after dropping
+ *  «السوداني», priming the recognizer toward a truncation of the peanut-butter name with the
+ *  peanut word missing. See lib/ai/stt/safe-vocab.ts. */
+export const MULTI_WORD_ALLERGEN_WORDS: ReadonlySet<string> = new Set(
+  ALLERGEN_TERMS_NORM.filter((t) => t.includes(" ")).flatMap((t) => t.split(/\s+/)).filter((w) => w.length >= 2)
+);
+
 /** Escape a literal for embedding in a RegExp source string. */
 function escapeRe(w: string): string {
   return w.replace(/[.*+?^${}()|[\]\\]/g, (c) => "\\" + c);

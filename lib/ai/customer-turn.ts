@@ -1159,10 +1159,28 @@ export async function runCustomerTurn(
   const callbackHit = callbackOn ? detectCallbackRequest(input.userMessage) : { fired: false, phrase: null };
 
   const allergenHit = detectAllergenAvoidance(input.userMessage);
-  // Additive symptom/condition/English layer — evaluated when the base gate did NOT
-  // fire and the tenant has allergen_symptom_detection explicitly enabled (still flagged).
-  const symptomDetectionOn = isFeatureExplicitlyEnabled("allergen_symptom_detection", tenantFeatures) || calmHoldOn;
-  const symptomHit = (!allergenHit.fired && symptomDetectionOn)
+  // Additive symptom/condition/English layer, evaluated when the base gate did NOT fire.
+  //
+  // NO LONGER FLAG-GATED, AND THE FLAG WAS PRODUCING A TURN THAT CONTRADICTED ITSELF.
+  //
+  // This read `isFeatureExplicitlyEnabled("allergen_symptom_detection", …) || calmHoldOn`,
+  // and it was the ONLY one of nine call sites that asked. `safety-bridge.ts`,
+  // `respond-and-send.ts` (four places), `allergy-simple.ts`, `stt/safe-vocab.ts` and both
+  // demo routes all run this detector unconditionally.
+  //
+  // So on a tenant with the flag off, «حلقي ينتفخ» ("my throat is swelling") fired the
+  // SAFETY BRIDGE — which tells the customer, in their own language, that the team has been
+  // alerted and to hold the order until a human confirms — while the Brain, one layer over,
+  // treated the same turn as an ordinary order and carried on taking it. The customer is told
+  // to stop and served at the same time. It also suppressed reply-dampening and withheld menu
+  // words from the transcriber on every tier, so the flag was never a rollback either: eight
+  // of its nine effects happened regardless.
+  //
+  // A safety gate is not a feature. The base allergen gate has never been flag-gated for
+  // exactly this reason, and this layer is now consistent with it and with its own eight
+  // peers. The cost is more deterministic holds on lower tiers; the alternative is a turn
+  // whose two halves disagree about whether the customer is safe.
+  const symptomHit = !allergenHit.fired
     ? detectAllergenSymptom(input.userMessage)
     : { fired: false, term: null };
   // WO-VOICE-1 (item-38, binding) — the FAIL-CLOSED PHONETIC NET runs UNCONDITIONALLY

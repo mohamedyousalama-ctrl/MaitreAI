@@ -205,6 +205,24 @@ console.log("\n── EVERY DETECTOR THE ROUTE RUNS, AND NO MORE ─────
     kept.length >= MENU.length - 4);
 }
 
+console.log("\n── AND NEVER KEEP HALF OF A TWO-WORD ALLERGEN ──────────────────");
+{
+  // «زبدة الفول السوداني» CAME BACK AS «زبدة الفول», AND THAT IS WORSE THAN DROPPING IT.
+  //
+  // The retry asks `namesAnAllergen` one word at a time, and «فول» alone is not a term — the
+  // canonical is the two-word «فول سوداني». So «السوداني» was dropped and «زبدة الفول» was
+  // offered to the recognizer as vocabulary bias: a TRUNCATION of the peanut-butter name
+  // with the peanut word missing. Priming toward it makes a peanut-butter order MORE likely
+  // to be transcribed without the word the allergen gate needs. The priming was removing the
+  // allergen.
+  const kept = safeSttVocabulary(["زبدة الفول السوداني", "جريش"]);
+  ok("«زبدة الفول» is not offered to the recognizer",
+    !kept.some((k) => k.includes("فول")));
+  ok("…nor any part of the peanut term", !kept.some((k) => k.includes("سوداني")));
+  ok("…while the harmless half is still primed", kept.includes("زبدة"));
+  ok("…and the safe dish beside it survives", kept.includes("جريش"));
+}
+
 console.log("\n── DROP THE TRIGGER WORD, KEEP THE DISH ────────────────────────");
 {
   // REFUSING A WHOLE NAME COSTS THE WORD THE PRIMING EXISTS FOR. «كنافة بالجبن» trips on

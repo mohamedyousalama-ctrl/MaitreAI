@@ -63,6 +63,36 @@ function stripComments(src: string): string {
       i += 2;
       continue;
     }
+    // A REGEX LITERAL, WHICH THE FIRST VERSION DID NOT KNOW ABOUT.
+    //
+    // Without this, `/['"]/` puts the scanner into string mode at the quote inside the
+    // character class and it stops stripping comments from that point on — every comment
+    // after it survives and can satisfy a "still CALLS" assertion. `/https?:\/\//` was
+    // truncated at the escaped slashes for the same reason. Not exploitable in the five
+    // files scanned today, which is exactly the kind of "not yet" this repo has been bitten
+    // by before.
+    //
+    // Telling a regex from a division needs the previous token: a `/` after a value (an
+    // identifier, a number, a closing bracket) is division; anywhere else it opens a literal.
+    if (c === "/") {
+      const prev = out.replace(/\s+$/, "").slice(-1);
+      const isDivision = prev !== "" && /[A-Za-z0-9_$)\]]/.test(prev);
+      if (!isDivision) {
+        out += c; i++;
+        let inClass = false;
+        while (i < n) {
+          const ch = src[i]!;
+          if (ch === "\\") { out += ch + (src[i + 1] ?? ""); i += 2; continue; }
+          if (ch === "\n") break; // an unterminated literal: stop rather than eat the file
+          out += ch;
+          i++;
+          if (ch === "[") inClass = true;
+          else if (ch === "]") inClass = false;
+          else if (ch === "/" && !inClass) break;
+        }
+        continue;
+      }
+    }
     if (c === '"' || c === "'" || c === "`") {
       const quote = c;
       out += c; i++;
@@ -307,6 +337,20 @@ console.log("\n── THE EXACT DETECTORS ARE STILL WIRED ───────�
   const URLLINE = 'const u = "https://example.com/x"; // gone';
   ok("a string literal survives the stripper", stripComments(URLLINE).includes("https://example.com/x"));
   ok("…and the comment after it does not", !stripComments(URLLINE).includes("gone"));
+  // THE REGEX LITERAL CASE, which defeated the scanner outright until it learned about them.
+  // A quote inside a character class put it into string mode and every comment after that
+  // point survived — so a deleted detector call parked in any later comment would have
+  // satisfied the "still CALLS" assertions above.
+  const AFTER_REGEX = "const RE = /['\"]/;\nconst h = 1; // detectAllergyContext(text).fired";
+  ok("a quote inside a regex character class does not swallow the rest of the file",
+    !calls(AFTER_REGEX, "detectAllergyContext"));
+  ok("…and the regex itself survives", stripComments(AFTER_REGEX).includes("/['\"]/"));
+  const ESCAPED = "const U = /https?:\\/\\//; // gone";
+  ok("escaped slashes inside a regex are not read as a comment",
+    stripComments(ESCAPED).includes("https?:") && !stripComments(ESCAPED).includes("gone"));
+  ok("division is still division, not a regex",
+    stripComments("const r = a / b; // gone").includes("a / b") &&
+    !stripComments("const r = a / b; // gone").includes("gone"));
   ok("an apostrophe inside a comment does not swallow the file",
     stripComments("// don't\nconst kept = 1;").includes("kept"));
   // AND THE LEXICON IS UNTOUCHED. Narrowing the word list would be a different, unauthorized
@@ -315,6 +359,37 @@ console.log("\n── THE EXACT DETECTORS ARE STILL WIRED ───────�
   for (const term of ["لبن", "حليب", "مكسرات", "بيض", "قمح", "سمك", "صويا", "جلوتين"]) {
     ok(`the allergen lexicon still contains «${term}»`, gate.includes(term));
   }
+}
+
+
+console.log("\n── THE PER-MODE REASON REACHES A TABLE SOMEONE CAN QUERY ───────");
+{
+  // THE FILE PROMISES A WATCHABLE FALSE-POSITIVE RATE PER MODE. That promise is only worth
+  // something if the mode reaches storage, and it crosses three files to get there — a
+  // review followed one of them, found nothing, and reported the metric as dropped. It is
+  // not dropped, and this pins each link so it cannot become dropped quietly.
+  const ctx = readFileSync(resolve(ROOT, "lib/ai/allergen-context.ts"), "utf8");
+  ok("the detector returns a distinct reason per mode",
+    /reason: "allergy_marker" \| "symptom" \| "allergy_context" \| null/.test(ctx));
+  for (const mode of ["allergy_marker", "symptom", "allergy_context"] as const) {
+    ok(`  …and «${mode}» is one it can actually return`,
+      new RegExp(`reason: "${mode}"`).test(ctx));
+  }
+
+  const turn = stripComments(readFileSync(resolve(ROOT, "lib/ai/customer-turn.ts"), "utf8"));
+  ok("the turn passes it into the signal as netReason",
+    /holdSource === "allergy_context" \? phoneticHit\.reason : null/.test(turn));
+
+  const gate = stripComments(readFileSync(resolve(ROOT, "lib/ai/customer-turn.ts"), "utf8"));
+  ok("…and the signal carries it in its detail",
+    /netReason \? \{ netReason \} : \{\}/.test(gate));
+
+  const typed = stripComments(readFileSync(resolve(ROOT, "lib/messaging/typed-actions.ts"), "utf8"));
+  ok("…and every signal's detail is inserted verbatim into conversation_signals",
+    /from\("conversation_signals"\)\.insert\(/.test(typed) && /detail: s\.detail,/.test(typed));
+  // …and NOT on the demo, which is the correct call: a public demo persisting a visitor's
+  // words is a worse problem than a missing metric.
+  ok("…except on a demo run, deliberately", /if \(ctx\.signals\.length && !args\.demoRun\)/.test(typed));
 }
 
 console.log(`\n${fails.length ? "FAIL" : "PASS"} phonetic-net-unwired: ${pass}/${pass + fails.length} passed`);

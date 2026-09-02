@@ -40,7 +40,17 @@ export interface AllergyContextHit {
   /** The exact term or phrase that matched, for the kitchen note and the audit trail. */
   term: string | null;
   /** Which of the three exact modes fired — kept distinct so a live false-positive rate is
-   *  watchable per mode rather than as one number. */
+   *  watchable per mode rather than as one number.
+   *
+   *  WHERE IT ACTUALLY LANDS, because a review traced it and concluded it was dropped:
+   *  `customer-turn.ts` passes it as `netReason` on the `notify_without_hold` signal, and
+   *  `typed-actions.ts` inserts every signal into `conversation_signals` with its `detail`
+   *  jsonb intact. So the query is one `detail->>'netReason'` away, grouped by mode, on the
+   *  live path. The review followed the `recordAllergyEvent` path instead, which is a
+   *  different table and genuinely does not carry it.
+   *
+   *  NOT ON THE DEMO, deliberately: `typed-actions.ts` skips the insert when `demoRun`, and a
+   *  public demo persisting a visitor's words is a worse problem than a missing metric. */
   reason: "allergy_marker" | "symptom" | "allergy_context" | null;
 }
 

@@ -33,7 +33,7 @@
 // ear-rendering pass inside the ElevenLabs adapter rather than in one of its two callers.
 // ============================================================================
 
-import { detectAllergenAvoidance, normalizeAr } from "../allergen-gate";
+import { detectAllergenAvoidance, normalizeAr, MULTI_WORD_ALLERGEN_WORDS } from "../allergen-gate";
 import { detectAllergenSymptom } from "../allergen-gate-symptoms";
 import { detectAllergenEmergency } from "../allergen-emergency";
 import { detectAllergyContext } from "../allergen-context";
@@ -160,10 +160,29 @@ function namesAnAllergen(name: string): boolean {
  *  So a name that trips is retried without the words that trip. What comes back is offered
  *  only if it is safe ON ITS OWN — the remainder is re-asked, never assumed. A name with
  *  nothing safe left is dropped exactly as before. */
+/* MULTI_WORD_ALLERGEN_WORDS is imported from the gate, which owns the lexicon.
+ *
+ *  WHY A WORD-LEVEL FILTER IS NOT ENOUGH ON ITS OWN. `namesAnAllergen` is asked one word at a
+ *  time, and «فول» alone is not an allergen term — the canonical is the two-word «فول
+ *  سوداني». So «زبدة الفول السوداني» lost «السوداني» and kept «زبدة الفول», which was then
+ *  offered to the recognizer as vocabulary bias.
+ *
+ *  That is worse than dropping the name outright. It biases the transcriber toward a
+ *  TRUNCATION of the peanut-butter name with the peanut word missing — so a customer
+ *  ordering it is more likely to be transcribed as «زبدة الفول», which the allergen gate
+ *  reads as no allergen at all. The priming actively removes the word the gate needs.
+ *
+ *  This file's own comment says the two-word canonical is exactly what the whole-name
+ *  containment check exists to protect. The retry has to honour the same thing. */
 function safeRemainder(name: string): string | null {
   const words = name.split(/\s+/).filter(Boolean);
   if (words.length < 2) return null;
-  const kept = words.filter((w) => !namesAnAllergen(w));
+  const kept = words.filter((w) => {
+    if (namesAnAllergen(w)) return false;
+    // …and no word that is HALF of a multi-word allergen term either. See above.
+    const bare = stripProclitic(normalizeAr(w));
+    return !MULTI_WORD_ALLERGEN_WORDS.has(bare) && !MULTI_WORD_ALLERGEN_WORDS.has(normalizeAr(w));
+  });
   if (kept.length === 0 || kept.length === words.length) return null;
   const remainder = kept.join(" ").trim();
   if (!remainder) return null;
