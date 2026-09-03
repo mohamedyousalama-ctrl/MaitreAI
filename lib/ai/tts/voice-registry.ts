@@ -50,8 +50,9 @@ export interface RegisteredVoice {
   /** The provider's own display name, for operator-facing messages. */
   name: string;
   provenance: VoiceProvenance;
-  /** The model the voice was accepted under. KIV-313: keep `eleven_v3` for the first
-   *  integration unless a separately reviewed model change is authorized. */
+  /** The model the voice was accepted under. KIV-313 pinned `eleven_v3` "unless a
+   *  separately reviewed model change is authorized" — that review happened (2 Sep 2026)
+   *  and authorized `eleven_multilingual_v2`. See KHALID_VOICE.model for the evidence. */
   model: string;
   /** Saved settings at handoff, restored and verified by the Founder at stability 0.50.
    *  KIV-313 is explicit that the later 0.40 and 0.30 captures are NOT the production pin —
@@ -75,15 +76,37 @@ export const KHALID_VOICE: RegisteredVoice = {
   name: "Khalid kivo",
   dialect: "saudi",
   provenance: "generated",
-  model: "eleven_v3",
+  // CHANGED FROM `eleven_v3` ON 2 SEP 2026, BY THE REVIEW KIV-313 REQUIRED.
+  //
+  // eleven_v3 could not speak a long reply at all. It is the expressive model, and its
+  // time-to-first-byte scales hard with length: measured on this exact voice and these
+  // exact settings, 2224ms at 38 characters and 12175ms at 190. The call screen bounds
+  // silence at 7000ms (DemoPhone.tsx), so a 190-character reply — a menu, a recap, a
+  // total — was abandoned before its first byte arrived. Not marginal: five seconds past
+  // the cutoff. Khalid went MUTE on exactly the replies that sell the product, and short
+  // answers kept working, which is why it read as "the voice lags" rather than as a fault.
+  //
+  // Measured the same way, eleven_multilingual_v2 answers the same 190-character line in
+  // 1878ms — 6.5x faster, with five seconds of headroom — and 905ms on the greeting.
+  // Same published rate ($0.10/1K), so nothing about spend changes. The faster realtime
+  // models (turbo_v2_5 at 523ms, flash_v2_5 at 761ms) were measured too and were NOT
+  // chosen: the Founder listened to all four on the same lines and picked this one. Speed
+  // was never the deciding question — it only ruled v3 out.
+  model: "eleven_multilingual_v2",
   settings: {
     stability: 0.5,
     similarity_boost: 0.75,
+    // STYLE AND SPEAKER BOOST NOW DO SOMETHING, AND THE VALUES DELIBERATELY DID NOT MOVE.
+    //
+    // The note here used to say `use_speaker_boost` was "not a meaningful Eleven v3
+    // control" — true then, false now: both it and `style` are real controls on
+    // multilingual_v2, so the same numbers have gone from inert to load-bearing. They are
+    // unchanged anyway, and that is the point rather than an oversight: the samples the
+    // Founder approved were synthesized through THIS model at THESE values, so this pair
+    // is what was actually accepted. Changing either now would mean shipping a sound
+    // nobody has heard.
     style: 0,
     speed: 1.0,
-    // Not a meaningful Eleven v3 control, per the handoff; carried because it is part of
-    // the saved object the Founder listened to, and drifting from it silently is how a
-    // "verified" configuration stops being the one that was verified.
     use_speaker_boost: true,
   },
   pronunciationDictionary: {

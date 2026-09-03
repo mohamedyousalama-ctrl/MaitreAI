@@ -18,10 +18,14 @@
 //   2. NO PRONUNCIATION DICTIONARY — so «قهوة» was mispronounced on every single render,
 //      which is the one correction the handoff proved and froze.
 //
-// THE MODEL IS PART OF THE ACCEPTANCE, NOT A PREFERENCE. KIV-313: keep `eleven_v3` unless a
-// separately reviewed model change is authorized. So `ELEVENLABS_TTS_MODEL` may confirm the
-// registered model but may not silently replace it — a model swap changes how the voice
-// sounds, and a change nobody reviewed is exactly what "separately reviewed" excludes.
+// THE MODEL IS PART OF THE ACCEPTANCE, NOT A PREFERENCE. KIV-313 pinned `eleven_v3` unless a
+// separately reviewed model change is authorized; that review ran on 2 Sep 2026 and moved the
+// registered model to `eleven_multilingual_v2` (the reasoning and the measurements live in
+// lib/ai/tts/voice-registry.ts, beside the value). The RULE here is unchanged and is the point:
+// `ELEVENLABS_TTS_MODEL` may confirm the registered model but may not silently replace it — a
+// model swap changes how the voice sounds, and a change nobody reviewed is exactly what
+// "separately reviewed" excludes. The pin moved because someone listened, not because an env
+// var was set.
 //
 // AND THE VOICE ITSELF IS ALLOW-LISTED (lib/ai/tts/voice-registry.ts). The refusal lives
 // HERE, in the adapter, rather than only in the demo's caller, because the demo is not the
@@ -192,7 +196,7 @@ export function buildElevenLabsRequest(
  * Turn a non-2xx into the right KIND of error.
  *
  * A 4xx IS A CONFIGURATION FAULT, NOT AN OUTAGE, and the difference decides whether the
- * fallback law applies. A revoked key, a plan without `eleven_v3`, an unknown dictionary
+ * fallback law applies. A revoked key, a plan without the registered model, an unknown dictionary
  * locator, an exhausted quota — all are PERMANENT until someone changes something, so
  * answering them by buying an OpenAI voice ships an American male reading Arabic to a real
  * customer on EVERY turn, forever, while paging the Founder each time. Tagged so

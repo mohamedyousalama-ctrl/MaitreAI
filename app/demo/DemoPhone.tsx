@@ -1620,7 +1620,14 @@ function CallScreen({
       // player that will not start — the call opens listening, exactly as it did before this
       // existed. A greeting is worth adding; it is not worth a call that will not start.
       if (greeting?.url) {
-        setPhase("speaking");
+        // NOT «يتكلم…» YET — THE SAME LIE, IN THE ONE PLACE THE FIX MISSED.
+        //
+        // Turn replies stopped announcing speech before there was any (see the phase handler
+        // in runTurn, which hangs the label off real audio progress). The greeting still set
+        // it here: before `el.src`, before `play()`, and held for up to the 6000ms race
+        // below — so a slow first byte showed «يتكلم…» over six seconds of silence on the
+        // very first thing a visitor sees. Fixing the general case and leaving the opening
+        // one is worse than not fixing it, because the opening one is what gets demoed.
         const text = String(greeting.text ?? "");
         setLastText(text);
 
@@ -1660,6 +1667,11 @@ function CallScreen({
           el.src = greeting.url;
           await Promise.race([
             new Promise<void>((done) => {
+              // …AND «يتكلم…» GOES UP HERE, when the element reports it is actually
+              // producing sound. `playing` is free on this path — unlike the turn loop,
+              // nothing else has claimed the handler — so the label follows the audio
+              // rather than the intention.
+              el.onplaying = () => setPhase("speaking");
               el.onended = () => done();
               el.onerror = () => done();
               void el.play().catch(() => done());
@@ -1673,6 +1685,9 @@ function CallScreen({
         try { el.pause(); } catch { /* already stopped */ }
         el.onended = null;
         el.onerror = null;
+        // Detached with the others: runTurn assigns its OWN progress handler to this same
+        // element, and a greeting listener left attached would fire into the turn loop.
+        el.onplaying = null;
         if (cancelled || !live.current) return;
       }
 

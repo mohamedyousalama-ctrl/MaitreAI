@@ -628,7 +628,7 @@ export async function maybeSendVoiceNote(
   const tts = await synthesizeVoiceReply(args.replyText);
   if (!tts) {
     // SAY SOMETHING. A 4xx here — a key scoped to the wrong account, a plan without
-    // eleven_v3, a voice or pronunciation-dictionary id that does not exist in this
+    // the registered model, a voice or pronunciation-dictionary id that does not exist in this
     // account, an exhausted quota — correctly produces silence rather than a substitute
     // voice. But it produced silence with NO alert and not even a console line, so voice
     // could be dead for every live tenant with no signal anywhere, indefinitely. The

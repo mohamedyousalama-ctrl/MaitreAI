@@ -258,7 +258,7 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ok("the registered voice is the one KIV-313 handed over",
       KHALID_VOICE.voiceId === "pYDa2s34YCzHjbn4DnXP");
     ok("…under the name it was accepted as", KHALID_VOICE.name === "Khalid kivo");
-    ok("…on the model it was accepted under", KHALID_VOICE.model === "eleven_v3");
+    ok("…on the model it was accepted under", KHALID_VOICE.model === "eleven_multilingual_v2");
     ok("…with the qualified one-word dictionary, by id and version",
       KHALID_VOICE.pronunciationDictionary.id === "rv3aw4bY6zoL4iWxJlDk" &&
       KHALID_VOICE.pronunciationDictionary.versionId === "AuNrVOZsoDPTqDl8wlFw");
@@ -377,14 +377,24 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
     ok("an unpriced model is refused — one env var must not blind the spend monitor",
       !demoVoiceProviderPinned());
   });
-  // KIV-313 §3 — `eleven_v3` is part of what was ACCEPTED, not a preference. An env value
-  // that agrees is a no-op confirmation; one that disagrees is an unreviewed model change,
-  // and it must fail closed in the pin AND in the adapter, not be approved by one and
-  // rejected by the other.
+  // KIV-313 §3 — the REGISTERED model is part of what was ACCEPTED, not a preference. An
+  // env value that agrees is a no-op confirmation; one that disagrees is an unreviewed
+  // model change, and it must fail closed in the pin AND in the adapter, not be approved
+  // by one and rejected by the other.
+  //
+  // THE REJECT LIST NAMED THE MODEL THAT LATER WON. `eleven_multilingual_v2` sat here as
+  // the example of a swap that must be refused, until the 2 Sep review moved the registry
+  // onto it — at which point this loop asserted the registered model must be rejected, and
+  // failed. The lesson is not "pick a different string": a reject list of hard-coded names
+  // is a list that goes stale the first time a decision is made. `eleven_v3` leads it now
+  // deliberately — the model production ran on YESTERDAY is refused TODAY unless the
+  // registry says so, which is the rule stated as sharply as it can be. Every entry is
+  // asserted to differ from the registry so this can never silently invert again.
   await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: KHALID_VOICE.model }, async () => {
     ok("an env model that AGREES with the registry is accepted", demoVoiceProviderPinned());
   });
-  for (const other of ["eleven_multilingual_v2", "eleven_flash_v2.5", "eleven_turbo_v2"]) {
+  for (const other of ["eleven_v3", "eleven_flash_v2_5", "eleven_turbo_v2"]) {
+    ok(`${other} is a genuine non-registered model for this test`, other !== KHALID_VOICE.model);
     await withEnvAsync({ ...PINNED, ELEVENLABS_TTS_MODEL: other }, async () => {
       ok(`an unreviewed model swap to ${other} is refused by the pin`, !demoVoiceProviderPinned());
     });
@@ -755,15 +765,32 @@ async function withEnvAsync(vars: Partial<Record<(typeof ENV_KEYS)[number], stri
   }
   ok("no skip reason at all is `none`", demoVoiceSilenceKind(null) === "none");
 
-  // H5 — the eleven_v3 RATE was unpinned: the pin checks presence, never accuracy, so any
+  // H5 — the RATE was unpinned: the pin checks presence, never accuracy, so any
   // wrong-but-present number was accepted and `agent_runs.cost_usd` — the only figure the
   // spend sweep sums — was wrong by that factor. Read off the provider dashboard.
-  ok("eleven_v3 is priced at the published $0.10 / 1K characters",
-    TTS_RATE_PER_CHAR["elevenlabs:eleven_v3"] === 0.0001);
-  ok("flash is priced at the published $0.05 / 1K characters",
-    TTS_RATE_PER_CHAR["elevenlabs:eleven_flash_v2.5"] === 0.00005);
+  //
+  // AND IT NOW FOLLOWS THE REGISTRY INSTEAD OF NAMING A MODEL. These lines pinned
+  // `eleven_v3` by hand, so the 2 Sep model review moved production onto
+  // `eleven_multilingual_v2` while this assertion went on proving a rate for a model
+  // nothing used any more — green, and covering nothing. A priced model missing from the
+  // table returns 0 (pricing.ts), which is not a loud failure: it is a silent one that
+  // makes every synthesis look free to lib/monitoring/sweep.ts. Keyed off
+  // KHALID_VOICE.model, the next model change cannot ship without its own rate.
+  ok(`the REGISTERED model (${KHALID_VOICE.model}) has a rate at all — a missing key silently prices it at zero`,
+    typeof TTS_RATE_PER_CHAR[`elevenlabs:${KHALID_VOICE.model}`] === "number" &&
+    TTS_RATE_PER_CHAR[`elevenlabs:${KHALID_VOICE.model}`]! > 0);
+  ok("…and it is the published $0.10 / 1K characters",
+    TTS_RATE_PER_CHAR[`elevenlabs:${KHALID_VOICE.model}`] === 0.0001);
+  // THE REAL PROVIDER IDS, VERIFIED BY SYNTHESIZING THROUGH THEM (2 Sep bake-off). The
+  // table said `eleven_flash_v2.5` with a DOT; ElevenLabs uses underscores, so that key
+  // could never be hit by `elevenlabs:${model}` and Flash would have priced at zero the
+  // day anyone switched to it.
+  ok("flash is priced at the published $0.05 / 1K characters, under its REAL id",
+    TTS_RATE_PER_CHAR["elevenlabs:eleven_flash_v2_5"] === 0.00005);
+  ok("turbo too — the other half-price realtime model the bake-off proved usable",
+    TTS_RATE_PER_CHAR["elevenlabs:eleven_turbo_v2_5"] === 0.00005);
   ok("a 600-character reply — the demo cap — costs about six cents",
-    Math.abs(600 * TTS_RATE_PER_CHAR["elevenlabs:eleven_v3"] - 0.06) < 1e-9);
+    Math.abs(600 * TTS_RATE_PER_CHAR[`elevenlabs:${KHALID_VOICE.model}`]! - 0.06) < 1e-9);
 
   // B1 — A VOICE MAY ONLY READ ITS OWN DIALECT. «وصاية» is a LIVE Egyptian tenant with
   // voice_notes enabled; ELEVENLABS_VOICE_ID is a single global setting, so without this

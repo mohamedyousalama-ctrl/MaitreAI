@@ -50,7 +50,9 @@ export const DEMO_WINDOW_MS = 60 * 60 * 1000;
  *   page the COLD turn is the normal case, billing at the cache-WRITE rate.
  *
  *   v3 (voice-out): "and more with voice" is now a number. TTS bills per character:
- *   DEMO_TTS_MAX_CHARS (600) x elevenlabs:eleven_v3 at $0.0001/char = $0.06 a spoken reply.
+ *   DEMO_TTS_MAX_CHARS (600) x elevenlabs:eleven_multilingual_v2 at $0.0001/char = $0.06 a
+ *   spoken reply. (Same published rate as the eleven_v3 this replaced, so the ceiling is
+ *   unchanged by the 2 Sep model review.)
  *
  *   v4 (streaming): a spoken reply on a phone call is FETCHED rather than delivered inside
  *   the turn, so one turn can buy up to SPEAK_PER_TICKET (3) syntheses — $0.18 a turn, and
