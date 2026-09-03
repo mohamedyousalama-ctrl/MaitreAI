@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { buildDeepgramKeyterms, isAllergenKeyterm, KEYTERM_CAP } from "../lib/ai/stt/deepgram-keyterms.ts";
-import { buildDeepgramUrl, parseDeepgramResponse, deepgramSttAdapter } from "../lib/ai/stt/deepgram.ts";
+import { buildDeepgramUrl, parseDeepgramResponse, deepgramSttAdapter, containerType } from "../lib/ai/stt/deepgram.ts";
 import {
   extractCanonicalSlots, parseCanonicalQuantity, compareSlots, buildSlotComparison,
 } from "../lib/ai/stt/slots.ts";
@@ -106,6 +106,83 @@ const MENU = ["ستربس دجاج", "بروست", "بطاطس", "كومبو ك�
   ok("WIRE: pricing carries a nova-3 rate", /"deepgram:nova-3"/.test(read("lib/ai/stt/pricing.ts")));
   ok("WIRE: DEEPGRAM_API_KEY gates ONLY the live call (throws when absent, pure builders don't)",
     /if \(!key\) throw new Error\("DEEPGRAM_API_KEY not set"\)/.test(read("lib/ai/stt/deepgram.ts")));
+}
+
+// ══ LEG 7 — THE IPHONE HAS NEVER BEEN UNDERSTOOD ═════════════════════════════
+//
+// Production, 3 Sep: four uploads from a real iPhone, every one 130 KB of genuine audio
+// with `mime="audio/mp4; codecs=mp4a.40.2"`, every one answered 200 by Deepgram with an
+// EMPTY transcript and confidence 0 — while desktop containers transcribed fine on the
+// same deployment and key. The visitor hears the greeting, speaks, and Khalid never
+// replies, because the route turns "no words" into a 422.
+//
+// These run the REAL adapter against a stubbed fetch. That is the only place this can be
+// proven: reproducing it for real needs an iOS recorder and a Deepgram key in one
+// environment, and none exists — so what is testable is the request WE send and how we
+// react, which is exactly what changed.
+{
+  ok("CONTAINER: the codecs parameter is stripped — iOS Safari is the only browser that sends one",
+    containerType("audio/mp4; codecs=mp4a.40.2") === "audio/mp4");
+  ok("CONTAINER: a plain container is untouched", containerType("audio/webm") === "audio/webm");
+  ok("CONTAINER: case and padding are normalized", containerType("  AUDIO/MP4 ; codecs=x ") === "audio/mp4");
+  ok("CONTAINER: absent falls back to the WhatsApp default, as before",
+    containerType(undefined) === "audio/ogg" && containerType("") === "audio/ogg");
+
+  const realFetch = globalThis.fetch;
+  const withStub = async (
+    replies: Array<{ transcript: string }>,
+    mimeType: string | undefined
+  ): Promise<{ sent: Array<string | null>; text: string }> => {
+    const sent: Array<string | null> = [];
+    let n = 0;
+    globalThis.fetch = (async (_u: unknown, init?: { headers?: Record<string, string> }) => {
+      const h = (init?.headers ?? {}) as Record<string, string>;
+      sent.push(h["Content-Type"] ?? null);
+      const r = replies[Math.min(n++, replies.length - 1)]!;
+      return {
+        ok: true,
+        json: async () => ({
+          results: { channels: [{ alternatives: [{ transcript: r.transcript, confidence: 0 }] }] },
+          metadata: { duration: 1 },
+        }),
+      };
+    }) as unknown as typeof globalThis.fetch;
+    process.env.DEEPGRAM_API_KEY = "test-key-not-a-real-one";
+    try {
+      const out = await deepgramSttAdapter.transcribe(Buffer.from([1, 2, 3]), { mimeType, languageHint: "ar" });
+      return { sent, text: out.text };
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.DEEPGRAM_API_KEY;
+    }
+  };
+
+  // The whole bug, end to end: the container that fails, then recovers on the retry.
+  const iphone = await withStub([{ transcript: "" }, { transcript: "ابغى كبسة دجاج" }], "audio/mp4; codecs=mp4a.40.2");
+  ok("IPHONE: the first attempt sends the container WITHOUT the codecs parameter",
+    iphone.sent[0] === "audio/mp4");
+  ok("IPHONE: an empty transcript retries with NO Content-Type, so the provider sniffs the bytes",
+    iphone.sent.length === 2 && iphone.sent[1] === null);
+  ok("IPHONE: and the recovered words are what the caller receives — not the empty first answer",
+    iphone.text === "ابغى كبسة دجاج");
+
+  // A turn that worked must cost exactly one call. A retry on success would double the bill
+  // on every single turn, which is a worse bug than the one being fixed.
+  const fine = await withStub([{ transcript: "مرحبا" }], "audio/webm");
+  ok("WORKING AUDIO: one attempt only — the retry never fires on a transcript that has words",
+    fine.sent.length === 1 && fine.text === "مرحبا");
+
+  // A genuinely silent room: both attempts empty, and it must STOP. This is the case that
+  // could loop, and the one that proves the retry is bounded rather than recursive.
+  const silent = await withStub([{ transcript: "" }, { transcript: "" }], "audio/webm");
+  ok("SILENCE: empty twice costs exactly two calls and then stops — the retry cannot loop",
+    silent.sent.length === 2 && silent.text === "");
+
+  // No mime, no retry: there is no Content-Type to remove, so a second identical call
+  // would be pure waste.
+  const noMime = await withStub([{ transcript: "" }, { transcript: "late" }], undefined);
+  ok("NO MIME: nothing to strip means nothing to retry — one call, no second chance",
+    noMime.sent.length === 1);
 }
 
 console.log(`\nWO-VOICE-DEEPGRAM PROOF: ${pass} passed, ${fail} failed`);
