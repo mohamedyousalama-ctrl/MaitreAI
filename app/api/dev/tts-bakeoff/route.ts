@@ -33,6 +33,7 @@
 //   GET ?model=<id>&line=<id>&audio=1 → the same, returning the MP3 to listen to.
 // ============================================================================
 
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { KHALID_VOICE } from "@/lib/ai/tts/voice-registry";
 import { toSpokenText } from "@/lib/ai/tts/spoken-text";
@@ -48,6 +49,9 @@ const LINES: Record<string, string> = {
   greeting: "هلا والله، معك خالد من مطعم الديرة. وش أقدر أخدمك؟",
   price: "الإجمالي 101.2 ريال، ويوصلك خلال 45 دقيقة.",
   warmth: "أبشر، سجّلت طلبك. تحب أضيف لك شي ثاني؟",
+  // JUST THE WORD THE DICTIONARY EXISTS FOR. Short, so the comparison is dominated by the
+  // one syllable under test rather than by everything around it.
+  gahwa: "قهوة عربية.",
   // The 194-character reply that actually lost its voice in production on 2 Sep: the
   // client bounds silence at 7s and eleven_v3 took 6924ms to first byte. A bake-off that
   // only measures short lines would have missed the case that broke.
@@ -244,12 +248,26 @@ export async function GET(req: Request): Promise<NextResponse> {
           use_speaker_boost: KHALID_VOICE.settings.use_speaker_boost,
           speed: KHALID_VOICE.settings.speed,
         },
-        pronunciation_dictionary_locators: [
-          {
-            pronunciation_dictionary_id: KHALID_VOICE.pronunciationDictionary.id,
-            version_id: KHALID_VOICE.pronunciationDictionary.versionId,
-          },
-        ],
+        // `nodict=1` DROPS the locator, which is how the dictionary question gets an
+        // answer the provider will not give directly: the key lacks
+        // `pronunciation_dictionaries_read`, so /v1/pronunciation-dictionaries/<id> 401s and
+        // nothing on our side records whether the rule is `phoneme` or `alias`. Asking is
+        // blocked; MEASURING is not. Synthesize the same word through the same model with
+        // and without the locator and compare the audio. Identical bytes = the model ignored
+        // it. The run is only meaningful next to two controls: the same config twice (is the
+        // provider deterministic at all?) and eleven_v3, which is documented to SUPPORT
+        // phoneme rules — if the dictionary changes nothing on v3 either, the method is
+        // broken, not the model.
+        ...(url.searchParams.get("nodict") === "1"
+          ? {}
+          : {
+              pronunciation_dictionary_locators: [
+                {
+                  pronunciation_dictionary_id: KHALID_VOICE.pronunciationDictionary.id,
+                  version_id: KHALID_VOICE.pronunciationDictionary.versionId,
+                },
+              ],
+            }),
       }),
     }
   );
@@ -301,6 +319,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       firstByteMs: firstByteMs < 0 ? headersMs : firstByteMs,
       totalMs,
       audioBytes: bytes.length,
+      dictSent: url.searchParams.get("nodict") !== "1",
+      sha256: createHash("sha256").update(bytes).digest("hex").slice(0, 32),
       current: KHALID_VOICE.model,
     },
     { status: 200, headers: { "Cache-Control": "no-store" } }
