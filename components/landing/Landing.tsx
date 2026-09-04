@@ -236,7 +236,7 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ===== FOOTER (legal + City Baker LLC) ===== */}
+      {/* ===== FOOTER (legal links) ===== */}
       <footer style={{ background: "#072a1e", color: "rgba(255,255,255,.7)" }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 24px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

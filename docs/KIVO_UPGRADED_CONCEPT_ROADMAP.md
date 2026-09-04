@@ -5,7 +5,7 @@
 
 ### Restaurant-First Core Brain + Module Agents
 **Document status:** Strategic north star + execution roadmap
-**Owner:** Mohamed (City Baker LLC — CR 216565)
+**Owner:** Mohamed (مؤسسة عمر حجاب المطيري للتجارة — الرقم الوطني الموحد 7055031913, Riyadh, Saudi Arabia)
 **Product:** Kivo — WhatsApp-first AI Restaurant Operating System
 **Frontline agent:** Karim / كريم (Egyptian Arabic, claude-sonnet)
 **First live client:** Wesaya Fried Chicken (وصاية) — Cairo, Egypt

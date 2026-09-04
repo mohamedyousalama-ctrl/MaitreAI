@@ -129,7 +129,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-lg font-semibold text-slate-900 mb-2">١٠. حدود المسؤولية</h2>
             <p>
-              في أقصى حدود ما يسمح به القانون، لا تتحمل شركة سيتي بيكر (ش.ذ.م.م) المسؤولية عن أي خسائر غير مباشرة أو عرضية أو تبعية
+              في أقصى حدود ما يسمح به النظام، لا تتحمل مؤسسة عمر حجاب المطيري للتجارة المسؤولية عن أي خسائر غير مباشرة أو عرضية أو تبعية
               تنشأ عن استخدام المنصة أو توقفها.
             </p>
           </section>
@@ -170,7 +170,7 @@ export default function TermsPage() {
           <section>
             <h3 className="text-base font-semibold text-slate-900 mb-1">Service &amp; roles</h3>
             <p className="text-sm">
-              Kivo is a WhatsApp-based AI ordering assistant for restaurants, a product of City Baker LLC (Cairo, Egypt). The <strong>restaurant is the merchant of record</strong> for every order — products, prices, payment, delivery — and the controller of its customers’ data. <strong>Kivo is a software and communications provider</strong>, not the seller of food and not a party to the sale between a restaurant and its customer.
+              Kivo is a WhatsApp-based AI ordering assistant for restaurants, a product of مؤسسة عمر حجاب المطيري للتجارة (Riyadh, Saudi Arabia). The <strong>restaurant is the merchant of record</strong> for every order — products, prices, payment, delivery — and the controller of its customers’ data. <strong>Kivo is a software and communications provider</strong>, not the seller of food and not a party to the sale between a restaurant and its customer.
             </p>
           </section>
           <section>
@@ -188,7 +188,7 @@ export default function TermsPage() {
           <section>
             <h3 className="text-base font-semibold text-slate-900 mb-1">Payment, availability &amp; liability</h3>
             <p className="text-sm">
-              Payment is between the customer and the restaurant (cash on delivery, wallet, or card where enabled). Kivo subscription fees are per commercial agreement <em>[قرار مطلوب: subscription fees, billing cycle, refunds]</em>. The service is provided “as is” without a guarantee of continuous availability <em>[قرار مطلوب: SLA, if any]</em>. To the maximum extent permitted by law, City Baker LLC is not liable for indirect, incidental, or consequential losses.
+              Payment is between the customer and the restaurant (cash on delivery, wallet, or card where enabled). Kivo subscription fees are per commercial agreement <em>[قرار مطلوب: subscription fees, billing cycle, refunds]</em>. The service is provided “as is” without a guarantee of continuous availability <em>[قرار مطلوب: SLA, if any]</em>. To the maximum extent permitted by law, مؤسسة عمر حجاب المطيري للتجارة is not liable for indirect, incidental, or consequential losses.
             </p>
           </section>
           <section>
@@ -200,7 +200,7 @@ export default function TermsPage() {
         </div>
 
         <div className="mt-12 border-t border-slate-100 pt-8 text-xs text-slate-400 text-center" dir="ltr">
-          <p>Kivo is a product of City Baker LLC — Commercial Register No. 216565 — Cairo, Egypt</p>
+          <p>Kivo is a product of مؤسسة عمر حجاب المطيري للتجارة — Unified National Number 7055031913 — Riyadh, Saudi Arabia</p>
         </div>
       </main>
       <SiteFooter />

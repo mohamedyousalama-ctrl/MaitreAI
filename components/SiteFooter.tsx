@@ -1,8 +1,8 @@
 // ============================================================================
 // MaitreAI — shared public-site footer
 // Renders on the public pages (landing, /contact, auth pages). Shows the
-// contact email and the City Baker LLC legal entity block (bilingual, exact
-// wording). NOT used inside the authenticated dashboard shell.
+// contact email and the Saudi establishment legal entity block (bilingual).
+// NOT used inside the authenticated dashboard shell.
 // ============================================================================
 
 import Link from "next/link";
@@ -35,16 +35,18 @@ export function SiteFooter() {
 
         <div className="mt-5 space-y-1 text-xs leading-relaxed text-slate-500">
           <p dir="rtl">
-            Kivo هو منتج من شركة سيتي بيكر (ش.ذ.م.م) — سجل تجاري رقم ٢١٦٥٦٥ — ١٤٩ شارع النصر،
-            المعادي، القاهرة، مصر
+            Kivo هو منتج من مؤسسة عمر حجاب المطيري للتجارة — الرقم الوطني الموحد ٧٠٥٥٠٣١٩١٣ —
+            الرياض، المملكة العربية السعودية
           </p>
           <p dir="ltr">
-            Kivo is a product of City Baker LLC — Commercial Register No. 216565 — 149 El-Nasr
-            St., Maadi, Cairo, Egypt
+            Kivo is a product of مؤسسة عمر حجاب المطيري للتجارة — Unified National Number
+            7055031913 — Riyadh, Saudi Arabia
           </p>
         </div>
 
-        <p className="mt-5 text-xs text-slate-400">© {year} City Baker LLC — جميع الحقوق محفوظة</p>
+        <p className="mt-5 text-xs text-slate-400">
+          © {year} مؤسسة عمر حجاب المطيري للتجارة — جميع الحقوق محفوظة
+        </p>
       </div>
     </footer>
   );

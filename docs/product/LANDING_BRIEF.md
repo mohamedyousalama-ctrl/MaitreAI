@@ -19,7 +19,7 @@ Independent restaurant owners + small chains in **Saudi Arabia and Egypt**. One 
 5. **Safety & trust block** — the differentiator: deterministic allergy safety, human takeover, no invented prices or availability. Doubles as the answer to "can I trust AI with my customers?"
 6. **Proof** — Wesaya as first named client (photo + owner quote) ONLY once live with permission; until then a neutral "built with a working Egyptian fried-chicken restaurant" line.
 7. **Pricing/contact** — no public pricing in V1; CTA-driven.
-8. **Footer** — City Baker LLC legal, links to /privacy, /terms, /data-deletion.
+8. **Footer** — مؤسسة عمر حجاب المطيري للتجارة legal, links to /privacy, /terms, /data-deletion.
 Support pages: **/demo** + the legal pages. Nothing else in V1.
 
 ## 4. The CTA — eat our own cooking
