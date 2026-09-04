@@ -527,6 +527,39 @@ console.log("\n── «997» IS NEVER SPOKEN, WHICHEVER PATH WROTE IT ───
   ]) {
     ok(`«${t}» is still speakable`, voiceHardZeroReason(t, CALL) !== "emergency_number");
   }
+  // A DECIMAL TOTAL IS A TOTAL, AND EVERY ONE OF THESE WENT SILENT.
+  //
+  // `(?![0-9٠-٩])` treats a decimal point as a word boundary, so «112.50» matched on its
+  // «112» — and the price exemption could not rescue it, because its currency branch wants
+  // the currency word directly after the digits and «.50 ريال» sits in between. What was
+  // left holding the line was whether one of SIX nouns happened to precede the number:
+  // «المجموع 112.50 ريال» spoke, «الفاتورة 112.50 ريال» did not. Same bill, same channel,
+  // different noun — and the screen then told the visitor a SAFETY RULE had silenced it.
+  //
+  // The first case below is the one that shipped: an ordinary Riyadh bill, refused. The
+  // last two are the reason the fix went into the BOUNDARY and not into the noun list —
+  // every noun added to a price context is a fresh way for a real «اتصل 997» to be spoken.
+  for (const t of [
+    "الفاتورة 112.50 ريال", "فاتورتك 112.50 ريال", "المطلوب 112.50 ريال",
+    "عليك 112.50 ريال", "112.50 ريال", "صار عليك 112.50",
+    "الإجمالي 997.50 ريال", "المبلغ ١١٢٫٥٠ ريال",
+  ]) {
+    ok(`«${t}» — a decimal total is speakable`, voiceHardZeroReason(t, CALL) !== "emergency_number");
+  }
+  // AND THE NUMBERS THAT MATTER ARE STILL REFUSED. A decimal exemption must not become a
+  // way to say one of these out loud: none of them is ever written with a decimal, which is
+  // exactly why exempting decimals costs nothing.
+  for (const t of [
+    "اتصل 997", "اطلب 911", "الطوارئ 112", "رقم الإسعاف 997", "اتصل بالهلال الأحمر 997",
+  ]) {
+    ok(`«${t}» is STILL refused`, voiceHardZeroReason(t, CALL) === "emergency_number");
+  }
+  // «،» IS A LIST, NOT A DECIMAL. The Arabic list comma is deliberately outside the
+  // exemption — «997، 911» is two emergency numbers, and reading it as one decimal would
+  // hand the guard a bypass in the one script it exists to police.
+  ok("«اتصل 997، 911» — an Arabic list comma is not a decimal separator",
+    voiceHardZeroReason("اتصل 997، 911", CALL) === "emergency_number");
+
   // SILENCE, NOT A CARRIER. Every other refusal on a call gets a spoken acknowledgement so
   // the line does not go dead; this one must not — the same reasoning that gives a safety
   // hold no carrier. It falls through the closed list and produces null.
