@@ -122,9 +122,39 @@ const REGISTRY: ReadonlyMap<string, RegisteredVoice> = new Map([[KHALID_VOICE.vo
 
 /** Historical provider objects that must never speak again. Diagnostic only — the allow
  *  list above is what actually refuses them, and it refuses the ones missing here too.
- *  KIV-95 carries the full disposition; `VuqFqWXHibJ61b9IiVJ7` is the one identified so far. */
+ *
+ *  READ-ONLY ACCOUNT INVENTORY, 4 Sep 2026 — and it corrected this list in both directions.
+ *  KIV-95 recorded four unidentified objects and named `VuqFqWXHibJ61b9IiVJ7` as the one
+ *  pinned down. A full read of the live account (29 voices) found the opposite of what this
+ *  block assumed:
+ *
+ *    • `VuqFqWXHibJ61b9IiVJ7` IS NOT IN THE ACCOUNT. A direct read returns no voice. It is
+ *      kept below anyway — an id that cannot resolve costs nothing to refuse, and removing
+ *      it would delete the only written trace of a KIV-95 object if it ever reappears.
+ *
+ *    • `3vR1KVyyNDhdkucpugQI` («Saad») IS, and it is the object this gate exists for:
+ *      category `professional`, `is_owner = false`, sharing status `copied`, and MULTIPLE
+ *      UPLOADED AUDIO SAMPLES — a licensed clone of a real person, copied into this account
+ *      from the shared library. KIV-313 forbids it by name and now the reason is visible
+ *      rather than assumed. It was missing from this list entirely, so a wrong pin to Saad
+ *      would have produced the generic "not in the registry" refusal instead of naming the
+ *      rights problem.
+ *
+ *  BOTH KHALID OBJECTS CAME BACK CLEAN, which is the other half of the finding and the
+ *  reason neither is listed here. «Khalid Demo» (`2LxxA31DwRtErSthUZxF`, created 12 hours
+ *  before the registered voice) is `generated`, `is_owner = true`, sourced from
+ *  `generated_audio.mp3`, with no donor recording — structurally identical in provenance to
+ *  the pinned voice. The blanket suspicion in KIV-313 was precautionary, from a time when
+ *  provenance was unknown; for that object it is now known and it is synthetic. The pin
+ *  stays on «Khalid kivo» because ONE voice may speak as Khalid, not because the other one
+ *  is tainted — its prompt is the specific Najdi restaurant-employee brief, where Khalid
+ *  Demo's is a generic English "high-end hospitality" one. */
 export const QUARANTINED_VOICE_IDS: Readonly<Record<string, string>> = {
-  VuqFqWXHibJ61b9IiVJ7: "legacy provider object under G0-R quarantine (KIV-90/95)",
+  VuqFqWXHibJ61b9IiVJ7: "legacy provider object under G0-R quarantine (KIV-90/95) — not present in the account as of 4 Sep 2026",
+  "3vR1KVyyNDhdkucpugQI":
+    "«Saad» — professional voice CLONED FROM A REAL PERSON'S RECORDINGS, copied from the shared " +
+    "library and NOT owned by this account (is_owner=false). Forbidden by name in KIV-313; the " +
+    "G0-R rights question applies to it in full.",
 };
 
 /** Ids are compared with invisibles stripped and case folded. A voice id pasted from a
