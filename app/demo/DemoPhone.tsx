@@ -889,6 +889,9 @@ function CallScreen({
   type Phase = "checking" | "unavailable" | "listening" | "thinking" | "speaking" | "ended";
   const [phase, setPhase] = useState<Phase>("checking");
   const [note, setNote] = useState<string>("");
+  /** Which reply this is, 1-based. Only ever read by reportSilent — a call whose
+   *  SECOND message is the silent one is a different bug from one that never spoke. */
+  const turnIndex = useRef(0);
   const [lastText, setLastText] = useState<string>("");
   const [textOnly, setTextOnly] = useState(false);
   // WHY the reply is on the screen instead of in the ear. "rule" is the product guarantee
@@ -944,6 +947,24 @@ function CallScreen({
     release();
     onEnd();
   }, [release, onEnd]);
+
+  /** TELL THE SERVER WHY A REPLY MADE NO SOUND. Fire-and-forget, never awaited, never
+   *  allowed to throw: a diagnostic that can break the call it is diagnosing is worse than
+   *  no diagnostic. The screen already WORKS OUT every one of these reasons and then wrote
+   *  them to a browser console nobody can read — which is why "he was silent on the second
+   *  message" could not be answered from server logs that showed the audio synthesized in
+   *  918ms. `keepalive` so a report survives the page being closed in frustration, which is
+   *  exactly when it matters most. */
+  const reportSilent = useCallback((reason: string, extra?: { chars?: number; waitedMs?: number; detail?: string }) => {
+    try {
+      void fetch("/api/demo/silent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason, turn: turnIndex.current, ...extra }),
+        keepalive: true,
+      }).catch(() => { /* a failed report is not a failed call */ });
+    } catch { /* nor is a thrown one */ }
+  }, []);
 
   /** Stop for a reason the visitor should see, without pretending the line dropped. */
   const stopWith = useCallback((msg: string) => {
@@ -1151,6 +1172,7 @@ function CallScreen({
       // conversation the visitor can check the prices in.
       if (data.transcript) push({ from: "me", kind: "voice", text: data.transcript, seconds: 0 });
       const reply = String(data.reply ?? "");
+      turnIndex.current += 1;
       setLastText(reply);
 
       // EITHER DELIVERY COUNTS AS AUDIO. `replyAudio` is the whole clip inline; a call now
@@ -1390,6 +1412,7 @@ function CallScreen({
           if (stallTimer) clearTimeout(stallTimer);
           stallTimer = setTimeout(() => {
             console.warn(`[demo/call] audio stalled — no progress in ${STALL_MS}ms, giving up on this reply`);
+            reportSilent("stalled", { chars: reply.length, waitedMs: STALL_MS });
             try { el.pause(); } catch { /* already stopped */ }
             done(false);
           }, STALL_MS);
@@ -1421,11 +1444,13 @@ function CallScreen({
         // failure is the wrong container, a NotAllowedError is the autoplay rules.
         el.onerror = () => {
           console.warn("[demo/call] audio element error", el.error?.code, el.error?.message, el.src.slice(0, 24));
+          reportSilent("element_error", { chars: reply.length, detail: `code${el.error?.code ?? "none"}` });
           done(false);
         };
         void el.play().catch((e: unknown) => {
           const err = e as { name?: string; message?: string };
           console.warn(`[demo/call] play() rejected: ${err?.name ?? "unknown"} — ${err?.message ?? ""}`);
+          reportSilent("play_rejected", { chars: reply.length, detail: err?.name ?? "unknown" });
           done(false);
         });
       });
@@ -1503,6 +1528,12 @@ function CallScreen({
       // held is that a call which cannot speak must not pretend it is fine, and running
       // silently turn after turn while the screen reads «يتكلم…» is exactly that pretence.
       if (!played || !heard) {
+        // THE TWO SILENT OUTCOMES THAT REPORT NOTHING ON THEIR OWN. The three warnings
+        // above cover a refusal, a decode failure and a stall; these are the ones left —
+        // audio that "ended" having never reported progress, and a barge that landed
+        // before the first syllable. Both look identical to the visitor (no sound) and
+        // identical in the server log (a reply composed, audio synthesized fast).
+        if (played && !heard) reportSilent(barged ? "barged_early" : "no_progress", { chars: reply.length });
         speechFailures.current += 1;
         if (speechFailures.current >= 2) {
           stopWith(endMessage({ kind: "end", reason: "voice_unavailable" }));
