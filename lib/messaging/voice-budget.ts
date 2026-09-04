@@ -278,7 +278,24 @@ const CALL_SPEAKABLE_SAFETY_STOPS: ReadonlySet<string> = new Set([
  *  danger" about an INBOUND message and is right to need context. This answers "may we say
  *  this OUT LOUD" about an OUTBOUND one, where there is no context that makes reading an
  *  ambulance number to someone a good idea. */
-const EMERGENCY_NUMBER_RE = /(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])/;
+// A DECIMAL IS NOT AN EMERGENCY NUMBER, AND THE BOUNDARY USED TO THINK IT WAS.
+//
+// `(?![0-9٠-٩])` is satisfied by a decimal point, so «112.50» matched on its «112» — and
+// then the price exemption below could not save it either: its currency branch needs the
+// currency word right after the digits («112 ريال»), and «.50 ريال» is in the way. The only
+// thing standing between a decimal total and silence was whether one of SIX nouns happened
+// to sit in front of it. «المجموع 112.50 ريال» spoke; «الفاتورة 112.50 ريال»، «فاتورتك…»،
+// «المطلوب…»، «عليك…» all went silent, and the screen blamed a SAFETY RULE for it.
+//
+// Fixed HERE rather than by adding nouns to the exemption, and the asymmetry is the reason.
+// Every noun added to a price context is a new way for a real «اتصل 997» to be SPOKEN — the
+// exact defect a previous commit fixed by REMOVING an over-broad alternative. Teaching this
+// pattern that 112.50 is one number is not a widening at all: no emergency number anywhere
+// is written with a decimal, so nothing that should be refused stops being refused.
+//
+// «٫» (U+066B, the Arabic decimal separator) is included; «،» (U+060C, the Arabic LIST
+// comma) is deliberately NOT — «اتصل 997، 911» is two emergency numbers, not one decimal.
+const EMERGENCY_NUMBER_RE = /(?<![0-9٠-٩])(?:997|911|112|٩٩٧|٩١١|١١٢)(?![0-9٠-٩])(?![.٫][0-9٠-٩])/;
 
 /** …UNLESS THE NUMBER IS A PRICE, WHICH IS THE COMMON CASE AND WAS NOT THOUGHT THROUGH.
  *
