@@ -1,13 +1,19 @@
 // ============================================================================
 // MaitreAI — OpenAI STT adapter (Sprint 9, S9-6) — candidate A
-// Whisper-family via the OpenAI audio transcriptions API. INERT until
-// OPENAI_API_KEY is provisioned (owner approval — new paid key). Model is
-// env-selectable (default gpt-4o-mini-transcribe; whisper-1 gives verbose_json
-// with duration for exact cost).
+// Whisper-family via the OpenAI audio transcriptions API. Model is env-selectable
+// (default whisper-1, which returns verbose_json with a duration — and therefore an exact
+// cost; other models return plain json with no duration, which the price table scores as
+// ZERO, so an OPENAI_STT_MODEL flip makes this spend invisible to the daily alert).
+//
+// NO LONGER INERT, AND THAT IS A DELIBERATE CHANGE: this is the SECOND rescue engine for a
+// container the primary cannot decode (lib/ai/stt/fallback.ts), so OPENAI_API_KEY — which
+// production already holds for TTS — now also buys transcription on a failed turn. It is
+// the most expensive rate in lib/ai/stt/pricing.ts and it is tried LAST for that reason; an
+// operator who does not want it sets STT_FALLBACK_ADAPTERS=groq.
 // ============================================================================
 
 import type { SttAdapter } from "./types";
-import { sttUploadFilename } from "./types";
+import { readSttJsonBody, sttUploadFilename } from "./types";
 import { sttCostUsd } from "./pricing";
 
 export const openaiSttAdapter: SttAdapter = {
@@ -38,7 +44,8 @@ export const openaiSttAdapter: SttAdapter = {
       // Unset on the normal path; the empty-transcript fallback always supplies a deadline.
       signal: opts?.signal,
     });
-    const j = (await res.json().catch(() => ({}))) as {
+    // NOT `.catch(() => ({}))` — that turned an abandoned request into an empty transcript.
+    const j = (await readSttJsonBody(res)) as {
       text?: string;
       duration?: number;
       segments?: Array<{ avg_logprob?: number }>;

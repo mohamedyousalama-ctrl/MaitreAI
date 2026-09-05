@@ -84,3 +84,33 @@ export function sttUploadFilename(mime: string | null | undefined): string {
   // ogg/opus and anything unrecognised: keep the pre-fix behaviour exactly.
   return "audio.ogg";
 }
+
+/**
+ * Read a provider's JSON body, tolerating junk but NEVER a cancellation.
+ *
+ * WHY THIS IS NOT `.catch(() => ({}))`, WHICH IS WHAT EVERY ADAPTER USED TO DO.
+ * `fetch` resolves the moment the response HEADERS arrive. A provider that answers 200 and
+ * then stops writing leaves `res.ok === true` and the failure entirely inside the body read
+ * — so a bare catch turns an ABANDONED request into a successful empty transcript. Measured
+ * against a real socket: headers sent, body stalled, `AbortSignal.timeout(700)` → `fetch`
+ * resolves ok, `res.json()` rejects `TimeoutError`, the catch swallows it, and the adapter
+ * returns `text: ""`.
+ *
+ * That is worse than the hang it was meant to bound, because of what happens next: the
+ * fallback reads an empty transcript as "no words" and logs «the clip is probably silent» —
+ * telling an operator the customer said nothing when the truth is that an engine hung. The
+ * whole reason this seam exists is that an empty transcript is ambiguous; manufacturing a
+ * fake one is the exact lie it was built to stop.
+ *
+ * A malformed or non-JSON body still degrades to `{}` — that is a provider quirk the callers
+ * handle by reading `res.ok` and the parsed fields. A cancellation is not a quirk.
+ */
+export async function readSttJsonBody(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await res.json()) as Record<string, unknown>;
+  } catch (e) {
+    const name = (e as { name?: string } | null)?.name;
+    if (name === "AbortError" || name === "TimeoutError") throw e;
+    return {};
+  }
+}

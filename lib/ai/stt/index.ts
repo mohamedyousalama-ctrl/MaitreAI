@@ -23,6 +23,7 @@ import {
   mockSttBlockedInProduction,
   isMockSttProductionError,
 } from "./guard";
+import { availableFallbackAdapters } from "./fallback";
 
 export function resolveSttAdapterName(): SttAdapterName {
   const sel = (process.env.STT_ADAPTER || "").toLowerCase();
@@ -58,6 +59,17 @@ export interface SttHealthReadout {
     enabled: boolean;
     status: "working" | "not-configured";
   };
+  /** WHICH ENGINES CAN RESCUE A TURN THE PRIMARY HEARS NOTHING ON, by name — never a key.
+   *
+   *  This exists because the question was only answerable by making a call and reading the
+   *  logs. Deepgram cannot decode the container iOS Safari records: it answers 200 with an
+   *  empty transcript, and lib/ai/stt/fallback.ts hands those bytes to Whisper instead — but
+   *  ONLY if a second provider key is present, and nothing said whether one was. An empty
+   *  list here means every iPhone call still ends in silence, which is a thing an operator
+   *  should be able to see before a prospect does. */
+  fallbackAdapters: string[];
+  /** "working" when a rescue is possible, "not-configured" when the primary is on its own. */
+  fallbackStatus: "working" | "not-configured";
 }
 
 function hasProviderKey(name: SttAdapterName): boolean {
@@ -89,10 +101,14 @@ export function readSttHealth(): SttHealthReadout {
     status = hasProviderKey(adapterName) ? "working" : "not-configured";
   }
 
+  const fallbackAdapters = availableFallbackAdapters(adapterName);
+
   return {
     adapterName,
     status,
     explicitAdapter,
+    fallbackAdapters,
+    fallbackStatus: fallbackAdapters.length > 0 ? "working" : "not-configured",
     mockTranscriptMode: {
       enabled: mockTranscriptEnabled,
       status: mockTranscriptEnabled ? "test-mode-on" : "working",

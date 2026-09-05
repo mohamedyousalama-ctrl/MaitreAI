@@ -194,9 +194,12 @@ const MENU = ["ستربس دجاج", "بروست", "بطاطس", "كومبو ك�
 
   // THE RECOVERY DID NOT DISAPPEAR — IT MOVED. Without this, deleting the retry and
   // deleting the fallback would both leave this file green.
+  // The CALL, not the identifier: a bare `/transcribeWithFallback/` passes on the import
+  // line alone, or on a comment mentioning it, so deleting the wiring would leave this green.
+  const seam = read("lib/messaging/voice.ts");
   ok("RECOVERY: the empty-transcript path is handed to a second ENGINE at the shared seam",
-    /transcribeWithFallback/.test(read("lib/messaging/voice.ts")) &&
-    /isEmptyTranscript\(primary\)/.test(read("lib/messaging/voice.ts")));
+    /await transcribeWithFallback\(\s*adapter\.name,\s*bytes,\s*opts\s*\)/.test(seam) &&
+    /if \(!isEmptyTranscript\(primary\)\) return primary;/.test(seam));
 }
 
 console.log(`\nWO-VOICE-DEEPGRAM PROOF: ${pass} passed, ${fail} failed`);

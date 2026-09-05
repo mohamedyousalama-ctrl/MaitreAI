@@ -19,6 +19,7 @@
 // ============================================================================
 
 import { transcribeAudioBytes, transcribeWhatsAppVoice } from "../lib/messaging/voice.ts";
+import { mockSttAdapter } from "../lib/ai/stt/mock.ts";
 import {
   availableFallbackAdapters,
   isEmptyTranscript,
@@ -38,6 +39,7 @@ function ok(name: string, condition: boolean, detail?: unknown) {
 const ENV_KEYS = [
   "NODE_ENV", "STT_ADAPTER", "DEEPGRAM_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY",
   "ENABLE_MOCK_STT", "DEEPGRAM_STT_MODEL", "GROQ_STT_MODEL", "OPENAI_STT_MODEL",
+  "STT_FALLBACK_ADAPTERS",
   "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID",
 ] as const;
 const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
@@ -91,6 +93,7 @@ function baseEnv() {
   delete process.env.ENABLE_MOCK_STT;
   delete process.env.GROQ_API_KEY;
   delete process.env.OPENAI_API_KEY;
+  delete process.env.STT_FALLBACK_ADAPTERS;
 }
 
 async function main() {
@@ -178,15 +181,23 @@ async function main() {
     baseEnv();
     process.env.ENABLE_MOCK_STT = "true"; // even when the mock is explicitly allowed
     process.env.GROQ_API_KEY = "gq-test";
+    process.env.OPENAI_API_KEY = "oa-test";       // a THIRD engine is available and must not be used
     stubNetwork([
       ["api.deepgram.com", () => json(DG_EMPTY)],
-      ["api.groq.com", () => json(whisper(""))],   // the second engine hears nothing either
+      ["api.groq.com", () => json(whisper(""))],   // the second engine decodes it and hears nothing
+      ["api.openai.com", () => json(whisper("لا يجب أن يحدث"))],
     ]);
     const r = await transcribeAudioBytes(IPHONE_BYTES, IPHONE_MIME);
-    ok("E2 no invented transcript appears when both engines hear nothing",
-      r.text === "" && !r.text.includes("تفريغ تجريبي"), r.text);
-    ok("E3 two engines and no words is reported as a silent clip, not a broken decoder",
-      warnings.some((w) => w.includes("probably silent")), warnings);
+    // Compared against the REAL constant the mock returns, not a substring of it — an
+    // assertion that only restates "the text is empty" cannot fail on its own.
+    const invented = (await mockSttAdapter.transcribe(Buffer.alloc(1))).text;
+    ok("E2 the mock's invented sentence never reaches the caller",
+      r.text === "" && r.text !== invented && invented.length > 0, { got: r.text, invented });
+    ok("E3 a decoded clip with no words is reported as silence, not a broken decoder",
+      warnings.some((w) => w.includes("found no words") && w.includes("silent")), warnings);
+    ok("E4 and it STOPS there — a second Whisper is not paid to reconfirm a quiet room",
+      hits("api.groq.com") === 1 && hits("api.openai.com") === 0,
+      { groq: hits("api.groq.com"), openai: hits("api.openai.com") });
   }
 
   // ── F. THE FALLBACK IS NEVER THE THING THAT FAILS THE TURN ─────────────────
@@ -227,6 +238,7 @@ async function main() {
       ["api.deepgram.com", () => json(DG_EMPTY)],
       ["api.groq.com", (init) => new Promise<Response>((_res, rej) => {
         const s = init.signal!;
+        if (s.aborted) return rej(Object.assign(new Error("aborted"), { name: "AbortError" }));
         // A REAL in-flight request holds the event loop open; a bare promise does not, and
         // Node's AbortSignal.timeout uses an UNREF'D timer on purpose. Without this the
         // process would simply exit here — the proof would end mid-run and report success.
@@ -252,16 +264,178 @@ async function main() {
     ok("G4 the deadline reaches the provider request itself, not just the wrapper",
       gqCall.init.signal instanceof AbortSignal, gqCall.init.signal);
   }
+  {
+    // THE HANG THAT ACTUALLY HAPPENS. `fetch` resolves the moment the response HEADERS
+    // arrive, so a provider that answers 200 and then stops writing fails inside the BODY
+    // read — where every adapter used to do `.catch(() => ({}))`. That turned an abandoned
+    // request into a successful EMPTY transcript, and the fallback then told an operator
+    // «the clip is silent»: the customer blamed for an engine that hung. Reproduced against
+    // a real socket before this was written.
+    baseEnv();
+    process.env.GROQ_API_KEY = "gq-test";
+    stubNetwork([
+      ["api.deepgram.com", () => json(DG_EMPTY)],
+      ["api.groq.com", (init) => {
+        const s = init.signal!;
+        const keepAlive = setTimeout(() => {}, 30_000);
+        // Headers land immediately; the body never completes.
+        const body = new ReadableStream({
+          start(ctrl) {
+            ctrl.enqueue(new TextEncoder().encode('{"te'));
+            s.addEventListener("abort", () => {
+              clearTimeout(keepAlive);
+              ctrl.error(Object.assign(new Error("aborted"), { name: "TimeoutError" }));
+            });
+          },
+        });
+        return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+      }],
+    ]);
+    const r = await transcribeAudioBytes(IPHONE_BYTES, IPHONE_MIME);
+    ok("G5 a body that never finishes is a FAILURE, not a silent customer",
+      warnings.some((w) => w.includes("groq failed")), warnings);
+    ok("G6 and it is NEVER reported as a decoded-but-silent clip",
+      !warnings.some((w) => w.includes("found no words")), warnings);
+    ok("G7 the turn still returns the primary's empty result", r.text === "" && r.adapter === "deepgram", r);
+  }
 
-  // ── H. NO BYTES, NO SPEND ──────────────────────────────────────────────────
+  {
+    // TWO HANGING ENGINES MUST COST ONE BUDGET, NOT TWO. A deadline built inside the loop
+    // reads as a ceiling and behaves as a multiplier: with both keys set — the state you
+    // actually want — it doubles. With one clock started before the first attempt, the
+    // second candidate inherits an already-spent deadline and fails immediately.
+    baseEnv();
+    process.env.GROQ_API_KEY = "gq-test";
+    process.env.OPENAI_API_KEY = "oa-test";
+    const hang = (init: RequestInit) => new Promise<Response>((_res, rej) => {
+      const s = init.signal!;
+      if (s.aborted) return rej(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      const keepAlive = setTimeout(() => {}, 30_000);
+      s.addEventListener("abort", () => {
+        clearTimeout(keepAlive);
+        rej(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
+      });
+    });
+    stubNetwork([
+      ["api.deepgram.com", () => json(DG_EMPTY)],
+      ["api.groq.com", hang],
+      ["api.openai.com", hang],
+    ]);
+    const t0 = Date.now();
+    const r = await transcribeAudioBytes(IPHONE_BYTES, IPHONE_MIME);
+    const waited = Date.now() - t0;
+    ok("G8 the budget covers the WHOLE rescue — two hanging engines still cost one deadline",
+      waited < STT_FALLBACK_TIMEOUT_MS * 1.5, { waited, deadline: STT_FALLBACK_TIMEOUT_MS });
+    ok("G9 both candidates were still attempted, not skipped",
+      hits("api.groq.com") === 1 && hits("api.openai.com") === 1,
+      { groq: hits("api.groq.com"), openai: hits("api.openai.com") });
+    ok("G10 and the turn returns rather than hanging", r.text === "" && r.adapter === "deepgram", r);
+  }
+
+  // ── K. THE SHAPE PRODUCTION IS ACTUALLY IN ─────────────────────────────────
+  // OPENAI_API_KEY is present in production for TTS, so on merge day the rescue chain is
+  // deepgram → openai with NO groq key. Every other case here deletes that key, which would
+  // leave the one environment this ships into unexercised.
+  {
+    baseEnv();
+    process.env.OPENAI_API_KEY = "oa-test";   // present for TTS; no GROQ key provisioned
+    stubNetwork([
+      ["api.deepgram.com", () => json(DG_EMPTY)],
+      ["api.openai.com", () => json(whisper("أبغى كبسة"))],
+    ]);
+    const r = await transcribeAudioBytes(IPHONE_BYTES, IPHONE_MIME);
+    ok("K1 the iPhone turn is rescued with the TTS key alone — no new variable required",
+      r.text === "أبغى كبسة" && r.adapter === "openai", r);
+    ok("K2 whisper-1's bill is added to deepgram's, not substituted for it",
+      Math.abs(r.costUsd - (Number(((6 / 60) * 0.0043).toFixed(6)) + Number(((6 / 60) * 0.006).toFixed(6)))) < 1e-9,
+      r.costUsd);
+  }
+
+  // ── L. AN OPERATOR CAN SAY NO, IN WRITING, WITHOUT A DEPLOY ────────────────
+  // This product does not infer paid providers from key presence — the rule it wrote after
+  // an inferred provider read Arabic in an American voice to a real customer.
+  {
+    baseEnv();
+    process.env.GROQ_API_KEY = "gq-test";
+    process.env.OPENAI_API_KEY = "oa-test";
+    process.env.STT_FALLBACK_ADAPTERS = "groq";
+    stubNetwork([
+      ["api.deepgram.com", () => json(DG_EMPTY)],
+      ["api.groq.com", () => json({ error: { message: "down" } }, 500)],
+      ["api.openai.com", () => { throw new Error("proof: whisper-1 was excluded and must not be called"); }],
+    ]);
+    const r = await transcribeAudioBytes(IPHONE_BYTES, IPHONE_MIME);
+    ok("L1 STT_FALLBACK_ADAPTERS=groq keeps the expensive engine out, even when groq fails",
+      r.text === "" && hits("api.openai.com") === 0, hits("api.openai.com"));
+    ok("L2 and the readout agrees with the runtime",
+      JSON.stringify(availableFallbackAdapters("deepgram")) === JSON.stringify(["groq"]),
+      availableFallbackAdapters("deepgram"));
+
+    process.env.STT_FALLBACK_ADAPTERS = "";
+    stubNetwork([["api.deepgram.com", () => json(DG_EMPTY)]]);
+    const off = await transcribeAudioBytes(IPHONE_BYTES, IPHONE_MIME);
+    ok("L3 an empty value turns the rescue off entirely — one call, no rescue",
+      off.text === "" && calls.length === 1 && availableFallbackAdapters("deepgram").length === 0, calls.length);
+
+    process.env.STT_FALLBACK_ADAPTERS = "gorq, nonsense";
+    ok("L4 a typo cannot take transcription down — unknown names are ignored, not thrown",
+      JSON.stringify(availableFallbackAdapters("deepgram")) === JSON.stringify([]),
+      availableFallbackAdapters("deepgram"));
+  }
+
+  // ── M. A PRIMARY THAT FAILS OUTRIGHT IS THE SAME DEAD TURN ─────────────────
+  // A Deepgram 429 or 500 used to propagate straight out: the demo route returns 503 and the
+  // call screen hangs up. From the caller's seat that is identical to an empty transcript.
+  {
+    baseEnv();
+    process.env.GROQ_API_KEY = "gq-test";
+    stubNetwork([
+      ["api.deepgram.com", () => json({ err_msg: "rate limited" }, 429)],
+      ["api.groq.com", () => json(whisper("أبغى مندي"))],
+    ]);
+    const r = await transcribeAudioBytes(IPHONE_BYTES, IPHONE_MIME);
+    ok("M1 a throwing primary is rescued, not surfaced as a dead call",
+      r.text === "أبغى مندي" && r.adapter === "groq", r);
+    ok("M2 the primary's failure is named in the log", warnings.some((w) => w.includes("[stt] deepgram failed")), warnings);
+  }
+  {
+    baseEnv(); // primary throws, nothing to rescue with
+    stubNetwork([["api.deepgram.com", () => json({ err_msg: "rate limited" }, 429)]]);
+    let threw: string | null = null;
+    try { await transcribeAudioBytes(IPHONE_BYTES, IPHONE_MIME); }
+    catch (e) { threw = String((e as Error).message); }
+    ok("M3 with no rescue the ORIGINAL error still reaches the caller, unchanged",
+      threw !== null && threw.includes("429"), threw);
+  }
+
+  // ── N. AN UNSUCCESSFUL RESCUE IS STILL REAL MONEY ──────────────────────────
+  // The daily spend alert sums agent_runs.cost_usd. A provider bills for a transcription
+  // that came back empty exactly as it bills for one that came back with words.
+  {
+    baseEnv();
+    process.env.GROQ_API_KEY = "gq-test";
+    stubNetwork([
+      ["api.deepgram.com", () => json(DG_EMPTY)],
+      ["api.groq.com", () => json(whisper(""))],
+    ]);
+    const r = await transcribeAudioBytes(IPHONE_BYTES, IPHONE_MIME);
+    const expected = Number(((6 / 60) * 0.0043).toFixed(6)) + Number(((6 / 60) * 0.00067).toFixed(6));
+    ok("N1 a rescue that found nothing is still billed to the turn",
+      r.text === "" && Math.abs(r.costUsd - expected) < 1e-9, { got: r.costUsd, expected });
+  }
+
+  // ── H. NO BYTES, NO *SECOND* SPEND ─────────────────────────────────────────
   // transcribeWhatsAppVoice substitutes an empty buffer when the media download fails.
   // Paying a second provider to confirm that zero bytes contain no words has no upside.
+  // The PRIMARY is still called — this seam does not decide whether audio is worth sending,
+  // and saying otherwise would be a claim this does not keep.
   {
     baseEnv();
     process.env.GROQ_API_KEY = "gq-test";
     stubNetwork([["api.groq.com", () => json(whisper("لا يجب أن يحدث"))]]);
     const out = await transcribeWithFallback("deepgram", Buffer.alloc(0), { mimeType: IPHONE_MIME });
-    ok("H1 an empty clip is not sent to a second engine", out === null && calls.length === 0, calls.length);
+    ok("H1 an empty clip is not sent to a second engine",
+      out.recovered === null && out.extraCostUsd === 0 && calls.length === 0, calls.length);
   }
 
   // ── I. WHATSAPP SHARES THE BEHAVIOUR, BECAUSE IT SHARES THE SEAM ───────────

@@ -26,25 +26,49 @@ export const VOICE_STT_UNAVAILABLE_TRANSCRIPT = "[رسالة صوتية — ال
  * unavailable" text, the demo route returns 422 and the caller hears nothing. One seam
  * means one behaviour, and no third surface can be added later that quietly lacks it.
  *
- * SPEND IS SUMMED, NOT REPLACED. The turn really did pay for two transcriptions, and
- * lib/monitoring/sweep.ts adds `agent_runs.cost_usd` up for the daily spend alert — so
- * reporting only the second engine's bill would under-count real money on the one surface
- * anyone on the internet can call. `model` and `adapter` name the engine whose WORDS were
- * used, because that is what the row is describing.
+ * SPEND IS SUMMED, NOT REPLACED — AND ON THE FAILED PATH TOO. The turn really did pay for
+ * every attempt, and lib/monitoring/sweep.ts adds `agent_runs.cost_usd` up for the daily
+ * spend alert, so reporting one engine's bill would under-count real money on the surface
+ * anyone on the internet can call. That argument does not stop applying when the rescue
+ * fails: a provider bills for a transcription that came back empty exactly as it bills for
+ * one that came back with words, so the first version of this — which returned the primary
+ * result untouched when nothing recovered — hid every unsuccessful rescue from the monitor.
+ * `model` and `adapter` name the engine whose WORDS were used, because that is what the row
+ * is describing.
  *
- * A recovered turn costs exactly two provider calls; a turn that produced words on the
- * first attempt costs one and never enters the fallback at all.
+ * A FAILED first attempt counts as no words, exactly like an empty one. Deepgram answering
+ * 429 or 500 is not different, from the caller's seat, from Deepgram answering 200 with
+ * nothing in it: both end the turn — the demo route returns 503 and the call screen hangs
+ * up, the webhook falls back to the "transcription unavailable" text. If the primary threw,
+ * the turn was already lost, so a second engine is the same free upside it is on an empty
+ * transcript. When nothing recovers, the ORIGINAL error is rethrown untouched, so a missing
+ * key or a mock-guard refusal still reaches the caller as itself.
+ *
+ * A turn that produced words on the first attempt costs one provider call and never enters
+ * the fallback at all.
  */
 async function transcribeWithSecondEngine(
   adapter: SttAdapter,
   bytes: Buffer,
   opts: SttTranscribeOptions
 ): Promise<SttResult> {
-  const primary = await adapter.transcribe(bytes, opts);
+  let primary: SttResult;
+  try {
+    primary = await adapter.transcribe(bytes, opts);
+  } catch (e) {
+    console.warn(`[stt] ${adapter.name} failed: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
+    const { recovered } = await transcribeWithFallback(adapter.name, bytes, opts);
+    // The primary billed nothing it can tell us about — it never returned a duration — so
+    // the rescue's own cost is the whole honest figure here.
+    if (recovered) return recovered;
+    throw e;
+  }
   if (!isEmptyTranscript(primary)) return primary;
-  const recovered = await transcribeWithFallback(adapter.name, bytes, opts);
-  if (!recovered) return primary;
-  return { ...recovered, costUsd: (primary.costUsd || 0) + (recovered.costUsd || 0) };
+
+  const { recovered, extraCostUsd } = await transcribeWithFallback(adapter.name, bytes, opts);
+  const spent = (primary.costUsd || 0) + extraCostUsd;
+  if (!recovered) return { ...primary, costUsd: spent };
+  return { ...recovered, costUsd: spent };
 }
 
 /**

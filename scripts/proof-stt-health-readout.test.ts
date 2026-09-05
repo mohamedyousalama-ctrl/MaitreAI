@@ -84,6 +84,28 @@ try {
   ok("AI timeout safety reports not-configured when AGENT_TIMEOUT_MS is absent/invalid", deepgram.aiTimeout.status === "not-configured" && deepgram.aiTimeout.enabled === false);
   ok("Deepgram readout does not leak key material", !JSON.stringify(deepgram).includes("dg-secret-health-proof"));
 
+  // WHETHER A FAILED TURN CAN BE RESCUED, ANSWERABLE WITHOUT MAKING A CALL.
+  // Deepgram cannot decode the container iOS Safari records — it answers 200 with an empty
+  // transcript — so the only thing standing between a prospect and silence is a second
+  // engine. An operator must be able to see whether one exists BEFORE the prospect does.
+  ok("a deployment with no second engine says so, loudly",
+    deepgram.fallbackStatus === "not-configured" && deepgram.fallbackAdapters.length === 0);
+
+  process.env.GROQ_API_KEY = "gq-secret-health-proof";
+  const rescued = readSttHealth();
+  ok("provisioning a Whisper key flips the rescue to working",
+    rescued.fallbackStatus === "working" && rescued.fallbackAdapters.includes("groq"));
+  ok("the rescue readout never names the mock — it fabricates a fixed Arabic sentence",
+    !rescued.fallbackAdapters.includes("mock"));
+  ok("the rescue readout leaks no key material either",
+    !JSON.stringify(rescued).includes("gq-secret-health-proof"));
+
+  process.env.STT_FALLBACK_ADAPTERS = "";
+  ok("an operator who switched the rescue off sees it off, not silently on",
+    readSttHealth().fallbackStatus === "not-configured");
+  delete process.env.STT_FALLBACK_ADAPTERS;
+  delete process.env.GROQ_API_KEY;
+
   const route = readFileSync("app/api/settings/whatsapp-health/route.ts", "utf8");
   ok("health route imports the STT readout", route.includes("readSttHealth"));
   ok("health route includes stt in the authenticated JSON response", /stt:\s*readSttHealth\(\)/.test(route));

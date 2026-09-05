@@ -37,6 +37,21 @@ import { recordWebhookAnomaly } from "@/lib/monitoring/webhook-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// A TIMEOUT HERE IS NOT A DROPPED TURN, IT IS A REPEATED BILL.
+//
+// This handler transcribes and answers INLINE, inside the message loop, before returning
+// 200 to Meta — and it carried no maxDuration at all, so it ran on the platform default
+// while app/api/demo/voice/route.ts (the same brain, the same STT) explicitly sets 60 for
+// exactly this reason. A voice note is an STT round trip plus a perception call plus model
+// calls over a ~17k-token prompt; when that runs past the ceiling Meta redelivers the whole
+// batch, every audio message is transcribed AGAIN, and the second bill is written nowhere:
+// transcription happens before `persistInboundMessage`, and the agent_runs insert is inside
+// `if (r.inserted)` — which is false on a redelivery. So the one failure mode that spends
+// twice is the one the spend monitor cannot see.
+//
+// The empty-transcript rescue (lib/ai/stt/fallback.ts) adds a bounded 4s to that worst case,
+// which is what made an already-latent ceiling worth fixing rather than noting.
+export const maxDuration = 60;
 
 // V1-pii — never write raw customer PII (phone, name, message content) to logs.
 // Mask a phone to its last 4 digits so a log line is still useful for debugging

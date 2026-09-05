@@ -13,6 +13,7 @@
 // ============================================================================
 
 import type { SttAdapter } from "./types";
+import { readSttJsonBody } from "./types";
 import { sttCostUsd } from "./pricing";
 
 const DEEPGRAM_ENDPOINT = "https://api.deepgram.com/v1/listen";
@@ -100,7 +101,8 @@ export const deepgramSttAdapter: SttAdapter = {
       // Unset on the normal path; the empty-transcript fallback always supplies a deadline.
       signal: opts?.signal,
     });
-    const body = (await r.json().catch(() => ({}))) as { err_msg?: string };
+    // NOT `.catch(() => ({}))` — that turned an abandoned request into an empty transcript.
+    const body = (await readSttJsonBody(r)) as { err_msg?: string };
     if (!r.ok) throw new Error(`Deepgram STT ${r.status}: ${body?.err_msg ?? "error"}`);
     const parsed = parseDeepgramResponse(body);
 

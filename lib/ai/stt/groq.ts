@@ -1,12 +1,15 @@
 // ============================================================================
 // MaitreAI — Groq STT adapter (Sprint 9, S9-6) — candidate B
-// Groq-hosted Whisper via its OpenAI-compatible audio endpoint. INERT until
-// GROQ_API_KEY is provisioned (owner approval — new paid key). Default
+// Groq-hosted Whisper via its OpenAI-compatible audio endpoint. Default
 // whisper-large-v3-turbo (fast + cheapest); verbose_json returns duration.
+//
+// NO LONGER INERT: this is the FIRST rescue engine when the configured engine cannot decode
+// a container (lib/ai/stt/fallback.ts), so provisioning GROQ_API_KEY also arms it there.
+// First because it is the fastest and ~9x cheaper than openai:whisper-1.
 // ============================================================================
 
 import type { SttAdapter } from "./types";
-import { sttUploadFilename } from "./types";
+import { readSttJsonBody, sttUploadFilename } from "./types";
 import { sttCostUsd } from "./pricing";
 
 // WO-VOICE-QUALITY (c) — derive a [0,1] confidence from Whisper verbose_json segments,
@@ -54,7 +57,8 @@ export const groqSttAdapter: SttAdapter = {
       // Unset on the normal path; the empty-transcript fallback always supplies a deadline.
       signal: opts?.signal,
     });
-    const j = (await res.json().catch(() => ({}))) as {
+    // NOT `.catch(() => ({}))` — that turned an abandoned request into an empty transcript.
+    const j = (await readSttJsonBody(res)) as {
       text?: string;
       duration?: number;
       segments?: Array<{ avg_logprob?: number; no_speech_prob?: number }>;
