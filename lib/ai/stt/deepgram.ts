@@ -6,6 +6,10 @@
 // change (the auto-resolver never falls through to deepgram). The URL builder is PURE
 // so the request shaping (model, language, keyterms) is unit-tested WITHOUT a key;
 // DEEPGRAM_API_KEY gates ONLY the live network call.
+//
+// KNOWN LIMIT: it answers 200 with an EMPTY transcript and confidence 0 for `audio/mp4`,
+// the only container iOS Safari records — measured, four for four, on 130 KB clips.
+// lib/ai/stt/fallback.ts is what rescues those turns; see the note in `containerType`.
 // ============================================================================
 
 import type { SttAdapter } from "./types";
@@ -49,11 +53,11 @@ export function buildDeepgramUrl(opts: {
  * Deepgram documents the Content-Type as the container; a parameter it does not expect is
  * a plausible reason for a decoder to return nothing rather than complain.
  *
- * PLAUSIBLE IS NOT PROVEN, and this cannot be proven from here — reproducing it needs an
- * iOS recorder and a Deepgram key in the same place, which no environment we control has.
- * So this is deliberately paired with the empty-transcript retry below rather than shipped
- * as a confident single fix: if stripping the parameter is the answer, the retry never
- * fires; if it is not, the retry says so in the log and the next call still works.
+ * IT WAS NOT THE PARAMETER — production stripped it and got the same empty transcript, then
+ * retried with no Content-Type at all and got a third. The strip stays because it is the
+ * correct thing to send either way: Deepgram documents this header as the container, and a
+ * codec parameter is not one. It is no longer offered as a fix for the iPhone. That is
+ * lib/ai/stt/fallback.ts, which hands the same bytes to an engine that can read them.
  */
 export function containerType(mime: string | undefined | null): string {
   const base = String(mime ?? "").split(";")[0]!.trim().toLowerCase();
@@ -82,47 +86,37 @@ export const deepgramSttAdapter: SttAdapter = {
     const model = process.env.DEEPGRAM_STT_MODEL || "nova-3";
     const url = buildDeepgramUrl({ model, language: opts?.languageHint || "ar", keyterms: opts?.keyterms });
 
-    /** One POST. `contentType: null` sends NO Content-Type at all, which is how Deepgram is
-     *  asked to sniff the container out of the bytes instead of being told what they are. */
-    const post = async (contentType: string | null) => {
-      const headers: Record<string, string> = { Authorization: `Token ${key}` };
-      if (contentType) headers["Content-Type"] = contentType;
-      const r = await fetch(url, { method: "POST", headers, body: new Uint8Array(audio) });
-      const body = (await r.json().catch(() => ({}))) as { err_msg?: string };
-      if (!r.ok) throw new Error(`Deepgram STT ${r.status}: ${body?.err_msg ?? "error"}`);
-      return parseDeepgramResponse(body);
+    // ONE POST. The Content-Type is the container, with the `codecs=` parameter stripped —
+    // `codecs=` is a MediaRecorder detail, not a container type, and Deepgram documents this
+    // header as the container.
+    const headers: Record<string, string> = {
+      Authorization: `Token ${key}`,
+      "Content-Type": containerType(opts?.mimeType),
     };
+    const r = await fetch(url, {
+      method: "POST",
+      headers,
+      body: new Uint8Array(audio),
+      // Unset on the normal path; the empty-transcript fallback always supplies a deadline.
+      signal: opts?.signal,
+    });
+    const body = (await r.json().catch(() => ({}))) as { err_msg?: string };
+    if (!r.ok) throw new Error(`Deepgram STT ${r.status}: ${body?.err_msg ?? "error"}`);
+    const parsed = parseDeepgramResponse(body);
 
-    let parsed = await post(containerType(opts?.mimeType));
-
-    // A SILENT EMPTY TRANSCRIPT IS A DECODE FAILURE WEARING A SUCCESS CODE.
+    // THE SECOND ATTEMPT THAT USED TO LIVE HERE IS GONE, BECAUSE IT WAS ANSWERED.
     //
-    // Deepgram answers 200 with `transcript: ""` both when the room was genuinely quiet and
-    // when it could not decode the container at all — and on the iPhone path it has only
-    // ever been the second (four for four, on 130 KB clips). The caller cannot tell those
-    // apart either: app/api/demo/voice/route.ts turns both into the same 422, so a visitor
-    // who spoke clearly gets the same nothing as a visitor who said nothing.
+    // An empty transcript used to buy one retry with no Content-Type at all, so the provider
+    // would sniff the container out of the bytes. That existed to decide one question — is
+    // the iPhone failure a header problem or a decoder problem — and production decided it:
     //
-    // So an empty result buys exactly ONE more attempt, with the Content-Type omitted so the
-    // provider reads the container from the bytes. Bounded on purpose:
-    //   • it fires only when the turn has ALREADY failed, so the worst case is one extra
-    //     call on a turn that was returning nothing anyway;
-    //   • only when a Content-Type was actually sent, so it can never loop;
-    //   • never on genuinely silent audio in a container that decoded — that returns empty
-    //     from BOTH attempts and costs one call, once.
+    //     [stt/deepgram] empty transcript on "audio/mp4" — retried without Content-Type: still empty
     //
-    // It logs which attempt won, because that is the measurement this bug still lacks: if
-    // `sniffed` starts producing words, the Content-Type was the fault and the strip above
-    // was not enough; if it stays empty, the container itself is the problem and the fix is
-    // a different engine, not a different header. Either way the next real call answers it.
-    if (!parsed.text.trim() && opts?.mimeType) {
-      const sniffed = await post(null);
-      console.warn(
-        `[stt/deepgram] empty transcript on ${JSON.stringify(containerType(opts.mimeType))} — ` +
-          `retried without Content-Type: ${sniffed.text.trim() ? "RECOVERED" : "still empty"}`
-      );
-      if (sniffed.text.trim()) parsed = sniffed;
-    }
+    // Both attempts empty, on 130 KB of real speech. The container is the problem, so no way
+    // of describing it will help, and a disproven experiment left running is just a second
+    // round trip of dead air on the one turn that was already failing. The recovery it was a
+    // stand-in for now lives in lib/ai/stt/fallback.ts, where a DIFFERENT ENGINE gets the
+    // bytes; the seam in lib/messaging/voice.ts calls it on exactly this empty result.
 
     return {
       text: parsed.text,

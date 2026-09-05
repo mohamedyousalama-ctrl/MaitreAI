@@ -10,9 +10,42 @@ import "server-only";
 import { downloadWhatsAppMedia } from "./adapters/whatsapp";
 import { assertMockSttAllowed } from "@/lib/ai/stt/guard";
 import { getSttAdapter, type SttResult } from "@/lib/ai/stt";
+import type { SttAdapter, SttTranscribeOptions } from "@/lib/ai/stt/types";
+import { isEmptyTranscript, transcribeWithFallback } from "@/lib/ai/stt/fallback";
 import { buildSttPromptVocab } from "@/lib/ai/voice-quality";
 
 export const VOICE_STT_UNAVAILABLE_TRANSCRIPT = "[رسالة صوتية — التفريغ الصوتي غير متاح حاليًا]";
+
+/**
+ * Transcribe with the configured engine, and if it returns NO WORDS, give the same bytes
+ * to a second engine once.
+ *
+ * WHY THIS SITS HERE AND NOT IN EITHER CALLER. Both public voice paths — the WhatsApp
+ * webhook and the demo call screen — end in `adapter.transcribe(...)`, and both turn an
+ * empty transcript into a dead turn: the webhook falls back to the "transcription
+ * unavailable" text, the demo route returns 422 and the caller hears nothing. One seam
+ * means one behaviour, and no third surface can be added later that quietly lacks it.
+ *
+ * SPEND IS SUMMED, NOT REPLACED. The turn really did pay for two transcriptions, and
+ * lib/monitoring/sweep.ts adds `agent_runs.cost_usd` up for the daily spend alert — so
+ * reporting only the second engine's bill would under-count real money on the one surface
+ * anyone on the internet can call. `model` and `adapter` name the engine whose WORDS were
+ * used, because that is what the row is describing.
+ *
+ * A recovered turn costs exactly two provider calls; a turn that produced words on the
+ * first attempt costs one and never enters the fallback at all.
+ */
+async function transcribeWithSecondEngine(
+  adapter: SttAdapter,
+  bytes: Buffer,
+  opts: SttTranscribeOptions
+): Promise<SttResult> {
+  const primary = await adapter.transcribe(bytes, opts);
+  if (!isEmptyTranscript(primary)) return primary;
+  const recovered = await transcribeWithFallback(adapter.name, bytes, opts);
+  if (!recovered) return primary;
+  return { ...recovered, costUsd: (primary.costUsd || 0) + (recovered.costUsd || 0) };
+}
 
 /**
  * Transcribe audio the caller already holds, rather than a WhatsApp media id.
@@ -36,7 +69,7 @@ export async function transcribeAudioBytes(
   const adapter = getSttAdapter();
   if (adapter.name === "mock") assertMockSttAllowed("transcribeAudioBytes");
   const prompt = buildSttPromptVocab(menuItemNames ?? [], 200, priorityTerms);
-  return adapter.transcribe(bytes, {
+  return transcribeWithSecondEngine(adapter, bytes, {
     mimeType: mimeHint || "audio/ogg",
     languageHint: "ar",
     prompt: prompt || undefined,
@@ -59,5 +92,5 @@ export async function transcribeWhatsAppVoice(
   const bytes = media?.bytes ?? Buffer.from([]);
   const mime = media?.mime ?? mimeHint ?? "audio/ogg";
   const prompt = buildSttPromptVocab(menuItemNames ?? [], 200, priorityTerms);
-  return adapter.transcribe(bytes, { mimeType: mime, languageHint: "ar", prompt: prompt || undefined });
+  return transcribeWithSecondEngine(adapter, bytes, { mimeType: mime, languageHint: "ar", prompt: prompt || undefined });
 }

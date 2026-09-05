@@ -194,6 +194,7 @@
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-c04-dispute.test.ts",
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-interactive-commands.test.ts",
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-stt-guard.test.ts",
+  "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-stt-fallback.test.ts",
   "node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-simplify.test.ts",
   "node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-conversation-outcomes.test.ts",
   "node --import ./scripts/prompt-snapshot-loader.mjs --experimental-strip-types scripts/proof-tester-allowlist.test.ts",

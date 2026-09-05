@@ -51,6 +51,8 @@ export const groqSttAdapter: SttAdapter = {
       method: "POST",
       headers: { Authorization: `Bearer ${key}` },
       body: fd,
+      // Unset on the normal path; the empty-transcript fallback always supplies a deadline.
+      signal: opts?.signal,
     });
     const j = (await res.json().catch(() => ({}))) as {
       text?: string;

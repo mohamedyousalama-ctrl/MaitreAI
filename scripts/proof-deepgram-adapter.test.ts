@@ -157,32 +157,46 @@ const MENU = ["ستربس دجاج", "بروست", "بطاطس", "كومبو ك�
     }
   };
 
-  // The whole bug, end to end: the container that fails, then recovers on the retry.
+  // THE RETRY IS GONE, AND THIS IS THE ASSERTION THAT WAS INVERTED TO SAY SO.
+  //
+  // These three cases used to prove a SECOND deepgram POST with no Content-Type at all, so
+  // the provider would sniff the container out of the bytes. That experiment existed to
+  // decide one question — header problem or decoder problem — and production decided it:
+  //
+  //     [stt/deepgram] empty transcript on "audio/mp4" — retried without Content-Type: still empty
+  //
+  // Both attempts empty, on 130 KB of real speech. So the retry buys nothing and costs a
+  // round trip of dead air on the one turn already failing. Recovery moved to a DIFFERENT
+  // ENGINE (lib/ai/stt/fallback.ts, proven in scripts/proof-stt-fallback.test.ts); this
+  // adapter's job is now one honest attempt.
   const iphone = await withStub([{ transcript: "" }, { transcript: "ابغى كبسة دجاج" }], "audio/mp4; codecs=mp4a.40.2");
-  ok("IPHONE: the first attempt sends the container WITHOUT the codecs parameter",
+  ok("IPHONE: the attempt sends the container WITHOUT the codecs parameter",
     iphone.sent[0] === "audio/mp4");
-  ok("IPHONE: an empty transcript retries with NO Content-Type, so the provider sniffs the bytes",
-    iphone.sent.length === 2 && iphone.sent[1] === null);
-  ok("IPHONE: and the recovered words are what the caller receives — not the empty first answer",
-    iphone.text === "ابغى كبسة دجاج");
+  ok("IPHONE: an empty transcript costs ONE call — the disproven header retry is gone",
+    iphone.sent.length === 1);
+  ok("IPHONE: the empty answer is passed up honestly, for the fallback seam to act on",
+    iphone.text === "");
 
-  // A turn that worked must cost exactly one call. A retry on success would double the bill
-  // on every single turn, which is a worse bug than the one being fixed.
+  // A turn that worked must cost exactly one call, as it always did.
   const fine = await withStub([{ transcript: "مرحبا" }], "audio/webm");
-  ok("WORKING AUDIO: one attempt only — the retry never fires on a transcript that has words",
+  ok("WORKING AUDIO: one attempt, and the words come straight back",
     fine.sent.length === 1 && fine.text === "مرحبا");
 
-  // A genuinely silent room: both attempts empty, and it must STOP. This is the case that
-  // could loop, and the one that proves the retry is bounded rather than recursive.
+  // A genuinely silent room is now indistinguishable HERE from a container we cannot read —
+  // and that is correct: this adapter no longer guesses which one it is. One call, empty.
   const silent = await withStub([{ transcript: "" }, { transcript: "" }], "audio/webm");
-  ok("SILENCE: empty twice costs exactly two calls and then stops — the retry cannot loop",
-    silent.sent.length === 2 && silent.text === "");
+  ok("SILENCE: one call, no words, no second guess",
+    silent.sent.length === 1 && silent.text === "");
 
-  // No mime, no retry: there is no Content-Type to remove, so a second identical call
-  // would be pure waste.
   const noMime = await withStub([{ transcript: "" }, { transcript: "late" }], undefined);
-  ok("NO MIME: nothing to strip means nothing to retry — one call, no second chance",
-    noMime.sent.length === 1);
+  ok("NO MIME: still one call, with the WhatsApp default container",
+    noMime.sent.length === 1 && noMime.sent[0] === "audio/ogg");
+
+  // THE RECOVERY DID NOT DISAPPEAR — IT MOVED. Without this, deleting the retry and
+  // deleting the fallback would both leave this file green.
+  ok("RECOVERY: the empty-transcript path is handed to a second ENGINE at the shared seam",
+    /transcribeWithFallback/.test(read("lib/messaging/voice.ts")) &&
+    /isEmptyTranscript\(primary\)/.test(read("lib/messaging/voice.ts")));
 }
 
 console.log(`\nWO-VOICE-DEEPGRAM PROOF: ${pass} passed, ${fail} failed`);

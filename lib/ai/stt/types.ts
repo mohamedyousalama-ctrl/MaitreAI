@@ -20,6 +20,15 @@ export interface SttTranscribeOptions {
    *  during recognition. Allergen words are NEVER included (buildDeepgramKeyterms). Only
    *  the deepgram adapter consumes this; other adapters ignore it. */
   keyterms?: string[];
+  /** Deadline / cancellation for the provider request.
+   *
+   *  NOTHING BOUNDED STT BEFORE THIS. Every adapter called `fetch` with no signal, and the
+   *  call screen posts to /api/demo/voice with no timeout of its own — so a provider that
+   *  accepts the connection and never answers left a caller holding a silent phone with no
+   *  ceiling at all. Optional and unset by the normal path (a first attempt that is slow is
+   *  still the turn's best hope); the empty-transcript FALLBACK always sets one, because it
+   *  adds a second network call to a turn that has already failed. */
+  signal?: AbortSignal;
 }
 
 export interface SttResult {
