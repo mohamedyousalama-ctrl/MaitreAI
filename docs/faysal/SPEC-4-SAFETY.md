@@ -327,6 +327,189 @@ never match, because by the time the regex ran the text said `«طواري»`.)
 negation list carried `مش` and `مب` but not `مو`, so the single most natural Najdi way to say
 "I can't breathe" did not fire at all. Do not repeat it.
 
+### 2.0 How a class rule is composed — the law every §2.x rule obeys
+
+**Why this subsection exists.** Wave 1's audit found nine defects; Wave 1.5 closed them; the
+re-audit found six more, and four of the six were the *same shapes* wearing new faces — a HARD
+class silenced by a frame, a rule narrower than its own Fires list, a veto that reached further
+than the sentence it was written for. They kept coming back because **§2 never said how a class
+rule is built.** §2.3 had a `HIT = …` formula; no other class did; and every ambiguity below
+flowed from that. This subsection is the missing law. It is normative, it binds every §2.x, and
+where a §2.x subsection and this one disagree, this one wins.
+
+---
+
+#### L1 — Every class states a `HIT = …` formula, and the formula is the rule
+
+A class rule is exactly six named sets and one line of algebra:
+
+```
+STANDALONE  phrases that ARE the finding — they fire with nothing else present
+TERM        the thing being reported (a body part, a substance, a named event)
+PREDICATE   what is happening to it (pain, volume, persistence, failure of function)
+SITE        where it is coming from / what it was done to — an alternative to PREDICATE
+EXCLUSION   an enumerated term IN THE MESSAGE that makes this arm not a finding
+TIER        which entries land on `urgent` rather than `emergency`, and on what test
+
+HIT = STANDALONE ∨ (TERM ∧ (PREDICATE ∨ SITE)) , minus EXCLUSION , evaluated per clause
+```
+
+A class may leave a set empty; it may not leave it unstated. **Six word lists and no joining
+rule is not a rule** — it is two or more rules, and §2.4's Wave 1.5 draft was read two ways that
+disagreed on a child who could not breathe (N4). If a class needs a shape this template cannot
+express (class F's numeric threshold, class I's contract), it writes its own formula in the same
+place and in the same form.
+
+#### L2 — Composition is adjacency, not co-occurrence, and the machinery already knew that
+
+Where a finding is made of parts — a negation, an auxiliary and a verb; a body part and a verb —
+**the parts must be adjacent**, with at most one space between each. This is not a preference:
+it is the shape of the machinery §2.4 says it inherits. `lib/ai/allergen-emergency.ts`, read
+verbatim:
+
+```
+ما ?اقدر ?(?:ا|ال)?تنفس
+(?:حلقي|زوري|حنجرتي|بلعومي) ?(?:يقفل|يتقفل|بيقفل|بتقفل|يضيق|…)
+(?:شفايفي|شفتي|لساني|وشي|وجهي|عيني|حلقي) ?(?:تورم|تتورم|يتورم|…)
+```
+
+Every one is `X ?Y` — one optional space. Replacing that with unordered word lists **discards
+the constraint that makes it work**, and the cost is driven in both directions:
+
+```
+                                        parts-must-be-adjacent   parts-anywhere-in-clause
+«الطفل ما يتنفس»       (§2.4's own must-fire)      FIRES                    FIRES
+«ما عندي مشكلة في التنفس»  (a denial of dyspnoea)   quiet                    FIRES  → ambulance + P0
+«ما فيه صعوبة بالتنفس الحمدلله» (reassurance)        quiet                    FIRES  → ambulance + P0
+```
+
+Notation, used by every §2.x below:
+
+```
+ADJ(A, B)       →  (A) ?(B)                    — at most one space
+ADJ(A, [M], B)  →  (A) ?(?:(M) ){0,2}(B)       — up to two optional middle slots
+```
+
+The two middle slots are not decoration. `«ما عاد يقدر يتنفس»` is negation + `عاد` + `يقدر` +
+breathe, and one slot loses it. **Driven, and this is a live defect in the shipped detector, not
+a hypothetical:** the real `detectAllergenEmergency` is `fired: false` on `«ما عاد يتنفس»` —
+*he is no longer breathing* — because `عاد` is not in its auxiliary slot at all.
+
+#### L3 — Every predicate set is enumerated. A rule may never refer to a set it does not list
+
+§2.3 wrote `PREDICATE persistence · volume · character` with every member named. §2.1 wrote
+*"carry a pain/pressure predicate"* and named none — and that single omission decides one of
+§2.1's own driven rows (whether `ضيق` is a predicate decides `«ضيق في الصدر من امس»`), decides
+whether the four chest-X-ray near-misses are safe for the reason §2.1 claims, and makes §11.2's
+*"pairs all four of them"* untranscribable. **A proof cannot be written from an unenumerated
+list**, and a rule whose sets are unenumerated cannot be shown to be as wide as its own Fires
+list. Every §2.x now enumerates all six sets.
+
+#### L4 — Every exclusion is clause-scoped, and a discourse particle is never one
+
+Two rules, and the second is the one that bites:
+
+1. **Scope.** Exclusions are clause-scoped per §1.2 — split on `[.،,؛!؟\n]` plus `بس` / `لكن` /
+   `مع إن`, which is the splitter `allergen-emergency.ts` L207 already uses. An exclusion never
+   reaches out of its own clause. §2.3's Wave 1.5 rule said *"minus the VETOes"* with no scope
+   stated, and the whole-message reading was defensible.
+2. **Substance.** An exclusion must be a term that **says the finding is not there** — a
+   resolution (`وقف النزيف`), a governed noun (`حامل بطاقة`), an explicit benign cause
+   (`من الجلسة`), an explicit chronicity (`من كم شهر`). **A politeness formula is not an
+   exclusion.** Bare `الحمدلله` was in §2.3's veto set; it is the most common discourse particle
+   in Saudi WhatsApp Arabic and it routinely opens a message that goes on to describe a
+   catastrophe. Driven, under the whole-message reading it produced:
+
+```
+message-scoped   clause-scoped (L4)
+    quiet             FIRES        «الحمدلله، ابني طاح والجرح ينزف بقوة»
+    quiet             FIRES        «الحمدلله على كل حال بس الجرح ينزف بقوة»
+    quiet             FIRES        «الحمدلله بخير، نزيف شديد من نص ساعة»
+    quiet             FIRES        «نزيف اللثة، بس الجرح في يدي ينزف بقوة»
+    quiet             quiet        «الحمدلله وقف النزيف»      ← the one the veto exists for
+```
+
+Only the last line behaves the same under both readings — which is the tell that the veto was
+always `وقف النزيف`, and that `الحمدلله` was never doing any work except silencing emergencies.
+It is struck from §2.3.
+
+#### L5 — Hardness is a property of a **class**, never of a **reading**
+
+§1.3 assigns hardness per class and §1.5 R1 gates the veto on *"the candidate class"*. Wave 1.5
+then wrote *"SOFT for the fever-only reading"* (§2.6) and *"past clause, SOFT reading"* (§2.7),
+which makes hardness a property of a reading and leaves nothing to say how the detector chooses
+the reading before it decides whether the veto applies. That is B1's shape on the past-tense
+axis, and it is closed here by drawing one line:
+
+| | a **frame** veto | an **arm exclusion** |
+|---|---|---|
+| what it is | one of §1.4's three regexes — `HYPOTHETICAL_RE`, `PAST_CLAUSE_RE`, `BOOKING_FRAME_RE` | an enumerated term listed in the class's own EXCLUSION set |
+| what it reads | the shape of the sentence around the finding | a word that is **in the message** and says the finding is not present, or is not current |
+| may it touch a HARD class | **only `HYPOTHETICAL_RE`**, and only inside its own clause (§1.5 R1) | **yes** — this is how every HARD class already works |
+| may it change the tier | no | yes, when the class's TIER row says so |
+| does it make the class SOFT | — | **no.** Hardness is unchanged; one arm of one rule declined to fire. |
+
+`«حرارته 39 من كم شهر»` is therefore not a SOFT reading of a HARD class. It is class F, HARD,
+whose fever-value arm carries the enumerated chronicity exclusion `من كم شهر · من شهور ·
+من كم اسبوع · من سنه · مزمن`, and whose convulsion/lethargy/rash arm never consults it. Same for
+`«تسمم غذائي صار لي قبل اسبوع»` in §2.7. Both now behave for a reason that is in the message,
+which is the treatment every other HARD near-miss got in Wave 1.5. §2.2's `الأطفال` lookahead,
+§2.3's gum veto and §2.5's `حامل بطاقة` guard were always arm exclusions; they are now named as
+such.
+
+#### L6 — Every entry on every Fires list is mirrored, mechanically, into `MUST_FIRE`
+
+**This is the rule that would have caught N2 and B5 at birth**, and it is the cheapest of the
+six. `proof-faysal-redflag-recall.test.ts` (§11.1) builds its `MUST_FIRE` corpus **from the §2
+Fires lists themselves**, one entry to one assertion, and the proof fails if a Fires-list entry
+has no assertion. Twice now a section has listed a string under **Fires** and shipped a rule
+that was silent on it — `«الجرح عميق والدم فوار»` in Wave 1, `«تقيأت دم»` and `«دم مع البول»` in
+Wave 1.5 — and both times the section's own driven corpus was 32/32 or 34/34 **because the
+failing entry was not in it**. A corpus assembled by hand from the same list it is testing is a
+corpus that agrees with itself.
+
+Two binding details, because both were violated by the lists as they stood:
+
+- **A conditional entry is mirrored as a complete sentence satisfying its stated condition.**
+  §2.1's radiation companions fire only *"when a chest term is present in the same clause"*, so
+  the corpus carries `«صدري يعورني والوجع ينزل لدراعي»`, not the bare `«الوجع ينزل لدراعي»`.
+  §2.3's `«دم مع البول»` is annotated *"→ urgent unless with pain+fever"*, so it is mirrored
+  twice, once at each tier. Driving the lists literally is what exposed that §2.5's
+  `«نزل مني ماء»` and `«تسمم حمل»` carry **no** pregnancy marker and so could never satisfy
+  §2.5's own stated rule — they are STANDALONE, and are now written as such.
+- **An un-normalized spelling in a term list is dead code, and the mirror is what finds it.**
+  §2's preamble already says every list is written post-`normalizeAr`. Driving the lists caught
+  three that were not: `تورم مفاجئ` (→ `تورم مفاجي`, `ئ→ي`) in §2.5 and `طاح على راسه`
+  (→ `طاح علي راسه`, `ى→ي`) in §2.8 were both **silent on their own Fires entries**. Term lists
+  are normalized at build time, and §11.1 asserts `list === list.map(normalizeAr)`.
+
+#### L7 — One matcher, one splitter, one order
+
+- **Matcher.** Every term and every phrase is matched with §1.2's matcher —
+  `(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?TERM(?![ء-ي])` — **including multi-word phrases**, where the
+  prefix group guards the first token and the lookahead the last. Driven: a phrase matched with a
+  bare `(?<![ء-ي])…` lookbehind is silent on `«حاس بثقل على صدري»` (`بثقل`), on
+  `«الرضيع حرارته عاليه ومو راضع»` (`ومو راضع`) and on `«الدنيا ما فيها فايده وأبي أرتاح للأبد»`
+  (`وأبي`) — the conjunction and the preposition are the ordinary way these sentences are
+  written.
+- **Splitter.** One clause splitter, §1.2's, used by exclusions and by adjacency alike.
+- **Order.** When more than one class hits, the verdict is the **first** class in this fixed
+  order: **I, A, B, D, E, C, F, G, H**. Two orderings are load-bearing and both are driven:
+  `«أخذت حبوب كثير عشان أخلص»` is class I, not class G (an intentional overdose is a crisis
+  before it is a poisoning, and §2.9 lists it); `«نزيف بعد الولاده»` is class E, not class C,
+  which is what §2.3's own Fires list annotation `«(→ obstetric)»` asks for. The tier and the
+  rail are the same either way; what differs is the audit row, the operator label and which
+  clinician is paged.
+
+---
+
+**What §2.0 is measured by.** The full §2 corpus — every Fires-list entry mirrored per L6, every
+near-miss row, the §11.2 site-name and clinic-ordinary corpora, and the hypotheticals — driven
+end to end against rules written to this law: **314 of 314** (204 `MUST_FIRE`, 110
+`MUST_BE_QUIET`). The eleven `MUST_FIRE` failures and two `MUST_BE_QUIET` failures found on the
+first run of that corpus are each recorded in the subsection they belong to; none of them was
+visible to the hand-assembled corpora of Wave 1 or Wave 1.5.
+
 ### 2.1 A — Cardiac (HARD)
 
 **Fires:**
@@ -361,9 +544,59 @@ English/franco: `chest pain` · `heart attack` · `pressure in my chest` · `sad
 | `«الدكتور قال عندي كوليسترول»` | cardiology vocabulary with no symptom |
 | `«عندي موعد قسطرة الأسبوع الجاي»` | scheduled procedure |
 
-**The rule that separates them:** a chest term must be **an enumerated surface form** — possessive,
-prepositional, *or definite* — *and* carry a pain/pressure predicate **in the same clause**.
+**The rule, v1.6 — written to §2.0's template, because "carry a pain/pressure predicate" named
+no set and one of this section's own driven rows depended on what was in it (S1.5-3):**
+
+```
+TERM        صدري · صدره · صدرها · بصدري · بصدره · بصدرها · فصدري ·
+            الصدر · بالصدر · في الصدر · على الصدر · قلبي · قلبه · قلبها
+            (enumerated surface forms; bare صدر and bare قلب are NEVER terms)
+
+PREDICATE   pain        يعورني · يعوره · يعورها · يعور · تعورني · يوجعني · يوجعه · يوجعها ·
+                        يوجع · توجعني · يألمني · وجع · ألم · وجعان · موجع
+            pressure    ضغط · ثقل · شي قاعد · ضاغط
+            tightness   ضيق · ضايق
+            burning     حرقه · حرقان · حارق · نار
+            companions  عرق بارد · تعرق بارد · أتعرق · دايخ · غثيان · ينزل لدراعي ·
+                        يضرب لذراعي · يشد على فكي · بين كتافي
+                        (a companion counts as the predicate ONLY with a TERM in the same
+                         clause — «يضرب لذراعي» alone is not a hit, and §11.1 mirrors these
+                         entries as complete sentences per §2.0 L6)
+
+SITE        — (empty; this class has no site axis)
+
+STANDALONE  جلطة قلب · جلطه بالقلب · جلطه في القلب · ذبحة صدرية · احتشاء ·
+            ازمه قلبيه · سكته قلبيه      (phrase terms — bare جلطة is not one)
+            EN: chest pain · heart attack · pressure in my chest · sadri ye3awerni
+
+EXCLUSION   — (empty. Class A is HARD: no frame veto, and no term in the message removes a
+            chest pain. §1.5 R1.)
+
+TIER        every hit is `emergency`.
+
+HIT = STANDALONE ∨ (TERM ∧ PREDICATE), per clause, minus HYPOTHETICAL_RE (§1.5 R1).
+```
+
 Bare `صدر`, with or without a boundary, is **never** a term.
+
+**`ضيق` is in the set, and that decision is load-bearing in both directions.** Driven, with the
+set above:
+
+```
+FIRES  cardiac    «ضيق في الصدر من امس»       ← the row §2.1's own v1.5 block shows firing;
+                                               without `ضيق` in the set it is quiet
+quiet             «أبغى أشعة على الصدر»        quiet  «موعد أشعة الصدر»
+quiet             «كم سعر أشعة الصدر؟»          quiet  «الأشعة طلعت على الصدر سليمة»
+FIRES  airway     «عندي ضيق في التنفس»         ← class D, not class A: no chest TERM is present.
+                                               Correct — that sentence is dyspnoea, and §2.4's
+                                               difficulty arm is where it belongs.
+```
+
+**One further correction the §2.0 L6 mirror produced.** Driving this Fires list literally,
+`«حاس بثقل على صدري»` and `«حاس بضغط على الصدر»` were **silent** — the predicate `ثقل` / `ضغط`
+is written `بثقل` / `بضغط`, and a phrase matched with a bare `(?<![ء-ي])` lookbehind fails on
+the `ب`. §1.2's matcher carries `(?:و|ف|ب|ك|ل)?` for exactly this reason and it must be applied
+to phrases as well as to single tokens (§2.0 L7). With it, both fire.
 
 **The forms must be enumerated, not derived from a stem, and the enumeration must include the
 definite article.** Two facts, both driven:
@@ -432,9 +665,45 @@ Named: `«سكته دماغيه»` · `«جلطه بالمخ»` · `«جلطه �
 | `«ما أقدر أحرك موعدي»` | `ما أقدر أحرك` + a non-body object |
 | `«وجهي فيه حبوب»` | `وجهي` (dermatology booking) |
 
-**The rule:** the stroke family requires **sudden onset** (`فجأة`, `الحين`, `توه`, `من شوي`,
-`من ساعة`) **or a body-part + failure-of-function pair**. `«ما أقدر أحرك X»` requires `X` ∈
-{body parts}.
+**The rule, v1.6 — written to §2.0's template:**
+
+```
+TERM (body)  يدي · يده · يدها · رجلي · رجله · رجلها · وجهي · وجهه · وجهها · فمي · فمه · فمها ·
+             لساني · لسانه · لسانها · عيني · عينه · عينها · نصي · نصه · نص جسمي · نص جسمه ·
+             نص وجهي · نص وجهه · كلامي · كلامه · كلامها
+
+PREDICATE    failure of function   ما يتحرك · ما تتحرك · ما أقدر أحرك · مو قادر أحرك ·
+                                   ما تستجيب · ما يستجيب · مشلول · مشلوله · مايل · معوج ·
+                                   نازله · ثقيل · ما ينفهم · متلعثم · يهذي · خدر · تنميل ·
+                                   فقد النظر · شايف دبل
+             sudden onset          فجأة · الحين · توه · من شوي · من ساعة
+
+SITE         — (empty)
+
+STANDALONE   شلل نصفي · نصي مشلول · سكته دماغيه · جلطه بالمخ · جلطه دماغيه · جلطه في المخ ·
+             ما يقدر يتكلم · ما تقدر تتكلم · ما يقدر يوقف · EN: stroke
+             plus `شلل` on its own, subject to the EXCLUSION below
+
+EXCLUSION    polio          `شلل` immediately governing `الأطفال`/`اطفال`
+             Parkinson's    `الرعاش` anywhere in the same clause as `شلل`
+             benign cause   من الجلسة · من النوم · من القعدة · من الوقفة · من المخدة
+                            — an EXPLICIT cause named in the message, per §2.0 L5; not a frame
+
+TIER         every hit is `emergency`.
+
+HIT = STANDALONE ∨ (TERM ∧ PREDICATE) ∨ (PREDICATE.onset ∧ PREDICATE.failure),
+      per clause, minus EXCLUSION and HYPOTHETICAL_RE.
+```
+
+`«ما أقدر أحرك X»` requires `X` ∈ TERM — which is why `«ما أقدر أحرك موعدي»` is quiet.
+
+**The benign-cause exclusion is new, and the §2.0 L6 mirror is what forced it.** As stated in
+v1.5, this class's rule was *wider than its own near-miss table*: `«تنميل في رجلي من الجلسة»` is
+a failure-of-function predicate (`تنميل`) and a body term (`رجلي`) in one clause, so the rule as
+written **fired on a row this section lists as a must-not-fire**. It is quiet now for a reason
+that is in the message — the patient named the cause — and not because a frame reached it. This
+is the mirror-image of B5's defect (a rule *narrower* than its Fires list) and the same
+inspection finds both.
 
 **`شلل` needs an explicit exclusion, because the boundary does not save it.** Verified: the
 standard boundary matcher **fires** on `«متى تطعيم شلل الأطفال؟»` — `شلل` is a whole word there,
@@ -462,7 +731,7 @@ nothing on the polio case that the `الأطفال` lookahead does not already b
 |---|---|
 | `«ألم في قدمي»` · `«القدم السكري»` · `«تقديم الأوراق»` · `«عدم تحمل اللاكتوز»` | `دم` is a substring of `قدم`, `تقديم`, `عدم`, `مقدمة`, `هدم`, `ندم`, `خدم` |
 | `«نزيف اثة لما أفرش أسناني»` (`«نزيف اللثة»`) | routine dental complaint, extremely common |
-| `«أبغى تحليل دم»` · `«فصيلة دمي»` · `«تبرع بالدم»` · `«صورة دم كاملة CBC»` | booking frame |
+| `«أبغى تحليل دم»` · `«فصيلة دمي»` · `«تبرع بالدم»` · `«صورة دم كاملة CBC»` | **Not the frame — class C is HARD and takes no frame veto (§1.5 R1).** `دم` is a TERM, but there is **no PREDICATE and no SITE** in any clause, so the class never becomes a candidate. Driven, all four are quiet with `BOOKING_FRAME_RE` never consulted. *(This row was the residual S1.5-1: §2.1, §2.2, §2.4–§2.8 had their reasons rewritten in Wave 1.5 and this one was missed, leaving the document still teaching that a booking frame is a live veto on a HARD class.)* |
 | `«نزلت عليّ الدورة»` | normal menstruation |
 | `«الحمدلله وقف النزيف»` | resolved, and the sentence says so |
 
@@ -477,34 +746,96 @@ were silent.** Two structural gaps, both driven:
    appears in this section's own **Fires** list. Driven: `فوار` was not a predicate, so
    «الجرح عميق والدم فوار» was quiet while being cited as a positive.
 
-**The rule, v1.5:**
+**The rule, v1.6** — v1.5's shape, with the three defects the re-audit and the §2.0 L6 mirror
+found in it (N2, N3, S1.5-5):
 
 ```
-TERMS      دم · دماء · نزيف · نزف · نزفت · ينزف · تنزف · انزف · ينزفون · نازف
-           (nouns AND verb forms; boundary-matched per §1.2)
+TERM       دم · دماء · نزيف · نزف · نزفت · ينزف · تنزف · انزف · ينزفون · نازف · نازفه
+           (nouns AND verb forms; §1.2's matcher)
 
-PREDICATE  persistence   ما يوقف · ما وقف · ما يبطل · ما ينحبس · ما ينقطع · مستمر · من نص ساعه
-           volume        بغزاره · غزير · شديد · قوي · بقوه · واجد · وايد · كثير
+PREDICATE  persistence   ما يوقف · ما وقف · ما يبطل · ما ينحبس · ما ينقطع · مستمر · مستمره ·
+                         من نص ساعه · من ساعتين
+           volume        بغزاره · غزير · غزيره · شديد · شديده · قوي · قويه · بقوه · واجد ·
+                         وايد · كثير · كثيره
            character     يفور · فوار · هدار
 
-SITE       تقيا · استفرغ · براز · بعد الولاده · بعد العمليه · جرح · جروح · قطع · طعنه · طلق ناري
+SITE       تقيا · تقيات · تقيت · يتقيا · تتقيا ·                        ← NEW (N2)
+           استفرغ · استفرغت · يستفرغ · تستفرغ ·                          ← NEW (N2)
+           براز · بعد الولاده · بعد العمليه · جرح · جروح · قطع · طعنه · طلق ناري
 
-STANDALONE (fire with no separate دم/نزيف term — they ARE the finding)
-           براز اسود · تقيا دم · استفرغ دم · قيء دموي · دم بالبراز · دم مع البراز
+SITE.urgent  بول · البول · التبول                                       ← NEW (N2)
 
-VETO       gum/nose:  نزيف اللثه · نزيف الانف · اللثه تنزف · رعاف   → urgent at most; with a
-                      brushing/dental frame, not a hit at all
-           resolved:  الحمدلله · وقف النزيف · بطل النزيف · انحبس   → not a hit
+STANDALONE براز اسود · تقيا دم · تقيات دم · تقيت دم · استفرغ دم · استفرغت دم ·
+           قيء دموي · قي دموي · دم بالبراز · دم مع البراز
 
-HIT = (a STANDALONE phrase) OR (a TERM AND (a PREDICATE OR a SITE)), minus the VETOes.
+EXCLUSION  resolved      وقف النزيف · وقف الدم · بطل النزيف · انحبس النزيف · ما عاد ينزف
+                         → not a hit.  **Bare `الحمدلله` is struck from this set (N3).**
+           brushing      نزيف اللثه/الانف/اللثه تنزف/رعاف, together with a dental-hygiene
+                         term (أفرش · تفريش · فرشاة · المعجون · أسناني) → not a hit at all
+           — both clause-scoped per §2.0 L4.
+
+TIER       gum/nose without a hygiene term        → `urgent` at most
+           SITE.urgent with no pain and no fever  → `urgent`
+           SITE.urgent WITH pain or fever         → `emergency`
+           everything else                        → `emergency`
+           **The gum cap is lifted** — the hit is `emergency` again — when the clause carries an
+           extraction or anticoagulant term: خلع · قلع · الضرس · السن · مميع · مميعات ·
+           سيولة · وارفرين · اسبرين · بلافكس.   (S1.5-5)
+
+HIT = STANDALONE ∨ (TERM ∧ (PREDICATE ∨ SITE ∨ SITE.urgent)), per clause,
+      minus EXCLUSION and HYPOTHETICAL_RE.
 ```
+
+**N2 — `«تقيأت دم»` was on this section's own Fires list and was silent, and the "34/34" corpus
+did not contain it.** Driven, through the real `normalizeAr`:
+
+```
+normalizeAr("تقيأت") = "تقيات"                    ← أ→ا, so the word ends in a ت
+boundary("تقيا") on «تقيات دم» → false             ← the trailing ت fails (?![ء-ي])
+STANDALONE "تقيا دم" on «تقيات دم» → false
+
+v1.5   v1.6
+quiet  FIRES emergency   «تقيأت دم»        ← haematemesis, first-person past: how a patient says it
+quiet  FIRES emergency   «استفرغت دم»      ← the SAME defect on the other verb; NOT in the audit
+quiet  FIRES emergency   «يتقيأ دم»
+quiet  FIRES urgent      «دم مع البول»      ← in the Fires list, annotated «→ urgent»; TERM with
+quiet  FIRES urgent      «دم بالبول»           no PREDICATE and no SITE, so v1.5 never reached it
+FIRES  FIRES emergency   «تقيا دم»          ← the only surface form v1.5 could hear
+```
+
+This is the verb-form defect B5 closed for `نزف` and did not close for `تقيأ`. `«استفرغت دم»` is
+the same word on the other verb and the re-audit did not name it either — which is the argument
+for §2.0 L6 rather than for a longer list: **the mirror finds these, a hand-written corpus does
+not.**
+
+**N3 — the vetoes are clause-scoped, and `الحمدلله` is not one of them.** Driven, five strings,
+both readings, in §2.0 L4. The four emergencies that go silent under the whole-message reading
+all open with a politeness formula and go on to describe a bleeding child; the one string the
+veto exists for behaves identically under both readings. `«الحمدلله وقف النزيف»` is caught by
+`وقف النزيف` with no help from `الحمدلله`.
+
+**S1.5-5 — the gum cap and the post-extraction bleed.** v1.5 put the gum veto **outside** the
+predicate test, which is right for the brushing complaint and wrong for an anticoagulated patient
+after an extraction. Driven:
+
+```
+quiet            «نزيف اللثة لما أفرش أسناني»                    ← hygiene term: not a hit
+quiet            «نزيف اللثة شديد لما أفرش أسناني»               ← still not a hit with `شديد`
+urgent           «نزيف اللثة من الصبح»                           ← capped, as before
+FIRES emergency  «نزيف اللثة ما يوقف من ساعتين بعد خلع الضرس»     ← cap lifted (S1.5-5)
+FIRES emergency  «نزيف اللثة شديد ما يوقف وانا على مميع دم»       ← cap lifted (S1.5-5)
+```
+
+§12 row 2 carries this interaction to the physician explicitly rather than asking the general
+gum-bleeding question.
 
 `جرح` is a **site**, not a predicate — that is what makes «جرح عميق وينزف» (a deep bleeding
 wound, with no intensifier at all) reachable. `براز أسود` is a **standalone**, because melena
 names no blood: v1 listed it under Fires while the rule required a `دم`/`نزيف` term it does not
 contain.
 
-**Driven, 34/34** — every v1 Fires-list entry, every auditor string, and every near-miss:
+**Driven, 27/27 for this class** — every Fires-list entry mirrored per §2.0 L6 (including the
+four that were silent in v1.5), every auditor string, every near-miss, and the four N3 strings:
 
 ```
 FIRES  «نزيف ما يوقف»            FIRES  «نزيف شديد»           FIRES  «نزيف غزير»
