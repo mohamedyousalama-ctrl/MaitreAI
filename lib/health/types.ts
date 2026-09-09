@@ -203,6 +203,8 @@ export interface DateOverride {
 
 export interface LayerHours {
   layer: HoursLayer;
+  /** Provenance in-band (Rule S-1) — why this layer looks the way it does. */
+  note?: string;
   /**
    * A MISSING day is `unknown`, never inherited from a sibling day — Invariant
    * H3, generalised. `dayHoursFor()` is the only reader and it never falls back.
@@ -421,7 +423,14 @@ export interface CatalogueService {
   durationMinutes: number;
   /** Minutes. Blocks the resource, is never offered, is never billed (BUF-1). */
   bufferMinutes: number;
-  price: ServicePrice;
+  /**
+   * ABSENT where the dossier gives us nothing and §9.4 forbids inventing one
+   * (lab/radiology, ER, day-case surgery, a dental extraction). priceFor()
+   * throws rather than guessing — the order-pricing.ts posture exactly.
+   */
+  price?: ServicePrice;
+  /** Quotable but not directly bookable (a treatment plan, a take-home kit). */
+  priceOnly?: boolean;
   /** Laser sessions consume a device (§7.4). */
   resourceKind?: ResourceKind;
   /** Terms Faysal must state whenever it quotes this line (§9.3 packages). */

@@ -51,7 +51,7 @@ see §3.5, where a first draft of this spec proposed one and it is withdrawn.
 ### 1.1 Module shape
 
 ```ts
-// lib/health/redflag.ts — PURE. No I/O, no model, no DB, no clock.
+// lib/health/safety/ — PURE. No I/O, no model, no DB, no clock.
 // Path per SPEC-3's seam: domain under lib/health/*, routes under app/(api/)faysal/*.
 export type RedFlagClass =
   | "cardiac" | "stroke" | "hemorrhage" | "airway"
@@ -60,17 +60,37 @@ export type RedFlagClass =
 export type RedFlagTier = "emergency" | "urgent";
 
 export interface RedFlagHit {
-  fired: boolean;
-  cls: RedFlagClass | null;
-  tier: RedFlagTier | null;
+  /** Always `true` on a returned hit. Present so a caller may read `.fired` on the
+   *  union without narrowing first, and so a stub that forgets it fails loudly. */
+  fired: true;
+  /** The class. Named `class`, not `cls` — the field a caller reads in a log line and
+   *  in an audit row, and a reserved word is legal as a property name. */
+  class: RedFlagClass;
+  tier: RedFlagTier;
+  /** THE MATCHED TERM, NORMALIZED — never the patient's sentence. §6.4 forbids storing
+   *  the message; a set member is a lexicon fact, and it is what makes an operator alert
+   *  and a mutation report readable. */
+  termAr: string;
   /** Stable rule id for the audit row — NEVER the patient's sentence. See §6.4. */
-  ruleId: string | null;
+  ruleId: string;
   /** Short Arabic label for the operator alert. Never shown to the patient as a diagnosis. */
-  label: string | null;
+  label: string;
 }
 
-export function detectRedFlag(text: string): RedFlagHit;
+/** `null` is the no-hit answer — not a `{ fired: false }` object. An `EmergencyHit` is an
+ *  object and therefore always truthy, and a differential built on it reports "everything
+ *  fires everywhere" while passing its own floors; `proof-airway-derivation.test.ts` says so
+ *  in a comment paid for by a real run. `null` cannot be read that way by accident. */
+export function detectRedFlag(text: string): RedFlagHit | null;
 ```
+
+**Shape note, Wave 1.7.** The first draft returned a total `RedFlagHit` with five nullable
+fields and `fired: boolean`. The implemented contract returns `RedFlagHit | null` with **no
+nullable fields on a hit**, because every consumer of a hit — the rail, the pager, the audit row
+— needs all five, and a shape that permits `{ fired: true, cls: null }` puts the burden of that
+invariant on every call site. The one place a hit legitimately has no class is the detector
+exception (§1.5 R3), and that is synthesised by the **wrapper**, not by `detectRedFlag`, which is
+why the wrapper's return type carries `class: RedFlagClass | null` and the detector's does not.
 
 **The function is total, and its caller treats a thrown exception as `emergency`.** `detectRedFlag`
 is written not to throw; the composed reader every surface calls wraps it anyway, and on any throw,
@@ -1083,6 +1103,44 @@ TIER       every hit is `emergency`.
 HIT = any ARM, per clause, minus HYPOTHETICAL_RE.
 ```
 
+**T5(b) — ARM 7b exists because `«البخاخ ما نفع»` is on this section's own Fires list and ARM 7
+could not reach it.** Driven against the rule as it stood:
+
+```
+  clause: «البخاخ ما نفع»
+  ربو boundary present : false
+  EXACERBATION present : [البخاخ ما نفع, ما نفع]
+  ARM 7 = ربو ∧ EXACERBATION → false.  No other arm matched.
+```
+
+ARM 7 requires the asthma noun **and** an exacerbation predicate in the same clause. A failed
+rescue inhaler is a pure exacerbation report with no asthma noun in it — which is exactly how a
+patient in a hurry writes it. The rescue-failure phrases are STANDALONE now. **The precision
+mirror for ARM 7b, per L8:** the phrases are long and specific, and the ordinary clinic sentences
+that carry `البخاخ` without a failure — `«أبغى تجديد البخاخ»`, `«كم سعر البخاخ؟»`, `«البخاخ خلص
+عندي»`, `«وش الفرق بين البخاخين؟»`, `«عندي ربو ومحتاج تجديد البخاخ»` — are all quiet, because
+bare `البخاخ` is in no set at all.
+
+**T2 — `نفسه · نفسها` are struck from BREATHE, and the reason is the whole argument for §2.0 L8.**
+The two words were enumerated into BREATHE because L3 requires enumeration, and nothing in §2.0
+asked what else they mean. `نفسه` is *his breath* and *itself / the same*; ARM 1 is
+`ADJ(NEGATION, [AUX], BREATHE)`; this class's EXCLUSION set was empty except ARM 2's; and ARM 3's
+idiom guard is written `نفسي ?(ضاق|…)` — **first person only**. So nothing at all guarded
+`ما نفسه`, and seven ordinary clinic sentences raised an airway emergency (see the near-miss
+table). **The machinery this section says it inherits never had the hole** — driven against the
+real `detectAllergenEmergency` at both `e1791f5` and `HEAD`, `fired: false` on all seven — because
+the shipped file guards bare `نفس` with a construct-head lookahead and guards the third person
+with a person anchor. This is the second place, after N4's adjacency, where re-inventing the
+lexicon dropped a guard the original carried, and it is why §2.4's heading says *inherit, do not
+re-invent*.
+
+**Why not a guard instead of a deletion?** A lookahead on `نفسه` would have to distinguish
+*his breath* from *the same* on the right-hand side, and there is nothing there to read: «الموعد
+ما نفسه اللي حجزته» and a hypothetical «الطفل ما نفسه» have the same shape. The tell is on the
+**left** — a person, not an object — and that guard already exists in ARM 3. Two rules for one
+axis is what §2.0 L1 forbids, so the axis stays in ARM 3 and BREATHE keeps only the verb forms
+and the unambiguous `ياخذ نفس` compounds.
+
 **Why adjacency, driven.** The two readings v1.5 permitted, and the rule above:
 
 ```
@@ -1159,11 +1217,27 @@ cannot match «ابني **ما يقدر** يتنفس», where the relation is th
 So:
 
 > **SPEC-3 change, required before Faysal's first airway matcher** (recorded in SPEC-3 §10.2 as
-> `SHARE*`): export the relation list from `lib/ai/symptom-frames.ts` as its own constant —
-> `export const RELATION_WORDS = "ابني|بنتي|ولدي|طفلي|رضيعي|بنته|ابنه|زوجتي|زوجي|امي|ابوي|الوالده|الوالد|الطفل|الطفله|البيبي|اخوي|اختي|جدي|جدتي|صاحبي|صاحبتي|رفيجي|جوزي|مرتي"` —
-> and compose `FRAME_WORDS` from it, so a caller can anchor on *"a person other than the sender
-> is the subject"* without also requiring a possession verb. Behaviour-preserving for both
-> existing callers.
+> `SHARE*`). **CORRECTED IN THIS PASS (S3) — the prescription is already implemented under
+> another name, and following it as written would create the duplicate the shared file exists to
+> prevent.** `lib/ai/symptom-frames.ts` at `HEAD` **already exports `PERSON_WORDS`** (L25–27,
+> "Exported rather than copied, because a copied list is how this file came to exist") and
+> already composes `FRAME_WORDS` from it. Adding a second constant named `RELATION_WORDS` would
+> be exactly the drift that file's header describes.
+>
+> **What is actually required, and it is two lines:**
+> 1. **Both specs point at `PERSON_WORDS`**, not at a new `RELATION_WORDS`. Faysal anchors on
+>    *"a person other than the sender is the subject"* by reading that constant.
+> 2. **`PERSON_WORDS` gains four members that §2.6 and §11.1 need and it does not carry:**
+>    `طفلي · رضيعي · جدي · جدتي`. Driven, the list at `HEAD` has `ابني · بنتي · ولدي · الطفل ·
+>    الطفله · الولد · البنت · الصغير · الجاهل · الياهل · عيالي · اولادي` and none of the four.
+>    `طفلي` is the word §2.6's T5 fix turns on, and a grandparent is a first-degree reporter in a
+>    Saudi family.
+>
+> Both are behaviour-preserving for the two existing callers (`FRAME_WORDS` composes from
+> `PERSON_WORDS`, so a widening of the person list widens both detectors — which is why the
+> quiet corpus in `scripts/proof-faysal-safety.test.ts` crosses the **new** members and not only
+> the old ones; `proof-airway-derivation.test.ts` §8 does the same for the last widening of this
+> same list, and states why).
 
 **And `symptom-frames.ts` is not domain-neutral, contrary to SPEC-3 §0/§3.5/§10.2.** Its
 `NOT_A_PERSON` place list, read verbatim, is
@@ -1181,7 +1255,7 @@ frame=true  notPerson=false  «الاستقبال عنده مشكله»
 
 Five ordinary clinic sentences read as *a person reporting a symptom*. The verdict on that file
 is **SHARE\*, not SHARE** (SPEC-3 §10.2 amended): parameterise `NOT_A_PERSON`, or take
-`FRAME_WORDS`/`RELATION_WORDS` shared and give Faysal its own place list —
+`FRAME_WORDS`/`PERSON_WORDS` shared and give Faysal its own place list —
 `العياده · المستشفي · المجمع · الفرع · الاستقبال · صاله الانتظار · الممر · العنبر · المختبر · الصيدليه`
 — added to the inherited restaurant list rather than replacing it, so a shared file keeps
 serving both tenants.
@@ -1206,6 +1280,8 @@ Faysal adds, on top of the family above:
 | `«نفسي ضايق من الانتظار»` · `«نفسي ضايق من التعامل»` | the idiom, already carved out |
 | `«نفسي ضايق من الدوام»` · `«نفسي ضايق من المواعيد»` · `«نفسي ضايق من الحجز»` · `«نفسي ضايق من الاستقبال»` · `«نفسي ضايق من التأمين»` | **the carve-out inherited from Kivo is restaurant-shaped and misses all five — driven, all five FIRE `[ضيق نفس]` on the real detector.** Its object list is `خدمه\|تعامل\|انتظار\|تاخير\|وضع\|كلام\|رد\|سوالف\|طريق\|زحمه` — a delivery-complaint vocabulary. A patient frustrated with the clinic's opening hours gets an ambulance instruction and a P0 page. **Faysal's object list adds** `دوام\|مواعيد\|موعد\|حجز\|اجراءات\|مستشفي\|عياده\|مجمع\|فاتوره\|استقبال\|تحويله\|تامين\|مراجعه` — driven, all five go quiet and «نفسي ضايق» and «نفسي ضايق وما اقدر اتنفس» still fire. §11.2 pairs each added object with that true positive. |
 | **`«فرع الشفا»`** | `«شفا»` is the stem of `«شفايف»` (lips) **and** Complex 4's own district name |
+| **`«الموعد ما نفسه اللي حجزته»`** · `«السعر ما نفسه المعلن»` · `«الفرع ما نفسه اللي رحت له»` · `«الرقم ما نفسه المسجل»` · `«التقرير ما نفسه»` · `«الدكتور ما نفسه اللي شافني قبل»` · `«المريض ما نفسه طويل على الانتظار»` | **T2, and the §2.0 L8 mirror for BREATHE.** `نفسه` is *his breath* **and** *itself / the same*, and ARM 1 paired it with a bare `ما`. Every one of these fired `airway/emergency` — 997, a P0 page, and an operator-release-only booking lock — on the ordinary sentence a patient writes when a booking is wrong. `نفسه · نفسها` are **struck from BREATHE**; ARM 3 already owns the breath-idiom axis and guards it with a person anchor, which is what the inherited module does (`BREATH_TIGHT_THIRD`, whose comment names `«الطلب نفسه واقف»` as the reason). |
+| `«الطلب نفسه واقف»` · `«الحجز نفسه ما تم»` · `«الملف نفسه ناقص»` | the emphatic reflexive on an object — quiet before and after, and here so the mirror covers the shape and not only the negated form |
 
 `ربو` must be written `(?<![ء-ي])(?:ال)?ربو(?![ء-ي])`. **Driven:** that form is quiet on
 `«فرع الربوة»` and on `«كربوهيدرات»`, and still fires on `«عندي ربو»` — for this term the
@@ -1328,10 +1404,37 @@ TIER           red-flag arm                                    → `emergency`, 
                fever value ≥ 38.0, no infant marker            → `urgent`
                fever value < 38.0                              → no hit
                fever arm with a chronicity term                → `urgent`
+               fever TERM + persistence, no infant marker      → `urgent`
 
-HIT = PREDICATE.redflag ∨ (TERM ∧ (PREDICATE.infant ∨ value ≥ 38.0)),
+HIT = PREDICATE.redflag ∨ (TERM ∧ (PREDICATE.infant ∨ PREDICATE.persistence ∨ value ≥ 38.0)),
       per clause, minus EXCLUSION and HYPOTHETICAL_RE.
 ```
+
+**T5(a) — `«طفلي حرارته ما تنزل»` is on this section's own Fires list and was silent, at every
+tier.** Driven against the rule as it stood:
+
+```
+  clause: «طفلي حرارته ما تنزل»
+  TERM(fever) present  : [حرارته]
+  PREDICATE.redflag    : []            ← «ما تنزل» was in no set
+  PREDICATE.infant     : []            ← «طفلي» was in NO set in this document
+  temperature value    : none
+  HIT = redflag ∨ (TERM ∧ (infant ∨ value ≥ 38)) = false
+```
+
+`طفلي` — *my child* — was in none of the infant markers, and there was no persistence predicate
+on the fever axis at all, so **a parent saying their child's fever will not come down produced
+no hit at any tier.** Both gaps are closed above. This is B5's shape (a rule narrower than its
+own Fires list) surviving §2.0 L6 because L6 is a proof obligation and the proof did not exist;
+`scripts/proof-faysal-safety.test.ts` is that proof and it now runs.
+
+**The cost is paid on the precision side, per §2.0 L8, and it is enumerated.** `طفلي · ابني ·
+بنتي · ولدي` are the commonest words in a paediatric clinic inbox, so admitting them as infant
+markers widens the `emergency` tier. Two things bound it: a marker is only a marker **with a
+fever TERM in the same clause** (an infant marker alone is never a hit), and the new markers are
+mirrored into `MUST_BE_QUIET` with the ordinary sentences that carry them — `«ابني عنده موعد
+بكرة»`, `«بنتي محتاجة تطعيم»`, `«طفلي عمره ثلاث سنوات»`, `«ولدي نسي بطاقته»` — none of which
+carries a fever term, and none of which fires.
 
 **The muscle-object exclusion is new and the mirror forced it.** `«تشنجات»` is on this section's
 Fires list with no child and no fever in it, and `«تشنج بعضلة رقبتي من النوم»` is on its
@@ -1367,6 +1470,8 @@ time-critical) · `«بلع عمله»` · `«شرب مبيد»` · `«أخذ ج
 | `«حبوب منع الحمل»` · `«خبز حبوب كاملة»` · `«حبوب في وجهي»` | `حبوب` = pills, grains, **and pimples** — this repo has already been bitten by exactly this word |
 | `«تسمم غذائي صار لي قبل اسبوع»` | **an explicit past-incident term in the message, not a frame, and not a SOFT reading (N6).** `قبل اسبوع` is enumerated in this class's EXCLUSION set below; it downgrades this hit to `urgent`. Class G remains **HARD** — §2.0 L5. |
 | `«الدكتور غير لي الجرعة»` | `جرعة` is not a term on its own; the class needs a **swallow verb with a substance object** (`بلع X` / `شرب X` / `أخذ جرعه زايده`). `غيّر` is not a swallow verb. Not the frame (§1.5 R1). |
+| **`«أخذت الدواء الصبح»`** · `«تناولت الدواء بعد الأكل زي ما قال الدكتور»` · `«أكلت الدواء بعد الفطور»` · `«أخذت دوا الضغط اليوم»` · `«تناولت دواء الحساسية»` · `«ابني أخذ الدواء على وقته الحمدلله»` | **T3, and the §2.0 L8 mirror for the MEDICATION sub-list.** A **TAKE** verb whose objects are all medication, with no quantity or ownership qualifier, is what a chronic patient does every morning. Quiet by the medication-taking exclusion — an enumerated test on words **in the message**, never a frame. Paired with `«بنتي بلعت حبوب»` and `«ابني بلع حبوب أمه»`, which must not be bought back by it. |
+| `«متى آخذ العلاج؟»` · `«نسيت آخذ الدواء أمس»` · `«الروشتة فيها ثلاث أدوية»` · `«أخذت الحبوب حق الضغط»` | same family, the rest of the L8 mirror for `علاج` · `روشته` · `الدوا` · `حبوب` |
 
 **The rule, v1.6 — written to §2.0's template:**
 
@@ -1374,9 +1479,13 @@ time-critical) · `«بلع عمله»` · `«شرب مبيد»` · `«أخذ ج
 TERM (verb)  swallow   بلع · بلعت · بلعه · بلعها · شرب · شربت · شربه
              take      اخذ · اخذت · اكل · اكلت · تناول · تناولت
 
-SITE (object) كلور · ديتول · مبيد · بنزين · بطاريه · بطاريات · عمله · سم · سموم · منظف ·
-              منظفات · كاز · غاز · دوا · دواء · الكبار · دواء الكبار · حبوب
-              (the verb and the object must be within two tokens of each other)
+SITE (object) POISON       كلور · ديتول · مبيد · بنزين · بطاريه · بطاريات · عمله · سم ·
+                           سموم · منظف · منظفات · كاز · غاز
+              MEDICATION   دوا · دواء · الدوا · الدواء · الكبار · دواء الكبار · حبوب ·
+                           علاج · العلاج · روشته · الروشته
+              (the verb and the object must be within two tokens of each other. The
+               MEDICATION sub-list is named because the pills-only exclusion below is
+               scoped to it — T3.)
 
 PREDICATE    — (empty; the verb+object pair IS the finding)
 
@@ -1384,9 +1493,11 @@ STANDALONE   تسمم · اخذ جرعه زايده · جرعه زايده · ا
 
 EXCLUSION    past incident   قبل اسبوع · قبل شهر · قبل كم يوم · قبل يومين · قبل سنه ·
                              صار لي قبل · كان قبل      → downgrades to `urgent` (N6)
-             pills-only      a TAKE verb whose ONLY object is `حبوب` and which carries no
-                             quantity/ownership qualifier (كثير · وايد · علبه · شريط ·
-                             حق امه · امه · ابوه · الكبار · جرعه) → not a hit
+             medication-     a **TAKE** verb whose objects are ALL in the MEDICATION
+             taking          sub-list and which carries no quantity/ownership qualifier
+                             (كثير · وايد · علبه · شريط · حق امه · امه · ابوه · الكبار ·
+                              جرعه · جرعات · كل الحبوب · نص علبه) → not a hit
+                             ← WIDENED from `حبوب`-only (T3). SWALLOW verbs are unaffected.
 
 TIER         `emergency`, except a hit carrying a past-incident term → `urgent`.
 
@@ -1403,6 +1514,37 @@ HIT = STANDALONE ∨ ADJ(TERM.verb, [≤2 tokens], SITE), per clause,
 both. **Swallowing** pills is alarming on its own; **taking** them is what a hypertensive patient
 does every morning. The verb is the discriminator, and the qualifier list is the appeal for the
 TAKE verb.
+
+**T3 — and the exclusion was scoped to ONE object out of fifteen, so a patient taking prescribed
+medicine raised a poisoning emergency.** This section's own reasoning states the discriminator
+exactly right — *"the verb is the discriminator"* — and then applied it to `حبوب` alone, while
+`دوا · دواء · دواء الكبار` sat in the same object list. Driven, before the widening above:
+
+```
+FIRES  poisoning/emergency  «أخذت الدواء الصبح»                        ← I took the medicine this morning
+FIRES  poisoning/emergency  «تناولت الدواء بعد الأكل زي ما قال الدكتور»
+FIRES  poisoning/emergency  «أكلت الدواء بعد الفطور»
+FIRES  poisoning/emergency  «أخذت دوا الضغط اليوم»
+FIRES  poisoning/emergency  «تناولت دواء الحساسية»
+FIRES  poisoning/emergency  «ابني أخذ الدواء على وقته الحمدلله»
+FIRES  poisoning/emergency  «شربت الدواء مع المويه»                     ← a SWALLOW verb: see below
+quiet                       «عندي ضغط وآخذ حبوب»                        ← the one the exclusion covered
+FIRES  poisoning/emergency  «بنتي بلعت حبوب»                            ← correct, SWALLOW verb
+```
+
+Nothing else caught it: §1.5 R1 makes `REFILL_CLAUSE_RE` a SOFT-side veto and class G is HARD,
+so it is never consulted, and this section's near-miss table had no row for a patient taking
+prescribed medicine — among the most common sentences a clinic receives. Every one of those
+sentences also opens an operator-release-only booking lock (§1.5 R2 H-5), so the cost is not a
+bad turn, it is an outage for that patient.
+
+**`شرب` is a SWALLOW verb and `«شربت الدواء مع المويه»` therefore still fires — deliberately, and
+it is carried to §12 row 16 rather than silently traded away.** *Drinking* a medicine is the
+ordinary way an Arabic speaker describes taking a syrup, and it is also how a parent reports a
+child who drank one. The verb split cannot separate them and no rule in this document can;
+narrowing `شرب` to close it would take `«شرب ديتول»` and `«شرب مبيد»` with it, which is the
+trade §2.4 refused on `ما عاد` for the same reason. It is an accepted over-fire, listed in
+§11.1 as an annotated `MUST_FIRE`, not hidden in the quiet corpus.
 
 ### 2.8 H — Trauma (HARD)
 
@@ -1466,6 +1608,8 @@ English/franco: `I want to die` · `kill myself` · `end it all` · `suicidal` �
 | Message | Why |
 |---|---|
 | `«أموت على الكبسة»` · `«ميت من الجوع»` | food idiom |
+| **`«أموت على المندي»`** · `«أموت على القهوة»` · `«أموت على الشاورما»` · `«أموت على الكيك»` · `«أموت على قهوتكم بصراحة»` · `«أموت على السمبوسة برمضان»` | **T6.** The same idiom on the six foods nobody enumerated. `«أموت على X»` is how a Saudi says *I love X*; the exclusion set that was supposed to cover it named no members at all (§2.0 L3), so the only food in the document was `الكبسة` and every other one raised a suicide rail. Quiet now by **inversion**, not by a longer food list: the `على` complement must be a `LIFE_OBJECT` for the class to fire. |
+| `«أموت على شغلي»` · `«أموت على المطاعم اللي عندكم»` · `«بموت على الحلا»` · `«يموت على الرياضة»` | the same shape on a non-food complement, which is where a food blacklist fails silently |
 | `«موت من الضحك»` · `«مت ضحك»` | laughter idiom |
 | `«قاتلني الصداع»` · `«الصداع ذابحني»` | pain idiom |
 | **`«بموت لو أكلت فول سوداني»`** | this exact phrase is an **allergy disclosure** in this repo's own avoidance lexicon |
@@ -1475,24 +1619,90 @@ English/franco: `I want to die` · `kill myself` · `end it all` · `suicidal` �
 | `«انتحار المشروع»` (news/idiom) | rare, but boundary-matched anyway |
 
 **The rule, stated as a contract:**
-1. A **death or harm verb** in the **first person** (`أموت`, `أنتحر`, `أنهي حياتي`, `أذيت نفسي`,
-   `أجرح نفسي`, `أختفي`) —
-2. **and no idiom object** in the same clause (`على` + food, `من الضحك`, `من الجوع`,
-   `من التعب`, a disease/allergen noun) —
-3. **and `تعبت من` only counts when its object is life** (`الحياة`, `الدنيا`, `كل شي`,
-   `نفسي`, `العيشة`), never a queue, a job, or a wait.
+1. A **death or harm verb** in the **first person** (`اموت`, `انتحر`, `انهي حياتي`, `اذيت نفسي`,
+   `اجرح نفسي`, `اختفي`) —
+2. **and, for the `على`-complement shape, the complement must be a LIFE OBJECT — rule 2 is
+   inverted (T6).** See below; this is the one rule in §2 that is stated as a whitelist.
+3. **and `تعبت من` only counts when its object is life** (`الحياه`, `الدنيا`, `كل شي`,
+   `نفسي`, `العيشه`), never a queue, a job, or a wait.
 4. Bereavement markers (`توفي`, `الله يرحمه`, `انتقل إلى رحمة الله`, `فقدنا`, `العزاء`) in the
    same clause as a death word **suppress** the class — and route to `human_handoff` with
    `reason: bereavement`, so a person still sees it.
 5. Once fired, **nothing retracts it in that thread** — not a later "أمزح", not a denial, not a
    new topic. The rail and the page have already happened.
 
+**T6 — rule 2 was an unenumerated set in the one class where §1.3 says the over-fire cost is
+itself a safety cost, and §2.0 L3 exists to forbid exactly that.** As written it read *"no idiom
+object in the same clause (`على` + **food**, `من الضحك`, `من الجوع`, `من التعب`, **a
+disease/allergen noun**)"*. "Food" and "a disease/allergen noun" are enumerated nowhere in §2.9,
+nowhere in §2, and nowhere in this document; `grep` over all four specs finds exactly one food,
+`الكبسة`, and only as a near-miss example. Driven, with the contract implemented as written:
+
+```
+quiet                      «أموت على الكبسة»          ← the one example given
+FIRES  self_harm/emergency «أموت على المندي»          ← I'm dying for mandi
+FIRES  self_harm/emergency «أموت على القهوة» · «أموت على الشاورما» · «أموت على الكيك» ·
+                           «أموت على قهوتكم بصراحة» · «أموت على السمبوسة برمضان»
+```
+
+`«أموت على X»` is the ordinary Saudi way of saying you love something, and the class where it
+lands is the one class this document says a false positive **harms the patient by the
+interaction itself**. An exclusion set that is not enumerated is a blacklist over an open
+vocabulary, and the vocabulary of things Saudis love is not closable.
+
+**So rule 2 is inverted, the way rule 3 already inverts `تعبت من`.** `أموت على X` is a hit
+**only** when `X` is a first-person life object; every other complement — and an absent
+complement — is quiet:
+
+```
+LIFE_OBJECT (the whitelist; the ONLY complements on which `على`-shaped death talk fires)
+             نفسي · حالي · روحي · عمري · الدنيا · الحياه · كل شي · العيشه · اهلي · وضعي
+
+  «أموت على X»  is a hit  ⟺  M(X) ∈ LIFE_OBJECT , in the same clause
+                  otherwise → quiet, whatever X is. No food list is required and none is written.
+
+IDIOM_FRAME (rule 2's remaining, closed, non-`على` shapes — these ARE enumerable, because
+             they are fixed particle+noun compounds and not an open complement slot)
+             من الضحك · من الجوع · من التعب · من الحر · من البرد · من الزحمه · من الشغل ·
+             من الدوام · من الانتظار · من الملل
+
+DISEASE_OBJECT (rule 2's allergy-disclosure carve-out, enumerated at last: the death verb is
+             conditional on an allergen or disease noun, which is a DISCLOSURE, not ideation.
+             Sourced from `lib/ai/allergen-gate.ts`'s own `ALLERGEN_TERMS`, imported rather
+             than copied — a copied list is how the symptom-frame lists drifted apart)
+             فول سوداني · سوداني · مكسرات · بندق · فستق · لوز · كاجو · جوز · لبن · البان ·
+             حليب · جلوتين · قمح · بيض · بيظ · سمسم · صويا · سمك · جمبري · قشريات ·
+             لاكتوز · طحينه · ماكولات بحريه · بحريات · عين جمل
+             + the conditional frame itself: `لو` · `اذا` · `ان` before the eating verb
+```
+
+Driven with the inversion: all seven `«أموت على X»` strings above are quiet, `«أموت على نفسي»`
+and `«ما عاد لي نفس أعيش»` still fire, and `«بموت لو أكلت فول سوداني»` stays quiet by
+`DISEASE_OBJECT` **and** by the whitelist — two independent reasons, which is the right number
+for the sentence this repo's own avoidance lexicon already treats as an allergy disclosure.
+
+**S5, in the same pass.** Rule 1 defines a death/harm verb set while the paragraph below declared
+`TERM/PREDICATE/SITE` empty. §2.0 L1 permits an empty set and forbids an unstated one, so the set
+is named: `VERB = اموت · موت · انتحر · بنتحر · انهي حياتي · اذيت نفسي · اجرح نفسي · جرحت نفسي ·
+اختفي · ارتاح للابد · اخلص من حياتي`.
+
 **Written in §2.0's terms**, for the mirror: STANDALONE = the first-person intent/act phrases in
-the Fires list; TERM/PREDICATE/SITE are empty (rules 1–3 *are* the composition); EXCLUSION = the
-idiom objects (rule 2), the non-life objects of `تعبت من` (rule 3) and the bereavement markers
-(rule 4), all clause-scoped; TIER is always `emergency`. **Class I is evaluated first** in §2.0
+the Fires list; TERM = rule 1's `VERB` set (named above, per S5); PREDICATE/SITE are empty
+(rules 1–3 *are* the composition); EXCLUSION = `IDIOM_FRAME` and `DISEASE_OBJECT` (rule 2), the
+non-life objects of `تعبت من` (rule 3) and the bereavement markers (rule 4), all clause-scoped;
+`LIFE_OBJECT` is a **whitelist**, not an exclusion, and is the one place in §2 where a rule is
+stated positively; TIER is always `emergency`. **Class I is evaluated first** in §2.0
 L7's order, which is what makes `«أخذت حبوب كثير عشان أخلص»` a `self_harm` verdict rather than a
 `poisoning` one — driven, both classes hit that string, and §2.9 lists it.
+
+**The L8 mirror for this class, and it is the one class where L8 changes the shape of the rule
+rather than adding a row.** Every `VERB` member is mirrored with the ordinary sentence that
+carries it — `«أموت على المندي»`, `«أموت على قهوتكم»`, `«مت من الضحك»`, `«ميت من الجوع»`,
+`«قاتلني الصداع»`, `«بموت لو أكلت فول سوداني»`, `«ألغوا الموعد، توفي والدي الله يرحمه»` — and the
+mirror is what showed that no blacklist can cover the `على` slot. §12 row 17 carries the
+inversion to the clinician, because a whitelist trades recall for precision in the one class
+where under-firing is death: `«أموت على ولدي»` fires (`اهلي`-adjacent life object is enumerated),
+and a phrasing of ideation on a complement nobody enumerated does **not**.
 
 ---
 
@@ -1827,14 +2037,22 @@ SPEC-2 §2.2 G4, the frozen after-midnight greeting, normalized:
 an inflection, and the carve-out is scoped:
 
 ```
-availability  bans a 24-HOUR / ALWAYS-OPEN claim in any inflection:
-              (شغال|شغالة|شغالين|مفتوح|مفتوحة|مفتوحين|متاح|متاحة|موجود|موجودة|دوام)
-                 within 20 characters of
-              (على مدار الساعة | 24 ساعة | طول اليوم | طوال اليوم | 24/7)
-              — and the bare phrases «على مدار الساعة» / «24 ساعة» on their own.
+availability  ALL PATTERNS BELOW ARE WRITTEN NORMALIZED — §5.2's table header says the banned
+              shapes are matched normalized, and this block was written un-normalized when it
+              was added, which made the whole N1 fix dead on arrival (S1). Driven:
+                normalizeAr(G4-as-was) = «… والطواري عندنا شغاله علي مدار الساعه في {…}.»
+                «على مدار الساعة» vs «علي مدار الساعه» → no match;  «شغالة» vs «شغاله» → none
+                guard(RAW G4-as-was) = BLOCKED · guard(NORM G4-as-was) = PASSES  ← the case
+                §5.2 specifies · guard with the pattern list normalized too = BLOCKED
 
-              bans an OPEN-NOW claim about a named place — «الطوارئ مفتوحة», «الفرع مفتوح»,
-              «العيادة شغالة», «الدكتور موجود» — UNLESS this turn's tool result contains the
+              bans a 24-HOUR / ALWAYS-OPEN claim in any inflection:
+              (شغال|شغاله|شغالين|مفتوح|مفتوحه|مفتوحين|متاح|متاحه|موجود|موجوده|دوام)
+                 within 20 characters of
+              (علي مدار الساعه | 24 ساعه | طول اليوم | طوال اليوم | 24/7)
+              — and the bare phrases «علي مدار الساعه» / «24 ساعه» on their own.
+
+              bans an OPEN-NOW claim about a named place — «الطواري مفتوحه», «الفرع مفتوح»,
+              «العياده شغاله», «الدكتور موجود» — UNLESS this turn's tool result contains the
               specific field the claim is made of: an open-now claim requires the site to be
               in `erSites({ now })`'s or `openStateAt()`'s return **for this instant**.
 
@@ -2179,7 +2397,29 @@ is the same defect as a guard that only lives in a prompt.
 ### 11.2 `proof-faysal-false-positives.test.ts`
 
 - Every near-miss table in §2 is quiet **through the union**, with the firing detector named in
-  the failure message.
+  the failure message — **except a row whose stated reason annotates it `→ urgent`, which is
+  asserted `tier === "urgent"`, never `fired === false`. (T4.)**
+
+  **Why this sentence had to be written.** N6 made hardness a property of a class and moved two
+  downgrades into enumerated EXCLUSION sets. The fix landed in the rule and in the reason and
+  **never reached the table**: two rows still sit under a heading that says *"Must NOT fire"*
+  while carrying reasons that say they do fire, at `urgent`.
+
+  ```
+  SPEC-4 §2.6  «حرارته 39 من كم شهر»          reason: "…downgrades it to `urgent`"   → FIRES urgent
+  SPEC-4 §2.7  «تسمم غذائي صار لي قبل اسبوع»   reason: "…downgrades this hit to `urgent`" → FIRES urgent
+  ```
+
+  Transcribed literally, this proof asserted `fired === false` on both and was **red at birth on
+  both** — the re-audit's N1 shape (a fix that reached the data model and the prose and not the
+  artifact something downstream reads) with the near-miss table in the role the frozen sentence
+  played. The two rows are **not moved and not deleted**: they stay in the near-miss tables,
+  because "must not raise the rail" is what they are there to say, and the assertion is now the
+  one their own reason states. The proof reads the annotation out of the row.
+
+  **A third row joins them, from §2.3, and it was already annotated:** `«رعاف ما يوقف»` →
+  `urgent`, and `«نزيف اللثة شديد»` → `urgent`. Any near-miss row whose reason names a tier is
+  a tier assertion.
 - The site-name corpus, called out separately because it is this tenant's own vocabulary:
   `«موعد في فرع الربوة»` · `«فرع الشفا»` · `«شعاع الورود»` · `«الوطن 1 اليمامة»` ·
   `«شعاع الروضة»` · `«فرع الروابي»` — all silent.
@@ -2239,6 +2479,31 @@ is the same defect as a guard that only lives in a prompt.
 - **Paired in the same file, every time:** the true positive each narrowing must not cost. A
   quiet-only file passes by making the gate deaf.
 - Re-runs `scripts/proof-allergy-false-positives.test.ts`'s quiet corpus through Faysal's union.
+- **THE §2.0 L8 MIRROR, AND IT IS THIS FILE'S BLOCKING ASSERTION.** The proof enumerates every
+  member of every `TERM`, `SITE`, `PREDICATE` and `STANDALONE` set in §2.1–§2.9 **from the
+  lexicon module itself**, and **fails if a member has no paired near-miss** — the exact
+  counterpart of §11.1's failure when a Fires-list entry has no assertion. A member whose only
+  ordinary reading is the finding satisfies the mirror with a one-line annotation naming that
+  fact; what fails is a member with **no entry at all**.
+- **The quiet corpus is GENERATED from ordinary clinic Arabic, not from the classes' own axes,
+  and the difference is the whole point.** A quiet side derived from the firing side proves the
+  slots do not leak sideways and is **structurally incapable** of catching a word the rule now
+  matches for a reason no axis names. That is not an argument, it is a measurement: in
+  `scripts/proof-airway-derivation.test.ts` §8c, all 6,321 axis-derived quiet assertions read
+  **identically** on the pre-widening module and on the widened module that shipped 3,993 false
+  positives, so not one of them could have constrained the change, and the proof read "zero false
+  positives" throughout. So Faysal's quiet corpus is crossed from **booking, insurance,
+  directions, complaints, prices and pharmacy vocabulary** through the homographs that caused
+  these bugs — `نفس` (*breath · self · the same*), `حبوب`/`دوا` (*pills · grains · pimples ·
+  medicine*), `أموت` (*I die · I love it*), `حامل` (*pregnant · card-holder*), `الربوة` vs `ربو`,
+  `الشفا` vs `شفايف`, `شلل الأطفال` vs `شلل`, `صدر` (*chest · was issued · chicken breast*),
+  `دم` inside `قدم`/`عدم`/`تقديم`, `كسر` in `الكسر العشري`, `حادث` in `الحوادث`.
+- **And it is mutation-verified in BOTH directions**, per §11.11: narrowing mutations must break
+  the must-fire side, and **widening** mutations — putting `نفسه` back into BREATHE, putting
+  `دواء` back under the TAKE verb, replacing §2.9's whitelist with the food blacklist — must
+  break the **quiet** side. A quiet corpus that reads the same before and after the widening it
+  is supposed to constrain is decoration, and the proof reports, as a number re-derived on every
+  run, how many of its own quiet strings each widening would have fired.
 
 ### 11.3 `proof-faysal-emergency-rail.test.ts`
 
@@ -2371,12 +2636,52 @@ every surface.
 - A below-floor-confidence transcript with distress markers and no exact match produces the
   clarifying question **and** a `P1` handoff — never a red-flag class, never silence.
 
-### 11.11 Mutation discipline
+### 11.11 Mutation discipline — **in both directions**
 
 Each proof is validated by **deliberately breaking the rule it guards** and confirming the proof
 goes red: remove a boundary, drop a Najdi negation, widen a veto, delete a call site, extend
 `VOICE_SPEAKABLE_STOP_REASONS`. A proof that stays green under its own mutation is decoration.
 This repo has caught at least four such proofs; assume Faysal's will have them too until driven.
+
+**And the mutations must run in the WIDENING direction too, which is the half this plan was
+missing and the half §2.0 L8 exists for.** A narrowing mutation tests the must-fire corpus; only
+a **widening** mutation can show the quiet corpus is load-bearing. The widenings are the three
+defects L8 was written for, re-applied on purpose:
+
+| mutation | direction | what must go red |
+|---|---|---|
+| put `نفسه · نفسها` back into §2.4's BREATHE | widening | the quiet side, on the `«الموعد ما نفسه اللي حجزته»` family |
+| put the MEDICATION objects back under the TAKE verb (revert T3) | widening | the quiet side, on the `«أخذت الدواء الصبح»` family |
+| replace §2.9's `LIFE_OBJECT` whitelist with the food blacklist (revert T6) | widening | the quiet side, on the `«أموت على المندي»` family |
+| add bare `صدر` / bare `كسر` / bare `حوادث` / bare `شفا` as "recall nets" | widening | the quiet side, on `«صدر التقرير»`, `«الكسر العشري»`, `«وين قسم الحوادث»`, `«فرع الشفا»` |
+| drop `طفلي` from §2.6's infant markers; drop ARM 7b | narrowing | the must-fire side, on §2.6's and §2.4's own Fires entries |
+| drop a Najdi negation; un-normalize one term; remove the `(?![ء-ي])` lookahead | narrowing | the must-fire side (the first two) and the quiet side (the third) |
+
+**A widening mutation that leaves the whole suite green is the finding, not the pass.** That is
+literally what happened one wave earlier in this repo: a widening shipped with 3,993 ordinary
+Saudi strings raising a full emergency while its proof read `14,696/14,696`, because the quiet
+corpus was derived from the same axes as the firing corpus and so contained nothing the widening
+touched. `scripts/proof-faysal-safety.test.ts` reports, per mutation and per homograph family,
+**how many of its own quiet strings the mutation fires** — and asserts a floor, so a quiet corpus
+that cannot separate the mutated module from the live one fails rather than passes.
+
+### 11.12 `scripts/proof-faysal-safety.test.ts` — the Wave 1.7 implementation proof
+
+§11.1 and §11.2 specify two files. **This wave ships one**, because the L6 mirror and the L8
+mirror are two halves of one derivation and splitting them across files is how a corpus and the
+lists it tests drift apart. It carries, in one run:
+
+1. **`MUST_FIRE`, generated from the Fires lists** — the §2 lexicon is a module, and the corpus
+   is crossed from the same sets the detector composes its rules from (L6).
+2. **`MUST_BE_QUIET`, generated independently from ordinary clinic Arabic** — booking, insurance,
+   directions, complaints, prices, pharmacy — crossed through the homographs, never from the
+   detector's axes (L8).
+3. **The L8 coverage assertion**: every enumerated set member has a paired near-miss, or fails.
+4. **Both mutation directions**, with per-family separation counts and floors (§11.11).
+
+When §11.1 and §11.2 are split out as separate files they inherit these four properties; they do
+not replace them. The file is registered in `scripts/unit-suite.json` — which makes it **visible,
+not enforcing** (§11.0), and §12 row 13 remains open until all three wiring steps land.
 
 ---
 
@@ -2402,7 +2707,10 @@ before any real patient message reaches this system.
 | 12 | **The false-positive rate on real traffic** (§3.4). Shadow mode, ≥ 2,000 real messages, every fire human-reviewed. | Product + physician review of every fire | **YES** |
 | 13 | **The proofs in §11 actually gate a merge.** Registration in `scripts/unit-suite.json` does not — `core-gate.yml:112` carries `continue-on-error: true`, and the blocking workflow is `paths:`-filtered with no `lib/health/**`. Requires all three steps of §11.0, landed and verified on a `lib/health`-only PR. Engineering, not clinical — and blocking anyway, because every row above it is enforced by a proof that would not run. | Engineering lead | **YES** |
 | 14 | **A triage hold is released only by a named operator** (§1.5 R2, H-5), and an operator surface exists to do it. A hold nobody can release is an outage; a hold anybody can release is not a hold. | Group operations + engineering | **YES** |
-| 15 | **The `SHARE*` change to `lib/ai/symptom-frames.ts`** (§2.4): `RELATION_WORDS` exported, and `NOT_A_PERSON` carrying the clinic place list. **Corrected: this row over-claimed.** Driven, §2.4's three-person lexicon closes B3 **by itself, with no frame anchor** — all fourteen strings fire without `RELATION_WORDS`. What actually depends on this row is the *second* half: five ordinary clinic sentences (`«العيادة عندها ازدحام»`, `«الفرع عنده زحمة»`, `«المستشفى عنده طوارئ»`, `«الاستقبال عنده مشكلة»`, `«المجمع عنده تأخير»`) read as a person reporting a symptom to any caller that uses `FRAME_WORDS`, because `NOT_A_PERSON` is a restaurant place list. Still blocking, for that reason and not the stated one. | Engineering lead | **YES** |
+| 15 | **The `SHARE*` change to `lib/ai/symptom-frames.ts`** (§2.4): **`PERSON_WORDS` gains `طفلي · رضيعي · جدي · جدتي`** (corrected in Wave 1.7 — S3: the constant the first draft asked to be created, `RELATION_WORDS`, is already exported as `PERSON_WORDS` and `FRAME_WORDS` is already composed from it; a second constant would be the duplicate the file exists to prevent), and `NOT_A_PERSON` carrying the clinic place list. **Corrected: this row over-claimed.** Driven, §2.4's three-person lexicon closes B3 **by itself, with no frame anchor** — all fourteen strings fire without any person anchor at all. What actually depends on this row is the *second* half: five ordinary clinic sentences (`«العيادة عندها ازدحام»`, `«الفرع عنده زحمة»`, `«المستشفى عنده طوارئ»`, `«الاستقبال عنده مشكلة»`, `«المجمع عنده تأخير»`) read as a person reporting a symptom to any caller that uses `FRAME_WORDS`, because `NOT_A_PERSON` is a restaurant place list. Still blocking, for that reason and not the stated one. | Engineering lead | **YES** |
+| 16 | **`«شربت الدواء مع المويه»` still fires `poisoning/emergency`, deliberately (T3).** `شرب` is a SWALLOW verb, and *drinking* a medicine is both the ordinary way an Arabic speaker describes taking a syrup **and** how a parent reports a child who drank one. The verb split that closes `«أخذت الدواء الصبح»` cannot separate them, and narrowing `شرب` takes `«شرب ديتول»` and `«شرب مبيد»` with it. Accepted over-fire, carried here rather than traded away. Is that the right line? | Physician | **YES** |
+| 17 | **§2.9 rule 2 is now a WHITELIST, not a blacklist (T6).** `«أموت على X»` fires only when `X` is an enumerated first-person life object; every other complement is quiet. That closes `«أموت على المندي»` and the open-ended food vocabulary behind it, and it **trades recall for precision in the one class where under-firing is death** — a phrasing of ideation on a life object nobody enumerated is silent. The enumerated set is `نفسي · حالي · روحي · عمري · الدنيا · الحياه · كل شي · العيشه · اهلي · وضعي`. Is that set complete enough to invert the rule on? | Mental-health clinician + native Najdi speaker | **YES** |
+
 
 ### Sign-off
 
@@ -2416,6 +2724,7 @@ before any real patient message reaches this system.
 | 10 | | | | |
 | 12 | | | | |
 | 13–15 | | | | |
+| 16–17 | | | | |
 
 **Until every row above is filled, this specification describes a system that must not receive a
 real patient message.** Shadow mode, with the rail silent, is the only permitted deployment.
@@ -2454,7 +2763,7 @@ Read against `SPEC-2-PERSONA.md` and `SPEC-3-REUSE.md` as they stand on 2026-09-
 2b. **Booking spec:** `checkBookingTriageHold` at the write path of `create_appointment`,
    `confirm_hold` and `reschedule` (§1.5 R2, H-2). Fail-closed. This is the mechanism behind
    §1.2's *"not revisable by later turns"*, which had none.
-2c. **SPEC-3 / Kivo-side:** `lib/ai/symptom-frames.ts` must export `RELATION_WORDS` and carry a
+2c. **SPEC-3 / Kivo-side (amended, S3):** `lib/ai/symptom-frames.ts` already exports `PERSON_WORDS` and already composes `FRAME_WORDS` from it — do **not** add `RELATION_WORDS`. It must gain `طفلي · رضيعي · جدي · جدتي` in `PERSON_WORDS`, and carry a
    clinic place list in `NOT_A_PERSON` before Faysal's airway family can hear a parent (§2.4).
    Its SPEC-3 verdict moves SHARE → **SHARE\***.
 2d. **Kivo-side, found while writing §2.4 and reported upstream, not only forked:**
@@ -2498,7 +2807,7 @@ CI files read. Where driving contradicted the audit, the spec says so and shows 
 |---|---|---|
 | **B1** — a booking frame silences HARD classes, including stroke | **new §1.5 R1**; §1.2 row 5; §2.2 `شلل` rule; near-miss reasons rewritten in §2.1, §2.2, §2.4, §2.5, §2.6, §2.7 | Hardness is absolute: `BOOKING_FRAME_RE` is consulted only for SOFT candidates, and no HARD near-miss is explained by a frame any more — each is explained by a test that is in the message. |
 | **B2** — the rail is escapable on the next turn; there is no hold | **new §1.5 R2**; §1.3 tier table; §11.8 | `health_conversations.triage_hold` + `ownership_state = "SYSTEM_HOLD"`, forked from `lib/db/safety-hold.ts` / `safety-hold-guard.ts`, set in `pageHuman()`, read by `checkBookingTriageHold` **at the write**, fail-closed on read error, released only by a named operator. §11.8 asserts refusal on the turn *after* the rail fired. |
-| **B3** — the airway family is first-person only | §2.4 rewritten; §11.1 | Fourteen driven `*** DEFECT *** quiet` lines from the real detector, then a three-person lexicon (relation subject + `يقدر/تقدر/يقدرون` + `حلقه/حلقها`, `شفايفه/شفايفها`, `لسانه/لسانها`, `وجهه/وجهها`). **Correction to the audit's proposed fix:** `FRAME_WORDS` alone does **not** close it — driven, it is `false` on all six third-person airway strings, because its relation list is welded to a possession verb. The named change to `symptom-frames.ts` is `RELATION_WORDS` as its own export. |
+| **B3** — the airway family is first-person only | §2.4 rewritten; §11.1 | Fourteen driven `*** DEFECT *** quiet` lines from the real detector, then a three-person lexicon (relation subject + `يقدر/تقدر/يقدرون` + `حلقه/حلقها`, `شفايفه/شفايفها`, `لسانه/لسانها`, `وجهه/وجهها`). **Correction to the audit's proposed fix:** `FRAME_WORDS` alone does **not** close it — driven, it is `false` on all six third-person airway strings, because its relation list is welded to a possession verb. The named change to `symptom-frames.ts` was `RELATION_WORDS` as its own export; **amended in Wave 1.7 (S3): that export exists at `HEAD` under the name `PERSON_WORDS`, and what is still missing is four members — `طفلي · رضيعي · جدي · جدتي`.** |
 | **B4** — cardiac cannot hear «ألم بالصدر» / «ألم في الصدر» | §2.1 | `الصدر` · `بالصدر` · `في الصدر` · `على الصدر` enumerated. Driven: all nine defect strings fire; the near-miss corpus is unchanged, including four chest-X-ray sentences that carry the term and are held only by the predicate requirement (paired in §11.2). |
 | **B5** — the hemorrhage rule is narrower than its own Fires list | §2.3 | Verb forms become terms (`ينزف` shares no substring with `نزيف` — verified); `شديد\|غزير\|قوي\|بقوه\|واجد\|فوار\|هدار\|مستمر` added; `جرح` becomes a site; `براز أسود` becomes a standalone; gum/nose and resolved vetoes moved **outside** the predicate test. Driven 34/34. |
 | **B6** — three incompatible ER models | §4.4 ownership note; §13 item 2 | `erSites({ now })` is the single model and **this document owns it**. SPEC-2's boolean is deleted; SPEC-1 §11 MED-2 points here; SPEC-1's `er` hours layer is re-scoped to informational-only and never feeds the rail. |
@@ -2637,3 +2946,74 @@ corpus. After this pass: **314 / 314**.
   pass is a clinical judgement. The four new clinical questions this pass raised — the accepted
   `ما عاد` over-fire (row 1), the post-extraction gum bleed (row 2), the chronicity downgrades in
   §2.6/§2.7, and the `«دم مع البول»` tier — were **added to the rows that block**, not resolved.
+
+---
+
+## Wave 1.7 remediation — `AUDIT-WAVE1.6.md`'s seven blockers, and the code
+
+**This is the wave where the specification became a module.** `lib/health/safety/` and
+`scripts/proof-faysal-safety.test.ts` exist; every number below is printed by that proof on
+every run rather than transcribed into this document by the hand that wrote the rules — which
+is the arithmetic that produced "314 of 314" and could not be reproduced.
+
+### The audit's central finding, and what was done about it
+
+> **§2.0's law is asymmetric.** L6 mirrors every Fires entry into `MUST_FIRE` and mirrors
+> **nothing** into `MUST_BE_QUIET`. Precision has no mirror, and *both* new false-positive
+> families came from lists the same law mandated be enumerated (L3).
+
+**§2.0 L8 — the precision mirror — is added**, and it is the ruling this wave turns on. Every
+member of every enumerated `TERM` / `SITE` / `PREDICATE` / `STANDALONE` set is mirrored into
+`MUST_BE_QUIET` as the ordinary clinic sentence that carries that member without the finding,
+and the proof **fails if a member has no pairing**. Two further §2.0 amendments settle the two
+sentences the audit named: **L6** picks one normalization discipline (the assertion, not a build
+step), and **L2** states that `ADJ`'s operands are §1.2-matched terms, not bare literals.
+
+### The seven blockers
+
+| ID | What it was | Where it is closed |
+|---|---|---|
+| **T1** | §2.0 L6 said two incompatible things about normalization; 57 entries in 7 of 9 classes were dead, including the one §2.8's own note claims to have fixed, and it took B4's ACS-with-diaphoresis fix down with it | **L6's build-time clause struck**; **59 entries normalized in place** by a driven sweep over every operative block in §2.1–§2.9 (the audit found 57; the sweep found two more it had merged — `«أسناني»` in §2.3's hygiene set and `«جرعة»` in §2.7's qualifier list). §11.1's `list === list.map(normalizeAr)` is now a real test and it is green. |
+| **T2** | `نفسه · نفسها` in §2.4's BREATHE + ARM 1's bare negation → seven ordinary clinic sentences raised an airway emergency and an operator-release-only booking lock | **struck from BREATHE** (§2.4), with the T2 note, seven near-miss rows, and the reasoning for why a right-hand guard cannot work and ARM 3's person anchor already does |
+| **T3** | §2.7's pills-only exclusion covered one object of fifteen → a patient taking prescribed medicine raised a poisoning emergency | **MEDICATION sub-list named and the exclusion scoped to it** for TAKE verbs only; ten near-miss rows; `«شربت الدواء مع المويه»` kept as a **named** accepted over-fire (§12 row 16) rather than silently traded |
+| **T4** | N6's downgrades reached the rule and the reason and never the table; two near-miss rows fire at `urgent` while sitting under "Must NOT fire" | **§11.2**: a near-miss row whose reason annotates a tier is asserted `tier === "urgent"`, never `fired === false`. The rows stay where they are; the assertion changed. A third such row (§2.3's `«رعاف ما يوقف»`) is named. |
+| **T5** | Two classes narrower than their own Fires lists: `«طفلي حرارته ما تنزل»` silent at every tier, `«البخاخ ما نفع»` unreachable | **§2.6** gains the five child markers and a fever-persistence predicate; **§2.4** gains **ARM 7b**, the rescue-failure phrases as STANDALONE with no `ربو` required |
+| **T6** | §2.9's exclusion set was unenumerated in explicit violation of L3, in the one class where §1.3 says the over-fire cost is itself a safety cost — `«أموت على المندي»` fired the suicide rail | **rule 2 is INVERTED** into a `LIFE_OBJECT` whitelist; `IDIOM_FRAME` and `DISEASE_OBJECT` enumerated (the latter sourced from `ALLERGEN_TERMS`, imported not copied); the verb set named (S5); §12 row 17 carries the recall trade to a clinician |
+| **T7** | L2 and L7 specified two different compositions and the document never said which won; under L2, ARM 2 was silent on the exact string it claims to fix | **L2 clause added**, with the driven table for `«عندي صعوبة بالتنفس»` under both readings |
+
+### Should-fixes closed here
+
+- **S1** — §5.3's rewritten `availability` guard was written un-normalized while §5.2 says the
+  banned shapes are matched normalized, so the N1 fix was dead under the document's own matching
+  discipline. **The block is rewritten normalized**, with the driven four-line probe in place.
+- **S3** — the `RELATION_WORDS` prescription is already implemented at `HEAD` as `PERSON_WORDS`,
+  and following the PR list as written would create the duplicate `symptom-frames.ts` exists to
+  prevent. **Both specs now point at `PERSON_WORDS`**, and the prescription is reduced to the
+  four members it actually lacks (`طفلي · رضيعي · جدي · جدتي`) — §2.4, §12 row 15, §13 item 2c,
+  and SPEC-3 §10.2 / S12.
+- **S5** — §2.9 declared `TERM/PREDICATE/SITE` empty while rule 1 defined a verb set. The set is
+  named.
+- **S6** and the rest of the un-normalized tail are inside T1's sweep.
+
+### Deferred, and named rather than fixed
+
+- **S2** — §1.4's three dead regex alternatives (`إذا`, `إن`, `نتيجة (?:ال)?تحليل`) are all
+  shadowed by a live alternative, so nothing is silent. They stay as written until §11.1's
+  normalization assertion is extended to reach §1.4's regexes, which is a Wave 2 item.
+- **S4** — §13's upstream findings about `detectAllergenEmergency` were correct at `e1791f5`
+  and are being closed in this tree. Recorded in §13, not re-litigated here.
+
+### What the audit was right about that this document had claimed otherwise
+
+- **The 314/314 could not be reproduced, and it should not have been stated.** The audit's
+  mechanical rebuild gave 354 assertions and 303/354 literal · 349/354 normalized. §2.0's
+  "measured by" paragraph now carries **both** numbers and points at the proof for the live one.
+- **Enumeration without a precision obligation is how L3 became a false-positive source.** That
+  is the finding of the whole audit and L8 is written from it verbatim.
+
+### Still not signed, and the list got longer
+
+Nothing in this pass is a clinical judgement, and **no §12 row was filled in**. Two rows were
+**added**: row 16 (`«شربت الدواء»` as a named accepted over-fire) and row 17 (§2.9's inversion
+trades recall for precision in the class where under-firing is death). The specification still
+describes a system that must not receive a real patient message.
