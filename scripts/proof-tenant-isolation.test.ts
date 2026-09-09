@@ -90,6 +90,9 @@ function proveInventoryCompleteness(): void {
   });
 
   const report = existsSync(REPORT_PATH) ? read("scripts/proof-tenant-isolation-report.md") : "";
+  // A merge that leaves conflict markers in the report still has every row present,
+  // so the coverage check above passes over them. It happened once; not twice.
+  check("inventory report carries no merge-conflict markers", !/^(<{7}|={7}|>{7})( |$)/m.test(report));
   for (const heading of [
     "Guarded",
     "Guarded By Non Obvious Means",
