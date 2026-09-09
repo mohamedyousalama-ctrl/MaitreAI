@@ -1,4 +1,24 @@
 // ============================================================================
+// FROZEN SNAPSHOT — the airway family AS THE AUDIT BLOCKED IT (`dc6c9f9`) — the widened, over-firing version.
+//
+// DO NOT EDIT. DO NOT IMPORT FROM PRODUCTION CODE. This is a byte-exact copy of
+// `lib/ai/allergen-emergency.ts` as of commit `dc6c9f9`, with its two relative
+// imports repointed. It exists for ONE reason: so that
+// `scripts/proof-airway-derivation.test.ts` can DRIVE the differential — old module vs
+// new module, on the same corpus, in the same process — instead of asserting it.
+//
+// WHY A SNAPSHOT AND NOT `git show`: the audit that blocked this change proved its
+// numbers by re-pointing an import at a historical revision by hand. That is not
+// reproducible in CI (shallow clones have no history) and it is not reproducible by a
+// reader. A checked-in snapshot makes every number in the proof re-derivable by anyone
+// who runs it, which is the whole point of the exercise.
+//
+// It depends on the LIVE `allergen-gate.normalizeAr` and `symptom-frames.PERSON_WORDS`
+// on purpose: the differential is meant to isolate the PATTERNS that changed, not the
+// shared normalizer, which did not.
+// ============================================================================
+
+// ============================================================================
 // MaitreAI — Allergy EMERGENCY detector (Allergy-Companion §5) — PURE, no I/O.
 //
 // The NARROW, present-tense "this is happening NOW" detector. In companion mode
@@ -20,10 +40,10 @@
 // customer-turn.ts). Flag-OFF, the legacy gate/symptom path is byte-identical.
 // ============================================================================
 
-import { normalizeAr } from "./allergen-gate";
+import { normalizeAr } from "../../lib/ai/allergen-gate";
 // The people a message can be ABOUT. One list, shared with the symptom detectors — see
 // symptom-frames.ts for why a second copy is not an option.
-import { PERSON_WORDS, FRAME_WORDS, NOT_A_PERSON } from "./symptom-frames";
+import { PERSON_WORDS } from "../../lib/ai/symptom-frames";
 
 export interface EmergencyHit {
   fired: boolean;
@@ -90,72 +110,21 @@ const HYPOTHETICAL_Q_RE = /(?:ممكن|يمكن|هل|ينفع|يصير|احتم�
 // have been a fourth. So the airway family is no longer WRITTEN AS SENTENCES. It is the cross
 // product of the four slots the language actually varies — NEGATION × ABILITY × PERSON ×
 // PREPOSITION — composed from the named lists below, and `scripts/proof-airway-derivation.test.ts`
-// drives the whole product instead of a list somebody thought of. A slot that
+// drives the whole product — 8,353 derived must-fire strings against 6,293 that must stay
+// quiet — instead of a list somebody thought of. A slot that
 // is missing a value is now a hole in a LIST, which a reader can see, rather than a hole in a
 // sentence, which nobody can.
 //
-// AND THE FIRST VERSION OF THAT WIDENING WAS BLOCKED, BECAUSE THE SENTENCE THAT USED TO SIT
-// HERE — "every alternative still requires a BREATH WORD, and there is no ordinary restaurant
-// sentence in that shape" — WAS FALSE, AND THE PROOF COULD NOT SAY SO.
-//
-// «نفس» IS a breath word. It is also "the same" and "himself", and «ما» is also the last two
-// letters of «دايما». 3,993 ordinary Saudi restaurant strings — «دايما ناخذ نفس الطلب» ("we
-// always order the same thing") among them — raised a full allergy emergency, which on this
-// path means a WhatsApp to a real human phone and a fabricated allergy note on a kitchen
-// ticket. The proof read 14,696/14,696 throughout, because its quiet corpus was derived from
-// the SAME AXES as its firing corpus and so could not contain a single string the widening
-// touched. See `docs/audits/AUDIT-airway-derivation.md`.
-//
-// WHAT IS STILL DEAF HERE, ON PURPOSE, SO THE NEXT READER INHERITS THE DECISION RATHER THAN
-// RE-DERIVING IT. Each of these is a real gap, driven and confirmed silent; each is deferred
-// because closing it is a WIDENING, and this file has just been blocked once for shipping a
-// widening whose quiet side was never derived. They belong in their own work item, with their
-// own quiet corpus, not appended to the end of the fix for the last one.
-//
-//   «صدري ضايق» / «صدري مسدود» — the chest. «صدر» is in no body list. It is deferred and not
-//     forgotten: «ضاق صدري من الانتظار» ("I got fed up waiting") is one of the most common
-//     idioms in a complaints inbox, so «صدر» + the tightness verbs needs exactly the design
-//     work family C needed above — the verb split and the agreement rule — not a list entry.
-//   Arabizi — `ma agdar atnafas`, `mo gader atnaffas`. Neither arm sees Latin-script Arabic at
-//     all. That is a THIRD language surface with its own axes and its own homographs («mat»,
-//     «shafa», «nafs»), so it needs its own derivation and its own ordinary corpus in Latin
-//     script. Nothing here can be extended to reach it.
-//   «ما اقدر اتنفص» (س→ص) and the rest of the typo space — that is the phonetic/fuzzy layer's
-//     job (`proof-phonetic-typed-scope`), not a literal axis. Adding spellings one at a time
-//     to a literal list is the anti-pattern this file exists to stop.
-//   «اغمي عليه» / «فقد الوعي» / «he passed out» — loss of consciousness is a DIFFERENT
-//     emergency family, not an airway one, with its own homographs («أغمي عليه من الضحك»,
-//     "passed out drunk"). It deserves its own signal, label and quiet side.
-//   «حلقي ضيق» — found while driving this change and silent in EVERY version including the
-//     pre-widening one, so it is not a regression. `THROAT_CLOSES` carries «يضيق» and «ضاق»
-//     but not the bare adjective «ضيق». Deferred for the same reason as the rest: «حلقة ضيقة»
-//     is a narrow ring, so the widening needs its quiet side driven first.
-//
-// SO THE RULE IS NOT "REQUIRE A BREATH WORD" ANY MORE. It is: require a breath word, and where
-// that word is a homograph, say WHICH READING by a property of the grammar — a word boundary,
-// a construct, an agreement — never by a list of the complements somebody thought of. Each
-// guard below carries the sentence that got past it. And the proof's quiet side is now derived
-// from ordinary Arabic rather than from these axes, and driven against BOTH the pre-widening
-// and the widened module, so it can fail.
+// WHY WIDENING HERE IS SAFE AND NARROWING IS NOT: every alternative below still requires a
+// BREATH WORD («تنفس»/«نفس») or a BODY PART with a possessive glued to it. There is no ordinary
+// restaurant sentence in that shape — the proof re-drives every "must stay quiet" string from
+// `proof-allergy-false-positives.test.ts` and every clean voice control from the eval set to
+// keep it that way.
 // ============================================================================
 
 /** NEGATION — every particle Arabic uses to say "not", including the Egyptian ما…ش circumfix
  *  fused onto the verb («مقدرش»). Longest first, so «ماني» is not eaten by «ما». */
 const NEG =
-  // A LEFT WORD BOUNDARY, WHICH THIS FAMILY WAS THE ONE PLACE TO OMIT. `\b` is meaningless
-  // for Arabic in JS, so `allergen-gate.ts`'s `termRegex()` uses `(?<![ء-ي])` — «لبن» must
-  // not match inside «البندق». Without it «ما» matched INSIDE every ordinary word that ends
-  // in it — «دايما»، «عموما»، «لما»، «كما»، «بينما»، «طالما»، «عندما»، «مهما»، «حينما» — and
-  // «دايما ناخذ نفس الطلب» ("we always order the same thing"), a returning customer's most
-  // ordinary sentence, raised a full allergy emergency and sent a WhatsApp to a real phone.
-  //
-  // THE PROCLITIC GOES INSIDE THE BOUNDARY, NOT AROUND IT — the same shape as the `(?:ال)?`
-  // in `termRegex()`. «و» and «ف» glue straight onto the particle («تعبان وما أقدر أتنفس»,
-  // «فما أقدر أتنفس»), so a bare `(?<![ء-ي])` would have silenced them: a fix that trades one
-  // deaf spot for another. Written this way the conjunction is part of the match and the
-  // boundary is checked BEFORE it, so «عموما» — which contains «وما» — is still excluded,
-  // because its «و» has an Arabic letter in front of it.
-  "(?<![ء-ي])[وف]?" +
   "(?:ماقدرش|مقدرتش|مقدرش|ماعرفش|معرفش|مبقتش|مبقاش|ماني|مانها|مانه|ماهو|ماهي|مهوب|موب|مش|مو|مب|ما|مني)";
 
 /** "NO LONGER" — the slot that was missing entirely. «ما عاد»/«ما بقيت» is what someone says
@@ -167,9 +136,7 @@ const NO_LONGER = "(?: ?(?:عاد|عادت|عادوا|بقي|بقيت|بقت))?"
  *  genders. Optional: «ما عاد يتنفس» ("he no longer breathes") carries none, and requiring one
  *  is exactly what silenced it. */
 const ABLE =
-  // «فيني»/«فينا» is the LEVANTINE ability auxiliary — «ما فيني اتنفس» is how the Levant says
-  // "I can't breathe", and it was in no slot, so the sentence was silent in both lists.
-  "(?: ?(?:[ايتن]قدر|بقدر|قدر|قادر(?:ه|ين)?|عارف(?:ه|ين)?|[ايتن]عرف|[ايتن]ستطيع|[ايتن]تمكن|فيني|فينا))?";
+  "(?: ?(?:[ايتن]قدر|بقدر|قدر|قادر(?:ه|ين)?|عارف(?:ه|ين)?|[ايتن]عرف|[ايتن]ستطيع|[ايتن]تمكن))?";
 
 /** BREATHE — the PERSON axis. «اتنفس» is me, «يتنفس» is him, «تتنفس» is her/you, «نتنفس» is us,
  *  «التنفس» is the verbal noun. Only «ا» and «ال» were ever accepted, which is why a parent
@@ -183,83 +150,18 @@ const POSS = "(?:ها|هم|نا|ي|ه)";
 /** THE PREPOSITION SLOT in «صعوبة … التنفس». It was the literal «في». Gulf says «بالتنفس»,
  *  Najdi contracts «في ال» to «فال», and the article detaches or glues on either way. All of it
  *  optional — «صعوبة تنفس» carries no preposition at all. */
-const IN = "(?: ?(?:في|ب|ف)? ?)";
-
-/** «نفس» IS THREE WORDS AT ONCE AND ONLY ONE OF THEM IS A BREATH. Arabic writes no short
- *  vowels, so one string carries نَفَس ("breath"), نَفْس ("self") and the construct head
- *  «نفس X» = "the SAME X". The bare noun was accepted anywhere a breath was expected, and
- *  «عندي صعوبة في نفس الطلب» ("I have trouble with the same order") became an ambulance call.
- *
- *  THE TELL IS STRUCTURAL, NOT LEXICAL. The breath reading is unambiguous whenever the noun
- *  carries the verbal-noun «ت» («تنفس»/«التنفس») or the article («النفس»); the "same" reading
- *  is a CONSTRUCT HEAD and is therefore always BARE and always followed by a definite noun.
- *  So the guard belongs on bare «نفس» alone, and what it excludes is that construct.
- *
- *  IT IS NOT «ANY «ال» AFTER «نفس»», WHICH IS THE OBVIOUS FIX AND IS WRONG: «عندي صعوبة في
- *  التنفس الحين» and «ضيق نفس الحين» — a difficulty breathing RIGHT NOW — end in exactly that
- *  shape, and a blanket lookahead silences them. «الحين»/«الان» are clause-level urgency
- *  adverbs, not construct complements: "the same moment" is «بنفس الوقت», never «نفس الحين». */
-const NOT_THE_SAME = "(?! ?ال(?!(?:حين|ان|له)(?![ء-ي]))[ء-ي])";
-/** THE SAME GUARD ON THE VERB'S OBJECT, WHICH NEEDS TO BE WEAKER, AND HERE IS THE MEASUREMENT
- *  THAT SAYS SO. «آخذ نفس ال…» has no left-hand tell at all — «ما عاد أقدر آخذ نفس الطلب» ("I
- *  can no longer take the same order") and «ما أقدر آخذ نفس الطفل تعبان» ("I can't take a
- *  breath, the child is exhausted") are the same six words in the same order. Applying the
- *  full guard silenced 18 airway strings that the PRE-WIDENING module already heard, which is
- *  a regression and not a narrowing. (The audit's own proposed lookahead, `(?! ?ال[ء-ي])`,
- *  is the same mistake made harder: driven against the blocked module over 2,496 airway
- *  strings it silences 420 of them and regresses 84 against pre-widening — and the proof as
- *  it stood passed 14,696/14,696 with it applied, because no assertion in that corpus ever
- *  put a word after the breath noun. Every number here is re-derived by §8 of the proof.)
- *  The difference is that «نفس الطلب» is the OBJECT of the verb and therefore ENDS the clause,
- *  while a run-on emergency keeps going. So the object reading is refused only when the
- *  definite noun is the last word in the clause — and never for a TIME word, because «اليوم»
- *  cannot be the object of "take" in the first place («نفس اليوم» needs a preposition).
- *  A trailing word after the noun leaves the string FIRING, which is the safe direction. */
-const NOT_THE_SAME_OBJECT = "(?! ?ال(?!(?:حين|ان|له|يوم|ليله)(?![ء-ي]))[ء-ي]+\\s*$)";
-/** The breath noun in the spellings that can ONLY be a breath. */
-const BREATH_UNAMBIGUOUS = "(?:(?:ال)?تنفس|النفس)";
-/** …AND THE OTHER HALF OF THE SAME PROBLEM, WHICH THE OBVIOUS FIX GETS BACKWARDS.
- *  «ضيق نفس» is a fixed compound and the bare «نفس» in it is unavoidable, so a right-hand
- *  guard cannot be the whole answer: «ضيق نفس اليوم», «عندي ضيق نفس الله يخليكم» and «ضيق نفس
- *  الطفل تعبان» are run-on emergency messages in exactly the blocked shape, and a lookahead
- *  that refuses a following definite noun silences all of them — 420 of 2,496 driven airway
- *  strings, 84 of which the PRE-widening module already heard.
- *
- *  The «الفرع الثاني» in «المحل ضيق نفس الفرع الثاني» is not distinguishable on the RIGHT.
- *  It is distinguishable on the LEFT: there «ضيق» is an ADJECTIVE and «المحل» is its subject,
- *  and an adjectival subject is a definite noun sitting immediately in front. A symptom
- *  report has no such subject — it opens the clause, or it sits in one of the personal frames
- *  `symptom-frames.FRAME_WORDS` already exists to name («عندي», «فيني», «ابني عنده»).
- *  «السلام عليكم ضيق نفس» keeps firing, because «عليكم» is not a definite noun. */
-const NO_DEFINITE_SUBJECT = "(?<!(?:^|[\\s،,.؛!؟])ال[^\\s]{0,12} )";
+const IN = "(?: ?(?:في|ب|ف)? ?(?:ال)?)";
 
 // The composed airway alternatives. Each is one SHAPE, not one sentence.
 /** «ما أقدر أتنفس» / «مو قادر يتنفس» / «ما عاد يقدر يتنفس» / «مقدرش اتنفس» / «ما عاد يتنفس». */
 const CANNOT_BREATHE = `${NEG}${NO_LONGER}${ABLE} ?${BREATHE}`;
 /** «ما أقدر آخذ نفس» — the same shape with the noun instead of the verb. */
-const CANNOT_TAKE_BREATH =
-  // «اخد» WITH A DAL is the Egyptian spelling of the verb, and only «اخذ» was listed — so
-  // «مش قادر آخد نفسي», the Egyptian sentence, was silent while its Gulf twin fired. The
-  // circumfix was a covered axis; the verb it attaches to was not.
-  `${NEG}${NO_LONGER}${ABLE} ?(?:[ايتن]?اخ[ذد]|اسحب) ?(?:النفس|نفس${NOT_THE_SAME_OBJECT})`;
+const CANNOT_TAKE_BREATH = `${NEG}${NO_LONGER}${ABLE} ?(?:[ايتن]?اخذ|اسحب) ?(?:ال)?نفس`;
 /** «توقف عن التنفس» / «بطل يتنفس» — reported as an event rather than an inability. No
  *  negation particle at all, which is why the negation axis alone would still have missed it. */
 const BREATHING_STOPPED = `(?:توقف|توقفت|وقف|وقفت|بطل|بطلت|انقطع|انقطعت|حبس) ?(?:عن )?${BREATHE}`;
 /** «صعوبة في التنفس» / «صعوبة بالتنفس» / «ضيق في التنفس» / «ضيق نفس» / «صعوبة تنفس». */
-const BREATHING_DIFFICULTY =
-  // the breath noun in a spelling that can only be a breath — any head, any preposition
-  `(?:صعوبه|صعوبات|ضيق)${IN}${BREATH_UNAMBIGUOUS}` +
-  // the fixed compound «ضيق نفس», which has no adjectival subject in front of it…
-  `|${NO_DEFINITE_SUBJECT}ضيق ?نفس(?![ء-ي])` +
-  // …or sits in a personal frame, which is what a symptom report looks like
-  `|(?:${FRAME_WORDS})[^.،,؛!؟\\n]{0,12}?ضيق ?نفس(?![ء-ي])` +
-  // «ضيق في نفس» / «ضيق بنفس» — WITH a preposition the compound is broken, so the construct
-  // guard applies again and there is no run-on to protect: «الشارع ضيق بنفس الطريقة» is a
-  // street, «فيه صعوبة في نفس الوقت» is a timetable.
-  `|ضيق ?(?:في|ب|ف) ?نفس${NOT_THE_SAME}` +
-  // «صعوبة نفس» — bare, and «صعوبة» never governs an adjectival subject, so the construct
-  // guard is the whole test here: «عندي صعوبة في نفس الطلب» is about an order.
-  `|(?:صعوبه|صعوبات)${IN}نفس${NOT_THE_SAME}`;
+const BREATHING_DIFFICULTY = `(?:صعوبه|صعوبات|ضيق)${IN}(?:ت)?نفس`;
 /** «صعب علي التنفس» — the same statement with the difficulty as a verb. */
 const HARD_TO_BREATHE = `(?:صعب|يصعب|صعبه) ?(?:عل(?:ي|يه|يها|يهم|ينا|يك))? ?(?:ال)?تنفس`;
 
@@ -271,86 +173,20 @@ const BREATH_TIGHT =
  *  «نفسي ضايق من الخدمة» — a complaint — opened the ambulance path. */
 const NOT_THE_IDIOM =
   "(?! ?من ?(?:ال)?(?:خدمه|تعامل|انتظار|تاخير|وضع|كلام|رد|سوالف|طريق|زحمه))";
-// THIRD PERSON: THE PERSON ANCHOR IS RIGHT, AND IT IS WHAT LET THE IDIOM IN.
-//
-// «نفسه» is "his breath" AND "itself", so «الطلب نفسه واقف» ("the order itself is stalled") —
-// an ordinary delivery sentence — had to be excluded, and naming a PERSON is the correct way
-// to do it: that non-widening is load-bearing and stays. But `PERSON_WORDS` is a list of
-// HUMANS, and with a human subject «نفسه» has a THIRD reading the object reading does not:
-// the emphatic reflexive, "himself". So the anchor that excludes the object reading admits
-// «أبوي نفسه واقف معنا بالمحل» ("my dad HIMSELF is standing with us"), and alongside it the
-// idiom «نفسه ضايق» = "he is fed up". 3,654 ordinary strings reached the WhatsApp alert.
-//
-// The only thing standing between them and the ambulance was `NOT_THE_IDIOM`, a CLOSED LIST
-// OF TEN COMPLEMENTS: «صاحبي نفسه ضايق من الخدمة» was quiet because «خدمه» is one of the ten,
-// and «صاحبي نفسه ضايق من الأسعار» was an emergency because «اسعار» is not. That is exactly
-// the "list of sentences somebody thought of" this whole change exists to kill, and it cannot
-// be finished — the complements are open.
-//
-// SO THE GUARD IS GRAMMAR INSTEAD OF VOCABULARY, on two axes:
-//
-//   THE VERB. «ضايق»/«ضاق»/«يضيق» with «نفس» IS the fed-up idiom, and «واقف»/«بيقف» with a
-//   human is the emphatic reflexive standing somewhere. Neither is separable from the airway
-//   reading by anything to their right. They are dropped from the THIRD PERSON only; the
-//   first-person «نفسي ضايق», where the sender is reporting their own body and the fail-safe
-//   argument is strongest, is unchanged.
-//
-//   AGREEMENT. نَفَس ("breath") is grammatically MASCULINE whoever it belongs to, so a
-//   FEMININE predicate after «نفسها» is about the woman, not about her breath: «أختي نفسها
-//   مقطوعة من الشغل» ("cut off from work") cannot be an airway, while «أختي نفسها مقطوع»
-//   would be. Hence the masculine forms only, with a right boundary so «مقطوع» cannot match
-//   inside «مقطوعه».
-//
-// WHAT THIS COSTS, NAMED: the bare «ابني نفسه ضايق» from a parent no longer fires. It is a
-// real reading and this is a deliberate trade. Everything else a parent says still does —
-// «ابني ما يقدر يتنفس», «ابني ما عاد يتنفس», «ابني عنده ضيق نفس», «ابني عنده صعوبة في
-// التنفس», «حلقه يقفل», «حلقه مقفل», «شفايفه زرقاء», and «ابني يختنق», which is new below and
-// is what a parent actually types. Trading one ambiguous phrasing for an unambiguous one that
-// was previously silent is a net gain in what this file can hear.
-/** The CUT verbs, masculine only (see agreement above), and never "cut off FROM" something —
- *  «عن» is the particle of ceasing an activity («انقطع عن الدوام»), never of a breath. */
-const BREATH_CUT_THIRD = "(?:مسدود|مقطوع|انقطع)(?![ء-ي])(?! ?عن(?![ء-ي]))";
+/** THIRD PERSON NEEDS A PERSON NAMED, and this is the one slot where that is true. «نفسه» is
+ *  "his breath" AND "itself": «الطلب نفسه واقف» ("the order itself is stalled") is an ordinary
+ *  delivery sentence and would otherwise have become an ambulance call. So the third-person
+ *  breath is admitted only with one of `symptom-frames.PERSON_WORDS` in front of it — the same
+ *  shared list the symptom detectors use, imported rather than copied. */
 const BREATH_TIGHT_THIRD =
-  `(?:${PERSON_WORDS})[^.،,؛!؟\\n]{0,12}?نفس(?:ه|ها|هم) ?${BREATH_CUT_THIRD}`;
-
-/** CHOKING / SUFFOCATING — THE ENTIRE FAMILY WAS ABSENT IN BOTH LANGUAGES. «ابني يختنق» is
- *  the sentence a parent types when a child's airway is blocked by a swelling throat, and no
- *  detector on any surface heard it. It is not a missing value in a slot; it is a missing
- *  signal, and it is the most urgent one this file can receive.
- *
- *  «اختنق» also describes traffic and stuffy rooms — «اختنقت الشوارع», «الجو مختنق»,
- *  «المكان مختنق بالزحمة» — so it is admitted only with a PERSON or a first-person marker in
- *  front of it, the same anchor the third-person breath uses. A bare «مختنق» with no subject
- *  is deliberately NOT admitted: with no subject the room reading is the common one. */
-const CHOKE_VERB = "(?:يختنق|تختنق|بيختنق|بتختنق|بختنق|نختنق|اختنقت|اختنق|مختنقه|مختنق)";
-const CHOKING = `(?:${PERSON_WORDS}|انا|اني|احس|حاسس|حاسه|صار|صرت|بدا|كاد)[^.،,؛!؟\\n]{0,16}?${CHOKE_VERB}`;
-
-/** «كتمة» — chest tightness. The proof's own vocabulary helper already classified it as
- *  naming an airway while the module could not detect it at all, which is the two-lists bug
- *  in its purest form. It is ALSO the ordinary word for stuffy weather, so it is bound to a
- *  personal frame («عندي»/«فيني»/«يجيني») from the shared `FRAME_WORDS`, with the place nouns
- *  of `NOT_A_PERSON` forbidden in the gap — «الجو فيه كتمة» and «أحس بالجو كتمه» are remarks
- *  about the room, and that is precisely why `NOT_A_PERSON` exists. */
-const STUFFY =
-  `(?:${FRAME_WORDS})(?:(?!${NOT_A_PERSON})[^.،,؛!؟\\n]){0,12}?كتمه(?![ء-ي])` +
-  `|كتمه ?(?:في ?)?(?:ال)?نفس${NOT_THE_SAME}`;
+  `(?:${PERSON_WORDS})[^.،,؛!؟\\n]{0,12}?نفس(?:ه|ها|هم) ?${BREATH_TIGHT}${NOT_THE_IDIOM}`;
 
 /** THROAT — «حلقي يقفل» in every person and every closing verb. «انسد»/«سكرت»/«قفل» are the
  *  perfect forms of verbs the list already carried in the imperfect: the same slot, unfilled. */
-// THE SAME MISSING LEFT BOUNDARY, ON THE BODY NOUNS. `normalizeAr` folds ة→ه, so «الحلقة»
-// (an episode, a ring, a discussion circle) becomes «الحلقه» — which is «حلق» + the
-// possessive «ه», i.e. "his throat" — and «الحلقة قفلت» ("the episode ended") raised
-// «انسداد الحلق». A body noun carrying a possessive NEVER also carries the article, so the
-// boundary is exactly right; the proclitics «و/ف/ب/ل» are inside it, as with `NEG`.
-const AR_B = "(?<![ء-ي])[وفبل]?";
-const THROAT = `${AR_B}(?:حلق|زور|حنجرت|بلعوم)`;
+const THROAT = "(?:حلق|زور|حنجرت|بلعوم)";
 const THROAT_CLOSES =
-  // «مقفل»/«مسكر» are the ORDINARY GULF PASSIVE PARTICIPLES — «حلقي مقفل» is how the Gulf
-  // says "my throat is shut". The list carried the active «قافل» and the Standard «مسدود»
-  // and neither passive form, so the commonest phrasing of the commonest anaphylaxis sign
-  // was silent. The same slot, unfilled, in a list that had two of its three shapes.
-  "(?:يقفل|تقفل|يتقفل|بيقفل|بتقفل|اتقفل|قافل|قافله|قفل|قفلت|مقفل|مقفله|يضيق|تضيق|يتضيق|بيضيق|ضاق|ضاقت|" +
-  "يتورم|تتورم|بيتورم|متورم|تورم|مسدود|مسدوده|انسد|انسدت|يسكر|تسكر|بيسكر|سكر|سكرت|اتسكر|مسكر|مسكره)";
+  "(?:يقفل|تقفل|يتقفل|بيقفل|بتقفل|اتقفل|قافل|قافله|قفل|قفلت|يضيق|تضيق|يتضيق|بيضيق|ضاق|ضاقت|" +
+  "يتورم|تتورم|بيتورم|متورم|تورم|مسدود|مسدوده|انسد|انسدت|يسكر|تسكر|بيسكر|سكر|سكرت|اتسكر)";
 const THROAT_CLOSING = `${THROAT}${POSS} ?${THROAT_CLOSES}`;
 
 /** SWELLING NOW — lips / tongue / face / eyes / throat, in every person. «شفتي» stays FIRST
@@ -359,20 +195,10 @@ const THROAT_CLOSING = `${THROAT}${POSS} ?${THROAT_CLOSES}`;
  *  an anaphylaxis. Nobody says «شفته» for a swelling lip anyway; they say «شفايفه». */
 // «بلعوم»/«زور»/«حنجرت» were in the THROAT list and not this one, so «بلعومي منتفخ» was
 // silent while «بلعومي يتورم» fired: the same body part, two verb lists, one of them short.
-const SWELL_BODY = `(?:${AR_B}(?:شفايف|لسان|وش|وجه|عين|حلق|بلعوم|زور|حنجرت)${POSS}|شفتي)`;
+const SWELL_BODY = `(?:(?:شفايف|لسان|وش|وجه|عين|حلق|بلعوم|زور|حنجرت)${POSS}|شفتي)`;
 const SWELLS =
-  "(?:تورم|تورمت|تتورم|يتورم|بيتورم|ورم|بيورم|منتفخ|منتفخه|انتفخ|انتفخت|ينتفخ|بينتفخ|تنتفخ)";
-/** «كبر»/«كبرت» IS "GREW", NOT "SWELLED", and it is not a synonym of the nine verbs above:
- *  Arabic says a swelling is «متورم»/«منتفخ». On the possessive axis it carried «عينها كبرت»
- *  ("her eyes went wide with joy") and «وجهه كبر» ("his face filled out from the food") into
- *  the anaphylaxis label — 72 driven strings, none of them about a body swelling. It was
- *  first-person-only before this family gained the person axis, and the axis was added
- *  without the verb list being re-read.
- *  It is kept for the LIPS and the TONGUE, where "got bigger" has no ordinary reading and is
- *  a real report of angioedema, and dropped for the face, eyes and throat, where it does. */
-const GREW = "(?:كبرت|كبر)(?![ء-ي])";
-const GREW_BODY = `(?:${AR_B}(?:شفايف|شفاه|لسان)${POSS}|شفتي)`;
-const SWELLING = `${SWELL_BODY} ?${SWELLS}|${GREW_BODY} ?${GREW}`;
+  "(?:تورم|تورمت|تتورم|يتورم|بيتورم|ورم|بيورم|منتفخ|منتفخه|انتفخ|انتفخت|ينتفخ|بينتفخ|تنتفخ|كبرت|كبر)";
+const SWELLING = `${SWELL_BODY} ?${SWELLS}`;
 
 /** CYANOSIS — «شفايفه زرقاء». THIS ONE IS A NEW SIGNAL, NOT A WIDER SLOT, and it is here
  *  because it was driven: «ابني شفايفه زرقاء» is a father reporting the textbook sign that a
@@ -382,7 +208,7 @@ const SWELLING = `${SWELL_BODY} ?${SWELLS}|${GREW_BODY} ?${GREW}`;
  *  Bound to lips / face / tongue / fingers ONLY — «عينه زرقاء» is an eye COLOUR, and «لونه
  *  أزرق» is just as likely to be a drink. */
 const BLUE = "(?:زرقاء|زرقا|زرقه|زرق|ازرق|مزرق|مزرقه|تزرق|زرقت|يزرق)";
-const CYANOSIS = `${AR_B}(?:شفايف|شفاه|وجه|وش|لسان|اصابع|اظافر)${POSS} ?(?:صار|صارت|بدت|بدا|تحول|صايره)? ?${BLUE}`;
+const CYANOSIS = `(?:شفايف|شفاه|وجه|وش|لسان|اصابع|اظافر)${POSS} ?(?:صار|صارت|بدت|بدا|تحول|صايره)? ?${BLUE}`;
 
 const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
   // AIRWAY / BREATHING NOW — the composed cross product above, in one alternation. Every
@@ -392,10 +218,6 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
   [new RegExp(`نفسي ?${BREATH_TIGHT}${NOT_THE_IDIOM}|${BREATH_TIGHT_THIRD}`), "ضيق نفس", "hard"],
   // Throat closing, in every person.
   [new RegExp(THROAT_CLOSING), "انسداد الحلق", "hard"],
-  // Choking / suffocating, with a person named — the family that was absent in both arms.
-  [new RegExp(CHOKING), "اختناق", "hard"],
-  // Chest tightness reported in a personal frame («عندي كتمة»), never about the room.
-  [new RegExp(STUFFY), "كتمة/ضيق نفس", "hard"],
   // Swelling NOW — lips / tongue / face / eyes / throat actively swelling, in every person.
   [new RegExp(SWELLING), "تورم", "hard"],
   // Blue lips / face — oxygen, not swelling, and its own label so the audit row says so.
@@ -436,22 +258,10 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
 // (can't / cannot / can no longer / unable / struggling / hard to), the event (stopped /
 // not breathing), and the nominal (difficulty / trouble / shortness of breath).
 //
-// AND THE SAME WIDENING REACHED A COMPLAINT ABOUT THE VENTILATION. «hard to breathe» and
-// «problems breathing» carry no person and no tense, so «it was hard to breathe inside», «we
-// had issues with breathing space in the kitchen» and «having trouble breathing in the smoking
-// section» — a restaurant describing its own dining room — each raised a full anaphylaxis.
-// The tell is a LOCATIVE: an airway report says WHO cannot breathe, a ventilation complaint
-// says WHERE. So the two nominal forms refuse a following place phrase, and «breathing» refuses
-// «space»/«room». Prepositions are a CLOSED grammatical class, which is why a lookahead over
-// them is not the open-ended complement list this change is removing elsewhere.
-// «can't breathe» is deliberately left unguarded — «I can't even breathe in there» still fires.
-// It is the one sentence in this file that is never worth a second guess.
-// «skin» now needs a possessive: «the skin looks blue on the chicken» is a kitchen report.
-//
 // A hypothetical English framing is still read as active, unchanged and on purpose — see the
 // header of `detectAllergenEmergency`. Widening the vocabulary does not touch that policy.
 const EMERGENCY_EN_RE =
-  /\b(?:(?:can|could)(?:'|\u2019)?t (?:\w+ ){0,2}?breathe?|can ?not breathe|can no longer breathe|(?:unable|not able) to breathe|(?:struggling|straining|fighting) to breathe|gasping for (?:air|breath)|(?:hard|difficult|tough) to breathe(?! (?:in|inside|out|near|around|here|there|with|when)\b)|(?:difficulty|trouble|problems?|issues?) (?:in |with )?breathing(?! (?:space|room|in|inside|near|around|here|there)\b)|(?:stopped|quit) breathing|(?:is |are |he'?s |she'?s |i'?m |im )?not breathing|short(?:ness)? of breath|can(?:'|\u2019)?t catch (?:my|his|her|their) breath|(?:he|she|they|we|i|someone|my \w+|the (?:child|kid|baby|boy|girl)) (?:is |are |'?s )?(?:choking|suffocating)|(?:throat|airway) (?:is |are )?(?:closing|closed|swelling|swollen|blocked|tightening|tight)|(?:lips?|face|tongue|throat) (?:is |are )?swelling|swelling (?:up )?now|(?:lips?|face|tongue|fingers?|(?:his|her|my|their|the (?:baby|child|kid)(?:'|\u2019)?s?) skin) (?:are |is |look |looks |went |turned |turning |going )*(?:blue|bluish|purple)|anaphylaxis|anaphylactic|allergic reaction now|call (?:an )?ambulance|call (?:9-?1-?1|997|112)|emergency now)\b/i;
+  /\b(?:(?:can|could)(?:'|\u2019)?t (?:\w+ ){0,2}?breathe?|can ?not breathe|can no longer breathe|(?:unable|not able) to breathe|(?:struggling|straining|fighting) to breathe|gasping for (?:air|breath)|(?:hard|difficult|tough) to breathe|(?:difficulty|trouble|problems?|issues?) (?:in |with )?breathing|(?:stopped|quit) breathing|(?:is |are |he'?s |she'?s |i'?m |im )?not breathing|short(?:ness)? of breath|can(?:'|\u2019)?t catch (?:my|his|her|their) breath|(?:throat|airway) (?:is |are )?(?:closing|closed|swelling|swollen|blocked|tightening|tight)|(?:lips?|face|tongue|throat) (?:is |are )?swelling|swelling (?:up )?now|(?:lips?|face|tongue|fingers?|skin) (?:are |is |look |looks |went |turned |turning |going )*(?:blue|bluish|purple)|anaphylaxis|anaphylactic|allergic reaction now|call (?:an )?ambulance|call (?:9-?1-?1|997|112)|emergency now)\b/i;
 
 // --- EMERGENCY NUMBERS — the hardest rule in this file to get right --------------
 //
