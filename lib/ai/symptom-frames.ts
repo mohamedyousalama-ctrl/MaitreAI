@@ -22,9 +22,18 @@
  *  ضايق», where the person is the only thing separating a child's airway from «الطلب نفسه واقف»
  *  ("the order itself is stalled") — «نفسه» is both "his breath" and "itself". Exported rather
  *  than copied, because a copied list is how this file came to exist. */
+// THE LIST WAS THE PEOPLE A SENDER NAMES BY RELATION, AND A PARENT IN A HURRY DOES NOT.
+// «ابني» was here and «الولد» was not, so «الولد يختنق» — *the boy is choking*, and the most
+// urgent sentence in the file — reached nothing, while «الولد ما يقدر يتنفس» fired, because
+// THAT family carries no person anchor at all. The gap was the GATE, not the vocabulary: the
+// signal that most needs a person to disambiguate it («اختنق» is also what traffic does) was
+// the one gated on the shortest list. Gulf «الجاهل»/«الياهل» (a small child), «الصغير» and the
+// plurals «عيالي»/«اولادي» are the same omission, and «البنت» is «الولد»'s pair.
+// Longest first, so «الطفله» is not eaten by «الطفل».
 export const PERSON_WORDS =
-  "ابني|بنتي|ولدي|بنته|ابنه|زوجتي|زوجي|امي|ابوي|الوالده|الوالد|الطفل|الطفله|البيبي|" +
-  "اخوي|اختي|صاحبي|صاحبتي|رفيجي|جوزي|مرتي";
+  "ابني|ابنتي|بنتي|ولدي|بنته|ابنه|زوجتي|زوجي|امي|ابوي|الوالده|الوالد|الطفله|الطفل|البيبي|" +
+  "اخوي|اختي|صاحبي|صاحبتي|رفيجي|جوزي|مرتي|" +
+  "الولد|البنت|الصغيره|الصغير|الجاهل|الياهل|الطفلة|عيالي|عيالنا|اولادي|ولدنا|بنتنا";
 
 /** Alternation source (not a RegExp) so each caller can anchor it its own way. */
 export const FRAME_WORDS =

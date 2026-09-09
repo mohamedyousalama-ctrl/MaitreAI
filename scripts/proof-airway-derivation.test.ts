@@ -54,6 +54,51 @@
 //      pre-widening one, the frozen widened one the audit blocked, and the live one. A quiet
 //      corpus that reads the same on all three proves nothing. This one separates them, and
 //      the file asserts by how much.
+//
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// WHAT THE QUIET CORPUS COVERS, AND WHAT IT DOES NOT. READ THIS BEFORE YOU TRUST A GREEN RUN.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+//
+// §8 and §5c are a real constraint and they are not a general one, and the difference has
+// already been measured twice — once by an auditor who defeated this corpus on purpose, and
+// once by an auditor who found 616 English false positives it could not see. A future engineer
+// who reads "PASS 26,554/26,554" as "this widening is safe" will ship the same bug a third
+// time, so here is the shape of the thing exactly.
+//
+// IT CONSTRAINS: VOCABULARY, inside the SYNTACTIC FRAMES SOMEBODY ENUMERATED, in the SCRIPTS
+// THAT ARE CROSSED. A widening that admits a new word in a frame this corpus writes — a body
+// noun, a verb, a person, a complement — is caught, loudly, in the thousands. That is why
+// §8 separates the widened module from the live one on 5,541 strings where the corpus it
+// replaced separated them on 0, and it is why the module's four remaining deferrals are
+// deferrals and not oversights.
+//
+// IT DOES NOT CONSTRAIN, AND EACH OF THESE IS A DEMONSTRATED HOLE AND NOT A THEORETICAL ONE:
+//
+//   WORD ORDER. Arabic has both, and this file had one. The chest deferral closed in the N–V
+//   order — «صدري ضايق», the commoner of the two in a WhatsApp complaint — made 3,168 ordinary
+//   strings raise a full emergency with the WHOLE SUITE GREEN, while the identical widening in
+//   the V–N order — «ضاق صدري» — was caught, because that is the order §8d happened to be
+//   written in. §8d now carries both for the chest, and §8d-ii both for the throat. EVERY OTHER
+//   FAMILY IN §8 IS STILL ONE WORD ORDER. Adding a value to a family is safe; adding a frame is
+//   not, and this corpus cannot tell you which one you just did.
+//
+//   SCRIPT. §8 is 100% Arabic literals by construction, so it read "zero false positives"
+//   through a widening of the ENGLISH arm that made 616 of 1,325 ordinary restaurant-English
+//   strings fire — «the wine is not breathing yet» among them. §5c is that corpus for English
+//   and it closes the hole for these two languages. THERE IS A THIRD SURFACE AND NEITHER
+//   SECTION REACHES IT: Arabizi (`ma agdar atnafas`) is deferred in the module's own header,
+//   and if it is ever admitted, NOTHING HERE WILL OBJECT. It needs its own ordinary corpus in
+//   Latin script, derived before the guard is written, exactly as these two were.
+//
+//   REGISTER AND CHANNEL. Every string here is a customer or a parent writing to a restaurant.
+//   Voice transcripts, staff commands and forwarded text arrive on other paths.
+//
+// THE RULE THAT FOLLOWS FROM IT: A GREEN RUN IS EVIDENCE ABOUT A VALUE, NOT ABOUT A FRAME. If
+// your change adds a word to a list this file already crosses, green means something. If it
+// adds a shape — a new word order, a new script, a new syntactic frame, a left-hand context
+// where there was none — GREEN MEANS THIS FILE DID NOT LOOK, and the quiet side for that shape
+// has to be derived before the guard is written. That is the discipline `b28f307` was blocked
+// for missing in Arabic and `162c515` was found still missing in English.
 // ============================================================================
 
 import { readFileSync } from "node:fs";
@@ -292,12 +337,123 @@ console.log("\n── BLUE LIPS — THE SIGN A PARENT SENDS WHEN THE CHILD CANNO
   derivedTotal += mustFire("cyanosis+person", ["ابني شفايفه زرقاء", "بنتي شفايفها زرقة", "الطفل وجهه أزرق"]);
 }
 
-// ── 5. THE SAME DERIVATION IN ENGLISH ────────────────────────────────────────
+// ── 5. THE SAME DERIVATION IN ENGLISH — AND THE SAME QUIET SIDE, OWED ────────
 console.log("\n── ENGLISH KNEW «can't breathe» AND NOTHING ELSE ───────────────");
+//
+// THIS SECTION USED TO BE THIRTY-THREE HAND-WRITTEN STRINGS AND IT CERTIFIED A REGRESSION.
+//
+// The widening of the English arm was measured against §8's ordinary corpus, which is 100%
+// Arabic by construction — every axis in it is an Arabic literal — so it could not say one
+// word about English. Driven afterwards against an ordinary restaurant ENGLISH corpus (§5c,
+// below, built the way §8 is built: vocabulary and homographs first, sentences never), 616 of
+// 1,325 ordinary strings raised a full allergy emergency and every one had been quiet in
+// production. «the wine is not breathing yet». «the dough is not breathing under the cloth».
+// «the queue left me short of breath». That is the defect that blocked the Arabic half of this
+// change, reproduced exactly, one language over, by the fix for it.
+//
+// AND THIS FILE MANDATED IT. The list below asserted bare «not breathing», «struggling to
+// breathe», «gasping for air» and «short of breath» as must-fire — subjectless, and therefore
+// the identical string to «the wine is not breathing yet». A proof that asserts a substring
+// as must-fire forbids every guard that reads what is in front of it.
+//
+// SO THE ASSERTION IS CHANGED HERE, DELIBERATELY, AND THIS IS THE REASONING.
+//
+//   THE BARE FORMS STAY MUST-FIRE. They are what someone types when they have no words left,
+//   and this file already recognises that shape in another family: `BARE_EMERGENCY_NUMBER_RE`
+//   fires on «997» ALONE. What changes is that they are asserted as MESSAGES rather than as
+//   SUBSTRINGS. «not breathing» fires. «the wine is not breathing yet» does not. The strings
+//   in the list are unchanged; what they now prove is narrower and true, where before it was
+//   broader and false.
+//
+//   THE SUBJECT IS THE TELL, AND IT IS DERIVED FROM A CLOSED CLASS. The module anchors those
+//   four alternatives on `EN_PERSON` — the English twin of `symptom-frames.PERSON_WORDS`. The
+//   alternative that was ALREADY written that way, `choking|suffocating`, contributes zero
+//   false positives to the 1,325 strings in §5c; the four that were not contributed all 616.
+//   The people are enumerable; the things that breathe in a restaurant — wine, dough,
+//   sourdough, cheese, oven, tandoor, extractor fan, compressor — are not, so the guard names
+//   the people. That is the same choice the Arabic arm made for «نفسه».
+//
+//   THE ONE THING A PERSON ANCHOR CANNOT DO is separate «we were gasping for air in the
+//   kitchen» from «he is gasping for air»: «we» is a person. Two more properties of the
+//   grammar do it — the PLACE lookahead this file already applies to «hard to breathe», and
+//   the PRESENT TENSE, which is this module's own definition of itself.
+//
+// WHAT THE CHANGE COSTS IS DRIVEN AND ASSERTED BELOW, NOT DESCRIBED: §5d names every English
+// string that goes quiet, and each one is a shape whose speaker keeps a live phrasing.
 {
-  // The English arm had the identical hole: two spellings of one phrasing. «he stopped
-  // breathing» is the gloss of «ما عاد يتنفس», and it was silent here too.
-  derivedTotal += mustFire("english", [
+  /** WHO an English message is about. The empty string is a value: a subjectless message is
+   *  the "no words left" case, and it is asserted separately in §5b-bare. */
+  const EN_WHO = ["he", "she", "they", "we", "I", "my son", "my daughter", "my wife",
+    "my husband", "my mother", "my friend", "the child", "the baby", "the kid", "the boy",
+    "the girl", "the customer", "the lady", "someone", "he's", "she's", "i'm"];
+  const EN_COP = ["", "is", "are", "was", "keeps", "suddenly"];
+  const EN_URG = ["", "now", "please", "help"];
+  // The inability, the event and the nominal — the same three shapes as the Arabic family.
+  const EN_INABILITY = ["can't breathe", "cannot breathe", "can not breathe",
+    "can no longer breathe", "is unable to breathe", "cant breathe"];
+  const EN_NOW_ONLY = ["is struggling to breathe", "struggling to breathe",
+    "is straining to breathe", "is fighting to breathe", "is gasping for air",
+    "gasping for air", "is gasping for breath", "is short of breath"];
+  const EN_NOMINAL = ["has difficulty breathing", "has trouble breathing",
+    "has problems breathing", "is having difficulty breathing", "has shortness of breath"];
+  const EN_EVENT = ["stopped breathing", "has stopped breathing", "quit breathing",
+    "is not breathing", "was not breathing", "is still not breathing"];
+  derivedTotal += mustFire("english×person",
+    [...new Set([
+      ...cross(EN_WHO, EN_INABILITY, EN_URG),
+      ...cross(EN_WHO, EN_NOW_ONLY, EN_URG),
+      ...cross(EN_WHO, EN_NOMINAL, EN_URG),
+      ...cross(EN_WHO, EN_EVENT, EN_URG),
+      ...cross(EN_WHO, EN_COP, ["not breathing"], EN_URG),
+    ])]);
+  // The body, in English: throat, swelling, cyanosis, and the named emergency.
+  derivedTotal += mustFire("english×body", [...new Set([
+    ...cross(["", "my", "his", "her", "my son's", "the child's"],
+      ["throat is closing", "throat is swelling", "throat is blocked", "airway is closing",
+       "throat feels tight", "throat is closed", "throat is tightening"], EN_URG),
+    ...cross(["", "his", "her", "my", "my son's"],
+      ["lips are swelling", "face is swelling", "tongue is swelling", "lip is swelling"], EN_URG),
+    ...cross(["", "his", "her", "my son's", "the baby's"],
+      ["lips are blue", "lips are turning blue", "face went blue", "fingers are bluish"], EN_URG),
+    // «skin» KEEPS ITS POSSESSIVE — «the skin looks blue on the chicken» is a kitchen report,
+    // which is why the bare noun is deliberately absent from this cross and asserted quiet in
+    // the audit's verbatim table below.
+    ...cross(["his", "her", "my", "my son's", "the baby's", "the child's"],
+      ["skin is going blue", "skin is turning blue", "skin looks bluish"], EN_URG),
+    ...cross(["", "this is", "it is"], ["anaphylaxis", "anaphylactic shock",
+      "an allergic reaction now"], EN_URG),
+    ...cross(["", "please", "someone"], ["call an ambulance", "call 997", "call 911"], EN_URG),
+    ...cross(["he", "she", "my son", "my daughter", "the child", "someone", "I"],
+      ["can't catch my breath", "cannot catch his breath", "can't catch her breath"], EN_URG),
+  ])]);
+  // THE PERSON CLASS ITSELF, CROSSED. `EN_PERSON` replaced an open `my \w+` with a closed list
+  // of people, which is the right direction — `my \w+` admitted «my sourdough is not breathing»
+  // — but a closed list is a list somebody can leave a person out of, and that is a deaf spot
+  // with a child in it. So every possessive × every value × every guarded symptom is driven
+  // here: dropping one name from the list fails in the hundreds instead of in silence.
+  const EN_KIN_DRIVEN = ["son", "daughter", "child", "kid", "baby", "toddler", "infant", "boy",
+    "girl", "wife", "husband", "mother", "father", "mom", "mum", "dad", "brother", "sister",
+    "sibling", "spouse", "partner", "fiancee", "friend", "colleague", "coworker", "neighbour",
+    "neighbor", "customer", "guest", "client", "patient", "uncle", "aunt", "auntie", "cousin",
+    "grandma", "grandmother", "grandpa", "grandfather", "grandson", "granddaughter", "grandchild",
+    "granny", "nephew", "niece", "stepson", "stepdaughter", "twin", "girlfriend", "boyfriend",
+    "roommate", "flatmate", "classmate", "student", "teacher", "nurse", "doctor", "man", "woman",
+    "lady", "person", "boss", "manager", "owner", "employee", "mate", "driver", "waiter",
+    "waitress", "chef", "cook"];
+  derivedTotal += mustFire("english×person-class", [...new Set(cross(
+    ["my", "his", "her", "our", "their", "the", "a"],
+    EN_KIN_DRIVEN,
+    ["is choking", "is suffocating", "is not breathing", "is gasping for air",
+     "is short of breath", "is struggling to breathe"]))]);
+}
+
+console.log("\n── …AND THE SUBJECTLESS FORMS, AS MESSAGES AND NOT AS SUBSTRINGS ─");
+{
+  // THE VERBATIM LIST THIS SECTION HAS ALWAYS ASSERTED, UNCHANGED. Every string here is the
+  // WHOLE message, which is the only reading under which a subjectless airway phrase is an
+  // airway report — and the reading the module now implements (`EN_BARE_AIRWAY_RE`). §5c
+  // asserts the other reading, where the same substring has a wine in front of it.
+  derivedTotal += mustFire("english-bare", [
     "he can't breathe", "I cannot breathe", "she can not breathe", "he can no longer breathe",
     "he stopped breathing", "the child is not breathing", "not breathing", "he's not breathing",
     "unable to breathe", "not able to breathe", "struggling to breathe", "gasping for air",
@@ -306,7 +462,186 @@ console.log("\n── ENGLISH KNEW «can't breathe» AND NOTHING ELSE ───�
     "can't catch my breath", "my throat is closing", "his airway is blocked", "throat tightening",
     "lips are blue", "his lips turning blue", "her face went blue", "fingers are bluish",
     "lips swelling", "swelling up now", "anaphylaxis", "call an ambulance", "call 997",
+    // …and the shape the hatch is FOR: the phrase alone, with the one word of urgency the
+    // number rule already allows, and with a short tail when the symptom opens the message.
+    "not breathing!!", "not breathing please", "is not breathing", "struggling to breathe now",
+    "gasping for air help", "short of breath after eating", "sudden shortness of breath",
+    "choking", "suffocating", "short of breath now",
   ]);
+}
+
+// ── 5c. ORDINARY RESTAURANT ENGLISH — THE QUIET SIDE THE OTHER LANGUAGE WAS OWED ─
+console.log("\n── ORDINARY RESTAURANT ENGLISH, DERIVED FROM ITS OWN VOCABULARY ─");
+//
+// §8 does this for Arabic and says why. THIS IS THE SAME CORPUS FOR THE OTHER LANGUAGE, and
+// it exists because §8 could not be it: every axis in §8 is an Arabic literal, so it read
+// "zero false positives" while 616 English strings were firing. Word order is not the only
+// axis that corpus lacks; SCRIPT is the other one.
+//
+// Built from the other end, exactly as §8 is — ordinary restaurant English crossed through the
+// homographs, and the homographs chosen because they are the ones English actually has:
+//
+//   «breathing»       a person · a wine · a dough · an oven · a room needing ventilation
+//   «breathing room»  slack on the rota, never an airway
+//   «short of breath» a symptom · what a double shift does to you
+//   «took my breath away» · «don't hold your breath» · «breathing down my neck» — praise,
+//                     sarcasm and pressure, in the vocabulary of an airway
+//   «choking»         an airway · a hazard label · what traffic does to a street
+//   «blue»            cyanosis · the colour of the icing
+//
+// AND IT IS DRIVEN THREE WAYS, so the file states as a re-derivable number both that these
+// strings were quiet in production and that they are the strings the widening broke.
+let enOrdinaryTotal = 0;
+const EN_ORDINARY_BY_FAMILY = new Map<string, string[]>();
+const addEn = (family: string, ...items: string[]) => {
+  const bucket = EN_ORDINARY_BY_FAMILY.get(family) ?? [];
+  bucket.push(...items);
+  EN_ORDINARY_BY_FAMILY.set(family, bucket);
+};
+{
+  /** The things in a restaurant that breathe and are not people. OPEN BY NATURE, which is why
+   *  the module's guard names the PEOPLE and not these. */
+  const THING = ["the wine", "the red wine", "the bottle", "this bordeaux", "the dough",
+    "the sourdough", "the bread", "the cheese", "the sauce", "the oven", "the tandoor",
+    "the extractor fan", "the AC", "the compressor", "the grill", "the fridge", "the engine"];
+  const NEG_BE = ["is not breathing", "isn't breathing", "is still not breathing",
+    "is not breathing yet", "has not started breathing", "was not breathing"];
+  const TAIL = ["", "yet", "well", "under the cloth", "properly", "in the decanter", "at all"];
+  addEn("thing is not breathing", ...cross(THING, NEG_BE, TAIL));
+  addEn("thing is not breathing", ...cross(["let the wine breathe,", "we decanted it but",
+    "open it early,"], ["it is not breathing", "it's not breathing"], ["yet", "", "still"]));
+  addEn("breathing room/space", ...cross(
+    ["we need", "the kitchen needs", "give us", "there is no", "we had issues with",
+     "we are having trouble with", "the pass has no", "give the dough some"],
+    ["breathing room", "breathing space"], ["", "in the kitchen", "before the rush", "on the pass"]));
+  addEn("ventilation — WHERE, not WHO", ...cross(
+    ["it was", "it is", "customers say it is", "the guests said it was", "everyone says it is"],
+    ["hard to breathe", "difficult to breathe", "tough to breathe"],
+    ["inside", "in the hall", "in the smoking section", "near the grill", "in there", "here"]));
+  addEn("ventilation — WHERE, not WHO", ...cross(
+    ["customers were", "the guests were", "the staff were", "we were", "the whole section was"],
+    ["struggling to breathe", "straining to breathe", "fighting to breathe"],
+    ["in the hall after the AC broke", "in the smoking section", "in that heat",
+     "near the fryer", "because of the smoke"]));
+  addEn("ventilation — WHERE, not WHO", ...cross(
+    ["the smoke was so bad we were", "with the fryer going we were", "in that kitchen heat we were",
+     "after the extractor died the cooks were"],
+    ["gasping for air", "gasping for breath"], ["", "in the kitchen", "all service"]));
+  addEn("ventilation — WHERE, not WHO", ...cross(
+    ["we had", "the hall has", "there were", "guests reported"],
+    ["difficulty breathing", "trouble breathing", "problems breathing", "issues breathing"],
+    ["in the smoking section", "in the hall", "near the shisha area", "inside"]));
+  // «short of breath» AS EXHAUSTION, in the CAUSATIVE frame — «X left me short of breath».
+  // The pronoun is an OBJECT there and a SUBJECT in a symptom report, which is the whole of
+  // the distinction and is grammar rather than a list of causes. The first-person PRESENT
+  // self-report is NOT in this corpus and is asserted the other way below, on purpose.
+  addEn("short of breath = exhaustion", ...cross(
+    ["the queue left me", "that double shift left me", "carrying the crates left me",
+     "running the pass left me", "the stairs to the store leave me", "that rush left us"],
+    ["short of breath"], ["", "honestly", "by closing", "for a minute"]));
+  addEn("short of breath = exhaustion", ...cross(
+    ["we were all", "the cooks were all", "by the end of the night we were"],
+    ["short of breath"], ["", "but fine", "from running around", "nothing serious"]));
+  addEn("breath idioms", ...cross(
+    ["the kunafa", "that view from the terrace", "the new menu", "the plating", "the price"],
+    ["took my breath away", "takes your breath away"], ["", "honestly", "wallah"]));
+  addEn("breath idioms",
+    "don't hold your breath, the supplier is late", "do not hold your breath on that delivery",
+    "the owner is breathing down my neck about the rota",
+    "the new manager is breathing down our necks",
+    "the refit was a breath of fresh air", "the new chef is a breath of fresh air",
+    "we can breathe easy now that the inspection passed", "let us breathe easy for one night",
+    "he said it in the same breath as the refund", "she muttered it under her breath",
+    "save your breath, the kitchen is closed", "let me catch my breath before the next table",
+    "give me a second to catch my breath", "we finally caught our breath after the rush");
+  addEn("choking, not an airway",
+    "choking hazard for kids on the toy", "the packaging is a choking hazard",
+    "traffic is choking the whole street", "the road is choked with cars",
+    "the sink is choked with grease", "the drain is choked again",
+    "the kitchen is suffocating in this heat", "the heat in there is suffocating",
+    "the smoke was suffocating", "prices are choking the small branches");
+  addEn("blue = a colour", ...cross(
+    ["the icing", "the plate", "the packaging", "the uniform", "the cheese", "the chicken skin"],
+    ["is blue", "looks blue", "turned blue", "went purple", "is bluish"], ["", "under that light"]));
+  addEn("swelling, not a body", ...cross(["the dough", "the queue", "the bill", "the guest list"],
+    ["is swelling", "keeps swelling"], ["", "fast"]));
+  addEn("ordinary inbox traffic", ...cross(
+    ["do you have", "is there", "how much is", "can I get"],
+    ["a table by the window", "the kabsa", "the mandi", "delivery to Malaz", "a high chair"],
+    ["?", "tonight?", "please"]));
+  addEn("ordinary inbox traffic", ...cross(
+    ["the order is", "delivery was", "the food came", "the driver was"],
+    ["late", "cold", "excellent", "fine"], ["", "again", "tonight"]));
+  addEn("ordinary inbox traffic",
+    "the AC broke and the hall is stuffy", "it is stuffy in the private room",
+    "can you open a window, it is close in here", "the extractor is not working",
+    "the fan stopped working in the kitchen", "the air in the hall is heavy tonight");
+}
+
+{
+  const uniq = [...new Set([...EN_ORDINARY_BY_FAMILY.values()].flat())];
+  enOrdinaryTotal += mustBeQuiet("ordinary-english", uniq);
+
+  // THE DIFFERENTIAL, re-derived on every run — the same three numbers §8 states for Arabic.
+  const quietBefore = uniq.filter((t) => !firesPreWidening(t));
+  const loudOnWidened = uniq.filter((t) => firesWidened(t));
+  const caught = uniq.filter((t) => firesWidened(t) && !fires(t) && !firesPreWidening(t));
+  console.log(`   pre-widening: ${quietBefore.length}/${uniq.length} quiet · widened: ${loudOnWidened.length} FIRED · live: ${uniq.length - uniq.filter(fires).length} quiet`);
+  ok(`${caught.length} ordinary ENGLISH strings fired on the module this proof used to certify and are quiet now (floor 500)`,
+    caught.length >= 500);
+  ok(`all ${quietBefore.length} of them were quiet in production too — the guard is a fix, not a trade`,
+    quietBefore.length === uniq.length);
+  for (const [family, items] of EN_ORDINARY_BY_FAMILY) {
+    const u = [...new Set(items)];
+    const sep = u.filter((t) => firesWidened(t) && !fires(t)).length;
+    console.log(`      ${String(sep).padStart(4)} / ${String(u.length).padStart(4)}  ${family}`);
+  }
+}
+
+console.log("\n── …AND WHAT THE ENGLISH GUARD COSTS, DRIVEN AND NAMED ─────────");
+{
+  // EVERY SHAPE THE GUARD SILENCES, ASSERTED AS SILENT SO IT CANNOT BE RE-LOST QUIETLY, each
+  // beside the live phrasing its speaker keeps. A cost that is asserted is a cost somebody
+  // decided; a cost that is only described is a cost somebody will rediscover.
+  quietTotal += mustBeQuiet("english-guard-cost", [
+    // A PLACE-QUALIFIED airway report, in the two alternatives whose past reading is a
+    // ventilation complaint. Keeps: «can't breathe» (unguarded), «choking», «not breathing».
+    "my son is struggling to breathe in the car",
+    "he is gasping for air in there",
+    // A PAST-TENSE «gasping»/«struggling»/«short of breath» — the tense this module is defined
+    // against. Keeps: «he stopped breathing», «he was not breathing when I found him».
+    "my son was gasping for air",
+    "she was struggling to breathe",
+    // A PROPER NAME as the subject: the one open class the person anchor cannot enumerate.
+    // Keeps: «he is not breathing», «my son is not breathing», a bare «not breathing».
+    "Ahmed is not breathing",
+    // A subjectless phrase that is NOT the message — which is the whole point of the change.
+    "the tandoor is not breathing well",
+  ]);
+  for (const t of [
+    "my son can't breathe in the car", "my son is choking", "my son is not breathing",
+    "he is gasping for air", "he stopped breathing", "he was not breathing when I found him",
+    "not breathing", "he is not breathing", "my son has difficulty breathing",
+    "his throat is closing", "she is struggling to breathe",
+  ]) {
+    ok(`«${t}» — the live phrasing the cost above leaves standing`, fires(t));
+  }
+  // …AND THE FIRST-PERSON PRESENT-TENSE SELF-REPORT, WHICH DELIBERATELY STILL FIRES. It is in
+  // neither corpus by accident: a sender describing their own breath in the present tense is
+  // the case this module's fail-safe exists for, even when the cause is a double shift. What
+  // was closed is the CAUSATIVE frame above, where the pronoun is an object.
+  for (const t of ["after that shift I am short of breath", "by the end of service we are short of breath"]) {
+    ok(`«${t}» — accepted over-escalation, present tense, first person`, fires(t));
+  }
+  // …AND ONE FALSE POSITIVE THAT IS OLDER THAN ANY OF THIS AND IS NOT CLOSED HERE. «swelling
+  // up now» has no subject at all, so «the dough is swelling up now» raises an emergency —
+  // ON THE PRE-WIDENING MODULE TOO. It is inherited from production, not introduced, and
+  // silencing it is a NARROWING against production, which this change is not allowed to make.
+  // Driven, so the claim "not a regression" is a measurement and the number is on the record.
+  const INHERITED = cross(["the dough", "the queue", "the bill", "the guest list"],
+    ["is swelling up now"], ["", "fast"]);
+  ok(`all ${INHERITED.length} «swelling up now» false positives are INHERITED — they fire on the pre-widening module too`,
+    INHERITED.every(firesPreWidening) && INHERITED.every(fires));
 }
 
 // ── 5b. THE DEAF SPOTS THE DERIVATION LEFT BEHIND ────────────────────────────
@@ -335,6 +670,27 @@ console.log("\n── VALUES THAT WERE MISSING FROM BOTH LISTS ─────�
     // «كتمة» — which this file's own `namesAnAirway()` helper already treated as an airway
     // word while the module could not detect it at all.
     "عندي كتمة", "فيني كتمة", "جاتني كتمة", "كتمة نفس", "عندي كتمة وضيق نفس",
+    // ── AND THE FOUR FOUND ONE WAVE LATER, ALL SILENT IN ALL THREE MODULES ─────────────
+    // «متورم» — THE ORDINARY PAST PARTICIPLE FOR *SWOLLEN*, and the textbook angioedema
+    // report. `THROAT_CLOSES` carried it and `SWELLS` did not, so «ابني حلقه متورم» fired
+    // and «ابني لسانه متورم» did not: two lists over the same body, one of them one word
+    // short, inside the commit that re-read the family.
+    "ابني لسانه متورم", "ابني شفايفه متورمة", "لساني متورم", "وجهي متورم", "بنتي وجهها متورم",
+    "عيني متورمة", "زوجتي شفايفها متورمة",
+    // THE PERSON GATE ON THE CHOKING FAMILY. «ابني» was in `PERSON_WORDS` and «الولد» was
+    // not, so the most urgent phrasing this module can receive was the one it could not
+    // hear — while «الولد ما يقدر يتنفس», whose family has NO person anchor, fired. The gap
+    // was the gate, not the vocabulary.
+    "الولد يختنق", "البنت تختنق", "الصغير يختنق", "الجاهل يختنق", "الياهل يختنق",
+    "عيالي يختنقون", "اولادي يختنقون", "الولد مختنق", "البنت حلقها مقفل", "الصغير ما يتنفس",
+    // «ضايق» ON THE THROAT — the form the module's own deferral list did not mention while
+    // deferring its rarer twin «ضيق» by name. 6,624 driven strings in this shape.
+    "ابني حلقه ضايق", "حلقي ضايق", "حلقي ضيق", "بنتي حلقها ضايق", "زوري ضايق", "بلعومي ضيق",
+    "ابني حلقه ضيق", "احس حلقي ضايق",
+    // THE ENGLISH SLOTS WITH ONE VALUE IN THEM, the same shape in the other language:
+    // «can't catch» was listed and «cannot catch» was not; the throat could be «tight» but
+    // could not «feel tight»; the possessive on «skin» stopped one step short of a child.
+    "cannot catch her breath", "my throat feels tight", "his throat feels tight",
   ];
   derivedTotal += mustFire("deaf-spots", DEAF_SPOTS);
   // …AND THEY ARE NEW. Every one was silent on the pre-widening module AND on the widened
@@ -545,7 +901,12 @@ const add = (family: string, ...items: string[]) => {
   /** WHO an ordinary sentence is about — the same people the firing corpus uses, on purpose:
    *  the person axis is what carried the idiom in, so the quiet side must cross it too. */
   const WHO = ["ابني", "بنتي", "ولدي", "زوجتي", "زوجي", "أمي", "أبوي", "الوالدة", "أخوي", "أختي",
-    "صاحبي", "صاحبتي", "رفيجي", "الطفل", "الطفلة", "جوزي", "مرتي", "العميل", "الكابتن", "المدير"];
+    "صاحبي", "صاحبتي", "رفيجي", "الطفل", "الطفلة", "جوزي", "مرتي", "العميل", "الكابتن", "المدير",
+    // THE PERSON WORDS ADDED TO `symptom-frames.PERSON_WORDS` WITH THIS CHANGE. A widening of a
+    // shared person list widens every detector that reads it, so the quiet side has to cross the
+    // NEW values and not only the old ones — otherwise this corpus reads the same before and
+    // after, which is the property §8 exists to refuse.
+    "الولد", "البنت", "الصغير", "الصغيره", "الجاهل", "الياهل", "عيالي", "اولادي", "ولدنا", "بنتنا"];
   const ANNOY = ["من الأسعار", "من الزحمة", "من التوصيل", "من الانتظار", "اليوم", "شوي"];
 
   // 8a-i. «نفس» = THE SAME, with «ما» hiding inside the adverb in front of it.
@@ -565,7 +926,31 @@ const add = (family: string, ...items: string[]) => {
   add("«شاف»=I saw it", ...cross(["شفته", "شفتها", "شفناه", "شفتهم"], ["من بعيد", "أمس", "في الفرع", "على الطاولة"]));
   add("body words, ordinary sense", ...cross(["شفايفها", "شفايفه", "لسانه", "وجهها"], ["حلوة", "حلو", "طويل شوي", "معروف عندنا"]));
   // 8d. «ضاق»/«ضايق» = annoyed. The commonest idiom in a complaints inbox.
+  //
+  // IN BOTH WORD ORDERS, AND THE SECOND ONE IS HERE BECAUSE AN AUDITOR DEFEATED THIS CORPUS
+  // WITH IT. The V–N order «ضاق صدري» was the only one written, so a widening that closed the
+  // chest deferral in the N–V order — «صدري ضايق», the commoner of the two in a WhatsApp
+  // complaint — made 3,168 ordinary strings fire with the whole suite green. The same widening
+  // in the V–N order was caught. That is the boundary this corpus has, stated in the header;
+  // this is one word order's worth of it closed. Arabic has both; a corpus that has one is a
+  // corpus that constrains half the widenings that reach it.
+  const CHEST_NV = ["صدري ضايق", "صدري ضيق", "صدري مسدود", "صدره ضايق", "صدرها ضايق",
+    "صاحبي صدره ضايق", "ابني صدره ضايق", "نفسيتي ضايقة", "خاطري ضايق"];
   add("«ضاق»=annoyed", ...cross(["ضاق صدري", "ضاقت نفسيتي", "أنا ضايق", "احنا ضايقين", "المدير ضايق"], ANNOY));
+  add("«ضاق»=annoyed, the OTHER word order", ...cross(CHEST_NV, ANNOY));
+  add("«ضاق»=annoyed, the OTHER word order", ...cross(["لا تزعلوني", "والله", ""], CHEST_NV, ["", "ومليت من الطلبات المتأخرة"]));
+  // 8d-ii. «حلق» = A RING, AND «ضيق»/«ضايق» IS WHAT A RING IS. The throat gained those four
+  // words with this change, so the noun's other reading has to be crossed against them here or
+  // the widening is certified by a corpus that cannot see it. `AR_B` protects «الحلقة ضيقة»;
+  // what the module leans on for the BARE ring is that a ring belongs to an ORDER and never to
+  // a person, so every string below is deliberately written without one.
+  add("«حلقة»=a ring, «ضيق»=narrow", ...cross(
+    ["ابغى", "عندكم", "نبي", "كم سعر", "وش سعر", "جهزوا لنا", "ودي في"],
+    ["حلقه ضيقه", "حلقة ضيقة", "حلق ضيق", "حلقات ضيقه", "الحلقه الضيقه"],
+    ["", "للتغليف", "للهدية", "؟", "لو سمحت"]));
+  add("«حلقة»=a ring, «ضيق»=narrow", ...cross(
+    ["الحلقة", "الحلقه", "حلقات البصل", "حلقة البرنامج", "الحلق"],
+    ["ضيقة", "ضيقه", "ضيق", "ضايقة", "ضايقه"], ["", "شوي", "مرة", "على الصحن"]));
   // 8e. «مات»/«أموت» = loves it. Enthusiasm, in the vocabulary of dying.
   add("«مات»=loves it", ...cross(["أموت على", "بموت على", "يموت على", "نموت على", "متنا على"], DISH));
   add("«مات»=loves it", ...cross(["مت من الجوع", "مايت من الجوع", "الحلا يموت", "الكبسة تموت"], ["", "والله", "بصراحة"]));
@@ -576,6 +961,13 @@ const add = (family: string, ...items: string[]) => {
   add("«حلقة»=an episode", ...cross(["الحلقة", "حلقة البرنامج", "الحلقة الأخيرة", "حلقة اليوم", "حلقات البصل"],
     ["قفلت", "انسدت", "ضاقت", "سكرت", "حلوة", "الجديدة"]));
   add("«حلق»=to shave, «زور»=to visit", "حلقت شعري اليوم", "زورت المطعم أمس", "نزور الفرع الجديد", "حلق الذهب غالي");
+  // 8g-ii. «متورم» — the value `SWELLS` gained with this change. It is a body word and very
+  // nearly nothing else, which is the argument for admitting it unguarded; the strings below
+  // are the nearest an ordinary inbox comes to it, and they are here so that argument is
+  // DRIVEN rather than asserted.
+  add("«متورم»=swollen, ordinary", ...cross(
+    ["العجين", "الخبز", "الكيس", "الحساب", "الطلب", "الصندوق"],
+    ["متورم", "منتفخ", "متورمة"], ["", "شوي", "من الحرارة"]));
   // 8h. «كبر» = grew up / got bigger, on the parts where that is all it means.
   add("«كبر»=grew", ...cross(["عينها", "عينه", "وجهه", "وشها"], ["كبرت", "كبر"], ["من الفرح", "من الأكل", "شوي", ""]));
   add("«كبر»=grew", "ابني كبر وصار يطلب بنفسه", "المحل كبر عن قبل");
@@ -713,8 +1105,8 @@ console.log("\n── AND WHY THE OLD QUIET CORPUS COULD NOT HAVE DONE THAT ─�
   console.log(`   …and ${addedPre.length} were already false positives BEFORE the widening: ${addedPre.slice(0, 6).map((t) => `«${t}»`).join(" ")}`);
 }
 
-console.log(`\n   corpus totals: ${derivedTotal} derived must-fire · ${quietTotal + ordinaryTotal} must-be-quiet`);
-console.log(`   …of which ${ordinaryTotal} are ordinary restaurant strings derived from Arabic, not from the module's axes`);
+console.log(`\n   corpus totals: ${derivedTotal} derived must-fire · ${quietTotal + ordinaryTotal + enOrdinaryTotal} must-be-quiet`);
+console.log(`   …of which ${ordinaryTotal} are ordinary restaurant strings derived from ARABIC and ${enOrdinaryTotal} from ENGLISH, neither from the module's axes`);
 console.log(`\n${fails.length ? "FAIL" : "PASS"} airway-derivation: ${pass}/${pass + fails.length} passed`);
 if (fails.length) {
   if (fails.length > 40) console.log(`   … ${fails.length - 40} more failures not listed`);

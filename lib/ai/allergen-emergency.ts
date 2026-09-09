@@ -126,17 +126,28 @@ const HYPOTHETICAL_Q_RE = /(?:ممكن|يمكن|هل|ينفع|يصير|احتم�
 //   «اغمي عليه» / «فقد الوعي» / «he passed out» — loss of consciousness is a DIFFERENT
 //     emergency family, not an airway one, with its own homographs («أغمي عليه من الضحك»,
 //     "passed out drunk"). It deserves its own signal, label and quiet side.
-//   «حلقي ضيق» — found while driving this change and silent in EVERY version including the
-//     pre-widening one, so it is not a regression. `THROAT_CLOSES` carries «يضيق» and «ضاق»
-//     but not the bare adjective «ضيق». Deferred for the same reason as the rest: «حلقة ضيقة»
-//     is a narrow ring, so the widening needs its quiet side driven first.
+//   «حلقي ضيق» — CLOSED, one wave later, and the way it was closed is the point. The deferral
+//     named «ضيق» and not «ضايق», which is the commoner Gulf form and was worth 6,624 driven
+//     strings on its own — a deferral list is a list somebody thought of too. It is closed
+//     with a SUBJECT anchor rather than a list entry (see `THROAT_TIGHT_ANCHORED`), because
+//     «حلقة ضيقة» is a narrow ring and the ring never belongs to a person.
 //
 // SO THE RULE IS NOT "REQUIRE A BREATH WORD" ANY MORE. It is: require a breath word, and where
 // that word is a homograph, say WHICH READING by a property of the grammar — a word boundary,
-// a construct, an agreement — never by a list of the complements somebody thought of. Each
-// guard below carries the sentence that got past it. And the proof's quiet side is now derived
-// from ordinary Arabic rather than from these axes, and driven against BOTH the pre-widening
-// and the widened module, so it can fail.
+// a construct, an agreement, a SUBJECT — never by a list of the complements somebody thought
+// of. Each guard below carries the sentence that got past it.
+//
+// AND THE PROOF'S QUIET SIDE IS DERIVED FROM ORDINARY RESTAURANT LANGUAGE RATHER THAN FROM
+// THESE AXES — IN TWO LANGUAGES, WHICH IS THE CORRECTION THIS PARAGRAPH OWED. The sentence
+// that used to end here said "ordinary Arabic", and the number that shipped beside it — six
+// false-positive families closed, 4,606 ordinary strings down to 1 — WAS AN ARABIC NUMBER
+// PRESENTED AS A MODULE NUMBER. The same commit widened the English arm with no quiet side at
+// all, and 616 of 1,325 ordinary restaurant-English strings raised a full emergency: «the wine
+// is not breathing yet», «the queue left me short of breath». `proof-airway-derivation.test.ts`
+// §8 is the Arabic corpus and §5c is the English one, both driven against the pre-widening and
+// the widened modules so both can fail, and the proof's header states in one place what the
+// two of them do and do not cover — word order, script and syntactic frame are the boundary,
+// and a green run is evidence about a VALUE, not about a FRAME.
 // ============================================================================
 
 /** NEGATION — every particle Arabic uses to say "not", including the Egyptian ما…ش circumfix
@@ -301,8 +312,26 @@ const NOT_THE_IDIOM =
 //   would be. Hence the masculine forms only, with a right boundary so «مقطوع» cannot match
 //   inside «مقطوعه».
 //
-// WHAT THIS COSTS, NAMED: the bare «ابني نفسه ضايق» from a parent no longer fires. It is a
-// real reading and this is a deliberate trade. Everything else a parent says still does —
+// WHAT THIS COSTS, NAMED — ON BOTH AXES, BECAUSE THE FIRST VERSION OF THIS PARAGRAPH NAMED
+// ONLY ONE OF THEM AND THE OTHER ONE COSTS A DAUGHTER.
+//
+//   THE VERB AXIS: the bare «ابني نفسه ضايق» from a parent no longer fires. It is a
+// real reading and this is a deliberate trade.
+//
+//   THE AGREEMENT AXIS, WHICH WAS NOT NAMED AND IS THE MORE EXPENSIVE OF THE TWO: «بنتي نفسها
+// مقطوعة» — *my daughter's breath is cut* — is SILENT, while «بنتي نفسها مقطوع» fires. Thirty
+// driven strings across «بنتي / ابنتي / اختي / زوجتي / امي / الطفله» are silent for this
+// reason alone. The grammar is right — نَفَس is masculine whoever it belongs to, so a feminine
+// predicate is about the woman and «أختي نفسها مقطوعة من الشغل» is a job, not an airway — but
+// the rule asks a frightened parent to get agreement right on a noun whose gender they cannot
+// hear, about a daughter, in a hurry, in a register that adds the ة freely. It is kept because
+// the alternative is a closed list of complements («من الشغل», «من الدوام», …) and that list
+// is exactly what this file is removing. IT IS KEPT AND IT IS WRITTEN DOWN, which is the part
+// that was missing. Everything else that parent types about that daughter fires: «بنتي ما
+// تقدر تتنفس», «بنتي تختنق», «بنتي حلقها مقفل», «بنتي حلقها ضايق», «بنتي عندها صعوبة في
+// التنفس», «بنتي لسانها متورم», «بنتي شفايفها زرقاء» — all driven, all firing.
+//
+// Everything else a parent says still does —
 // «ابني ما يقدر يتنفس», «ابني ما عاد يتنفس», «ابني عنده ضيق نفس», «ابني عنده صعوبة في
 // التنفس», «حلقه يقفل», «حلقه مقفل», «شفايفه زرقاء», and «ابني يختنق», which is new below and
 // is what a parent actually types. Trading one ambiguous phrasing for an unambiguous one that
@@ -353,6 +382,32 @@ const THROAT_CLOSES =
   "يتورم|تتورم|بيتورم|متورم|تورم|مسدود|مسدوده|انسد|انسدت|يسكر|تسكر|بيسكر|سكر|سكرت|اتسكر|مسكر|مسكره)";
 const THROAT_CLOSING = `${THROAT}${POSS} ?${THROAT_CLOSES}`;
 
+/** «حلقي ضايق» / «ابني حلقه ضايق» — A TIGHT THROAT, DEFERRED UNDER ONE SPELLING AND MISSED
+ *  UNDER THE COMMONER ONE. The header above deferred «حلقي ضيق» by name; it never mentioned
+ *  «ضايق», which is the ordinary Gulf participle and the form a parent types. 6,624 driven
+ *  strings in that shape were silent in all three versions of this module.
+ *
+ *  THE DEFERRAL WAS RIGHT ABOUT THE HOMOGRAPH AND WRONG ABOUT THE REMEDY. «حلقة ضيقة» is a
+ *  narrow ring and «حلقات» are onion rings, so these four words cannot join `THROAT_CLOSES`,
+ *  where they would be admitted with no subject at all: driven, a bare «حلقه ضيق» and «ابغى
+ *  حلقه ضيقه للتغليف» both fire the moment they are added there. `AR_B` protects «الحلقة
+ *  ضيقة» — a noun carrying the article is not a noun carrying a possessive — but the BARE
+ *  ring slips past it, because «حلقه» is «حلق»+«ه» whichever word it came from.
+ *
+ *  So the guard is the one this file already uses twice, and it is a subject and not a
+ *  complement list: the throat is either THE SENDER'S OWN («حلقي», first person, where a ring
+ *  has no reading) or it belongs to A PERSON THE MESSAGE NAMES. A ring belongs to an order.
+ *  «ابغى حلقه ضيقه» has no person in it and stays quiet; «ابني حلقه ضايق» has one and fires.
+ *
+ *  WHAT THIS COSTS, NAMED: «عندكم حلقه ضيقه؟» from a customer who wants a narrow ring for
+ *  packaging is still quiet, but «حلقي ضيق» said about an EARRING — «حلق» is also jewellery —
+ *  now fires. That is over-escalation on a sentence nobody sends to a restaurant, and it is
+ *  the direction this file chooses when it has to choose. */
+const THROAT_TIGHT = "(?:ضايق|ضايقه|ضيق|ضيقه)(?![ء-ي])";
+const THROAT_TIGHT_ANCHORED =
+  `${THROAT}ي ?${THROAT_TIGHT}` +
+  `|(?:${PERSON_WORDS}|انا|اني|احس|حاسس|حاسه|صار|صرت|بدا)[^.،,؛!؟\n]{0,12}?${THROAT}${POSS} ?${THROAT_TIGHT}`;
+
 /** SWELLING NOW — lips / tongue / face / eyes / throat, in every person. «شفتي» stays FIRST
  *  PERSON ONLY on purpose: the singular «شفة» with a third-person suffix is «شفته», which is
  *  also «شفته» = "I saw it" — «الخبز شفته ينتفخ» ("I saw the bread rising") would have become
@@ -360,8 +415,14 @@ const THROAT_CLOSING = `${THROAT}${POSS} ?${THROAT_CLOSES}`;
 // «بلعوم»/«زور»/«حنجرت» were in the THROAT list and not this one, so «بلعومي منتفخ» was
 // silent while «بلعومي يتورم» fired: the same body part, two verb lists, one of them short.
 const SWELL_BODY = `(?:${AR_B}(?:شفايف|لسان|وش|وجه|عين|حلق|بلعوم|زور|حنجرت)${POSS}|شفتي)`;
+// «متورم» — THE ORDINARY PAST PARTICIPLE FOR *SWOLLEN*, AND THE ONE WORD THIS LIST DID NOT
+// HAVE. `THROAT_CLOSES` carries it, so «ابني حلقه متورم» fired and «ابني لسانه متورم» — the
+// textbook angioedema report, a swollen tongue — did not. Two lists over the same body, one of
+// them a word short: the exact bug this file exists to end, surviving inside the commit that
+// re-read the family. It is a pure widening — «متورم» describes a body and nothing else in a
+// restaurant — and it needs no guard beyond the one `SWELL_BODY` already applies.
 const SWELLS =
-  "(?:تورم|تورمت|تتورم|يتورم|بيتورم|ورم|بيورم|منتفخ|منتفخه|انتفخ|انتفخت|ينتفخ|بينتفخ|تنتفخ)";
+  "(?:متورم|متورمه|تورم|تورمت|تتورم|يتورم|بيتورم|ورم|بيورم|منتفخ|منتفخه|انتفخ|انتفخت|ينتفخ|بينتفخ|تنتفخ)";
 /** «كبر»/«كبرت» IS "GREW", NOT "SWELLED", and it is not a synonym of the nine verbs above:
  *  Arabic says a swelling is «متورم»/«منتفخ». On the possessive axis it carried «عينها كبرت»
  *  ("her eyes went wide with joy") and «وجهه كبر» ("his face filled out from the food") into
@@ -391,7 +452,7 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
   // Breath tight — first person bare, third person only with a person named (see above).
   [new RegExp(`نفسي ?${BREATH_TIGHT}${NOT_THE_IDIOM}|${BREATH_TIGHT_THIRD}`), "ضيق نفس", "hard"],
   // Throat closing, in every person.
-  [new RegExp(THROAT_CLOSING), "انسداد الحلق", "hard"],
+  [new RegExp(`${THROAT_CLOSING}|${THROAT_TIGHT_ANCHORED}`), "انسداد الحلق", "hard"],
   // Choking / suffocating, with a person named — the family that was absent in both arms.
   [new RegExp(CHOKING), "اختناق", "hard"],
   // Chest tightness reported in a personal frame («عندي كتمة»), never about the room.
@@ -448,10 +509,192 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
 // It is the one sentence in this file that is never worth a second guess.
 // «skin» now needs a possessive: «the skin looks blue on the chicken» is a kitchen report.
 //
-// A hypothetical English framing is still read as active, unchanged and on purpose — see the
-// header of `detectAllergenEmergency`. Widening the vocabulary does not touch that policy.
+// ============================================================================
+// AND THAT GUARD WAS WRITTEN FOR THE TWO SHAPES AN AUDIT HAD LISTED, AND CERTIFIED AGAINST A
+// CORPUS THAT WAS 100% ARABIC. WHICH IS THE ARABIC BUG, ONE LANGUAGE OVER.
+//
+// The four alternatives added beside the two guarded ones — `struggling|straining|fighting to
+// breathe`, `gasping for air|breath`, `short(ness)? of breath`, `(?:is |are |…)?not breathing`
+// — carried no person, no tense and no locative. Driven against an ordinary restaurant ENGLISH
+// corpus built the way §8 of the proof builds the Arabic one (vocabulary and homographs first,
+// sentences never), 616 of 1,325 ordinary strings raised a full allergy emergency and every one
+// of them was quiet in production:
+//
+//   «the wine is not breathing yet»                      «the dough is not breathing under the cloth»
+//   «the extractor fan is not breathing»                 «the tandoor is not breathing well»
+//   «customers were struggling to breathe in the hall»   «we were gasping for air in the kitchen»
+//   «the queue left me short of breath»                  «that double shift left me short of breath»
+//
+// «breathing» is a homograph in English the same way «نفس» is in Arabic: wine breathes, dough
+// breathes, an oven breathes, a room breathes. The rule this file already states applies
+// unchanged — REQUIRE THE BREATH WORD, AND WHERE IT IS A HOMOGRAPH SAY WHICH READING BY A
+// PROPERTY OF THE GRAMMAR. In English that property is the SUBJECT: a wine, a dough and an
+// extractor fan are not people, and an airway report names a person or it is the whole message.
+//
+// SO THE GUARD IS A CLOSED PERSON CLASS ON THE LEFT (`EN_PERSON`, below — the English twin of
+// `symptom-frames.PERSON_WORDS`), NOT AN OPEN LIST OF THINGS THAT BREATHE. The things are
+// open — wine, dough, sourdough, starter, cheese, oven, tandoor, fan, compressor, engine — and
+// enumerating them is the anti-pattern this file exists to kill. The people are enumerable, and
+// this file already enumerates them in Arabic and, for `choking|suffocating`, in English: that
+// alternative was written with a person anchor from the start and it contributes ZERO false
+// positives to the 1,325-string corpus. The guard below is that alternative's guard, applied to
+// the four that were shipped without it.
+//
+// WHY THAT DOES NOT SILENCE THE BARE FORMS, WHICH IS THE OBJECTION THAT KILLED THE OBVIOUS FIX.
+// A person anchor alone silences «not breathing», «struggling to breathe», «gasping for air»,
+// «short of breath» — the subjectless forms the proof asserts as must-fire, and it is right to:
+// they are what someone types when they have no words left. So the anchor has the escape hatch
+// THIS FILE ALREADY USES FOR THE EMERGENCY NUMBERS one screen down — the phrase ALONE, as the
+// whole message, with at most one word of urgency, fires with no subject at all. «not breathing»
+// fires; «the wine is not breathing yet» does not. That is the difference the subject makes, and
+// it is a property of the message, not a list of complements.
+//
+// THE LOCATIVE HALF STAYS, AND IT REACHES TWO MORE ALTERNATIVES. A person anchor cannot separate
+// «we were gasping for air in the kitchen» from «he is gasping for air» — «we» is a person. The
+// tell there is the one already named above: WHERE, not WHO. So `struggling|straining|fighting
+// to breathe` and `gasping for air|breath` take the same closed-class place lookahead the two
+// nominals already have.
+//
+// WHAT THIS COSTS, NAMED, AND DRIVEN — the same discipline the Arabic design calls got:
+//
+//   * A PLACE-QUALIFIED AIRWAY REPORT in exactly those two shapes: «my son is struggling to
+//     breathe in the car» is silent. Everything else that parent can type still fires — «my son
+//     can't breathe in the car» (unguarded on purpose), «my son is choking», «my son is not
+//     breathing», «my son has difficulty breathing», «his throat is closing».
+//   * A NAMED SUBJECT THAT IS NOT A PRONOUN OR A KINSHIP TERM: «Ahmed is not breathing» is
+//     silent, because proper names are the one open class here. «he is not breathing», «my son
+//     is not breathing», «the child is not breathing» and a bare «not breathing» all fire.
+//   * A FIRST-PERSON PRESENT-TENSE «I am short of breath» STILL FIRES even when the cause is a
+//     double shift. That is over-escalation and it is the accepted direction: the sender is
+//     reporting their own body in the present tense. What no longer fires is the causative
+//     frame with an OBJECT pronoun — «the queue left me short of breath» — where the sender is
+//     reporting a cause, not a symptom. Subject vs object is grammar; "queue" vs "allergy" is a
+//     complement list, and this file does not write those any more.
+//   * `shortness of breath` KEEPS NO ANCHOR AT ALL. The -ness nominalisation is clinical
+//     register; it has no ordinary restaurant reading, and 0 of the 1,325 ordinary strings
+//     contain it. Only the adjectival «short of breath» needed the subject.
+//
+// The quiet side of this guard is derived in `proof-airway-derivation.test.ts` §5c, from
+// ordinary restaurant English, BEFORE the guard was written — which is the discipline this
+// file was blocked for missing in Arabic and owed to the other language.
+// ============================================================================
+
+/** THE PEOPLE, BY RELATION — the noun half of `EN_PERSON`, and LONG ON PURPOSE. What makes
+ *  this a closed class is not its length; it is that every value is A PERSON. It replaced an
+ *  open `my \w+`, which was open in the wrong direction — it admitted «my sourdough is not
+ *  breathing». A name missing from here is a deaf spot and a one-line fix; an open `\w+` here
+ *  is 616 false positives. Driven: `proof-airway-derivation.test.ts` §5 crosses this list
+ *  against every possessive and every guarded symptom, so a value dropped from it fails in
+ *  the hundreds rather than in silence. */
+const EN_KIN =
+  "(?:son|daughter|child|kid|baby|toddler|infant|boy|girl|wife|husband|mother|father|mom|mum|" +
+  "dad|papa|brother|sister|sibling|spouse|partner|fianc(?:e|é)e?|friend|colleague|co-?worker|" +
+  "neighbou?r|customer|guest|client|patient|uncle|aunt(?:ie)?|cousin|" +
+  "grand(?:ma|mother|pa|father|son|daughter|child|kid)|granny|nephew|niece|stepson|stepdaughter|" +
+  "twin|girlfriend|boyfriend|roommate|flatmate|classmate|student|teacher|nurse|doctor|" +
+  "man|woman|lady|person|little one|boss|manager|owner|employee|mate|" +
+  "driver|waiter|waitress|chef|cook|staff member)";
+/** WHO an English message can be ABOUT — the English twin of `symptom-frames.PERSON_WORDS`,
+ *  and closed for the same reason: the people are enumerable and the things that breathe in a
+ *  restaurant — wine, dough, sourdough, cheese, oven, tandoor, extractor fan — are not. Kept
+ *  as ONE list used by every alternative that needs a subject, because two copies of a person
+ *  list is the bug `symptom-frames.ts` exists to document. */
+const EN_PERSON =
+  // The contractions FIRST — «he's» must not be eaten by «he», which would leave the «s»
+  // stranded and the copula unmatched. Longest first, the same ordering rule as `NEG`.
+  "(?:he(?:'|’)s|she(?:'|’)s|they(?:'|’)re|we(?:'|’)re|i(?:'|’)m|" +
+  "he|she|they|we|i|im|someone|somebody|" +
+  `(?:(?:my|his|her|our|their|your|the|a|this) )?${EN_KIN})`;
+/** The subject slot: a person, then at most two words of copula/adverb before the symptom —
+ *  «he is not breathing», «she is still not breathing», «my son has stopped breathing».
+ *  THE `\b` IS LOAD-BEARING AND ITS ABSENCE COST 349 FALSE POSITIVES IN THE FIRST DRAFT OF
+ *  THIS GUARD. Written without it — with the contraction as an optional trailing `s` — the
+ *  pronoun «i» matched the FIRST LETTER OF THE COPULA and the `s` matched its second, so
+ *  «the wine **is** not breathing» supplied its own subject and the anchor admitted every
+ *  string it was written to exclude. The contractions are alternatives inside `EN_PERSON`
+ *  instead, and the person has to END where a word ends. */
+const EN_SUBJ = `(?:${EN_PERSON})\\b (?:\\w+ ){0,2}?`;
+/** THE PRESENT TENSE, WHICH IS THIS FILE'S OWN DEFINITION OF ITSELF («the NARROW,
+ *  present-tense "this is happening NOW" detector», line 4) AND THE LAST THING SEPARATING
+ *  TWO OF THESE PHRASES FROM A REPORT ABOUT LAST NIGHT'S SERVICE. With a person anchor and
+ *  a place lookahead both applied, «the smoke was so bad we were gasping for air» and «we
+ *  were all short of breath» still fired: «we» is a person and there is no place in them.
+ *  What is left is the tense — a ventilation complaint is a report about a shift that is
+ *  over, an airway emergency is now — and it is grammar, not a list of causes.
+ *  APPLIED TO THREE ALTERNATIVES ONLY: «struggling to breathe», «gasping for air» and the
+ *  adjectival «short of breath», where the past reading is the ordinary one. NOT to «stopped
+ *  breathing», which is past by nature; NOT to «not breathing», so «he was not breathing when
+ *  I found him» still fires; NOT to «can't breathe», which is guarded by nothing at all.
+ *  COST, NAMED: «my son was gasping for air» is silent. «my son is gasping for air», «my son
+ *  can't breathe», «my son is choking» and a bare «gasping for air» all fire. */
+const EN_NOW =
+  "(?:is|are|(?:'|’)s|(?:'|’)re|am|(?:'|’)m|keeps|starts|started|suddenly|now|still|" +
+  "barely|hardly|just|already|really|very|badly|so)";
+/** The subject slot, present tense only — see `EN_NOW`. */
+const EN_SUBJ_NOW = `(?:${EN_PERSON})\\b (?:${EN_NOW} ){0,2}?`;
+
+/** A PLACE, not a person. Prepositions are a closed grammatical class; this is the same
+ *  lookahead the two nominal forms already carry, shared so the two lists cannot drift. */
+const EN_NOT_A_PLACE =
+  "(?! (?:in|inside|out|near|around|here|there|with|when|from|during|throughout|because|due)\\b)";
+
 const EMERGENCY_EN_RE =
-  /\b(?:(?:can|could)(?:'|\u2019)?t (?:\w+ ){0,2}?breathe?|can ?not breathe|can no longer breathe|(?:unable|not able) to breathe|(?:struggling|straining|fighting) to breathe|gasping for (?:air|breath)|(?:hard|difficult|tough) to breathe(?! (?:in|inside|out|near|around|here|there|with|when)\b)|(?:difficulty|trouble|problems?|issues?) (?:in |with )?breathing(?! (?:space|room|in|inside|near|around|here|there)\b)|(?:stopped|quit) breathing|(?:is |are |he'?s |she'?s |i'?m |im )?not breathing|short(?:ness)? of breath|can(?:'|\u2019)?t catch (?:my|his|her|their) breath|(?:he|she|they|we|i|someone|my \w+|the (?:child|kid|baby|boy|girl)) (?:is |are |'?s )?(?:choking|suffocating)|(?:throat|airway) (?:is |are )?(?:closing|closed|swelling|swollen|blocked|tightening|tight)|(?:lips?|face|tongue|throat) (?:is |are )?swelling|swelling (?:up )?now|(?:lips?|face|tongue|fingers?|(?:his|her|my|their|the (?:baby|child|kid)(?:'|\u2019)?s?) skin) (?:are |is |look |looks |went |turned |turning |going )*(?:blue|bluish|purple)|anaphylaxis|anaphylactic|allergic reaction now|call (?:an )?ambulance|call (?:9-?1-?1|997|112)|emergency now)\b/i;
+  new RegExp(
+    "\\b(?:" +
+    // «can't breathe» — deliberately unguarded, in every spelling. Never worth a second guess.
+    "(?:can|could)(?:'|’)?t (?:\\w+ ){0,2}?breathe?|can ?not breathe|can no longer breathe|" +
+    "(?:unable|not able) to breathe|" +
+    // The four that shipped bare. A person subject, and for the two that a person can say
+    // about a ROOM, no place after them.
+    `${EN_SUBJ_NOW}(?:struggling|straining|fighting) to breathe${EN_NOT_A_PLACE}|` +
+    `${EN_SUBJ_NOW}gasping for (?:air|breath)${EN_NOT_A_PLACE}|` +
+    `${EN_SUBJ_NOW}(?:feels? |feeling |gets |getting )?short of breath|` +
+    `${EN_SUBJ}not breathing|` +
+    // …and the -ness nominal, which has no ordinary restaurant reading and needs no subject.
+    "shortness of breath|" +
+    // The two the audit's §1F named, unchanged: guarded on the place, not on the person.
+    "(?:hard|difficult|tough) to breathe(?! (?:in|inside|out|near|around|here|there|with|when)\\b)|" +
+    "(?:difficulty|trouble|problems?|issues?) (?:in |with )?breathing(?! (?:space|room|in|inside|near|around|here|there)\\b)|" +
+    "(?:stopped|quit) breathing|" +
+    "can(?:no|(?:'|’))?t catch (?:my|his|her|their|our|your) breath|" +
+    // Choking / suffocating — person-anchored since it was written, and the model for the four
+    // above. `EN_PERSON` replaces its own inline person list so there is one list, not two.
+    `(?:${EN_PERSON}) (?:is |are |'?s |was |were )?(?:choking|suffocating)|` +
+    "(?:throat|airway) (?:is |are |feels? |feeling |went |going )?(?:closing|closed|swelling|swollen|blocked|tightening|tight)|" +
+    "(?:lips?|face|tongue|throat) (?:is |are )?swelling|swelling (?:up )?now|" +
+    "(?:lips?|face|tongue|fingers?|(?:(?:his|her|my|their|our|your)(?: (?:son|daughter|child|kid|baby|boy|girl)(?:'|’)s)?|the (?:baby|child|kid)(?:'|’)?s?) skin) (?:are |is |look |looks |went |turned |turning |going )*(?:blue|bluish|purple)|" +
+    "anaphylaxis|anaphylactic|allergic reaction now|call (?:an )?ambulance|call (?:9-?1-?1|997|112)|emergency now" +
+    ")\\b",
+    "i",
+  );
+
+/** THE ESCAPE HATCH FOR THE SUBJECTLESS FORMS — the same rule, and the same reasoning, as
+ *  `BARE_EMERGENCY_NUMBER_RE` below: the phrase IS the message, which is what someone types
+ *  when they have no words left. «not breathing» fires; «the wine is not breathing yet» does
+ *  not, because there the phrase is not the message — it has a subject, and the subject is a
+ *  wine. The `^` anchor is the whole guard: a symptom that OPENS the message is the topic of
+ *  the message, and «the queue left me short of breath» can never reach it.
+ *
+ *  An elided copula is allowed in front («is not breathing»), a severity adverb with it
+ *  («sudden short of breath»), and at most four words of tail behind — «short of breath after
+ *  eating», «not breathing please help» — because a message that begins with the symptom is
+ *  still about the symptom. The two lookaheads are the only things the tail may not be: a
+ *  PLACE, which is the ventilation reading this file already refuses on the right, and the
+ *  fixed compounds «breathing room/space» and «choking hazard», which open a message about
+ *  the kitchen rota and a message about packaging respectively. */
+const EN_BARE_AIRWAY_RE = new RegExp(
+  "^[\\s]*(?:(?:is|are|was|were|he(?:'|’)?s|she(?:'|’)?s|i(?:'|’)?m|im|still|now|" +
+  "sudden|suddenly|severe|acute|really|very|badly)\\s+){0,2}" +
+  "(?:" +
+  "not breathing(?! (?:room|space)\\b)|" +
+  `(?:struggling|straining|fighting) to breathe${EN_NOT_A_PLACE}|` +
+  `gasping for (?:air|breath)${EN_NOT_A_PLACE}|` +
+  "short of breath|" +
+  "(?:choking|suffocating)(?! (?:hazard|risk|point)\\b)" +
+  ")" +
+  "(?:[\\s,]+[^\\s]+){0,4}[\\s!?.,’']*$",
+  "i",
+);
 
 // --- EMERGENCY NUMBERS — the hardest rule in this file to get right --------------
 //
@@ -535,7 +778,7 @@ export function detectAllergenEmergency(text: string): EmergencyHit {
 
   // English/mixed first (raw text). Past/hypothetical English framings are rare and
   // an English "anaphylaxis"/"can't breathe" is always treated as active (fail-safe).
-  if (EMERGENCY_EN_RE.test(raw)) return { fired: true, label: "emergency (EN)" };
+  if (EMERGENCY_EN_RE.test(raw) || EN_BARE_AIRWAY_RE.test(raw)) return { fired: true, label: "emergency (EN)" };
 
   // A CONDITIONAL IS NEVER A REPORT, AND LETTING THE HARD FAMILIES IGNORE THAT WAS A
   // REGRESSION AGAINST THE VERSION IN PRODUCTION.
