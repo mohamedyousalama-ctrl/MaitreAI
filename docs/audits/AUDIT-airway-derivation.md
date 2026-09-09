@@ -436,3 +436,258 @@ Families **E** (5) and **F** (11) are small and can ship as follow-ups.
 2. Make `HYPOTHETICAL_Q_RE` linear (§6) — public-webhook DoS surface, pre-existing.
 3. Raise the extraction floor in the proof from 150 to `>= 175`, and widen `[^\]]` to recover
    the 12 dropped quiet strings (§3a).
+
+---
+
+## Re-audit (`b28f307`)
+
+**Method:** one harness, three modules in one process — `scripts/fixtures/allergen-emergency-pre-widening.ts`
+(**pre**, what is in production now), `scripts/fixtures/allergen-emergency-widened.ts` (**widened**,
+the version §7 blocked), `lib/ai/allergen-emergency.ts` (**live**, the candidate). Imported through
+`scripts/ts-ext-loader.mjs`. Every verdict below is **pre / widened / live** on a driven string.
+Corpora built for this audit, not reused from the proof. The module was mutated only in a sandbox
+copy and restored byte-exact after every run (`sha256 d472676…9639`, verified; `git status` clean).
+
+The headline numbers from §0 were not re-verified — the previous audit confirmed them. Baseline
+re-run once for a floor: `proof-airway-derivation.test.ts` **PASS 20,657/20,657**, suite **229/229**.
+
+---
+
+## R1. Can the new quiet corpus be defeated? **YES — but it is not decoration.**
+
+### R1a. The attack that succeeds
+
+The module names five deferrals in its own header. The first is the chest: *«صدري ضايق» / «ابني صدره
+ضايق»* — deferred because *«ضاق صدري من الانتظار»* ("I got fed up waiting") is a first-class
+complaints idiom. That is exactly the deaf spot a future engineer closes next, and closing it is
+one more body noun written in this file's own established idiom (`AR_B` + noun + `POSS` + verbs):
+
+```ts
+const CHEST = `${AR_B}صدر${POSS} ?(?:ضايق|ضايقه|ضيق|ضيقه|مسدود|مسدوده|مقفل|مكتوم|تعبان|فيه صفير)`;
+// …[new RegExp(CHEST), "ضيق صدر", "hard"],
+```
+
+Driven with it applied:
+
+```
+PASS airway-derivation: 20657/20657 passed
+passed 229   failed 0   total 229          ← the WHOLE unit suite, including
+                                             proof-allergy-false-positives.test.ts
+3,168 ordinary chest-complaint strings:  pre 0 fire · widened 0 fire · LIVE 3,168 FIRE
+```
+
+| driven string | gloss | pre / widened / live+CHEST |
+|---|---|---|
+| **«صدري ضايق من الخدمة»** | *I'm fed up with the service* | quiet / quiet / **FIRES** `ضيق صدر` |
+| **«صدري ضايق من الأسعار»** | *fed up with the prices* | quiet / quiet / **FIRES** |
+| «صدري ضايق من الانتظار» | *fed up with the waiting* | quiet / quiet / **FIRES** |
+| «صاحبي صدره ضايق من الخدمة» | *my friend is fed up with the service* | quiet / quiet / **FIRES** |
+| «لا تزعلوني صدري ضايق» | *don't upset me, I'm down* | quiet / quiet / **FIRES** |
+| «صدري ضايق ومليت من الطلبات المتأخرة» | *I'm fed up with late orders* | quiet / quiet / **FIRES** |
+
+3,168 ordinary strings raising a full allergy emergency — WhatsApp to the founder's phone, fabricated
+allergy note on a kitchen ticket — and every proof in the repo reads green. That is the same scale as
+the 3,993 that blocked `dc6c9f9`.
+
+### R1b. …and the control that says exactly *why* it succeeds
+
+The same deferral, closed in the **other word order** — `(?:ضاق|ضاقت|يضيق) ?${AR_B}صدر${POSS}` —
+is **caught**:
+
+```
+FAIL ordinary-restaurant: «ضاق صدري من الأسعار» FIRED
+FAIL ordinary-restaurant: «ضاق صدري من الزحمة» FIRED   … (6 more)
+FAIL airway-derivation: 20651/20657 passed
+```
+
+So the corpus **can** object, and here it does. §8's `add("«ضاق»=annoyed", ...cross(["ضاق صدري", …], ANNOY))`
+carries the right idiom, the right noun and the right complements. What it does not carry is the
+**other word order for the same idiom** — and Arabic has both. `«ضاق صدري»` (V–N) is in the corpus;
+`«صدري ضايق»` (N–V) is not, and it is the commoner of the two in a WhatsApp complaint.
+
+**This is the finding, stated precisely: the new corpus is a cross product of frames somebody
+enumerated, so it constrains a widening exactly when the widening lands in an enumerated frame.**
+It is a real, load-bearing constraint — §8's own assertion that 4,026 of its strings separate the
+widened module from the live one is true, and R1b shows it biting on a widening written after this
+commit. It is not decoration; the old corpus separated 0/6,289 and this one separates 4,026. But the
+sentence the commit reaches for — *"the quiet side is now derived from ORDINARY RESTAURANT ARABIC"* —
+overstates it. It is derived from ordinary restaurant **vocabulary**, in the **syntactic frames the
+author wrote**, in **one language**. Word order is not an axis; neither is script.
+
+### R1c. The second attack, and the third — which needs no mutation at all
+
+**ATTACK B** — the other named deferral, `«حلقي ضيق»`, closed by adding `ضيق|ضيقه|ضايق|ضايقه` to
+`THROAT_CLOSES`: **PASS 20,657/20,657**, and «حلقة ضيقة» *(a narrow ring)*, «حلقه ضيق»,
+«ابغى حلقه ضيقه للتغليف» fire. `AR_B` correctly protects «الحلقة ضيقة» — the boundary guard works;
+the bare noun is what slips. Small, but the corpus's `«حلقة»=an episode` family was written for this
+exact noun and does not reach it.
+
+**ATTACK C — the English arm, on the live module as committed. No mutation.** §8's `ORDINARY`
+corpus is 100% Arabic by construction (every axis is an Arabic literal), so it cannot say anything
+about the English arm — which **this commit widened**.
+
+```
+761 ordinary restaurant-English strings:  pre 0 fire · widened 677 · LIVE 677 FIRE
+```
+
+| driven string | pre / widened / live |
+|---|---|
+| **«the wine is not breathing yet»** | quiet / **FIRES** / **FIRES** |
+| «let the wine breathe, it is not breathing yet» | quiet / **FIRES** / **FIRES** |
+| «the dough is not breathing under the cloth» | quiet / **FIRES** / **FIRES** |
+| **«customers were struggling to breathe in the hall after the AC broke»** | quiet / **FIRES** / **FIRES** |
+| «the smoke was so bad we were gasping for air in the kitchen» | quiet / **FIRES** / **FIRES** |
+| **«the queue left me short of breath»** | quiet / **FIRES** / **FIRES** |
+| «the extractor fan is not breathing» | quiet / **FIRES** / **FIRES** |
+| «the tandoor is not breathing well» | quiet / **FIRES** / **FIRES** |
+
+The commit's `4,606 → 1` is a number about **Arabic** presented as a number about the module. Family
+**F** was not closed; it was narrowed to the two shapes §1F named. `(?:hard|difficult|tough) to breathe`
+and `(?:difficulty|trouble|problems?|issues?) breathing` got locative lookaheads. The four
+alternatives this commit *added* beside them — `(?:struggling|straining|fighting) to breathe`,
+`gasping for (?:air|breath)`, `short(?:ness)? of breath`, `(?:is |are |…)?not breathing` — carry no
+person, no tense and no locative guard, and the corpus that certified the change contains **five**
+English strings, all copied from §1F of this document.
+
+That is the §3d defect surviving one language over: *guard the strings the audit listed, certify
+against a corpus containing only the strings the audit listed.*
+
+**And the proof forbids the obvious fix — driven, so this is not a repeat of §7's mistake.**
+Anchoring those four alternatives to a person subject (the same anchor `choking|suffocating` already
+uses in the same regex) gives:
+
+```
+FAIL english: «not breathing» is SILENT · «struggling to breathe» is SILENT
+FAIL english: «gasping for air» is SILENT · «shortness of breath» is SILENT · «short of breath» is SILENT
+FAIL airway-derivation: 20652/20657          ordinary EN 677 → 296 · but 1,647 of 3,780 English
+                                              must-fire strings go SILENT
+```
+
+`proof-airway-derivation.test.ts` §5 asserts bare `"not breathing"`, `"struggling to breathe"`,
+`"gasping for air"`, `"shortness of breath"`, `"short of breath"` as **must-fire** — subjectless, and
+therefore identical to «the wine is not breathing yet». **The proof mandates the false positive.**
+Fixing it is a design call on both files, exactly as family **C** was; it is **not** a patch an
+auditor should hand over, and this one is not handed over.
+
+---
+
+## R2. What the two design calls cost a frightened parent
+
+Derived across person × possessive × body part × verb × dialect and driven three ways:
+**112,109 unique parent strings** (`pre 1,659 fire · widened 75,759 · live 69,885`), plus a focused
+399-string agreement/participle/person sweep. **The live module hears 42× more of what a frightened
+parent types than production does.** What it does not hear:
+
+### R2a. Design call #1 — «ابني نفسه ضايق». The named cost is real and it is correctly bounded.
+
+| driven string | gloss | pre / widened / live |
+|---|---|---|
+| «ابني نفسه ضايق» | *my son's breath is tight* / *my son is fed up* | quiet / FIRES / **quiet** |
+| «ابني نفسه ضاق» · «ابني نفسه يضيق» · «ابني نفسه واقف» | | quiet / FIRES / **quiet** |
+| «ابني نفسه ضايق بعد ما اكل» | *…after he ate* | quiet / FIRES / **quiet** |
+| «ابني نفسه ضايق من الحساسية» | *…from the allergy* | quiet / FIRES / **quiet** |
+| «ابني نفسه مقطوع» · «ابني نفسه مسدود» | *his breath is cut / blocked* | quiet / FIRES / **FIRES** |
+| «ابني نفسه ضايق ما يقدر يتنفس» | run-on with a second clause | quiet / FIRES / **FIRES** |
+
+The trade is the one the file describes, and the escape hatches it names all work. **But the second
+axis of the same design call — agreement — costs more than the file admits, and it is not named:**
+
+| driven string | gloss | pre / widened / live |
+|---|---|---|
+| «بنتي نفسها **مقطوع**» | masculine predicate | quiet / FIRES / **FIRES** |
+| **«بنتي نفسها مقطوعة»** | *my daughter's breath is cut* | quiet / FIRES / **quiet** |
+| «بنتي نفسها مقطوعه» · «مسدودة» · «مسدوده» · «انقطعت» | | quiet / FIRES / **quiet** |
+| …and the same across «ابنتي / اختي / زوجتي / امي / الطفله» | **30 driven, 30 silent** | |
+
+The grammar is right — نَفَس is masculine, so a feminine predicate is about the woman. But the rule
+asks a frightened parent to get gender agreement right on a noun whose gender they cannot hear, about
+a daughter, in a hurry, in a register where the ة is added freely. The file's "WHAT THIS COSTS,
+NAMED" paragraph names only the verb axis. **The agreement axis costs «بنتي نفسها مقطوعة» and does
+not say so.** That is a documentation gap, not a wrong call.
+
+### R2b. Design call #2 — «كبر» for face / eyes / throat. **The only true pre→live regression, and it is this.**
+
+| driven string | pre / widened / live |
+|---|---|
+| «وشي كبرت» · «وجهي كبرت» · «عيني كبرت» · «حلقي كبرت» | **FIRE** / FIRE / **quiet** ← regression |
+| «ابني وجهه كبر» · «ابني عينه كبرت» · «ابني حلقه كبر» | quiet / FIRES / **quiet** |
+| «ابني لسانه كبر» · «ابني شفايفه كبرت» | quiet / FIRES / **FIRES** (kept) |
+
+The parent keeps a live phrasing in every case — «عيني ورمت», «عيني منتفخة», «عينه تورم», «وجهه
+منتفخ» all fire on live — so nothing about a swelling eye is unreportable. Correct call.
+
+### R2c. Silent, not a design call, and a parent would plausibly send it
+
+These are **silent on all three modules** — not regressions — but every one of them is a parent
+sentence about an allergic reaction, and four of the five sit inside families this commit edited.
+
+| driven string | gloss | why |
+|---|---|---|
+| **«ابني لسانه متورم»** · «ابني شفايفه متورمة» · «لساني متورم» · «وجهي متورم» | *my son's tongue is swollen* | `SWELLS` has `تورم\|منتفخ\|انتفخ…` but **not «متورم/متورمه»** — the ordinary past participle for *swollen*. `THROAT_CLOSES` **does** carry it, so «ابني حلقه متورم» fires and «ابني لسانه متورم» does not. Same commit, two lists, one of them short — the exact bug this file exists to end. **~60 driven, all silent.** The textbook angioedema report. |
+| **«الولد يختنق»** · «البنت تختنق» · «الصغير يختنق» · «الجاهل يختنق» · «عيالي يختنقون» | *the boy is choking* | `CHOKING` — this commit's headline new signal, "what a parent actually types" — is anchored to `PERSON_WORDS`, which has «ابني/ولدي/الطفل» but **not «الولد», «البنت», «الصغير», «الجاهل/الياهل», «عيالي», «اولادي»**. In the same message «الولد ما يقدر يتنفس» **FIRES** and «الولد حلقه يقفل» **FIRES** — those families carry no person anchor — but the most urgent phrasing is the one that is silent. **~70 driven, all silent.** («ابنتي تختنق» fires only by accident: «بنتي» is a substring of it.) |
+| **«ابني انقطع نفسه»** · «ابني وقف نفسه» · «انقطع نفس ابني» · «ضاق نفس ابني» | *my son's breath cut off* | `BREATH_TIGHT_THIRD` hard-codes person → «نفسه» → verb. Arabic VSO puts the verb first at least as often. `BREATHING_STOPPED` would catch it but requires the **verb** «تنفس», not the noun «نفس». The sentence falls between two patterns. Word order is not an axis in a family the commit describes as fully derived. |
+| **«ابني حلقه ضايق»** · «حلقي ضايق» | *my son's throat is tight* | `THROAT_CLOSES` carries «يضيق» and «ضاق» but neither the participle «ضايق» nor the adjective «ضيق». The file **defers «حلقي ضيق» by name**; it does not mention «ضايق», which is the commoner Gulf form. **6,624 driven strings in this shape are silent.** |
+| «ابني يلهث» · «ابني يشهق» · «ابني صوته راح» · «ابني ما يقدر يبلع» | *panting / gasping / voice gone / can't swallow* | stridor and dysphagia — no signal in either arm, and not in the deferral list. |
+| «ابني صدره ضايق» · «صدري ضايق» | chest | deferred by name, correctly (see R1a for why that deferral is load-bearing). |
+
+---
+
+## R3. Regressions against production — **clean, but for R2b**
+
+Two independently-built corpora, neither reusing the proof's:
+
+* **25,574 strings** generated from the pre-widening module's own reachable shapes × realistic
+  WhatsApp framing (openers, urgency tails, emoji, order numbers, past/hypothetical clauses,
+  mixed-language): `pre 25,549 fire · widened 25,549 · live 25,149` — **400 pre→live regressions.**
+  Grouped, all 400 are: `وشي كبرت` (100) · `وجهي كبرت` (100) · `عيني كبرت` (100) · `حلقي كبرت` (100).
+* **112,109 parent strings** (R2): **1 pre→live regression** — «حلقي كبرت».
+
+**Every pre→live regression in 137,683 driven strings is a cell of design call #2.** Nothing in the
+airway, throat-closing, swelling, cyanosis, ambulance/hospital, active-reaction or English arms
+regresses; nor does anything under a past or hypothetical frame; nor does the new `AR_B`/`NEG`
+left-boundary silence a proclitic form («تعبان وما أقدر أتنفس», «بحلقي ورم» both still fire).
+
+---
+
+## R4. VERDICT
+
+# APPROVED FOR MAIN
+
+Ship it. The original deaf spot is in production tonight: **«ما عاد يتنفس»** — *he stopped
+breathing* — is silent there, and so is every third-person airway sentence, which means a parent
+cannot report their child at all. Against that module this candidate hears **69,885 of 112,109**
+frightened-parent strings where production hears **1,659**. Every false-positive family that blocked
+`dc6c9f9` is genuinely closed under a corpus its author did not write: across 137,683 independently
+derived strings I could not make a single ordinary Arabic sentence fire without first mutating the
+module myself. The two design calls are the right ones — the parent keeps a live phrasing for every
+symptom either one silences — and the only regression against production is the four documented
+«كبر» cells.
+
+What follows is not a condition on the merge. It is the next work item, and it is a real one.
+
+### Must-fix next, in order
+
+1. **The English arm (R1c).** 677 of 761 ordinary restaurant-English strings raise a full emergency
+   on the live module and were quiet in production — «the wine is not breathing yet» among them.
+   This is a **design call, not a patch**: `proof-airway-derivation.test.ts` §5 asserts the bare
+   subjectless forms as must-fire, so the proof currently *mandates* the false positive, and the
+   obvious person-anchor fix silences 1,647 English must-fire strings (driven, above). Both files
+   change together, and the English quiet side has to be derived before the guard is written —
+   which is the discipline this commit was blocked for missing, owed now to the other language.
+2. **`«متورم»` into `SWELLS` (R2c).** «ابني لسانه متورم» is silent in all three versions and is the
+   textbook angioedema report. It is a value missing from one of two lists that already agree
+   everywhere else — a pure widening in the family this commit just re-read.
+3. **`PERSON_WORDS` (R2c).** «الولد», «البنت», «الصغير», «الجاهل/الياهل», «عيالي», «اولادي». The new
+   `CHOKING` signal is the one that most needs them and it is the one gated on them.
+4. **Word order as an axis (R2c)** — «ابني انقطع نفسه» — and **«ضايق» into `THROAT_CLOSES`** beside
+   the already-deferred «ضيق» (6,624 driven strings).
+
+### Owed to the file's own header
+
+* Add the **agreement cost** to the "WHAT THIS COSTS, NAMED" paragraph: «بنتي نفسها مقطوعة» is
+  silent, not just «ابني نفسه ضايق» (R2a).
+* Correct **`4,606 → 1`** to say what it measures. It is an Arabic number; the English arm carries
+  at least 677 more.
+* Record R1b in the proof: the quiet corpus constrains a widening **in the syntactic frames it
+  enumerates**, and word order and script are not among its axes. `«ضاق صدري»` is in it and
+  `«صدري ضايق»` is not, and that gap is worth 3,168 strings and a clean 229/229.
