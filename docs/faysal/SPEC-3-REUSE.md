@@ -805,6 +805,15 @@ from a food-allergen module.
 > §2.2 proof either fails on Faysal's first matcher or has to allow-list the allergen gate —
 > and allow-listing the allergen gate is how the seam ends.
 
+> **Re-counted in Wave 1.6 (re-audit S1.5-6 called the 25 stale).** Driven, parsing the
+> named-import list of every `.ts`/`.tsx` under `lib/`, `app/`, `scripts/`, `components/`:
+> **36** files import *something* from `*/allergen-gate` (34 under `lib/`+`app/`); **26** import
+> `normalizeAr` specifically, **25** of them under `lib/`+`app/` — the one file outside is
+> `scripts/proof-phonetic-net-unwired.test.ts`. **The sentence above is exactly right as
+> qualified.** The re-audit's 31 matches neither predicate; the ambiguity came from
+> `SPEC-1-DOMAIN.md` DOC-4 stating "25 files import" without the qualifier, which is now added
+> there.
+
 **And the extraction must reconcile TWO implementations, not move one** *(added Wave 1.5, audit
 S14)*. `lib/ai/callback-trigger.ts:13` exports a **second** `normalizeAr`, and it is **missing
 the 3+-letter run collapse** `.replace(/([ء-ي])\1{2,}/g, "$1")`. Everything else is identical.
@@ -964,7 +973,7 @@ insurance-eligibility or referral module exists.
 
 ---
 
-## Wave 1.5 remediation
+## Wave 1.5 / 1.6 remediation
 
 Against `AUDIT-WAVE1.md` and `REVIEW-WAVE1.md`, 2026-09-09. Every verdict change below was made
 by **reading the file's import block** or **importing and executing the module**, not by reading
@@ -984,7 +993,7 @@ this document's own prose.
 | **S11** — two SHARE verdicts are transitively coupled | **`lib/messaging/service.ts` SHARE → SHARE\*** (`:12` imports `useMessageLogStore` from `message-log-store.ts`, **NEVER**, which itself imports `newId` from the Kivo global store). **`lib/demo/speech-ticket.ts` SHARE → SHARE\*** (`:53` `voice-budget` FORK, `:59` `voice-out` FORK). Both verified by reading the import blocks. The `SHARE*` list goes 5 → 9 and §4 now enumerates it with where each entry was found. §13 risk 1 states the general rule: **a SHARE verdict is a claim about a subgraph, and every one must have its transitive closure checked before §2.2's `ALLOWED_MODULES` is transcribed.** |
 | **S12** — `symptom-frames.ts` is not domain-neutral | Driven with the real module: `NOT_A_PERSON` is `الجو\|المحل\|المطعم\|المكان\|القاعه\|الغرفه\|الفرن\|الشارع\|السياره` — a restaurant place list — and five ordinary clinic sentences («العياده عندها ازدحام», «المستشفي عنده طوارئ», «المجمع عنده تاخير», «الفرع عنده زحمه», «الاستقبال عنده مشكله») return `frame=true, notPerson=false`. **A second finding the audit did not have:** the third-person half is welded to a possession verb, so `FRAME_WORDS` is **`false`** on «ابني ما يقدر يتنفس», «بنتي ما تقدر تتنفس», «ابني حلقه يقفل» and «زوجتي حلقها يتورم» — meaning the audit's own proposed fix for B3 ("anchor them on `FRAME_WORDS`") does not work as stated. Two named changes: add the clinic places to the shared list; export `RELATION_WORDS` and compose `FRAME_WORDS` from it. |
 | **S13** — the scanner SPEC-3 says to reuse is not exported | Verified: `stripComments` at **L52 with no `export`**, `bindingsFrom` at **L169 nested inside a block**. §2.2 and §11.1 now say to extract both to `scripts/lib/import-scan.mjs` first. Extraction beats adding `export` in place, because a `.test.ts` importing another `.test.ts` breaks the suite runner's per-file timeout accounting. |
-| **S14** — two divergent `normalizeAr` implementations | §10.2: `lib/ai/callback-trigger.ts:13` exports a second copy **missing the 3+-letter run collapse**. **`lib/ai/allergen-gate.ts`'s is authoritative** — 25 importers, and the one SPEC-4 §2 needs for «ماااا أقدر». The extraction PR must delete the second copy and re-point its call sites, and assert `normalizeAr("حساااسية") === "حساسيه"` so a re-divergence goes red. `SPEC-1-DOMAIN.md` DOC-4 names the same authoritative copy. |
+| **S14** — two divergent `normalizeAr` implementations | §10.2: `lib/ai/callback-trigger.ts:13` exports a second copy **missing the 3+-letter run collapse**. **`lib/ai/allergen-gate.ts`'s is authoritative** — 25 `normalizeAr` importers under `lib/`+`app/`, 26 repo-wide (re-driven Wave 1.6), and the one SPEC-4 §2 needs for «ماااا أقدر». The extraction PR must delete the second copy and re-point its call sites, and assert `normalizeAr("حساااسية") === "حساسيه"` so a re-divergence goes red. `SPEC-1-DOMAIN.md` DOC-4 names the same authoritative copy. |
 | **S15** — the seam proof's part D has three blind spots | §2.2 part D now scans `rpc()` (with `next_order_number` / `is_member_of` / `kv_demo_try_consume` banned and a positive assertion), asserts **every** `.from(` matched the string-literal form (so a `const`/template-literal table name is a failure rather than a silent pass), and extends the scan to the PR's **migrations**, which no scanned directory covered. |
 | **S16** — the migration count mis-attributes a column to a table | §1: **59** of 119 migration files contain `restaurant_id`; **65** contain `restaurants`. Re-counted: `grep -rl restaurant_id supabase/migrations/ \| wc -l` → 59, `grep -rl restaurants` → 65, `ls *.sql \| wc -l` → 119. Everything else in §1 re-verified exact. |
 
@@ -1011,3 +1020,18 @@ Forty lines of duplicated SQL behind an adversarial RLS proof is a smaller and, 
 call: **health data is legally different** — separate tables give a separate retention policy, a
 separate deletion path and a separate export, none of which can be derived with a `where` clause,
 and a Saudi DPO will ask.
+
+---
+
+## Wave 1.6 remediation — this document's share of the re-audit
+
+| ID | Verdict | What changed |
+|---|---|---|
+| **S1.5-6** — §10.2's "25 importers" called stale by the re-audit | **The re-audit is wrong, and this document was already right** | Re-driven by parsing the named-import list of every `.ts`/`.tsx` under `lib/`, `app/`, `scripts/`, `components/`: **36** files import *something* from `*/allergen-gate` (34 under `lib/`+`app/`); **26** import `normalizeAr` specifically, **25** of them under `lib/`+`app/` (the odd one out is `scripts/proof-phonetic-net-unwired.test.ts`). §10.2's sentence — *"25 files under `lib/` and `app/` import `normalizeAr` from `lib/ai/allergen-gate`"* — is exact. The ambiguity came from `SPEC-1-DOMAIN.md` DOC-4 stating the bare number without the qualifier; that is fixed there, and the driven counts are recorded here so the next pass does not re-litigate it. The re-audit's 31 matches neither predicate. |
+| **`symptom-frames.ts` SHARE\*** | unchanged, and re-confirmed | Both halves of S12 stand. `SPEC-4-SAFETY.md` §12 row 15's *reason* is corrected there — driven, §2.4's three-person lexicon closes B3 with **no** frame anchor, so the row blocks for the `NOT_A_PERSON` half (five clinic sentences reading as symptom reports), not for third-person deafness. |
+| **New, found in this pass** | `lib/ai/allergen-emergency.ts` has two live recall holes | Driven against the real `detectAllergenEmergency`: `«ما عاد يتنفس»` and `«ما عاد يقدر يتنفس»` — respiratory arrest — are `fired: false`, because `عاد` is in no auxiliary slot; and `«عندي صعوبة بالتنفس»` is `fired: false` because the pattern is `صعوبه في ?التنفس` and the Gulf `ب` preposition matches nothing. These are **Kivo's live restaurant path**, not only Faysal's fork. Recorded in `SPEC-4-SAFETY.md` §13 item 2d as an upstream finding with the three additions that close it. |
+
+**The rest of §10.2's Wave 1.5 re-verification** — `service.ts:12` → `message-log-store` → `newId`;
+`speech-ticket.ts:53`/`:59`; `stripComments` at L52 unexported; `bindingsFrom` at L169 nested;
+119 migration files, 59 with `restaurant_id`, 65 with `restaurants` — was re-driven by the
+re-auditor and reproduced exactly. Unchanged.

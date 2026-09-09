@@ -235,9 +235,33 @@ does **not** fill it — he switches to **G5**.
 
 ```
 حياك الله، معك فيصل من مجموعة الوطن الطبية.
-أعرف إن الوقت متأخر — العيادات مسكّرة الحين، والطوارئ عندنا شغّالة على مدار الساعة في {er_branch_name}.
+أعرف إن الوقت متأخر — العيادات مسكّرة الحين، والطوارئ في {er_branch_name} مفتوحة الحين.
 إذا الموضوع يستنى الصبح، أثبّت لك موعد من الحين — تفضّل الصبح ولا بعد العصر؟
 ```
+
+> **Corrected in Wave 1.6 (re-audit N1). The middle line said «شغّالة على مدار الساعة» — *open
+> around the clock* — and that is a claim `erSites({ now })` cannot support.** Wave 1.5 fixed the
+> data model and left the sentence alone, which is the same failure B6 named, one layer up.
+>
+> `erSites({ now })` answers exactly one question: *is this site's ER open at this instant, on
+> this weekday.* `SPEC-4-SAFETY.md` §4.4 admits sites eligible by `er_hours_by_weekday` and not
+> only by `er_open_24h` — that is the entire reason the boolean was deleted. So a site whose
+> Friday ER runs 16:00–02:00 is eligible at **00:40**, this greeting renders, and the patient
+> reads *twenty-four hours*. He arrives at 03:00 and finds a locked door. §4.4's own words:
+> *"Sending a patient with chest pain to a branch that closed at midnight is a lethal defect that
+> a unit test cannot catch."*
+>
+> The corrected line asserts **open now**, which is precisely what the tool returned, and drops
+> the 24-hour claim entirely. If a site genuinely is 24-hour, the sentence is still true; if it
+> is not, the sentence is still true. That is the test a claim has to pass.
+>
+> **The guard that should have caught it did not, twice over, and is rewritten in
+> `SPEC-4-SAFETY.md` §5.3.** The `availability` kind added in Wave 1.5 banned «شغّالين على مدار
+> الساعة» — *masculine plural* — while this string says «شغّالة», feminine singular; and it
+> exempted any sentence *"rendered from a tool result in this turn"*, which this one is by
+> construction. Driven, the string passed both locks. §5.3 now bans the **claim** in any
+> inflection and scopes the carve-out to **the field the tool actually returned** — so a tool
+> that answers *open now* can never license *open 24 hours*.
 
 Two things make this line work and both are non-obvious:
 
@@ -615,13 +639,29 @@ not.
 > appears: this `[ANCHOR]`, the confirmation block, the objection line, and §8.3's determinism
 > table now lists it as deterministic.
 >
-> **The wording differs from SPEC-1's by one clause, deliberately** (audit nit 8). SPEC-1 wrote
-> «السعر تقريبي **للعرض التجريبي**، والمعتمد من الاستقبال» — and «العرض التجريبي» is Faysal
+> **OWNERSHIP, settled in Wave 1.6 (re-audit S1.5-2). This document owns the string; `SPEC-1`
+> owns the rule.** SPEC-2 owns every patient-visible `[FROZEN]` / `[ANCHOR]` string in the
+> product, so **«هذا سعر استرشادي، والمعتمد من الاستقبال.» is the price label that ships**, and
+> `SPEC-1-DOMAIN.md` Rule PRICE-1 now points here for the wording instead of specifying a second
+> one. Wave 1.5 changed the string in this document and did not amend SPEC-1, which left two
+> different frozen strings for one renderer-emitted label and SPEC-1's acceptance criterion #14
+> **red at birth** against this renderer. One string, one owner, and the other document points
+> at it.
+>
+> **The wording differs from SPEC-1's first draft by one clause, deliberately** (audit nit 8).
+> SPEC-1 wrote «السعر تقريبي **للعرض التجريبي**، والمعتمد من الاستقبال» — and «العرض التجريبي» is Faysal
 > describing himself as a software demo, which §8.1 #16 `machine_jargon` bans and which breaks
 > the persona's fourth wall mid-price. **«هذا سعر استرشادي، والمعتمد من الاستقبال.»** keeps the
 > full force of the caveat — *indicative, reception confirms* — in a sentence a real coordinator
 > says. The demo *framing* is carried by Rule DEMO-1's three placements, which are system-voice
 > and are the right place for it.
+>
+> **The re-audit is right that this substitution drops the demo semantics** — «سعر استرشادي»
+> means *indicative*, not *invented* — and that is why the trade is only defensible with DEMO-1
+> intact. SPEC-1 criterion #14 is reworded to assert what actually ships: **the PRICE-1 label on
+> every figure, in this document's wording, AND the DEMO-1(c) suffix on every confirmation
+> block.** Two assertions, because the demo framing moved from the first to the second and a
+> single criterion could no longer carry both.
 
 **Insurance is not a price answer.** «مغطّى» is the forbidden word (§8.1
 `insurance_coverage_guarantee`). The correct move, every time:
@@ -1292,10 +1332,23 @@ Mirrors the two-consumer, one-source pattern already used for Khalid:
 4. **Emoji allowlist test** — a regex asserting no outbound contains an emoji outside
    **`✅` / `🙏` / `🚨`** (three, per §4.5 — the first draft said two and therefore rejected the
    emergency rail's own first character), that `✅` and `🙏` do not appear in a message matching
-   the clinical/price/complaint/safety classifiers, that `🚨` appears **only** on a turn whose
-   `stopReason` is `"faysal_redflag_emergency"`, and — the assertion that proves the carve-out is
-   real — **that both SPEC-4 §4.2 rail strings (A/B and C) pass this test verbatim**. A test the
-   safety rail fails is a test that gets loosened, and then the rail is the thing that changed.
+   the clinical/price/complaint/safety classifiers **whose `stopReason` is not
+   `"faysal_redflag_emergency"`**, that `🚨` appears **only** on a turn whose `stopReason` **is**
+   `"faysal_redflag_emergency"`, and — the assertion that proves the carve-out is real — **that
+   both SPEC-4 §4.2 rail strings (A/B and C) pass this test verbatim**. A test the safety rail
+   fails is a test that gets loosened, and then the rail is the thing that changed.
+
+   > **Corrected in Wave 1.6 (re-audit S1.5-4).** The `✅`/`🙏` clause was **unqualified** and the
+   > final clause asserted that rail C passes — and **rail C is a safety message that opens with
+   > `🙏`**. As written, item 4 was red at birth against its own last sentence: the same shape as
+   > the first audit's S17, a proof description that contradicts itself. §8.1 row 24 already
+   > carried the `stopReason` qualifier; this item did not. Both now do.
+   >
+   > **And `SPEC-4` §4.1's field table is the authority that rail C carries that `stopReason`.**
+   > That table is written for "the rail" and never says class I is included, which is what left
+   > the ambiguity. It is amended there: **every rail branch — A, B and C — carries
+   > `stopReason: "faysal_redflag_emergency"`**, because the carve-out is keyed on the stop
+   > reason and a branch outside it would be a branch the emoji ban rejects.
 5. **Digit test** — no Arabic-Indic digit in any outbound, in either language
    (`formatCustomerVisibleNumbers` already enforces this; the test pins it for this tenant).
 6. **Cadence test** — no outbound turn exceeds 3 messages; no single message contains more
@@ -1340,7 +1393,7 @@ So the auditor can check them rather than infer them:
 
 ---
 
-## Wave 1.5 remediation
+## Wave 1.5 / 1.6 remediation
 
 Against `AUDIT-WAVE1.md` and `REVIEW-WAVE1.md`, 2026-09-09. The dialect claims below were driven
 by importing the real `lib/ai/personas/khalid-dialect-linter.mjs` and executing `findLeakage`.
@@ -1387,3 +1440,21 @@ byte-exact assertion still holds.
 
 *End of SPEC-2-PERSONA. No code accompanies this document; §11 describes the tests that must
 exist before any of these strings reaches a patient.*
+
+---
+
+## Wave 1.6 remediation — this document's share of the re-audit
+
+Written against `AUDIT-WAVE1.5.md`. Two blockers/should-fixes land here, and one of them is the
+blocker the re-audit says it would fix first if it could only fix one.
+
+| ID | Closed by | What changed |
+|---|---|---|
+| **N1** — B6's failure sentence was never changed; at 01:00 a patient is sent to a locked door | **§2.2 G4's `[FROZEN]` string** | The middle line said «الطوارئ عندنا **شغّالة على مدار الساعة**» — *around the clock* — and `erSites({ now })` answers only *open at this instant, on this weekday*. `SPEC-4-SAFETY.md` §4.4 admits sites eligible by `er_hours_by_weekday` alone, so a Friday 16:00–02:00 ER is eligible at 00:40 and this greeting promised twenty-four hours. **The line now reads «والطوارئ في {er_branch_name} مفتوحة الحين» — open *now*, which is exactly what the tool returned.** Wave 1.5 fixed the data model (`has_24h_er` deleted, `erSites({ now })` adopted) and left the sentence standing above the correction note that diagnosed it. |
+| **N1**, second half — the guard could not catch it, twice over | `SPEC-4-SAFETY.md` **§5.3 rewritten** | The `availability` kind banned «شغّالين على مدار الساعة» — masculine plural — while G4 said «شغّالة», feminine singular; and it exempted any sentence *"rendered from a tool result in this turn"*, which G4's is by construction. Driven, the string walked through both locks. The kind now bans the **claim** in any inflection, and the carve-out is scoped to **the field the tool returned**: a tool that answers *open now* can never license *open 24 hours*. |
+| **S1.5-4** — §11.4 item 4's emoji test is red at birth against its own final clause | §11.4 item 4; `SPEC-4-SAFETY.md` §4.1 | The ✅/🙏 clause was **unqualified** — "do not appear in a message matching the clinical/price/complaint/safety classifiers" — and three lines later the item asserts that **rail C passes verbatim**, while rail C is a safety message opening with 🙏. §8.1 row 24 already carried the `stopReason` qualifier; item 4 now does too. And because the carve-out is keyed on `stopReason`, **`SPEC-4` §4.1's field table now states explicitly that every rail branch — A, B *and* C — carries `stopReason: "faysal_redflag_emergency"`**, which is what this assertion had nothing to rest on. |
+| **S1.5-2** — the price label | §5.2's note | **Ownership settled: this document owns the string, `SPEC-1-DOMAIN.md` Rule PRICE-1 owns the requirement.** «هذا سعر استرشادي، والمعتمد من الاستقبال.» ships; SPEC-1 points here. The re-audit is right that the substitution drops the demo *semantics* — «استرشادي» is *indicative*, not *invented* — which is why SPEC-1's criterion #14 is now two assertions, the label **and** DEMO-1(c). |
+
+**Nothing else in this document changed.** The gold transcript, `motion.discover`'s split,
+`motion.expand`'s `{for_pronoun}`, turn 10's Rawabi phone and turn 12's DEMO-1(c) suffix all
+reproduced under the re-audit and are left alone.

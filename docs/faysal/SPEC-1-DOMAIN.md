@@ -113,6 +113,12 @@ type Confidence =
   | "medium"    // third-party directory or insurer PDF, unconflicted
   | "low"       // single stale/secondary source, or first-party but superseded
   | "conflicted"// two sources disagree and the dossier does not resolve them
+  | "demo_seeded" // NOT a provenance rung at all — an explicitly invented value, seeded by
+                   //   Rule HRS-DEMO so the demo has inventory. `bookableWindows()` accepts it
+                   //   ONLY when DEMO_MODE is on; §14 criterion 27 greps the production bundle
+                   //   for the literal. It sorts BELOW `unknown` for every purpose except
+                   //   bookability-under-DEMO_MODE, and it may never be spoken as a fact (§11
+                   //   Rule DEMO-1 discloses it in the conversation instead).
   | "unknown";  // the dossier is silent
 
 type SourceRef = {
@@ -467,9 +473,16 @@ openStateAt(site, layer, instantLocal): "open" | "closed" | "unknown"
  *   - the layer is "clinic"
  *   - status is "open_24h" | "windows"
  *   - confidence is "client_confirmed" | "high" | "medium"   (never low / conflicted / unknown)
+ *     — OR confidence is "demo_seeded" AND DEMO_MODE is on. That is the ONLY way
+ *       "demo_seeded" is ever accepted, and it is the only inventory the demo has
+ *       (Rule HRS-DEMO). Outside DEMO_MODE it behaves exactly like "unknown": [].
+ *       DEMO_MODE is read here, at the one function that mints slots, and nowhere else —
+ *       the same law as PRICE-2's single calculator. A second reader is a second answer.
  *   - conflicts is empty
  *   - capturedAt is within staleAfterDays  —  EXCEPT for "client_confirmed", which uses
- *     clientConfirmedStaleAfterDays (180) and DOWNGRADES rather than voiding (§4.10)
+ *     clientConfirmedStaleAfterDays (180) and DOWNGRADES rather than voiding (§4.10);
+ *     and EXCEPT for "demo_seeded", which has no capturedAt to be stale — it was never
+ *     captured from anything. It expires when DEMO_MODE goes off, and only then.
  *   - the site's operatingStatus is "operational"
  *     (for "operational_contested" the windows are returned but flagged; see Rule C4-1)
  * Returning [] is not an error state. It is the safe state.
@@ -917,7 +930,8 @@ It folds **nothing else** — no hamza, no `ة→ه`, no `ى→ي`, no `ال`. D
 **Two corrections to this rule's own implementation gotcha, both driven:**
 
 1. **`normalizeAr` does NOT strip «ال»**, and the gotcha claimed it as one of four folds. Verified: `normalizeAr("الرشيدي") === "الرشيدي"`. It does not need to — the article is part of the surname and is normalised identically on both sides of the comparison. The «ال» sentence in the gotcha was never about folding; it was about the *token* false positive, and the full-name rule below is what actually prevents that. Do not add an `ال`-stripping step: it would turn `الرشيدي` into `رشيدي` and widen the match surface for no gain.
-2. **There are two divergent `normalizeAr` implementations in this repo.** `lib/ai/callback-trigger.ts:13` exports a second one that is **missing the 3+-letter run collapse** `.replace(/([ء-ي])\1{2,}/g, "$1")`. **`lib/ai/allergen-gate.ts`'s is authoritative** — it is the one 25 files import, the one SPEC-4 §2 depends on for «ماااا أقدر», and the one the extraction must re-export. A Faysal file importing from `callback-trigger` gets a normaliser that is deaf to emphatic spellings.
+2. **There are two divergent `normalizeAr` implementations in this repo.** `lib/ai/callback-trigger.ts:13` exports a second one that is **missing the 3+-letter run collapse** `.replace(/([ء-ي])\1{2,}/g, "$1")`. **`lib/ai/allergen-gate.ts`'s is authoritative** — it is the one **25 files under `lib/` and `app/` import `normalizeAr` from** (26 counting `scripts/proof-phonetic-net-unwired.test.ts`), the one SPEC-4 §2 depends on for «ماااا أقدر», and the one the extraction must re-export. A Faysal file importing from `callback-trigger` gets a normaliser that is deaf to emphatic spellings.
+   > **Re-counted in Wave 1.6, because the re-audit called this number stale (S1.5-6). It is not — but it was ambiguous, and the qualifier is now in the sentence.** Driven, parsing the named-import list of every `.ts`/`.tsx` under `lib/`, `app/`, `scripts/` and `components/`: **36** files import *something* from `*/allergen-gate` (34 of them under `lib/` or `app/`); **26** import `normalizeAr` specifically, **25** of those under `lib/` and `app/`. `SPEC-3-REUSE.md` §10.2 states the 25 with the qualifier and is exactly right; this document stated it without one, which is what made two different counts look like a contradiction. The re-audit's 31 matches neither predicate.
 
 **Matching discipline — both halves are required, and the two specs each had one of them.**
 
@@ -1116,9 +1130,27 @@ Two markers, because they are read by different things — the same reasoning `l
 
 **`client_confirmed` is reachable, corrected in Wave 1.5.** The first draft reserved the value and then noted nothing could reach it — the same defect as the hours ladder (§4.10), in the same document, twice. A `ServicePrice` reaches it exactly as a `DayHours` does: a populated `ClientConfirmation` naming the person at the client who gave the tariff, the channel, and the datetime. When `basis === "client_confirmed"`, `requiresDemoLabel` becomes `false` — the literal type widens to `boolean` for that branch only, and the PRICE-1 label is replaced by nothing, because the number is now the client's. Every other basis keeps `requiresDemoLabel: true` as a literal.
 
-**Rule PRICE-1 — no bare number ever leaves the agent.** Every quoted figure is rendered with its demo label:
-> «السعر تقريبي للعرض التجريبي، والمعتمد من الاستقبال.»
-> "Indicative demo price — reception confirms the final amount."
+**Rule PRICE-1 — no bare number ever leaves the agent.** Every quoted figure is rendered with the
+price label, as a frozen suffix emitted by `quote()`'s renderer and never composed by the model.
+
+> **This rule owns the requirement. `SPEC-2-PERSONA.md` §5.2 owns the wording** — settled in
+> Wave 1.6 (re-audit S1.5-2), because two documents were specifying two different frozen strings
+> for one renderer-emitted label. The string that ships is SPEC-2's:
+>
+> > «هذا سعر استرشادي، والمعتمد من الاستقبال.»
+> > *"This is an indicative price; reception confirms it."*
+>
+> This document's first draft wrote «السعر تقريبي **للعرض التجريبي**، والمعتمد من الاستقبال»,
+> and SPEC-2 changed it in Wave 1.5 to drop «العرض التجريبي» — Faysal describing himself as a
+> software demo, which SPEC-2 §8.1 #16 `machine_jargon` bans. That change landed in one document
+> and not its partner, which left criterion #14 below asserting a string the renderer does not
+> emit: **red at birth.** SPEC-2 owns every patient-visible frozen string; this rule points there
+> and stops restating it.
+>
+> **The substitution does drop the demo semantics**, and that is a real cost, not a wash:
+> «سعر استرشادي» means *indicative*, not *invented*. The demo framing moves to Rule DEMO-1's
+> three placements — which are system-voice, are the right place for it, and are what criterion
+> #14 now also asserts.
 
 **Rule PRICE-2 — one calculator.** A single `quote(serviceKey, siteId, modifiers)` returns the priced lines, exactly as `recomputeOrderPricing()` is the only thing in Kivo that decides money. No template, no prompt and no UI computes a total.
 
@@ -1412,6 +1444,22 @@ same two-marker reasoning `lib/demo/config.ts` L176–179 applies to `source` + 
    `client_confirmed` and every clinic layer is `client_confirmed`, (a) and (c) are removed by
    configuration and (b) becomes the ordinary channel introduction. The disclaimer is a function
    of the data's provenance, not a permanent fixture — which is exactly what makes it credible.
+4b. **When the FIRST inbound message of a conversation fires the rail, (b) is deferred to the
+   first non-rail turn in that thread — it is not dropped.** `[Wave 1.6, re-audit S1.5-7]`
+   Detail 5 exempts the rail turn from (b), and (b) is defined as *the first message of every
+   conversation*, so between them a patient whose opening message is an emergency would never
+   receive the system line at all — not on turn 1, and not on turn 2 either, because turn 1 has
+   passed. What is lost is not the emergency handling (§4.2's rail carries `997` itself) but the
+   **demo marker on a conversation wearing the group's real registered trade name**, and the
+   real booking numbers `920009303` / `0504490460`. That conversation is exactly the one that
+   gets screenshotted.
+
+   The deferral is per thread, it fires once, and it fires **before** the first non-rail reply,
+   in the same position and the same system voice it would have had on turn 1. If the thread is
+   held under an open `triage_hold` (`SPEC-4-SAFETY.md` §1.5 R2) and never produces a non-rail
+   turn, (b) never renders — which is correct: there is no ordinary conversation to mark.
+   §14 criterion 31 is extended to assert the deferred placement as well as the ordinary one.
+
 5. **The rail is exempt from (b) and (c)**, and only from those. SPEC-4 §4.2's emergency copy is
    byte-exact and asserted as such (§11.3); nothing is prepended or appended to it. (a) remains,
    because it is chrome. A demo disclaimer inside an ambulance instruction is the corrupted
@@ -1520,7 +1568,12 @@ An auditor or implementer can check the code against these directly. Each maps t
 13. Every `Clinician` record has `fictional: true`; the type makes any other value uncompilable. (§6.3)
 
 **Money**
-14. Every price rendered to a patient carries the demo label. (PRICE-1)
+14. Every price rendered to a patient carries the price label **in `SPEC-2-PERSONA.md` §5.2's
+    wording — «هذا سعر استرشادي، والمعتمد من الاستقبال.» — emitted by `quote()`'s renderer and
+    absent from every prompt template**; *and* every confirmation block carrying that price
+    carries the DEMO-1(c) suffix «حجز تجريبي — غير مسجّل لدى الفرع.» **Two assertions, not one**:
+    the demo framing moved from the price label to DEMO-1 in Wave 1.5, and a criterion that
+    asserts only the first no longer proves a patient was told this is a demo. (PRICE-1, DEMO-1c)
 15. `package6 === 5 * session` for all four laser areas. (PKG-1)
 16. No TPA percentage (20 / 25 / 30) appears in any catalogue row or prompt template. (PRICE-4)
 17. No reply states a final payable amount for a patient who mentioned insurance. (PRICE-3, INS-1)
@@ -1543,14 +1596,14 @@ An auditor or implementer can check the code against these directly. Each maps t
 28. `bookableWindows()` returns a non-empty result for a `clinic` layer at `confidence: "client_confirmed"` on a day whose `capturedAt` is 120 days old, and the **same** record at 400 days old returns a non-empty result at a downgraded confidence — no absolute void. (§4.10, HRS-FRESH)
 29. A `DayHours` or `ServicePrice` carrying `client_confirmed` **without** a populated `ClientConfirmation` (named person, role, channel, datetime) does not compile. (H6, HRS-CONFIRM)
 30. Every confirmation block — `slot` **and** `callback_request`, contested site **and** operational — contains «حجز تجريبي — غير مسجّل لدى الفرع.» while any of its data carries a demo basis, and the string is emitted by the renderer, not present in any prompt template. (DEMO-1c)
-31. The first message of every demo conversation is the DEMO-1(b) system line, it precedes the greeting, it is **not** attributed to Faysal, and it contains `920009303`, `0504490460` and `997`. (DEMO-1b)
+31. The first message of every demo conversation is the DEMO-1(b) system line, it precedes the greeting, it is **not** attributed to Faysal, and it contains `920009303`, `0504490460` and `997`. **And where turn 1 fired the rail, the same line is asserted on the first non-rail turn instead — present exactly once in the thread, never appended to a rail turn.** (DEMO-1b, detail 4b)
 32. The emergency rail's rendered string is byte-identical to SPEC-4 §4.2 — **no demo disclaimer is prepended or appended**. (DEMO-1 detail 5)
 33. No reply names an ER site that `erSites({ now })` did not return with `hours_verified_at` inside 30 days; with `erSites()` returning `[]`, the escalation names no site and still contains `997`. (MED-2, SPEC-4 §4.4)
 34. The DOC-4 denylist test fails on «هبه احمد» when the denylist holds «هبة أحمد», and fails on «الممرضة نورين» when the denylist holds «نورين». Both are the cases the first draft's matcher would have passed. (DOC-4)
 
 ---
 
-## Wave 1.5 remediation
+## Wave 1.5 / 1.6 remediation
 
 Against `AUDIT-WAVE1.md` (Agent 5) and `REVIEW-WAVE1.md`, 2026-09-09. Every claim below was
 driven — the three normalisers executed against the denylist, the CI files read, the dossier
@@ -1572,7 +1625,8 @@ re-checked.
    gotcha was about *token* matching, not folding, and the full-name rule is what prevents that.
 2. **There are two divergent `normalizeAr`s** (audit S14, confirmed): `lib/ai/callback-trigger.ts:13`
    exports a second copy **missing** the 3+-letter run collapse. **`lib/ai/allergen-gate.ts`'s is
-   authoritative** — 25 importers, and the one SPEC-4 §2 depends on for «ماااا أقدر». Named as
+   authoritative** — 25 `normalizeAr` importers under `lib/` and `app/` (26 repo-wide; driven,
+   Wave 1.6), and the one SPEC-4 §2 depends on for «ماااا أقدر». Named as
    such in DOC-4 and in SPEC-3 §10.2.
 
 ### Blockers this document participates in
@@ -1608,3 +1662,21 @@ re-checked.
 ---
 
 *End of SPEC-1-DOMAIN. Wave 1 is specification only: no `.ts`, no `.tsx`, nothing outside `docs/faysal/`.*
+
+---
+
+## Wave 1.6 remediation — this document's share of the re-audit
+
+Written against `AUDIT-WAVE1.5.md`. Three blockers/should-fixes land here; each was driven or
+counted, not asserted.
+
+| ID | Closed by | What changed |
+|---|---|---|
+| **N5** — the entire demo bookability path does not typecheck | §2 `Confidence`; §4.2 `bookableWindows()` | `\| "demo_seeded"` added to the union with its comment: **not a provenance rung**, an explicitly invented value that sorts below `unknown` and is accepted by exactly one function. `bookableWindows()`'s contract gains the `DEMO_MODE` clause **and** the staleness carve-out — `demo_seeded` has no `capturedAt` to be stale, it expires when `DEMO_MODE` goes off. `DEMO_MODE` is read at the one function that mints slots and nowhere else, the same law as PRICE-2's single calculator. Rule HRS-DEMO, §14 criterion 27, `[OPEN-01]` and `[OPEN-15]` all now rest on a value that exists in the type. |
+| **S1.5-2** — two documents specify two different frozen strings for one price label | Rule PRICE-1; §14 criterion 14 | **Ownership settled: this rule owns the requirement, `SPEC-2-PERSONA.md` §5.2 owns the wording.** The string that ships is SPEC-2's «هذا سعر استرشادي، والمعتمد من الاستقبال.»; PRICE-1 points there and stops restating it. Criterion #14 was **red at birth** against SPEC-2's renderer and is reworded into **two** assertions — the price label *and* the DEMO-1(c) suffix — because the demo framing moved from the first to the second in Wave 1.5 and one criterion could no longer carry both. |
+| **S1.5-7** — DEMO-1(b) has no defined behaviour when turn 1 is a red flag | Rule DEMO-1 detail **4b**; §14 criterion 31 | (b) is **deferred to the first non-rail turn**, not dropped. Detail 5 exempts the rail turn and (b) is defined as *the first message*, so between them the demo marker — and the real numbers `920009303` / `0504490460` — were lost for exactly the conversation most likely to be screenshotted. If the thread never produces a non-rail turn, (b) never renders, which is correct. Criterion 31 asserts both placements and asserts it appears **once**. |
+| **S1.5-6** — "25 importers" called stale | DOC-4 | **Re-counted, and the number was right; the missing qualifier was the defect.** Driven over every `.ts`/`.tsx` in `lib/`, `app/`, `scripts/`, `components/`, parsing named-import lists: **36** files import *something* from `*/allergen-gate` (34 under `lib/`+`app/`); **26** import `normalizeAr`, **25** of them under `lib/`+`app/`. `SPEC-3-REUSE.md` §10.2 stated the qualified 25 and is exactly right; DOC-4 stated the bare 25, which is what made two correct counts look like a contradiction. The qualifier is now in both. The re-audit's 31 matches neither predicate. |
+
+**Nothing else in this document changed.** The Wave 1.5 work the re-audit re-drove — `§4.10`'s
+reachable `client_confirmed`, invariant **H6**, the 180/365 downgrading staleness, Rule DOC-3's
+three conditions, `§9.2`'s `PriceBasis` — all reproduced and is left alone.
