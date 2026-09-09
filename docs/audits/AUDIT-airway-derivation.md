@@ -691,3 +691,47 @@ What follows is not a condition on the merge. It is the next work item, and it i
 * Record R1b in the proof: the quiet corpus constrains a widening **in the syntactic frames it
   enumerates**, and word order and script are not among its axes. `«ضاق صدري»` is in it and
   `«صدري ضايق»` is not, and that gap is worth 3,168 strings and a clean 229/229.
+
+---
+
+## R5. Verification of the follow-up (`fa1141c`) — checked against R1–R4's own corpora
+
+`HEAD` moved while this audit was being written: the re-audit above landed as `162c515` and
+`fa1141c` ("guard the English arm, and let a parent report the textbook case") answers it. Re-driven
+with the **same corpora R1–R4 used**, nothing regenerated. `proof-airway-derivation.test.ts`
+**PASS 29,636/29,636** (was 20,657).
+
+**Closed.** Three of the four must-fix items, and the R2c silences are gone:
+
+| driven string | b28f307 | `fa1141c` |
+|---|---|---|
+| «ابني لسانه متورم» · «لساني متورم» · «عيني متورمة» | silent | **FIRES** `تورم` |
+| «الولد يختنق» · «البنت تختنق» · «الصغير يختنق» · «الجاهل يختنق» · «عيالي يختنقون» · «اولادي يختنقون» | silent | **FIRES** `اختناق` |
+| «ابني حلقه ضايق» · «حلقي ضايق» · «حلقي ضيق» | silent | **FIRES** `انسداد الحلق` |
+| «الحلقة ضيقة» · «حلقة ضيقة» · «حلقة البصل ضيقة شوي» | quiet | **still quiet** — the subject anchor holds |
+| ordinary restaurant English (R1c's 761) | **677 fire** | **96 fire** |
+| English airway, 29 realistic sentences | — | **28 fire**, 0 regressions |
+| R3's 25,574-string corpus | 400 pre→live regressions | **400** — unchanged, still only the «كبر» cells |
+| every Arabic FP family (§1 A–E, R1a) | quiet | **still quiet** |
+
+**Still open, and one of them is new.**
+
+1. **NEW LOSS — `EN_NOT_A_PLACE` refuses a place even after a named person.** «my son is struggling
+   to breathe **in the car**» · «my daughter is gasping for air in the car» · «he is struggling to
+   breathe here» · «my son is struggling to breathe with the swelling» — **widened FIRES / live
+   quiet.** Not a regression against production (pre is quiet), but a loss against the version R4
+   approved, and the sentence is a parent on the way to hospital. The locative is the right tell for
+   a *subjectless* complaint; after `EN_SUBJ_NOW` has already matched «my son», it is answering a
+   question that has been answered. The guard should be on the subjectless arm only.
+2. **«we are struggling to breathe in the hall» / «we are short of breath near the grill»** — 12 of
+   the 96 survivors. «we» is genuinely both a person reporting an airway and a restaurant describing
+   its room; firing is the fail-safe direction. A design call, and it should be written down as one
+   rather than left as a residue.
+3. **«the wine stopped breathing» / «the dough stopped breathing»** — the other 12. `(?:stopped|quit)
+   breathing` was left in the unchanged group and is still subjectless.
+4. **Word order (R2c) — «ابني انقطع نفسه» · «انقطع نفس ابني»** — still silent in all three. The
+   «ضايق» half of must-fix #4 landed; the VSO half did not.
+5. The chest stays deferred, correctly — R1a is the measurement of why.
+
+**R4's verdict is unchanged and `fa1141c` improves on it.** Item 1 is the only thing here worth a
+follow-up commit of its own.
