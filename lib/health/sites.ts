@@ -551,6 +551,26 @@ export function patientPhonesFor(siteId: SiteId): string[] {
     .map((p) => p.e164OrNational);
 }
 
+/**
+ * The branch that IS in a named district — never "the nearest branch by
+ * distance", which we cannot compute: the dossier gives a plus code for two of
+ * six sites and no coordinates at all. Matching is on the district's own Arabic
+ * or English name and the site's recorded alternates, so «الشفا» resolves and
+ * «جنوب الرياض» does not. A null answer is the honest one; the caller asks.
+ */
+export function siteInDistrict(text: string): SiteId | null {
+  const q = String(text ?? "").trim().toLowerCase();
+  if (!q) return null;
+  for (const id of SITE_IDS) {
+    const site = SITES[id];
+    const names = [site.district.ar, site.district.en, ...(site.akaAr ?? []), ...(site.akaEn ?? [])]
+      .filter(Boolean)
+      .map((n) => n.toLowerCase());
+    if (names.some((n) => q === n || q.includes(n))) return id;
+  }
+  return null;
+}
+
 /** H5 / Rule C4-1 — a contested site's bookings carry pendingBranchConfirmation. */
 export function isContested(siteId: SiteId): boolean {
   return siteById(siteId).operatingStatus.state === "operational_contested";

@@ -22,6 +22,13 @@ export interface SeedSite {
   id: SiteId;
   nameAr: string;
   nameEn: string;
+  /**
+   * What Faysal calls the branch INSIDE a sentence. A coordinator says «الروابي»,
+   * not «مجمع الوطن الطبي 2 — الروابي» three times in one message; the registered
+   * name belongs in the first mention and in the confirmation block, which are the
+   * two places it is doing identification work rather than reference work.
+   */
+  shortAr: string;
   districtAr: string;
   /** Districts a patient might name that make this the geographically nearest site. */
   nearDistrictsAr: string[];
@@ -47,6 +54,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     id: "wattan-1",
     nameAr: "مجمع الوطن الطبي 1 — اليمامة",
     nameEn: "Al Wattan Medical Complex 1 — Al Yamamah",
+    shortAr: "اليمامة",
     districtAr: "اليمامة",
     nearDistrictsAr: ["اليمامة", "عتيقة", "منفوحة", "الديرة", "البطحاء"],
     addressAr: "2807 طريق الأمير محمد بن عبدالرحمن، اليمامة، الرياض 12671",
@@ -64,6 +72,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     id: "wattan-2",
     nameAr: "مجمع الوطن الطبي 2 — الروابي",
     nameEn: "Al Wattan Medical Complex 2 — Ar Rawabi",
+    shortAr: "الروابي",
     districtAr: "الروابي",
     nearDistrictsAr: ["الروابي", "الريان", "النسيم", "قرطبة", "اليرموك"],
     addressAr: "7291 شارع عنيزة، الروابي، الرياض 14216",
@@ -81,6 +90,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     id: "wattan-3",
     nameAr: "مجمع الوطن الطبي 3 — الربوة",
     nameEn: "Al Wattan Medical Complex 3 — Ar Rabwah",
+    shortAr: "الربوة",
     districtAr: "الربوة",
     nearDistrictsAr: ["الربوة", "الملز", "الوزارات", "السليمانية"],
     addressAr: "طريق الأمير متعب بن عبدالعزيز، الربوة، الرياض 12835",
@@ -98,6 +108,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     id: "wattan-4",
     nameAr: "مجمع الوطن الطبي 4 — الشفا",
     nameEn: "Al Wattan Medical Complex 4 — Ash Shifa",
+    shortAr: "الشفا",
     districtAr: "الشفا",
     nearDistrictsAr: ["الشفا", "الحزم", "بدر", "المروة", "عريض", "الدار البيضاء", "جنوب الرياض"],
     addressAr: "7348 ابن طولون، الشفا، الرياض 14721",
@@ -115,6 +126,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     id: "shoaa-wurud",
     nameAr: "مجمع شعاع الطبي — الورود",
     nameEn: "Shoaa Medical Complex — Al Wurud",
+    shortAr: "شعاع الورود",
     districtAr: "الورود",
     nearDistrictsAr: ["الورود", "المروج", "الملقا", "العليا", "السليمانية", "شمال الرياض"],
     addressAr: "طريق الملك عبدالله، الورود، الرياض 12254",
@@ -131,6 +143,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     id: "shoaa-rawdah",
     nameAr: "مجمع شعاع الطبي 2 — الروضة",
     nameEn: "Shoaa Medical Complex 2 — Ar Rawdah",
+    shortAr: "شعاع الروضة",
     districtAr: "الروضة",
     nearDistrictsAr: ["الروضة", "الأندلس", "الحمراء", "غرناطة", "النهضة", "شرق الرياض"],
     addressAr: "الطريق الدائري الشرقي الفرعي، الروضة، الرياض 13213",
@@ -308,29 +321,29 @@ export interface SeedPrice {
 }
 
 export const PRICES: readonly SeedPrice[] = [
-  { id: "consult-general", nameAr: "كشف طب عام / أسرة", amount: 90, basis: "demo_invented_anchored" },
-  { id: "consult-paeds", nameAr: "كشف أطفال", amount: 120, basis: "demo_invented_anchored" },
-  { id: "consult-internal", nameAr: "كشف باطنة", amount: 130, basis: "demo_invented_anchored" },
-  { id: "consult-derm", nameAr: "كشف جلدية", amount: 150, basis: "demo_invented_anchored" },
-  { id: "consult-ent", nameAr: "كشف أنف وأذن", amount: 150, basis: "demo_invented_anchored" },
-  { id: "consult-eye", nameAr: "كشف عيون", amount: 150, basis: "demo_invented_anchored" },
-  { id: "consult-obgyn", nameAr: "كشف نساء وولادة", amount: 170, basis: "demo_invented_anchored" },
-  { id: "consult-neuro", nameAr: "كشف مخ وأعصاب", amount: 200, basis: "demo_invented_anchored" },
+  { id: "consult-general", nameAr: "كشف الطب العام", amount: 90, basis: "demo_invented_anchored" },
+  { id: "consult-paeds", nameAr: "كشف الأطفال", amount: 120, basis: "demo_invented_anchored" },
+  { id: "consult-internal", nameAr: "كشف الباطنة", amount: 130, basis: "demo_invented_anchored" },
+  { id: "consult-derm", nameAr: "كشف الجلدية", amount: 150, basis: "demo_invented_anchored" },
+  { id: "consult-ent", nameAr: "كشف الأنف والأذن", amount: 150, basis: "demo_invented_anchored" },
+  { id: "consult-eye", nameAr: "كشف العيون", amount: 150, basis: "demo_invented_anchored" },
+  { id: "consult-obgyn", nameAr: "كشف النساء والولادة", amount: 170, basis: "demo_invented_anchored" },
+  { id: "consult-neuro", nameAr: "كشف المخ والأعصاب", amount: 200, basis: "demo_invented_anchored" },
 
-  { id: "laser-small-session", nameAr: "جلسة ليزر — منطقة صغيرة", amount: 150, basis: "demo_invented_unanchored" },
-  { id: "laser-medium-session", nameAr: "جلسة ليزر — منطقة متوسطة", amount: 300, basis: "demo_invented_unanchored" },
-  { id: "laser-large-session", nameAr: "جلسة ليزر — منطقة كبيرة", amount: 700, basis: "demo_invented_unanchored" },
-  { id: "laser-full-session", nameAr: "جلسة ليزر — الجسم كامل", amount: 1200, basis: "demo_invented_unanchored" },
-  { id: "laser-small-pkg6", nameAr: "باقة 6 جلسات ليزر — منطقة صغيرة", amount: 750, basis: "demo_invented_unanchored", packageOf: "laser-small-session" },
-  { id: "laser-medium-pkg6", nameAr: "باقة 6 جلسات ليزر — منطقة متوسطة", amount: 1500, basis: "demo_invented_unanchored", packageOf: "laser-medium-session" },
-  { id: "laser-large-pkg6", nameAr: "باقة 6 جلسات ليزر — منطقة كبيرة", amount: 3500, basis: "demo_invented_unanchored", packageOf: "laser-large-session" },
-  { id: "laser-full-pkg6", nameAr: "باقة 6 جلسات ليزر — الجسم كامل", amount: 6000, basis: "demo_invented_unanchored", packageOf: "laser-full-session" },
+  { id: "laser-small-session", nameAr: "جلسة الليزر للمنطقة الصغيرة", amount: 150, basis: "demo_invented_unanchored" },
+  { id: "laser-medium-session", nameAr: "جلسة الليزر للمنطقة المتوسطة", amount: 300, basis: "demo_invented_unanchored" },
+  { id: "laser-large-session", nameAr: "جلسة الليزر للمنطقة الكبيرة", amount: 700, basis: "demo_invented_unanchored" },
+  { id: "laser-full-session", nameAr: "جلسة الليزر للجسم كامل", amount: 1200, basis: "demo_invented_unanchored" },
+  { id: "laser-small-pkg6", nameAr: "باقة 6 جلسات للمنطقة الصغيرة", amount: 750, basis: "demo_invented_unanchored", packageOf: "laser-small-session" },
+  { id: "laser-medium-pkg6", nameAr: "باقة 6 جلسات للمنطقة المتوسطة", amount: 1500, basis: "demo_invented_unanchored", packageOf: "laser-medium-session" },
+  { id: "laser-large-pkg6", nameAr: "باقة 6 جلسات للمنطقة الكبيرة", amount: 3500, basis: "demo_invented_unanchored", packageOf: "laser-large-session" },
+  { id: "laser-full-pkg6", nameAr: "باقة 6 جلسات للجسم كامل", amount: 6000, basis: "demo_invented_unanchored", packageOf: "laser-full-session" },
 
-  { id: "ortho-assessment", nameAr: "تقييم تقويم + أشعة وقياسات", amount: 300, basis: "demo_invented_unanchored" },
+  { id: "ortho-assessment", nameAr: "تقييم التقويم مع الأشعة والقياسات", amount: 300, basis: "demo_invented_unanchored" },
   { id: "ortho-metal", nameAr: "تقويم معدني — الفكين، شامل 18 شهر متابعة", amount: 6500, basis: "demo_invented_unanchored" },
   { id: "ortho-ceramic", nameAr: "تقويم سيراميك — الفكين، شامل 18 شهر متابعة", amount: 9000, basis: "demo_invented_unanchored" },
   { id: "dental-scaling", nameAr: "تنظيف وتلميع الأسنان", amount: 250, basis: "demo_invented_unanchored" },
-  { id: "employment-basic", nameAr: "فحص ما قبل التوظيف — الأساسي", amount: 250, basis: "demo_invented_unanchored" },
+  { id: "employment-basic", nameAr: "فحص ما قبل التوظيف الأساسي", amount: 250, basis: "demo_invented_unanchored" },
 ];
 
 /** Rule PKG-1, asserted mechanically rather than in a sentence. */

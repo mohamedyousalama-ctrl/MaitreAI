@@ -120,6 +120,13 @@ export interface SlotQuery {
   clinicKey: string;
   /** Search from this instant forward. */
   fromISO: string;
+  /**
+   * The clock the LABEL is rendered against, when it differs from `fromISO`.
+   * «اليوم» and «بكرة» are relative to NOW, not to the search origin — a search
+   * that starts next Saturday because the patient asked for Saturday must still
+   * label it «السبت», never «اليوم السبت». Defaults to `fromISO`.
+   */
+  nowISO?: string;
   limit?: number;
 }
 

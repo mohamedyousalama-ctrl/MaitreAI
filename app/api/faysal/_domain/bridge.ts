@@ -18,10 +18,14 @@
 // this file and `seed.ts`. Nothing else changes — the scene machine, the strings
 // and the renderer all import from `_domain`, never from here.
 //
-// STATE. Holds and bookings live in a process-local Map with a TTL, exactly as
-// `lib/rate-limit.ts` does and with the same honest caveat: it resets on a cold
-// start and is not shared across lambdas. That is correct for a demo (a booking
-// here is explicitly «غير مسجّل لدى الفرع») and it is why `lib/health/db/` exists.
+// STATE. There is none that matters. A slot id is self-describing and a HOLD is a
+// SIGNED TOKEN (`signing.ts`), so `confirmBooking` can verify a hold this instance
+// never issued — which is what a serverless deployment actually needs and what a
+// process-local Map silently failed to give (it reproduced in `next dev` within
+// one turn: the greeting was re-sent because reset and turn were different module
+// instances). The bookings Map is a convenience for `cancelBooking` only, and a
+// booking here is explicitly «حجز تجريبي — غير مسجّل لدى الفرع» in any case. That
+// is what `lib/health/db/` is for.
 // ============================================================================
 
 import type {
@@ -40,6 +44,7 @@ import type {
   SlotQuery,
 } from "./contract";
 import { CARRIERS, CLINICIANS, OPS, PRICES, ROUTES, SITES, SITE_IDS } from "./seed";
+import { open, seal } from "./signing";
 
 // ── Riyadh wall clock ───────────────────────────────────────────────────────
 // SPEC-1 §4.1: "Riyadh is UTC+03:00 with no DST. Pinned; never derived from the
@@ -222,6 +227,7 @@ export function searchSlots(q: SlotQuery): Slot[] {
 
   const from = new Date(q.fromISO);
   if (Number.isNaN(from.getTime())) return [];
+  const labelClock = q.nowISO ? new Date(q.nowISO) : from;
   const limit = Math.max(1, Math.min(q.limit ?? 2, 8));
   const route = Object.values(ROUTES).find((r) => r.clinicKey === q.clinicKey);
   const clinicAr = route?.clinicAr ?? q.clinicKey;
@@ -254,7 +260,7 @@ export function searchSlots(q: SlotQuery): Slot[] {
         clinicKey: q.clinicKey,
         clinicAr,
         startISO: at.toISOString(),
-        labelAr: slotLabelAr(at, from),
+        labelAr: slotLabelAr(at, labelClock),
         isFriday: isFridayAt(at),
         doctorId: doc?.id ?? null,
         doctorAr: doc?.nameAr ?? null,
@@ -266,29 +272,34 @@ export function searchSlots(q: SlotQuery): Slot[] {
 
 // ── hold → confirm → cancel  (SPEC-1 §7.5) ──────────────────────────────────
 
-interface HoldRow extends Hold {
-  slot: Slot;
-  who: string;
-  createdAt: number;
+/**
+ * SPEC-1 §7.5 — hold, THEN confirm.
+ *
+ * The hold is a SEALED TOKEN, not a row in a Map. The first cut used a Map and it
+ * was wrong off a single process: on Vercel the turn that holds a slot and the
+ * turn that confirms it can land on different instances, and the confirmation
+ * would have failed with the visitor's chosen time already gone from the screen.
+ * The token carries the slot id and the expiry and is signed, so `confirmBooking`
+ * can verify a hold it has never seen. `lib/health/db/` replaces this with a row.
+ */
+interface HoldPayload {
+  s: string; // slotId
+  e: number; // expiresAt (epoch ms)
+  w: string; // who
 }
 
-const holds = new Map<string, HoldRow>();
 const bookings = new Map<string, Booking>();
 const HOLD_TTL_MS = OPS.holdMinutes * 60_000;
-const BOOKING_TTL_MS = 6 * 60 * 60_000;
 const MAX_ROWS = 2_000;
 
 function sweep(): void {
-  const now = Date.now();
-  for (const [k, v] of holds) if (now - v.createdAt > HOLD_TTL_MS) holds.delete(k);
-  if (holds.size > MAX_ROWS) holds.clear();
   if (bookings.size > MAX_ROWS) bookings.clear();
 }
 
 function slotFromId(slotId: string): Slot | null {
   // The id is server-minted and self-describing, so a hold survives the process
-  // never having seen the search that produced it (a different lambda). The parse
-  // is strict: an id that does not decode to a real site + a real window is refused.
+  // never having seen the search that produced it. The parse is strict: an id that
+  // does not decode to a real site inside a real bookable window is refused.
   const m = /^slot_([a-z0-9-]+)_([a-z_]+)_(\d+)$/.exec(slotId);
   if (!m) return null;
   const siteId = m[1] as SiteId;
@@ -317,35 +328,33 @@ function slotFromId(slotId: string): Slot | null {
 }
 
 export function holdSlot(slotId: string, who: string): Hold | null {
-  sweep();
   const slot = slotFromId(slotId);
   if (!slot) return null;
-  const holdId = `hold_${hash32(`${slotId}|${who}|${Date.now()}`).toString(36)}`;
-  const row: HoldRow = {
+  const expiresAt = Date.now() + HOLD_TTL_MS;
+  const holdId = seal("hold", { s: slotId, e: expiresAt, w: who.slice(0, 64) } satisfies HoldPayload);
+  return {
     holdId,
     slotId,
-    expiresAtISO: new Date(Date.now() + HOLD_TTL_MS).toISOString(),
+    expiresAtISO: new Date(expiresAt).toISOString(),
     holdMinutes: OPS.holdMinutes,
-    slot,
-    who,
-    createdAt: Date.now(),
   };
-  holds.set(holdId, row);
-  return { holdId, slotId, expiresAtISO: row.expiresAtISO, holdMinutes: row.holdMinutes };
 }
 
 export function confirmBooking(holdId: string, patient: Patient): Booking | null {
   sweep();
-  const row = holds.get(holdId);
-  if (!row) return null;
-  holds.delete(holdId);
-  const site = SITES[row.slot.siteId];
+  const payload = open<HoldPayload>("hold", holdId);
+  // An expired hold is NOT a booking. §6.5: "wait for real confirmation before
+  // claiming it" — the caller renders the honest "that time is gone" line.
+  if (!payload || typeof payload.e !== "number" || payload.e < Date.now()) return null;
+  const slot = slotFromId(String(payload.s));
+  if (!slot) return null;
+  const site = SITES[slot.siteId];
   const booking: Booking = {
     ref: `WT-${hash32(holdId).toString(36).toUpperCase().slice(0, 6)}`,
     kind: "slot",
-    siteId: row.slot.siteId,
-    clinicAr: row.slot.clinicAr,
-    slotLabelAr: row.slot.labelAr,
+    siteId: slot.siteId,
+    clinicAr: slot.clinicAr,
+    slotLabelAr: slot.labelAr,
     preferredWindowAr: null,
     patientNameAr: patient.nameAr,
     carrierAr: patient.carrierAr ?? null,
@@ -353,7 +362,7 @@ export function confirmBooking(holdId: string, patient: Patient): Booking | null
     // Rule DEMO-1(c)(4): true while ANY of the booking's data carries a demo basis.
     // Every clinic window in this build is `demo_seeded`, so it is always true here.
     demoBasis: true,
-    isFriday: row.slot.isFriday,
+    isFriday: slot.isFriday,
   };
   bookings.set(booking.ref, booking);
   return booking;
@@ -362,7 +371,8 @@ export function confirmBooking(holdId: string, patient: Patient): Booking | null
 /**
  * SPEC-1 §4.6 / Rule C4-1 — a request at a contested or hours-unknown site.
  * It consumes no slot inventory and NEVER carries a time the patient could turn
- * up for. `slotLabelAr` is null by construction, not by convention.
+ * up for. `slotLabelAr` is null BY CONSTRUCTION, not by convention: there is no
+ * argument to this function that could put a clock time on the confirmation.
  */
 export function requestCallback(siteId: SiteId, patient: Patient): Booking {
   sweep();
@@ -384,6 +394,7 @@ export function requestCallback(siteId: SiteId, patient: Patient): Booking {
   return booking;
 }
 
+/** Rule MED-6 — cancellation is never argued and no penalty is quoted. */
 export function cancelBooking(ref: string): boolean {
   return bookings.delete(ref);
 }
@@ -391,8 +402,6 @@ export function cancelBooking(ref: string): boolean {
 export function getBooking(ref: string): Booking | null {
   return bookings.get(ref) ?? null;
 }
-
-void BOOKING_TTL_MS; // reserved: bookings are swept by MAX_ROWS in this build.
 
 // ── priceFor ────────────────────────────────────────────────────────────────
 

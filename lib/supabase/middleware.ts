@@ -26,7 +26,14 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
 // exists where console_v2 is deployed); without it a signed-out user is bounced to
 // the OLD /login and the new magic-link page is unreachable. Only /c/login is
 // public — every other /c route stays protected.
-const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/c/login", "/auth", "/checkout", "/order", "/api", "/d", "/t", "/mizan", "/demo"];
+// "/faysal" is the Al Wattan / فيصل booking demo, the clinic-side equivalent of
+// "/demo": an unauthenticated public page that a founder opens in front of a
+// client. Without it here, a configured-Supabase deployment bounces the demo to
+// /login and the page is unreachable on the URL it exists to be shared on. Its
+// own controls are the ones that bound harm — noindex, the persistent Rule
+// DEMO-1(a) chrome, a per-IP rate limit and a durable daily spend ceiling
+// (app/api/faysal/_engine/guard.ts). "/api" already covers /api/faysal/*.
+const PUBLIC_PREFIXES = ["/", "/contact", "/login", "/c/login", "/auth", "/checkout", "/order", "/api", "/d", "/t", "/mizan", "/demo", "/faysal"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));

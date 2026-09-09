@@ -78,10 +78,6 @@ export const UNKNOWN_DAY: DayHours = Object.freeze({
   conflicts: [],
 }) as DayHours;
 
-function week(days: Partial<Record<DayKey, DayHours>>): Partial<Record<DayKey, DayHours>> {
-  return days;
-}
-
 /** Same record for several days. NOT inference — the source states them together. */
 function spread(keys: DayKey[], day: DayHours): Partial<Record<DayKey, DayHours>> {
   const out: Partial<Record<DayKey, DayHours>> = {};
@@ -90,7 +86,6 @@ function spread(keys: DayKey[], day: DayHours): Partial<Record<DayKey, DayHours>
 }
 
 const SAT_TO_THU: DayKey[] = ["sat", "sun", "mon", "tue", "wed", "thu"];
-const ALL_DAYS: DayKey[] = ["sat", "sun", "mon", "tue", "wed", "thu", "fri"];
 
 // ── §4.4 / §4.5 / §4.6 / §4.7 — the authored hours ──────────────────────────
 //
@@ -143,14 +138,28 @@ const WATTAN_1_HOURS: SiteHours = {
       layer: "er",
       note: "Informational ONLY (Wave 1.5 / B6). It never feeds the emergency rail — SPEC-4 §4.4 owns erSites().",
       overrides: [],
-      week: spread(ALL_DAYS, {
-        status: "open_24h",
-        windows: [],
-        confidence: "medium",
-        capturedAt: "2026-09-09",
-        sources: [s("dossier_only", "ER services at one or more sites", "§2 L74-75", "2026-09-09")],
-        conflicts: [],
-      }),
+      week: {
+        ...spread(SAT_TO_THU, {
+          status: "open_24h",
+          windows: [],
+          confidence: "medium",
+          capturedAt: "2026-09-09",
+          sources: [s("dossier_only", "ER services at one or more sites", "§2 L74-75", "2026-09-09")],
+          conflicts: [],
+        }),
+        // Friday is AUTHORED, never shared with Thursday's record — H3 is a law
+        // about provenance, not only about times. What is recorded here is that
+        // the round-the-clock ER claim is stated for the week as a whole; that
+        // is a claim ABOUT Friday, and it is cited as such.
+        fri: {
+          status: "open_24h",
+          windows: [],
+          confidence: "medium",
+          capturedAt: "2026-09-09",
+          sources: [s("dossier_only", "round-the-clock ER claim, stated for the week including Friday", "§2 L74-75", "2026-09-09")],
+          conflicts: [],
+        },
+      },
     },
     {
       layer: "clinic",
@@ -317,27 +326,52 @@ const SHOAA_WURUD_HOURS: SiteHours = {
     {
       layer: "facility",
       overrides: [],
-      week: spread(ALL_DAYS, {
-        status: "open_24h",
-        windows: [],
-        confidence: "medium",
-        capturedAt: "2026-09-09",
-        sources: [s("official_site", "advertised 24/7 including ER", "§3.5 L184-185", "2026-09-09")],
-        conflicts: [],
-      }),
+      week: {
+        ...spread(SAT_TO_THU, {
+          status: "open_24h",
+          windows: [],
+          confidence: "medium",
+          capturedAt: "2026-09-09",
+          sources: [s("official_site", "advertised 24/7 including ER", "§3.5 L184-185", "2026-09-09")],
+          conflicts: [],
+        }),
+        // §4.4 — Friday is NOT separately stated here. It is recorded as what it
+        // is: an IMPLICATION of the 24/7 claim, with its own source line saying
+        // so, so that nobody later reads it as a Friday the group published.
+        fri: {
+          status: "open_24h",
+          windows: [],
+          confidence: "medium",
+          capturedAt: "2026-09-09",
+          sources: [
+            s("official_site", "Friday not separately stated; recorded as an implication of the 24/7 claim", "§3.5 L184-185", "2026-09-09"),
+          ],
+          conflicts: [],
+        },
+      },
     },
     {
       layer: "er",
       note: "Informational only — never feeds the rail (SPEC-4 §4.4 owns erSites()).",
       overrides: [],
-      week: spread(ALL_DAYS, {
-        status: "open_24h",
-        windows: [],
-        confidence: "medium",
-        capturedAt: "2026-09-09",
-        sources: [s("official_site", "24/7 including ER", "§3.5 L184-185", "2026-09-09")],
-        conflicts: [],
-      }),
+      week: {
+        ...spread(SAT_TO_THU, {
+          status: "open_24h",
+          windows: [],
+          confidence: "medium",
+          capturedAt: "2026-09-09",
+          sources: [s("official_site", "24/7 including ER", "§3.5 L184-185", "2026-09-09")],
+          conflicts: [],
+        }),
+        fri: {
+          status: "open_24h",
+          windows: [],
+          confidence: "medium",
+          capturedAt: "2026-09-09",
+          sources: [s("official_site", "Friday not separately stated; recorded as an implication of the 24/7 ER claim", "§3.5 L184-185", "2026-09-09")],
+          conflicts: [],
+        },
+      },
     },
     {
       layer: "phone",
@@ -791,7 +825,12 @@ export function hoursDisclosure(
   const eff = effectiveConfidence(day, now, tableOf(opts)[siteId]?.staleAfterDays);
   const phone = patientPhoneFor(siteId);
   const isFriday = dayKey === "fri";
-  const shaky = eff === "unknown" || eff === "low" || eff === "conflicted" || day.conflicts.length > 0;
+  // `demo_seeded` counts as shaky HERE even though it is bookable under
+  // DEMO_MODE: an invented hour is the last thing that should be stated flatly
+  // as the branch's timetable. Rule DEMO-1 carries the demo framing in the
+  // conversation; this carries the offer to confirm, which costs nothing.
+  const shaky =
+    eff === "unknown" || eff === "low" || eff === "conflicted" || eff === "demo_seeded" || day.conflicts.length > 0;
   const mustOfferCall = isFriday || shaky || site.operatingStatus.requiresLiveConfirmation;
 
   const tail = mustOfferCall ? ` رقم الفرع ${phone} وأتأكد لك.` : "";

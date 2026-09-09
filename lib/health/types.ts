@@ -292,7 +292,9 @@ export type NeedKey =
   | "paediatrics"
   | "obgyn"
   | "ent"
-  | "urgent_tonight";
+  | "urgent_tonight"
+  | "general_practice"
+  | "internal_medicine";
 
 export interface SiteStrength {
   siteId: SiteId;
@@ -332,6 +334,18 @@ export interface BranchRecommendation {
   /** Rule STR-3 — set when the primary was displaced, with the reason why. */
   fallbackFromSiteId?: SiteId;
   fallbackReasonAr?: string;
+  /**
+   * SPEC-2 §6.2's geography fork. The branch in the district the patient named —
+   * REPORTED, never substituted for the clinical answer, and null when they
+   * named no district or named one we have no branch in.
+   */
+  nearestSiteId: SiteId | null;
+  nearestReasonAr: string | null;
+  /**
+   * MED-2 — for an urgent/tonight need the red-flag rail outranks this answer
+   * entirely. The flag is here so a caller cannot claim it did not know.
+   */
+  safetyRailOutranks: boolean;
 }
 
 // ── Specialties and clinicians (§6) ─────────────────────────────────────────
