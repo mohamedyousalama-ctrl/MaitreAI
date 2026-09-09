@@ -93,8 +93,72 @@ const EMPTY: Classification = {
 
 // ── language (§3.1) ─────────────────────────────────────────────────────────
 
+// ── CONFIRM — composed from axes (see the note at the use site) ─────────────
+// Everything here is written in POST-normalization spelling: hamza folded to «ا»,
+// «ة» to «ه», no tashkeel. The boundary is a negative lookahead for a letter or
+// digit, never `\b` (ASCII-only in JS; never matched an Arabic token).
+const CONFIRM_WORD_END = "(?![ء-يa-z0-9])";
+/** Bare-yes tokens: a whole reply on their own. */
+const CONFIRM_YES = "اي|ايه|ايوه|ايوا|نعم|تمام|زين|اوك|اوكي|اوكيه|اكيد|موافق|ماشي|ابشر|يلا|يالله|ok|okay|okey|yes|yep|yeah|sure";
+/** Verb stems that mean "go ahead and lock it": أكد / ثبت / اعتمد / كمل / احجز, with
+ *  the imperative prefix «ا» optional and the object suffix optional. */
+const CONFIRM_STEM = "(?:ا)?(?:اكد|ثبت|اعتمد|كمل|حجز|احجز)";
+const CONFIRM_OBJ = "(?:ه|ها|لي|ه لي|الموعد|الحجز|it)?";
+/** Nominal forms: «تأكيد» / «تثبيت» / «اعتماد» as a one-word reply. */
+const CONFIRM_NOUN = "(?:تاكيد|تثبيت|اعتماد|confirm|confirmed|book)";
+/** Optional leading particles a patient glues on: «و», «ف», «ايه،», «تمام،». */
+const CONFIRM_LEAD = "(?:(?:و|ف)\\s*|(?:اي|ايه|ايوه|تمام|زين|اوك|اوكي)\\s*[،,]?\\s*)?";
+const CONFIRM_RE = new RegExp(
+  `^${CONFIRM_LEAD}(?:(?:${CONFIRM_YES})${CONFIRM_WORD_END}|${CONFIRM_STEM}${CONFIRM_OBJ}${CONFIRM_WORD_END}|${CONFIRM_NOUN}${CONFIRM_WORD_END})`,
+);
+/** Anything that turns a yes into a no or a not-yet, or asks Faysal to confirm
+ *  something OTHER than the held appointment. Checked before CONFIRM_RE. */
+const CONFIRM_NEGATED = new RegExp(
+  // A no, a not-now, or a not-me anywhere in the message.
+  "(?:^|\\s)(?:لا|ما|مو|مب|موب|ماني|ما ابي|ما ابغي|مو الحين|مب الحين|بعدين|لاحقا|خلني افكر)(?:\\s|$)|" +
+  // A yes followed by «بس» is a hedge, whatever follows the «بس»: «تمام بس بعدين»,
+  // «اوكي بس خلني اشوف», «إي بس غالي».
+  `^(?:${CONFIRM_YES})\\s*[،,]?\\s*بس(?![ء-ي])|` +
+  // A yes followed by a question word is a question that happens to start politely:
+  // «تمام وش الأسعار؟», «زين الدكتور؟» is «is the doctor good?».
+  `^(?:${CONFIRM_YES})\\s*[،,]?\\s*(?:وش|ايش|كم|متي|وين|هل|ليش|مين|كيف)${CONFIRM_WORD_END}|` +
+  // «أي» the question word («تمام أي وقت») folds to the same letters as «إي» the yes
+  // («إي، إي»). It is a question only when a non-yes word follows it.
+  `^(?:${CONFIRM_YES})\\s*[،,]?\\s*اي\\s+(?!(?:${CONFIRM_YES}|${CONFIRM_STEM})${CONFIRM_WORD_END})[ء-ي]|` +
+  // Anything that starts with a yes/stem and ENDS with a question mark is the
+  // patient asking, not deciding: «أثبته؟», «confirm?», «زين الدكتور؟».
+  `^(?:(?:${CONFIRM_YES})|${CONFIRM_STEM}${CONFIRM_OBJ}|${CONFIRM_NOUN}).*[؟?]\\s*$|` +
+  // «أكد لي الدوام» / «ثبت لي السعر» — an object that is not the booking.
+  "(?:^|\\s)(?:ا)?(?:اكد|ثبت)\\s*لي\\s+(?!الموعد|الحجز)[ء-ي]|" +
+  // The one idiom: «ماشي الحال» is «how are things», not a yes.
+  "^ماشي الحال",
+);
+
+
 const GREETING_TOKENS =
-  /^(?:hi|hello|hey|salam|salaam|السلام عليكم|سلام عليكم|هلا|مرحبا|مساء الخير|صباح الخير|اهلا|السلام)\b/;
+  // NOT `\\b`. It is ASCII-word-based in JS, so after an Arabic letter there is never a
+  // boundary and this regex could not match a single Arabic greeting — «مساء الخير»
+  // reached the honest-unknown fallback whenever the model tier was absent. Driven.
+  // Same defect the confirm line documents; same fix: a letter-or-digit lookahead.
+  /^(?:hi|hello|hey|salam|salaam|السلام عليكم|سلام عليكم|هلا|مرحبا|مساء الخير|صباح الخير|اهلا|السلام|صباح النور|مساء النور)(?![ء-يa-z0-9])/i;
+
+/** A NAME-SHAPED reply — what a patient sends to «أثبّته باسم ضيف العرض التجريبي؟»
+ *  when the honest answer is "yes, but under my name". Two to four tokens of
+ *  Arabic or Latin letters, optionally followed by a Saudi mobile, and containing
+ *  no confirm stem, no need word, no district. Consumed ONLY at S6_close with a
+ *  live hold (scenes.ts) — a name anywhere else is not a confirmation. */
+const SAUDI_MOBILE = /(?:\+?966|0)5\d{8}/;
+const NAME_TOKEN = "[ء-يa-z][ء-يa-z'\\-]{1,20}";
+const NAME_RE = new RegExp(`^(?:د\\.?\\s*|dr\\.?\\s*)?(?:${NAME_TOKEN})(?:\\s+(?:${NAME_TOKEN})){1,3}\\s*(?:${SAUDI_MOBILE.source})?\\s*$`);
+export function nameShaped(normalized: string): { nameAr: string; mobile: string | null } | null {
+  const t = normalized.trim();
+  if (!NAME_RE.test(t)) return null;
+  if (CONFIRM_RE.test(t) || CONFIRM_NEGATED.test(t) || GREETING_TOKENS.test(t)) return null;
+  const m = t.match(SAUDI_MOBILE);
+  const mobile = m ? m[0] : null;
+  const nameAr = t.replace(SAUDI_MOBILE, "").replace(/^(?:د\\.?\\s*|dr\\.?\\s*)/, "د. ").trim().slice(0, 40);
+  return { nameAr, mobile };
+}
 
 /**
  * "Faysal replies in the language of the patient's most recent SUBSTANTIVE
@@ -177,6 +241,8 @@ function findWindow(t: string): string | null {
  * The deterministic pass. Returns `null` when it is NOT confident, which is the
  * only condition under which the model is asked.
  */
+export { CONFIRM_RE, CONFIRM_NEGATED };
+
 export function classifyDeterministic(raw: string, offeredCount: number): Classification | null {
   const t = normalizeArabic(raw);
   const language = detectLanguage(raw);
@@ -269,6 +335,30 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   if (has(t, "الدوام", "متي تفتحون", "متي يفتح", "مفتوح", "مسكر", "شغالين", "open now", "opening hours"))
     return { ...base, kind: "hours_question", districtAr: district };
 
+  // Confirm / decline — DERIVED, NOT LISTED, and checked BEFORE the slots ask so «ثبّت
+  // الموعد» reads as a confirmation rather than as a request for slots. It still sits
+  // AFTER price, insurance and the objections, so «إي غالي» stays an objection and
+  // «كم سعر الموعد» stays a price question.
+  // The first version of this line was a hand-typed set and
+  // it was missing «أكد» — the single most ordinary way to say yes to «أثبّته؟» —
+  // so a patient who TYPED a confirmation one tap from a booked appointment got
+  // the honest-unknown fallback while the chip worked. Same failure class this
+  // repo hit four times today on the restaurant emergency detector: a list holds
+  // exactly the values one author thought of on one afternoon. The stems below are
+  // composed with their inflections instead of enumerated as sentences, and the
+  // proof (scripts/proof-faysal-confirm.test.ts) generates its corpus from the
+  // same axes AND drives an independently-derived must-NOT-confirm corpus, so a
+  // widening here has something that can object to it.
+  //
+  // Negations and hedges are checked FIRST and win: «لا تأكد», «ما أبي أثبت»,
+  // «مو الحين», «تمام بس بعدين», «إي بس غالي» are not a yes. A patient asking
+  // Faysal to confirm something else («أكد لي الدوام») is not a yes either — the
+  // object gate below requires the confirmation to be bare, or to point at the
+  // appointment/booking/it.
+  if (CONFIRM_NEGATED.test(t)) return { ...base, kind: "decline" };
+  if (CONFIRM_RE.test(t) || has(t, "احجز لي", "confirm it", "book it"))
+    return { ...base, kind: "confirm", preferredWindowAr: findWindow(t) };
+
   // Slots.
   // A bare «موعد» belongs here: «أبغى موعد عند دكتور قلب» and «موعد أشعة الصدر» are
   // both booking asks, and both were falling to `fallback.honest_unknown` because
@@ -290,9 +380,6 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // a whitespace-only boundary missed the yes on the turn before a confirmed
   // booking. Punctuation is a boundary; a letter is not.
   const wordEnd = "(?![ء-يa-z0-9])";
-  if (new RegExp(`^(?:اي|ايه|ايوه|نعم|تمام|زين|اوك|ok|okay|yes|yep|اكيد|موافق|اثبته|ثبته|ثبت|اثبت|اثبتها|احجزه|يالله|ماشي)${wordEnd}`).test(t) ||
-      has(t, "اثبته", "ثبته", "احجزه", "احجز لي", "confirm it", "book it"))
-    return { ...base, kind: "confirm", preferredWindowAr: findWindow(t) };
   if (new RegExp(`^(?:لا|ما ابي|مو الحين|no|nope|not now)${wordEnd}`).test(t)) return { ...base, kind: "decline" };
 
   if (has(t, "شكرا", "مشكور", "الله يعطيك العافيه", "thanks", "thank you", "bye", "سلام عليكم فقط"))

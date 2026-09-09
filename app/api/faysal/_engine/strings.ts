@@ -78,6 +78,21 @@ export const PERSONA_IDENTITY_HONEST =
 // ── §2.2 — the five greetings ───────────────────────────────────────────────
 
 /** G1 — new patient, inside opening hours. The default. */
+/** §2.2 addendum — the greeting ECHO. Used only when Faysal has already greeted
+ *  and the patient sends a courtesy. Mirrors the form («مساء الخير» → «مساء
+ *  النور», «السلام عليكم» → «وعليكم السلام»), then nudges back to the open
+ *  question if there is one. One question mark at most; nothing else appended. */
+export const greetingEcho = (raw: string, openQuestion: string | null): string => {
+  const t = raw.trim();
+  let ack: string;
+  if (/^(?:ال)?سلام/.test(t)) ack = "وعليكم السلام ورحمة الله.";
+  else if (/^مساء/.test(t)) ack = "مساء النور.";
+  else if (/^صباح/.test(t)) ack = "صباح النور.";
+  else if (/^(?:hi|hello|hey)/i.test(t)) ack = "Hello, welcome back.";
+  else ack = "هلا والله.";
+  return openQuestion ? `${ack}\n${openQuestion}` : `${ack}\nقل لي وش تحتاج وبأي حي، وأرتّب لك.`;
+};
+
 export const GREETING_NEW_PATIENT = nbsp(
   `حياك الله، معك فيصل من مجموعة الوطن الطبية.
 أنا اللي أرتّب المواعيد بين فروعنا في الرياض، وأقدر أشوف لك الأقرب لك والأنسب لحالتك.

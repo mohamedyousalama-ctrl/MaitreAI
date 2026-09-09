@@ -592,6 +592,19 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   const appt2 = confirmBooking(h2.holdId, WHO, { store, ...DEMO });
   check("HOLD-4: confirming twice yields ONE appointment", appt1.appointmentId === appt2.appointmentId && store.appointments.size === 1);
   check("POL-04: the appointment carries both demo markers", appt1.source === "faysal_demo" && appt1.isTest === true);
+  // A hold placed under the demo guest name and confirmed under a typed name is ONE
+  // patient (same number) who typed a name — the appointment carries the typed name.
+  {
+    const s3 = createStore();
+    const GUEST = { waNumber: WHO.waNumber, displayName: "ضيف العرض التجريبي" };
+    const three = searchSlots({ serviceId: "derm-consult", siteId: "wattan-2", dateISO: SAT, limit: 3, ...DEMO }, { store: s3 });
+    const ga = confirmBooking(holdSlot(three[0].slotId, GUEST, { store: s3, ...DEMO }).holdId, { waNumber: WHO.waNumber, displayName: "محمد الشهري" }, { store: s3, ...DEMO });
+    check("HOLD-2/name: the name given at confirm time is the name on the appointment", ga.patient.displayName === "محمد الشهري" && ga.patient.waNumber === WHO.waNumber);
+    const gb = confirmBooking(holdSlot(three[1].slotId, GUEST, { store: s3, ...DEMO }).holdId, { waNumber: WHO.waNumber, displayName: "  " }, { store: s3, ...DEMO });
+    check("HOLD-2/name: a blank confirm-time name keeps the hold's name", gb.patient.displayName === GUEST.displayName);
+    const gc = holdSlot(three[2].slotId, WHO, { store: s3, ...DEMO });
+    check("HOLD-2/name: a different number cannot confirm it, whatever name it gives", throws(() => confirmBooking(gc.holdId, { waNumber: OTHER.waNumber, displayName: WHO.displayName }, { store: s3, ...DEMO })));
+  }
   check("POL-03: and no clinical detail beyond the service name", !("nationalId" in appt1) && !("insuranceMemberNumber" in appt1));
   check("§7.5: a confirmed slot is out of inventory",
     !searchSlots({ serviceId: "derm-consult", siteId: "wattan-2", dateISO: SAT, limit: 20, ...DEMO }, { store }).some((s) => s.slotId === b.slotId));

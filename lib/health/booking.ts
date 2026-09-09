@@ -193,7 +193,10 @@ export function confirmBooking(holdId: string, patient: PatientRef, opts: Bookin
     start: first.start,
     end: last.end,
     preferredWindowAr: null,
-    patient: hold.patient,
+    // Identity is the HOLD's number (checked above); the name is whatever the patient
+    // gave by the time they said yes. A hold placed as «ضيف العرض التجريبي» and
+    // confirmed as «محمد الشهري» is one patient who typed a name — not two patients.
+    patient: { ...hold.patient, displayName: patient?.displayName?.trim() || hold.patient.displayName },
     // HOLD-6 / Rule C4-1 — a contested branch never renders a bare "confirmed".
     pendingBranchConfirmation: isContested(first.siteId),
     branchPhone: patientPhoneFor(first.siteId),

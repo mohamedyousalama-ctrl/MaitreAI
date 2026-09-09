@@ -55,6 +55,7 @@ import {
 } from "../_domain";
 import { EN } from "./english";
 import { compose } from "./render";
+import { classifyDeterministic, nameShaped } from "./intent";
 import type { Classification } from "./intent";
 import type { FaysalSession } from "./session";
 import * as S from "./strings";
@@ -109,6 +110,23 @@ function faysal(
 
 function reply(s: FaysalSession, msgs: OutMsg[], chips: string[] = [], stopReason: string | null = null): Reply {
   return { messages: assertCadence(msgs), chips: chips.slice(0, 2), stopReason, scene: s.scene };
+}
+
+/** The question currently open in this thread, for a greeting echo to nudge back to. */
+function openQuestionFor(s: FaysalSession): string | null {
+  if (s.scene === "S6_close" && s.holdId) return "أثبّت لك الموعد اللي ماسكه لك؟";
+  if (s.scene === "S5_slots" && s.offeredSlots.length) return "أي وقت أثبّت لك؟";
+  if (s.awaitingCallbackWindow) return "الصبح ولا بعد العصر؟";
+  if (s.scene === "S3_route" || s.scene === "S4_insurance") return "الزيارة تأمين ولا كاش؟";
+  return null;
+}
+/** The chips that were on screen for the open question, re-offered unchanged. */
+function chipsFor(s: FaysalSession): string[] {
+  if (s.scene === "S6_close" && s.holdId) return ["إي، ثبّته", "لا، غيّره"];
+  if (s.scene === "S5_slots" && s.offeredSlots.length) return s.offeredSlots.slice(0, 2).map((x) => x.labelAr);
+  if (s.awaitingCallbackWindow) return ["الصبح", "بعد العصر"];
+  if (s.scene === "S3_route" || s.scene === "S4_insurance") return ["تأمين", "كاش"];
+  return [];
 }
 
 const needOf = (s: FaysalSession): DemoNeed | null => s.need;
@@ -556,6 +574,22 @@ function dispatch(
   const expanded = tryExpand(s, raw, cls, now, store);
   if (expanded) return expanded;
 
+  // A TYPED NAME AT S6_close IS A YES UNDER THAT NAME. Faysal just asked «أثبّته
+  // باسم ضيف العرض التجريبي؟»; a patient who replies «محمد الشهري 0551234567» has
+  // answered it. Scoped to exactly this scene with a live hold — a name anywhere
+  // else is not a confirmation. The mobile is kept in the session envelope only,
+  // never written anywhere; the confirmation block still carries the demo label.
+  // Gate: the deterministic classifier must have had NOTHING to say. Any typed
+  // yes, no, question, greeting or slot pick is handled by its own branch; only a
+  // message the rules could not read is tried as a name.
+  if (s.scene === "S6_close" && s.holdId && classifyDeterministic(raw, s.offeredSlots.length) === null) {
+    const named = nameShaped(normalizeArabic(raw));
+    if (named) {
+      s.patientNameAr = named.nameAr;
+      return confirmHeld(s, now, store);
+    }
+  }
+
   switch (cls.kind) {
     case "identity":
       return reply(s, [faysal(s, language === "en" ? EN.identity : S.PERSONA_IDENTITY_HONEST)]);
@@ -759,7 +793,13 @@ function dispatch(
 
     case "greeting_only":
       if (!s.greeted) return openConversation(s, now, language);
-      return reply(s, [faysal(s, language === "en" ? EN.greeting : S.GREETING_NEW_PATIENT)]);
+      // ALREADY GREETED. A coordinator who has said hello answers «مساء الخير» with
+      // «مساء النور», not with a second introduction. The first version replayed
+      // GREETING_NEW_PATIENT here, so a patient who opened with a courtesy after
+      // Faysal's own greeting got introduced to Faysal twice in a row — driven on
+      // a real phone at 02:00. Mirror the greeting, then nudge back to whatever
+      // was open, and re-offer the same chips so the thread does not lose its place.
+      return reply(s, [faysal(s, S.greetingEcho(raw, openQuestionFor(s)))], chipsFor(s));
 
     default: {
       // §8.2 — the universal fallback. `{concrete_alternative}` is always a branch
