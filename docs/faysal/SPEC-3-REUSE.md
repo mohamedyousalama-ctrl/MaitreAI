@@ -670,7 +670,7 @@ avoids.
 | `call-presentation.ts` | 54 | **FORK** | A regex deciding when a caller is asking for something **sent** rather than **spoken** — "he tells you what he has on the phone; he sends the menu only if you ask." | Replace menu/photo vocabulary with location, price list, doctor schedule, insurance list. |
 | `call-carriers.ts` | 143 | **FORK** | Short spoken "carrier" lines that bridge dead air while the authoritative reply is composed — chosen so they carry **no number, no currency token, no link, no order number**. Written after the Founder asked a price and heard three seconds of nothing. | New lines; the never-carry-a-figure rule is unchanged. |
 | `voice-out.ts` | 410 | **FORK** | Speakability decision + synthesis + ledger write. Reads order/price signals via `voice-budget`. | Follows §7.3 `voice-budget`. Keep the `agent_runs`-equivalent cost write — it is what makes spend visible. |
-| `order.ts` | 134 | **NEVER** | Creates a demo order; imports `@/lib/db/orders-create`. |
+| `order.ts` | 134 | **NEVER** | Creates a demo order; imports `@/lib/db/orders-create`. | — |
 
 ### 8.2 `app/api/demo/*`
 
@@ -753,10 +753,10 @@ from a food-allergen module.
 | `lib/settings/safety-flags.ts` | 69 | **FORK** | The denylist of feature flags **no console may flip**, because turning one off is a safety failure, not a tier choice. The doctrine is universal. | The flag names. Keep the "not flippable from ANY console, by anyone" rule. |
 | `lib/ai/banned-words.ts` | 91 | **FORK** | Never-say list. | Clinic equivalents: never promise a diagnosis, never state a wait time as a fact, never say a doctor is available without checking. |
 | `lib/ai/money-guard.ts` | 118 | **FORK** | Prevents the model inventing figures. | Consultation fees, insurance co-pay. The dossier's own 56-200 SAR marketplace figures are exactly the kind of number that must never be spoken as a tariff. |
-| `lib/ai/phonetic-safety-net.ts` | 331 | **NEVER** | **Unwired by Founder ruling.** It fires on words that merely *sound* like a safety term — «موز»→«لوز», «جبن»→«لبن» — and turned the greeting «هلا والله» into an allergy consultation in front of the Founder. Faysal must not rewire it. Free coverage: `scripts/proof-phonetic-net-unwired.test.ts` walks `app/`, `lib/` and `components/` with **no directory allow-list**, so it covers `lib/health/*` from the day it exists. *(Carve-out: the pure helpers `levenshtein` / `stripAffix` are ordinary utilities and remain importable — that carve-out is already encoded in the proof.)* |
-| `lib/ai/allergen-vocab.ts` | 230 | **NEVER** | Food allergen lexicon. |
-| `lib/ai/allergen-canonical.ts` | 161 | **NEVER** | Canonical allergen mapping. |
-| `lib/ai/allergen-companion.ts` / `-flow.ts` / `-scan-context.ts` / `allergen-prep-vocab.ts` / `dish-allergen-data.ts` / `memory-allergy-gate.ts` / `allergy-simple.ts` / `allergy-calm-hold.ts` / `prompt-allergy.ts` / `disease-diet-guard.ts` | — | **NEVER** (10 files) | Menu-item allergy companion: kitchen prep, cross-contact, per-dish data. Entirely restaurant. |
+| `lib/ai/phonetic-safety-net.ts` | 331 | **NEVER** | **Unwired by Founder ruling.** It fires on words that merely *sound* like a safety term — «موز»→«لوز», «جبن»→«لبن» — and turned the greeting «هلا والله» into an allergy consultation in front of the Founder. Faysal must not rewire it. Free coverage: `scripts/proof-phonetic-net-unwired.test.ts` walks `app/`, `lib/` and `components/` with **no directory allow-list**, so it covers `lib/health/*` from the day it exists. *(Carve-out: the pure helpers `levenshtein` / `stripAffix` are ordinary utilities and remain importable — that carve-out is already encoded in the proof.)* | — |
+| `lib/ai/allergen-vocab.ts` | 230 | **NEVER** | Food allergen lexicon. | — |
+| `lib/ai/allergen-canonical.ts` | 161 | **NEVER** | Canonical allergen mapping. | — |
+| `lib/ai/allergen-companion.ts` / `-flow.ts` / `-scan-context.ts` / `allergen-prep-vocab.ts` / `dish-allergen-data.ts` / `memory-allergy-gate.ts` / `allergy-simple.ts` / `allergy-calm-hold.ts` / `prompt-allergy.ts` / `disease-diet-guard.ts` | — | **NEVER** (10 files) | Menu-item allergy companion: kitchen prep, cross-contact, per-dish data. Entirely restaurant. | — |
 | `lib/privacy/record-consent.ts` | 75 | **FORK** | Tenant-scoped consent write. | Health tables; add the sensitive-category flag PDPL requires for health data. |
 
 ---

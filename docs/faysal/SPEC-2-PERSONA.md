@@ -1103,8 +1103,19 @@ reconciliation rather than a silent edit.
 | **Q7** | **Insurance network per branch, per insurer, with a freshness date.** Faysal will never say "covered", but he does need to say *which branches are on your network* — that list must be owned and dated. | Otherwise every insurance turn collapses to the honest-unknown line. |
 | **Q8** | **Is `{records_channel}` real** (portal, the Shoaa app, reception only)? §8.1 #19 forbids results in chat and needs a true destination. | Otherwise the refusal has no alternative to offer. |
 | **Q9** | **Does the client accept the near-zero emoji policy?** It reads as more serious than the group's Instagram voice, and it is a deliberate departure from Khalid. | Cheap to reverse, expensive to get wrong in front of a frightened patient. |
-| **Q10** | **Shoaa is a second public brand** (own site, own app, own X account) owned by the same group. Does Faysal introduce himself as «مجموعة الوطن الطبية» when routing a patient to a Shoaa branch, or switch brand voice? This spec assumes **one group identity, branch named explicitly** — G1 and turn 4 of §9 both do this. | Affects every greeting string. |
-| **Q11** | **Doctor-name policy.** Public reviews and the group's own social posts name individual doctors. May Faysal name a doctor before booking, or only in the confirmation? This spec allows naming **only from `{doctor}` data**, never from reputation. | Affects §6.5 and the objection table. |
+| **Q10** | ~~Does Faysal switch brand voice for a Shoaa branch?~~ **SETTLED: `SPEC-1-DOMAIN.md` Rule B-1 — one agent, one group identity, and the relationship stated out loud («شعاع من نفس المجموعة»).** G1 and turn 4 of §9 now match. **Remaining action:** confirm the client is comfortable with a single «مجموعة الوطن الطبية» identity on threads that arrive through Shoaa's own channels. | Affects every greeting string. |
+| **Q11** | **Doctor-name policy.** All clinicians in this product are invented (SPEC-1 PROHIBITION A) and the real names harvested from reviews are denylisted at build time (§8.1 #10b). Open question is narrower: may Faysal name an **invented** doctor *before* booking, or only inside the confirmation? This spec allows naming only from `{doctor}` data, never from reputation. | Affects §6.5 and the objection table. |
+
+### 12.1 Cross-spec boundaries this document asserts
+
+So the auditor can check them rather than infer them:
+
+| surface | owner | this document's role |
+|---|---|---|
+| red-flag detection, tiers, emergency rail copy, 997 | `SPEC-4-SAFETY.md` | defers entirely; defines only the persona's prohibitions and the delegated `urgent` wording |
+| branch records, hours, tri-state status, contested-site rules, ratings policy, invented clinicians | `SPEC-1-DOMAIN.md` | consumes as data slots (§10); restates two of its rules in persona voice (RATE-1, C4-1) |
+| engine, digit style, bold sanitisation, banned-word scrubber, dialect linter, compose ordering | existing code (`lib/ai/*`, `lib/util/*`) | reuses unchanged; adds no competing implementation |
+| greeting strings, register, emotional stance, sales motion, scene list, forbidden output, emoji policy | **this document** | source of truth |
 
 ---
 
