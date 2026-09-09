@@ -2,10 +2,10 @@
 // فيصل / Faysal — THE SCENE MACHINE (SPEC-2 §7).
 //
 // Every inbound passes S0 (the safety screen) before anything here runs; that is
-// in `turn/route.ts`, above this module, so that a red flag cannot reach a scene
-// even by mistake. What is left is S1–S14.
+// in `turn/route.ts`, above this module, so a red flag cannot reach a scene even
+// by mistake. What is left is S1–S14.
 //
-// THE DETERMINISM BOUNDARY (§8.3) is the whole architecture of this file:
+// THE DETERMINISM BOUNDARY (§8.3) is the architecture of this file:
 //
 //   code owns          the five greetings · the rail · the confirmation and
 //                      pre-visit blocks · `insurance.class_honesty` ·
@@ -16,37 +16,43 @@
 //                      one-question rule · the ≤3-message cadence
 //   the model owns     which intent this message carries, and nothing else
 //
-// So there is no code path in this file through which the model can produce a
-// fact. It selects a frozen string; the domain fills the slots.
+// Every FACT comes from `lib/health` through `_domain`. There is no code path in
+// this file that can produce one: it selects a frozen string, and the engine
+// fills the slots.
 //
-// CADENCE, enforced here rather than hoped for (§4.2): default 1–3 short lines,
-// ≤2 messages per turn (3 only under the split-recap pattern), ONE question mark
-// per message. `assertCadence()` is the mechanical form of that rule.
+// CADENCE is enforced here rather than hoped for (§4.2): ≤2 messages per turn
+// (3 only under the split-recap pattern), ONE question mark per message.
+// `assertCadence()` is the mechanical form of that rule.
 // ============================================================================
 
 import {
   OPS,
   REAL_CONTACTS,
   SITES,
-  bookableWindows,
-  cancelBooking,
-  carrierNameAr,
-  confirmBooking,
-  holdSlot,
-  insuranceAnswer,
-  openStateAt,
+  callback as domainCallback,
+  cancel as domainCancel,
+  canBook,
+  clinicsAtSite,
+  confirm as domainConfirm,
+  hold as domainHold,
+  insurance,
+  normalizeArabic,
+  openState,
   packageFor,
-  priceFor,
-  clinicBookableAt,
-  recommendBranch,
-  requestCallback,
+  planFor,
+  price,
+  recommend,
   riyadhDateISO,
   riyadhParts,
-  searchSlots,
+  serviceNameAr,
+  twoSlotsAcrossDays,
+  type Appointment,
+  type DemoNeed,
+  type FaysalStore,
+  type SiteId,
+  type SiteView,
+  type SlotView,
 } from "../_domain";
-import { ROUTES as ROUTE_CACHE } from "../_domain";
-import type { NeedKey, SeedSite, SiteId, Slot } from "../_domain";
-import { normalizeArabic } from "../_domain/safety";
 import { EN } from "./english";
 import { compose } from "./render";
 import type { Classification } from "./intent";
@@ -71,17 +77,12 @@ export interface Reply {
 
 // ── cadence guard (§4.2) ────────────────────────────────────────────────────
 
-/**
- * "One question mark per message. If a draft has two ؟, it is two messages or it
- * is wrong." Applied to Faysal's own messages only — the system line has none and
- * the rail is exempt from composition entirely.
- */
 function assertCadence(messages: OutMsg[]): OutMsg[] {
-  const faysal = messages.filter((m) => m.from === "faysal");
-  if (faysal.length > 3) {
-    throw new Error(`[faysal] cadence: ${faysal.length} messages in one turn; the cap is 3 (split-recap) and the norm is 2.`);
+  const mine = messages.filter((m) => m.from === "faysal");
+  if (mine.length > 3) {
+    throw new Error(`[faysal] cadence: ${mine.length} messages in one turn; the cap is 3 (split-recap) and the norm is 2.`);
   }
-  for (const m of faysal) {
+  for (const m of mine) {
     const marks = (m.text.match(/[؟?]/g) ?? []).length;
     if (marks > 1) {
       throw new Error(`[faysal] cadence: ${marks} question marks in one message — that is two messages, or it is wrong.`);
@@ -92,13 +93,17 @@ function assertCadence(messages: OutMsg[]): OutMsg[] {
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-const site = (id: SiteId | null): SeedSite | null => (id ? SITES[id] : null);
+const site = (id: SiteId | null): SiteView | null => (id ? SITES[id] : null);
 
 function branchPhoneFor(s: FaysalSession): string | null {
   return site(s.siteId)?.phoneAr ?? site(s.nearSiteId)?.phoneAr ?? null;
 }
 
-function faysal(s: FaysalSession, text: string, opts: { quotedPackage?: boolean; isConfirmation?: boolean } = {}): OutMsg {
+function faysal(
+  s: FaysalSession,
+  text: string,
+  opts: { quotedPackage?: boolean; packageTermsAr?: string | null; isConfirmation?: boolean } = {},
+): OutMsg {
   return { from: "faysal", text: compose(text, { branchPhone: branchPhoneFor(s), ...opts }) };
 }
 
@@ -106,68 +111,7 @@ function reply(s: FaysalSession, msgs: OutMsg[], chips: string[] = [], stopReaso
   return { messages: assertCadence(msgs), chips: chips.slice(0, 2), stopReason, scene: s.scene };
 }
 
-/** The clinic the current need routes to, as loaded data — never a guess. */
-function clinicFor(need: NeedKey | null): { key: string; ar: string } {
-  if (!need) return { key: "general", ar: "الكشف العام" };
-  const route = ROUTE_CACHE[need];
-  return { key: route.clinicKey, ar: route.clinicAr };
-}
-
-
-/** The service whose price is loaded for a need. Null → `price.not_loaded` (§5.2). */
-function priceIdsFor(need: NeedKey | null): { consult: string | null; procedure: string | null } {
-  switch (need) {
-    case "laser":
-      return { consult: "consult-derm", procedure: "laser-medium-session" };
-    case "dermatology":
-      return { consult: "consult-derm", procedure: null };
-    case "orthodontics":
-      return { consult: "ortho-assessment", procedure: "ortho-metal" };
-    case "dental":
-      return { consult: "consult-general", procedure: "dental-scaling" };
-    case "paediatrics":
-      return { consult: "consult-paeds", procedure: null };
-    case "obgyn":
-      return { consult: "consult-obgyn", procedure: null };
-    case "ent":
-      return { consult: "consult-ent", procedure: null };
-    case "internal":
-      return { consult: "consult-internal", procedure: null };
-    case "neurology":
-      return { consult: "consult-neuro", procedure: null };
-    case "general":
-      return { consult: "consult-general", procedure: null };
-    case "employment_medical":
-      return { consult: "employment-basic", procedure: null };
-    // Deliberately unpriced: SPEC-1 §9.4 — no lab or radiology price list exists,
-    // and inventing one invents dozens of clinical claims at once.
-    default:
-      return { consult: null, procedure: null };
-  }
-}
-
-/**
- * The noun the fork template puts in front of «نسويه». It is masculine-agreeing by
- * construction, because the frozen template reads «{procedure} نسويه في
- * {best_branch}» — a slot filled with «جلسات الليزر» would ship «جلسات الليزر
- * نسويه», and a grammar error in the showpiece turn reads as a machine.
- */
-const NEED_NOUN_AR: Readonly<Partial<Record<NeedKey, string>>> = {
-  laser: "الليزر",
-  dermatology: "كشف الجلدية",
-  dental: "علاج الأسنان",
-  orthodontics: "التقويم",
-  endodontics: "علاج الجذور",
-  orthopaedics: "كشف العظام",
-  paediatrics: "كشف الأطفال",
-  obgyn: "كشف النساء والولادة",
-  ent: "كشف الأنف والأذن",
-  internal: "كشف الباطنة",
-  neurology: "كشف المخ والأعصاب",
-  employment_medical: "فحص ما قبل التوظيف",
-};
-
-const needNounAr = (need: NeedKey | null): string => (need && NEED_NOUN_AR[need]) || "هالنوع من الكشف";
+const needOf = (s: FaysalSession): DemoNeed | null => s.need;
 
 // ── the opener (S1) ─────────────────────────────────────────────────────────
 
@@ -176,9 +120,8 @@ const needNounAr = (need: NeedKey | null): string => (need && NEED_NOUN_AR[need]
  * it precedes the greeting. It is not attributed to Faysal, and it carries the
  * real booking numbers 920009303 / 0504490460 and 997.
  *
- * Greeting selection is SPEC-2 §2.2, and the red-flag screen runs before it —
- * "if the inbound message carries a red-flag symptom, NO greeting is sent at all."
- * That precedence lives in the route.
+ * The red-flag screen runs before it — "if the inbound message carries a red-flag
+ * symptom, NO greeting is sent at all." That precedence lives in the route.
  */
 export function openConversation(s: FaysalSession, now: Date, language: "ar" | "en" | "other" = "ar"): Reply {
   const msgs: OutMsg[] = [];
@@ -198,10 +141,10 @@ function selectGreeting(s: FaysalSession, now: Date, language: "ar" | "en" | "ot
 
   const p = riyadhParts(now);
 
-  // G4 — after midnight. `erSites({ now })` is SPEC-4 §4.4's call, and this build
-  // has no roster that can satisfy its freshness requirement (a named verifier
-  // inside 30 days). Zero eligible sites is the branch this reaches, and §4.4 is
-  // explicit that it is the correct default, not a degradation.
+  // G4 — after midnight. `erSites({ now })` is SPEC-4 §4.4's call, and no site in
+  // this build satisfies its freshness requirement (a named verifier inside 30
+  // days). Zero eligible sites is the branch this reaches, and §4.4 is explicit
+  // that it is the correct default, not a degradation.
   if (p.hour >= 0 && p.hour < 6) {
     s.scene = "S11_offhours";
     return S.GREETING_AFTER_MIDNIGHT_NO_ER;
@@ -210,7 +153,7 @@ function selectGreeting(s: FaysalSession, now: Date, language: "ar" | "en" | "ot
   // G3 — Friday, before the branch opens. States the REAL opening time from data.
   if (p.weekday === 5) {
     const anchor = SITES["wattan-2"];
-    const state = openStateAt("wattan-2", now);
+    const state = openState("wattan-2", now);
     if (state.state === "CLOSED" && state.opensAtAr) {
       s.scene = "S11_offhours";
       s.siteId = "wattan-2";
@@ -225,12 +168,12 @@ function selectGreeting(s: FaysalSession, now: Date, language: "ar" | "en" | "ot
 
 // ── the fork ────────────────────────────────────────────────────────────────
 
-function forkReply(s: FaysalSession, bestId: SiteId, nearId: SiteId, reasonAr: string): Reply {
+function forkReply(s: FaysalSession, bestId: SiteId, nearId: SiteId, reasonAr: string, now: Date): Reply {
   const best = SITES[bestId];
   const near = SITES[nearId];
-  const nearState = openStateAt(nearId, new Date());
-  const procedure = needNounAr(s.need);
-  const capability = near.clinicsAr.slice(0, 2).join(" و");
+  const nearState = openState(nearId, now);
+  const plan = planFor(needOf(s));
+  const capability = clinicsAtSite(nearId).slice(0, 2).join(" و") || "عيادات عامة";
 
   s.siteId = bestId;
   s.nearSiteId = nearId;
@@ -239,38 +182,26 @@ function forkReply(s: FaysalSession, bestId: SiteId, nearId: SiteId, reasonAr: s
 
   const optionBest = `${best.shortAr} بموعد مثبّت من الحين — الكشف والجلسة في نفس الزيارة، وما تتنقل.`;
 
-  // Rule C4-1: a contested site is bookable, but NEVER silently, and Rule C4-3:
-  // the contradiction is never explained away. So the near option here promises a
-  // CALLBACK and a phone number, not a time.
+  // Rule C4-1: a contested site is bookable, but NEVER silently. Rule C4-3: the
+  // contradiction is never explained away. So the near option promises a CALLBACK
+  // and a phone number, not a time.
   const contested = nearState.state === "UNVERIFIED";
   const optionNear = contested
     ? `أسجّل لك طلب في ${near.shortAr}، والفرع يتصل عليك ويثبت الوقت — وقبل ما تطلع اتصل على ${near.phoneAr} وتأكد إنه فاتح.`
-    : `كشف في ${near.shortAr} لأنه قريب، و${procedure} بعدين في ${best.shortAr}.`;
+    : `كشف في ${near.shortAr} لأنه قريب، و${plan.nounAr} بعدين في ${best.shortAr}.`;
 
-  const text = contested
-    ? S.motionMatchForkUnverified({
-        nearBranch: near.nameAr,
-        nearCapability: capability,
-        procedure,
-        bestBranch: best.nameAr,
-        bestShort: best.shortAr,
-        bestReason: reasonAr,
-        optionNear,
-        optionBest,
-      })
-    : S.motionMatchFork({
-        nearBranch: near.nameAr,
-        nearCapability: capability,
-        procedure,
-        bestBranch: best.nameAr,
-        bestShort: best.shortAr,
-        bestReason: reasonAr,
-        optionNear,
-        optionBest,
-      });
+  const args = {
+    nearBranch: near.nameAr,
+    nearCapability: capability,
+    procedure: plan.nounAr,
+    bestBranch: best.nameAr,
+    bestShort: best.shortAr,
+    bestReason: reasonAr,
+    optionNear,
+    optionBest,
+  };
+  const text = contested ? S.motionMatchForkUnverified(args) : S.motionMatchFork(args);
 
-  // The near branch's phone is already in the contested option, so FRI-1's
-  // post-pass sees a number and does not double it.
   return reply(s, [faysal(s, text)], [near.districtAr, best.districtAr]);
 }
 
@@ -281,8 +212,7 @@ function readForkChoice(raw: string, s: FaysalSession): ForkChoice {
   const t = normalizeArabic(raw);
   const near = SITES[s.nearSiteId];
   const best = SITES[s.siteId];
-  const hit = (site_: SeedSite) =>
-    t.includes(normalizeArabic(site_.districtAr)) || t.includes(normalizeArabic(site_.nameAr));
+  const hit = (v: SiteView) => t.includes(normalizeArabic(v.districtAr)) || t.includes(normalizeArabic(v.nameAr));
   if (hit(best)) return "best";
   if (hit(near)) return "near";
   if (/(^|\s)(2|الثاني|الثانيه)(\s|$)/.test(t)) return "best";
@@ -292,42 +222,28 @@ function readForkChoice(raw: string, s: FaysalSession): ForkChoice {
 
 // ── slots, hold, confirm ────────────────────────────────────────────────────
 
-function offerSlots(s: FaysalSession, now: Date, language: "ar" | "en" | "other", from: Date = now): Reply {
+function offerSlots(
+  s: FaysalSession,
+  now: Date,
+  language: "ar" | "en" | "other",
+  store: FaysalStore,
+  from: Date = now,
+): Reply {
   const target = s.siteId;
   if (!target) return askDistrict(s);
-  const target_ = SITES[target];
-  const clinic = clinicFor(s.need);
+  const view = SITES[target];
+  const plan = planFor(needOf(s));
 
   // Invariant H4 + Rule C4-1: an unbookable or contested site never produces a
   // time. It produces a callback request and a phone number, out loud.
-  if (!target_.bookable || openStateAt(target, now).state === "UNVERIFIED") {
+  const slots = twoSlotsAcrossDays(target, needOf(s), from, now, store);
+  if (slots.length === 0) {
     s.awaitingCallbackWindow = true;
     s.scene = "S11_offhours";
     return reply(
       s,
-      [faysal(s, S.greetingBranchUnverifiedBookAnyway(target_.nameAr, target_.phoneAr))],
+      [faysal(s, S.greetingBranchUnverifiedBookAnyway(view.nameAr, view.phoneAr))],
       ["الصبح", "بعد العصر"],
-    );
-  }
-
-  // Two options, on TWO DIFFERENT DAYS. §6.5 caps the offer at two; §9's transcript
-  // offers «بكرة الجمعة 5:30 م» and «السبت 11:00 ص», and that is not decoration —
-  // two times an hour apart is one option wearing a hat, and it forces a patient
-  // who cannot make that morning straight back to «متى فيه غيره؟».
-  const slots = twoAcrossDays(target, clinic.key, from, now);
-  if (slots.length === 0) {
-    // §6.5 `motion.close.none` — the alternative is a real one from the fallback
-    // chain, never "try again later".
-    const alt = recommendBranch(s.need ?? "general", {});
-    const altSite = SITES[alt.siteId === target ? "shoaa-wurud" : alt.siteId];
-    const altSlots = searchSlots({ siteId: altSite.id, clinicKey: clinic.key, fromISO: now.toISOString(), limit: 1 });
-    if (!altSlots.length) {
-      return reply(s, [faysal(s, S.fallbackHonestUnknown(`تتصل على ${target_.phoneAr} والاستقبال يعطيك أقرب وقت`))]);
-    }
-    return reply(
-      s,
-      [faysal(s, S.motionCloseNone(target_.shortAr, altSlots[0].labelAr, altSite.shortAr, altSlots[0].labelAr))],
-      [altSlots[0].labelAr],
     );
   }
 
@@ -335,61 +251,90 @@ function offerSlots(s: FaysalSession, now: Date, language: "ar" | "en" | "other"
   s.scene = "S5_slots";
 
   if (slots.length === 1) {
-    return reply(s, [faysal(s, S.motionCloseSingle(slots[0].labelAr, target_.shortAr))], [slots[0].labelAr]);
+    return reply(s, [faysal(s, S.motionCloseSingle(slots[0].labelAr, view.shortAr))], [slots[0].labelAr]);
   }
 
   const text =
     language === "en"
-      ? EN.close(target_.nameEn, clinic.ar, slots[0].labelAr, slots[1].labelAr)
-      : S.motionClose(target_.nameAr, clinic.ar, slots[0].labelAr, slots[1].labelAr);
+      ? EN.close(view.nameEn, plan.clinicAr, slots[0].labelAr, slots[1].labelAr)
+      : S.motionClose(view.nameAr, plan.clinicAr, slots[0].labelAr, slots[1].labelAr);
 
   // A Friday slot in the list makes this a Friday reply, and Rule FRI-1 appends
   // the branch phone here — the same code path that renders the slot.
   return reply(s, [faysal(s, text)], [slots[0].labelAr, slots[1].labelAr]);
 }
 
-function pickSlot(s: FaysalSession, index: number, language: "ar" | "en" | "other"): Reply {
+function pickSlot(
+  s: FaysalSession,
+  index: number,
+  language: "ar" | "en" | "other",
+  now: Date,
+  store: FaysalStore,
+): Reply {
   const slot = s.offeredSlots[index - 1];
-  if (!slot) return offerSlots(s, new Date(), language);
-  const hold = holdSlot(slot.slotId, s.id);
-  if (!hold) {
-    return reply(s, [faysal(s, S.fallbackHonestUnknown("أشوف لك وقت ثاني في نفس الفرع"))]);
-  }
-  s.holdId = hold.holdId;
+  if (!slot) return offerSlots(s, now, language, store);
+  const held = domainHold(slot.slotId, s.id, s.patientNameAr, now, store);
+  if (!held) return reply(s, [faysal(s, S.fallbackHonestUnknown("أشوف لك وقت ثاني في نفس الفرع"))]);
+  s.holdId = held.holdId;
   s.heldSlot = slot;
   s.scene = "S6_close";
   const branch = SITES[slot.siteId];
   const text =
     language === "en"
-      ? EN.hold(slot.labelAr, branch.nameEn, hold.holdMinutes, s.patientNameAr)
-      : S.holdMessage(slot.labelAr, branch.shortAr, slot.clinicAr, hold.holdMinutes, s.patientNameAr);
+      ? EN.hold(slot.labelAr, branch.nameEn, held.holdMinutes, s.patientNameAr)
+      : S.holdMessage(slot.labelAr, branch.shortAr, slot.clinicAr, held.holdMinutes, s.patientNameAr);
   return reply(s, [faysal(s, text)], ["إي، ثبّته", "لا، غيّره"]);
 }
 
-function confirmHeld(s: FaysalSession): Reply {
+function confirmHeld(s: FaysalSession, now: Date, store: FaysalStore): Reply {
   if (!s.holdId || !s.heldSlot) return reply(s, [faysal(s, S.fallbackHonestUnknown("أشوف لك أقرب موعد من جديد"))]);
-  const booking = confirmBooking(s.holdId, { nameAr: s.patientNameAr, carrierAr: s.carrierAr });
-  if (!booking) {
-    // The hold expired. Never claim a booking that did not happen (§6.5: "wait for
-    // real confirmation before claiming it").
+  const appt = domainConfirm(s.holdId, s.id, s.patientNameAr, now, store);
+  if (!appt) {
+    // §6.5: "wait for real confirmation before claiming it." A hold that expired,
+    // or a window that closed between the hold and the confirm, is NOT a booking.
     s.holdId = null;
     s.heldSlot = null;
     return reply(s, [faysal(s, "الحجز ما ثبت — الوقت اللي كنت ماسكه لك انتهى. أشوف لك أقرب وقت من جديد؟")]);
   }
-  const branch = SITES[booking.siteId];
-  s.bookingRef = booking.ref;
+  return renderAppointment(s, appt);
+}
+
+function renderAppointment(s: FaysalSession, appt: Appointment): Reply {
+  const branch = SITES[appt.siteId];
+  s.bookingRef = appt.ref;
   s.holdId = null;
   s.scene = "S7_confirmed";
 
   // §6.7: the confirmation block is ATOMIC — its own message, nothing appended,
   // no question glued on. The pre-visit block is a SEPARATE message.
+  if (appt.kind === "callback_request") {
+    // SPEC-1 §4.6 — a callback consumes no inventory and NEVER renders a time.
+    // There is no `الموعد:` row in this template at all, by construction.
+    const block = S.motionConfirmBlockCallback({
+      patientName: appt.patient.displayName,
+      branchName: branch.nameAr,
+      branchAddress: branch.addressAr,
+      clinic: serviceNameAr(appt.serviceId),
+      preferredWindow: appt.preferredWindowAr ?? "",
+      branchPhone: branch.phoneAr,
+    });
+    return reply(
+      s,
+      [
+        { from: "faysal", text: compose(block, { isConfirmation: true, branchPhone: branch.phoneAr }) },
+        faysal(s, S.PRE_VISIT_CALLBACK),
+      ],
+      [],
+    );
+  }
+
   const block = S.motionConfirmBlock({
-    patientName: booking.patientNameAr,
+    patientName: appt.patient.displayName,
     branchName: branch.nameAr,
     branchAddress: branch.addressAr,
-    clinic: booking.clinicAr,
-    slot: booking.slotLabelAr ?? "",
-    insurer: booking.carrierAr,
+    clinic: s.heldSlot?.clinicAr ?? serviceNameAr(appt.serviceId),
+    slot: s.heldSlot?.labelAr ?? "",
+    insurer: s.carrierAr,
   });
   return reply(
     s,
@@ -401,53 +346,19 @@ function confirmHeld(s: FaysalSession): Reply {
   );
 }
 
-function confirmCallback(s: FaysalSession, windowAr: string): Reply {
+function confirmCallback(s: FaysalSession, windowAr: string, now: Date, store: FaysalStore): Reply {
   const target = s.siteId ?? s.nearSiteId;
   if (!target) return askDistrict(s);
-  const branch = SITES[target];
-  const booking = requestCallback(target, {
-    nameAr: s.patientNameAr,
-    carrierAr: s.carrierAr,
-    preferredWindowAr: windowAr,
-  });
-  s.bookingRef = booking.ref;
-  s.awaitingCallbackWindow = false;
-  s.scene = "S7_confirmed";
-
-  const block = S.motionConfirmBlockCallback({
-    patientName: booking.patientNameAr,
-    branchName: branch.nameAr,
-    branchAddress: branch.addressAr,
-    clinic: clinicLabelForSite(target, s.need),
-    preferredWindow: windowAr,
-    branchPhone: branch.phoneAr,
-  });
-  return reply(
-    s,
-    [
-      { from: "faysal", text: compose(block, { isConfirmation: true, branchPhone: branch.phoneAr }) },
-      faysal(s, S.PRE_VISIT_CALLBACK),
-    ],
-    [],
+  const appt = domainCallback(
+    { siteId: target, need: needOf(s), waNumber: s.id, displayName: s.patientNameAr, preferredWindowAr: windowAr },
+    now,
+    store,
   );
-}
-
-/**
- * What goes in the confirmation's «العيادة» row.
- *
- * At a site that CARRIES the clinic, the clinic's own name. At a site that does
- * not — Ash Shifa has no dermatology-and-laser clinic on record — naming it would
- * be an `availability_claim` (§8.1 #12) printed on the artefact most likely to be
- * screenshotted. So the row carries what the PATIENT asked for instead, which is
- * the only thing a callback request actually records.
- */
-function clinicLabelForSite(siteId: SiteId, need: NeedKey | null): string {
-  const clinic = clinicFor(need);
-  const site_ = SITES[siteId];
-  const carried =
-    site_.clinicsAr.some((c) => c.includes(clinic.ar) || clinic.ar.includes(c)) ||
-    site_.namedSpecialties.includes(clinic.key);
-  return carried ? clinic.ar : needNounAr(need);
+  if (!appt) {
+    return reply(s, [faysal(s, S.fallbackHonestUnknown(`تتصل على ${SITES[target].phoneAr} والاستقبال يسجّل لك الطلب`))]);
+  }
+  s.awaitingCallbackWindow = false;
+  return renderAppointment(s, appt);
 }
 
 // ── discovery ───────────────────────────────────────────────────────────────
@@ -457,21 +368,18 @@ function askDistrict(s: FaysalSession): Reply {
   return reply(s, [faysal(s, s.need ? S.MOTION_DISCOVER_SHORT : S.MOTION_DISCOVER)], ["تأمين", "كاش"]);
 }
 
-function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other"): Reply {
-  const need = s.need ?? "general";
-  const rec = recommendBranch(need, { districtAr: s.districtAr, preferNearest: false });
+function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other", store: FaysalStore): Reply {
+  const rec = recommend(needOf(s), { districtAr: s.districtAr, now });
+  if (!rec) return unsupportedSpecialty(s);
 
-  if (rec.nearest && rec.nearest.siteId !== rec.siteId) {
-    return forkReply(s, rec.siteId, rec.nearest.siteId, rec.reasonAr);
+  if (rec.nearestSiteId && rec.nearestSiteId !== rec.siteId) {
+    return forkReply(s, rec.siteId, rec.nearestSiteId, rec.reasonAr, now);
   }
 
   s.siteId = rec.siteId;
   s.scene = "S3_route";
   const branch = SITES[rec.siteId];
-  const matchText =
-    language === "en"
-      ? EN.match(branch.nameEn, ROUTE_CACHE[need].reasonEn)
-      : S.motionMatch(branch.nameAr, rec.reasonAr);
+  const matchText = language === "en" ? EN.match(branch.nameEn, rec.reasonEn) : S.motionMatch(branch.nameAr, rec.reasonAr);
 
   // Split-recap (§4.2): the match is one atomic message, the ask is the next. Two
   // messages in one turn — within cadence, and the ask carries the only «؟».
@@ -479,7 +387,25 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
     const ask = language === "en" ? EN.discoverShort : S.MOTION_DISCOVER_SHORT;
     return reply(s, [faysal(s, matchText), faysal(s, ask)], ["تأمين", "كاش"]);
   }
-  return offerSlots(s, now, language);
+  return offerSlots(s, now, language, store);
+}
+
+/**
+ * Rule SPEC-1 + Rule STR-3. `recommendBranch` throws `need_unrecognised` for a
+ * specialty §6.2 records as group-wide only — orthopaedics, urology, cardiology —
+ * because naming a branch we cannot claim runs that clinic is an
+ * `availability_claim`. The honest answer is «let me confirm which branch runs
+ * that clinic», never a quiet substitution into a general consultation.
+ */
+function unsupportedSpecialty(s: FaysalSession): Reply {
+  return reply(s, [
+    faysal(
+      s,
+      S.fallbackHonestUnknown(
+        `تتصل على ${REAL_CONTACTS.unified} والاستقبال يقول لك أي فرع فيه العيادة، وأنا موجود هنا لو تبي أرتّب لك شي ثاني`,
+      ),
+    ),
+  ]);
 }
 
 // ── the expansion gate (§6.6) ───────────────────────────────────────────────
@@ -507,23 +433,22 @@ function expansionPronoun(raw: string): string | null {
  * branch, same day, and (4) it is never clinical: a slot in a specialty the
  * patient named, never a test, a screening or a follow-up no clinician ordered.
  */
-function tryExpand(s: FaysalSession, raw: string, cls: Classification, now: Date): Reply | null {
+function tryExpand(s: FaysalSession, raw: string, cls: Classification, now: Date, store: FaysalStore): Reply | null {
   if (s.scene !== "S7_confirmed" || !s.bookingRef) return null; // gate 1
   if (!cls.need) return null; // gate 2 — they must have named it
   const pronoun = expansionPronoun(raw) ?? "لك";
   const target = s.siteId;
-  if (!target || !SITES[target].bookable) return null; // gate 3 — same branch, same day
+  if (!target) return null;
 
-  const clinic = clinicFor(cls.need);
+  const clinicAr = planFor(cls.need).clinicAr;
 
-  // The clinic the patient just named is not one this branch carries. §6.2 records
-  // orthopaedics as `G` — group-wide — at all six sites, so «العظام في نفس الفرع»
-  // is a claim the data cannot support, and offering it is exactly the
-  // `availability_claim` §8.1 #12 bans. Gate 3 fails, so the EXPANSION move does
-  // not run; what runs instead is the honest version of the same kindness — the
-  // clinical question is refused, the limit is stated, and a callback at the SAME
-  // branch is offered so the second trip may still be saved if the branch confirms.
-  if (!clinicBookableAt(target, clinic.key)) {
+  // Gate 3. The clinic the patient just named is not one this branch can book, so
+  // «في نفس الفرع» would save nothing and «عند العظام» would be an
+  // `availability_claim` (§8.1 #12). The EXPANSION move does not run; what runs
+  // instead is the honest version of the same kindness — the clinical question is
+  // refused, the limit is stated, and a callback at the SAME branch is offered so
+  // the second trip may still be saved if the branch confirms.
+  if (!canBook(target, cls.need, now, store)) {
     s.awaitingCallbackWindow = true;
     s.need = cls.need;
     s.scene = "S11_offhours";
@@ -533,7 +458,7 @@ function tryExpand(s: FaysalSession, raw: string, cls: Classification, now: Date
         faysal(s, `أكيد، وأحسن لكم تجون مرة وحدة بدل زيارتين.\n${S.CLINICAL_DIAGNOSIS_REFUSAL}`),
         faysal(
           s,
-          `بس أصارحك: عيادة ${clinic.ar} موجودة عندنا كمجموعة، وما أقدر أأكد لك جدولها في ${SITES[target].shortAr} من عندي — وما أبي أعطيك وقت وتطلعون على الفاضي.\n` +
+          `بس أصارحك: عيادة ${clinicAr} موجودة عندنا كمجموعة، وما أقدر أأكد لك جدولها في ${SITES[target].shortAr} من عندي — وما أبي أعطيك وقت وتطلعون على الفاضي.\n` +
             `أسجّل ${pronoun} طلب في نفس الفرع والاستقبال يتصل ويثبت الوقت — الصبح ولا بعد العصر؟`,
         ),
       ],
@@ -541,15 +466,12 @@ function tryExpand(s: FaysalSession, raw: string, cls: Classification, now: Date
     );
   }
 
-  const heldDate = s.heldSlot ? riyadhDateISO(new Date(s.heldSlot.startISO)) : riyadhDateISO(now);
-  const dayStart = new Date(`${heldDate}T00:00:00+03:00`);
-  const slots = searchSlots({ siteId: target, clinicKey: clinic.key, fromISO: dayStart.toISOString(), nowISO: now.toISOString(), limit: 4 })
-    .filter((x) => riyadhDateISO(new Date(x.startISO)) === heldDate);
-  if (!slots.length) return null;
+  const heldDate = s.heldSlot ? s.heldSlot.dateISO : riyadhDateISO(now);
+  const sameDay = twoSlotsAcrossDays(target, cls.need, now, now, store).filter((x) => x.dateISO === heldDate);
+  if (!sameDay.length) return null;
 
-  const near = s.heldSlot ? nearestTo(slots, new Date(s.heldSlot.startISO)) : slots[0];
   s.scene = "S9_expand";
-  s.offeredSlots = [near];
+  s.offeredSlots = [sameDay[0]];
 
   // Gate 4 in the words themselves: he refuses to say anything about the symptom
   // and books the CLINIC. `clinical_diagnosis` is declined explicitly.
@@ -557,59 +479,15 @@ function tryExpand(s: FaysalSession, raw: string, cls: Classification, now: Date
     s,
     [
       faysal(s, `أكيد، وأحسن لكم تجون مرة وحدة بدل زيارتين.\n${S.CLINICAL_DIAGNOSIS_REFUSAL}`),
-      faysal(s, S.motionExpand(cls.need === "orthopaedics" ? "ألم الركبة" : clinic.ar, pronoun, clinic.ar, near.labelAr)),
+      faysal(s, S.motionExpand(clinicAr, pronoun, clinicAr, sameDay[0].labelAr)),
     ],
-    [near.labelAr],
-  );
-}
-
-/**
- * The earliest slot, then the earliest slot on a LATER day. Two searches rather
- * than one wide one, because a single window holds a dozen free half-hours and a
- * `limit: 12` read never leaves the first day at all — which is exactly what the
- * first cut did, and it offered the patient «10:00 ص» and «11:30 ص».
- */
-function twoAcrossDays(siteId: SiteId, clinicKey: string, from: Date, now: Date): Slot[] {
-  const first = searchSlots({ siteId, clinicKey, fromISO: from.toISOString(), nowISO: now.toISOString(), limit: 1 })[0];
-  if (!first) return [];
-  const dayAfter = new Date(new Date(first.startISO).getTime() + 24 * 3600_000);
-  const p = riyadhParts(dayAfter);
-  const nextDayStart = new Date(Date.UTC(p.year, p.month - 1, p.day, 0, 0) - 3 * 3600_000);
-  const second = searchSlots({ siteId, clinicKey, fromISO: nextDayStart.toISOString(), nowISO: now.toISOString(), limit: 1 })[0];
-  return second ? [first, second] : [first];
-}
-
-/**
- * The patient named a weekday we did not offer — «السبت» against two Thursdays.
- * That is not an unknown; it is a preference, and the honest answer is to look on
- * that day rather than to run `fallback.honest_unknown` at someone who told us
- * exactly what they wanted. Returns the next instant on that weekday, or null.
- */
-function weekdayOrigin(raw: string, now: Date): Date | null {
-  const t = normalizeArabic(raw);
-  const idx = WEEKDAY_WORDS.findIndex((d) => t.includes(d));
-  if (idx < 0) return null;
-  for (let i = 0; i <= 7; i++) {
-    const probe = new Date(now.getTime() + i * 24 * 3600_000);
-    if (riyadhParts(probe).weekday === idx) {
-      const p = riyadhParts(probe);
-      return new Date(Date.UTC(p.year, p.month - 1, p.day, 0, 0) - 3 * 3600_000);
-    }
-  }
-  return null;
-}
-
-function nearestTo(slots: Slot[], anchor: Date): Slot {
-  return slots.reduce((best, x) =>
-    Math.abs(new Date(x.startISO).getTime() - anchor.getTime()) < Math.abs(new Date(best.startISO).getTime() - anchor.getTime())
-      ? x
-      : best,
+    [sameDay[0].labelAr],
   );
 }
 
 // ── the turn ────────────────────────────────────────────────────────────────
 
-export function runTurn(s: FaysalSession, raw: string, cls: Classification, now: Date): Reply {
+export function runTurn(s: FaysalSession, raw: string, cls: Classification, now: Date, store: FaysalStore): Reply {
   const language = cls.language;
   s.turns += 1;
 
@@ -617,8 +495,7 @@ export function runTurn(s: FaysalSession, raw: string, cls: Classification, now:
   // fluency and does not machine-translate a clinical conversation.
   if (language === "other") {
     // With no branch in play the group's own unified line is the right number —
-    // it is the one Rule DEMO-1(b) already published in this thread, and it
-    // reaches a human who can route in any language the group actually staffs.
+    // it is the one Rule DEMO-1(b) already published in this thread.
     const phone = branchPhoneFor(s) ?? REAL_CONTACTS.unified;
     return reply(s, [faysal(s, S.languageThirdLanguage(phone))]);
   }
@@ -631,7 +508,7 @@ export function runTurn(s: FaysalSession, raw: string, cls: Classification, now:
     s.demoLineSent = true;
   }
 
-  const out = dispatch(s, raw, cls, now, language);
+  const out = dispatch(s, raw, cls, now, language, store);
   if (prefix.length) out.messages = assertCadence([...prefix, ...out.messages]);
   return out;
 }
@@ -642,46 +519,41 @@ function dispatch(
   cls: Classification,
   now: Date,
   language: "ar" | "en" | "other",
+  store: FaysalStore,
 ): Reply {
   // Record what the patient told us. NOTHING here is inferred: a district only
-  // becomes a district because the patient typed one, a carrier only becomes a
-  // carrier because it resolves against the network list.
+  // becomes a district because the patient typed one, and a carrier only becomes a
+  // carrier because it resolved against the engine's own payer table.
   if (cls.need) s.need = cls.need;
   if (cls.districtAr) s.districtAr = cls.districtAr;
   if (cls.payment) s.payment = cls.payment;
-  if (cls.carrierRaw) s.carrierAr = carrierNameAr(cls.carrierRaw) ?? cls.carrierRaw;
+  if (cls.carrierRaw) s.carrierAr = cls.carrierRaw;
 
   // A pending callback window outranks a fresh read: the patient was asked one
   // question and this is the answer to it.
   if (s.awaitingCallbackWindow) {
     const win = cls.preferredWindowAr ?? readWindow(raw);
-    if (win) return confirmCallback(s, win);
+    if (win) return confirmCallback(s, win, now, store);
   }
 
   // Picking a slot by its OWN WORDS — «السبت 11», «الخميس», «11:30». Only this
   // layer can see the offered labels, so the classifier deliberately does not try:
-  // it reads ordinals, and this reads the times we actually named. Driven from the
-  // §9 transcript, where the patient's pick is literally «السبت 11».
+  // it reads ordinals, and this reads the times we actually named.
   if (s.offeredSlots.length && cls.kind !== "cancel" && cls.kind !== "decline") {
     const picked = matchOfferedSlot(raw, s.offeredSlots);
-    if (picked) return pickSlot(s, picked, language);
+    if (picked) return pickSlot(s, picked, language, now, store);
     const origin = weekdayOrigin(raw, now);
-    if (origin && s.siteId) return offerSlots(s, now, language, origin);
+    if (origin && s.siteId) return offerSlots(s, now, language, store, origin);
   }
 
-  // A pending fork choice, likewise.
   const forkChoice = readForkChoice(raw, s);
   if (forkChoice) {
     s.forkOffered = false;
-    if (forkChoice === "near" && s.nearSiteId) {
-      s.siteId = s.nearSiteId;
-      return offerSlots(s, now, language);
-    }
-    return offerSlots(s, now, language);
+    if (forkChoice === "near" && s.nearSiteId) s.siteId = s.nearSiteId;
+    return offerSlots(s, now, language, store);
   }
 
-  // Expansion, only after S7 and only on a need the patient just raised.
-  const expanded = tryExpand(s, raw, cls, now);
+  const expanded = tryExpand(s, raw, cls, now, store);
   if (expanded) return expanded;
 
   switch (cls.kind) {
@@ -691,22 +563,15 @@ function dispatch(
     // §5.3 — own it FIRST, no explanation before the apology, then ONE concrete
     // action. Compensation is never self-authorised.
     case "complaint": {
-      const clinic = clinicFor(s.need);
-      const slots = s.siteId && SITES[s.siteId].bookable
-        ? searchSlots({ siteId: s.siteId, clinicKey: clinic.key, fromISO: now.toISOString(), limit: 1 })
-        : [];
+      const slots = s.siteId ? twoSlotsAcrossDays(s.siteId, needOf(s), now, now, store) : [];
       if (!slots.length) {
-        // §5.3 is explicit about ORDER: own it first, completely, with no defence
-        // and no context — THEN one concrete action. Jumping straight to the
-        // handoff offer skips the apology, and an apology that arrives after the
-        // process step reads as a process step.
         s.scene = "S10_escalate";
         s.escalationOffered = true;
         return reply(s, [faysal(s, S.COMPLAINT_OWN_IT_NO_SLOT)], ["إي، حوّلني"]);
       }
-      s.offeredSlots = slots;
+      s.offeredSlots = slots.slice(0, 1);
       s.scene = "S5_slots";
-      return reply(s, [faysal(s, S.complaintWaitOwnIt(clinic.ar, slots[0].labelAr))], [slots[0].labelAr]);
+      return reply(s, [faysal(s, S.complaintWaitOwnIt(planFor(needOf(s)).clinicAr, slots[0].labelAr))], [slots[0].labelAr]);
     }
 
     case "handoff":
@@ -729,14 +594,25 @@ function dispatch(
 
     case "competitor": {
       const b = site(s.siteId) ?? SITES["wattan-2"];
+      const rec = recommend(needOf(s), { districtAr: s.districtAr, now });
       return reply(s, [
-        faysal(s, S.competitorDecline(`${b.nameAr} — ${ROUTE_CACHE[s.need ?? "general"].reasonAr}`, `${SITES["shoaa-wurud"].nameAr} حاصل على ${SITES["shoaa-wurud"].accreditationAr}`)),
+        faysal(
+          s,
+          S.competitorDecline(
+            `${b.nameAr} — ${rec?.reasonAr ?? "الفرع اللي فيه العيادة اللي تحتاجها"}`,
+            `${SITES["shoaa-wurud"].nameAr} حاصل على ${SITES["shoaa-wurud"].accreditationAr}`,
+          ),
+        ),
       ]);
     }
 
     // §8.1 #1/#2/#19 — refused in voice, then the one thing he CAN do.
     case "clinical_question":
-      return reply(s, [faysal(s, `${S.CLINICAL_DIAGNOSIS_REFUSAL}\nأقرب طريق: أثبّت لك موعد عند ${clinicFor(s.need).ar}.`)], ["أقرب موعد"]);
+      return reply(
+        s,
+        [faysal(s, `${S.CLINICAL_DIAGNOSIS_REFUSAL}\nأقرب طريق: أثبّت لك موعد عند ${planFor(needOf(s)).clinicAr}.`)],
+        ["أقرب موعد"],
+      );
     case "drug_question":
       return reply(s, [faysal(s, `${S.DRUG_NAMING_REFUSAL}\n${S.TREATMENT_ADVICE_REFUSAL}`)]);
     case "records": {
@@ -754,7 +630,7 @@ function dispatch(
       return reply(s, [faysal(s, S.motionObjectionDoctor("ما عندي تفاصيله، والاستقبال يعطيك إياها"))]);
 
     case "cancel": {
-      if (s.bookingRef) cancelBooking(s.bookingRef);
+      if (s.bookingRef) domainCancel(s.bookingRef, now, store);
       s.bookingRef = null;
       s.holdId = null;
       s.heldSlot = null;
@@ -764,69 +640,61 @@ function dispatch(
 
     case "need":
     case "district":
-      return matchAndAsk(s, now, language);
-
-    case "prefer_nearest": {
-      const need = s.need ?? "general";
-      const rec = recommendBranch(need, { districtAr: s.districtAr, preferNearest: true });
-      if (rec.nearest && rec.nearest.siteId !== rec.siteId) return forkReply(s, rec.siteId, rec.nearest.siteId, rec.reasonAr);
-      s.siteId = rec.siteId;
-      return offerSlots(s, now, language);
-    }
+    case "prefer_nearest":
+      return matchAndAsk(s, now, language, store);
 
     case "payment":
-      // The carrier is recorded; the coverage answer still refuses to compute.
-      if (s.carrierAr) return insuranceReply(s, s.carrierAr, now, language);
-      if (!s.siteId) return matchAndAsk(s, now, language);
-      return offerSlots(s, now, language);
+      if (s.carrierAr) return insuranceReply(s, s.carrierAr, now, language, store);
+      if (!s.siteId) return matchAndAsk(s, now, language, store);
+      return offerSlots(s, now, language, store);
 
     case "insurance_question": {
-      const carrier = s.carrierAr ?? (cls.carrierRaw ? carrierNameAr(cls.carrierRaw) : null);
+      const carrier = s.carrierAr ?? cls.carrierRaw;
+      const target = s.siteId ?? recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? "wattan-2";
       if (!carrier) {
-        const b = site(s.siteId) ?? SITES["wattan-2"];
-        return reply(s, [faysal(s, S.insuranceNetworksListed(b.nameAr, b.networks.slice(0, 3).join(" و")))]);
+        return reply(s, [faysal(s, S.insuranceNetworksListed(SITES[target].nameAr, "بوبا والتعاونية وميدغلف"))]);
       }
       s.carrierAr = carrier;
-      return insuranceReply(s, carrier, now, language);
+      return insuranceReply(s, carrier, now, language, store);
     }
 
     case "price_question":
-      return priceReply(s, now, language);
+      return priceReply(s, now, store);
 
     case "package_question":
-      return packageReply(s, now);
+      return packageReply(s);
 
     case "hours_question": {
-      const target = nearestNamed(cls.districtAr) ?? s.siteId ?? "wattan-2";
-      const state = openStateAt(target, now);
+      const target = s.siteId ?? recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? null;
+      if (!target) return unsupportedSpecialty(s);
+      const state = openState(target, now);
       const b = SITES[target];
       if (state.state === "UNVERIFIED") {
         // G5 — never asserts open OR closed. Offers a working alternative AND the
         // branch line, right now, in the same message.
-        const alt = SITES[recommendBranch(s.need ?? "general", {}).siteId];
+        const altId = recommend(needOf(s), { now })?.siteId ?? "wattan-2";
+        const alt = SITES[altId];
         s.nearSiteId = target;
         return reply(s, [faysal(s, S.greetingBranchUnverified(b.nameAr, alt.nameAr, b.phoneAr))], [alt.districtAr, b.districtAr]);
       }
-      const windows = bookableWindows(target, riyadhDateISO(now));
-      const hours = windows.length ? windows[0].labelAr : null;
-      if (!hours) return reply(s, [faysal(s, S.fallbackHonestUnknown(`تتصل على ${b.phoneAr} والاستقبال يأكد لك الدوام`))]);
       s.siteId = target;
-      return reply(s, [faysal(s, `${b.nameAr} اليوم ${hours}.\nتبي أثبّت لك موعد؟`)], ["أقرب موعد"]);
+      if (!state.opensAtAr) return reply(s, [faysal(s, S.fallbackHonestUnknown(`تتصل على ${b.phoneAr} والاستقبال يأكد لك الدوام`))]);
+      return reply(s, [faysal(s, `${b.nameAr} يفتح اليوم ${state.opensAtAr}.\nتبي أثبّت لك موعد؟`)], ["أقرب موعد"]);
     }
 
     case "slots_question":
-      if (!s.siteId) return matchAndAsk(s, now, language);
-      return offerSlots(s, now, language);
+      if (!s.siteId) return matchAndAsk(s, now, language, store);
+      return offerSlots(s, now, language, store);
 
     case "pick_slot":
-      return pickSlot(s, cls.slotPick ?? 1, language);
+      return pickSlot(s, cls.slotPick ?? 1, language, now, store);
 
     case "confirm": {
-      if (s.scene === "S6_close" && s.holdId) return confirmHeld(s);
-      if (s.scene === "S9_expand" && s.offeredSlots.length) return pickSlot(s, 1, language);
+      if (s.scene === "S6_close" && s.holdId) return confirmHeld(s, now, store);
+      if (s.scene === "S9_expand" && s.offeredSlots.length) return pickSlot(s, 1, language, now, store);
       if (s.awaitingCallbackWindow) {
         const win = cls.preferredWindowAr ?? readWindow(raw);
-        if (win) return confirmCallback(s, win);
+        if (win) return confirmCallback(s, win, now, store);
         return reply(s, [faysal(s, "قل لي الوقت اللي يناسبك — الصبح ولا بعد العصر.")], ["الصبح", "بعد العصر"]);
       }
       if (s.escalationOffered) {
@@ -834,13 +702,12 @@ function dispatch(
         // this build "firing" is a real callback_request row, and the message says
         // exactly that and nothing more.
         s.escalationOffered = false;
-        const b = site(s.siteId) ?? SITES["wattan-1"];
-        s.siteId = b.id;
-        return confirmCallback(s, s.preferredWindowAr ?? "أقرب وقت");
+        s.siteId = s.siteId ?? "wattan-1";
+        return confirmCallback(s, s.preferredWindowAr ?? "أقرب وقت", now, store);
       }
-      if (s.scene === "S5_slots" && s.offeredSlots.length) return pickSlot(s, 1, language);
-      if (s.siteId) return offerSlots(s, now, language);
-      return matchAndAsk(s, now, language);
+      if (s.scene === "S5_slots" && s.offeredSlots.length) return pickSlot(s, 1, language, now, store);
+      if (s.siteId) return offerSlots(s, now, language, store);
+      return matchAndAsk(s, now, language, store);
     }
 
     case "decline":
@@ -858,8 +725,12 @@ function dispatch(
       if (s.objections.distance >= 2) return reply(s, [faysal(s, S.MOTION_OBJECTION_STOP)]);
       const near = site(s.nearSiteId) ?? site(s.siteId);
       const best = site(s.siteId) ?? SITES["wattan-2"];
-      if (!near) return offerSlots(s, now, language);
-      return reply(s, [faysal(s, S.motionObjectionDistance(near.shortAr, needNounAr(s.need), best.shortAr))], [near.districtAr, best.districtAr]);
+      if (!near) return offerSlots(s, now, language, store);
+      return reply(
+        s,
+        [faysal(s, S.motionObjectionDistance(near.shortAr, planFor(needOf(s)).nounAr, best.shortAr))],
+        [near.districtAr, best.districtAr],
+      );
     }
 
     case "objection_price": {
@@ -869,23 +740,18 @@ function dispatch(
       // defend it." One reframe, on a SPECIFIC, then stop. Never a discount — that
       // is `invented_price_or_discount` and it is not his to give.
       const b = site(s.siteId) ?? SITES["wattan-2"];
-      return reply(s, [faysal(s, S.motionObjectionPrice(`أثبّت لك الكشف أول، والدكتور يحدد المنطقة وعدد الجلسات قبل ما تدفع أي شي في ${b.shortAr}`))], ["إي", "لا"]);
+      return reply(
+        s,
+        [faysal(s, S.motionObjectionPrice(`أثبّت لك الكشف أول، والدكتور يحدد التفاصيل قبل ما تدفع أي شي في ${b.shortAr}`))],
+        ["إي", "لا"],
+      );
     }
 
     case "objection_delay":
       return reply(s, [faysal(s, S.motionObjectionDelay(s.offeredSlots[0]?.labelAr ?? "أقرب موعد"))], ["إي", "لا"]);
 
-    // Rule STR-3 — a specialty we carry no route for is said out loud. Never a
-    // silent substitution into a different appointment.
     case "unsupported_specialty":
-      return reply(s, [
-        faysal(
-          s,
-          S.fallbackHonestUnknown(
-            `تتصل على ${REAL_CONTACTS.unified} والاستقبال يقول لك أي فرع فيه العيادة، وأنا موجود هنا لو تبي أرتّب لك شي ثاني`,
-          ),
-        ),
-      ]);
+      return unsupportedSpecialty(s);
 
     case "close":
       s.scene = "S14_closed";
@@ -908,16 +774,18 @@ function dispatch(
   }
 }
 
+// ── small readers ───────────────────────────────────────────────────────────
+
 const WEEKDAY_WORDS = ["الاحد", "الاثنين", "الثلاثاء", "الاربعاء", "الخميس", "الجمعه", "السبت"];
 
 /**
- * Does this message name one of the two slots we just offered? Matched on the
- * DAY the label carries plus, when the patient gave one, the hour — so «السبت»
- * picks the Saturday slot, and «السبت 11» still picks it when both offered slots
- * are Saturdays. A day we did not offer matches nothing, and the turn falls
- * through to the ordinary read rather than booking a time we never said.
+ * Does this message name one of the two slots we just offered? Matched on the DAY
+ * the label carries plus, when the patient gave one, the hour — so «السبت» picks
+ * the Saturday slot and «السبت 11» still picks it when both offers are Saturdays.
+ * A day we did not offer matches nothing, and the turn falls through rather than
+ * booking a time we never said.
  */
-function matchOfferedSlot(raw: string, offered: Slot[]): number | null {
+function matchOfferedSlot(raw: string, offered: SlotView[]): number | null {
   const t = normalizeArabic(raw);
   const hour = /(?:^|\D)(\d{1,2})(?::(\d{2}))?(?:\D|$)/.exec(t);
   const wantedDay = WEEKDAY_WORDS.find((d) => t.includes(d)) ?? null;
@@ -926,8 +794,7 @@ function matchOfferedSlot(raw: string, offered: Slot[]): number | null {
   let dayMatch: number | null = null;
   for (let i = 0; i < offered.length; i++) {
     const label = normalizeArabic(offered[i].labelAr);
-    const dayOk = wantedDay ? label.includes(wantedDay) : true;
-    if (!dayOk) continue;
+    if (wantedDay && !label.includes(wantedDay)) continue;
     if (hour) {
       const h = Number(hour[1]);
       const labelHour = /(\d{1,2}):(\d{2})/.exec(label);
@@ -938,6 +805,23 @@ function matchOfferedSlot(raw: string, offered: Slot[]): number | null {
   return dayMatch;
 }
 
+/**
+ * The patient named a weekday we did not offer — «السبت» against two Thursdays.
+ * That is not an unknown; it is a preference, and the honest answer is to look on
+ * that day rather than run `fallback.honest_unknown` at someone who told us
+ * exactly what they wanted.
+ */
+function weekdayOrigin(raw: string, now: Date): Date | null {
+  const t = normalizeArabic(raw);
+  const idx = WEEKDAY_WORDS.findIndex((d) => t.includes(d));
+  if (idx < 0) return null;
+  for (let i = 0; i <= 7; i++) {
+    const probe = new Date(now.getTime() + i * 24 * 3600_000);
+    if (riyadhParts(probe).weekday === idx) return probe;
+  }
+  return null;
+}
+
 function readWindow(raw: string): string | null {
   const t = normalizeArabic(raw);
   if (/(الصبح|الصباح|صباحا|بكره الصبح)/.test(t)) return "الصبح";
@@ -945,20 +829,19 @@ function readWindow(raw: string): string | null {
   return null;
 }
 
-function nearestNamed(districtAr: string | null): SiteId | null {
-  if (!districtAr) return null;
-  const t = normalizeArabic(districtAr);
-  for (const id of Object.keys(SITES) as SiteId[]) {
-    if (SITES[id].nearDistrictsAr.some((d) => t.includes(normalizeArabic(d)))) return id;
-  }
-  return null;
-}
-
 // ── insurance and price ─────────────────────────────────────────────────────
 
-function insuranceReply(s: FaysalSession, carrier: string, now: Date, language: "ar" | "en" | "other"): Reply {
-  const target = s.siteId ?? recommendBranch(s.need ?? "general", { districtAr: s.districtAr }).siteId;
-  const answer = insuranceAnswer(carrier, target);
+function insuranceReply(
+  s: FaysalSession,
+  carrier: string,
+  now: Date,
+  language: "ar" | "en" | "other",
+  store: FaysalStore,
+): Reply {
+  const target = s.siteId ?? recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? "wattan-2";
+  // Rule INS-1 — the ENGINE owns the sentence. This layer never composes one, and
+  // «مغطّى» is a word it cannot reach.
+  const answer = insurance(carrier, target);
   s.scene = "S4_insurance";
 
   const aesthetic = s.need === "laser" || s.need === "orthodontics";
@@ -969,42 +852,46 @@ function insuranceReply(s: FaysalSession, carrier: string, now: Date, language: 
         ? `${answer.sentenceAr}\n${S.INSURANCE_AESTHETIC_NOTE}`
         : answer.sentenceAr;
 
-  // Split-recap (§4.2, and the §9 transcript's turn 5): the insurance note is its
-  // own atomic message and the ONE question follows it.
+  // Split-recap (§4.2, and §9's turn 5): the insurance note is its own atomic
+  // message and the ONE question follows it.
   const msgs = [faysal(s, body)];
   if (s.forkOffered) {
     msgs.push(faysal(s, "أي طريق أريح لك؟"));
     return reply(s, msgs, [SITES[s.nearSiteId ?? target].districtAr, SITES[target].districtAr]);
   }
   if (!s.offeredSlots.length && s.siteId) {
-    const follow = offerSlots(s, now, language);
+    const follow = offerSlots(s, now, language, store);
     return reply(s, [...msgs, ...follow.messages], follow.chips);
   }
   return reply(s, msgs);
 }
 
-function priceReply(s: FaysalSession, now: Date, language: "ar" | "en" | "other"): Reply {
-  const target = s.siteId ?? recommendBranch(s.need ?? "general", { districtAr: s.districtAr }).siteId;
-  const ids = priceIdsFor(s.need);
-  const consult = ids.consult ? priceFor(ids.consult, target) : null;
-  const procedure = ids.procedure ? priceFor(ids.procedure, target) : null;
+function priceReply(s: FaysalSession, now: Date, store: FaysalStore): Reply {
+  const target = s.siteId ?? recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? "wattan-2";
+  const plan = planFor(needOf(s));
   s.scene = "S4_insurance";
   s.quotedPrice = true;
 
+  const quotes = [plan.serviceId, ...plan.extraPriceIds]
+    .filter((id): id is string => !!id)
+    .map((id) => price(id, target))
+    .filter((q): q is NonNullable<typeof q> => !!q);
+
   // §5.2 / Rule PRICE-1: nothing is loaded → the honest-unknown price line, and
-  // NEVER an invented range. `{known_fact}` is a loaded fact, not a hedge.
-  if (!consult && !procedure) {
+  // NEVER an invented range. §9.4 leaves lab, radiology, ER and day-case unpriced
+  // on purpose, and the engine's `quote()` throws rather than guessing.
+  if (!quotes.length) {
     const b = SITES[target];
-    return reply(s, [faysal(s, S.priceNotLoaded(`${b.nameAr} هو الفرع اللي يناسب حالتك — ${ROUTE_CACHE[s.need ?? "general"].reasonAr}`))], ["أقرب موعد"]);
+    const rec = recommend(needOf(s), { districtAr: s.districtAr, now });
+    return reply(
+      s,
+      [faysal(s, S.priceNotLoaded(`${b.nameAr} هو الفرع اللي يناسب حالتك — ${rec?.reasonAr ?? "العيادة اللي تحتاجها عندهم"}`))],
+      ["أقرب موعد"],
+    );
   }
 
-  const parts: string[] = [];
-  if (consult) parts.push(`${consult.serviceAr} بـ ${consult.amount} ر.س`);
-  if (procedure) parts.push(`و${procedure.serviceAr} بـ ${procedure.amount} ر.س`);
-  const tail =
-    s.need === "laser"
-      ? "\nوالمناطق تختلف، والدكتورة تحدد المنطقة وعدد الجلسات بعد تقييم البشرة."
-      : "";
+  const parts = quotes.map((q, i) => `${i ? "و" : ""}${serviceNameAr(q.serviceId)} بـ ${q.amount} ر.س`);
+  const tail = s.need === "laser" ? "\nوالمناطق تختلف، والدكتورة تحدد المنطقة وعدد الجلسات بعد تقييم البشرة." : "";
 
   // The PRICE-1 label is appended by the renderer, not by this line — the same law
   // as Rule PRICE-2's single calculator.
@@ -1012,17 +899,16 @@ function priceReply(s: FaysalSession, now: Date, language: "ar" | "en" | "other"
 
   // Reframe EXACTLY ONCE, on a specific, then stop and let the price stand.
   const b = SITES[target];
-  const reframe = b.bookable
+  const reframe = canBook(target, needOf(s), now, store)
     ? faysal(s, `وإذا مهم عندك تخلّصه بأسرع وقت، أشوف لك أقرب موعد في ${b.shortAr}؟`)
-    : faysal(s, `${S.fallbackHonestUnknown(`تتصل على ${b.phoneAr} والاستقبال يعطيك أقرب وقت`)}`);
-  void language;
+    : faysal(s, S.fallbackHonestUnknown(`تتصل على ${b.phoneAr} والاستقبال يعطيك أقرب وقت`));
   return reply(s, [priceMsg, reframe], ["أقرب موعد"]);
 }
 
-function packageReply(s: FaysalSession, now: Date): Reply {
-  void now;
-  const ids = priceIdsFor(s.need);
-  const pair = ids.procedure ? packageFor(ids.procedure) : null;
+function packageReply(s: FaysalSession): Reply {
+  const plan = planFor(needOf(s));
+  const anchor = plan.extraPriceIds[0] ?? plan.serviceId;
+  const pair = anchor ? packageFor(anchor) : null;
   if (!pair) return reply(s, [faysal(s, S.priceNotLoaded("الاستقبال يعطيك الباقات المتاحة حسب المنطقة"))]);
   s.quotedPrice = true;
   return reply(
@@ -1030,8 +916,8 @@ function packageReply(s: FaysalSession, now: Date): Reply {
     [
       faysal(
         s,
-        `${pair.single.serviceAr} بـ ${pair.single.amount} ر.س، و${pair.pkg.serviceAr} بـ ${pair.pkg.amount} ر.س — يعني 6 جلسات بسعر 5.`,
-        { quotedPackage: true },
+        `${pair.sessionAr} بـ ${pair.sessionAmount} ر.س، و${pair.packageAr} بـ ${pair.packageAmount} ر.س — يعني ${pair.sessions} جلسات بسعر ${pair.paidSessions}.`,
+        { quotedPackage: true, packageTermsAr: pair.termsAr },
       ),
     ],
     ["أقرب موعد"],

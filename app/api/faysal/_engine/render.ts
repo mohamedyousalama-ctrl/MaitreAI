@@ -27,7 +27,7 @@
 // ============================================================================
 
 import { formatCustomerVisibleText } from "@/lib/util/customer-visible-format";
-import { DEMO_1_C, PACKAGE_TERMS, friday1Suffix } from "./strings";
+import { DEMO_1_C, friday1Suffix } from "./strings";
 import { PRICE_LABEL_AR } from "../_domain";
 
 /** SPEC-2 §3.4 — the Saudi profile declares `digitStyle: "western"`, both ways. */
@@ -72,10 +72,15 @@ export function applyPrice1(text: string): string {
   return `${text}\n${PRICE_LABEL_AR}`;
 }
 
-/** Rule PKG-1 — an unstated expiry on a 6,000 SAR package is a complaint waiting. */
-export function applyPackageTerms(text: string, quotedPackage: boolean): string {
-  if (!quotedPackage || text.includes(PACKAGE_TERMS)) return text;
-  return `${text}\n${PACKAGE_TERMS}`;
+/**
+ * Rule PKG-1 — an unstated expiry on a 6,000 SAR package is a complaint waiting to
+ * happen, so the TERMS travel with the figure. They come from the catalogue row
+ * itself (`CatalogueService.termsAr`), never from a constant in this file: a
+ * second copy of a package's terms is a second thing to forget to update.
+ */
+export function applyPackageTerms(text: string, quotedPackage: boolean, termsAr: string | null | undefined): string {
+  if (!quotedPackage || !termsAr || text.includes(termsAr)) return text;
+  return `${text}\n${termsAr}`;
 }
 
 /**
@@ -95,6 +100,8 @@ export interface ComposeOpts {
   /** The branch phone for Rule FRI-1. Null when no branch is in play. */
   branchPhone?: string | null;
   quotedPackage?: boolean;
+  /** The package's own terms, from the catalogue row (Rule PKG-1). */
+  packageTermsAr?: string | null;
   /** A confirmation block — asserted for DEMO-1(c) and exempt from nothing else. */
   isConfirmation?: boolean;
   /** SPEC-4 §4.2 rail copy: byte-exact, nothing prepended or appended. */
@@ -111,7 +118,7 @@ export function compose(text: string, opts: ComposeOpts = {}): string {
   }
   let out = text;
   out = applyPrice1(out);
-  out = applyPackageTerms(out, !!opts.quotedPackage);
+  out = applyPackageTerms(out, !!opts.quotedPackage, opts.packageTermsAr);
   out = applyFriday1(out, opts.branchPhone ?? null);
   if (opts.isConfirmation) assertConfirmationDisclosed(out);
   return normalizeOutbound(out);

@@ -71,7 +71,7 @@
 // THE RULE THAT FOLLOWS: A GREEN RUN IS EVIDENCE ABOUT A VALUE, NOT ABOUT A FRAME.
 // ============================================================================
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   detectRedFlag, isFaysalSafetyInbound, DETECTOR_EXCEPTION,
@@ -943,31 +943,61 @@ console.log("\n── §W  WIRING, AND THE SHARED-LEXICON BINDING ────�
     ok(`§W «بموت لو أكلت ${t}» is not self-harm`, detectRedFlag(`بموت لو أكلت ${t}`) === null);
   }
 
-  // THE CROSS-AGENT SWAP POINT. `app/api/faysal/_domain/index.ts` says the whole edit when
-  // this module lands is `export { detectRedFlag } from "@/lib/health/safety"`. That is only
-  // true if the two class unions are the SAME SET and the hit carries every field the app's
-  // `normalizeRedFlag()` reads. Two specs naming one field differently, and a safety rail
-  // silently reading `undefined`, is the exact defect §1.5 R3 exists to catch — so it is
-  // asserted here rather than discovered at the swap.
-  let contract = "";
-  try { contract = readFileSync(resolve(import.meta.dirname, "../app/api/faysal/_domain/contract.ts"), "utf8"); } catch { /* not present yet */ }
-  if (contract) {
-    // Parse THEIR declaration, not every string literal in the file — and take the whole
-    // block including the last member, whose line ends in a `;`. A parser that silently drops
-    // the last alternative is how a union "matches" while missing `self_harm`, which is the
-    // one class §1.3 singles out.
-    const block = /export type RedFlagClass\s*=([\s\S]*?);/.exec(contract)?.[1] ?? "";
-    const theirs = new Set([...block.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]));
-    const mine = new Set(CLASSES.map((c) => c.cls));
-    ok(`§W the app contract's RedFlagClass union is the same set as this module's (${theirs.size} vs ${mine.size})`,
-      theirs.size === mine.size && [...mine].every((c) => theirs.has(c)));
-    const h = detectRedFlag("صدري يعورني وأتعرق")!;
-    for (const field of ["fired", "class", "tier", "termAr", "ruleId", "label"]) {
-      ok(`§W the hit carries «${field}», which the app's normalizeRedFlag reads`, field in h);
+  // ── §11.9's WIRING PROPERTY, AS FAR AS THIS FILE CAN SEE IT ──────────────────────────────
+  // A GUARD PROVEN IN ONE DETECTOR IS NOT A GUARD, and this repo has shipped that mistake
+  // twice. `index.ts` exists so the EXCEPTION WRAPPER is part of the union rather than
+  // something each surface remembers to add — so a surface that reaches past it to
+  // `detectRedFlag` gets §1.5 R3's fail-closed behaviour only by accident.
+  //
+  // The full meta-proof (§11.9) reads every inbound surface and asserts the call and its
+  // ORDER relative to the model. That file is not this wave's and the surfaces are another
+  // agent's; what IS in scope is the half that can be checked from the module's own side:
+  // whoever imports this module must import the UNION. Comments are stripped first, so a
+  // mention in prose cannot satisfy a check for a call — the technique
+  // `proof-phonetic-net-unwired.test.ts` uses and the reason it survived a driven mutation.
+  // LINE COMMENTS FIRST, THEN BLOCK COMMENTS, AND THE ORDER IS THE WHOLE THING. Written the
+  // other way round this scanner reported ZERO importers on a file that plainly imports the
+  // module: `app/api/faysal/_domain/index.ts` L6 is a `//` comment containing the path glob
+  // «lib/health/*», whose `/*` opened a block comment that ran to the next `*/` — a JSDoc 85
+  // lines later — and swallowed the import. A scanner that is defeated by a path glob in a
+  // sentence reports "no call site" and passes, which is the failure mode
+  // `proof-phonetic-net-unwired.test.ts` calls "adversarially hardened" for.
+  const stripComments = (src: string) =>
+    src.split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n").replace(/\/\*[\s\S]*?\*\//g, " ");
+  const walk = (dir: string): string[] => {
+    let out: string[] = [];
+    let entries: Array<{ name: string; isDirectory(): boolean }> = [];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+    for (const e of entries) {
+      const full = resolve(dir, e.name);
+      if (e.isDirectory()) out = out.concat(walk(full));
+      else if (/\.tsx?$/.test(e.name)) out.push(full);
     }
-    ok("§W a no-hit is `null`, which is what the app contract declares", detectRedFlag("أبغى موعد بكرة") === null);
+    return out;
+  };
+  const surfaces = [...walk(resolve(import.meta.dirname, "../app/api/faysal")), ...walk(resolve(import.meta.dirname, "../app/faysal"))];
+  const importers = surfaces
+    .map((f) => [f, stripComments(readFileSync(f, "utf8"))] as const)
+    .filter(([, src]) => /from\s+["'](?:@\/)?lib\/health\/safety/.test(src));
+  console.log(`   ${surfaces.length} Faysal surface files scanned · ${importers.length} import lib/health/safety`);
+  const reachPast = importers.filter(([, src]) =>
+    /\bdetectRedFlag\b/.test(src) && !/\bisFaysalSafetyInbound\b/.test(src));
+  for (const [f] of reachPast) {
+    ok(`§W ${f.split("/").slice(-4).join("/")} imports detectRedFlag WITHOUT the union — §1.5 R3 is bypassed`, false);
+  }
+  pass += importers.length - reachPast.length;
+  ok(`every Faysal surface that imports the safety module imports the UNION (${reachPast.length} reach past it)`,
+    reachPast.length === 0);
+  // THE SCAN MUST BE REAL. A proof over an empty set passes vacuously, which is exactly how a
+  // seam guard dies the day someone renames a directory — and how this check read 0/13 while
+  // the import was sitting there.
+  ok(`the surface scan found Faysal sources (${surfaces.length} ≥ 5)`, surfaces.length >= 5);
+  if (importers.length === 0) {
+    console.log("   (no Faysal surface imports lib/health/safety yet — the wiring meta-proof §11.9 is where");
+    console.log("    that becomes an assertion; this file cannot prove a call site that does not exist.)");
   } else {
-    console.log("   (app/api/faysal/_domain/contract.ts not present — cross-agent shape check skipped)");
+    ok(`at least one surface imports the module and it imports the union (${importers.length})`,
+      importers.every(([, src]) => /\bisFaysalSafetyInbound\b/.test(src)));
   }
 
   // §3.5 / §11.10 — FAYSAL DOES NOT REWIRE THE PHONETIC NET. No fuzzy matching on typed text:

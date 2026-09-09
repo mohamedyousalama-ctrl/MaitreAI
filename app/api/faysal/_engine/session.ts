@@ -22,7 +22,7 @@
 import { randomUUID } from "node:crypto";
 import { open, seal } from "../_domain/signing";
 import { FAYSAL_SESSION_TTL_MS } from "./limits";
-import type { NeedKey, SiteId, Slot } from "../_domain";
+import type { DemoNeed, SiteId, SlotView, StoreSnapshot } from "../_domain";
 
 export type Scene =
   | "S1_greeting"
@@ -53,7 +53,7 @@ export interface FaysalSession {
   triageClass: string | null;
 
   /** What the patient told us, in their own words. Never inferred. */
-  need: NeedKey | null;
+  need: DemoNeed | null;
   districtAr: string | null;
   carrierAr: string | null;
   payment: "insurance" | "cash" | null;
@@ -67,9 +67,17 @@ export interface FaysalSession {
   askedPayment: boolean;
   quotedPrice: boolean;
 
-  offeredSlots: Slot[];
+  offeredSlots: SlotView[];
+  /**
+   * `lib/health`'s booking store, carried by the CONVERSATION rather than left in
+   * a process-local Map. On Vercel the turn that holds a slot and the turn that
+   * confirms it can land on different instances, and `confirmBooking` would throw
+   * `hold_unknown` with the patient's chosen time still on their screen. One hold
+   * and one appointment per demo conversation, so the payload stays small.
+   */
+  store: StoreSnapshot | null;
   holdId: string | null;
-  heldSlot: Slot | null;
+  heldSlot: SlotView | null;
   bookingRef: string | null;
   /** Rule C4-1 — a coarse window in the patient's OWN words, never a clock time. */
   preferredWindowAr: string | null;
@@ -119,6 +127,7 @@ export function newSession(): FaysalSession {
     askedPayment: false,
     quotedPrice: false,
     offeredSlots: [],
+    store: null,
     holdId: null,
     heldSlot: null,
     bookingRef: null,

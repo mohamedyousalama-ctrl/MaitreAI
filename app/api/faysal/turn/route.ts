@@ -32,12 +32,13 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { REAL_CONTACTS, RAIL_STOP_REASON, emergencyRail, readRedFlag } from "../_domain";
+import { REAL_CONTACTS, RAIL_STOP_REASON, emergencyRailText, readRedFlag, snapshotOfStore, storeFromSnapshot } from "../_domain";
 import { classify, type Classification } from "../_engine/intent";
 import { compose } from "../_engine/render";
 import { consumeSpendGuard, clientIp, preFilter } from "../_engine/guard";
 import { FAYSAL_MAX_CHARS } from "../_engine/limits";
 import { openConversation, runTurn, type Reply } from "../_engine/scenes";
+import type { FaysalStore } from "../_domain";
 import { encodeSession, pushHistory, resetCourtesy, resolveSession, type FaysalSession } from "../_engine/session";
 import * as S from "../_engine/strings";
 
@@ -104,7 +105,7 @@ export async function POST(req: Request) {
     // Rule DEMO-1 detail 5: the rail is exempt from (b) and (c), and only from
     // those. Nothing is prepended or appended to §4.2's copy. `compose` with
     // `isRail` normalizes digits and does nothing else, so `997` stays `997`.
-    const railText = compose(emergencyRail(verdict), { isRail: true });
+    const railText = compose(emergencyRailText(verdict), { isRail: true });
     pushHistory(session, "assistant", railText);
 
     return NextResponse.json({
@@ -124,7 +125,9 @@ export async function POST(req: Request) {
   if (session.triageHold) {
     const held = readRedFlag(raw);
     const railText = compose(
-      emergencyRail(held.fired ? held : { fired: true, cls: session.triageClass as never, tier: "emergency", ruleId: "triage_hold", label: null }),
+      emergencyRailText(
+        held.fired ? held : { fired: true, cls: session.triageClass, tier: "emergency", ruleId: "triage_hold", label: null },
+      ),
       { isRail: true },
     );
     pushHistory(session, "user", raw);
@@ -155,14 +158,19 @@ export async function POST(req: Request) {
   pushHistory(session, "user", raw);
   resetCourtesy(session);
 
+  // `lib/health`'s booking store, rebuilt from the sealed session and written back
+  // after the turn. See `_domain/index.ts` header note 2 — a process-local store
+  // loses a hold the moment two turns land on two lambdas.
+  const store = storeFromSnapshot(session.store);
+
   let out: Reply;
   try {
     out = session.greeted
-      ? runTurn(session, raw, cls, new Date())
+      ? runTurn(session, raw, cls, new Date(), store)
       : // The visitor typed before the opener rendered (a page refresh, or a
         // client that skipped `/reset`). The greeting is still owed, and Rule
         // DEMO-1(b) with it.
-        mergeOpening(session, raw, cls);
+        mergeOpening(session, raw, cls, store);
   } catch (e) {
     // A composition guard threw — Rule DEMO-1(c), Rule PKG-1, the cadence rule or
     // the English register. Those exist to stop a bad message shipping, so the
@@ -176,6 +184,7 @@ export async function POST(req: Request) {
     };
   }
 
+  session.store = snapshotOfStore(store);
   for (const m of out.messages) if (m.from === "faysal") pushHistory(session, "assistant", m.text);
   return payload(encodeSession(session), out);
 }
@@ -186,11 +195,11 @@ export async function POST(req: Request) {
  * rule and it is what §9's turn 2 does — «وعليكم السلام … إي عندنا ليزر …» is one
  * turn carrying both.
  */
-function mergeOpening(session: FaysalSession, raw: string, cls: Classification): Reply {
+function mergeOpening(session: FaysalSession, raw: string, cls: Classification, store: FaysalStore): Reply {
   const now = new Date();
   const opening = openConversation(session, now, cls.language);
   if (cls.kind === "greeting_only") return opening;
-  const rest = runTurn(session, raw, cls, now);
+  const rest = runTurn(session, raw, cls, now, store);
   // The system line is not negotiable — Rule DEMO-1(b) is defined as the FIRST
   // message of every conversation. `runTurn` will not re-emit it (it is already
   // marked sent), so it is carried over from the opening here.

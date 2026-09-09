@@ -26,9 +26,7 @@
 // ============================================================================
 
 import { getAdapter, isClaudeConfigured } from "@/lib/ai/llm";
-import type { NeedKey } from "../_domain";
-import { CARRIERS, SITES, SITE_IDS } from "../_domain";
-import { normalizeArabic } from "../_domain/safety";
+import { NEED_PLANS, SITES, carrierNameAr, normalizeArabic, siteInDistrict, type DemoNeed } from "../_domain";
 import { FAYSAL_MAX_HISTORY } from "./limits";
 
 export type IntentKind =
@@ -65,7 +63,7 @@ export type IntentKind =
 
 export interface Classification {
   kind: IntentKind;
-  need: NeedKey | null;
+  need: DemoNeed | null;
   /** The patient's own words for their district. Never a resolved site id. */
   districtAr: string | null;
   /** Raw carrier text; the DOMAIN resolves it against the network list. */
@@ -130,7 +128,13 @@ export function detectLanguage(raw: string): "ar" | "en" | "other" {
 
 const has = (t: string, ...needles: string[]) => needles.some((n) => t.includes(normalizeArabic(n)));
 
-const NEEDS: readonly { need: NeedKey; words: string[] }[] = [
+/**
+ * The demo's needs, each a key of `NEED_PLANS`, which pins it to one of the
+ * ENGINE's `NeedKey`s. Orthopaedics is deliberately absent: SPEC-1 §6.2 records
+ * it as group-wide only at all six sites, so `recommendBranch` has no key for it
+ * and «ألم بالركبة» is answered by the unsupported-specialty path below.
+ */
+const NEEDS: readonly { need: DemoNeed; words: string[] }[] = [
   { need: "laser", words: ["ليزر", "ازاله شعر", "إزالة الشعر", "laser", "hair removal"] },
   { need: "orthodontics", words: ["تقويم", "braces", "aligner", "الينر"] },
   { need: "endodontics", words: ["عصب", "حشو عصب", "علاج جذور", "root canal"] },
@@ -139,32 +143,28 @@ const NEEDS: readonly { need: NeedKey; words: string[] }[] = [
   { need: "paediatrics", words: ["اطفال", "طفلي", "ابني الصغير", "بيبي", "pediatric", "paediatric"] },
   { need: "obgyn", words: ["نساء وولاده", "نسائيه", "حمل", "ولاده", "obgyn", "gynae"] },
   { need: "ent", words: ["انف واذن", "حنجره", "اذن", "ent"] },
-  { need: "orthopaedics", words: ["عظام", "ركبه", "الركبه", "كتف", "ظهري", "ortho", "knee"] },
   { need: "employment_medical", words: ["فحص توظيف", "ما قبل التوظيف", "employment medical", "pre-employment"] },
   { need: "neurology", words: ["مخ واعصاب", "اعصاب", "صداع مزمن", "neurology"] },
   { need: "internal", words: ["باطنه", "باطنية", "internal medicine"] },
   { need: "general", words: ["كشف عام", "طب اسره", "عياده عامه", "general checkup", "family medicine"] },
 ];
 
-/** District recognition is over the site seed's own `nearDistrictsAr`, never a guess. */
-function findDistrict(t: string): string | null {
-  for (const id of SITE_IDS) {
-    for (const d of SITES[id].nearDistrictsAr) {
-      const n = normalizeArabic(d);
-      if (n.length >= 3 && t.includes(n)) return d;
-    }
-  }
-  return null;
+/**
+ * The branch that IS in the district the patient named — the engine's own
+ * `siteInDistrict`, which matches a site's district and its recorded alternates
+ * and NOTHING else. There is no "nearest by distance" here and there must not be:
+ * the dossier gives a plus code for two of six sites and no coordinates at all, so
+ * a neighbourhood-adjacency table would be a geographic claim we cannot support.
+ * A null answer is the honest one, and the fork simply does not run.
+ */
+function findDistrict(raw: string): string | null {
+  const id = siteInDistrict(raw);
+  return id ? SITES[id].districtAr : null;
 }
 
-function findCarrier(t: string): string | null {
-  for (const c of CARRIERS) {
-    for (const a of c.aliases) {
-      const n = normalizeArabic(a);
-      if (n.length >= 3 && t.includes(n)) return c.nameAr;
-    }
-  }
-  return null;
+/** Resolved against the ENGINE's payer table; a `directory_source` is never one. */
+function findCarrier(raw: string): string | null {
+  return carrierNameAr(raw);
 }
 
 function findWindow(t: string): string | null {
@@ -235,7 +235,7 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
 
   // Nearest — the geography fork trigger (§6.2).
   const nearest = has(t, "اقرب فرع", "الاقرب", "اقرب لي", "قريب مني", "اقرب شي لي", "nearest", "closest");
-  const district = findDistrict(t);
+  const district = findDistrict(raw);
   if (nearest && district) return { ...base, kind: "prefer_nearest", districtAr: district };
   if (nearest) return { ...base, kind: "prefer_nearest" };
 
@@ -246,7 +246,7 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // `includes` on «قلب» fires on gratitude, which is SPEC-4 §2.1's own near-miss.
   if (
     has(t, "عياده", "عيادة", "دكتور", "طبيب", "قسم", "موعد") &&
-    has(t, "قلب", "قلبيه", "مسالك", "كلي", "اورام", "نفسي", "نفسيه", "سكري", "تجميل", "تخاطب", "علاج طبيعي", "روماتيزم")
+    has(t, "قلب", "قلبيه", "مسالك", "كلي", "اورام", "نفسي", "نفسيه", "سكري", "تجميل", "تخاطب", "علاج طبيعي", "روماتيزم", "عظام", "الركبه", "ركبه", "كتف")
   ) {
     return { ...base, kind: "unsupported_specialty" };
   }
@@ -257,7 +257,7 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
     return { ...base, kind: "price_question" };
 
   // Insurance (§5.2). Distinguish "do you take X?" from "I have X".
-  const carrier = findCarrier(t);
+  const carrier = findCarrier(raw);
   if (has(t, "تامين", "التامين", "insurance") || carrier) {
     const declaring = has(t, "عندي", "معي", "معاي", "i have", "my insurance is");
     if (declaring && carrier) return { ...base, kind: "payment", payment: "insurance", carrierRaw: carrier };
@@ -324,7 +324,7 @@ const CLASSIFIER_SYSTEM = `أنت مصنّف نوايا لمحادثة حجز م
 
 kind ∈ [greeting_only, need, district, payment, insurance_question, price_question, package_question, slots_question, pick_slot, confirm, decline, cancel, prefer_nearest, objection_distance, objection_price, objection_delay, rating, competitor, identity, female_doctor, doctor_quality, clinical_question, drug_question, records, complaint, handoff, hours_question, unsupported_specialty, close, other]
 
-need ∈ [laser, dermatology, dental, orthodontics, endodontics, paediatrics, obgyn, ent, orthopaedics, internal, general, employment_medical, neurology, after_hours, null]
+need ∈ [laser, dermatology, dental, orthodontics, endodontics, paediatrics, obgyn, ent, internal, general, employment_medical, neurology, after_hours, null]
 
 قواعد ملزمة:
 - لا تخترع حياً ولا شركة تأمين ولا وقتاً. انسخ كلام المريض حرفياً أو اكتب null.
@@ -340,10 +340,7 @@ const KIND_SET = new Set<IntentKind>([
   "drug_question", "records", "complaint", "handoff", "hours_question", "unsupported_specialty", "close", "other",
 ]);
 
-const NEED_SET = new Set<string>([
-  "laser", "dermatology", "dental", "orthodontics", "endodontics", "paediatrics", "obgyn",
-  "ent", "orthopaedics", "internal", "general", "employment_medical", "neurology", "after_hours",
-]);
+const NEED_SET = new Set<string>(Object.keys(NEED_PLANS));
 
 function parseClassifierJson(text: string, language: Classification["language"]): Classification | null {
   const m = /\{[\s\S]*\}/.exec(text);
@@ -361,7 +358,7 @@ function parseClassifierJson(text: string, language: Classification["language"])
   const window = String(raw.window ?? "");
   return {
     kind: kind as IntentKind,
-    need: NEED_SET.has(need) ? (need as NeedKey) : null,
+    need: NEED_SET.has(need) ? (need as DemoNeed) : null,
     // The model may return the patient's own words for a district; the DOMAIN
     // resolves those to a site, and an unrecognised district resolves to nothing.
     districtAr: typeof raw.district === "string" && raw.district.trim() ? raw.district.trim().slice(0, 40) : null,
