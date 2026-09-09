@@ -17,13 +17,21 @@
 // how a parent reports a child's, and that is the case this gate's ancestor was built for.
 // ============================================================================
 
+/** WHO the message is about, when it is not the sender. Split out of `FRAME_WORDS` because a
+ *  SECOND caller needs the people without the frames: `allergen-emergency.ts` reads «ابني نفسه
+ *  ضايق», where the person is the only thing separating a child's airway from «الطلب نفسه واقف»
+ *  ("the order itself is stalled") — «نفسه» is both "his breath" and "itself". Exported rather
+ *  than copied, because a copied list is how this file came to exist. */
+export const PERSON_WORDS =
+  "ابني|بنتي|ولدي|بنته|ابنه|زوجتي|زوجي|امي|ابوي|الوالده|الوالد|الطفل|الطفله|البيبي|" +
+  "اخوي|اختي|صاحبي|صاحبتي|رفيجي|جوزي|مرتي";
+
 /** Alternation source (not a RegExp) so each caller can anchor it its own way. */
 export const FRAME_WORDS =
   // «فيه»/«فيها» MEAN BOTH "he has" AND "in it", so they only count with a PERSON in front.
   // «ابني فيه طفح» is a father reporting his son; «الجو فيه كتمة» is a remark about the room,
   // and with the bare form in this list it read as a chest.
-  "(?:ابني|بنتي|ولدي|بنته|ابنه|زوجتي|زوجي|امي|ابوي|الوالده|الوالد|الطفل|الطفله|البيبي|" +
-  "اخوي|اختي|صاحبي|صاحبتي|رفيجي|جوزي|مرتي)\\s+(?:فيه|فيها|فيهم|عنده|عندها|عندهم)|" +
+  "(?:" + PERSON_WORDS + ")\\s+(?:فيه|فيها|فيهم|عنده|عندها|عندهم)|" +
   "عندي|عندك|عنده|عندها|عندهم|فيني|جاني|جاله|جالها|جالي|جاتني|جاته|جاتها|جتني|" +
   "بيجيني|بيجيلي|يجيني|يجيلي|بتجيني|تجيني|" +
   "صار\\s*(?:لي|له|لها|لهم)|طلع\\s*(?:لي|له|لها|لهم)|ظهر\\s*(?:لي|له|لها|لهم)|طالع\\s*(?:لي|له|لها)|" +

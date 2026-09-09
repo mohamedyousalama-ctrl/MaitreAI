@@ -21,6 +21,9 @@
 // ============================================================================
 
 import { normalizeAr } from "./allergen-gate";
+// The people a message can be ABOUT. One list, shared with the symptom detectors — see
+// symptom-frames.ts for why a second copy is not an option.
+import { PERSON_WORDS } from "./symptom-frames";
 
 export interface EmergencyHit {
   fired: boolean;
@@ -58,27 +61,153 @@ const HYPOTHETICAL_Q_RE = /(?:ممكن|يمكن|هل|ينفع|يصير|احتم�
 // whatever frame surrounds them, and the exclusions keep their job over the softer signals —
 // a hospital visit, a reaction reported, an emergency number — where a history really is the
 // common reading and the cost of over-firing is a human interrupted for nothing.
+// ============================================================================
+// THE AIRWAY IS COMPOSED FROM ITS AXES NOW, BECAUSE THIS BUG HAS HAPPENED TWICE.
+//
+// FIRST OCCURRENCE — NAJDI NEGATION «مو» WAS MISSING, a real gap and not a theoretical one.
+// The list carried Egyptian «مش» and Gulf/Eastern «مب» but not «مو», which is the ordinary
+// negation in Najd. Khalid's own configured home region is najd (Riyadh), so the single most
+// natural way for this agent's core customer to say "I can't breathe" — «مو قادر أتنفس» — did
+// not fire the emergency path at all, while «ما أقدر أتنفس» did. It was fixed by ADDING THE
+// THREE PHRASINGS SOMEBODY THOUGHT OF («مو»، «موب»، «ماني») and the feminine «قادرة» — which,
+// being written with «ة» in a list matched against `normalizeAr` output that folds ة→ه, could
+// never match anything. The fix for the first occurrence shipped with a dead alternative in it.
+//
+// SECOND OCCURRENCE, found one wave later, the identical shape:
+//
+//   «ما عاد يتنفس»          he stopped breathing            SILENT
+//   «ما عاد يقدر يتنفس»     he can no longer breathe        SILENT
+//   «عندي صعوبة بالتنفس»    I have difficulty breathing     SILENT   ← Gulf «ب»
+//   «عندي صعوبة في التنفس»  the identical sentence, «في»    FIRED
+//
+// «ما عاد» is how Arabic says "no longer" — the exact words a person reaches for when a state
+// has just CHANGED, which is what an emergency IS — and it appeared in no auxiliary slot. The
+// preposition was hard-coded to «في»; «ب» is the Gulf one, and this tenant's configured home
+// region is Najd. And every verb in the family was frozen in the FIRST PERSON, so a father
+// could not report his son at all: «ابني ما يقدر يتنفس» and «الطفل ما يتنفس» were both silent.
+//
+// Adding «ما عاد» and «ب» would have been the third patch of the same kind, and there would
+// have been a fourth. So the airway family is no longer WRITTEN AS SENTENCES. It is the cross
+// product of the four slots the language actually varies — NEGATION × ABILITY × PERSON ×
+// PREPOSITION — composed from the named lists below, and `scripts/proof-airway-derivation.test.ts`
+// drives the whole product (2,600+ strings) instead of a list somebody thought of. A slot that
+// is missing a value is now a hole in a LIST, which a reader can see, rather than a hole in a
+// sentence, which nobody can.
+//
+// WHY WIDENING HERE IS SAFE AND NARROWING IS NOT: every alternative below still requires a
+// BREATH WORD («تنفس»/«نفس») or a BODY PART with a possessive glued to it. There is no ordinary
+// restaurant sentence in that shape — the proof re-drives every "must stay quiet" string from
+// `proof-allergy-false-positives.test.ts` and every clean voice control from the eval set to
+// keep it that way.
+// ============================================================================
+
+/** NEGATION — every particle Arabic uses to say "not", including the Egyptian ما…ش circumfix
+ *  fused onto the verb («مقدرش»). Longest first, so «ماني» is not eaten by «ما». */
+const NEG =
+  "(?:ماقدرش|مقدرتش|مقدرش|ماعرفش|معرفش|مبقتش|مبقاش|ماني|مانها|مانه|ماهو|ماهي|مهوب|موب|مش|مو|مب|ما|مني)";
+
+/** "NO LONGER" — the slot that was missing entirely. «ما عاد»/«ما بقيت» is what someone says
+ *  when the breathing has just STOPPED, which is the most urgent message this file can get.
+ *  Optional, because «ما يقدر يتنفس» has no such word. */
+const NO_LONGER = "(?: ?(?:عاد|عادت|عادوا|بقي|بقيت|بقت))?";
+
+/** ABILITY — the auxiliary between the negation and the verb, in every person and both
+ *  genders. Optional: «ما عاد يتنفس» ("he no longer breathes") carries none, and requiring one
+ *  is exactly what silenced it. */
+const ABLE =
+  "(?: ?(?:[ايتن]قدر|بقدر|قدر|قادر(?:ه|ين)?|عارف(?:ه|ين)?|[ايتن]عرف|[ايتن]ستطيع|[ايتن]تمكن))?";
+
+/** BREATHE — the PERSON axis. «اتنفس» is me, «يتنفس» is him, «تتنفس» is her/you, «نتنفس» is us,
+ *  «التنفس» is the verbal noun. Only «ا» and «ال» were ever accepted, which is why a parent
+ *  reporting a child fired nothing. */
+const BREATHE = "(?:ال|[ايتن])?تنفس";
+
+/** POSSESSIVE — WHOSE body. Same axis as above, on the noun instead of the verb: «حلقي» is my
+ *  throat, «حلقه» his, «حلقها» hers. Every body term in this file was bound to «ي». */
+const POSS = "(?:ها|هم|نا|ي|ه)";
+
+/** THE PREPOSITION SLOT in «صعوبة … التنفس». It was the literal «في». Gulf says «بالتنفس»,
+ *  Najdi contracts «في ال» to «فال», and the article detaches or glues on either way. All of it
+ *  optional — «صعوبة تنفس» carries no preposition at all. */
+const IN = "(?: ?(?:في|ب|ف)? ?(?:ال)?)";
+
+// The composed airway alternatives. Each is one SHAPE, not one sentence.
+/** «ما أقدر أتنفس» / «مو قادر يتنفس» / «ما عاد يقدر يتنفس» / «مقدرش اتنفس» / «ما عاد يتنفس». */
+const CANNOT_BREATHE = `${NEG}${NO_LONGER}${ABLE} ?${BREATHE}`;
+/** «ما أقدر آخذ نفس» — the same shape with the noun instead of the verb. */
+const CANNOT_TAKE_BREATH = `${NEG}${NO_LONGER}${ABLE} ?(?:[ايتن]?اخذ|اسحب) ?(?:ال)?نفس`;
+/** «توقف عن التنفس» / «بطل يتنفس» — reported as an event rather than an inability. No
+ *  negation particle at all, which is why the negation axis alone would still have missed it. */
+const BREATHING_STOPPED = `(?:توقف|توقفت|وقف|وقفت|بطل|بطلت|انقطع|انقطعت|حبس) ?(?:عن )?${BREATHE}`;
+/** «صعوبة في التنفس» / «صعوبة بالتنفس» / «ضيق في التنفس» / «ضيق نفس» / «صعوبة تنفس». */
+const BREATHING_DIFFICULTY = `(?:صعوبه|صعوبات|ضيق)${IN}(?:ت)?نفس`;
+/** «صعب علي التنفس» — the same statement with the difficulty as a verb. */
+const HARD_TO_BREATHE = `(?:صعب|يصعب|صعبه) ?(?:عل(?:ي|يه|يها|يهم|ينا|يك))? ?(?:ال)?تنفس`;
+
+/** The verbs that say a breath is tight, stopped or cut. */
+const BREATH_TIGHT =
+  "(?:ضاق|ضاقت|يضيق|تضيق|بيضيق|ضايق|ضايقه|مسدود|مسدوده|واقف|واقفه|بيقف|بيوقف|انقطع|انقطعت|مقطوع)";
+/** «نفسي ضايق» is BOTH "my breath is tight" and the idiom "I am fed up". What follows says
+ *  which: a body reading never takes «من الخدمة» / «من التأخير» after it. Without this,
+ *  «نفسي ضايق من الخدمة» — a complaint — opened the ambulance path. */
+const NOT_THE_IDIOM =
+  "(?! ?من ?(?:ال)?(?:خدمه|تعامل|انتظار|تاخير|وضع|كلام|رد|سوالف|طريق|زحمه))";
+/** THIRD PERSON NEEDS A PERSON NAMED, and this is the one slot where that is true. «نفسه» is
+ *  "his breath" AND "itself": «الطلب نفسه واقف» ("the order itself is stalled") is an ordinary
+ *  delivery sentence and would otherwise have become an ambulance call. So the third-person
+ *  breath is admitted only with one of `symptom-frames.PERSON_WORDS` in front of it — the same
+ *  shared list the symptom detectors use, imported rather than copied. */
+const BREATH_TIGHT_THIRD =
+  `(?:${PERSON_WORDS})[^.،,؛!؟\\n]{0,12}?نفس(?:ه|ها|هم) ?${BREATH_TIGHT}${NOT_THE_IDIOM}`;
+
+/** THROAT — «حلقي يقفل» in every person and every closing verb. «انسد»/«سكرت»/«قفل» are the
+ *  perfect forms of verbs the list already carried in the imperfect: the same slot, unfilled. */
+const THROAT = "(?:حلق|زور|حنجرت|بلعوم)";
+const THROAT_CLOSES =
+  "(?:يقفل|تقفل|يتقفل|بيقفل|بتقفل|اتقفل|قافل|قافله|قفل|قفلت|يضيق|تضيق|يتضيق|بيضيق|ضاق|ضاقت|" +
+  "يتورم|تتورم|بيتورم|متورم|تورم|مسدود|مسدوده|انسد|انسدت|يسكر|تسكر|بيسكر|سكر|سكرت|اتسكر)";
+const THROAT_CLOSING = `${THROAT}${POSS} ?${THROAT_CLOSES}`;
+
+/** SWELLING NOW — lips / tongue / face / eyes / throat, in every person. «شفتي» stays FIRST
+ *  PERSON ONLY on purpose: the singular «شفة» with a third-person suffix is «شفته», which is
+ *  also «شفته» = "I saw it" — «الخبز شفته ينتفخ» ("I saw the bread rising") would have become
+ *  an anaphylaxis. Nobody says «شفته» for a swelling lip anyway; they say «شفايفه». */
+// «بلعوم»/«زور»/«حنجرت» were in the THROAT list and not this one, so «بلعومي منتفخ» was
+// silent while «بلعومي يتورم» fired: the same body part, two verb lists, one of them short.
+const SWELL_BODY = `(?:(?:شفايف|لسان|وش|وجه|عين|حلق|بلعوم|زور|حنجرت)${POSS}|شفتي)`;
+const SWELLS =
+  "(?:تورم|تورمت|تتورم|يتورم|بيتورم|ورم|بيورم|منتفخ|منتفخه|انتفخ|انتفخت|ينتفخ|بينتفخ|تنتفخ|كبرت|كبر)";
+const SWELLING = `${SWELL_BODY} ?${SWELLS}`;
+
+/** CYANOSIS — «شفايفه زرقاء». THIS ONE IS A NEW SIGNAL, NOT A WIDER SLOT, and it is here
+ *  because it was driven: «ابني شفايفه زرقاء» is a father reporting the textbook sign that a
+ *  child has stopped getting oxygen, and it fired nothing in any detector on any surface. It
+ *  is the message you send when the person can no longer speak for themselves, so it cannot
+ *  wait for the airway vocabulary to be reached some other way.
+ *  Bound to lips / face / tongue / fingers ONLY — «عينه زرقاء» is an eye COLOUR, and «لونه
+ *  أزرق» is just as likely to be a drink. */
+const BLUE = "(?:زرقاء|زرقا|زرقه|زرق|ازرق|مزرق|مزرقه|تزرق|زرقت|يزرق)";
+const CYANOSIS = `(?:شفايف|شفاه|وجه|وش|لسان|اصابع|اظافر)${POSS} ?(?:صار|صارت|بدت|بدا|تحول|صايره)? ?${BLUE}`;
+
 const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
-  // Airway / breathing NOW (Najdi + Gulf + Egyptian). «ما اقدر اتنفس» / «مو قادر اتنفس» /
-  // «مش عارف اتنفس» / «نفسي ضاق/يضيق/ضايق» / «حلقي|زوري|حنجرتي يقفل/يضيق/يتورم».
-  //
-  // NAJDI NEGATION «مو» WAS MISSING — a real gap, not a theoretical one. The list carried
-  // Egyptian «مش» and Gulf/Eastern «مب» but not «مو»، which is the ordinary negation in
-  // Najd. Khalid's own configured home region is najd (Riyadh), so the single most natural
-  // way for this agent's core customer to say "I can't breathe" — «مو قادر أتنفس» — did not
-  // fire the emergency path at all, while «ما أقدر أتنفس» did. Added with «موب» and «ماني»,
-  // the other two Najdi/Gulf negators, and the feminine «قادرة».
-  [/ما ?اقدر ?(?:ا|ال)?تنفس|مش ?(?:عارف|عارفه|قادر|قادره) ?(?:ا|ال)?تنفس|(?:مب|مو|موب|ماني|مني) ?(?:قادر|قادره|قادرة)? ?(?:ا|ال)?تنفس|صعوبه في ?التنفس|ما ?اقدر ?اخذ ?نفس/, "صعوبة تنفس", "hard"],
-  // «نفسي ضايق» is BOTH "my breath is tight" and the idiom "I am fed up". What follows says
-  // which: a body reading never takes «من الخدمة» / «من التأخير» after it. Without this,
-  // «نفسي ضايق من الخدمة» — a complaint — opened the ambulance path.
-  [/نفسي ?(?:ضاق|يضيق|بيضيق|ضايق|مسدود|واقف|بيقف)(?! ?من ?(?:ال)?(?:خدمه|تعامل|انتظار|تاخير|وضع|كلام|رد|سوالف|طريق|زحمه))/, "ضيق نفس", "hard"],
-  [/(?:حلقي|زوري|حنجرتي|بلعومي) ?(?:يقفل|يتقفل|بيقفل|بتقفل|يضيق|يتضيق|بيضيق|يتورم|بيتورم|مسدود|قافل|بيسكر|يسكر)/, "انسداد الحلق", "hard"],
-  // Swelling NOW — lips / tongue / face / throat actively swelling.
-  [/(?:شفايفي|شفتي|لساني|وشي|وجهي|عيني|حلقي) ?(?:تورم|تتورم|يتورم|بيتورم|ورم|بيورم|منتفخ|انتفخ|ينتفخ|بينتفخ|تنتفخ|كبرت)/, "تورم", "hard"],
+  // AIRWAY / BREATHING NOW — the composed cross product above, in one alternation. Every
+  // shape needs a breath word, so a message with none of them cannot reach this line.
+  [new RegExp(`${CANNOT_BREATHE}|${CANNOT_TAKE_BREATH}|${BREATHING_STOPPED}|${BREATHING_DIFFICULTY}|${HARD_TO_BREATHE}`), "صعوبة تنفس", "hard"],
+  // Breath tight — first person bare, third person only with a person named (see above).
+  [new RegExp(`نفسي ?${BREATH_TIGHT}${NOT_THE_IDIOM}|${BREATH_TIGHT_THIRD}`), "ضيق نفس", "hard"],
+  // Throat closing, in every person.
+  [new RegExp(THROAT_CLOSING), "انسداد الحلق", "hard"],
+  // Swelling NOW — lips / tongue / face / eyes / throat actively swelling, in every person.
+  [new RegExp(SWELLING), "تورم", "hard"],
+  // Blue lips / face — oxygen, not swelling, and its own label so the audit row says so.
+  [new RegExp(CYANOSIS), "ازرقاق (نقص أكسجين)", "hard"],
   // Active allergic reaction happening right now («الحين»/«دلوقتي»/«الآن»).
   [/(?:صار|جاني|جاله|جالها|جالي|صارت|بيصير|صاير) ?.{0,12}?(?:تحسس|حساسيه|حساسيت|رد ?فعل|طفح) ?.{0,8}?(?:الحين|دلوقتي|الان|توه|هسه|هلا)|(?:تحسس|حساسيه) ?(?:الحين|دلوقتي|الان|توه|هسه)/, "رد فعل تحسسي نشط", "soft"],
   // Emergency call / hospital NOW.
+  // THE PERSON AXIS REACHES HERE TOO. «ودّيناه المستشفى» was listed and «ودّوه المستشفى» was
+  // not — the same first-person freeze as the airway family, in the family a bystander is
+  // most likely to use, because the person being taken to hospital is by definition not the
+  // one typing. Soft, so a genuine history («قبل سنة ودّوه المستشفى») is still vetoed.
   // NORMALIZED SPELLINGS ONLY — three alternatives here were unreachable.
   //
   // These patterns run over `normalizeAr` output, which folds ئ→ي and ى→ي. So «طوارئ» is
@@ -95,12 +224,23 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
   // بالإسعاف», which is the exact wording Khalid himself uses when he tells someone to call
   // one. Verb forms widened, ب and ال both optional; «اسعاف» is still required, and there is
   // no ordinary restaurant sentence that asks for an ambulance.
-  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغي|ابغى|اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|نادو|نادوا|طلبو|طلبوا) ?ب? ?(?:ال)?اسعاف|(?:ودينا|ودونا|وديتوني|وديناه|وديناها|رحنا|راح|دخلنا|دخلوه) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)/, "طلب إسعاف / طوارئ", "soft"],
+  [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغي|ابغى|اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|نادو|نادوا|طلبو|طلبوا) ?ب? ?(?:ال)?اسعاف|(?:ودينا|ودونا|ودوه|ودوها|ودوني|ودوا|ودو|وديته|وديتها|وديتوني|وديناه|وديناها|رحنا|راح|راحت|راحوا|دخلنا|دخلوه|دخلوها|دخلته|خذوه|خذوها) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)/, "طلب إسعاف / طوارئ", "soft"],
 ];
 
 // English / mixed — tested on the RAW (case-insensitive) text.
+//
+// THE SAME BUG CLASS, IN THE OTHER LANGUAGE. This arm knew «can't breathe» and «cannot
+// breathe» and nothing else about breathing, so the English half of the very defect that
+// prompted this rewrite — "he stopped breathing", "he can no longer breathe", "difficulty
+// breathing" — was silent here too, alongside "not breathing", "trouble breathing",
+// "struggling to breathe" and "shortness of breath". Derived the same way: the inability
+// (can't / cannot / can no longer / unable / struggling / hard to), the event (stopped /
+// not breathing), and the nominal (difficulty / trouble / shortness of breath).
+//
+// A hypothetical English framing is still read as active, unchanged and on purpose — see the
+// header of `detectAllergenEmergency`. Widening the vocabulary does not touch that policy.
 const EMERGENCY_EN_RE =
-  /\b(can'?t breathe|cannot breathe|can not breathe|throat (?:is )?(?:closing|swelling|closed)|(?:lips?|face|tongue|throat) (?:is |are )?swelling|swelling (?:up )?now|anaphylaxis|anaphylactic|allergic reaction now|call (?:an )?ambulance|call (?:9-?1-?1|997|112)|emergency now)\b/i;
+  /\b(?:(?:can|could)(?:'|\u2019)?t (?:\w+ ){0,2}?breathe?|can ?not breathe|can no longer breathe|(?:unable|not able) to breathe|(?:struggling|straining|fighting) to breathe|gasping for (?:air|breath)|(?:hard|difficult|tough) to breathe|(?:difficulty|trouble|problems?|issues?) (?:in |with )?breathing|(?:stopped|quit) breathing|(?:is |are |he'?s |she'?s |i'?m |im )?not breathing|short(?:ness)? of breath|can(?:'|\u2019)?t catch (?:my|his|her|their) breath|(?:throat|airway) (?:is |are )?(?:closing|closed|swelling|swollen|blocked|tightening|tight)|(?:lips?|face|tongue|throat) (?:is |are )?swelling|swelling (?:up )?now|(?:lips?|face|tongue|fingers?|skin) (?:are |is |look |looks |went |turned |turning |going )*(?:blue|bluish|purple)|anaphylaxis|anaphylactic|allergic reaction now|call (?:an )?ambulance|call (?:9-?1-?1|997|112)|emergency now)\b/i;
 
 // --- EMERGENCY NUMBERS — the hardest rule in this file to get right --------------
 //
