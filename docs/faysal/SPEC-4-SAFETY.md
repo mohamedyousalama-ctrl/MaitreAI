@@ -532,7 +532,7 @@ Two binding details, because both were violated by the lists as they stood:
   in §2.1–§2.9 is written in its normalized spelling, and §11.1's `list === list.map(normalizeAr)`
   is a real test that goes red the moment one is not.
 
-  **What the struck clause was hiding: 58 entries in 7 of the 9 classes, driven.** Under the
+  **What the struck clause was hiding: 59 entries in 8 of the 9 classes, driven.** Under the
   literal reading — the lists exactly as §2 wrote them — the corpus scored 303/354 rather than
   349/354, and the 46-assertion difference was entirely this. Three consequences, each driven,
   each now fixed in place:
@@ -558,7 +558,26 @@ Two binding details, because both were violated by the lists as they stood:
 
 - **Matcher.** Every term and every phrase is matched with §1.2's matcher —
   `(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?TERM(?![ء-ي])` — **including multi-word phrases**, where the
-  prefix group guards the first token and the lookahead the last. Driven: a phrase matched with a
+  prefix group guards the first token and the lookahead the last.
+
+  **ONE MATCHER, TWO PROCLITIC GROUPS — added Wave 1.7, and the quiet corpus is what found it.**
+  A **noun** takes all five proclitics (`بالصدر`, `للفرع`, `كالعادة`). A **particle** takes only
+  the two conjunctions. Put the negation set through the *nominal* group and `ل` and `ك` become
+  part of the match:
+
+  ```
+  «لما ياخذ نفس الموعد»    when he takes the same appointment   → AIRWAY EMERGENCY
+  «كما ياخذ نفس التقرير»   as he takes the same report          → AIRWAY EMERGENCY
+  ```
+
+  96 ordinary clinic sentences, on the first run of `scripts/proof-faysal-safety.test.ts`.
+  `لما` is `ل` + `ما` **at a word boundary**, so the lookbehind is satisfied and the prefix
+  group eats the `ل`. This is the same bug `lib/ai/allergen-emergency.ts` records one layer up
+  — there `ما` matched *inside* `دايما` for want of a left boundary — and the shipped fix put
+  the proclitic **inside** the boundary with `[وف]` **only**, which is why that module never had
+  this failure. So: **`(?<![ء-ي])[وف]?` for a particle, the full group for a term.** A rule that
+  puts a particle through the nominal matcher is deaf to nothing and **loud on ordinary Arabic**,
+  which is the direction that costs a patient a booking lock. Driven: a phrase matched with a
   bare `(?<![ء-ي])…` lookbehind is silent on `«حاس بثقل على صدري»` (`بثقل`), on
   `«الرضيع حرارته عاليه ومو راضع»` (`ومو راضع`) and on `«الدنيا ما فيها فايده وأبي أرتاح للأبد»`
   (`وأبي`) — the conjunction and the preposition are the ordinary way these sentences are
@@ -847,9 +866,31 @@ EXCLUSION    polio          `شلل` immediately governing `الأطفال`/`ا�
 
 TIER         every hit is `emergency`.
 
-HIT = STANDALONE ∨ (TERM ∧ PREDICATE) ∨ (PREDICATE.onset ∧ PREDICATE.failure),
+HIT = STANDALONE ∨ (TERM ∧ PREDICATE) ∨ (PREDICATE.onset ∧ PREDICATE.failure_person_only),
       per clause, minus EXCLUSION and HYPOTHETICAL_RE.
 ```
+
+**The onset arm is scoped to the PERSON-ONLY failures — Wave 1.7, found by the §2.0 L8 mirror.**
+The arm exists for the Fires entries that name no body part (`«صار يهذي فجأة»`,
+`«فقد النظر بعين وحده فجأة»`, `«شايف دبل فجأة»`), and as written it had **no subject anchor at
+all**. Driven:
+
+```
+FIRES  stroke/emergency  «الدور ما يتحرك من ساعة»    ← the queue hasn't moved for an hour
+                                                       `ما يتحرك` is a failure predicate and
+                                                       `من ساعه` is an onset
+```
+
+A queue can fail to move and a file can be heavy; nothing administrative slurs its speech or
+sees double. So the onset arm reads only:
+
+```
+PREDICATE.failure_person_only   مشلول · مشلوله · ما ينفهم · متلعثم · يهذي · فقد النظر ·
+                                شايف دبل · ما اقدر احرك · مو قادر احرك · معوج
+```
+
+The generic failures (`ما يتحرك`, `ما تستجيب`, `ثقيل`, `خدر`, `تنميل`, …) still fire — **with a
+body TERM**, which is the other half of the same formula.
 
 `«ما أقدر أحرك X»` requires `X` ∈ TERM — which is why `«ما أقدر أحرك موعدي»` is quiet.
 
@@ -1085,11 +1126,15 @@ breathe. Per §2.0 L1 and L2:
 ```
 ARM 1  inability      ADJ(NEGATION, [AUX], BREATHE)
 ARM 2  difficulty     ADJ(DIFFICULTY, [في|ب|بال|في ال], BREATHE-NOUN)
-                      minus  ADJ(ما|مب|مو|بدون|من غير, [فيه|فيها|في|عندي|عنده|عندها|عندك|
+                      minus  ADJ(ما|مافي|مافيه|ماكو|مب|مو|بدون|من غير,
+                                 [فيه|فيها|في|عندي|عنده|عندها|عندك|
                                  عندنا|صار|صارت], DIFFICULTY)      ← the denial GOVERNS the noun
+                             («مافي · مافيه · ماكو» added Wave 1.7 — see below)
 ARM 3  idiom          the inherited «نفسي ضايق» pattern with its object list, restaurant + clinic
 ARM 4  part + verb    ADJ(THROAT ∪ LIPS/TONGUE ∪ FACE/EYES, CLOSING ∪ SWELLING)
 ARM 5  cyanosis       ADJ(CYANOSIS-SUBJ, BLUE)
+                      minus  «لونه»/«لونها»/«لوني» with a NON-PERSON definite subject
+                             immediately in front — see the ARM 5 note below (Wave 1.7)
 ARM 6  phrases        الطفل نفسه سريع · صدره يشتغل وهو يتنفس · اختناق · شرق فيه اكل · يغص
 ARM 7  asthma         `ربو` (boundary) ∧ EXACERBATION, in the same clause
 ARM 7b RESCUE-FAILED  STANDALONE, no `ربو` required (T5):
@@ -1140,6 +1185,33 @@ re-invent*.
 **left** — a person, not an object — and that guard already exists in ARM 3. Two rules for one
 axis is what §2.0 L1 forbids, so the axis stays in ARM 3 and BREATHE keeps only the verb forms
 and the unambiguous `ياخذ نفس` compounds.
+
+**ARM 5 — `لونه · لونها` are «ITS colour», and the §2.0 L8 mirror found what that costs.**
+
+```
+FIRES  airway/emergency   «السيارة لونها أزرق»   ← a car
+```
+
+Cyanosis is HARD and any age, so the arm must stay wide. **The tell is on the LEFT, not the
+right** — a symptom report opens its clause or names a person; an object puts its **definite
+subject** immediately in front. This is the technique `lib/ai/allergen-emergency.ts` already
+uses for `ضيق نفس` («المحل ضيق نفس الفرع الثاني» is a shop, «ضيق نفس الحين» is dyspnoea), and it
+is the fourth place in this document where the answer is **a property of the grammar, not a list
+of the complements somebody thought of.** Driven: `«صار لونه أزرق»` and `«ابني لونه أزرق»` still
+fire — neither has an `ال`-definite non-person subject — and `«شفايفه زرقاء»` is untouched,
+because a lip is a body word whatever precedes it.
+
+**ARM 2 — «مافي · مافيه · ماكو» are one word in Najdi, and the denial head was enumerated only
+in its detached spelling.** Driven, 160 ordinary denials reached ARM 2 before this:
+
+```
+FIRES  airway/emergency   «مافي صعوبة في التنفس الحمدلله»
+                          «مافي عندي ضيق تنفس»  ·  «ماكو صعوبة بالتنفس»
+```
+
+This is **"a slot with one value in it"** — the shape the airway family was rebuilt to end —
+occurring on the **exclusion** side rather than the firing side, which is the direction §2.0 L8
+exists to look in. A denial that governs the difficulty noun is not a symptom.
 
 **Why adjacency, driven.** The two readings v1.5 permitted, and the rule above:
 
@@ -1435,6 +1507,21 @@ fever TERM in the same clause** (an infant marker alone is never a hit), and the
 mirrored into `MUST_BE_QUIET` with the ordinary sentences that carry them — `«ابني عنده موعد
 بكرة»`, `«بنتي محتاجة تطعيم»`, `«طفلي عمره ثلاث سنوات»`, `«ولدي نسي بطاقته»` — none of which
 carries a fever term, and none of which fires.
+
+**Two red flags are homographs, and the §2.0 L8 mirror found both (Wave 1.7).**
+
+```
+FIRES  infant_fever/emergency  «الحساب خامل من سنة، ابغى افعله»   ← a DORMANT ACCOUNT
+FIRES  infant_fever/emergency  «اختلاج بسيط في جفني من التعب»      ← an eyelid twitch
+```
+
+- **`خامل`** is *lethargic* (of a child) **and** *dormant* (of an account or a file). It fires
+  only **with a person anchor** now, or beside a second red flag. Every way a parent actually
+  writes it has one — «ابني خامل», «الطفل خامل ما يفتح عينه» — and the bare Fires entry
+  `«خامل ما يفتح عينه»` carries the second red flag, which is what reaches it.
+- **`اختلاج`** is the clinical word for a seizure; a twitch is `رفة`. It is annotated
+  **only-finding** per §2.0 L8 detail 2 — the annotation *is* the mirror — rather than paired
+  with a sentence that would have to be invented.
 
 **The muscle-object exclusion is new and the mirror forced it.** `«تشنجات»` is on this section's
 Fires list with no child and no fever in it, and `«تشنج بعضلة رقبتي من النوم»` is on its
@@ -1898,11 +1985,32 @@ minimisation, no promise that someone will call within a time we do not control.
 
 ### 4.3 What the rail may never contain — enforced as an output assertion, not a hope
 
-`scripts/proof-faysal-emergency-rail.test.ts` asserts the rendered rail string contains **none**
+`scripts/proof-faysal-safety.test.ts` asserts the rendered rail string contains **none**
 of: a price or currency token; a slot time or date; a doctor name; the words `حجز` / `موعد` /
 `عرض` / `خصم` / `باقة`; a payment or booking URL; any interactive payload; any reassurance
 phrase from §5's banned list. And it asserts the **turn** contains no booking tool call, by
 asserting the tool set for the rail branch is empty.
+
+> **CORRECTION, WAVE 1.7 — this assertion was RED AT BIRTH against §4.2's own verbatim copy, on
+> all three branches, and three audits did not find it.**
+>
+> ```
+> branch A / B   «اللي وصفته يحتاج كشف عاجل، وما ينتظر موعد.»   ← «موعد»
+> branch C       «ما راح أكمل أي حجز الحين.»                     ← «حجز»
+> ```
+>
+> That is the **T4 shape** — a rule that never reached the artifact something downstream reads —
+> one section away from where the audit found it. And the tempting fix is wrong twice over:
+> deleting the two sentences removes *"this does not wait for an appointment"* (the whole point
+> of the rail) and *"I will not continue any booking"* (the sentence that makes the refusal
+> explicit to a person in crisis).
+>
+> **The rule §4.3 meant is that the rail may not OFFER a booking.** Both surviving uses are
+> **refusals** — the grammatical opposite. So the two spans are exempted **by exact text**,
+> listed in `railCopyViolations` and nowhere else, and **never by a general "is it negated?"
+> heuristic**: an open-ended negation test is precisely what §2.9's T6 inversion was written to
+> refuse, and a rail that can talk its way past its own output assertion is not a rail. Any
+> **other** occurrence of a booking word, in any inflection, still fails.
 
 ### 4.4 Which ER — the fact this product must not invent
 
@@ -2973,7 +3081,7 @@ step), and **L2** states that `ADJ`'s operands are §1.2-matched terms, not bare
 
 | ID | What it was | Where it is closed |
 |---|---|---|
-| **T1** | §2.0 L6 said two incompatible things about normalization; 57 entries in 7 of 9 classes were dead, including the one §2.8's own note claims to have fixed, and it took B4's ACS-with-diaphoresis fix down with it | **L6's build-time clause struck**; **59 entries normalized in place** by a driven sweep over every operative block in §2.1–§2.9 (the audit found 57; the sweep found two more it had merged — `«أسناني»` in §2.3's hygiene set and `«جرعة»` in §2.7's qualifier list). §11.1's `list === list.map(normalizeAr)` is now a real test and it is green. |
+| **T1** | §2.0 L6 said two incompatible things about normalization; 57 entries in 7 of 9 classes were dead, including the one §2.8's own note claims to have fixed, and it took B4's ACS-with-diaphoresis fix down with it | **L6's build-time clause struck**; **59 entries across 8 of the 9 classes (§2.1–§2.8) normalized in place** by a driven sweep over every operative block in §2.1–§2.9 (the audit counted 57 in 7 classes; the sweep found two more it had merged — `«أسناني»` in §2.3's hygiene set and `«جرعة»` in §2.7's qualifier list — and re-drives to **0 remaining** on every run). §11.1's `list === list.map(normalizeAr)` is now a real test and it is green. |
 | **T2** | `نفسه · نفسها` in §2.4's BREATHE + ARM 1's bare negation → seven ordinary clinic sentences raised an airway emergency and an operator-release-only booking lock | **struck from BREATHE** (§2.4), with the T2 note, seven near-miss rows, and the reasoning for why a right-hand guard cannot work and ARM 3's person anchor already does |
 | **T3** | §2.7's pills-only exclusion covered one object of fifteen → a patient taking prescribed medicine raised a poisoning emergency | **MEDICATION sub-list named and the exclusion scoped to it** for TAKE verbs only; ten near-miss rows; `«شربت الدواء مع المويه»` kept as a **named** accepted over-fire (§12 row 16) rather than silently traded |
 | **T4** | N6's downgrades reached the rule and the reason and never the table; two near-miss rows fire at `urgent` while sitting under "Must NOT fire" | **§11.2**: a near-miss row whose reason annotates a tier is asserted `tier === "urgent"`, never `fired === false`. The rows stay where they are; the assertion changed. A third such row (§2.3's `«رعاف ما يوقف»`) is named. |
@@ -3010,6 +3118,68 @@ step), and **L2** states that `ADJ`'s operands are §1.2-matched terms, not bare
   "measured by" paragraph now carries **both** numbers and points at the proof for the live one.
 - **Enumeration without a precision obligation is how L3 became a false-positive source.** That
   is the finding of the whole audit and L8 is written from it verbatim.
+
+### The measured numbers, printed by the proof on every run
+
+`node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-faysal-safety.test.ts`
+
+```
+  §N  646 enumerated set members · 646 normalizeAr-stable · 0 dead
+  §F  218 Fires entries · 218 correct CLASS and TIER · 2 annotated accepted over-fires
+  §F2 8,229 generated MUST_FIRE strings (nine cross products) · 0 silent
+  §Q  7,284 ordinary clinic strings, sixteen homograph families · 0 fired
+  §L8 656 enumerated members · 529 paired with a carrying near-miss · 127 annotated
+      only-finding · 0 UNPAIRED    ← the blocking assertion of this wave
+  §T  130 quiet near-miss rows · 1 TIER row (T4) · 70 pairings, 0 deaf
+  §M  15 mutations · 8 widening · 7 narrowing · 0 INERT
+  ────────────────────────────────────────────────────────────────────────────
+  corpus totals: 8,535 MUST_FIRE · 8,418 MUST_BE_QUIET · 16,953 assertions
+  PASS faysal-safety: 18,711 / 18,711
+```
+
+**The mutation table, re-derived on every run.** A widening mutation is measured against the
+QUIET corpus and a narrowing one against MUST_FIRE, scoped by rule id — without that scoping a
+narrowing "loses" every string in the corpus and reports the size of the corpus rather than the
+reach of the mutation.
+
+| # | mutation | dir | separated by |
+|---|---|---|---|
+| W1 | `نفسه · نفسها` back into BREATHE (revert T2) | widening | **770** quiet strings |
+| W2 | MEDICATION objects back under TAKE (revert T3) | widening | **1,054** |
+| W3 | §2.9 rule 2 back to a food blacklist (revert T6) | widening | **227** |
+| W4 | bare `صدر`/`كسر`/`حوادث`/`شفا`/`دم` as "recall nets" | widening | **235** |
+| W5 | §2.2's benign-cause exclusion deleted | widening | **20** |
+| W6 | the negation particle through the NOMINAL proclitic group | widening | **96** |
+| W7 | ARM 2 read as co-occurrence instead of adjacency (§2.0 L2) | widening | **960** |
+| W8 | the `مافي · مافيه · ماكو` denial heads dropped | widening | **160** |
+| N1 | `طفلي · ابني · بنتي · ولدي` dropped from §2.6 (revert T5a) | narrowing | **65** Fires strings |
+| N2 | ARM 7b deleted (revert T5b) | narrowing | **3** |
+| N3 | the Najdi negation `مو · موب` dropped | narrowing | **1,280** |
+| N4 | `عاد` dropped from the ability slot | narrowing | **1,920** |
+| N5 | §2.1's pain predicate written un-normalized (revert T1) | narrowing | **119** |
+| N6 | §2.8's phrases written un-normalized (revert T1(b)) | narrowing | **76** |
+| N7 | §2.2's onset arm re-widened to all failures | narrowing | **3** |
+
+**Nothing is inert.** W7 was inert on the first run — the quiet corpus had no string carrying
+both a difficulty word and a breath noun — and the fix was to **derive the denial family**, not
+to lower the floor. That family then found W8.
+
+### Five defects this wave's own proof found, in code the specification had already blessed
+
+Recorded because a green run that found nothing is the failure mode this file keeps naming.
+Every one came from the **quiet** side, and not one was reachable from the Fires lists.
+
+| what | where | how |
+|---|---|---|
+| `لما` · `كما` read as the negation `ما` — 96 ordinary sentences → airway emergency | §2.0 L7 | §Q, first run. §1.2's **nominal** proclitic group applied to a **particle**. |
+| `«الدور ما يتحرك من ساعة»` → stroke emergency | §2.2 | the L8 mirror for `PRED_ONSET`. The onset arm had **no subject anchor**. |
+| `«السيارة لونها أزرق»` → airway emergency | §2.4 ARM 5 | the L8 mirror for `CYANOSIS-SUBJ`. `لونه` is *its* colour. |
+| `«الحساب خامل من سنة»` → infant-fever emergency | §2.6 | the L8 mirror for `PRED_REDFLAG`. `خامل` is *dormant* as well as *lethargic*. |
+| `«مافي صعوبة في التنفس الحمدلله»` → airway emergency, ×160 | §2.4 ARM 2 | the derived denial family. The Najdi contraction was in no exclusion set. |
+
+And one in this document rather than in the code: **§4.3's output assertion was red at birth
+against §4.2's own verbatim copy on all three branches** — the T4 shape, one section away from
+where the audit found it. See §4.3.
 
 ### Still not signed, and the list got longer
 

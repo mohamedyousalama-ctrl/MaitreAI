@@ -33,7 +33,17 @@ export interface SeedSite {
   /** Districts a patient might name that make this the geographically nearest site. */
   nearDistrictsAr: string[];
   addressAr: string;
-  /** SPEC-1 Rule PHONE-1 — `primary`/`unified_920`/`whatsapp` only. Never a fax. */
+  /**
+   * SPEC-1 Rule PHONE-1 — `primary` / `unified_920` / `whatsapp` only, never a fax.
+   * Six of the numbers in the dossier are fax or unlabelled alternates, and a fax
+   * given to a patient as a booking line is a small failure with a large smell.
+   *
+   * The separators are NO-BREAK SPACES (U+00A0), deliberately. SPEC-2 §3.4:
+   * "Phone numbers: exactly as the group publishes them — grouped, never
+   * hyphenated, NEVER WRAPPED ACROSS A LINE." Driven: in a 420px WhatsApp bubble
+   * «011 497 7900» broke after «497» and the patient reads two numbers, neither of
+   * which is dialable. The rendered glyphs are identical to an ordinary space.
+   */
   phoneAr: string;
   /** SPEC-1 §3.4.1 — `operational_contested` for wattan-4. */
   contested: boolean;
@@ -70,7 +80,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     districtAr: "اليمامة",
     nearDistrictsAr: ["اليمامة", "عتيقة", "منفوحة", "الديرة", "البطحاء"],
     addressAr: "2807 طريق الأمير محمد بن عبدالرحمن، اليمامة، الرياض 12671",
-    phoneAr: "011 458 8444",
+    phoneAr: "011\u00A0458\u00A08444",
     contested: false,
     // SPEC-1 §4.7 + Invariant H4: a 24h FACILITY with a duty doctor is not an open
     // clinic. The clinic layer here is `unknown`, so there is no bookable inventory.
@@ -89,7 +99,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     districtAr: "الروابي",
     nearDistrictsAr: ["الروابي", "الريان", "النسيم", "قرطبة", "اليرموك"],
     addressAr: "7291 شارع عنيزة، الروابي، الرياض 14216",
-    phoneAr: "011 496 4455",
+    phoneAr: "011\u00A0496\u00A04455",
     contested: false,
     bookable: true,
     // Rule HRS-DEMO, `demo_seeded`. Friday confidence `medium` at this site
@@ -108,7 +118,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     districtAr: "الربوة",
     nearDistrictsAr: ["الربوة", "الملز", "الوزارات", "السليمانية"],
     addressAr: "طريق الأمير متعب بن عبدالعزيز، الربوة، الرياض 12835",
-    phoneAr: "011 491 8003",
+    phoneAr: "011\u00A0491\u00A08003",
     contested: false,
     // SPEC-1 §4.4: Friday `conflicted`, and §6.3's demo inventory names three other
     // sites. Callback-only in this build.
@@ -129,7 +139,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     addressAr: "7348 ابن طولون، الشفا، الرياض 14721",
     // SPEC-1 §3.4 PHONE WARNING: 011 458 8444 is Complex 1's line and is SUPPRESSED
     // for this site. Faysal gives 011 497 7900 for Complex 4 and never the other.
-    phoneAr: "011 497 7900",
+    phoneAr: "011\u00A0497\u00A07900",
     contested: true,
     bookable: false,
     clinicHours: { satThu: null, friday: null }, // SPEC-1 §4.6 — silent, not closed.
@@ -146,7 +156,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     districtAr: "الورود",
     nearDistrictsAr: ["الورود", "المروج", "الملقا", "العليا", "السليمانية", "شمال الرياض"],
     addressAr: "طريق الملك عبدالله، الورود، الرياض 12254",
-    phoneAr: "011 456 3777",
+    phoneAr: "011\u00A0456\u00A03777",
     contested: false,
     bookable: true,
     clinicHours: { satThu: [8, 21], friday: [16, 22] },
@@ -164,7 +174,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     districtAr: "الروضة",
     nearDistrictsAr: ["الروضة", "الأندلس", "الحمراء", "غرناطة", "النهضة", "شرق الرياض"],
     addressAr: "الطريق الدائري الشرقي الفرعي، الروضة، الرياض 13213",
-    phoneAr: "011 208 8585",
+    phoneAr: "011\u00A0208\u00A08585",
     contested: false,
     bookable: true,
     clinicHours: { satThu: [8, 22], friday: [16, 22] },

@@ -943,6 +943,33 @@ console.log("\n── §W  WIRING, AND THE SHARED-LEXICON BINDING ────�
     ok(`§W «بموت لو أكلت ${t}» is not self-harm`, detectRedFlag(`بموت لو أكلت ${t}`) === null);
   }
 
+  // THE CROSS-AGENT SWAP POINT. `app/api/faysal/_domain/index.ts` says the whole edit when
+  // this module lands is `export { detectRedFlag } from "@/lib/health/safety"`. That is only
+  // true if the two class unions are the SAME SET and the hit carries every field the app's
+  // `normalizeRedFlag()` reads. Two specs naming one field differently, and a safety rail
+  // silently reading `undefined`, is the exact defect §1.5 R3 exists to catch — so it is
+  // asserted here rather than discovered at the swap.
+  let contract = "";
+  try { contract = readFileSync(resolve(import.meta.dirname, "../app/api/faysal/_domain/contract.ts"), "utf8"); } catch { /* not present yet */ }
+  if (contract) {
+    // Parse THEIR declaration, not every string literal in the file — and take the whole
+    // block including the last member, whose line ends in a `;`. A parser that silently drops
+    // the last alternative is how a union "matches" while missing `self_harm`, which is the
+    // one class §1.3 singles out.
+    const block = /export type RedFlagClass\s*=([\s\S]*?);/.exec(contract)?.[1] ?? "";
+    const theirs = new Set([...block.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]));
+    const mine = new Set(CLASSES.map((c) => c.cls));
+    ok(`§W the app contract's RedFlagClass union is the same set as this module's (${theirs.size} vs ${mine.size})`,
+      theirs.size === mine.size && [...mine].every((c) => theirs.has(c)));
+    const h = detectRedFlag("صدري يعورني وأتعرق")!;
+    for (const field of ["fired", "class", "tier", "termAr", "ruleId", "label"]) {
+      ok(`§W the hit carries «${field}», which the app's normalizeRedFlag reads`, field in h);
+    }
+    ok("§W a no-hit is `null`, which is what the app contract declares", detectRedFlag("أبغى موعد بكرة") === null);
+  } else {
+    console.log("   (app/api/faysal/_domain/contract.ts not present — cross-agent shape check skipped)");
+  }
+
   // §3.5 / §11.10 — FAYSAL DOES NOT REWIRE THE PHONETIC NET. No fuzzy matching on typed text:
   // no edit distance, no phonetic folding, no "within 2 of a safety word". The Founder retired
   // that net after «هلا والله» became an allergy consultation in front of him.

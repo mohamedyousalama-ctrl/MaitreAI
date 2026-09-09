@@ -56,6 +56,14 @@
 // occupancy curve is a fixed table. Re-running with the same `--from` produces
 // byte-identical rows, so the salesperson's screen and the client's phone show
 // the same day — and so a demo can be rehearsed.
+//
+// APPLIED to project zlighrbsjexrozrmuwpw on 2026-09-09 with `--from=2026-09-09`
+// (migration 0123 first). Row counts after that run, verified in the database:
+//   clinics 1 · sites 6 · specialties 20 · site_specialties 120 · doctors 30 ·
+//   doctor_sites 32 · services 36 · payers 16 · resources 1 · slots 4004
+// `health_members` is EMPTY on purpose — see `--owner-email` at the bottom of
+// this file. The bookable 4,004 slots sit at exactly the three Rule HRS-DEMO
+// sites; Al Yamamah, Ar Rabwah and Ash Shifa have none, which is the point.
 // ============================================================================
 
 import { createHash } from "node:crypto";
@@ -1758,11 +1766,18 @@ function emitSlotSql(fromISO: string): string[] {
     else groups.set(key, { row: s, minutes: [s.startMinute] });
   }
 
-  const rows = [...groups.values()].map(({ row, minutes }) =>
-    `  (${quote(siteId(row.siteKey))}::uuid, ${quote(doctorId(row.doctorKey))}::uuid, ` +
-    `${quote(serviceId(row.serviceKey))}::uuid, date ${quote(row.dateISO)}, ${row.duration}, ${row.buffer}, ` +
-    `${quote(row.windowConfidence)}, array[${minutes.join(",")}])`,
-  );
+  // Rows are keyed by site_key / doctor_key / service_key rather than by uuid:
+  // the ids are resolved by joining the tables this seed has already written,
+  // which halves the bytes and — more to the point — makes a slot row legible
+  // to a reviewer, who can see WHICH clinician is being given WHICH day.
+  const rows = [...groups.values()].map(({ row, minutes }, i) => {
+    const cast = i === 0 ? "::text" : "";
+    return (
+      `  (${quote(row.siteKey)}${cast}, ${quote(row.doctorKey)}${cast}, ${quote(row.serviceKey)}${cast}, ` +
+      `date ${quote(row.dateISO)}, ${row.duration}, ${row.buffer}, ` +
+      `${quote(row.windowConfidence)}${cast}, array[${minutes.join(",")}])`
+    );
+  });
 
   const out: string[] = [];
   for (let i = 0; i < rows.length; i += 90) {
@@ -1773,15 +1788,18 @@ function emitSlotSql(fromISO: string): string[] {
   duration_minutes, buffer_minutes, local_date, local_start_minute, day_key,
   state, window_confidence, generator, seed_salt, source, is_test)
 select
-  ${quote(CLINIC_ID)}::uuid, g.site_id, g.doctor_id, g.service_id,
+  st.clinic_id, st.id, dr.id, sv.id,
   (g.local_date + make_interval(mins => m))::timestamp at time zone 'Asia/Riyadh',
   (g.local_date + make_interval(mins => m + g.duration_minutes))::timestamp at time zone 'Asia/Riyadh',
   (g.local_date + make_interval(mins => m + g.duration_minutes + g.buffer_minutes))::timestamp at time zone 'Asia/Riyadh',
   g.duration_minutes, g.buffer_minutes, g.local_date, m,
   (array['sun','mon','tue','wed','thu','fri','sat'])[extract(dow from g.local_date)::int + 1],
   'offered', g.window_confidence, ${quote(SLOT_GENERATOR)}, ${quote(FAYSAL_SLOT_SALT)}, 'faysal_demo', true
-from (values\n${chunk.join(",\n")}\n) as g(site_id, doctor_id, service_id, local_date, duration_minutes, buffer_minutes, window_confidence, mins)
+from (values\n${chunk.join(",\n")}\n) as g(site_key, doctor_key, service_key, local_date, duration_minutes, buffer_minutes, window_confidence, mins)
 cross join lateral unnest(g.mins) as m
+join public.health_sites st on st.clinic_id = ${quote(CLINIC_ID)}::uuid and st.site_key = g.site_key
+join public.health_doctors dr on dr.clinic_id = st.clinic_id and dr.doctor_key = g.doctor_key
+join public.health_services sv on sv.clinic_id = st.clinic_id and sv.service_key = g.service_key
 on conflict (clinic_id, doctor_id, starts_at) do nothing;`,
     );
   }
@@ -1831,11 +1849,32 @@ function todayInRiyadh(): string {
   return now.toISOString().slice(0, 10);
 }
 
+/**
+ * The clinic membership row, when an owner is named. It is OPT-IN and it
+ * resolves an EXISTING `auth.users` row by email rather than creating one:
+ * creating an auth user needs the service key, and quietly granting a login
+ * access to a clinic's health records is not something a seed should decide.
+ *
+ * Without it the tenant has zero members, which is the safe default — RLS
+ * denies every authenticated read, and the demo runs through server routes on
+ * the service key exactly as the Kivo demo does. SPEC-3 §1.3's mitigation for
+ * "two logins" is precisely this shape: one `auth.users` row, two memberships.
+ */
+function ownerMembershipSql(email: string): string {
+  return (
+    `insert into public.health_members (clinic_id, user_id, role)\n` +
+    `select ${quote(CLINIC_ID)}::uuid, u.id, 'manager' from auth.users u where u.email = ${quote(email)}\n` +
+    `on conflict (clinic_id, user_id) do update set role = excluded.role;`
+  );
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const emitSql = args.includes("--emit-sql");
   const outArg = args.find((a) => a.startsWith("--out="));
   const fromArg = args.find((a) => a.startsWith("--from="));
+  const ownerArg = args.find((a) => a.startsWith("--owner-email="));
+  const ownerEmail = ownerArg ? ownerArg.slice("--owner-email=".length) : null;
   const fromISO = fromArg ? fromArg.slice("--from=".length) : todayInRiyadh();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fromISO)) throw new Error(`--from must be YYYY-MM-DD, got ${fromISO}`);
 
@@ -1843,7 +1882,10 @@ async function main(): Promise<void> {
   const counts = groups.map((g) => `${g.table.replace("health_", "")}=${g.rows.length}`).join(" · ");
 
   if (emitSql) {
-    const sql = buildSeedSql(fromISO);
+    let sql = buildSeedSql(fromISO);
+    if (ownerEmail) {
+      sql = sql.replace("\ncommit;\n", `\n${ownerMembershipSql(ownerEmail)}\n\ncommit;\n`);
+    }
     if (outArg) {
       const out = outArg.slice("--out=".length);
       writeFileSync(out, sql, "utf8");

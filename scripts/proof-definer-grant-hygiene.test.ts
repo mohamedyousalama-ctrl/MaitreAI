@@ -75,6 +75,16 @@ const ALLOWED_REACHABLE: Readonly<Record<string, string>> = {
   is_member_of: "read-only RLS predicate scoped to auth.uid(); every policy invokes it",
   is_manager_of: "read-only RLS predicate scoped to auth.uid(); every policy invokes it",
 
+  // The Faysal pair (0123), identical in shape against health_members. Same
+  // reasoning, same exemption: they are the predicates the health_* policies
+  // are written in terms of, so `authenticated` losing EXECUTE would not fail
+  // those reads closed — it would raise a permission error on every one of
+  // them. anon and public ARE revoked in 0123, which is what keeps a signed-out
+  // caller out. Listed separately rather than folded into the two above so that
+  // dropping either product's helper leaves a stale entry the proof reports.
+  is_member_of_clinic: "read-only RLS predicate scoped to auth.uid(); every health_* policy invokes it",
+  is_manager_of_clinic: "read-only RLS predicate scoped to auth.uid(); every health_* policy invokes it",
+
   // 0090 kept `authenticated` deliberately: the only caller is the manager's
   // browser (_sb.rpc in lib/store.ts), and 0007's internal guard raises
   // 'not authorized to reset this restaurant' for a non-manager. anon IS revoked.

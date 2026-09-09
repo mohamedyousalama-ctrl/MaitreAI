@@ -55,7 +55,6 @@ interface TurnResponse {
   error?: string;
 }
 
-const SESSION_KEY = "faysal.demo.session";
 const RAIL_STOP = "faysal_redflag_emergency";
 
 const clock = () =>
@@ -72,18 +71,19 @@ export default function FaysalChat() {
   const [notice, setNotice] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
   const sessionId = useRef<string | null>(null);
+  // React 18 StrictMode invokes mount effects TWICE in development. Without this
+  // the opener ran twice and the visitor saw the demo disclosure and the greeting
+  // duplicated — which is precisely the message a client reads most carefully.
+  const started = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const applyResponse = useCallback((data: TurnResponse) => {
-    if (data.sessionId) {
-      sessionId.current = data.sessionId;
-      try {
-        sessionStorage.setItem(SESSION_KEY, data.sessionId);
-      } catch {
-        /* private window, or site data blocked — the id lives in the ref regardless */
-      }
-    }
+    // The session lives in this ref and nowhere else. It is deliberately NOT put in
+    // sessionStorage: a refresh is a new patient, which is also what the founder
+    // wants between two client meetings — and it means the sealed token never
+    // outlives the tab that earned it.
+    if (data.sessionId) sessionId.current = data.sessionId;
     const rail = data.stopReason === RAIL_STOP;
     const incoming = (data.messages ?? []).map((m) => ({
       id: nextId(),
@@ -123,6 +123,8 @@ export default function FaysalChat() {
   }, [applyResponse]);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     void start();
   }, [start]);
 
@@ -169,8 +171,16 @@ export default function FaysalChat() {
   return (
     <div style={S.stage}>
       {/* Scoped to this page so the demo carries its own motion and nothing else
-          on the site has to know about it. Reduced-motion is honoured. */}
-      <style>{KEYFRAMES}</style>
+          on the site has to know about it. Reduced-motion is honoured.
+
+          `dangerouslySetInnerHTML` is not decoration here: as a text child, React
+          escapes the `"` inside the attribute selector to `&quot;` on the client
+          and not on the server, which is a HYDRATION MISMATCH — and a mismatch in
+          the root subtree makes React throw the server HTML away and re-render the
+          whole page on the client. That is a visible blank-then-repaint on the
+          first screen a prospect sees, on a phone. Driven: 7 hydration errors and
+          "the entire root will switch to client rendering". */}
+      <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
       <div style={S.phone}>
         {/* ── header ──────────────────────────────────────────────────────── */}
         <div style={S.header}>
@@ -190,7 +200,15 @@ export default function FaysalChat() {
             </div>
             <div style={S.presence}>{typing ? "يكتب…" : "متصل الآن"}</div>
           </div>
-          <button style={S.iconBtn} onClick={() => void start()} aria-label="محادثة جديدة" title="محادثة جديدة">
+          <button
+            style={S.iconBtn}
+            onClick={() => {
+              started.current = true;
+              void start();
+            }}
+            aria-label="محادثة جديدة"
+            title="محادثة جديدة"
+          >
             <ResetIcon />
           </button>
         </div>
@@ -367,7 +385,7 @@ const S: Record<string, React.CSSProperties> = {
   back: { fontSize: 26, lineHeight: 1, opacity: 0.7 },
   avatar: { width: 38, height: 38, borderRadius: "50%", background: "#3b6f63", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, flexShrink: 0 },
   name: { fontSize: 15, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, minWidth: 0 },
-  nameText: { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  nameText: { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 14 },
   demoChip: { fontSize: 10, fontWeight: 700, background: "#f0b232", color: "#1c1c1c", borderRadius: 4, padding: "1px 5px", flexShrink: 0 },
   presence: { fontSize: 12, color: "#8696a0" },
   iconBtn: { background: "none", border: 0, color: "#e9edef", cursor: "pointer", padding: 8, display: "grid", placeItems: "center" },

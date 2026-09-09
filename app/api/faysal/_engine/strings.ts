@@ -27,6 +27,16 @@
 
 import { OPS, REAL_CONTACTS } from "../_domain";
 
+// ESLint's `local-rules/no-arabic-name-number-interpolation` warns on every
+// interpolated Arabic template below, and that is expected here rather than a
+// smell to silence. The rule's fix — "compose it in JSX with <Bdi>/<Num>/<Phone>"
+// — presumes a React tree; these are WhatsApp MESSAGE strings and there is no JSX
+// on the wire. The same warning fires 168 times across `lib/ai`, for the same
+// reason. The actual mitigation is applied where the text is rendered:
+// `app/faysal/FaysalChat.tsx` sets `unicode-bidi: plaintext` per bubble, so each
+// LINE resolves its own direction — which is what WhatsApp itself does, and what
+// makes «011 496 4455» read left-to-right inside a right-to-left message.
+
 const nbsp = (s: string) => s; // marker for strings whose spacing is load-bearing
 
 // ── Rule DEMO-1 — three placements (SPEC-1 §11) ─────────────────────────────
@@ -330,6 +340,16 @@ ${DEMO_1_C}`;
  */
 export const motionPreVisit = (arrivalBuffer: number = OPS.arrivalBufferMinutes) =>
   `تجيب معك الهوية أو الإقامة وبطاقة التأمين، وتحاول توصل قبل الموعد بـ ${arrivalBuffer} دقيقة عشان إجراءات الاستقبال.
+وأي تعديل بعدين، ترد هنا على نفس المحادثة وأنا أتابع معك.`;
+
+/**
+ * Pre-visit for a `callback_request`. The slot variant tells the patient to arrive
+ * fifteen minutes before «الموعد» — and a callback has no موعد, by construction
+ * (SPEC-1 §4.6). Telling someone to arrive early for an appointment that does not
+ * exist is the same defect as rendering a provisional time, one message later.
+ */
+export const PRE_VISIT_CALLBACK =
+  `لما يتصلون ويثبتون الوقت، تجيب معك الهوية أو الإقامة وبطاقة التأمين.
 وأي تعديل بعدين، ترد هنا على نفس المحادثة وأنا أتابع معك.`;
 
 // ── §7 — scene strings ─────────────────────────────────────────────────────

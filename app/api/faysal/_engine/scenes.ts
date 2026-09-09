@@ -418,7 +418,7 @@ function confirmCallback(s: FaysalSession, windowAr: string): Reply {
     patientName: booking.patientNameAr,
     branchName: branch.nameAr,
     branchAddress: branch.addressAr,
-    clinic: clinicFor(s.need).ar,
+    clinic: clinicLabelForSite(target, s.need),
     preferredWindow: windowAr,
     branchPhone: branch.phoneAr,
   });
@@ -426,10 +426,28 @@ function confirmCallback(s: FaysalSession, windowAr: string): Reply {
     s,
     [
       { from: "faysal", text: compose(block, { isConfirmation: true, branchPhone: branch.phoneAr }) },
-      faysal(s, S.motionPreVisit(OPS.arrivalBufferMinutes)),
+      faysal(s, S.PRE_VISIT_CALLBACK),
     ],
     [],
   );
+}
+
+/**
+ * What goes in the confirmation's «العيادة» row.
+ *
+ * At a site that CARRIES the clinic, the clinic's own name. At a site that does
+ * not — Ash Shifa has no dermatology-and-laser clinic on record — naming it would
+ * be an `availability_claim` (§8.1 #12) printed on the artefact most likely to be
+ * screenshotted. So the row carries what the PATIENT asked for instead, which is
+ * the only thing a callback request actually records.
+ */
+function clinicLabelForSite(siteId: SiteId, need: NeedKey | null): string {
+  const clinic = clinicFor(need);
+  const site_ = SITES[siteId];
+  const carried =
+    site_.clinicsAr.some((c) => c.includes(clinic.ar) || clinic.ar.includes(c)) ||
+    site_.namedSpecialties.includes(clinic.key);
+  return carried ? clinic.ar : needNounAr(need);
 }
 
 // ── discovery ───────────────────────────────────────────────────────────────
