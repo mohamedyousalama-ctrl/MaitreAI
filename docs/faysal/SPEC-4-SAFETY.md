@@ -386,9 +386,31 @@ the constraint that makes it work**, and the cost is driven in both directions:
 Notation, used by every §2.x below:
 
 ```
-ADJ(A, B)       →  (A) ?(B)                    — at most one space
-ADJ(A, [M], B)  →  (A) ?(?:(M) ){0,2}(B)       — up to two optional middle slots
+ADJ(A, B)       →  M(A) ?M(B)                  — at most one space
+ADJ(A, [M], B)  →  M(A) ?(?:(m) ){0,2}M(B)     — up to two optional middle slots
 ```
+
+**`ADJ`'s operands are §1.2-matched terms (L7), not bare literals.** `M(X)` is
+`(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?X(?![ء-ي])` — the one matcher, applied to `A` and to `B`. The
+middle slots `m` are bare particles and stay bare, because a particle is not a term. **This
+clause is normative and it settles a contradiction the document carried:** L2 wrote `ADJ` over
+bare literals and L7 said every term and phrase is matched with §1.2's matcher, and the two are
+not the same operation. Driven on §2.4's ARM 2 = `ADJ(DIFFICULTY, [في|ب|بال|في ال], BREATHE-NOUN)`:
+
+```
+  normalizeAr("عندي صعوبة بالتنفس") = "عندي صعوبه بالتنفس"
+  bare-literal operands (L2 as it stood)  : quiet   ← the middle slot carries a mandatory
+                                                      trailing space, so `بال` cannot attach
+                                                      to `التنفس`, and with zero middle slots
+                                                      `صعوبه` cannot reach `بالتنفس` either
+  §1.2-matched operands (this clause)     : FIRES   ← M(التنفس) absorbs the `ب` in its own
+                                                      prefix group, which is what that group
+                                                      is for
+  the paired denial «ما فيه صعوبة بالتنفس الحمدلله» : quiet under both
+```
+
+`«عندي صعوبة بالتنفس»` is the string §2.4 explicitly claims ARM 2 fixes and the string §11.2
+pairs with the denial. Under the reading this clause retires, it was lost.
 
 The two middle slots are not decoration. `«ما عاد يقدر يتنفس»` is negation + `عاد` + `يقدر` +
 breathe, and one slot loses it. **Driven, and this is a live defect in the shipped detector, not
@@ -480,8 +502,37 @@ Two binding details, because both were violated by the lists as they stood:
 - **An un-normalized spelling in a term list is dead code, and the mirror is what finds it.**
   §2's preamble already says every list is written post-`normalizeAr`. Driving the lists caught
   three that were not: `تورم مفاجئ` (→ `تورم مفاجي`, `ئ→ي`) in §2.5 and `طاح على راسه`
-  (→ `طاح علي راسه`, `ى→ي`) in §2.8 were both **silent on their own Fires entries**. Term lists
-  are normalized at build time, and §11.1 asserts `list === list.map(normalizeAr)`.
+  (→ `طاح علي راسه`, `ى→ي`) in §2.8 were both **silent on their own Fires entries**.
+
+  **One discipline, and it is the assertion — not a build step.** The first version of this
+  bullet ended *"Term lists are normalized at build time, and §11.1 asserts
+  `list === list.map(normalizeAr)`."* **Those two clauses cannot both be operative.** If the
+  build normalizes, the assertion is vacuous and tests nothing; if the assertion is real, the
+  lists must be *written* normalized. The build-time clause is **struck**. Every operative set
+  in §2.1–§2.9 is written in its normalized spelling, and §11.1's `list === list.map(normalizeAr)`
+  is a real test that goes red the moment one is not.
+
+  **What the struck clause was hiding: 58 entries in 7 of the 9 classes, driven.** Under the
+  literal reading — the lists exactly as §2 wrote them — the corpus scored 303/354 rather than
+  349/354, and the 46-assertion difference was entirely this. Three consequences, each driven,
+  each now fixed in place:
+
+  ```
+  §2.1  PREDICATE «ألم» → «الم»     dead → «ألم في الصدر» · «ألم بالصدر» · «صدري يألمني» ·
+                                    «عندي ألم شديد بالصدر وأتعرق» (B4's own ACS fix) all SILENT
+  §2.8  6 of 22 STANDALONE phrases  dead → «حادث سيارة», the FIRST entry on the trauma Fires
+                                    list, SILENT — and `طاح على راسه` is the exact entry §2.8's
+                                    own note says it corrected, still carrying the `ى`
+  §2.2 «من الجلسة» · §2.6 «بعضلة» · §2.3 «فرشاة»  dead → three near-miss rows FIRE, and the
+                                    first two exclusions were added in this very wave to close
+                                    exactly those rows
+  ```
+
+  The `Fires`-list prose and the near-miss tables stay in **the spelling a patient types** —
+  `«ألم في الصدر»`, `«طاح على راسه»` — because that is the input the detector normalizes and
+  driving the typed spelling is the only way to prove the normalizer and the pattern agree
+  (`scripts/proof-airway-derivation.test.ts` states the same discipline). It is the **operative
+  sets** that are written normalized. The line between the two is exactly the line §11.1 asserts.
 
 #### L7 — One matcher, one splitter, one order
 
@@ -501,14 +552,99 @@ Two binding details, because both were violated by the lists as they stood:
   rail are the same either way; what differs is the audit row, the operator label and which
   clinician is paged.
 
+#### L8 — THE PRECISION MIRROR. Every enumerated set member is mirrored into `MUST_BE_QUIET`, exactly as L6 mirrors Fires entries into `MUST_FIRE`
+
+**Why this rule exists, and it is the most important sentence in §2.0.** L1–L7 closed three of
+the six shapes that kept coming back. They also **created a new one**, and the shape is visible
+only once you notice what L6 does and what it does not:
+
+> **L6 gives recall a mechanical mirror and gives precision nothing.** Every entry on a Fires
+> list becomes a `MUST_FIRE` assertion, automatically, and a rule narrower than its own list
+> goes red. There was **no rule in the other direction** — nothing said that a member of an
+> enumerated `TERM`, `SITE`, `PREDICATE` or `STANDALONE` set must be paired with the ordinary
+> clinic sentence that carries that member *without* the finding. §11.2's pairing discipline
+> runs the other way again: it pairs each **narrowing** with the true positive it must not cost.
+> So the whole law pushed in one direction, and enumeration — which L3 **mandates** — became the
+> mechanism by which false positives entered.
+
+**Both new false-positive families were created by lists L3 required be enumerated**, and each
+one opens a booking lock only a named operator can release (§1.5 R2 H-5). Driven:
+
+```
+FIRES  airway/emergency   «الموعد ما نفسه اللي حجزته»   ← the appointment isn't the one I booked
+                          «السعر ما نفسه المعلن» · «الفرع ما نفسه اللي رحت له» ·
+                          «الرقم ما نفسه المسجل» · «التقرير ما نفسه» ·
+                          «الدكتور ما نفسه اللي شافني قبل» · «المريض ما نفسه طويل على الانتظار»
+                          cause: `نفسه · نفسها` in §2.4's BREATHE set, against ARM 1's bare
+                          negation. `نفسه` is BOTH "his breath" AND "itself / the same".
+FIRES  poisoning/emergency «أخذت الدواء الصبح» · «تناولت الدواء بعد الأكل زي ما قال الدكتور» ·
+                          «أكلت الدواء بعد الفطور» · «أخذت دوا الضغط اليوم» ·
+                          «ابني أخذ الدواء على وقته الحمدلله» · «شربت الدواء مع المويه»
+                          cause: `دوا · دواء · دواء الكبار` in §2.7's SITE, against a TAKE verb.
+FIRES  self_harm/emergency «أموت على المندي» · «أموت على القهوة» · «أموت على الشاورما» · …
+                          cause: §2.9 rule 2's exclusion set was never enumerated at all —
+                          "food" and "a disease/allergen noun" name no members (L3), and the
+                          only food the document writes is `الكبسة`, as an example.
+```
+
+**The machinery §2.4 says it inherits never had the first hole.** Driven against the real
+`detectAllergenEmergency` at `e1791f5` and at `HEAD`: `fired: false` on all seven `نفسه`
+strings. The shipped file guards `نفس` on a **property of the grammar** — a person anchor, a
+construct-head lookahead — precisely because `«الطلب نفسه واقف»` is an ordinary delivery
+sentence. Re-inventing the lexicon dropped a guard the original carried. That is the second time
+in this document, after N4's adjacency, and it is why L8 is a law and not a checklist item.
+
+**The rule.**
+
+> Every member of every enumerated `TERM`, `SITE`, `PREDICATE` and `STANDALONE` set in §2.1–§2.9
+> is **mirrored into `MUST_BE_QUIET`** as at least one ordinary clinic sentence that carries that
+> member **without** the finding — the same member, in the reading a clinic inbox actually
+> receives. `proof-faysal-false-positives.test.ts` **fails if an enumerated set member has no
+> paired near-miss**, exactly as `proof-faysal-redflag-recall.test.ts` fails if a Fires entry has
+> no assertion.
+
+Four binding details, because the naive form of this rule is decoration:
+
+1. **The near-miss is derived from ordinary clinic Arabic, not from the class's own axes.** A
+   quiet corpus generated from the same slots as the firing corpus proves the slots do not leak
+   sideways and can prove nothing about a word the rule now matches for a reason the axes do not
+   name — `نفس` = *the same*, `حبوب` = *pills, grains, pimples*, `حامل` = *card-holder*, `أموت`
+   = *I love it*. Those are properties of **Arabic**, and only a corpus generated from Arabic
+   finds them. This is the discipline `scripts/proof-airway-derivation.test.ts` §8 states at
+   length after 3,993 ordinary strings raised a full emergency while its proof read "zero false
+   positives" — because its quiet side was derived from its firing side and therefore contained
+   nothing the change touched.
+2. **A member whose only ordinary reading is the finding says so, in one line, and that line is
+   the mirror.** `تشنجات`, `العظم بارز`, `تسمم حمل` have no benign clinic reading; the pairing
+   for them is an explicit annotation, not a fabricated sentence. What L8 forbids is a member
+   with **no entry at all** — silence is what let `نفسه` and `دواء` in.
+3. **A member that cannot be paired is a member that does not belong in the set.** If no ordinary
+   clinic sentence can be written that carries the term without the finding *and* the term still
+   over-fires, the term is wrong — take it out, or guard it by a property of the grammar (a
+   person anchor, an agreement, a construct lookahead), never by a closed list of the complements
+   somebody thought of. That is how `نفسه` leaves BREATHE below and how §2.9 rule 2 is inverted.
+4. **L8 is also the general form of the `رعاف` shape.** A word that appears only in a veto set
+   and in no term set is a word the class cannot hear; a word that appears in a term set and in
+   no near-miss is a word the class cannot be quiet about. L6 covers the first direction, L8 the
+   second, and between them every enumerated string in §2 is now constrained in both.
+
+**What L8 would have caught at birth:** `نفسه` in BREATHE, `دواء` in class G's SITE, the
+unenumerated food set in §2.9 — and `رعاف`, which was closed by inspection because no law
+reached it.
+
 ---
 
 **What §2.0 is measured by.** The full §2 corpus — every Fires-list entry mirrored per L6, every
-near-miss row, the §11.2 site-name and clinic-ordinary corpora, and the hypotheticals — driven
-end to end against rules written to this law: **314 of 314** (204 `MUST_FIRE`, 110
-`MUST_BE_QUIET`). The eleven `MUST_FIRE` failures and two `MUST_BE_QUIET` failures found on the
-first run of that corpus are each recorded in the subsection they belong to; none of them was
-visible to the hand-assembled corpora of Wave 1 or Wave 1.5.
+enumerated set member mirrored per L8, every near-miss row, the §11.2 site-name and
+clinic-ordinary corpora, and the hypotheticals — driven end to end against rules written to this
+law. The Wave 1.6 draft reported **314 of 314** (204 `MUST_FIRE`, 110 `MUST_BE_QUIET`) and the
+Wave 1.6 audit could not reproduce it: rebuilding the corpus mechanically from the documents
+gave **354 assertions (213 `MUST_FIRE`, 141 `MUST_BE_QUIET`)** and **303/354 under the literal
+reading of the term lists, 349/354 under the normalized one.** Both numbers are recorded here
+rather than replaced, because the gap between them *is* T1 and the five residual failures are
+T4, T5 and T7. **The measured number is now the one `scripts/proof-faysal-safety.test.ts` prints
+on every run**, and it is generated rather than transcribed — a count computed by the hand that
+wrote the rules is the arithmetic §2.0 exists to retire.
 
 ### 2.1 A — Cardiac (HARD)
 
@@ -549,23 +685,23 @@ no set and one of this section's own driven rows depended on what was in it (S1.
 
 ```
 TERM        صدري · صدره · صدرها · بصدري · بصدره · بصدرها · فصدري ·
-            الصدر · بالصدر · في الصدر · على الصدر · قلبي · قلبه · قلبها
+            الصدر · بالصدر · في الصدر · علي الصدر · قلبي · قلبه · قلبها
             (enumerated surface forms; bare صدر and bare قلب are NEVER terms)
 
 PREDICATE   pain        يعورني · يعوره · يعورها · يعور · تعورني · يوجعني · يوجعه · يوجعها ·
-                        يوجع · توجعني · يألمني · وجع · ألم · وجعان · موجع
+                        يوجع · توجعني · يالمني · وجع · الم · وجعان · موجع
             pressure    ضغط · ثقل · شي قاعد · ضاغط
             tightness   ضيق · ضايق
             burning     حرقه · حرقان · حارق · نار
-            companions  عرق بارد · تعرق بارد · أتعرق · دايخ · غثيان · ينزل لدراعي ·
-                        يضرب لذراعي · يشد على فكي · بين كتافي
+            companions  عرق بارد · تعرق بارد · اتعرق · دايخ · غثيان · ينزل لدراعي ·
+                        يضرب لذراعي · يشد علي فكي · بين كتافي
                         (a companion counts as the predicate ONLY with a TERM in the same
                          clause — «يضرب لذراعي» alone is not a hit, and §11.1 mirrors these
                          entries as complete sentences per §2.0 L6)
 
 SITE        — (empty; this class has no site axis)
 
-STANDALONE  جلطة قلب · جلطه بالقلب · جلطه في القلب · ذبحة صدرية · احتشاء ·
+STANDALONE  جلطه قلب · جلطه بالقلب · جلطه في القلب · ذبحه صدريه · احتشاء ·
             ازمه قلبيه · سكته قلبيه      (phrase terms — bare جلطة is not one)
             EN: chest pain · heart attack · pressure in my chest · sadri ye3awerni
 
@@ -672,11 +808,11 @@ TERM (body)  يدي · يده · يدها · رجلي · رجله · رجلها 
              لساني · لسانه · لسانها · عيني · عينه · عينها · نصي · نصه · نص جسمي · نص جسمه ·
              نص وجهي · نص وجهه · كلامي · كلامه · كلامها
 
-PREDICATE    failure of function   ما يتحرك · ما تتحرك · ما أقدر أحرك · مو قادر أحرك ·
+PREDICATE    failure of function   ما يتحرك · ما تتحرك · ما اقدر احرك · مو قادر احرك ·
                                    ما تستجيب · ما يستجيب · مشلول · مشلوله · مايل · معوج ·
                                    نازله · ثقيل · ما ينفهم · متلعثم · يهذي · خدر · تنميل ·
                                    فقد النظر · شايف دبل
-             sudden onset          فجأة · الحين · توه · من شوي · من ساعة
+             sudden onset          فجاه · الحين · توه · من شوي · من ساعه
 
 SITE         — (empty)
 
@@ -686,7 +822,7 @@ STANDALONE   شلل نصفي · نصي مشلول · سكته دماغيه · ج
 
 EXCLUSION    polio          `شلل` immediately governing `الأطفال`/`اطفال`
              Parkinson's    `الرعاش` anywhere in the same clause as `شلل`
-             benign cause   من الجلسة · من النوم · من القعدة · من الوقفة · من المخدة
+             benign cause   من الجلسه · من النوم · من القعده · من الوقفه · من المخده
                             — an EXPLICIT cause named in the message, per §2.0 L5; not a frame
 
 TIER         every hit is `emergency`.
@@ -772,7 +908,7 @@ STANDALONE براز اسود · تقيا دم · تقيات دم · تقيت د�
 EXCLUSION  resolved      وقف النزيف · وقف الدم · بطل النزيف · انحبس النزيف · ما عاد ينزف
                          → not a hit.  **Bare `الحمدلله` is struck from this set (N3).**
            brushing      نزيف اللثه/الانف/اللثه تنزف/رعاف, together with a dental-hygiene
-                         term (أفرش · تفريش · فرشاة · المعجون · أسناني) → not a hit at all
+                         term (أفرش · تفريش · فرشاه · المعجون · اسناني) → not a hit at all
            — both clause-scoped per §2.0 L4.
 
 TIER       gum/nose without a hygiene term        → `urgent` at most
@@ -781,7 +917,7 @@ TIER       gum/nose without a hygiene term        → `urgent` at most
            everything else                        → `emergency`
            **The gum cap is lifted** — the hit is `emergency` again — when the clause carries an
            extraction or anticoagulant term: خلع · قلع · الضرس · السن · مميع · مميعات ·
-           سيولة · وارفرين · اسبرين · بلافكس.   (S1.5-5)
+           سيوله · وارفرين · اسبرين · بلافكس.   (S1.5-5)
 
 HIT = STANDALONE ∨ (TERM ∧ (PREDICATE ∨ SITE ∨ SITE.urgent)), per clause,
       minus EXCLUSION and HYPOTHETICAL_RE.
@@ -898,10 +1034,12 @@ person who cannot breathe is the person typing. In a paediatric clinic it is not
 
 ```
 NEGATION      ما · ماا · مو · موو · موب · مووب · مب · ماني · مني · مش   (inherited, + nit-3 runs)
-AUX           اقدر · يقدر · تقدر · يقدرون · نقدر · قادر · قادره · قادرة · عارف · عارفه ·
+AUX           اقدر · يقدر · تقدر · يقدرون · نقدر · قادر · قادره · قادره · عارف · عارفه ·
               عاد · عاده                                    ← `عاد` is NEW; see below
 BREATHE       اتنفس · يتنفس · تتنفس · نتنفس · التنفس · تنفس · ياخذ نفس · تاخذ نفس ·
-              اخذ نفس · نفسه · نفسها
+              اخذ نفس
+              (`نفسه · نفسها` are STRUCK — see the T2 note below. The breath-idiom axis is
+               ARM 3's and it owns the third-person reading with a person anchor.)
 DIFFICULTY    صعوبه · ضيق · صعب
 BREATHE-NOUN  التنفس · تنفس · النفس
 
@@ -915,8 +1053,8 @@ CLOSING       يقفل · تقفل · يتقفل · بيقفل · بتقفل · 
 SWELLING      تورم · تورمت · يتورم · تتورم · بيتورم · ورم · منتفخ · منتفخه · انتفخ · انتفخت ·
               ينتفخ · تنتفخ · كبرت
 CYANOSIS-SUBJ لوني · لونه · لونها · شفايفي · شفايفه · شفايفها · شفتينه · شفتينها
-BLUE          أزرق · زرقاء · زرقا · زرق · زرقه
-EXACERBATION  اشتد · اشتدت · نوبه · ازمه · ما رد على البخاخ · البخاخ ما نفع ·
+BLUE          ازرق · زرقاء · زرقا · زرق · زرقه
+EXACERBATION  اشتد · اشتدت · نوبه · ازمه · ما رد علي البخاخ · البخاخ ما نفع ·
               ما ينفع معه البخاخ · ما نفع
 ```
 
@@ -932,8 +1070,11 @@ ARM 2  difficulty     ADJ(DIFFICULTY, [في|ب|بال|في ال], BREATHE-NOUN)
 ARM 3  idiom          the inherited «نفسي ضايق» pattern with its object list, restaurant + clinic
 ARM 4  part + verb    ADJ(THROAT ∪ LIPS/TONGUE ∪ FACE/EYES, CLOSING ∪ SWELLING)
 ARM 5  cyanosis       ADJ(CYANOSIS-SUBJ, BLUE)
-ARM 6  phrases        الطفل نفسه سريع · صدره يشتغل وهو يتنفس · اختناق · شرق فيه أكل · يغص
+ARM 6  phrases        الطفل نفسه سريع · صدره يشتغل وهو يتنفس · اختناق · شرق فيه اكل · يغص
 ARM 7  asthma         `ربو` (boundary) ∧ EXACERBATION, in the same clause
+ARM 7b RESCUE-FAILED  STANDALONE, no `ربو` required (T5):
+                      البخاخ ما نفع · ما رد علي البخاخ · ما ينفع معه البخاخ ·
+                      البخاخ ما ينفع · ما نفع البخاخ
 ARM 8  English        the inherited EMERGENCY_EN_RE, on the RAW text
 
 EXCLUSION  — (empty except ARM 2's, which is stated inline and governs one noun in one clause)
@@ -1109,20 +1250,20 @@ one §2.1 already applies to `صدر`: **enumerate the possessive surface forms.
 **The rule, v1.6 — written to §2.0's template:**
 
 ```
-TERM (marker)  حامل · حامله · حبلى · بالشهر · الجنين · حملي · ولادتي · الولادة
+TERM (marker)  حامل · حامله · حبلي · بالشهر · الجنين · حملي · ولادتي · الولاده
 
 PREDICATE      bleeding    نازل مني دم · نازل منها دم · نازل دم · نزيف · دم
-               movement    ما يتحرك · ما تتحرك · ما أحس بحركة      (negation REQUIRED)
+               movement    ما يتحرك · ما تتحرك · ما احس بحركه      (negation REQUIRED)
                labour      طلق
-               pre-ecl.    صداع شديد · زغللة · تورم مفاجي · تسمم حمل
-               postpartum  حرارة عالية
-               pain        توجعني بشدة · بطني توجعني
+               pre-ecl.    صداع شديد · زغلله · تورم مفاجي · تسمم حمل
+               postpartum  حراره عاليه
+               pain        توجعني بشده · بطني توجعني
 
 SITE           — (empty)
 
 STANDALONE     نزل مني ماء · نزل مني ماي · انفجر كيس الماء · انفجر كيس المياه · تسمم حمل
 
-EXCLUSION      governed noun — `حامل` immediately followed by بطاقة · شهادة · الملف · التأمين
+EXCLUSION      governed noun — `حامل` immediately followed by بطاقة · شهاده · الملف · التامين
 
 TIER           every hit is `emergency`.
 
@@ -1159,22 +1300,27 @@ and treat a value in `[35, 43]` as a body temperature.
 **The rule, v1.6 — written to §2.0's template:**
 
 ```
-TERM (fever)   حرارة · حرارته · حرارتها · سخونة · حمى + a temperature value in [35, 43]
+TERM (fever)   حراره · حرارته · حرارتها · سخونه · حمى + a temperature value in [35, 43]
 
 PREDICATE      red flags, ANY AGE   تشنج · تشنجات · اختلاج · خامل · ما يفتح عينه · ما يرضع ·
-                                    مو راضع · رافض الرضاعة · بقع حمرا ما تختفي ·
-                                    ما تختفي بالضغط · رقبته متيبسة · يصرخ من الضوء
+                                    مو راضع · رافض الرضاعه · بقع حمرا ما تختفي ·
+                                    ما تختفي بالضغط · رقبته متيبسه · يصرخ من الضوء
                infant markers       رضيع · رضيعي · مولود · بيبي · عمره شهر · عمره شهرين ·
-                                    عمرها شهر · حديث الولادة
+                                    عمرها شهر · حديث الولاده ·
+                                    طفلي · طفلتي · ولدي · ابني · بنتي        ← NEW (T5)
+               persistence          ما تنزل · ما تنخفض · ما ترد · ما تروح ·
+                                    ما نزلت · ما تهدا                        ← NEW (T5)
+                                    (scopes the fever axis; a persistence predicate with a
+                                     fever TERM is a hit with no temperature value at all)
 
 SITE           — (empty)
 
 STANDALONE     — (empty)
 
-EXCLUSION      not a body      الجو · المكيف · الفرن · الشمس · الماء · المويه · الغرفة ·
-                               السيارة · الجهاز        → the subject is not a body
-               muscle object   عضلة · بعضلة · عضلات     → scopes the `تشنج` arm only
-               chronicity      من كم شهر · من شهور · من كم اسبوع · من سنة · مزمن · من زمان
+EXCLUSION      not a body      الجو · المكيف · الفرن · الشمس · الماء · المويه · الغرفه ·
+                               السياره · الجهاز        → the subject is not a body
+               muscle object   عضله · بعضله · عضلات     → scopes the `تشنج` arm only
+               chronicity      من كم شهر · من شهور · من كم اسبوع · من سنه · مزمن · من زمان
                                → scopes the fever-VALUE arm only, and to `urgent` (N6)
 
 TIER           red-flag arm                                    → `emergency`, any age
@@ -1226,21 +1372,21 @@ time-critical) · `«بلع عمله»` · `«شرب مبيد»` · `«أخذ ج
 
 ```
 TERM (verb)  swallow   بلع · بلعت · بلعه · بلعها · شرب · شربت · شربه
-             take      أخذ · أخذت · أكل · أكلت · تناول · تناولت
+             take      اخذ · اخذت · اكل · اكلت · تناول · تناولت
 
-SITE (object) كلور · ديتول · مبيد · بنزين · بطارية · بطاريات · عملة · سم · سموم · منظف ·
+SITE (object) كلور · ديتول · مبيد · بنزين · بطاريه · بطاريات · عمله · سم · سموم · منظف ·
               منظفات · كاز · غاز · دوا · دواء · الكبار · دواء الكبار · حبوب
               (the verb and the object must be within two tokens of each other)
 
 PREDICATE    — (empty; the verb+object pair IS the finding)
 
-STANDALONE   تسمم · أخذ جرعه زايده · جرعه زايده · اشتم غاز · بلع بطاريه
+STANDALONE   تسمم · اخذ جرعه زايده · جرعه زايده · اشتم غاز · بلع بطاريه
 
-EXCLUSION    past incident   قبل اسبوع · قبل شهر · قبل كم يوم · قبل يومين · قبل سنة ·
+EXCLUSION    past incident   قبل اسبوع · قبل شهر · قبل كم يوم · قبل يومين · قبل سنه ·
                              صار لي قبل · كان قبل      → downgrades to `urgent` (N6)
              pills-only      a TAKE verb whose ONLY object is `حبوب` and which carries no
-                             quantity/ownership qualifier (كثير · وايد · علبة · شريط ·
-                             حق أمه · أمه · أبوه · الكبار · جرعة) → not a hit
+                             quantity/ownership qualifier (كثير · وايد · علبه · شريط ·
+                             حق امه · امه · ابوه · الكبار · جرعه) → not a hit
 
 TIER         `emergency`, except a hit carrying a past-incident term → `urgent`.
 
@@ -1279,10 +1425,10 @@ TAKE verb.
 **The rule, v1.6 — written to §2.0's template:**
 
 ```
-STANDALONE   حادث سيارة · حادث دهس · حادث مروري · انقلبت فينا السيارة · انقلبت السيارة ·
-             طاح من الدرج · طاح من السلم · طاح على راسه · طاحت على راسها · ضرب راسه ·
+STANDALONE   حادث سياره · حادث دهس · حادث مروري · انقلبت فينا السياره · انقلبت السياره ·
+             طاح من الدرج · طاح من السلم · طاح علي راسه · طاحت علي راسها · ضرب راسه ·
              ضربت راسها · غاب عن الوعي · غابت عن الوعي · فقد الوعي · العظم بارز ·
-             العظم طالع · كسر مفتوح · حرق كبير · حروق كبيرة · انسكب عليه ماء حار ·
+             العظم طالع · كسر مفتوح · حرق كبير · حروق كبيره · انسكب عليه ماء حار ·
              ما يقدر يحمل رجله · ما تقدر تحمل رجلها
 
 TERM · PREDICATE · SITE   — (all empty. This class is phrases only, deliberately.)
