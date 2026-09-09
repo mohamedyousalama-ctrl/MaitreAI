@@ -41,7 +41,8 @@ text**. No edit distance, no phonetic folding, no "within 2 of a safety word". T
 already retired that net for this exact reason (`scripts/proof-phonetic-net-unwired.test.ts`,
 `scripts/proof-phonetic-typed-scope.test.ts`). Misspellings are handled by **enumerating the
 real misspellings in the lexicon**, which is a data problem with a review process, not a
-matcher problem with a threshold. The one exception is a **voice transcript**, scoped in §3.5.
+matcher problem with a threshold. **There is no exception, including for voice transcripts** —
+see §3.5, where a first draft of this spec proposed one and it is withdrawn.
 
 ---
 
@@ -50,7 +51,8 @@ matcher problem with a threshold. The one exception is a **voice transcript**, s
 ### 1.1 Module shape
 
 ```ts
-// lib/faysal/redflag.ts — PURE. No I/O, no model, no DB, no clock.
+// lib/health/redflag.ts — PURE. No I/O, no model, no DB, no clock.
+// Path per SPEC-3's seam: domain under lib/health/*, routes under app/(api/)faysal/*.
 export type RedFlagClass =
   | "cardiac" | "stroke" | "hemorrhage" | "airway"
   | "obstetric" | "infant_fever" | "poisoning" | "trauma" | "self_harm";
@@ -107,9 +109,11 @@ hypothetical veto stops it.
 | H | `trauma` — high-energy injury, head injury with vomiting/LOC, exposed fracture, large burn | emergency | **HARD** | one wrong ER pointer | death or limb |
 | I | `self_harm` — suicidal ideation, plan, act | emergency | **HARD, exact-match only** | **a grieving or joking patient is treated as suicidal — humiliating, and it teaches them to stop talking** | death |
 
-**Class I is the only class where the over-fire cost is itself a safety cost**, which is why it
-alone is barred from the STT phonetic net (§3.5) and requires an explicit first-person
-intent/act frame (§2.9). Every other class fails toward firing and says so.
+**Class I is the only class where the over-fire cost is itself a safety cost** — a grieving or
+joking patient handed a crisis rail is harmed by the interaction and learns to stop talking to
+us. That is why it alone requires an explicit first-person intent/act frame with an idiom and
+bereavement veto (§2.9), rather than the generous includes every other class gets. Every other
+class fails toward firing, and says so in the table above.
 
 A second tier exists so the rail is not the only tool:
 
@@ -434,7 +438,7 @@ is a far worse defect than the one it fixes.
    توصل»`. In Faysal: a booking frame and a symptom in one message must be resolved
    **per clause**, not per message.
 3. **Guessing.** The retired phonetic net turned `«هلا والله»` into an allergy consultation.
-   **No edit distance on typed text.** Ever.
+   **No edit distance. Ever. In either channel** (§3.5).
 
 ### 3.3 The clinic-specific fourth shape: the medical noun is the ordinary noun
 
@@ -457,21 +461,37 @@ Shadow mode (detectors run, rail does **not** speak, every fire logged and human
 | Red-flag recall on the labelled red-flag subset | **100 %** — any single miss blocks launch |
 | Bereavement messages routed to `self_harm` | **0** |
 
-### 3.5 Voice notes
+### 3.5 Voice notes — and a conflict with SPEC-3, resolved SPEC-3's way
 
-WhatsApp voice is a real channel here and STT garbles Arabic medical terms. Scoped exception,
-mirroring `proof-phonetic-typed-scope.test.ts`:
+WhatsApp voice is a real channel here and STT garbles Arabic medical terms. A first draft of
+this section proposed a bounded phonetic net over a curated confusion list for voice
+transcripts. **That is withdrawn.** `SPEC-3-REUSE.md` rules `lib/ai/phonetic-safety-net.ts`
+**NEVER**, on the Founder's ruling that it fires on words that merely *sound* like a safety
+term and turned `«هلا والله»` into an allergy consultation; `scripts/proof-phonetic-net-unwired.test.ts`
+walks `lib/` with **no directory allow-list** and so covers `lib/health/*` from the day it
+exists. Re-opening that ruling from inside the safety spec is exactly the move a safety spec
+should not make, and the arithmetic does not favour it: a guessed red flag is a wrong rail, and
+a wrong rail is how patients learn to ignore the right one.
 
-- **Typed text:** exact lexicon only. No near-miss matching.
-- **Voice transcript:** a bounded phonetic net over a **curated confusion list** (garble → base,
-  reviewed, versioned) may fire classes **A–H**. Cost of over-firing on a transcript is one
-  extra ER pointer; cost of under-firing is a missed emergency in the channel where a patient
-  in distress is *most likely* to speak rather than type.
-- **Class I (`self_harm`) is excluded from the phonetic net.** It requires an exact match in
-  either channel. The over-fire cost is a safety cost (§1.3).
-- A transcript with STT confidence below the configured floor, containing **any** class A–H
-  near-miss, produces the `urgent` tier and a human handoff — never silence, never the full
-  emergency rail on a guess.
+**The settled position:**
+
+- **Typed text and transcripts alike: exact lexicon only.** No edit distance, no phonetic fold,
+  no "within 2 of a safety word", in either channel.
+- **Garbling is handled where it is created — at STT, not at the detector.** The existing
+  discipline in `lib/ai/stt/safe-vocab.ts` biases the recognizer toward the safety vocabulary so
+  the transcript contains the real word. Faysal's version of that vocabulary is the §2 lexicon.
+  That is priming, not guessing: it changes what the recognizer hears, not what the detector
+  believes. Its own trap is already documented in that file — dropping one word of a multi-word
+  term leaves a truncation that primes toward the wrong thing — and Faysal's multi-word terms
+  (`فول سوداني` → `شلل الأطفال`, `جلطة دماغية`, `تسمم حمل`) must be filtered as units.
+- **A low-confidence transcript is never resolved by guessing.** Below the confidence floor,
+  with no exact red-flag match but with distress markers present, Faysal does **not** invent a
+  class and does **not** proceed silently: it asks the one clarifying question from the reviewed
+  bank and queues a `P1` human handoff. Fail-closed here means *a person looks*, not *the rail
+  fires on a maybe*.
+- **A transcript that fails entirely** (empty, or STT unavailable) is answered with the frozen
+  honest line plus the branch number and 997 — never with silence, and never with a model
+  guessing at what the audio said.
 
 ---
 
@@ -615,7 +635,7 @@ on, not interviewed. It never asks a differential-diagnosis question
 to a bot's screening question has been actively harmed by the interaction.
 
 **Complaint → department routing is itself a medical claim.** Faysal may map a stated complaint
-to a clinic department **only** through `data/faysal/complaint-department.json` — a fixed,
+to a clinic department **only** through `lib/health/data/complaint-department.json` — a fixed,
 versioned, physician-signed table — never model-generated, and always phrased as an **option**,
 never a directive:
 
@@ -987,7 +1007,7 @@ is not a guard, and this repo has shipped that mistake twice.
 - `«الله يشفيك»` and `«سلامتك»` are **not** blocked — a wish is not a claim.
 - Blocking **replaces wholesale**, never patches, and the rejected text is present in the audit
   signal and absent from the sent text.
-- Every specialty Faysal can name is present in `data/faysal/complaint-department.json`, and the
+- Every specialty Faysal can name is present in `lib/health/data/complaint-department.json`, and the
   file's checksum matches the value recorded at sign-off (a silent edit to a signed clinical
   table fails the build).
 
@@ -1049,7 +1069,20 @@ suite stayed green.
 It further asserts the **ordering**: `detectRedFlag` is called before any model invocation on
 every surface.
 
-### 11.10 Mutation discipline
+### 11.10 `proof-faysal-stt-vocab.test.ts`
+
+- The §2 lexicon's **multi-word** terms (`فول سوداني`, `شلل الأطفال`, `جلطة دماغية`, `تسمم حمل`,
+  `ذبحة صدرية`) are filtered **as units** by the STT vocabulary builder. Dropping one word leaves
+  a truncation that primes the recognizer toward the wrong concept — the exact defect
+  `MULTI_WORD_ALLERGEN_WORDS` in `lib/ai/allergen-gate.ts` exists to prevent.
+- **Faysal does not rewire `lib/ai/phonetic-safety-net.ts`** (§3.5). Already covered free by
+  `scripts/proof-phonetic-net-unwired.test.ts`, which walks `lib/` with no directory allow-list
+  and so covers `lib/health/*` from the day it exists — asserted here explicitly so a reader of
+  this spec does not have to discover it.
+- A below-floor-confidence transcript with distress markers and no exact match produces the
+  clarifying question **and** a `P1` handoff — never a red-flag class, never silence.
+
+### 11.11 Mutation discipline
 
 Each proof is validated by **deliberately breaking the rule it guards** and confirming the proof
 goes red: remove a boundary, drop a Najdi negation, widen a veto, delete a call site, extend
@@ -1096,18 +1129,41 @@ real patient message.** Shadow mode, with the rail silent, is the only permitted
 
 ---
 
-## 13. Open questions for the other specs
+## 13. Interfaces with the other specs
 
-1. **SPEC-1/2 (booking):** the booking tool must reject a minor booking without guardian fields
-   at the **write**, not in the prompt (§7.1). Please expose `guardian_*` on the booking schema.
-2. **SPEC-1/2:** `erSites({ now })` with `is_er`, `er_open_24h`, `er_hours_by_weekday`,
-   `hours_verified_at`, `verified_by` — the rail depends on it and degrades to branch B without
-   it (§4.4).
-3. **SPEC-3 (persona):** the persona must never be given a "reassure the patient" instruction.
-   Reassurance is `false_reassurance` (§5.2) and the guard will block it, producing a persona
-   that fights its own rail.
-4. **SPEC-5 (ops):** P0 alert routing must bypass `monitor_alert_state` cooldown (§9.1), and
-   24-hour coverage is a launch gate (§9.4).
-5. **All specs:** `docs/faysal/SOURCE_DOSSIER.txt` is research, not data. Nothing in it —
-   hours, prices, discount percentages, insurance networks, or **doctor names** — may reach a
-   prompt, a seed, or a patient (§6.1, §6.3).
+Read against `SPEC-2-PERSONA.md` and `SPEC-3-REUSE.md` as they stand on 2026-09-09.
+
+**Already agreed, recorded so it does not drift:**
+
+- SPEC-2 §"THE GATE" defers the red-flag classes, the routing and the verbatim rail copy to this
+  document, and adds 🚨 to its emoji allowlist as this document's property. It also confirms the
+  rail must skip `composeFinalReply`. Consistent with §4.1 here.
+- SPEC-2 owns the **`urgent`-tier wording** (its line
+  `«ولو زاد عليك قبل الموعد، لا تنتظر — الطوارئ و 997 موجودين»`). This document owns *when* the
+  urgent tier fires (§1.3) and delegates *how it reads* to SPEC-2. The only constraint imposed
+  from here: the urgent copy must pass `assertsMedicalClaim` (§5.2), which the quoted line does.
+- SPEC-3 forks `lib/ai/allergen-emergency.ts` into `lib/health/*` keeping
+  `PAST_RE` / `HYPOTHETICAL_RE` / `HYPOTHETICAL_Q_RE` verbatim. Consistent with §2.4 here, which
+  imports the airway family rather than re-deriving it.
+- SPEC-3 rules `lib/ai/phonetic-safety-net.ts` **NEVER**. §3.5 here is written to that ruling; a
+  draft that proposed an exception for voice is withdrawn in the text, not silently dropped.
+
+**Still open, and each one is load-bearing for this document:**
+
+1. **Booking spec:** the booking tool must reject a minor booking without `guardian_name`,
+   `guardian_relation`, `guardian_id_last4` **at the write**, not in the prompt (§7.1).
+2. **Booking spec:** `erSites({ now })` with `is_er`, `er_open_24h`, `er_hours_by_weekday`,
+   `hours_verified_at`, `verified_by`. The rail depends on it and correctly degrades to branch B
+   without it (§4.4) — but branch B names no site, so this tool is the difference between "997"
+   and "997 and here is where to go".
+3. **SPEC-2:** the persona must never carry a "reassure the patient" instruction. Reassurance is
+   `false_reassurance` (§5.2) and the output guard blocks it — a persona told to reassure would
+   fight its own rail every turn and lose, visibly.
+4. **Ops spec:** P0/P1 safety alerts must bypass the `monitor_alert_state` cooldown (§9.1), and
+   24-hour responder coverage is a launch gate (§9.4). A rail that pages nobody is a rail that
+   lied.
+5. **SPEC-3:** the `agent-eval.yml` `paths:` extension it proposes must include the Faysal proof
+   scripts, or §11's gates do not run on a Faysal-only PR.
+6. **All specs:** `docs/faysal/SOURCE_DOSSIER.txt` is research, not data. Nothing in it — hours,
+   prices, the TPA discount percentages, insurance networks, or **doctor names harvested from
+   Google reviews** — may reach a prompt, a seed, a fixture, or a patient (§6.1, §6.3).
