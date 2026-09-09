@@ -167,6 +167,23 @@ export function bookableWindows(siteId: SiteId, dateISO: string): BookableWindow
   ];
 }
 
+/**
+ * Is this clinic bookable at this site? SPEC-1 §6.2 + §6.3, as a predicate.
+ *
+ * `G` (group-wide) and `I` (inferred) are NOT bookable — Rule SPEC-1 turns them
+ * into "let me confirm", and §6.2 footnote 1 says an inferred capability is
+ * "inferred, therefore not bookable". Without this, the demo cheerfully offered
+ * an orthopaedics slot at Ar Rawabi, where the matrix records orthopaedics as `G`
+ * at every one of the six sites — an `availability_claim` (SPEC-2 §8.1 #12) with
+ * a forty-minute drive attached to it.
+ */
+export function clinicBookableAt(siteId: SiteId, clinicKey: string): boolean {
+  const site = SITES[siteId];
+  if (!site?.bookable) return false;
+  if (site.namedSpecialties.includes(clinicKey)) return true;
+  return CLINICIANS.some((c) => c.clinicKey === clinicKey && c.siteIds.includes(siteId));
+}
+
 // ── recommendBranch ─────────────────────────────────────────────────────────
 
 function nearestSiteFor(districtAr: string | null | undefined): SiteId | null {
@@ -183,10 +200,18 @@ function nearestSiteFor(districtAr: string | null | undefined): SiteId | null {
 
 export function recommendBranch(need: NeedKey, opts: RecommendOpts = {}): BranchRecommendation {
   const route = ROUTES[need] ?? ROUTES.general;
-  // The clinically-best site is the first link in the chain that is not gated.
+  // The clinically-best site is the first link in the chain that can ACTUALLY see
+  // this patient — bookable, and carrying this clinic as a named capability rather
+  // than a group-wide claim. Falling back to "the first non-contested link" alone
+  // recommends a branch and then discovers it has no inventory, which is a wasted
+  // turn at best and Rule STR-3's silent substitution at worst.
+  //
   // Rule C4-2: a contested site is NEVER the only option, so it can never be the
   // clinical best — it can only ever be the *nearest*.
-  const best = route.chain.find((id) => !SITES[id].contested) ?? route.chain[0];
+  const best =
+    route.chain.find((id) => !SITES[id].contested && clinicBookableAt(id, route.clinicKey)) ??
+    route.chain.find((id) => !SITES[id].contested) ??
+    route.chain[0];
   const nearId = nearestSiteFor(opts.districtAr);
 
   if (!nearId || nearId === best) {
@@ -224,6 +249,9 @@ const SEARCH_DAYS = 10;
 export function searchSlots(q: SlotQuery): Slot[] {
   const site = SITES[q.siteId];
   if (!site?.bookable) return []; // callback path — SPEC-1 §4.10 / §6.3.
+  // A clinic this site does not carry has no slots, ever. The caller renders the
+  // callback path; it does not render a time. (SPEC-1 §6.2, Rule SPEC-1.)
+  if (!clinicBookableAt(q.siteId, q.clinicKey)) return [];
 
   const from = new Date(q.fromISO);
   if (Number.isNaN(from.getTime())) return [];
@@ -303,8 +331,11 @@ function slotFromId(slotId: string): Slot | null {
   const m = /^slot_([a-z0-9-]+)_([a-z_]+)_(\d+)$/.exec(slotId);
   if (!m) return null;
   const siteId = m[1] as SiteId;
-  if (!SITES[siteId]?.bookable) return null;
   const clinicKey = m[2];
+  // The same rule as `searchSlots`, applied on the way back in. A slot id is
+  // client-carried, so the confirm path re-checks the capability rather than
+  // trusting that the search that produced it obeyed the rule.
+  if (!clinicBookableAt(siteId, clinicKey)) return null;
   const at = new Date(Number(m[3]));
   if (Number.isNaN(at.getTime())) return null;
   const windows = bookableWindows(siteId, riyadhDateISO(at));

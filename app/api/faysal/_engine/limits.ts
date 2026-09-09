@@ -20,7 +20,10 @@ export const FAYSAL_MAX_CHARS = 400;
 export const FAYSAL_MAX_HISTORY = 8;
 
 /** Per-IP pre-filter. A speed bump — `lib/rate-limit` is process-local by design. */
-export const FAYSAL_PER_IP_TURNS = 30;
+// 60 an hour: a full demo run is ~15 turns, and a founder who runs the script
+// three times back-to-back in front of three people must not be throttled mid-
+// sentence. The global daily ceiling is what protects the card.
+export const FAYSAL_PER_IP_TURNS = 60;
 export const FAYSAL_WINDOW_MS = 60 * 60 * 1000;
 
 /** Per-IP cap on session minting (`/api/faysal/reset`), which costs no tokens. */

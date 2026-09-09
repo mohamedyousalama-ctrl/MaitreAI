@@ -29,7 +29,7 @@ import {
 } from "./config";
 import { serviceById } from "./catalogue";
 import { clinicianById } from "./clinicians";
-import { isContested, patientPhoneFor, siteById } from "./sites";
+import { formatPhoneAr, isContested, patientPhoneFor, siteById } from "./sites";
 import {
   fnv1a32,
   meetsLeadTime,
@@ -46,7 +46,7 @@ import {
   holdBySlotId,
   type FaysalStore,
 } from "./store";
-import { isFriday, minutesOf } from "./time";
+import { dayKeyOf, isFriday, minutesOf } from "./time";
 import type { Appointment, Hold, PatientRef, SiteId, Slot } from "./types";
 
 export interface BookingOpts extends GenerateOpts {
@@ -364,23 +364,23 @@ export function renderConfirmationBlock(appt: Appointment): string {
   if (appt.kind === "callback_request") {
     lines.push("تم تسجيل طلبك ✅", "");
     lines.push(`الاسم: ${appt.patient.displayName}`);
-    lines.push(`الفرع: ${site.nameAr} — ${site.addressAr ?? site.addressEn}`);
+    lines.push(`الفرع: ${site.nameAr} — ${addressLine(site)}`);
     if (service) lines.push(`العيادة: ${service.nameAr}`);
     // NO «الموعد» row at all — not a greyed one, not a provisional one.
     lines.push(`الوقت اللي تفضّله: ${appt.preferredWindowAr ?? ""}`.trim());
-    lines.push(`الفرع يتصل عليك ويثبت الوقت. ولو تبي تستعجل: ${appt.branchPhone}`);
+    lines.push(`الفرع يتصل عليك ويثبت الوقت. ولو تبي تستعجل: ${formatPhoneAr(appt.branchPhone)}`);
   } else {
     lines.push("تم الحجز ✅", "");
     lines.push(`الاسم: ${appt.patient.displayName}`);
-    lines.push(`الفرع: ${site.nameAr} — ${site.addressAr ?? site.addressEn}`);
-    if (service) lines.push(`العيادة: ${service.nameAr}${clinician ? ` — ${clinician.nameAr}` : ""}`);
-    lines.push(`الموعد: ${appt.dateISO} الساعة ${appt.start}`);
+    lines.push(`الفرع: ${site.nameAr} — ${addressLine(site)}`);
+    if (service) lines.push(`العيادة: ${service.nameAr}${clinician ? ` مع ${clinician.nameAr}` : ""}`);
+    lines.push(`الموعد: ${spokenWhen(appt.dateISO, appt.start)}`);
     if (appt.pendingBranchConfirmation) {
-      lines.push(`وضع الفرع نأكده لك بالاتصال قبل الموعد — رقم الفرع ${appt.branchPhone}.`);
+      lines.push(`وضع الفرع نأكده لك بالاتصال قبل الموعد — رقم الفرع ${formatPhoneAr(appt.branchPhone)}.`);
     }
     if (appt.dateISO && isFriday(appt.dateISO)) {
       // FRI-1 — no exceptions, including at sites whose Friday confidence is medium.
-      lines.push(`ويوم الجمعة الدوام يضيق، فأنصحك تتصل على ${appt.branchPhone} قبل ما تجي.`);
+      lines.push(`ويوم الجمعة الدوام يضيق، فأنصحك تتصل على ${formatPhoneAr(appt.branchPhone)} قبل ما تجي.`);
     }
   }
 
@@ -390,16 +390,56 @@ export function renderConfirmationBlock(appt: Appointment): string {
   return block;
 }
 
+/**
+ * SPEC-2 §3.4 — Western digits, 12-hour with ص/م, never 24-hour, and the day
+ * named in Arabic. The WORDING around it is SPEC-2's; this is the format that
+ * document pins, and an ISO timestamp in a patient's confirmation fails it.
+ */
+const DAY_AR_SHORT: Record<string, string> = {
+  sat: "السبت",
+  sun: "الأحد",
+  mon: "الاثنين",
+  tue: "الثلاثاء",
+  wed: "الأربعاء",
+  thu: "الخميس",
+  fri: "الجمعة",
+};
+
+/**
+ * §3 — the Arabic address where the dossier gives one; otherwise the district in
+ * Arabic followed by the street as published. We do NOT translate an address
+ * Faysal has never been given (Rule B-1's discipline applied to geography): an
+ * invented Arabic street name is a fabricated fact about the client's premises.
+ */
+function addressLine(site: { addressAr: string | null; addressEn: string; district: { ar: string } }): string {
+  return site.addressAr ?? `حي ${site.district.ar} — ${site.addressEn}`;
+}
+
+function spokenTime(hhmm: string): string {
+  const total = minutesOf(hhmm);
+  const h24 = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  const meridiem = h24 >= 12 ? "م" : "ص";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${meridiem}`;
+}
+
+function spokenWhen(dateISO: string | null, start: string | null): string {
+  if (!dateISO || !start) return "";
+  const [, month, day] = dateISO.split("-");
+  return `${DAY_AR_SHORT[dayKeyOf(dateISO)]} ${Number(day)}/${Number(month)} — ${spokenTime(start)}`;
+}
+
 /** A disclaimer a model can forget is not a disclaimer — so this throws. */
 export function assertConfirmationMarkers(block: string, appt: Appointment): void {
   if (!block.includes(DEMO_BOOKING_SUFFIX_AR)) throw new Error("demo1c_violated:suffix_missing");
   if (appt.kind === "callback_request" && /الموعد:/.test(block)) {
     throw new Error("callback_rendered_a_time"); // §4.6 / criterion 10
   }
-  if (appt.pendingBranchConfirmation && !block.includes(appt.branchPhone)) {
+  if (appt.pendingBranchConfirmation && !block.includes(formatPhoneAr(appt.branchPhone))) {
     throw new Error("c4_1_violated:no_phone");
   }
-  if (appt.kind === "slot" && appt.dateISO && isFriday(appt.dateISO) && !block.includes(appt.branchPhone)) {
+  if (appt.kind === "slot" && appt.dateISO && isFriday(appt.dateISO) && !block.includes(formatPhoneAr(appt.branchPhone))) {
     throw new Error("fri1_violated:no_phone");
   }
 }

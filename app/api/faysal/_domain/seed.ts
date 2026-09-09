@@ -43,6 +43,18 @@ export interface SeedSite {
   clinicHours: { satThu: [number, number] | null; friday: [number, number] | null };
   /** Clinics genuinely listed at this site (SPEC-1 §6.2 / §6.3 roster). */
   clinicsAr: string[];
+  /**
+   * SPEC-1 §6.2's matrix, `named_at_site` ONLY. `G` (group-wide) and `I` (inferred)
+   * are deliberately absent: Rule SPEC-1 turns those into "let me confirm", never
+   * into a confident booking, and §6.2 footnote 1 says an inferred capability is
+   * "inferred, therefore not bookable".
+   *
+   * A clinic is bookable here when it is on THIS list or a rostered clinician holds
+   * it at this site — the union of the two records SPEC-1 keeps. §6.2 footnote 3
+   * sets the precedent for the first half ("the capability is recorded; the
+   * clinician is not"); §6.3's `[DEMO-01]` roster is the second.
+   */
+  namedSpecialties: string[];
   /** Insurer network lists the BUILDING appears on. Never eligibility (Rule INS-1). */
   networks: string[];
   accreditationAr: string | null;
@@ -65,6 +77,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     bookable: false,
     clinicHours: { satThu: null, friday: null },
     clinicsAr: ["الباطنة", "طب الأسرة", "المخ والأعصاب", "الأطفال", "الطوارئ"],
+    namedSpecialties: ["general", "internal", "paeds", "obgyn", "neuro", "er"],
     networks: ["بوبا", "التعاونية", "ميدغلف", "ولاء", "الخليجية العامة", "سايكو", "ملاذ", "المتحدة", "الاتحاد", "عناية", "سلامة"],
     accreditationAr: null,
   },
@@ -83,6 +96,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     // (SPEC-1 §4.4, "often listed" 16:00–24:00) — so Rule FRI-1 applies to it.
     clinicHours: { satThu: [9, 21], friday: [16, 22] },
     clinicsAr: ["الجلدية والليزر", "الأسنان والتقويم", "الأنف والأذن", "النساء والولادة", "العيون", "الأطفال"],
+    namedSpecialties: ["general", "internal", "paeds", "obgyn", "ent", "eye", "derm_laser", "dental", "ortho"],
     networks: ["بوبا", "التعاونية", "ميدغلف", "ولاء", "الخليجية العامة", "سايكو", "ملاذ", "المتحدة", "الاتحاد", "عناية", "سلامة"],
     accreditationAr: null,
   },
@@ -101,6 +115,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     bookable: false,
     clinicHours: { satThu: null, friday: null },
     clinicsAr: ["علاج الجذور (حشو عصب)", "الأسنان", "الباطنة", "الجلدية"],
+    namedSpecialties: ["dental", "endo"],
     networks: ["بوبا", "التعاونية", "ميدغلف", "ولاء", "الخليجية العامة", "سايكو", "ملاذ", "المتحدة", "الاتحاد", "عناية", "سلامة"],
     accreditationAr: null,
   },
@@ -119,6 +134,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     bookable: false,
     clinicHours: { satThu: null, friday: null }, // SPEC-1 §4.6 — silent, not closed.
     clinicsAr: ["طب الأسرة", "الأسنان", "التقويم"],
+    namedSpecialties: ["ortho"],
     networks: ["بوبا", "التعاونية", "ميدغلف", "ولاء", "الخليجية العامة", "سايكو", "ملاذ", "المتحدة", "الاتحاد", "عناية", "سلامة"],
     accreditationAr: null,
   },
@@ -135,6 +151,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     bookable: true,
     clinicHours: { satThu: [8, 21], friday: [16, 22] },
     clinicsAr: ["الجراحة العامة وجراحة اليوم الواحد", "النساء والولادة", "الأنف والأذن", "الأطفال", "الجلدية والليزر", "فحوصات ما قبل التوظيف"],
+    namedSpecialties: ["general", "internal", "paeds", "obgyn", "ent", "derm_laser", "dental", "ortho_surgery", "employment", "er"],
     networks: ["بوبا", "التعاونية", "ميدغلف", "ولاء", "الخليجية العامة", "سايكو", "ملاذ", "المتحدة", "الاتحاد", "عناية", "سلامة"],
     // SPEC-1 §3.5 — the only accredited site in the group, 13 March 2023.
     accreditationAr: "اعتماد المجلس السعودي للمنشآت الصحية CBAHI",
@@ -152,6 +169,7 @@ export const SITES: Readonly<Record<SiteId, SeedSite>> = {
     bookable: true,
     clinicHours: { satThu: [8, 22], friday: [16, 22] },
     clinicsAr: ["الأطفال", "الباطنة", "الأسنان", "فحوصات ما قبل التوظيف"],
+    namedSpecialties: ["er"],
     networks: ["بوبا", "التعاونية", "ميدغلف", "ولاء", "الخليجية العامة", "سايكو", "ملاذ", "المتحدة", "الاتحاد", "عناية", "سلامة"],
     accreditationAr: null,
   },
@@ -168,6 +186,13 @@ export interface RouteRow {
   need: NeedKey;
   chain: SiteId[];
   reasonAr: string;
+  /**
+   * SPEC-2 §3.2 — when Faysal speaks English he is the SAME MAN in his second
+   * language, so the reason is translated as a short concrete clause, not left in
+   * Arabic inside an English sentence. The first cut shipped
+   * «The one that suits you is Ar Rawabi — القسم هناك مركّز…», which is neither.
+   */
+  reasonEn: string;
   clinicKey: string;
   clinicAr: string;
 }
@@ -177,6 +202,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "laser",
     chain: ["wattan-2", "shoaa-wurud", "wattan-3"],
     reasonAr: "القسم هناك مركّز على الجلدية والليزر، والجلسات نفسها تنعمل فيه",
+    reasonEn: "that is where the laser sessions are done",
     clinicKey: "derm_laser",
     clinicAr: "الجلدية والليزر",
   },
@@ -184,6 +210,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "dermatology",
     chain: ["wattan-2", "shoaa-wurud", "wattan-3"],
     reasonAr: "القسم هناك مركّز على الجلدية والليزر",
+    reasonEn: "the department there focuses on dermatology and laser",
     clinicKey: "derm_laser",
     clinicAr: "الجلدية والليزر",
   },
@@ -191,6 +218,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "dental",
     chain: ["wattan-2", "wattan-3", "shoaa-wurud", "wattan-4"],
     reasonAr: "الروابي فرع الأسنان والتقويم عندهم",
+    reasonEn: "Ar Rawabi is their dental and orthodontics branch",
     clinicKey: "dental",
     clinicAr: "الأسنان",
   },
@@ -198,6 +226,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "orthodontics",
     chain: ["wattan-2", "wattan-3", "shoaa-wurud", "wattan-4"],
     reasonAr: "الروابي فرع الأسنان والتقويم عندهم",
+    reasonEn: "Ar Rawabi is their dental and orthodontics branch",
     clinicKey: "ortho",
     clinicAr: "التقويم",
   },
@@ -205,6 +234,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "endodontics",
     chain: ["wattan-3", "wattan-2"],
     reasonAr: "الربوة عندهم عيادة علاج جذور (حشو عصب)",
+    reasonEn: "Ar Rabwah has the root canal clinic",
     clinicKey: "endo",
     clinicAr: "علاج الجذور",
   },
@@ -212,6 +242,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "paediatrics",
     chain: ["shoaa-wurud", "wattan-2", "shoaa-rawdah", "wattan-1"],
     reasonAr: "عيادة الأطفال عندهم، والصيدلية بنفس المبنى",
+    reasonEn: "the paediatric clinic is there, with a pharmacy in the same building",
     clinicKey: "paeds",
     clinicAr: "الأطفال",
   },
@@ -219,6 +250,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "obgyn",
     chain: ["wattan-2", "shoaa-wurud"],
     reasonAr: "عيادة النساء والولادة عندهم، وفيه دكتورات في الجدول",
+    reasonEn: "the OB-GYN clinic is there, and there are female doctors on the schedule",
     clinicKey: "obgyn",
     clinicAr: "النساء والولادة",
   },
@@ -226,6 +258,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "ent",
     chain: ["wattan-2", "shoaa-wurud"],
     reasonAr: "عيادة الأنف والأذن والحنجرة عندهم",
+    reasonEn: "the ENT clinic is there",
     clinicKey: "ent",
     clinicAr: "الأنف والأذن والحنجرة",
   },
@@ -233,6 +266,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "orthopaedics",
     chain: ["shoaa-wurud", "wattan-2"],
     reasonAr: "الجراحة وجراحة اليوم الواحد عندهم، والأشعة بنفس المبنى",
+    reasonEn: "surgery and day-case are there, with imaging in the same building",
     clinicKey: "ortho_surgery",
     clinicAr: "العظام",
   },
@@ -240,6 +274,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "internal",
     chain: ["shoaa-rawdah", "shoaa-wurud", "wattan-1"],
     reasonAr: "عيادة الباطنة عندهم",
+    reasonEn: "the internal medicine clinic is there",
     clinicKey: "internal",
     clinicAr: "الباطنة",
   },
@@ -247,6 +282,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "general",
     chain: ["shoaa-wurud", "wattan-2", "shoaa-rawdah"],
     reasonAr: "الكشف العام عندهم، والصيدلية بنفس المبنى",
+    reasonEn: "general consultations are there, with a pharmacy in the same building",
     clinicKey: "general",
     clinicAr: "الكشف العام",
   },
@@ -254,6 +290,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "employment_medical",
     chain: ["shoaa-wurud", "shoaa-rawdah"],
     reasonAr: "شعاع الورود يسوّي فحوصات ما قبل التوظيف",
+    reasonEn: "Shoaa Al Wurud does the pre-employment medicals",
     clinicKey: "employment",
     clinicAr: "فحوصات ما قبل التوظيف",
   },
@@ -261,6 +298,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "neurology",
     chain: ["wattan-1"],
     reasonAr: "عيادة المخ والأعصاب مذكورة في فرع اليمامة",
+    reasonEn: "the neurology clinic is listed at Al Yamamah",
     clinicKey: "neuro",
     clinicAr: "المخ والأعصاب",
   },
@@ -268,6 +306,7 @@ export const ROUTES: Readonly<Record<NeedKey, RouteRow>> = {
     need: "after_hours",
     chain: ["wattan-1", "shoaa-wurud"],
     reasonAr: "اليمامة فيه طوارئ وطبيب مناوب",
+    reasonEn: "Al Yamamah has an emergency room and a duty doctor",
     clinicKey: "er",
     clinicAr: "الطوارئ",
   },
@@ -284,6 +323,19 @@ export interface SeedClinician {
 }
 
 export const CLINICIANS: readonly SeedClinician[] = [
+  { id: "dr-aldosari", nameAr: "د. عبدالله الدوسري", gender: "male", clinicKey: "internal", siteIds: ["wattan-1"], fictional: true },
+  { id: "dr-alotaibi", nameAr: "د. منيرة العتيبي", gender: "female", clinicKey: "general", siteIds: ["wattan-1"], fictional: true },
+  { id: "dr-alshammari", nameAr: "د. طارق الشمري", gender: "male", clinicKey: "er", siteIds: ["wattan-1"], fictional: true },
+  { id: "dr-hegazy", nameAr: "د. ياسمين حجازي", gender: "female", clinicKey: "paeds", siteIds: ["wattan-1"], fictional: true },
+  { id: "dr-alqahtani", nameAr: "د. سامي القحطاني", gender: "male", clinicKey: "neuro", siteIds: ["wattan-1"], fictional: true },
+  { id: "dr-alzahrani", nameAr: "د. بدر الزهراني", gender: "male", clinicKey: "eye", siteIds: ["wattan-2"], fictional: true },
+  { id: "dr-alansari", nameAr: "د. وليد الأنصاري", gender: "male", clinicKey: "endo", siteIds: ["wattan-3"], fictional: true },
+  { id: "dr-alsaleh", nameAr: "د. دانة الصالح", gender: "female", clinicKey: "dental", siteIds: ["wattan-3"], fictional: true },
+  { id: "dr-alsubaie", nameAr: "د. ماجد السبيعي", gender: "male", clinicKey: "internal", siteIds: ["wattan-3"], fictional: true },
+  { id: "dr-benyoussef", nameAr: "د. عائشة بن يوسف", gender: "female", clinicKey: "derm_laser", siteIds: ["wattan-3"], fictional: true },
+  { id: "dr-alnuaimi", nameAr: "د. إبراهيم النعيمي", gender: "male", clinicKey: "ortho", siteIds: ["wattan-4"], fictional: true },
+  { id: "dr-alajmi", nameAr: "د. راكان العجمي", gender: "male", clinicKey: "dental", siteIds: ["wattan-4"], fictional: true },
+  { id: "dr-alshehri", nameAr: "د. مها الشهري", gender: "female", clinicKey: "obgyn", siteIds: ["shoaa-wurud"], fictional: true },
   { id: "dr-albaqami", nameAr: "د. ريم البقمي", gender: "female", clinicKey: "derm_laser", siteIds: ["wattan-2"], fictional: true },
   { id: "dr-alkhatib", nameAr: "د. لينا الخطيب", gender: "female", clinicKey: "derm_laser", siteIds: ["wattan-2"], fictional: true },
   { id: "dr-alqarni", nameAr: "د. رنا القرني", gender: "female", clinicKey: "derm_laser", siteIds: ["shoaa-wurud"], fictional: true },
@@ -300,7 +352,7 @@ export const CLINICIANS: readonly SeedClinician[] = [
   { id: "dr-aldakhil", nameAr: "د. هيفاء الدخيل", gender: "female", clinicKey: "paeds", siteIds: ["shoaa-rawdah"], fictional: true },
   { id: "dr-alnour", nameAr: "د. مصعب النور", gender: "male", clinicKey: "internal", siteIds: ["shoaa-rawdah"], fictional: true },
   { id: "dr-alfahad", nameAr: "د. جواهر الفهد", gender: "female", clinicKey: "dental", siteIds: ["shoaa-rawdah"], fictional: true },
-  { id: "dr-altayeb", nameAr: "د. سلمى الطيب", gender: "female", clinicKey: "general", siteIds: ["shoaa-wurud", "wattan-4"], fictional: true },
+  { id: "dr-altayeb", nameAr: "د. سلمى الطيب", gender: "female", clinicKey: "general", siteIds: ["wattan-4"], fictional: true },
 ];
 
 /**

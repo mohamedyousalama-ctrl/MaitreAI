@@ -15,7 +15,7 @@
 // ============================================================================
 
 import { bookableWindows, type HoursOpts } from "./hours";
-import { canMintSlots, isContested, isSiteId, patientPhoneFor, siteById, siteInDistrict } from "./sites";
+import { canMintSlots, isContested, isSiteId, patientPhoneDisplay, patientPhoneFor, siteById, siteInDistrict } from "./sites";
 import type { AppointmentKind, BranchRecommendation, NeedKey, SiteId, SiteStrength } from "./types";
 
 // ── §5.2 — the routing table ────────────────────────────────────────────────
@@ -332,7 +332,7 @@ export function recommendBranch(need: NeedKey | string, opts: RecommendOpts = {}
         fallbackFromSiteId = primary;
         fallbackReasonAr =
           `${siteById(primary).nameAr} ما أقدر أثبّت فيه موعد بهذا اليوم، ` +
-          `ورقمه ${patientPhoneFor(primary)} لو تحب تتأكد منهم مباشرة.`;
+          `ورقمه ${patientPhoneDisplay(primary)} لو تحب تتأكد منهم مباشرة.`;
       }
     }
   }

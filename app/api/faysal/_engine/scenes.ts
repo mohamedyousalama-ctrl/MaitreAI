@@ -37,6 +37,7 @@ import {
   openStateAt,
   packageFor,
   priceFor,
+  clinicBookableAt,
   recommendBranch,
   requestCallback,
   riyadhDateISO,
@@ -450,7 +451,9 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
   s.scene = "S3_route";
   const branch = SITES[rec.siteId];
   const matchText =
-    language === "en" ? EN.match(branch.nameEn, rec.reasonAr) : S.motionMatch(branch.nameAr, rec.reasonAr);
+    language === "en"
+      ? EN.match(branch.nameEn, ROUTE_CACHE[need].reasonEn)
+      : S.motionMatch(branch.nameAr, rec.reasonAr);
 
   // Split-recap (§4.2): the match is one atomic message, the ask is the next. Two
   // messages in one turn — within cadence, and the ask carries the only «؟».
@@ -494,6 +497,32 @@ function tryExpand(s: FaysalSession, raw: string, cls: Classification, now: Date
   if (!target || !SITES[target].bookable) return null; // gate 3 — same branch, same day
 
   const clinic = clinicFor(cls.need);
+
+  // The clinic the patient just named is not one this branch carries. §6.2 records
+  // orthopaedics as `G` — group-wide — at all six sites, so «العظام في نفس الفرع»
+  // is a claim the data cannot support, and offering it is exactly the
+  // `availability_claim` §8.1 #12 bans. Gate 3 fails, so the EXPANSION move does
+  // not run; what runs instead is the honest version of the same kindness — the
+  // clinical question is refused, the limit is stated, and a callback at the SAME
+  // branch is offered so the second trip may still be saved if the branch confirms.
+  if (!clinicBookableAt(target, clinic.key)) {
+    s.awaitingCallbackWindow = true;
+    s.need = cls.need;
+    s.scene = "S11_offhours";
+    return reply(
+      s,
+      [
+        faysal(s, `أكيد، وأحسن لكم تجون مرة وحدة بدل زيارتين.\n${S.CLINICAL_DIAGNOSIS_REFUSAL}`),
+        faysal(
+          s,
+          `بس أصارحك: عيادة ${clinic.ar} موجودة عندنا كمجموعة، وما أقدر أأكد لك جدولها في ${SITES[target].shortAr} من عندي — وما أبي أعطيك وقت وتطلعون على الفاضي.\n` +
+            `أسجّل ${pronoun} طلب في نفس الفرع والاستقبال يتصل ويثبت الوقت — الصبح ولا بعد العصر؟`,
+        ),
+      ],
+      ["الصبح", "بعد العصر"],
+    );
+  }
+
   const heldDate = s.heldSlot ? riyadhDateISO(new Date(s.heldSlot.startISO)) : riyadhDateISO(now);
   const dayStart = new Date(`${heldDate}T00:00:00+03:00`);
   const slots = searchSlots({ siteId: target, clinicKey: clinic.key, fromISO: dayStart.toISOString(), nowISO: now.toISOString(), limit: 4 })
@@ -569,7 +598,10 @@ export function runTurn(s: FaysalSession, raw: string, cls: Classification, now:
   // §3.3 — the only bilingual message in the product. Faysal does not pretend
   // fluency and does not machine-translate a clinical conversation.
   if (language === "other") {
-    const phone = branchPhoneFor(s) ?? SITES["wattan-1"].phoneAr;
+    // With no branch in play the group's own unified line is the right number —
+    // it is the one Rule DEMO-1(b) already published in this thread, and it
+    // reaches a human who can route in any language the group actually staffs.
+    const phone = branchPhoneFor(s) ?? REAL_CONTACTS.unified;
     return reply(s, [faysal(s, S.languageThirdLanguage(phone))]);
   }
 
@@ -646,9 +678,13 @@ function dispatch(
         ? searchSlots({ siteId: s.siteId, clinicKey: clinic.key, fromISO: now.toISOString(), limit: 1 })
         : [];
       if (!slots.length) {
+        // §5.3 is explicit about ORDER: own it first, completely, with no defence
+        // and no context — THEN one concrete action. Jumping straight to the
+        // handoff offer skips the apology, and an apology that arrives after the
+        // process step reads as a process step.
         s.scene = "S10_escalate";
         s.escalationOffered = true;
-        return reply(s, [faysal(s, S.COMPLAINT_ESCALATE_OFFER)], ["إي، حوّلني"]);
+        return reply(s, [faysal(s, S.COMPLAINT_OWN_IT_NO_SLOT)], ["إي، حوّلني"]);
       }
       s.offeredSlots = slots;
       s.scene = "S5_slots";
@@ -820,6 +856,18 @@ function dispatch(
 
     case "objection_delay":
       return reply(s, [faysal(s, S.motionObjectionDelay(s.offeredSlots[0]?.labelAr ?? "أقرب موعد"))], ["إي", "لا"]);
+
+    // Rule STR-3 — a specialty we carry no route for is said out loud. Never a
+    // silent substitution into a different appointment.
+    case "unsupported_specialty":
+      return reply(s, [
+        faysal(
+          s,
+          S.fallbackHonestUnknown(
+            `تتصل على ${REAL_CONTACTS.unified} والاستقبال يقول لك أي فرع فيه العيادة، وأنا موجود هنا لو تبي أرتّب لك شي ثاني`,
+          ),
+        ),
+      ]);
 
     case "close":
       s.scene = "S14_closed";

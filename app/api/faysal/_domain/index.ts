@@ -73,6 +73,7 @@ export { detectRedFlag, readRedFlag, emergencyRail, RAIL_STOP_REASON } from "./s
 export {
   PRICE_LABEL_AR,
   carrierNameAr,
+  clinicBookableAt,
   getBooking,
   packageFor,
   requestCallback,

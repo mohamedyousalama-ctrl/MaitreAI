@@ -34,7 +34,7 @@ import { isContested, isSiteId, patientPhoneFor } from "./sites";
 import { SITE_IDS } from "./sites";
 import { defaultStore, takenSlotIds, type FaysalStore } from "./store";
 import { addDays, dayKeyOf, hhmmOf, localDateOf, minutesOf } from "./time";
-import type { CatalogueService, Slot, SlotQuery, SiteId, Window } from "./types";
+import type { CatalogueService, Slot, SlotQuery, SiteId, SpecialtyKey, Window } from "./types";
 
 // ── the PRNG. Pure, seeded, and reproducible across processes ───────────────
 
@@ -328,6 +328,26 @@ function datesFor(q: SlotQuery, today: string): string[] {
   const out: string[] = [];
   for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);
   return out;
+}
+
+/**
+ * "Can this clinic take anyone at this branch that day?" — the two gates that
+ * decide it, in one call: bookable HOURS (H1/H4, via bookableWindows) and a
+ * bookable CAPABILITY (Rule SPEC-1, via isBookableSpecialty). Either one false
+ * means the answer is a callback, not a slot.
+ *
+ * Accepts a specialty key or a service id, because callers hold one or the other.
+ */
+export function clinicBookableAt(
+  siteId: SiteId,
+  specialtyOrServiceId: SpecialtyKey | string,
+  dateISO: string,
+  opts: GenerateOpts = {}
+): boolean {
+  const specialty = (serviceById(specialtyOrServiceId)?.specialty ?? specialtyOrServiceId) as SpecialtyKey;
+  const demoMode = opts.demoMode ?? demoModeFromEnv();
+  if (!isBookableSpecialty(siteId, specialty, demoMode)) return false;
+  return bookableWindows(siteId, dateISO, { ...opts, demoMode }).length > 0;
 }
 
 /**

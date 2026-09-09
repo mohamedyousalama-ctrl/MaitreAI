@@ -542,6 +542,27 @@ export function patientPhoneFor(siteId: SiteId): string {
   throw new Error(`no_speakable_phone:${siteId}`);
 }
 
+/**
+ * SPEC-2 §3.4 — a phone number is rendered EXACTLY as the group publishes it:
+ * «011 496 4455», «050 449 0460», «920 002 258». Grouped, never hyphenated.
+ * Ten digits group 3-3-4; a nine-digit 920 unified number groups 3-3-3.
+ *
+ * The canonical STORED form stays unspaced (patientPhoneFor) because that is
+ * the key; this is the SPOKEN form, and every sentence this engine renders uses
+ * it. Formatting is not wording — SPEC-2 still owns every word.
+ */
+export function formatPhoneAr(national: string): string {
+  const digits = String(national ?? "").replace(/\D/g, "");
+  if (digits.length === 10) return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  if (digits.length === 9) return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  return digits || String(national ?? "");
+}
+
+/** The number as Faysal SAYS it (grouped, §3.4). */
+export function patientPhoneDisplay(siteId: SiteId): string {
+  return formatPhoneAr(patientPhoneFor(siteId));
+}
+
 /** Every number Faysal may say for a site, in speaking order. */
 export function patientPhonesFor(siteId: SiteId): string[] {
   const order: Phone["kind"][] = ["primary", "unified_920", "whatsapp"];

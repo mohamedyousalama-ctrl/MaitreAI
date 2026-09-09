@@ -176,6 +176,18 @@ export const complaintWaitOwnIt = (doctorOrSpecialty: string, slot: string) =>
 اللي بيدي أسويه لك الحين: موعد مثبّت باسمك مع ${doctorOrSpecialty} في وقت محدد، بدل ما تجي وتنتظر دورك.
 تبي أثبّت لك ${slot}؟`;
 
+/**
+ * `complaint.wait_own_it`, for the case where there is no slot to offer yet — the
+ * patient complained before naming a need. Line 1 is `complaint.wait_own_it`'s
+ * first line VERBATIM, because that line is the whole rule: own it first, no
+ * explanation before the apology. Line 2 keeps the shape — one thing he controls,
+ * then one question — and offers the handoff rather than a slot he does not have.
+ * 🙏 is on the three-item allowlist for exactly this: a serious apology for a wait.
+ */
+export const COMPLAINT_OWN_IT_NO_SLOT =
+  `معك حق، والانتظار اللي صار مو مقبول، وأعتذر لك عنه 🙏
+اللي بيدي أسويه لك: موعد مثبّت باسمك في وقت محدد بدل ما تجي وتنتظر دورك — ولو تبي مسؤول من الفرع يكلمك، أحوّلك لهم الحين؟`;
+
 export const COMPLAINT_ESCALATE_OFFER =
   `هذا الموضوع يحتاج مسؤول من الفرع يتكلم معك، وما أبي أعدك بشي ما أملكه.
 أحوّلك لهم الحين؟`;

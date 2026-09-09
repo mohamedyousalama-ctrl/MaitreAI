@@ -59,6 +59,7 @@ export type IntentKind =
   | "complaint"
   | "handoff"
   | "hours_question"
+  | "unsupported_specialty"
   | "close"
   | "other";
 
@@ -103,13 +104,24 @@ const GREETING_TOKENS =
  * tie-break." A single English word inside Arabic (`MRI`, `laser`) does not flip
  * the language, so the test is on the majority of letters, not on presence.
  */
+/**
+ * Urdu is written in the ARABIC SCRIPT, so a script-block test calls it Arabic and
+ * §3.3's honest third-language path never fires — which is the one Riyadh-clinic
+ * reality that path exists for. The tell is the letters Urdu has and Arabic does
+ * not: ٹ ڈ ڑ ں ھ ے ۓ گ ک چ پ ژ ہ ی. Two of them is a sentence, not a typo.
+ */
+const URDU_MARKERS = /[پچژگکہھےۓٹڈڑںی]/g;
+
 export function detectLanguage(raw: string): "ar" | "en" | "other" {
   const stripped = raw.replace(GREETING_TOKENS, " ").trim();
   const probe = stripped || raw;
   const arabic = (probe.match(/[؀-ۿ]/g) ?? []).length;
   const latin = (probe.match(/[A-Za-z]/g) ?? []).length;
-  const other = (probe.match(/[ऀ-ॿঀ-৿ሀ-፿฀-๿]/g) ?? []).length;
-  if (other > arabic && other > latin) return "other";
+  // Devanagari, Bengali, Ethiopic, Thai — the other languages §3.3 names.
+  const otherScript = (probe.match(/[ऀ-ॿঀ-৿ሀ-፿฀-๿]/g) ?? []).length;
+  const urdu = (probe.match(URDU_MARKERS) ?? []).length;
+  if (otherScript > arabic && otherScript > latin) return "other";
+  if (urdu >= 2) return "other";
   if (latin > arabic * 2 && latin >= 6) return "en";
   return "ar"; // mixed with no clear majority → Arabic (the tie-break)
 }
@@ -227,6 +239,18 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   if (nearest && district) return { ...base, kind: "prefer_nearest", districtAr: district };
   if (nearest) return { ...base, kind: "prefer_nearest" };
 
+  // Rule STR-3 forbids a SILENT substitution, and routing «دكتور قلب» to a general
+  // consultation is exactly that. A specialty we carry no route for is said out
+  // loud (§8.2) rather than quietly turned into a different appointment. The
+  // clinic-context requirement is what keeps «من القلب أشكركم» out of it — a bare
+  // `includes` on «قلب» fires on gratitude, which is SPEC-4 §2.1's own near-miss.
+  if (
+    has(t, "عياده", "عيادة", "دكتور", "طبيب", "قسم", "موعد") &&
+    has(t, "قلب", "قلبيه", "مسالك", "كلي", "اورام", "نفسي", "نفسيه", "سكري", "تجميل", "تخاطب", "علاج طبيعي", "روماتيزم")
+  ) {
+    return { ...base, kind: "unsupported_specialty" };
+  }
+
   // Price (§5.2). «كم» / «السعر» / «التكلفة».
   if (has(t, "باقه", "باقات", "package", "packages")) return { ...base, kind: "package_question" };
   if (has(t, "كم سعر", "السعر", "بكم", "التكلفه", "كم يكلف", "كم تكلف", "how much", "price", "cost"))
@@ -246,7 +270,11 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
     return { ...base, kind: "hours_question", districtAr: district };
 
   // Slots.
-  if (has(t, "اقرب موعد", "متي فيه موعد", "المواعيد", "متي اقدر اجي", "ابي موعد", "احجز", "حجز", "appointment", "book", "slots"))
+  // A bare «موعد» belongs here: «أبغى موعد عند دكتور قلب» and «موعد أشعة الصدر» are
+  // both booking asks, and both were falling to `fallback.honest_unknown` because
+  // the needles were all multi-word. It sits AFTER price and insurance, so
+  // «كم سعر الموعد؟» still reads as a price question.
+  if (has(t, "موعد", "المواعيد", "متابعه", "متي اقدر اجي", "احجز", "حجز", "appointment", "book", "slots", "follow up"))
     return { ...base, kind: "slots_question", districtAr: district };
 
   // Confirm / decline. Kept LATE so «إي غالي» reads as an objection, not a yes.
@@ -294,7 +322,7 @@ const CLASSIFIER_SYSTEM = `أنت مصنّف نوايا لمحادثة حجز م
 الحقول:
 {"kind": <واحد من القائمة>, "need": <واحد من قائمة الاحتياجات أو null>, "district": <اسم الحي كما كتبه المريض أو null>, "carrier": <اسم شركة التأمين كما كتبها أو null>, "payment": "insurance"|"cash"|null, "slotPick": 1|2|null, "window": "الصبح"|"بعد العصر"|null}
 
-kind ∈ [greeting_only, need, district, payment, insurance_question, price_question, package_question, slots_question, pick_slot, confirm, decline, cancel, prefer_nearest, objection_distance, objection_price, objection_delay, rating, competitor, identity, female_doctor, doctor_quality, clinical_question, drug_question, records, complaint, handoff, hours_question, close, other]
+kind ∈ [greeting_only, need, district, payment, insurance_question, price_question, package_question, slots_question, pick_slot, confirm, decline, cancel, prefer_nearest, objection_distance, objection_price, objection_delay, rating, competitor, identity, female_doctor, doctor_quality, clinical_question, drug_question, records, complaint, handoff, hours_question, unsupported_specialty, close, other]
 
 need ∈ [laser, dermatology, dental, orthodontics, endodontics, paediatrics, obgyn, ent, orthopaedics, internal, general, employment_medical, neurology, after_hours, null]
 
@@ -309,7 +337,7 @@ const KIND_SET = new Set<IntentKind>([
   "package_question", "slots_question", "pick_slot", "confirm", "decline", "cancel",
   "prefer_nearest", "objection_distance", "objection_price", "objection_delay", "rating",
   "competitor", "identity", "female_doctor", "doctor_quality", "clinical_question",
-  "drug_question", "records", "complaint", "handoff", "hours_question", "close", "other",
+  "drug_question", "records", "complaint", "handoff", "hours_question", "unsupported_specialty", "close", "other",
 ]);
 
 const NEED_SET = new Set<string>([

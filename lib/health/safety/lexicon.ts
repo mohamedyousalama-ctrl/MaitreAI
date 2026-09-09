@@ -585,7 +585,12 @@ export const AIRWAY: ClassSpec = {
     BREATHE: ["اتنفس", "يتنفس", "تتنفس", "نتنفس", "التنفس", "تنفس", "ياخذ نفس", "تاخذ نفس", "اخذ نفس"],
     DIFFICULTY: ["صعوبه", "ضيق", "صعب"],
     BREATHE_NOUN: ["التنفس", "تنفس", "النفس"],
-    DENIAL_HEAD: ["ما", "مب", "مو", "بدون", "من غير"],
+    // «مافي» / «مافيه» ARE ONE WORD IN NAJDI AND THE QUIET CORPUS FOUND THEM: 160 ordinary
+    // denials — «مافي صعوبة في التنفس الحمدلله» — reached ARM 2 because the denial head was
+    // enumerated only in its detached spelling. A denial that GOVERNS the difficulty noun is
+    // not a symptom, and this is the same "a slot with one value in it" shape the airway
+    // family was rebuilt to end, on the exclusion side rather than the firing side.
+    DENIAL_HEAD: ["ما", "مافي", "مافيه", "ماكو", "مب", "مو", "بدون", "من غير"],
     DENIAL_MID: ["فيه", "فيها", "في", "عندي", "عنده", "عندها", "عندك", "عندنا", "صار", "صارت"],
     THROAT: [
       "حلقي", "حلقه", "حلقها", "زوري", "زوره", "زورها", "حنجرتي", "حنجرته", "حنجرتها",
@@ -741,7 +746,14 @@ export const AIRWAY: ClassSpec = {
       frames: ["عندي {} في الحجز اونلاين", "فيه {} في الوصول للفرع", "{} على المريض ينتظر كل هذا"],
     },
     BREATHE_NOUN: { frames: ["عيادة {} وين؟", "قسم {} يفتح كم؟"] },
-    DENIAL_HEAD: { frames: ["{} فيه مواعيد اليوم؟"] },
+    DENIAL_HEAD: {
+      frames: ["{} فيه مواعيد اليوم؟"],
+      per: {
+        "مافي": ["مافي مواعيد اليوم؟"], "مافيه": ["مافيه دور طويل؟"],
+        "ماكو": ["ماكو مواعيد بكرة؟"], "بدون": ["ابغى موعد بدون تأمين"],
+        "من غير": ["ينفع كشف من غير موعد؟"],
+      },
+    },
     DENIAL_MID: { frames: ["ما {} مشكلة في الموعد"] },
     THROAT: {
       frames: ["{} فيه التهاب بسيط وابغى موعد", "ابغى موعد انف واذن عشان {}"],

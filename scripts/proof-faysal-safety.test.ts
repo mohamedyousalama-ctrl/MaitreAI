@@ -269,6 +269,16 @@ console.log("\n── §F2  NEGATION × ABILITY × PERSON, and the third person 
       ["حرارته", "حرارتها", "سخونته عالية و حرارته"],
       ["39", "38.5", "40", "٣٩"],
     ))]);
+  // …AND WITH NO TEMPERATURE VALUE AT ALL, which is what the T5 fix is actually about:
+  // «طفلي حرارته ما تنزل» — a parent saying their child's fever will not come down — carried
+  // no value, no infant marker the document listed, and no persistence predicate, and so
+  // produced NO HIT AT ANY TIER while sitting on §2.6's own Fires list.
+  mustFire("§F2 infant_fever: child word × fever term × persistence, NO value  (T5)",
+    [...new Set(cross(
+      ["طفلي", "طفلتي", "ولدي", "ابني", "بنتي", "رضيعي", "الرضيع"],
+      ["حرارته", "حرارتها"],
+      INFANT_FEVER.sets.PRED_PERSIST as string[],
+    ))]);
 
   // §2.8 — phrases only, and each phrase inside an ordinary run-on message, because a phrase
   // matched with a bare lookbehind is silent behind a «و» or a «ب» (§2.0 L7).
@@ -588,8 +598,13 @@ console.log("\n── §M  MUTATION: narrowing AND widening ──────�
     dir: "widening" | "narrowing";
     /** For a widening: does the MUTANT fire where the live rule does not? */
     mutantFires?: (n: string) => boolean;
-    /** For a narrowing: does the MUTANT stay silent where the live rule fires? */
-    mutantSilentOn?: (n: string) => boolean;
+    /** For a narrowing: the MUTATED ARM. A Fires string is "lost" when the LIVE hit came from
+     *  the arm this mutation touches (`ruleIdPrefix`) and the mutated arm no longer matches.
+     *  Scoping by rule id is not bookkeeping: without it a narrowing mutation "loses" every
+     *  string in the corpus, including the eight classes it never touched, and the number it
+     *  reports is the size of the corpus rather than the reach of the mutation. */
+    mutantArm?: (n: string) => boolean;
+    ruleIdPrefix?: string;
     floor: number;
   };
 
@@ -651,52 +666,57 @@ console.log("\n── §M  MUTATION: narrowing AND widening ──────�
   mutations.push(
     {
       name: "N1  drop «طفلي · ابني · بنتي · ولدي» from §2.6's infant markers  (revert T5a)",
-      dir: "narrowing", floor: 40,
-      mutantSilentOn: (n) => !(has(INFANT_FEVER.sets.TERM, n) && (has(withoutTifli, n) || /\b(3[89]|4[0-3])(\.\d)?\b/.test(n))),
+      dir: "narrowing", ruleIdPrefix: "F.", floor: 40,
+      mutantArm: (n) => has(INFANT_FEVER.sets.TERM, n)
+        && (has(withoutTifli, n) || /\b(3[89]|4[0-3])(\.\d)?\b/.test(n) || has(INFANT_FEVER.sets.PRED_REDFLAG, n)),
     },
     {
       name: "N2  drop ARM 7b, the rescue-failure STANDALONE  (revert T5b)",
-      dir: "narrowing", floor: 1,
-      mutantSilentOn: (n) => has(AIRWAY.sets.RESCUE_FAILED, n) && !termRe("ربو").test(n)
-        && !adj(AIRWAY.sets.NEGATION, AIRWAY.sets.AUX, AIRWAY.sets.BREATHE, { aParticle: true }).test(n),
+      dir: "narrowing", ruleIdPrefix: "D.arm7b", floor: 1,
+      mutantArm: () => false,
     },
     {
       name: "N3  drop the Najdi negation «مو · موب»",
-      dir: "narrowing", floor: 100,
-      mutantSilentOn: (n) => adj(AIRWAY.sets.NEGATION, AIRWAY.sets.AUX, AIRWAY.sets.BREATHE, { aParticle: true }).test(n) && !ARM1_NO_MU.test(n),
+      dir: "narrowing", ruleIdPrefix: "D.arm1", floor: 100,
+      mutantArm: (n) => ARM1_NO_MU.test(n),
     },
     {
       name: "N4  drop «عاد» from the ability slot  (the live Kivo defect)",
-      dir: "narrowing", floor: 5,
-      mutantSilentOn: (n) => adj(AIRWAY.sets.NEGATION, AIRWAY.sets.AUX, AIRWAY.sets.BREATHE, { aParticle: true }).test(n) && !ARM1_NO_AAD.test(n),
+      dir: "narrowing", ruleIdPrefix: "D.arm1", floor: 100,
+      mutantArm: (n) => ARM1_NO_AAD.test(n),
     },
     {
       name: "N5  write §2.1's pain predicate UN-NORMALIZED  (revert T1)",
-      dir: "narrowing", floor: 5,
-      mutantSilentOn: (n) => has(CARDIAC.sets.TERM, n) && has(CARDIAC.sets.PRED_PAIN, n) && !has(PAIN_UNNORMALIZED, n),
+      dir: "narrowing", ruleIdPrefix: "A.pain", floor: 5,
+      mutantArm: (n) => has(CARDIAC.sets.TERM, n) && has(PAIN_UNNORMALIZED, n),
     },
     {
       name: "N6  write §2.8's phrases UN-NORMALIZED  (revert T1(b))",
-      dir: "narrowing", floor: 3,
-      mutantSilentOn: (n) => {
-        const un = TRAUMA.sets.STANDALONE.map((p) => p.replace("سياره", "سيارة").replace("علي راسه", "على راسه").replace("علي راسها", "على راسها").replace("كبيره", "كبيرة"));
-        return has(TRAUMA.sets.STANDALONE, n) && !un.some((p) => new RegExp(`(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?${p}(?![ء-ي])`).test(n));
-      },
+      dir: "narrowing", ruleIdPrefix: "H.", floor: 3,
+      mutantArm: (n) => TRAUMA.sets.STANDALONE
+        .map((ph) => ph.replace("سياره", "سيارة").replace("علي راسه", "على راسه").replace("علي راسها", "على راسها").replace("كبيره", "كبيرة"))
+        .some((ph) => new RegExp(`(?<![ء-ي])(?:و|ف|ب|ك|ل)?(?:ال)?${ph}(?![ء-ي])`).test(n)),
     },
     {
-      name: "N7  require a `ربو` noun for the exacerbation arm  (the T5b hole, stated as a rule)",
-      dir: "narrowing", floor: 1,
-      mutantSilentOn: (n) => has(AIRWAY.sets.EXACERBATION, n) && !termRe("ربو").test(n)
-        && !adj(AIRWAY.sets.NEGATION, AIRWAY.sets.AUX, AIRWAY.sets.BREATHE, { aParticle: true }).test(n),
+      name: "N7  §2.2's onset arm scoped to ALL failures again  (the «الدور ما يتحرك» widening, inverted)",
+      dir: "narrowing", ruleIdPrefix: "B.onset", floor: 1,
+      mutantArm: (n) => has(STROKE.sets.PRED_ONSET, n) && has(STROKE.sets.TERM, n),
     },
   );
 
-  // THE CORPUS'S OWN INTEGRITY, ASSERTED ONCE. Every string §M drives as "quiet" must be
-  // quiet on the LIVE rules, or a separation count is measuring the corpus and not the mutant.
-  ok(`all ${ALL_QUIET.length} strings in the quiet corpus are quiet on the live rules`,
-    ALL_QUIET.every((t) => !fires(t)));
-  ok(`all ${ALL_FIRE.length} strings in the must-fire corpus fire on the live rules`,
-    ALL_FIRE.every(fires));
+  // W8 IS A WIDENING AND NOT A NARROWING, and getting that wrong once is worth recording:
+  // dropping a value from an EXCLUSION set makes a rule fire MORE, so it is measured against
+  // the QUIET corpus. Written as a narrowing it reported 0 and looked inert, which is the
+  // shape of a mutation that cannot fail.
+  const DENIAL_NO_MAFI = adj(
+    AIRWAY.sets.DENIAL_HEAD.filter((h) => h !== "مافي" && h !== "مافيه" && h !== "ماكو"),
+    AIRWAY.sets.DENIAL_MID, AIRWAY.sets.DIFFICULTY, { aParticle: true });
+  const ARM2_LIVE = adj(AIRWAY.sets.DIFFICULTY, ["في", "ب", "بال", "في ال"], AIRWAY.sets.BREATHE_NOUN);
+  mutations.push({
+    name: "W8  drop the «مافي · مافيه · ماكو» denial heads  (the Najdi contraction §Q found)",
+    dir: "widening", floor: 100,
+    mutantFires: (n) => ARM2_LIVE.test(n) && !DENIAL_NO_MAFI.test(n),
+  });
 
   let inert = 0;
   for (const m of mutations) {
@@ -707,7 +727,11 @@ console.log("\n── §M  MUTATION: narrowing AND widening ──────�
       if (caught.length < m.floor) inert++;
       ok(`§M ${m.name}: the QUIET corpus separates it from the live rule (${caught.length} ≥ ${m.floor})`, caught.length >= m.floor);
     } else {
-      const lost = ALL_FIRE.filter((t) => fires(t) && m.mutantSilentOn!(N(t)));
+      const lost = ALL_FIRE.filter((t) => {
+        const h = detectRedFlag(t);
+        if (!h || !h.ruleId.startsWith(m.ruleIdPrefix!)) return false;
+        return !m.mutantArm!(N(t));
+      });
       console.log(`   ${String(lost.length).padStart(5)} Fires entries GO SILENT under ${m.name}  (floor ${m.floor})`);
       if (lost.length) console.log(`         e.g. «${lost[0]}»  …  «${lost[lost.length - 1]}»`);
       if (lost.length < m.floor) inert++;
@@ -716,4 +740,236 @@ console.log("\n── §M  MUTATION: narrowing AND widening ──────�
   }
   ok(`all ${mutations.length} mutations are separated by this corpus — none is inert`, inert === 0);
   console.log(`   ${mutations.filter((m) => m.dir === "widening").length} widening · ${mutations.filter((m) => m.dir === "narrowing").length} narrowing · ${inert} inert`);
+}
+
+// ═══ §R — THE RAIL (§4.1 structure, §4.2 copy, §4.3 output guard, §4.4 which ER) ════════════
+console.log("\n── §R  THE RAIL: structural, not instructional ─────────────────");
+{
+  const fresh = (d: number): ErSite => ({
+    id: "w1", name: "مجمع الوطن الطبي 1", address: "اليمامة، الرياض",
+    is_er: true, er_open_24h: true,
+    hours_verified_at: new Date(Date.now() - d * 86400000).toISOString(), verified_by: "ops",
+  });
+  const NOW = new Date();
+
+  // §4.1 — BOOKING AND SALES ARE UNREACHABLE STRUCTURALLY, not by instruction. There is no
+  // tool to call, no presentation to tap, and no composer stage to append «نكمل الحجز؟» to.
+  for (const cls of ["cardiac", "stroke", "hemorrhage", "airway", "obstetric", "infant_fever", "poisoning", "trauma", "self_harm", null] as const) {
+    const r = emergencyRail({ cls, tier: "emergency", sites: [fresh(3)], now: NOW });
+    ok(`§R ${cls ?? "exception"}: toolNames is EMPTY`, r.toolNames.length === 0);
+    ok(`§R ${cls ?? "exception"}: canBook === false`, r.canBook === false);
+    ok(`§R ${cls ?? "exception"}: presentation === null`, r.presentation === null);
+    ok(`§R ${cls ?? "exception"}: stopReason on EVERY branch (A, B and C)`, r.stopReason === "faysal_redflag_emergency");
+    ok(`§R ${cls ?? "exception"}: triageHold set before the reply`, r.triageHold === true);
+    ok(`§R ${cls ?? "exception"}: voice is hard-zeroed`, r.voiceHardZeroReason === "safety_hold");
+    ok(`§R ${cls ?? "exception"}: pager priority is P0`, r.pagerPriority === "P0");
+    ok(`§R ${cls ?? "exception"}: §4.3 output guard clean — ${railCopyViolations(r.text).join(", ") || "none"}`,
+      railCopyViolations(r.text).length === 0);
+  }
+
+  // §4.2 / §11.3 — `997` in EVERY A–H branch, as the FIRST line, in WESTERN digits.
+  for (const cls of ["cardiac", "airway", "trauma", null] as const) {
+    const r = emergencyRail({ cls, tier: "emergency", sites: [fresh(3)], now: NOW });
+    ok(`§R ${cls ?? "exception"}: 997 on the FIRST line`, r.text.split("\n")[0].includes("997"));
+    ok(`§R ${cls ?? "exception"}: 997 in WESTERN digits, not ٩٩٧`, !r.text.includes("٩٩٧"));
+  }
+  ok("§R rail C also carries 997", emergencyRail({ cls: "self_harm", tier: "emergency" }).text.includes("997"));
+
+  // §4.4 — THE ER SITE IS NAMED ONLY FROM A RECORD VERIFIED WITHIN 30 DAYS. Sending a patient
+  // with chest pain to a branch that closed at midnight is a lethal defect a unit test cannot
+  // catch, so the code refuses to guess: stale, absent, or not-an-ER all render branch B.
+  ok("§R fresh (3 days) → branch A, site named",
+    emergencyRail({ cls: "cardiac", tier: "emergency", sites: [fresh(3)], now: NOW }).branch === "A");
+  ok("§R 29 days → still branch A", emergencyRail({ cls: "cardiac", tier: "emergency", sites: [fresh(29)], now: NOW }).branch === "A");
+  ok("§R 31 DAYS → branch B, NO site named",
+    emergencyRail({ cls: "cardiac", tier: "emergency", sites: [fresh(31)], now: NOW }).branch === "B");
+  ok("§R 31 days → siteNamed is null", emergencyRail({ cls: "cardiac", tier: "emergency", sites: [fresh(31)], now: NOW }).siteNamed === null);
+  ok("§R never verified → branch B",
+    emergencyRail({ cls: "cardiac", tier: "emergency", sites: [{ ...fresh(1), hours_verified_at: null }], now: NOW }).branch === "B");
+  ok("§R not an ER → branch B",
+    emergencyRail({ cls: "cardiac", tier: "emergency", sites: [{ ...fresh(1), is_er: false }], now: NOW }).branch === "B");
+  ok("§R zero sites → branch B", emergencyRail({ cls: "cardiac", tier: "emergency", sites: [], now: NOW }).branch === "B");
+  ok("§R branch B is byte-exact", emergencyRail({ cls: "cardiac", tier: "emergency", sites: [], now: NOW }).text === RAIL_B);
+  ok("§R eligibleErSites drops the stale row", eligibleErSites([fresh(31), fresh(2)], NOW).length === 1);
+  ok("§R a FUTURE verification timestamp is not eligible either (clock skew is not evidence)",
+    eligibleErSites([{ ...fresh(0), hours_verified_at: new Date(Date.now() + 86400000).toISOString() }], NOW).length === 0);
+
+  // §12 row 6 — THE MENTAL-HEALTH NUMBER SHIPS BLANK. Precedent: the Egyptian ambulance number
+  // was deliberately left out rather than guessed — "a wrong number is worse than none,
+  // because it is dialled and it fails." A psychological-support number reached by a person in
+  // crisis has the same property. It goes in with a SIGNATURE, not a deploy.
+  ok("§12 row 6: SUPPORT_LINE_SENTENCE ships BLANK", SUPPORT_LINE_SENTENCE === "");
+  const c = emergencyRail({ cls: "self_harm", tier: "emergency" }).text;
+  ok("§12 row 6: rail C renders NO support line while the slot is blank", !/\n\s*\n/.test(c) && c.split("\n").length === 3);
+  ok("§12 row 6: rail C contains no phone number other than 997", (c.match(/\d+/g) ?? []).every((d) => d === "997"));
+  // …and rail C does NOT do the things §4.2 says it must not.
+  for (const banned of ["لا تسوي كذا", "فكر في أهلك", "بيتصلون فيك خلال", "خلال دقائق"]) {
+    ok(`§R rail C omits «${banned}»`, !c.includes(banned));
+  }
+}
+
+// ═══ §H — THE TRIAGE HOLD (§1.5 R2), READ AT THE WRITE ══════════════════════════════════════
+console.log("\n── §H  THE HOLD: read at the write, released by a person ───────");
+{
+  // THE ASSERTION THE FIRST DRAFT HAD NO MECHANISM FOR. Fire the rail on «صدري يعورني وأتعرق»;
+  // then assert the NEXT turn's text is CORRECTLY QUIET — it is, and that is the point — and
+  // that the booking write on that thread is refused anyway. If this test can be made to pass
+  // by making the first assertion fail, it is measuring the detector, not the hold.
+  const turn1 = detectRedFlag("صدري يعورني وأتعرق");
+  ok("§H turn 1 fires", turn1 !== null && turn1.tier === "emergency");
+  ok("§H turn 2 «طيب أبغى موعد قلب بكرة الساعة 10» is CORRECTLY QUIET",
+    detectRedFlag("طيب أبغى موعد قلب بكرة الساعة 10") === null);
+
+  const heldRow = { ...OPEN_TRIAGE_HOLD_PATCH };
+  ok("§H the rail's patch sets BOTH fields", heldRow.triage_hold === true && heldRow.ownership_state === "SYSTEM_HOLD");
+  ok("§H isTriageHeld on the patched row", isTriageHeld(heldRow));
+  ok("§H isTriageHeld on ownership_state alone", isTriageHeld({ ownership_state: "SYSTEM_HOLD" }));
+  ok("§H isTriageHeld on triage_hold alone", isTriageHeld({ triage_hold: true }));
+  ok("§H isTriageHeld on a clean row", !isTriageHeld({ ownership_state: "BOT", triage_hold: false }));
+  ok("§H isTriageHeld on null", !isTriageHeld(null));
+
+  const readHeld = async () => ({ id: "conv1", conv: heldRow as { ownership_state: string; triage_hold: boolean } });
+  const readClean = async () => ({ id: "conv2", conv: { ownership_state: "BOT", triage_hold: false } });
+  const readThrows = async () => { throw new Error("supabase down"); };
+
+  const results = await Promise.all([
+    checkBookingTriageHold(readHeld, "tok", "create"),
+    checkBookingTriageHold(readClean, "tok", "create"),
+    checkBookingTriageHold(readThrows, "tok", "create"),
+    checkBookingTriageHold(readHeld, "tok", "cancel"),
+    checkBookingTriageHold(readThrows, "tok", "cancel"),
+    checkBookingTriageHold(readHeld, "tok", "confirm"),
+    checkBookingTriageHold(readHeld, "tok", "reschedule"),
+  ]);
+  ok("§H H-3 a create on a held thread is REFUSED", results[0].held && results[0].reason === "triage_hold_open");
+  ok("§H a create on a clean thread proceeds", !results[1].held);
+  ok("§H H-4 FAIL-CLOSED: a read error is HELD", results[2].held && results[2].reason === "triage_hold_check_failed");
+  ok("§H H-6 cancellation survives the hold", !results[3].held);
+  ok("§H H-6 cancellation survives even a broken read", !results[4].held);
+  ok("§H confirm is refused on a held thread", results[5].held);
+  ok("§H reschedule is refused on a held thread", results[6].held);
+  ok("§H COMMITTED_APPOINTMENT_STATES excludes draft/pending/cancelled",
+    !COMMITTED_APPOINTMENT_STATES.includes("draft") && !COMMITTED_APPOINTMENT_STATES.includes("cancelled")
+    && COMMITTED_APPOINTMENT_STATES.includes("confirmed"));
+
+  // H-5 — RELEASE IS AN EXPLICIT OPERATOR NEXT-ACTION. No timer, no message, no model output,
+  // no flag. There is exactly one shape that produces a release and it needs a NAMED operator.
+  ok("§H H-5 release with a named operator works",
+    releaseTriageHold({ releasedBy: "sara.alqahtani", releasedAt: new Date().toISOString() })?.ownership_state === "HUMAN_ACTIVE");
+  ok("§H H-5 release with NO operator is refused", releaseTriageHold({ releasedBy: "", releasedAt: new Date().toISOString() }) === null);
+  ok("§H H-5 release with whitespace-only operator is refused", releaseTriageHold({ releasedBy: "   ", releasedAt: new Date().toISOString() }) === null);
+  ok("§H H-5 release with no timestamp is refused", releaseTriageHold({ releasedBy: "sara", releasedAt: "" }) === null);
+  ok("§H H-5 release records released_by and released_at",
+    !!releaseTriageHold({ releasedBy: "sara", releasedAt: "2026-09-09T10:00:00Z" })?.released_by);
+}
+
+// ═══ §X — THE DETECTOR EXCEPTION (§1.5 R3) ══════════════════════════════════════════════════
+console.log("\n── §X  A DETECTOR EXCEPTION IS AN `emergency`, NEVER AN `urgent` ");
+{
+  // §10 said "detector throws → fail closed: treat as `urgent`". §1.3 says `urgent` LEAVES
+  // BOOKING REACHABLE. So the designated fail-closed path was fail-OPEN for the one thing the
+  // rail exists to prevent, on the one turn where we have no information at all.
+  const thrower = () => { throw new Error("malformed transcript"); };
+  const v = isFaysalSafetyInbound("صدري يعورني وأتعرق", thrower);
+  ok("§X a throw produces fired:true", v.fired);
+  ok("§X a throw produces tier === 'emergency', NOT 'urgent'", v.tier === "emergency");
+  ok("§X a throw produces ruleId 'detector_exception'", v.ruleId === "detector_exception");
+  ok("§X a throw names NO class (we could not classify, so we cannot route)", v.class === null);
+  const r = emergencyRail({ cls: v.class, tier: v.tier! });
+  ok("§X the exception renders BRANCH B", r.branch === "B");
+  ok("§X branch B still carries 997", r.text.includes("997"));
+  ok("§X the exception turn has an empty tool set", r.toolNames.length === 0);
+  ok("§X the exception turn cannot book", r.canBook === false);
+  ok("§X the exception turn pages P0, not P1", r.pagerPriority === "P0");
+  ok("§X the exception turn sets the hold", r.triageHold === true);
+  // A NON-CONFORMING RETURN IS TREATED EXACTLY LIKE A THROW — §1.5 R3 says "any throw, timeout,
+  // OR NON-CONFORMING RETURN". A stub that quietly returns the wrong shape is the realistic
+  // failure, not an exception: a refactor changes a field name and every surface reads `null`.
+  for (const [name, stub] of [
+    ["missing tier", () => ({ fired: true, class: "cardiac", termAr: "صدري", ruleId: "x", label: "y" })],
+    ["tier is 'urgent-ish' garbage", () => ({ fired: true, class: "cardiac", tier: "high", termAr: "a", ruleId: "x", label: "y" })],
+    ["fired is false but an object is returned", () => ({ fired: false, class: null, tier: null, termAr: null, ruleId: null, label: null })],
+    ["a bare string", () => "emergency"],
+  ] as Array<[string, () => unknown]>) {
+    const vv = isFaysalSafetyInbound("صدري يعورني وأتعرق", stub as () => RedFlagHit | null);
+    ok(`§X non-conforming return (${name}) → emergency, not silence`, vv.fired && vv.tier === "emergency" && vv.ruleId === "detector_exception");
+  }
+  ok("§X the constant itself is emergency", DETECTOR_EXCEPTION.tier === "emergency");
+  // …AND THE UNION IS WHAT SURFACES CALL. A guard proven in one detector is not a guard.
+  ok("§X the union agrees with the detector on a hit", isFaysalSafetyInbound("ما أقدر أتنفس").class === "airway");
+  ok("§X the union agrees with the detector on silence", !isFaysalSafetyInbound("أبغى موعد بكرة").fired);
+}
+
+// ═══ §W — WIRING, AND THE ONE LIST THAT MUST NOT BE A COPY ══════════════════════════════════
+console.log("\n── §W  WIRING, AND THE SHARED-LEXICON BINDING ──────────────────");
+{
+  // §11.0 — registration in `unit-suite.json` makes a proof VISIBLE, NOT ENFORCING:
+  // `core-gate.yml:112` carries `continue-on-error: true`, and the blocking workflow is
+  // `paths:`-filtered with no `lib/health/**`. This assertion checks the half that is in this
+  // wave's scope and PRINTS the half that is not, so nobody reads green as "gated".
+  const suite = JSON.parse(readFileSync(resolve(import.meta.dirname, "unit-suite.json"), "utf8")) as string[];
+  ok("§W this proof is registered in scripts/unit-suite.json",
+    suite.some((c) => c.includes("proof-faysal-safety.test.ts")));
+
+  let gate = "";
+  try { gate = readFileSync(resolve(import.meta.dirname, "../.github/workflows/agent-eval.yml"), "utf8"); } catch { /* not present */ }
+  const inBlockingGate = gate.includes("proof-faysal-safety.test.ts");
+  const pathsCoverHealth = /paths:[\s\S]{0,800}lib\/health/.test(gate);
+  console.log(`   registered in unit-suite.json : yes`);
+  console.log(`   named in agent-eval.yml       : ${inBlockingGate ? "yes" : "NO  ← §12 row 13, still open"}`);
+  console.log(`   lib/health/** in its paths:   : ${pathsCoverHealth ? "yes" : "NO  ← §12 row 13, still open"}`);
+  if (!inBlockingGate || !pathsCoverHealth) {
+    console.log("   ⚠  §11.0: a PR touching only lib/health/* triggers NEITHER blocking job today.");
+    console.log("      `core-gate.yml:112` has `continue-on-error: true`, so `npm run test:unit`");
+    console.log("      runs this file and CI swallows the exit code. §12 row 13 is a launch gate");
+    console.log("      and it is NOT this wave's to close — the workflow files are outside the");
+    console.log("      safety rail's ownership. Registration is necessary and worth nothing alone.");
+  }
+
+  // §2.9's DISEASE_OBJECT IS ENUMERATED LOCALLY AND MUST NOT DRIFT FROM THE SHARED LEXICON.
+  // A copied list is how `symptom-frames.ts`'s two ancestors became a deaf spot, so every
+  // member is DRIVEN through the real `lib/ai/allergen-gate.ts` rather than trusted.
+  const notRecognised = SELF_HARM.sets.DISEASE_OBJECT.filter(
+    (t) => detectAllergenAvoidance(`عندي حساسية من ${t}`).term === null);
+  for (const t of notRecognised) ok(`§W «${t}» is in DISEASE_OBJECT but the SHARED allergen lexicon does not know it`, false);
+  pass += SELF_HARM.sets.DISEASE_OBJECT.length - notRecognised.length;
+  console.log(`   ${SELF_HARM.sets.DISEASE_OBJECT.length} DISEASE_OBJECT members · ${SELF_HARM.sets.DISEASE_OBJECT.length - notRecognised.length} recognised by the shared lexicon`);
+  ok(`§2.9's allergy carve-out agrees with lib/ai/allergen-gate.ts (${notRecognised.length} drifted)`, notRecognised.length === 0);
+
+  // …AND THE ALLERGY DISCLOSURE ITSELF. «بموت لو أكلت فول سوداني» is an allergy statement in
+  // this repo's own avoidance lexicon, and firing a suicide rail at it is the failure §1.3
+  // singles this class out for.
+  for (const t of SELF_HARM.sets.DISEASE_OBJECT) {
+    ok(`§W «بموت لو أكلت ${t}» is not self-harm`, detectRedFlag(`بموت لو أكلت ${t}`) === null);
+  }
+
+  // §3.5 / §11.10 — FAYSAL DOES NOT REWIRE THE PHONETIC NET. No fuzzy matching on typed text:
+  // no edit distance, no phonetic folding, no "within 2 of a safety word". The Founder retired
+  // that net after «هلا والله» became an allergy consultation in front of him.
+  const src = ["normalize", "match", "lexicon", "detect", "rail", "triage-hold", "index"]
+    .map((f) => readFileSync(resolve(import.meta.dirname, `../lib/health/safety/${f}.ts`), "utf8"))
+    .join("\n")
+    .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+  for (const banned of ["phonetic-safety-net", "levenshtein", "editDistance", "fuzzy"]) {
+    ok(`§W no code in lib/health/safety/ references «${banned}»`, !src.includes(banned));
+  }
+  // …and it is PURE: no DB, no clock, no model, no network in the detector's own path.
+  const detectSrc = readFileSync(resolve(import.meta.dirname, "../lib/health/safety/detect.ts"), "utf8");
+  for (const banned of ["supabase", "fetch(", "Date.now", "new Date", "process.env", "await "]) {
+    ok(`§W detect.ts contains no «${banned}» — PURE and pre-model`, !detectSrc.includes(banned));
+  }
+}
+
+// ═══ TOTALS ═════════════════════════════════════════════════════════════════════════════════
+console.log(`\n   corpus totals: ${mustFireTotal} MUST_FIRE · ${mustQuietTotal} MUST_BE_QUIET · ${mustFireTotal + mustQuietTotal} assertions`);
+console.log(`   …of which ${[...QUIET_BY_FAMILY.entries()].filter(([k]) => k.startsWith("Q")).reduce((n, [, v]) => n + v.length, 0)} are ordinary clinic strings derived from ARABIC, not from the detector's axes`);
+console.log(`\n   NOT PROVEN HERE, AND BLOCKING (§12): the clinical correctness of every threshold;`);
+console.log(`   the emergency/urgent boundary; the infant-fever cut-offs; the rail's wording; the`);
+console.log(`   self-harm copy and escalation; the mental-health number (ships BLANK); which sites`);
+console.log(`   have a 24-hour ER on which weekday; the false-positive rate on real traffic; and`);
+console.log(`   whether these proofs gate a merge at all. Seventeen rows, all unsigned.`);
+console.log(`\n${fails.length ? "FAIL" : "PASS"} faysal-safety: ${pass}/${pass + fails.length} passed`);
+if (fails.length) {
+  if (fails.length > 40) console.log(`   … ${fails.length - 40} more failures not listed`);
+  process.exit(1);
 }

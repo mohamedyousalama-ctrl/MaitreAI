@@ -43,10 +43,12 @@ import {
   assertNoCoveragePromise,
   bookableWindows,
   cancelBooking,
+  clinicBookableAt,
   confirmBooking,
   createStore,
   dayHoursFor,
   effectiveConfidence,
+  formatPhoneAr,
   generateDaySlots,
   holdFamilyBlock,
   holdSlot,
@@ -54,6 +56,7 @@ import {
   insuranceAnswer,
   minutesOf,
   openStateAt,
+  patientPhoneDisplay,
   patientPhoneFor,
   priceFor,
   recommendBranch,
@@ -222,7 +225,7 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
 
   const talk = hoursDisclosure("wattan-4", "facility", "sun", DEMO);
   check("H2: an unknown day is still answerable in conversation", talk.ar.length > 20 && talk.state === "unknown");
-  check("H2: and the answer offers the call with the branch number", talk.mustOfferCall && talk.ar.includes(patientPhoneFor("wattan-4")));
+  check("H2: and the answer offers the call with the branch number", talk.mustOfferCall && talk.ar.includes(patientPhoneDisplay("wattan-4")));
 
   // criterion 3 — Ar Rabwah's Friday is `unknown`, NOT `closed`. They differ in
   // what Faysal is allowed to SAY: `closed` licenses "Ar Rabwah is closed on
@@ -355,7 +358,7 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   check("C4-1: a Shifa request produces a callback_request, never a slot", cb.kind === "callback_request" && cb.dateISO === null && cb.start === null);
   const block = renderConfirmationBlock(cb);
   check("criterion 10: the callback block renders NO appointment time", !block.includes("الموعد:"));
-  check("C4-1: it names the branch's own number, 011 497 7900", block.includes("0114977900"));
+  check("C4-1: it names the branch's own number, 011 497 7900", block.includes("011 497 7900"));
   check("C4-1: it never renders a bare 'confirmed'", block.includes("تم تسجيل طلبك") && !block.includes("تم الحجز"));
   check("§3.4: the suppressed Complex-1 line is never offered as Shifa's", patientPhoneFor("wattan-4") === "0114977900");
   check("DEMO-1c: the callback confirmation carries the demo suffix too", block.includes(DEMO_BOOKING_SUFFIX_AR));
@@ -508,14 +511,25 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   for (const siteId of SITE_IDS) {
     const d = hoursDisclosure(siteId, "facility", "fri", DEMO);
     check(`FRI-1: ${siteId} Friday disclosure offers the call`, d.mustOfferCall);
-    check(`FRI-1: ${siteId} Friday disclosure carries the branch number`, d.ar.includes(patientPhoneFor(siteId)));
+    check(`FRI-1: ${siteId} Friday disclosure carries the branch number`, d.ar.includes(patientPhoneDisplay(siteId)));
   }
+  check("§3.4: a phone is spoken exactly as the group publishes it — grouped, never hyphenated",
+    patientPhoneDisplay("wattan-2") === "011 496 4455" &&
+    patientPhoneDisplay("wattan-3") === "011 491 8003" &&
+    patientPhoneDisplay("wattan-4") === "011 497 7900" &&
+    formatPhoneAr("920002258") === "920 002 258" &&
+    formatPhoneAr("0504490460") === "050 449 0460");
+  check("§1 / PHONE-1: a branch's own direct line is offered before the 920, which is not reliably dialable from abroad",
+    patientPhoneDisplay("shoaa-wurud") === "011 456 3777");
+  check("§3.4: the unspaced storage key never leaks into a patient-facing sentence",
+    SITE_IDS.every((id) => !hoursDisclosure(id, "facility", "fri", DEMO).ar.includes(patientPhoneFor(id))));
+
   // Even where Friday confidence is `medium` — the rule has no exceptions.
   check("FRI-1: applies at Ar Rawabi, whose Friday is medium", hoursDisclosure("wattan-2", "facility", "fri", DEMO).mustOfferCall);
   // An INVENTED hour is never stated flatly as the branch's timetable.
   const seededDisclosure = hoursDisclosure("wattan-2", "clinic", "sat", DEMO);
   check("HRS-DEMO: a seeded clinic day is flagged as seeded to the caller", seededDisclosure.demoSeeded === true);
-  check("HRS-DEMO: and it always offers the branch call", seededDisclosure.mustOfferCall && seededDisclosure.ar.includes(patientPhoneFor("wattan-2")));
+  check("HRS-DEMO: and it always offers the branch call", seededDisclosure.mustOfferCall && seededDisclosure.ar.includes(patientPhoneDisplay("wattan-2")));
 
   const store = createStore();
   const fridaySlots = searchSlots({ serviceId: "derm-consult", siteId: "wattan-2", dateISO: FRI, ...DEMO }, { store });
@@ -525,10 +539,12 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   const h = holdSlot(fridaySlots[0].slotId, WHO, { store, ...DEMO });
   const appt = confirmBooking(h.holdId, WHO, { store, ...DEMO });
   const block = renderConfirmationBlock(appt);
-  check("FRI-1: the Friday confirmation block carries the branch number", block.includes(patientPhoneFor("wattan-2")));
+  check("FRI-1: the Friday confirmation block carries the branch number", block.includes(patientPhoneDisplay("wattan-2")));
   check("FRI-1: and it says the Friday hours compress", block.includes("الجمعة"));
+  check("§3.4: the time is 12-hour with ص/م and Western digits, never 24-hour, never an ISO stamp",
+    /الموعد: الجمعة 11\/9 — \d{1,2}:\d{2} [صم]/.test(block) && !block.includes(FRI));
   mutation("FRI-1: a Friday confirmation without the phone is accepted", () =>
-    !throws(() => assertConfirmationMarkers(block.replace(patientPhoneFor("wattan-2"), "—"), appt)));
+    !throws(() => assertConfirmationMarkers(block.replaceAll(patientPhoneDisplay("wattan-2"), "—"), appt)));
 
   // No other site sells a Friday.
   for (const siteId of SITE_IDS.filter((s) => s !== "wattan-2")) {
@@ -807,7 +823,7 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   const forced = recommendBranch("paediatrics", { ...DEMO, dateISO: FRI });
   check("STR-3: when the primary can't take Friday, the fallback is named with a reason",
     forced.siteId === "wattan-2" && forced.fallbackFromSiteId === "shoaa-wurud" && !!forced.fallbackReasonAr &&
-    forced.fallbackReasonAr.includes(patientPhoneFor("shoaa-wurud")));
+    forced.fallbackReasonAr.includes(patientPhoneDisplay("shoaa-wurud")));
   check("STR-3: and a bookable primary is left alone", recommendBranch("paediatrics", { ...DEMO, dateISO: SAT }).siteId === "shoaa-wurud");
   check("§5.3: fallbacks stay inside the need", recommendBranch("endodontics", DEMO).siteId === "wattan-3");
   check("§5: the commonest asks route without guessing", recommendBranch("باطنية", DEMO).siteId === "wattan-2" && recommendBranch("laser", DEMO).siteId === "wattan-2");
@@ -833,6 +849,12 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   // SPEC-1 — group_only / inferred capability is conversational, never bookable.
   check("SPEC-1: a group_only specialty is never bookable",
     searchSlots({ serviceId: "ophth-consult", siteId: "shoaa-wurud", dateISO: SAT, ...DEMO }, { store: createStore() }).length === 0);
+  check("SPEC-1: the two gates answer together — hours AND capability",
+    clinicBookableAt("wattan-2", "derm-consult", SAT, DEMO) === true &&
+    clinicBookableAt("shoaa-wurud", "ophth-consult", SAT, DEMO) === false &&
+    clinicBookableAt("wattan-2", "derm-consult", FRI, DEMO) === true &&
+    clinicBookableAt("shoaa-wurud", "paeds-consult", FRI, DEMO) === false &&
+    clinicBookableAt("wattan-4", "ortho-assessment", SAT, DEMO) === false);
   check("SPEC-1: a named_at_site specialty at a seeded site IS bookable",
     searchSlots({ serviceId: "ophth-consult", siteId: "wattan-2", dateISO: SAT, ...DEMO }, { store: createStore() }).length > 0);
   check("§6.2 fn3 / audit S10: Shoaa Al Wurud's OB-GYN is downgraded to group_only, deliberately",

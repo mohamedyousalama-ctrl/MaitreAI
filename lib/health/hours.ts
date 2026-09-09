@@ -29,7 +29,7 @@ import {
   VOLATILITY_WINDOWS,
   demoModeFromEnv,
 } from "./config";
-import { isContested, canMintSlots, isSiteId, patientPhoneFor, siteById } from "./sites";
+import { canMintSlots, isContested, isSiteId, patientPhoneDisplay, patientPhoneFor, siteById } from "./sites";
 import {
   addDays,
   dayKeyOf,
@@ -833,8 +833,9 @@ export function hoursDisclosure(
     eff === "unknown" || eff === "low" || eff === "conflicted" || eff === "demo_seeded" || day.conflicts.length > 0;
   const mustOfferCall = isFriday || shaky || site.operatingStatus.requiresLiveConfirmation;
 
-  const tail = mustOfferCall ? ` رقم الفرع ${phone} وأتأكد لك.` : "";
-  const tailEn = mustOfferCall ? ` The branch number is ${phone} — I can confirm for you.` : "";
+  const spoken = patientPhoneDisplay(siteId);
+  const tail = mustOfferCall ? ` رقم الفرع ${spoken} وأتأكد لك.` : "";
+  const tailEn = mustOfferCall ? ` The branch number is ${spoken} — I can confirm for you.` : "";
 
   let ar: string;
   let en: string;

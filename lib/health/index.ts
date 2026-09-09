@@ -54,8 +54,10 @@ export {
   SITES,
   SITE_IDS,
   canMintSlots,
+  formatPhoneAr,
   isContested,
   isSiteId,
+  patientPhoneDisplay,
   patientPhoneFor,
   patientPhonesFor,
   siteById,
@@ -90,6 +92,7 @@ export {
 export {
   RESOURCES,
   busyProbability,
+  clinicBookableAt,
   fnv1a32,
   generateDaySlots,
   meetsLeadTime,
