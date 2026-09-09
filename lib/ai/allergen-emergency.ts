@@ -90,7 +90,8 @@ const HYPOTHETICAL_Q_RE = /(?:ممكن|يمكن|هل|ينفع|يصير|احتم�
 // have been a fourth. So the airway family is no longer WRITTEN AS SENTENCES. It is the cross
 // product of the four slots the language actually varies — NEGATION × ABILITY × PERSON ×
 // PREPOSITION — composed from the named lists below, and `scripts/proof-airway-derivation.test.ts`
-// drives the whole product (2,600+ strings) instead of a list somebody thought of. A slot that
+// drives the whole product — 8,353 derived must-fire strings against 6,293 that must stay
+// quiet — instead of a list somebody thought of. A slot that
 // is missing a value is now a hole in a LIST, which a reader can see, rather than a hole in a
 // sentence, which nobody can.
 //
@@ -204,10 +205,6 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
   // Active allergic reaction happening right now («الحين»/«دلوقتي»/«الآن»).
   [/(?:صار|جاني|جاله|جالها|جالي|صارت|بيصير|صاير) ?.{0,12}?(?:تحسس|حساسيه|حساسيت|رد ?فعل|طفح) ?.{0,8}?(?:الحين|دلوقتي|الان|توه|هسه|هلا)|(?:تحسس|حساسيه) ?(?:الحين|دلوقتي|الان|توه|هسه)/, "رد فعل تحسسي نشط", "soft"],
   // Emergency call / hospital NOW.
-  // THE PERSON AXIS REACHES HERE TOO. «ودّيناه المستشفى» was listed and «ودّوه المستشفى» was
-  // not — the same first-person freeze as the airway family, in the family a bystander is
-  // most likely to use, because the person being taken to hospital is by definition not the
-  // one typing. Soft, so a genuine history («قبل سنة ودّوه المستشفى») is still vetoed.
   // NORMALIZED SPELLINGS ONLY — three alternatives here were unreachable.
   //
   // These patterns run over `normalizeAr` output, which folds ئ→ي and ى→ي. So «طوارئ» is
@@ -224,6 +221,10 @@ const EMERGENCY_PATTERNS: Array<[RegExp, string, "hard" | "soft"]> = [
   // بالإسعاف», which is the exact wording Khalid himself uses when he tells someone to call
   // one. Verb forms widened, ب and ال both optional; «اسعاف» is still required, and there is
   // no ordinary restaurant sentence that asks for an ambulance.
+  // THE PERSON AXIS REACHES HERE TOO. «ودّيناه المستشفى» was listed and «ودّوه المستشفى» was
+  // not — the same first-person freeze as the airway family, in the family a bystander is
+  // most likely to use, because the person being taken to hospital is by definition not the
+  // one typing. Soft, so a genuine history («قبل سنة ودّوه المستشفى») is still vetoed.
   [/(?:نحتاج|عايزين|عايز|ابي|نبي|ابغي|ابغى|اتصل|اتصلو|اتصلوا|نتصل|كلم|كلمو|كلموا|نادو|نادوا|طلبو|طلبوا) ?ب? ?(?:ال)?اسعاف|(?:ودينا|ودونا|ودوه|ودوها|ودوني|ودوا|ودو|وديته|وديتها|وديتوني|وديناه|وديناها|رحنا|راح|راحت|راحوا|دخلنا|دخلوه|دخلوها|دخلته|خذوه|خذوها) ?(?:ال)?(?:مستشفي|طواري)|(?:ال)?طواري ?(?:الحين|دلوقتي|الان)/, "طلب إسعاف / طوارئ", "soft"],
 ];
 
