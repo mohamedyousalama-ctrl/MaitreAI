@@ -55,7 +55,7 @@ becomes a set of exceptions.
 
 **Question:** the tenant table is called `restaurants`, and **58 files** under
 `app/`, `lib/` and `components/` query it directly (`from("restaurants")`); **122 files**
-reference the `restaurant_id` column; **65 of 119 migration files** touch it. Does Faysal reuse
+reference the `restaurant_id` column; **59 of 119 migration files** contain the column `restaurant_id` (and 65 contain the string `restaurants` — the *table*, which is what the first draft counted; corrected Wave 1.5, audit S16). Does Faysal reuse
 it, extend it, or get its own?
 
 ### 1.0 What the table actually is
@@ -279,6 +279,14 @@ and documents the defect that motivated each of, the following:
 - **Positive controls**: a list of import lines that MUST be caught and a list that MUST NOT,
   so a typo in a regex cannot leave the proof green and meaningless.
 
+> **Both functions must be *extracted* first — as of today neither is importable** (Wave 1.5,
+> audit S13). `stripComments` is declared at L52 **without `export`**; `bindingsFrom` at L169 is
+> a **nested function inside a block**. So "do not write a new scanner" is, as written, an
+> instruction to **copy** one — two divergent copies of an adversarially-hardened scanner, which
+> is the exact drift `symptom-frames.ts`'s header exists to record. Extract both to
+> `scripts/lib/import-scan.mjs` and have both proofs import them. This is on the pre-Faysal PR
+> list (§4, `SHARE*` #9).
+
 The Faysal proof inverts its polarity: instead of *one banned module scanned across the whole
 repo*, it is *the whole repo banned, allow-listed, scanned across three directories*.
 
@@ -323,6 +331,22 @@ scripts/proof-faysal-seam.test.ts
         from("delivery_zones")   restaurant_id    menu_item_id
     …and assert the positive: every Faysal `.from("…")` names a table whose name
     starts with `health_`, or is `auth.users`. Deny by default here too.
+
+    THREE BLIND SPOTS, closed in Wave 1.5 (audit S15) — each is a way a Faysal file
+    reaches Kivo data without an import and without a literal `.from("restaurants")`:
+      • rpc()  — supabase.rpc("next_order_number", …), rpc("is_member_of"),
+        rpc("kv_demo_try_consume"). §1.1 names next_order_number as a hazard and
+        part D did not scan for it. Ban the Kivo RPC names; assert every Faysal
+        .rpc("…") names a function starting health_ or kv_faysal_.
+      • NON-LITERAL TABLE NAMES — .from(tbl) where tbl is a const or a template
+        literal matches neither the ban list nor the positive assertion, so it
+        passes silently, and part A's vacuity controls do not cover it. Assert:
+        EVERY .from( occurrence in a Faysal source matched the string-literal form.
+        A dynamic table name in a Faysal file is a failure, not an exemption.
+      • MIGRATIONS — a Faysal migration adding `references public.restaurants(id)`
+        is under supabase/migrations/, which no scanned directory covers. Scan the
+        migrations added by the PR for `restaurants`, `orders`, `menu_items` and
+        `restaurant_id` in any Faysal-owned object.
 
   ── E. THE RETIRED DETECTOR IS RETIRED FOR FAYSAL TOO ──────────────────
     Already free: proof-phonetic-net-unwired.test.ts walks app/, lib/ and
@@ -374,6 +398,18 @@ survived into the implementation.**
 3. **Extend `agent-eval.yml`'s `paths:` filter** with `lib/health/**`, `app/faysal/**` and
    `app/api/faysal/**`. Without this, the job does not run on a Faysal-only PR, and steps 1
    and 2 protect nothing on exactly the change they exist to catch.
+
+> **Ownership, settled in Wave 1.5 (audit B7).** These three steps are not this document's alone.
+> `SPEC-4-SAFETY.md` §11's first draft asserted that registering a proof in `unit-suite.json`
+> *"so it is a blocking gate"* — the thing §2.1 above disproves — and its §13 delegated the
+> `paths:` extension back here, while §13.2 of this document listed it only as a **risk**. Each
+> document assumed the other owned it, which is how a merge gate ends up owned by nobody.
+> **SPEC-4 §11.0 now specifies the same three steps as a precondition of its own proof plan,
+> §12 row 13 makes it a launch gate, and SPEC-4 §11.9 asserts it in code** — the meta-proof reads
+> `.github/workflows/agent-eval.yml` and fails if a Faysal proof filename is missing from its
+> steps or `lib/health/**` is missing from its `paths:`. These three steps and SPEC-4 §11.0's are
+> the same three steps, described from the seam's side and from the rail's side. **`proof-faysal-seam.test.ts` is covered by that assertion too**, so the seam proof cannot be
+> silently dropped from the workflow either.
 
 ### 2.5 Optional second layer (cheap, additive)
 
@@ -468,13 +504,22 @@ four times — the allergen gate, the media guard, the voice budget, the send ga
 exactly the shape a booking agent needs for red-flag triage (chest pain, bleeding, pregnancy,
 paediatric fever → never book a routine slot, always escalate).
 
-And one file transfers with no adaptation at all: **`lib/ai/symptom-frames.ts`** (36 lines).
-It is a single alternation source for *how Arabic reports a symptom*, in **both first and
-third person** — «عندي»، «جاني»، «أعاني من»، and «ابني عنده»، «بنتي فيها» — with an explicit
-`NOT_A_PERSON` list so «الجو فيه كتمة» is a remark about the room and not a chest complaint.
-Its header records why it exists: two copies drifted, and a parent reporting a child's rash
-was heard by one detector and not the other. For a clinic that is not a nice-to-have; it is
-the difference between hearing a mother describe her child's symptoms and not.
+And one file is close to transferring outright: **`lib/ai/symptom-frames.ts`** (36 lines). It is
+a single alternation source for *how Arabic reports a symptom*, in **both first and third
+person** — «عندي»، «جاني»، «أعاني من»، and «ابني عنده»، «بنتي فيها» — with a `NOT_A_PERSON` list
+so «الجو فيه كتمة» is a remark about the room and not a chest complaint. Its header records why
+it exists: two copies drifted, and a parent reporting a child's rash was heard by one detector
+and not the other. For a clinic that is not a nice-to-have; it is the difference between hearing
+a mother describe her child's symptoms and not.
+
+> **Corrected in Wave 1.5: it does *not* transfer with no edit, and the first draft's
+> "zero domain coupling" was wrong on its face.** `NOT_A_PERSON` contains `المطعم` (the
+> restaurant), `المحل` (the shop) and `الفرن` (the oven) — it is a restaurant place list — and
+> the third-person half is welded to a possession verb, so it is `false` on «ابني ما يقدر
+> يتنفس». Both are driven in §10.2, and the verdict is **SHARE\*** with two named changes.
+> `SPEC-4-SAFETY.md` §12 row 15 makes those changes a Faysal launch gate, because until they
+> land the airway family cannot hear a parent — which is the precise failure this file was
+> written to prevent, arriving in the file itself.
 
 Alongside it: `lib/ai/allergen-emergency.ts`'s present-tense discipline
 (`PAST_RE` / `HYPOTHETICAL_RE` / `HYPOTHETICAL_Q_RE` exclusions so "if I ate nuts" and "it
@@ -538,12 +583,32 @@ tables below rather than asserted.
 | §11.1 proof harness | 7 | — | — | — | 7 |
 | **total (files)** | **63** | **40** | **4** | **19** | **126** |
 
-Of the 63 SHARE, **5 are `SHARE*`** — shareable only after one named, behaviour-preserving
-change to the Kivo file: `lib/messaging/outbound.ts`, `lib/messaging/voice.ts`,
-`lib/messaging/send-template.ts`, `app/api/demo/capabilities/route.ts`,
-`app/api/demo/speak/route.ts`. A sixth pre-Faysal change is recommended in §10.2 (extracting
-`normalizeAr` out of the allergen gate); it creates a new shared file rather than
-reclassifying an existing one.
+Of the 63 SHARE, **9 are `SHARE*`** — shareable only after one named, behaviour-preserving
+change to the Kivo file. **Wave 1.5 raised this from 5 to 9** (audit S11, S12, S13); the totals
+row is unchanged because `SHARE*` is a sub-class of SHARE, not a separate verdict.
+
+| # | file | § | found |
+|---|---|---|---|
+| 1 | `lib/messaging/outbound.ts` | §7.2 | Wave 1 |
+| 2 | `lib/messaging/voice.ts` | §7.2 | Wave 1 |
+| 3 | `lib/messaging/send-template.ts` | §7.2 | Wave 1 — transitive on `capacity.ts` (FORK) |
+| 4 | **`lib/messaging/service.ts`** | §7.2 | **Wave 1.5** — transitive on `message-log-store.ts` (**NEVER**) |
+| 5 | `app/api/demo/capabilities/route.ts` | §8.2 | Wave 1 |
+| 6 | `app/api/demo/speak/route.ts` | §8.2 | Wave 1 |
+| 7 | **`lib/demo/speech-ticket.ts`** | §8.1 | **Wave 1.5** — transitive on `voice-budget.ts` + `voice-out.ts` (both **FORK**) |
+| 8 | **`lib/ai/symptom-frames.ts`** | §10.2 | **Wave 1.5** — restaurant place list; relation words not separately exported |
+| 9 | **`scripts/proof-phonetic-net-unwired.test.ts`** | §11.1 | **Wave 1.5** — `stripComments`/`bindingsFrom` are not importable |
+
+A tenth pre-Faysal change is recommended in §10.2 (extracting `normalizeAr` out of the allergen
+gate **and reconciling the divergent second copy in `callback-trigger.ts`**); it creates a new
+shared file rather than reclassifying an existing one.
+
+> **Three of the four new entries were found by the same method, and it is the method this
+> document should have applied to every SHARE verdict:** read the file's own import block.
+> `service.ts:12`, `speech-ticket.ts:53` and `:59` each bind a module this document classifies
+> FORK or NEVER. A SHARE verdict is a claim about a **subgraph**, not about a file, and it is
+> only true if its transitive closure is also SHARE. §13.1 now says so, and it is a precondition
+> of transcribing §2.2's `ALLOWED_MODULES`.
 
 Two further items are classified in §11.2 but are **database objects, not files**:
 `demo_usage_counters` (SHARE) and the migration's grant idiom (SHARE) against
@@ -598,7 +663,7 @@ avoids.
 
 ## 7. `lib/messaging/*` — 33 files (adapter, webhook, voice, outbound)
 
-### 7.1 SHARE (14)
+### 7.1 SHARE (13)
 
 | path | lines | verdict | why | note |
 |---|---:|---|---|---|
@@ -615,15 +680,16 @@ avoids.
 | `tester-allowlist.ts` | 39 | **SHARE** | Pure upstream recipient filter — "may the agent engage at all". | |
 | `image-turn.ts` | 109 | **SHARE** | Pure string shaping for an inbound-image turn. Zero domain terms. | |
 | `inbound-coalescing.ts` | 126 | **SHARE** | Pure burst-merge over a watermark. Safety-relevant: it is what stops a burst message bypassing the input gate. | |
-| `service.ts` | 60 | **SHARE** | Channel → adapter resolution. | |
+| ~~`service.ts`~~ | 60 | **→ SHARE\*** (moved to §7.2, Wave 1.5) | Channel → adapter resolution — but **`service.ts:12` imports `useMessageLogStore` from `./message-log-store`**, which §7.4 classifies **NEVER**. Verified by reading the import block. | |
 
-### 7.2 SHARE\* — shareable after one named change to the Kivo file (3)
+### 7.2 SHARE\* — shareable after one named change to the Kivo file (4)
 
 | path | lines | the change (behaviour-preserving) |
 |---|---:|---|
 | `outbound.ts` | 315 | Move `Presentation` / `PresentationButton` / `PresentationRow` / `PresentationSection` **out of `lib/ai/tools.ts` (lines 179-194) into `lib/messaging/types.ts`** and re-export from `tools.ts` for compatibility. They are WhatsApp interactive-message shapes, not restaurant concepts. Until this lands, `outbound.ts` transitively binds Faysal to a 1,539-line restaurant module — and the §2.2 proof will (correctly) fail on it. |
 | `voice.ts` | 120 | Take the STT prompt-bias string as a **parameter** instead of calling `buildSttPromptVocab()` (which is menu-shaped) internally. One signature change; both Kivo callers already have the vocabulary to hand. |
 | `send-template.ts` | 48 | Depends on `capacity.ts` (FORK, §7.3). Either inject the capacity recorder, or accept it as FORK alongside its dependency. |
+| `service.ts` | 60 | **Re-verdicted in Wave 1.5 (audit S11).** SHARE → **SHARE\***. `service.ts:12` reads `import { useMessageLogStore } from "./message-log-store"` — and `message-log-store.ts` is **NEVER** (§7.4), because it is the client Zustand log for the Kivo Settings simulator and its L12 reads `import { newId } from "../store"`, the Kivo global store. A Faysal import of `service.ts` therefore drags a NEVER module **and** the Kivo global store across the seam, and §2.2 part B fails on it — on Faysal's first commit, which is exactly when the tempting fix is to widen `ALLOWED_MODULES`. **The change:** make the log store an optional injected observer (`registerMessageObserver(fn)`) rather than a module-level import, or split the 60 lines into `service-core.ts` (adapter resolution, SHARE) + `service-with-log.ts` (Kivo-only). Behaviour-preserving either way. |
 
 ### 7.3 FORK (9)
 
@@ -663,7 +729,7 @@ avoids.
 | `call-channel.ts` | 42 | **SHARE** | Which audio container this client can play. Zero domain terms. | — |
 | `call-delivery.ts` | 40 | **SHARE** | Delivery mode for a spoken reply (inline vs ticket). Zero domain terms. | — |
 | `call-loop.ts` | 222 | **SHARE** | The VAD / barge-in / silence state machine, with a measured noise floor tuned above a busy room's 0.05 RMS hum. The four "restaurant" hits are all prose about that room. | — |
-| `speech-ticket.ts` | 377 | **SHARE** | HMAC-signed, replay-bounded TTS ticket so playback can start before synthesis finishes. One incidental domain mention. | — |
+| `speech-ticket.ts` | 377 | **SHARE\*** *(re-verdicted Wave 1.5, audit S11)* | HMAC-signed, replay-bounded TTS ticket so playback can start before synthesis finishes — and the crypto core genuinely is neutral. **But it imports two FORKs:** L53 `import { voiceHardZeroReason } from "@/lib/messaging/voice-budget"` (FORK, §7.3) and L59 `from "@/lib/demo/voice-out"` (FORK, this table). Verified by reading the import block. As it stands the §2.2 proof fails on it. | **The change:** take the speakability decision as an **injected predicate** — `mintSpeechTicket({ …, speakable: (reply) => boolean })` — instead of importing `voiceHardZeroReason` and `voice-out` internally. Both Kivo call sites already have those to hand, exactly as §7.2's `voice.ts` change does for the STT vocabulary. Then the HMAC/replay half is genuinely shared and each product supplies its own hard-zero lexicon. |
 | `config.ts` | 261 | **FORK** | Pins `DEMO_RESTAURANT_ID`, the demo hosts, `DEMO_ORDER_SOURCE`, the TTL and the caps. The **caps, bucket helpers (`globalBucket`/`ipBucket`), `isUuid`, `capDemoHistory`, `isDemoHost`** are all directly reusable. | Faysal's pinned clinic id, its own hosts, `DEMO_SESSION_CHANNEL = "faysal_demo"`, and a **distinct bucket prefix** so the two products do not drain one counter (§11.2). Re-run the spend arithmetic; do not copy the numbers. |
 | `session.ts` | 202 | **FORK** | The ephemeral session row. **The doctrine is the asset**: the client-supplied id is never trusted, it is resolved with `.eq(tenant)` **and** `.eq(channel)`, and a non-match is *not found* rather than an error — so a visitor pasting a real id gets their own fresh session and never learns whether the id exists. It also deliberately writes **no inbound message row**, because the monitoring sweep would page the Founder on every abandoned demo. | Health-side conversations table; both `.eq` filters kept, both for the same stated reasons. |
 | `call-greeting.ts` | 82 | **FORK** | One Arabic constant: «هلا والله، معك خالد من مطعم الديرة». | The greeting; the "the person who picks up speaks first" rule stays. |
@@ -739,9 +805,27 @@ from a food-allergen module.
 > §2.2 proof either fails on Faysal's first matcher or has to allow-list the allergen gate —
 > and allow-listing the allergen gate is how the seam ends.
 
+**And the extraction must reconcile TWO implementations, not move one** *(added Wave 1.5, audit
+S14)*. `lib/ai/callback-trigger.ts:13` exports a **second** `normalizeAr`, and it is **missing
+the 3+-letter run collapse** `.replace(/([ء-ي])\1{2,}/g, "$1")`. Everything else is identical.
+
+> **`lib/ai/allergen-gate.ts`'s copy is authoritative.** It is the one 25 files import, and the
+> one `SPEC-4-SAFETY.md` §2 depends on for «ماااا أقدر» — driven,
+> `normalizeAr("ماااا أقدر أتنفس") === "ما اقدر اتنفس"` under the gate's copy and stays
+> `"ماااا …"` under `callback-trigger`'s. If the extraction re-exports the wrong one, or a Faysal
+> file imports from `callback-trigger`, **every Najdi negation goes deaf on emphatic spellings**
+> and no proof in SPEC-4 §11 catches it, because they all import the same wrong function.
+
+The extraction PR must therefore: (1) move the allergen-gate copy to
+`lib/util/arabic-normalize.ts`; (2) **delete** `callback-trigger`'s copy and re-point its call
+sites at the shared one; (3) assert in the extraction's own test that
+`normalizeAr("حساااسية") === "حساسيه"` — the one behaviour that differs between the two, so a
+future re-divergence goes red. `SPEC-1-DOMAIN.md` Rule DOC-4 also names the authoritative copy,
+because its denylist guard depends on it.
+
 | path | lines | verdict | why | if FORK: what must change |
 |---|---:|---|---|---|
-| `lib/ai/symptom-frames.ts` | 36 | **SHARE** | *How Arabic reports a symptom*, first **and** third person, with a `NOT_A_PERSON` place list so «الجو فيه كتمة» is a room and not a chest. Zero domain coupling. **Transfers to a clinic with no edit.** | — |
+| `lib/ai/symptom-frames.ts` | 36 | **SHARE\*** *(re-verdicted Wave 1.5 — audit S12 and SPEC-4 B3; the first draft said SHARE, "zero domain coupling", "transfers to a clinic with no edit", and all three were wrong)* | *How Arabic reports a symptom*, in both persons. Still the most medically valuable file in a restaurant codebase, and still the right file — it needs **two named changes** before Faysal can use it, both driven. | **(1) `NOT_A_PERSON` is a restaurant place list.** Read verbatim: `"الجو\|المحل\|المطعم\|المكان\|القاعه\|الغرفه\|الفرن\|الشارع\|السياره"` — *the restaurant*, *the shop*, *the oven*. No clinic place is in it, and `FRAME_WORDS` carries bare `عنده`/`عندها`/`عندهم`. **Driven** (real module imported): «العياده عندها ازدحام», «المستشفي عنده طوارئ», «المجمع عنده تاخير», «الفرع عنده زحمه» and «الاستقبال عنده مشكله» all return `frame=true, notPerson=false` — five ordinary clinic sentences reading as a person reporting a symptom. **Add** `العياده\|المستشفي\|المجمع\|الفرع\|الاستقبال\|صاله الانتظار\|الممر\|العنبر\|المختبر\|الصيدليه` to the shared list rather than forking it, so one file keeps serving both tenants. **(2) Export `RELATION_WORDS`.** The relation list (`ابني\|بنتي\|…\|مرتي`) exists only welded to a possession verb — `(?:ابني\|…)\s+(?:فيه\|فيها\|فيهم\|عنده\|عندها\|عندهم)` — so **driven**, `FRAME_WORDS` is `false` on «ابني ما يقدر يتنفس», «بنتي ما تقدر تتنفس», «ابني حلقه يقفل» and «زوجتي حلقها يتورم». Faysal's airway family needs *"a person other than the sender is the subject"* **without** a possession verb. Export the list as its own constant and compose `FRAME_WORDS` from it. Behaviour-preserving for both existing callers (`allergen-gate-symptoms.ts`, `allergen-context.ts`). |
 | `lib/privacy/consent.ts` | 92 | **SHARE** | PDPL enforcement helpers. Zero domain terms. Encodes the right rule: in-conversation safety needs no consent (vital interest); marketing does. | — |
 | `lib/ai/allergen-gate.ts` | 347 | **FORK** | The archetype: *a deterministic detector layer under the prompt, because escalation was proven model-stochastic.* Input gate (avoidance/euphemism + a domain term → force escalation) and output guard (the reply asserting safety when the data is unknown → intercept). | The lexicon becomes medical red flags and drug-allergy terms. Keep `hasAllergyIntent`'s euphemism handling and `assertsAllergenSafety`'s **output**-side interception — a booking agent asserting «الدكتور متفرغ» or «ما فيه خطر» without data is the same class of failure. Import `normalizeAr` from the extracted shared module. |
 | `lib/ai/allergen-emergency.ts` | 237 | **FORK** | **The closest thing in this repo to a medical red-flag detector.** Present-tense "this is happening now", with narrow exclusions for past tense, hypotheticals and questions, and an explicit fail-safe posture: over-escalation is acceptable, missing an active emergency is not. | Symptom families become the clinic's: chest pain, breathing difficulty, uncontrolled bleeding, loss of consciousness, stroke signs, obstetric emergency, paediatric fever. **Keep `PAST_RE` / `HYPOTHETICAL_RE` / `HYPOTHETICAL_Q_RE` verbatim** and the 997 routing. |
@@ -770,7 +854,7 @@ from a food-allergen module.
 | `scripts/run-unit-suite.mjs` | **SHARE** | Product-neutral. Runs **every** manifest entry with a 5-minute per-file timeout, prints a true tally, exits non-zero. Its header is the case for why an `&&` chain is not a suite. |
 | `scripts/unit-suite.json` | **SHARE** | One manifest, 228 entries. Faysal appends its proofs here. **Caveat (§2.1): the CI job that runs it is `continue-on-error: true`,** so registration alone is reporting, not gating. |
 | `scripts/ts-ext-loader.mjs`, `scripts/prompt-snapshot-loader.mjs`, `scripts/webhook-route-loader.mjs` | **SHARE** | Node loaders for extensionless imports, prompt snapshots and route loading. Faysal's entries use the same flags. |
-| `scripts/proof-phonetic-net-unwired.test.ts` | **SHARE (as a template, and as live coverage)** | Supplies `stripComments()` and `bindingsFrom()`, both adversarially hardened with the defeating mutations recorded in comments. §2.2 reuses them rather than writing a new scanner. It also already covers `lib/health/*` (see §10.2). |
+| `scripts/proof-phonetic-net-unwired.test.ts` | **SHARE\* (as a template, and as live coverage)** *(re-verdicted Wave 1.5, audit S13)* | Supplies `stripComments()` and `bindingsFrom()`, both adversarially hardened with the defeating mutations recorded in comments, and it already covers `lib/health/*` (see §10.2). **Neither function is importable as it stands:** `stripComments` is declared at **L52 with no `export`**, and `bindingsFrom` at **L169 is a nested function inside a block**. Verified by reading the file. §2.2 says *"do not write a new scanner"* — but as written, the Faysal proof would have to **copy** them, producing two divergent copies of an adversarially-hardened scanner, which is the exact drift this document praises `symptom-frames.ts` for having prevented. **The change (pre-Faysal PR list):** extract both to `scripts/lib/import-scan.mjs` and import them from both proofs. Extraction is preferable to adding `export` in place, because a `.test.ts` file importing from another `.test.ts` file makes the suite runner's per-file timeout accounting misleading. |
 | `scripts/proof-tenant-isolation-report.md` | **SHARE (as the standard to meet)** | The route-by-route inventory of *how the caller tenant is determined and whether that determination is trustworthy*. Faysal owes an equivalent for `app/api/faysal/*` before go-live. |
 
 ### 11.2 The demo spend guard — a real sharing hazard, stated precisely
@@ -812,14 +896,24 @@ insurance-eligibility or referral module exists.
 
 ## 13. Risks a reviewer should press on
 
-1. **The `SHARE*` list is load-bearing and easy to skip.** Six files (§7.2, §8.2, §10.2)
-   need small Kivo-side changes before Faysal can import them cleanly. If they are skipped,
-   the §2.2 proof will fail on Faysal's first real commit and the tempting fix will be to
-   allow-list `lib/ai/tools.ts` and `lib/ai/allergen-gate.ts` — which ends the seam. Land
-   these first, as their own PR, before any Faysal code.
+1. **The `SHARE*` list is load-bearing, easy to skip, and it is longer than the first draft
+   said.** **Nine** files now need a small Kivo-side change before Faysal can import them
+   cleanly: `outbound.ts`, `voice.ts`, `send-template.ts` and **`service.ts`** (§7.2);
+   **`speech-ticket.ts`** (§8.1); `capabilities/route.ts` and `speak/route.ts` (§8.2);
+   `normalizeAr`'s extraction and **`symptom-frames.ts`** (§10.2); plus
+   **`proof-phonetic-net-unwired.test.ts`**'s scanner extraction (§11.1). Four of those were
+   found in Wave 1.5, three of them by checking the **transitive closure** of a SHARE verdict —
+   the shape this document caught once (`send-template.ts` → `capacity.ts`) and then missed three
+   more times. **Every SHARE verdict's imports must be read before §2.2's `ALLOWED_MODULES` is
+   transcribed**, or the proof is red on Faysal's first commit and the tempting fix is to widen
+   the allow-list, which ends the seam. Land them first, as their own Kivo-only PR, before any
+   Faysal code.
 
-2. **§2.4 step 3 is the whole enforcement story.** A proof registered in `unit-suite.json`
-   but absent from `agent-eval.yml`'s `paths:` filter does not run on a Faysal-only PR.
+2. **§2.4 step 3 is the whole enforcement story — and it is no longer only a risk.** A proof
+   registered in `unit-suite.json` but absent from `agent-eval.yml`'s `paths:` filter does not
+   run on a Faysal-only PR. Wave 1.5 promoted this from *"a risk a reviewer should press on"* to
+   a **launch gate with a proof behind it** (`SPEC-4-SAFETY.md` §11.0, §12 row 13, §11.9). It was
+   sitting in the gap between two documents; it is now owned by both, from both sides.
 
 3. **The tenant recommendation costs five FORKs (§1.5).** That is real and is the honest
    price of a provable seam. Anyone who prefers Option B should say so *because* they accept
@@ -833,3 +927,87 @@ insurance-eligibility or referral module exists.
 5. **Nothing here has clinical authority.** The triage content behind the FORK of
    `allergen-emergency.ts` needs a clinician's sign-off. This document scopes the machinery,
    not the medicine.
+
+6. **THE BIGGEST ONE, and it was in no spec, no acceptance criterion and no auditor brief until
+   the Wave 1 review named it: Faysal has no write path into the system that actually decides
+   whether a patient can be seen — and §12's REBUILD table frames this as a *data-model* problem
+   when it is an *integration* problem.** Verified: **zero** occurrences of PMS, HIS, EMR, EHR,
+   practice-management, write-back, two-way, bidirectional or sync anywhere in `docs/faysal/`;
+   NPHIES appears twice, both as an out-of-scope note about insurance eligibility. §12's first row
+   reads *"An order draft is a basket: no time dimension, no resource contention, no
+   double-booking … Rebuild"* — every one of those is stated against **Kivo's order draft**, and
+   none of them is stated against **the client's existing scheduler**.
+
+   Al Wattan has run six sites for forty years; one is CBAHI-accredited, they sit on eleven
+   insurer networks, they hold pre-employment screening contracts with government agencies, and
+   Shoaa ships its own booking app on both stores. **There is a scheduler behind all of that.**
+   `SPEC-1-DOMAIN.md` §7.2 makes availability *"generated, not stored"* from a seeded PRNG, which
+   is correct and clever for a demo and fatal for a pilot — and no spec notices the transition.
+   On day one of a pilot: every slot Faysal confirms is invisible to the reception desk that owns
+   the room; every walk-in and phone booking reception takes is invisible to Faysal; and the first
+   collision is two patients in one chair, which the clinic will blame on the vendor, correctly.
+
+   Note the irony precisely, because it is the reason this belongs at the top of a reuse map:
+   **4,794 lines were spent making certain Faysal never sends a patient to a closed desk, and not
+   one line on making certain it never sends two patients to the same open one.**
+
+   **This is `SPEC-1-DOMAIN.md` `[OPEN-14]`, and it is one question on the client call**, asked
+   before the slot engine is built: *"What system do your receptionists book into, and does it
+   have an API?"* Three branches, all survivable if you know which one you are in — **(a)** it has
+   an API, Faysal writes into it, the slot generator becomes a cache and most of SPEC-1 §7 shrinks;
+   **(b)** it does not, Faysal is honest about being a request queue and
+   `appointmentKind: "callback_request"` becomes the **primary** path (SPEC-1 §4.6 already built
+   that path properly, so this is a repositioning, not a rewrite); **(c)** each site runs something
+   different, so the pilot is one site and it should be Shoaa Al Wurud. Until it is answered,
+   §12's *"Appointment slots and capacity — Rebuild"* row is under-specified in a way no amount of
+   engineering judgement can close.
+
+---
+
+## Wave 1.5 remediation
+
+Against `AUDIT-WAVE1.md` and `REVIEW-WAVE1.md`, 2026-09-09. Every verdict change below was made
+by **reading the file's import block** or **importing and executing the module**, not by reading
+this document's own prose.
+
+### Blocker this document participates in
+
+| ID | Change |
+|---|---|
+| **B7** — none of SPEC-4's ten proofs is a blocking gate | §2.4 gains an **ownership** note. §2.1's finding was correct and complete; the failure was that this document filed the fix as *risk #2* while `SPEC-4-SAFETY.md` §13 delegated it here. It is now specified from both sides: SPEC-4 §11.0 carries the same three steps as a precondition of its proof plan, §12 row 13 makes it a launch gate, and SPEC-4 §11.9 **asserts it in code** by reading `agent-eval.yml`. `proof-faysal-seam.test.ts` is covered by that assertion, so this document's own gate cannot be dropped from the workflow silently either. §13 risk 2 is updated to say so. |
+| **B3** — the airway family cannot hear a parent | §10.2 and §3.5: `lib/ai/symptom-frames.ts` re-verdicted **SHARE → SHARE\*** with two named, driven changes. It is a Faysal launch gate (`SPEC-4-SAFETY.md` §12 row 15). |
+
+### Should-fixes closed here
+
+| ID | Change |
+|---|---|
+| **S11** — two SHARE verdicts are transitively coupled | **`lib/messaging/service.ts` SHARE → SHARE\*** (`:12` imports `useMessageLogStore` from `message-log-store.ts`, **NEVER**, which itself imports `newId` from the Kivo global store). **`lib/demo/speech-ticket.ts` SHARE → SHARE\*** (`:53` `voice-budget` FORK, `:59` `voice-out` FORK). Both verified by reading the import blocks. The `SHARE*` list goes 5 → 9 and §4 now enumerates it with where each entry was found. §13 risk 1 states the general rule: **a SHARE verdict is a claim about a subgraph, and every one must have its transitive closure checked before §2.2's `ALLOWED_MODULES` is transcribed.** |
+| **S12** — `symptom-frames.ts` is not domain-neutral | Driven with the real module: `NOT_A_PERSON` is `الجو\|المحل\|المطعم\|المكان\|القاعه\|الغرفه\|الفرن\|الشارع\|السياره` — a restaurant place list — and five ordinary clinic sentences («العياده عندها ازدحام», «المستشفي عنده طوارئ», «المجمع عنده تاخير», «الفرع عنده زحمه», «الاستقبال عنده مشكله») return `frame=true, notPerson=false`. **A second finding the audit did not have:** the third-person half is welded to a possession verb, so `FRAME_WORDS` is **`false`** on «ابني ما يقدر يتنفس», «بنتي ما تقدر تتنفس», «ابني حلقه يقفل» and «زوجتي حلقها يتورم» — meaning the audit's own proposed fix for B3 ("anchor them on `FRAME_WORDS`") does not work as stated. Two named changes: add the clinic places to the shared list; export `RELATION_WORDS` and compose `FRAME_WORDS` from it. |
+| **S13** — the scanner SPEC-3 says to reuse is not exported | Verified: `stripComments` at **L52 with no `export`**, `bindingsFrom` at **L169 nested inside a block**. §2.2 and §11.1 now say to extract both to `scripts/lib/import-scan.mjs` first. Extraction beats adding `export` in place, because a `.test.ts` importing another `.test.ts` breaks the suite runner's per-file timeout accounting. |
+| **S14** — two divergent `normalizeAr` implementations | §10.2: `lib/ai/callback-trigger.ts:13` exports a second copy **missing the 3+-letter run collapse**. **`lib/ai/allergen-gate.ts`'s is authoritative** — 25 importers, and the one SPEC-4 §2 needs for «ماااا أقدر». The extraction PR must delete the second copy and re-point its call sites, and assert `normalizeAr("حساااسية") === "حساسيه"` so a re-divergence goes red. `SPEC-1-DOMAIN.md` DOC-4 names the same authoritative copy. |
+| **S15** — the seam proof's part D has three blind spots | §2.2 part D now scans `rpc()` (with `next_order_number` / `is_member_of` / `kv_demo_try_consume` banned and a positive assertion), asserts **every** `.from(` matched the string-literal form (so a `const`/template-literal table name is a failure rather than a silent pass), and extends the scan to the PR's **migrations**, which no scanned directory covered. |
+| **S16** — the migration count mis-attributes a column to a table | §1: **59** of 119 migration files contain `restaurant_id`; **65** contain `restaurants`. Re-counted: `grep -rl restaurant_id supabase/migrations/ \| wc -l` → 59, `grep -rl restaurants` → 65, `ls *.sql \| wc -l` → 119. Everything else in §1 re-verified exact. |
+
+### The reviewer's finding this document now carries
+
+**§13 risk 6 — the missing integration.** *"Faysal has no write path into the system that
+actually decides whether a patient can be seen, and none of the four specs mentions that such a
+system exists."* Verified: zero occurrences of PMS, HIS, EMR, EHR, practice-management,
+write-back, two-way, bidirectional or sync anywhere in `docs/faysal/`. §12's REBUILD table framed
+appointment slots entirely against **Kivo's order draft** — a data-model problem — and never
+against **the client's existing scheduler**, which is an integration problem and the one that
+ends a pilot. Recorded as risk 6 with its three branches, and as `SPEC-1-DOMAIN.md` `[OPEN-14]`
+so it lands on the client-call agenda where it can actually be answered.
+
+### Agreed, unchanged, and worth restating
+
+Option C stands. The review's re-framing of *why* is adopted in spirit: the three cited hazards
+(`resolveWebhookRestaurantId`'s fallback, `sweep.ts`'s hardcoded «والمطعم مفتوح», the
+`order_number_counters` FK) are **illustrations**; the argument is §1.2's — **RLS scopes by
+membership, not by product**, so Option B's `product` filter has no database backstop and all 59
+call sites become load-bearing on a developer's memory, forever, with no proof possible.
+Forty lines of duplicated SQL behind an adversarial RLS proof is a smaller and, crucially, an
+**enumerable** risk. The second-strongest point is under-sold and belongs first on the client
+call: **health data is legally different** — separate tables give a separate retention policy, a
+separate deletion path and a separate export, none of which can be derived with a `where` clause,
+and a Saudi DPO will ask.

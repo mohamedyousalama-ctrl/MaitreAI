@@ -106,6 +106,9 @@ type Brand = "wattan" | "shoaa";
 type Tri = "yes" | "no" | "unknown";
 
 type Confidence =
+  | "client_confirmed" // the CLIENT told us, on a dated occasion, through a named person.
+                       //   The only rung a research dossier can NEVER reach — and therefore the
+                       //   only rung a real clinic timetable can ever land on. See §4.10.
   | "high"      // first-party (official site / official social) or Google listing, unconflicted
   | "medium"    // third-party directory or insurer PDF, unconflicted
   | "low"       // single stale/secondary source, or first-party but superseded
@@ -463,9 +466,10 @@ openStateAt(site, layer, instantLocal): "open" | "closed" | "unknown"
  * BOOKABLE. Returns [] unless every one of these holds:
  *   - the layer is "clinic"
  *   - status is "open_24h" | "windows"
- *   - confidence is "high" or "medium"        (never low / conflicted / unknown)
+ *   - confidence is "client_confirmed" | "high" | "medium"   (never low / conflicted / unknown)
  *   - conflicts is empty
- *   - capturedAt is within staleAfterDays
+ *   - capturedAt is within staleAfterDays  —  EXCEPT for "client_confirmed", which uses
+ *     clientConfirmedStaleAfterDays (180) and DOWNGRADES rather than voiding (§4.10)
  *   - the site's operatingStatus is "operational"
  *     (for "operational_contested" the windows are returned but flagged; see Rule C4-1)
  * Returning [] is not an error state. It is the safe state.
@@ -487,8 +491,9 @@ hoursDisclosure(site, layer, dayKey): { ar: string; en: string; mustOfferCall: b
 | **H3** | **Friday is never inferred from any other day.** A missing Friday record is `unknown` — never copied from Thursday, never defaulted to the weekday pattern, never interpolated across sites. | This is *the* bug. Five of six sites have a Friday that differs from their own weekday pattern (§4.4). A generic scheduler that treats Friday as "another day" will be wrong at almost every site. |
 | **H4** | A `facility` or `er` window **never** authorises a `clinic` slot. Clinic slots come from the `clinic` layer only; where that layer is `unknown`, there are no slots, whatever the building's sign says. | Complex 1 is marketed as 24 hours while the clinic pattern on record is two shifts `[D §3.1 L112–113, L126]`. A 24h facility with a duty doctor is not an open dermatology clinic. |
 | **H5** | A site with `operatingStatus.state !== "operational"` cannot be the sole recommendation, and its bookings carry `pendingBranchConfirmation`. | Complex 4 (§3.4.1). |
+| **H6** | `confidence: "client_confirmed"` requires a populated `ClientConfirmation` with a **named** person, a role, a channel and a datetime. A record carrying the value without the attribution does not compile. | It is the highest-authority claim in the system, so it takes the strongest provenance requirement — not the weakest (§4.10, Rule HRS-CONFIRM). |
 
-**Rule HRS-FRESH (borrowed straight from `config.ts`).** Every `DayHours` carries `capturedAt`, and confidence **downgrades automatically** once `capturedAt` is older than `staleAfterDays` (30): `high → medium`, `medium → low`, and `low`/`conflicted` become unbookable. The dossier is dated 9 September 2026 `[D L322]` but the hours inside it were captured across 2023–2026 — a 2024 Arabic guide `[D §3.3 L155–156]` and a legacy pre-acquisition page `[D §3.6 L203–204]` are not fresh facts merely because a fresh document quotes them. `config.ts` documents what happens when a stale number outlives the paragraph that corrected it; here the decay is mechanical, so nobody has to remember.
+**Rule HRS-FRESH (borrowed straight from `config.ts`).** Every `DayHours` carries `capturedAt`, and confidence **downgrades automatically** once `capturedAt` is older than `staleAfterDays` (30): `high → medium`, `medium → low`, and `low`/`conflicted` become unbookable. **`client_confirmed` decays on its own, longer clock** — `clientConfirmedStaleAfterDays` (180) → `high`, then 365 → `medium` — because a timetable a named operations manager gave us on a dated call is not the same kind of fact as a scraped listing, and a 30-day absolute void would delete the client's own answer six weeks after they gave it (§4.10). The dossier is dated 9 September 2026 `[D L322]` but the hours inside it were captured across 2023–2026 — a 2024 Arabic guide `[D §3.3 L155–156]` and a legacy pre-acquisition page `[D §3.6 L203–204]` are not fresh facts merely because a fresh document quotes them. `config.ts` documents what happens when a stale number outlives the paragraph that corrected it; here the decay is mechanical, so nobody has to remember.
 
 ### 4.4 Friday, site by site — six sites, six different problems
 
@@ -590,6 +595,85 @@ Three sites publish windows ending at or past midnight `[D §3.1 L113]`, `[D §3
 The dossier says nothing about seasonal hours. Riyadh clinic hours shift substantially during Ramadan `[INF-05]`, and Eid closures are routine. `DateOverride[]` exists in the schema and is **empty** in Wave 1.
 
 **Rule HRS-SEASON.** When the requested date falls inside a configured `volatilityWindow` (Ramadan, the two Eids, National Day) and no override exists, every affected day drops to `confidence: "low"` → unbookable, and Faysal switches to callback. Wave 1 ships the window dates as configuration with the overrides blank, so the guard exists before the data does. `[OPEN-04]`
+
+---
+
+### 4.10 `client_confirmed` — the rung the ladder was missing, and the reason nothing was bookable
+
+**The defect this closes.** Read literally, §4.1–§4.8 mint **zero bookable slots at all six
+sites** — not just at Complex 1 — because `bookableWindows()` requires the **clinic** layer at
+`high`/`medium`, H4 forbids promoting a `facility` window to a clinic one, and the dossier
+contains exactly one clinic record in the whole file (Complex 1's, which §4.7 itself pins `low`):
+
+| Site | clinic layer as authored before this section | bookable? |
+|---|---|---|
+| `wattan-1` | `low` (§4.7 — the one Arabic guide, called "older") | no |
+| `wattan-2` | **none authored** — §4.4 gives facility hours only | no, by H4 |
+| `wattan-3` | facility hours from a 2024 guide; Friday `conflicted`; `capturedAt: "2024"` | no |
+| `wattan-4` | nothing at all (§4.6) | no |
+| `shoaa-wurud` | `low` (§4.4) | no |
+| `shoaa-rawdah` | `low` — the legacy pre-acquisition Mashfa page | no |
+
+Rule DOC-3 then claimed *"the Wave 1 demo's bookable inventory sits at Ar Rawabi, Shoaa Al Wurud
+and Shoaa Rawdah."* **That was not derivable from this document's own invariants** — it requires
+promoting Rawabi's facility hours to clinic hours, which is precisely what H4 exists to forbid,
+and it ignores the `low` §4.4 already stamped on Shoaa Al Wurud. Two of the three named sites
+were ruled out by this document three sections earlier. That contradiction is corrected in DOC-3
+below, and this section supplies the rung that makes the claim reachable **honestly**.
+
+**The structural point.** The ladder topped out at what a research dossier can support, and a
+research dossier can *never* support a clinic timetable — a clinic's session grid is not
+published anywhere, by anyone, at any confidence. So there was **nowhere to put the good answer
+when it arrives.** `[OPEN-01]` and `[OPEN-03]` are one phone call to the group's operations lead
+or one WhatsApp to 050 449 0460; without a reachable top rung, that call changes nothing in the
+model. The same defect existed twice: §9.2's `PriceBasis` reserved `"client_confirmed"` and then
+noted that nothing can reach it. Both are given a reachable top rung, with the same shape.
+
+```
+type ClientConfirmation = {
+  confirmedBy: string;        // the NAMED person at the client. Never "ops", never "the client".
+  role: string;               // e.g. "Group Operations Manager"
+  channel: "phone" | "whatsapp" | "email" | "meeting";
+  confirmedAt: string;        // ISO datetime. This is the capturedAt for this record.
+  verbatim: string;           // what they actually said, in their words, quoted.
+  scope: string;              // exactly what it covers: which site, which layer, which days.
+};
+```
+
+**Rule HRS-CONFIRM.** A `DayHours` may carry `confidence: "client_confirmed"` **only** with a
+populated `ClientConfirmation`. Missing or partial → the record does not compile. The type makes
+an unattributed client confirmation unrepresentable, which is the same law `fictional: true`
+(§6.3) and `requiresDemoLabel: true` (§9.2) already apply: a marker that can be forgotten is not
+a marker.
+
+| Property | Rule | Why |
+|---|---|---|
+| **It is the top rung, not a bypass.** | `client_confirmed` outranks `high`. It still cannot make a `conflicted` day bookable — a client confirmation **resolves** the conflict by replacing both claims, and the `HoursConflict[]` is cleared with the confirmation recorded as the resolution. | Otherwise "the client said so" becomes the way to make an unresolved contradiction disappear without resolving it. |
+| **It is dated on the day the client said it**, not on the day the dossier was written. | `capturedAt = confirmedAt`. | A 2024 guide quoted in a 2026 document is a 2024 fact (Rule HRS-FRESH); the same discipline, in the other direction. |
+| **It has a longer, softer staleness.** | `clientConfirmedStaleAfterDays = 180`. Past it, it **downgrades to `high`** rather than voiding — and `high` is still bookable. A second expiry at 365 days downgrades to `medium`. Only `unknown` and `conflicted` void. | The 30-day absolute gate is right for scraped data and wrong for a timetable an operations manager told us. It also removed the 30-day shelf life the first draft wrote into the product: with the dossier dated 9 September 2026 and `staleAfterDays: 30`, **every remaining window becomes ineligible by construction on 10 October 2026**. |
+| **Staleness is an operational alert, not a silent degradation.** | At 150 days a re-confirmation task fires to the group. | Same posture as SPEC-4 §4.4's 30-day ER expiry. |
+| **It cannot be set by the model, by a prompt, or by a seed file marked demo.** | It is written through an **operator hours surface** by an authenticated operator, and the write records who. **That surface does not exist and is specified by nobody** — see `[OPEN-17]`. `SPEC-4-SAFETY.md` §4.4 needs the same surface for `er_hours_by_weekday` / `hours_verified_at` / `verified_by`, and its §9.2 needs an operator console to open a thread under RLS; three specs assume it and none owns it. **A one-screen hours editor is the cheapest engineering item across all four documents and has the highest leverage**, because it is the difference between a demo and a pilot: it is where the client's answer goes when they give it on the call. | *"The client said so"* is the highest-authority claim in this system. It gets the strongest provenance requirement, not the weakest. |
+
+**Wave 1 status: nothing carries `client_confirmed` yet.** That is the point — it is the field
+the client call fills, and the call is a twenty-minute unblock, not a Wave 2 dependency. Until
+it is filled, §4.10's fallback applies:
+
+**Rule HRS-DEMO — the labelled-invention fallback, for the demo only.** If the client call has
+not happened before the demo, the clinic layer may be seeded with plausible split shifts at
+**exactly the three sites DOC-3 names**, each stamped `confidence: "demo_seeded"` at the data
+layer — a value `bookableWindows()` accepts **only** when `DEMO_MODE` is on, never in
+production — and Faysal says so **in the conversation, once**, through the §11 Rule DEMO-1
+disclaimer. Inventing hours *and labelling them invented* is honest. Refusing to book anything
+is not more honest; it is less useful, and it fails the dossier's own instruction that the point
+is to stop patients wasting a journey `[D §6 L271]`. `demo_seeded` can never appear in a
+production build: the proof in §14 criterion 27 greps the production bundle for it.
+
+**And the honesty scene is demoed deliberately, at two sites, not at six.** Said once or twice
+against a background of competence, «ما أبي أعطيك معلومة غير أكيدة وتطلع من بيتك على الفاضي»
+(SPEC-2 G5) is the best sentence in the product. Said six times out of six it stops reading as
+integrity and starts reading as *"your data is bad"*. **Ash Shifa** (contested status, §3.4) and
+**Al Yamamah** (24-hour building, clinic on shifts, §4.7) are the pair; everywhere else books
+normally.
 
 ---
 
@@ -782,7 +866,19 @@ Roster construction notes, all `[DEMO-01]`:
 
 **Rule DOC-2 — no credentials Faysal cannot support.** The roster carries specialty and seniority only. Faysal never states a licence number, a university, years of experience, or a sub-specialty certification. Those would be pure fabrication dressed as credentials, which is the most harmful possible class of invented data in a medical context.
 
-**Rule DOC-3 — availability is bounded by hours.** A clinician may only be scheduled inside `bookableWindows(site, "clinic", day)`. Given §4.7 and §4.6, that means the Wave 1 demo's bookable inventory sits at Ar Rawabi, Shoaa Al Wurud and Shoaa Rawdah (subject to their own confidences), with Al Yamamah, Ar Rabwah-Friday and Ash Shifa exercising the callback and verify paths. **This is the demo's most valuable scene, not a limitation to engineer around.**
+**Rule DOC-3 — availability is bounded by hours.** A clinician may only be scheduled inside `bookableWindows(site, "clinic", day)`.
+
+**Corrected in Wave 1.5, because the first draft's inventory claim was not derivable from this document's own rules.** It read: *"the Wave 1 demo's bookable inventory sits at Ar Rawabi, Shoaa Al Wurud and Shoaa Rawdah."* Under §4.4 + §4.7 + Invariant H4 as authored, **no site had a bookable clinic layer at all** — Rawabi has no clinic layer authored (only facility hours, which H4 forbids promoting), and Shoaa Al Wurud's clinic layer is stamped `low` in §4.4. Two of the three named sites were excluded by this document three sections earlier. §4.10 sets out the full table.
+
+**The rule, as it now stands:**
+
+| condition | bookable inventory |
+|---|---|
+| **After the client call** (`[OPEN-01]` / `[OPEN-03]` answered) | wherever a `clinic` layer carries `client_confirmed` with a populated `ClientConfirmation`. That is the intended state and it is one phone call away. |
+| **Before the client call, demo build only** | the three sites named above, seeded per Rule HRS-DEMO with `confidence: "demo_seeded"` and disclosed in-conversation by Rule DEMO-1. **Ash Shifa** and **Al Yamamah** stay on the callback/verify path deliberately — they are the honesty scene, and two of them is a differentiator where six is a product defect. |
+| **Before the client call, production build** | **nothing.** `demo_seeded` is not accepted by `bookableWindows()` outside `DEMO_MODE`, and §14 criterion 27 greps the production bundle for the value. Every request becomes a `callback_request`. That is the correct production behaviour and it is why the client call is `[OPEN-01]`. |
+
+**The scene is still the most valuable thing in the demo** — but it is a scene, not the whole product, and the difference between those two is Rule HRS-CONFIRM.
 
 ### 6.4 The denylist guard — build-time, not a review checklist
 
@@ -791,11 +887,50 @@ These names appear in the dossier as real people `[D §3.1 L125]`, `[D §3.2 L14
 > Heba Ahmed · Ahmed Sayed Mustafa · Noreen · Huda Al-Rashidi · Sarah Al-Jundi · Hanan Ali
 > (and their Arabic renderings: هبة أحمد · أحمد سيد مصطفى · نورين · هدى الرشيدي · سارة الجندي · حنان علي)
 
-**Rule DOC-4.** A test in the Faysal suite scans all seed data, prompt templates and fixtures for these strings — Arabic and Latin, diacritic-normalised using the same `norm()` treatment `lib/order-pricing.ts` L99–105 applies to Arabic menu matching — and **fails the build** on any hit. A prohibition that lives only in a review comment gets forgotten at 2am by someone adding a doctor; a failing test does not. `[POL-02]`
+**Rule DOC-4.** A test in the Faysal suite scans all seed data, prompt templates, fixtures, eval sets **and the assembled prompt bundle** for these strings — Arabic and Latin — and **fails the build** on any hit. A prohibition that lives only in a review comment gets forgotten at 2am by someone adding a doctor; a failing test does not. `[POL-02]`
+
+**The normaliser, corrected in Wave 1.5 — the first draft named the wrong function and the guard would not have fired.** It said *"diacritic-normalised using the same `norm()` treatment `lib/order-pricing.ts` L99–105 applies."* That function, read verbatim:
+
+```ts
+function norm(s: string): string {
+  return s
+    .replace(/[ً-ْـ]/g, "")   // tashkeel + tatweel ONLY
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+```
+
+It folds **nothing else** — no hamza, no `ة→ه`, no `ى→ي`, no `ال`. Driven, against the exact leak this rule exists to catch:
+
+| denylist entry | the spelling that leaks | `norm()` equal? | `normalizeAr()` equal? |
+|---|---|---|---|
+| «هبة أحمد» | «هبه احمد» | **no** | **yes** |
+| «أحمد سيد مصطفى» | «احمد سيد مصطفي» | **no** | **yes** |
+| «هدى الرشيدي» | «هدي الرشيدي» | **no** | **yes** |
+| «سارة الجندي» | «ساره الجندي» | **no** | **yes** |
+
+«هبه احمد» is not a typo — it is the *normalized* spelling, and it is what every other Arabic matcher in this repo produces. Under `norm()` a real, identifiable, licensed clinician's name passes the build-time guard silently, and PROHIBITION A is unenforced in exactly the case it exists for.
+
+> **DOC-4 uses `normalizeAr`** — today in `lib/ai/allergen-gate.ts` L19–31, after SPEC-3 §10.2's extraction in `lib/util/arabic-normalize.ts`. It folds tashkeel, tatweel, `أإآٱ→ا`, `ة→ه`, `ى→ي`, `ؤ→و`, `ئ→ي`, 3+-letter runs, whitespace and case.
+
+**Two corrections to this rule's own implementation gotcha, both driven:**
+
+1. **`normalizeAr` does NOT strip «ال»**, and the gotcha claimed it as one of four folds. Verified: `normalizeAr("الرشيدي") === "الرشيدي"`. It does not need to — the article is part of the surname and is normalised identically on both sides of the comparison. The «ال» sentence in the gotcha was never about folding; it was about the *token* false positive, and the full-name rule below is what actually prevents that. Do not add an `ال`-stripping step: it would turn `الرشيدي` into `رشيدي` and widen the match surface for no gain.
+2. **There are two divergent `normalizeAr` implementations in this repo.** `lib/ai/callback-trigger.ts:13` exports a second one that is **missing the 3+-letter run collapse** `.replace(/([ء-ي])\1{2,}/g, "$1")`. **`lib/ai/allergen-gate.ts`'s is authoritative** — it is the one 25 files import, the one SPEC-4 §2 depends on for «ماااا أقدر», and the one the extraction must re-export. A Faysal file importing from `callback-trigger` gets a normaliser that is deaf to emphatic spellings.
+
+**Matching discipline — both halves are required, and the two specs each had one of them.**
+
+| entry shape | rule | why |
+|---|---|---|
+| **multi-token** («هبة أحمد», «Ahmed Sayed Mustafa») | **full-name containment** after `normalizeAr` on both sides. Not token matching. | A naive token matcher flags the particle «ال» / "al" in *Ahmed Sayed Mustafa* against 23 of the 30 invented names and fails the build on every one — after which someone loosens the test, and the guard is gone. |
+| **mononym** («Noreen» / «نورين» — a nurse's given name, no surname) | **boundary-matched single token**, per SPEC-4 §1.2's Arabic boundary form. | Driven: full-name *equality* on «نورين» is **false** against «الممرضة نورين» inside a prompt template, while containment is **true**. A full-name-equality matcher over a single-token entry never fires, which is the whole population of that entry. |
+
+Both disciplines ship. SPEC-4 §11.5's grep-the-built-bundle assertion runs **beside** this one, not instead of it: it is stricter on exact strings and this one is stricter on spelling variants.
 
 Note also that the Faysal seed roster is checked against the denylist *by construction*: no given name and no family name above is shared with any denylisted entry.
 
-**Implementation gotcha, found while validating this roster.** The match must be on the **full name string** (normalised), not on tokens. A naive token matcher flags the particle «ال» / "al" in *Ahmed Sayed Mustafa* against 23 of the 30 invented names and fails the build on every one of them — after which someone loosens the test, and the guard is gone. Match full names; normalise diacritics, «ال» prefixes, hamza forms and whitespace on both sides first.
+*(The original implementation gotcha — "match full names, not tokens" — is preserved in the table above, corrected for the mononym case and for what `normalizeAr` actually folds.)*
 
 ---
 
@@ -963,7 +1098,10 @@ That is the entire price surface. There is **no** figure anywhere in the dossier
 type PriceBasis =
   | "demo_invented_anchored"   // invented, but sanity-checked against a dossier range
   | "demo_invented_unanchored" // invented with no dossier reference point at all
-  | "client_confirmed";        // reserved. NOTHING carries this in Wave 1.
+  | "client_confirmed";        // REACHABLE, and it is the point. Requires a populated
+                               //   ClientConfirmation (§4.10) — same type, same rule, same
+                               //   named-person requirement as an hours record. Nothing
+                               //   carries it TODAY; the client call is what fills it.
 
 type ServicePrice = {
   amountSar: number;
@@ -974,7 +1112,9 @@ type ServicePrice = {
 };
 ```
 
-Two markers, because they are read by different things — the same reasoning `lib/demo/config.ts` L176–179 gives for stamping a demo order with both `source` and `is_test`. `basis` governs code paths (a `client_confirmed` price would one day be quotable without a caveat). `requiresDemoLabel` governs what the patient sees. Neither can be satisfied by the other.
+Two markers, because they are read by different things — the same reasoning `lib/demo/config.ts` L176–179 gives for stamping a demo order with both `source` and `is_test`. `basis` governs code paths. `requiresDemoLabel` governs what the patient sees. Neither can be satisfied by the other.
+
+**`client_confirmed` is reachable, corrected in Wave 1.5.** The first draft reserved the value and then noted nothing could reach it — the same defect as the hours ladder (§4.10), in the same document, twice. A `ServicePrice` reaches it exactly as a `DayHours` does: a populated `ClientConfirmation` naming the person at the client who gave the tariff, the channel, and the datetime. When `basis === "client_confirmed"`, `requiresDemoLabel` becomes `false` — the literal type widens to `boolean` for that branch only, and the PRICE-1 label is replaced by nothing, because the number is now the client's. Every other basis keeps `requiresDemoLabel: true` as a literal.
 
 **Rule PRICE-1 — no bare number ever leaves the agent.** Every quoted figure is rendered with its demo label:
 > «السعر تقريبي للعرض التجريبي، والمعتمد من الاستقبال.»
@@ -1218,7 +1358,15 @@ The dossier is a commercial research file and has nothing to say here. Everythin
 
 **Rule MED-2 — red flags stop the booking flow immediately.** On any mention of chest pain, difficulty breathing, stroke signs, severe bleeding, loss of consciousness, seizure, anaphylaxis, a serious injury, a burn, poisoning, suicidal intent, severe abdominal pain, or a distressed infant, Faysal **abandons scheduling** and directs to emergency care. It does not offer a slot, does not quote a price, does not ask which branch.
 
-The escalation line names the emergency number and the nearest 24-hour site with an ER — Complex 1 is open 24 hours with an ER and duty doctor `[D §3.1 L112–113, L127]`, and Shoaa Al Wurud advertises 24/7 including ER `[D §3.5 L184–185]`. **The emergency number itself must be confirmed with the client before the demo** — `[OPEN-08]`; 997 (Saudi Red Crescent) and the 911 unified number used in Riyadh are both in circulation, and this is not a detail to get from memory.
+**Corrected in Wave 1.5. Two sentences that stood here are struck.**
+
+**(a) This document no longer names ER sites.** It said the escalation line names *"Complex 1 … and Shoaa Al Wurud"* from the dossier `[D §3.1 L112–113, L127]`, `[D §3.5 L184–185]`. `SPEC-4-SAFETY.md` §4.4 forbids that outright — *"`SOURCE_DOSSIER.txt` is a research artifact and is **not** a data source for the rail … The rail reads ER sites **only** from a tool"* — and it is right, for a reason the dossier itself supplies: it contradicts itself on four of six sites and says to confirm by phone. A dossier-named ER at 00:40 on a Friday sends a patient with chest pain to a branch that closed at midnight.
+
+> **The escalation line names the emergency number and, if and only if `erSites({ now })` returns a site whose `hours_verified_at` is within 30 days, that site.** Otherwise it names no site at all — SPEC-4 §4.2 branch B, which is the correct output whenever anything is uncertain and is not a degraded fallback to be avoided. SPEC-4 §4.4 owns this model; SPEC-1 defers to it entirely. `[OPEN-08]`
+>
+> **SPEC-1's `er` hours layer (§4.1) survives, re-scoped:** it answers a patient who *asks* «الطوارئ عندكم مفتوحة؟` in an ordinary conversation, through `openStateAt(site, "er", t)` with the tri-state honesty of §4.2. It never feeds the rail.
+
+**(b) The emergency number is 997, and this document no longer treats it as unset config.** It said *"the number is a config value, unset until confirmed"*, which meant an implementer building from this spec ships an unset config and the rail renders «اتصل بالإسعاف  الحين» with a hole in it. `SPEC-4-SAFETY.md` §4.2 hardcodes `997` in a frozen string and §11.3 asserts it byte-exact; SPEC-2 Q1 defers to SPEC-4. **SPEC-4 wins, and this document defers.** What survives here is only the *sign-off* requirement, which is real and is SPEC-4 §12 row 6's territory: 997 (Saudi Red Crescent) and the Riyadh 911 unified line are both in circulation, and which is operationally correct for this catchment is a question for the group's medical director, not a question to answer from memory. It blocks **launch**, not the string.
 
 **Rule MED-3 — no results, no records.** Faysal does not read out lab results, does not confirm what a doctor said, and does not access any record. It has none.
 
@@ -1230,6 +1378,49 @@ The escalation line names the emergency number and the nearest 24-hour site with
 
 **Rule MED-7 — Faysal identifies as an assistant when asked**, and hands to a human on request. A patient who asks for a person gets one.
 
+**Rule DEMO-1 — the conversation carries the demo marker, not just the chrome.** `[POL-09]`
+
+This is the rule none of the four Wave 1 specs had, and it is the one that matters most, because
+**the confirmation block is what gets screenshotted and forwarded on WhatsApp with no chrome
+attached.** Faysal inverts Kivo's precedent deliberately and dangerously: Kivo's demo uses a
+*synthetic* tenant («مطعم الديرة (تجريبي)», `lib/demo/config.ts:13`) plus a persistent «تجربة»
+chip (`app/demo/DemoPhone.tsx:7`). Faysal wears the group's **real** registered trade name, real
+branch addresses and real published phone numbers, with invented doctors and invented prices.
+§6.3 asked the *UI* to carry a marker; the artefact that leaves the UI carried nothing but a
+price caveat.
+
+**Three placements, because three different people read them at three different moments** — the
+same two-marker reasoning `lib/demo/config.ts` L176–179 applies to `source` + `is_test`:
+
+| # | where | string | notes |
+|---|---|---|---|
+| **(a)** | **Page chrome, persistent** — a chip beside the brand, where Kivo's «تجربة» chip sits | «**عرض تجريبي — ليس قناة حجز فعلية لمجموعة الوطن الطبية**» | *Demonstration — not a live booking channel for Al Wattan Medical Group.* Never scrolls away. |
+| **(b)** | **First message of every conversation, before Faysal's greeting**, as a **system line, not in Faysal's voice** | «**هذا عرض تجريبي. الأطباء والمواعيد والأسعار المعروضة هنا افتراضية للعرض فقط، وغير معتمدة من مجموعة الوطن الطبية. للحجز الفعلي: 920009303 أو واتساب 0504490460. وللطوارئ: 997.**» | It **must** carry the **real** booking numbers `[D §1 L45]`, `[D §2 L60]`. A demo that wears a clinic's name and offers no route to the actual clinic is the version that could hurt someone. It is a system line because putting it in Faysal's voice makes it a claim Faysal is making, and SPEC-2 §8.1 #16 `machine_jargon` then has to allow self-description as software. |
+| **(c)** | **On every confirmation block**, alongside PRICE-1's price label | «**حجز تجريبي — غير مسجّل لدى الفرع.**» | *Demo booking — not registered with the branch.* This is the one that survives a screenshot. |
+
+**Binding details:**
+
+1. **(c) is a frozen suffix of `motion.confirm_block` (SPEC-2 §6.7), not an optional line.** It
+   renders on **every** confirmation, including `callback_request` confirmations and including
+   contested-site confirmations that already carry `pendingBranchConfirmation`. There is no
+   branch of the code that emits a confirmation without it.
+2. **It is emitted by the renderer, not by the model.** Same law as PRICE-1 and Rule PRICE-2's
+   single calculator: a disclaimer a model can forget is not a disclaimer.
+3. **It is not an emoji-bearing line and it is not in Faysal's register** — it is plain,
+   declarative, and deliberately flat. SPEC-2 §4.5's emoji ban applies to it absolutely.
+4. **It ships only while `basis`/`confidence` is a demo value.** When every price is
+   `client_confirmed` and every clinic layer is `client_confirmed`, (a) and (c) are removed by
+   configuration and (b) becomes the ordinary channel introduction. The disclaimer is a function
+   of the data's provenance, not a permanent fixture — which is exactly what makes it credible.
+5. **The rail is exempt from (b) and (c)**, and only from those. SPEC-4 §4.2's emergency copy is
+   byte-exact and asserted as such (§11.3); nothing is prepended or appended to it. (a) remains,
+   because it is chrome. A demo disclaimer inside an ambulance instruction is the corrupted
+   composite `lib/ai/reply-compose.ts` exists to prevent.
+
+**And say it out loud on the call.** SPEC-4 §12's twelve-item sign-off table, shown as a slide
+with every signature line blank, is the strongest sales asset in this pack. No vendor these
+executives have met has shown them that list.
+
 ---
 
 ## 12. Open questions — the client call agenda
@@ -1238,19 +1429,23 @@ Ordered by how much they unblock.
 
 | # | Question | Blocked by it | Interim behaviour |
 |---|---|---|---|
-| `[OPEN-01]` | **Real clinic-session timetables per branch, per specialty.** The dossier gives *facility* hours; it gives clinic hours only once, for Complex 1, from an Arabic guide it calls "older" `[D §3.1 L126]`. | Bookable inventory at Complex 1 and Ar Rabwah; §4.7. | Facility hours answer "are you open"; clinic booking falls back to callback. |
+| `[OPEN-01]` | **Real clinic-session timetables per branch, per specialty.** The dossier gives *facility* hours; it gives clinic hours only once, for Complex 1, from an Arabic guide it calls "older" `[D §3.1 L126]`. **This is the first question on the call and it is a twenty-minute unblock, not a Wave 2 dependency** — one call to the group's operations lead, or one WhatsApp to 050 449 0460. Until it is answered, **bookable inventory is zero at all six sites in a production build** (§4.10). | **Every** bookable slot in the product, at every site — not just Complex 1 and Ar Rabwah. §4.10. | The answer lands on `confidence: "client_confirmed"` (Rule HRS-CONFIRM), which is now reachable and bookable. Before it: production books nothing and offers callbacks; the demo build may use Rule HRS-DEMO's labelled `demo_seeded` hours at three sites, disclosed by Rule DEMO-1. |
 | `[OPEN-02]` | **Which specialties actually run at which branch.** The matrix in §6.2 is mostly group-wide inference. | Confident routing beyond derm/laser/dental. | Rule SPEC-1 — "let me confirm which branch runs that clinic." |
 | `[OPEN-03]` | **Friday, definitively, at all six sites** — and specifically: is Ar Rabwah open Friday (§4.5)? What are Complex 4's hours (§4.6)? Which of Complex 1's two Friday closing times is right (§4.7)? | The whole Friday surface. | `unknown` / `conflicted` → no Friday slots at the affected sites; disclosure + phone number every time (Rule FRI-1). |
 | `[OPEN-04]` | **Ramadan and Eid hours**, and the group's holiday calendar. | Any booking inside those windows. | Rule HRS-SEASON downgrades affected days to unbookable. |
 | `[OPEN-05]` | **The real tariff**, and whether prices differ by branch. | Every figure in §9. | All prices `demo_invented`, labelled in-message (Rule PRICE-1). |
 | `[OPEN-06]` | **VAT treatment** of each service line. | Any total the patient could rely on. | `vatNote: "excluded_unknown"`; no tax line; Faysal never says whether VAT is included (§9.5). |
 | `[OPEN-07]` | **PDPL posture**, and whether NPHIES eligibility is ever in scope. | Production, not the demo. | Minimal data, TTL, two markers (§8). |
-| `[OPEN-08]` | **The emergency number to publish** — 997 vs the Riyadh 911 unified line — and which branches have a genuinely staffed ER at which hours. | The MED-2 escalation script. | Escalation directs to emergency services and names Complex 1 / Shoaa Al Wurud as 24h sites; the number is a config value, unset until confirmed. |
+| `[OPEN-08]` | **Sign-off that 997 is the right number for this catchment**, and **which branches have a genuinely staffed ER at which hours, including Friday**. | Nothing in the build — **corrected in Wave 1.5.** The number is settled to `997` (SPEC-4 §4.2, frozen and byte-exact); the ER sites are settled to `erSites({ now })` (SPEC-4 §4.4). What is blocked is **launch**, not implementation: SPEC-4 §12 rows 6 and 7. | Rail renders 997 always; a site is named only if the operator table says it is verified-open within 30 days, otherwise branch B names no site. Nothing here reads the dossier. |
 | `[OPEN-09]` | **Cancellation, no-show and late-arrival policy.** | Rule MED-6. | Cancel freely, quote nothing. |
 | `[OPEN-10]` | **Which WhatsApp number Faysal answers on** — the group line 050 449 0460 serves both brands `[D §1 L45]`, and both brands' patients would land in one thread. | Brand-aware greeting and routing. | Faysal greets as the group and asks which branch or which service. |
 | `[OPEN-11]` | **Does Complex 4 share Complex 1's switchboard?** The group used 011 458 8444 for Shifa offers (§3.4). | Whether the alt number can be un-suppressed. | Suppressed; Faysal gives 011 497 7900 only. |
 | `[OPEN-12]` | **Is Shoaa's mobile app the preferred booking channel** for the two Shoaa sites `[D §3.5 L175]`, and does Faysal hand off to it or book alongside it? | Shoaa-site booking flow. | Faysal books and mentions the app as an option. |
 | `[OPEN-13]` | **The Shifa orthodontics offer's actual terms** `[D §3.4 L171]`. | Quoting the offer. | Faysal says an offer is advertised and routes to the branch; never states terms. |
+| `[OPEN-14]` | **What system do your receptionists book into, and does it have an API?** Raised by the Wave 1 review and **not previously in any of the four specs** — verified: zero occurrences of PMS, HIS, EMR, EHR, practice-management, write-back, two-way, bidirectional or sync anywhere in `docs/faysal/`. Al Wattan has run six sites for forty years, one CBAHI-accredited, on eleven insurer networks, with pre-employment screening contracts and a Shoaa booking app on both stores. **There is a scheduler behind all of that**, and §7.2 makes availability *"generated, not stored"* from a seeded PRNG. That is correct for a demo and fatal for a pilot, and no spec noticed the transition. | **The entire slot model's meaning.** Not the demo — the demo is fine — but everything after it. Without a write path, every slot Faysal confirms is invisible to the desk that owns the room, every walk-in reception takes is invisible to Faysal, and the first collision is two patients in one chair. 4,794 lines were spent making certain Faysal never sends a patient to a closed desk and **not one line** on making certain it never sends two patients to the same open one. It is also a *commercial* question: without a write path Faysal is a triage-and-lead-capture funnel, not a booking agent — a real product, at a different price, sold to a different buyer. | Three branches, all survivable if you know which one you are in: **(a) it has an API** → Faysal writes into it, the slot generator becomes a cache, and most of §7 shrinks; **(b) it does not** → `appointmentKind: "callback_request"` becomes the **primary** path rather than the degraded one, and §4.6 already built that path properly, so this is a repositioning and not a rewrite; **(c) each site runs something different** → the pilot is one site, and it should be Shoaa Al Wurud (accredited, its own app, the group's showpiece). |
+| `[OPEN-15]` | **Who at the group is the named person who confirms hours and prices**, and by what channel? Rule HRS-CONFIRM requires a name, a role, a channel and a datetime for any `client_confirmed` record to exist. | Every `client_confirmed` hours record and every `client_confirmed` price. | Nothing carries `client_confirmed`; the demo runs on `demo_seeded` + Rule DEMO-1. |
+| `[OPEN-16]` | **Does the client accept the Rule DEMO-1 disclaimer wording**, in all three placements, on a channel that carries their registered trade name? | Nothing — DEMO-1 ships regardless; this is a courtesy review, not a gate. | The strings in §11 Rule DEMO-1 ship as written. |
+| `[OPEN-17]` | **Who builds and owns the operator surface?** Not a client question — an internal one, recorded here because three specs assume it exists and none specifies it: Rule HRS-CONFIRM (§4.10) needs an hours editor that records *who said so and when*; `SPEC-4-SAFETY.md` §4.4 needs the same for the ER table with its 30-day expiry alert; §4.1 R2 H-5 needs a **release** control for a `triage_hold`; and `SPEC-4-SAFETY.md` §9.2 needs an operator console that opens a thread under RLS so the responder can read the patient's actual words. | `client_confirmed` (hours **and** prices), the ER table, the triage-hold release, and the P0 responder's ability to act on an alert that deliberately carries no free text. | Seed files carry the demo. **A hold nobody can release is an outage, and a P0 alert nobody can read is a page with no payload** — so this is a launch gate (`SPEC-4-SAFETY.md` §12 row 14), not a nicety. |
 
 ---
 
@@ -1289,6 +1484,9 @@ POL-05 Whitening: prerequisites stated, outcomes never predicted.
 POL-06 Visa/residency medicals declared out of scope.
 POL-07 Female clinician offered by default for women's health where one exists.
 POL-08 The whole of §11 — clinical safety, refusals, escalation.
+POL-09 Rule DEMO-1 — the in-conversation demo disclaimer, in three placements, emitted by the renderer.
+POL-10 Rule HRS-CONFIRM / `client_confirmed` (§4.10) — a client-sourced fact outranks every research source and requires a named human attribution to exist at all.
+POL-11 Rule HRS-DEMO — demo-only seeded clinic hours, stamped `demo_seeded`, unreachable in a production build.
 
 ### Demo data `[DEMO]`
 
@@ -1318,7 +1516,7 @@ An auditor or implementer can check the code against these directly. Each maps t
 11. No confirmation message for `wattan-4` renders a bare "confirmed". (C4-1)
 
 **Real people**
-12. The denylist test fails the build when any denylisted name (Latin or Arabic, diacritic-normalised) appears in seed data, prompts or fixtures. (DOC-4)
+12. The denylist test fails the build when any denylisted name (Latin or Arabic, **`normalizeAr`-normalised — not `norm()`**) appears in seed data, prompts, fixtures, eval sets or the assembled prompt bundle. (DOC-4)
 13. Every `Clinician` record has `fictional: true`; the type makes any other value uncompilable. (§6.3)
 
 **Money**
@@ -1339,6 +1537,73 @@ An auditor or implementer can check the code against these directly. Each maps t
 24. A red-flag phrase in any language produces the escalation message and **zero** slot offers. (MED-2)
 25. No reply contains a star rating or review count. (RATE-1)
 26. A `group_only` or `inferred` specialty is never offered as bookable. (SPEC-1)
+
+**Bookability, provenance and the demo marker** *(added Wave 1.5)*
+27. `confidence: "demo_seeded"` appears **nowhere** in a production build — asserted by grepping the built bundle, not the source tree. (HRS-DEMO)
+28. `bookableWindows()` returns a non-empty result for a `clinic` layer at `confidence: "client_confirmed"` on a day whose `capturedAt` is 120 days old, and the **same** record at 400 days old returns a non-empty result at a downgraded confidence — no absolute void. (§4.10, HRS-FRESH)
+29. A `DayHours` or `ServicePrice` carrying `client_confirmed` **without** a populated `ClientConfirmation` (named person, role, channel, datetime) does not compile. (H6, HRS-CONFIRM)
+30. Every confirmation block — `slot` **and** `callback_request`, contested site **and** operational — contains «حجز تجريبي — غير مسجّل لدى الفرع.» while any of its data carries a demo basis, and the string is emitted by the renderer, not present in any prompt template. (DEMO-1c)
+31. The first message of every demo conversation is the DEMO-1(b) system line, it precedes the greeting, it is **not** attributed to Faysal, and it contains `920009303`, `0504490460` and `997`. (DEMO-1b)
+32. The emergency rail's rendered string is byte-identical to SPEC-4 §4.2 — **no demo disclaimer is prepended or appended**. (DEMO-1 detail 5)
+33. No reply names an ER site that `erSites({ now })` did not return with `hours_verified_at` inside 30 days; with `erSites()` returning `[]`, the escalation names no site and still contains `997`. (MED-2, SPEC-4 §4.4)
+34. The DOC-4 denylist test fails on «هبه احمد» when the denylist holds «هبة أحمد», and fails on «الممرضة نورين» when the denylist holds «نورين». Both are the cases the first draft's matcher would have passed. (DOC-4)
+
+---
+
+## Wave 1.5 remediation
+
+Against `AUDIT-WAVE1.md` (Agent 5) and `REVIEW-WAVE1.md`, 2026-09-09. Every claim below was
+driven — the three normalisers executed against the denylist, the CI files read, the dossier
+re-checked.
+
+### Blocker closed
+
+| ID | Closed by | Mechanism |
+|---|---|---|
+| **B8** — the real-clinician denylist guard uses the wrong normaliser and will not fire on the likeliest leak | **§6.4 Rule DOC-4**, rewritten | `norm()` in `lib/order-pricing.ts` L99–105 strips tashkeel and tatweel **only** — verified verbatim. Driven, it is unequal on «هبة أحمد» vs «هبه احمد», «أحمد سيد مصطفى» vs «احمد سيد مصطفي», «هدى الرشيدي» vs «هدي الرشيدي» and «سارة الجندي» vs «ساره الجندي»; `normalizeAr` is equal on all four. DOC-4 now names `normalizeAr` (`lib/ai/allergen-gate.ts` L19–31 → `lib/util/arabic-normalize.ts` after SPEC-3 §10.2's extraction). |
+
+**Two corrections to the audit's own fix, both driven and both recorded in DOC-4:**
+
+1. **`normalizeAr` does not strip «ال».** The audit's fix said to verify the fold covers "hamza,
+   `ة→ه` and `ال`". It covers hamza, `ة→ه`, `ى→ي`, `ؤ→و`, `ئ→ي`, tashkeel, tatweel, 3+-letter
+   runs, whitespace and case — and **not** `ال`: `normalizeAr("الرشيدي") === "الرشيدي"`. It does
+   not need to, because the article is normalised identically on both sides of a full-name
+   comparison, and stripping it would widen the match surface. The «ال» sentence in the original
+   gotcha was about *token* matching, not folding, and the full-name rule is what prevents that.
+2. **There are two divergent `normalizeAr`s** (audit S14, confirmed): `lib/ai/callback-trigger.ts:13`
+   exports a second copy **missing** the 3+-letter run collapse. **`lib/ai/allergen-gate.ts`'s is
+   authoritative** — 25 importers, and the one SPEC-4 §2 depends on for «ماااا أقدر». Named as
+   such in DOC-4 and in SPEC-3 §10.2.
+
+### Blockers this document participates in
+
+| ID | Change here |
+|---|---|
+| **B6** — three incompatible ER models | §11 MED-2 no longer names Complex 1 or Shoaa Al Wurud from the dossier. `erSites({ now })` (SPEC-4 §4.4) is the single model and SPEC-4 owns it. SPEC-1's `er` hours layer survives, **re-scoped to informational-only**: it answers "is your ER open?" in conversation and never feeds the rail. |
+| **S8** — 997 frozen vs config | `[OPEN-08]` rewritten. The number is settled to SPEC-4's frozen `997`; what remains open here is the **sign-off**, which blocks launch, not the string. The "config value, unset until confirmed" interim behaviour is struck — it shipped a hole in the highest-consequence string in the product. |
+| **S21** — the denylist cannot catch a mononym | DOC-4's matching-discipline table: **full-name containment** for multi-token entries (which prevents the «ال»/"al" token false positive across 23 of 30 invented names) **and** boundary-matched single-token for mononyms. Driven: full-name equality on «نورين» is false against «الممرضة نورين»; containment is true. Both disciplines ship; SPEC-4 §11.5's bundle grep runs beside, not instead. |
+
+### The reviewer's two changes
+
+| Finding | Change |
+|---|---|
+| **The bookability contradiction** — these rules mint zero slots at all six sites while Rule DOC-3 claims three work, and the whole model expires 30 days after the dossier's date | **New §4.10**, a reachable `client_confirmed` confidence tier with `ClientConfirmation` (named person, role, channel, datetime, verbatim, scope), a 180/365-day **downgrading** staleness rather than an absolute void, and Invariant **H6** making an unattributed client confirmation uncompilable. **Rule DOC-3 is corrected**: it now states the three conditions (after the call / demo build / production build) instead of asserting an inventory its own invariants forbade. Rule **HRS-DEMO** gives the demo a labelled `demo_seeded` fallback at three sites — with Ash Shifa and Al Yamamah left on the honesty path deliberately, because one "I can't confirm that" is a differentiator and six is a product defect. §9.2's `PriceBasis` gets the identical treatment: the same defect existed twice in this document. |
+| **Demo labelling** — no spec owned an in-conversation demo marker, and the confirmation block is what gets screenshotted | **New Rule DEMO-1** (`[POL-09]`) in §11: three placements — persistent chrome chip, a **system-line** first message carrying the **real** booking numbers (920009303 / 0504490460 / 997), and «حجز تجريبي — غير مسجّل لدى الفرع.» as a **frozen renderer-emitted suffix on every confirmation block**, `callback_request` and contested-site included. Five binding details, including the rail's exemption from (b) and (c) so SPEC-4 §11.3's byte-exact assertion still holds. |
+
+### Named but not closed here, and why
+
+- **S10 — Shoaa Wurud OB-GYN is `named_at_site` on the strength of a review of a denylisted
+  clinician (§6.2 fn3 vs Rule STR-1).** Real, and left standing with this note rather than
+  silently downgraded, because the fix is a judgement about *demo shape* rather than a
+  correctness edit: dropping the site's OB-GYN to `G` removes the only female-clinician
+  women's-health path at the group's flagship, which `[INF-09]` says is one of the most common
+  real filters in this market. **The correct resolution is a line on the client call**
+  (`[OPEN-02]`): ask whether Shoaa Al Wurud runs an OB-GYN clinic, and take the answer as
+  `client_confirmed`. Until then the strength must not be built from `[D §3.5 L194]`, and the
+  matrix entry should read `G` — recorded here so the next pass does it deliberately.
+- **The `crossesMidnight` / `SourceRef.dossierRef` / `conflicted`-vs-`low` simplifications**
+  the review proposes as cuts. They cost nothing to keep and cutting them is a Wave 2 scope
+  decision, not a defect.
 
 ---
 
