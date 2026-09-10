@@ -94,6 +94,23 @@ function selfHarm(clause: string): Candidate | null {
   if (/(?:^|\s)(?:و|ف|ب|ك|ل)?(?:ابي|ودي|بدي|افكر|راح|بغيت) [^ ]{0,12}(?:اموت|انتحر|اختفي)/.test(clause)) {
     return { tier: "emergency", termAr: "اموت", ruleId: "I.first_person_intent" };
   }
+  // …AND THE HARM VERBS, WHICH RULE 1 DID NOT CARRY. The class caught the PAST
+  // («جرحت نفسي», «اذيت نفسي») and the death verbs, and was silent on the INTENT to
+  // hurt oneself: «أفكر أأذي نفسي», «ابي اذي نفسي», «راح اجرح نفسي». Driven — every
+  // one of them reached the honest-unknown fallback and was then asked which clinic
+  // they needed. The English arm has caught these since the day it shipped, which is
+  // how the gap surfaced. The object is REQUIRED and enumerated: «ما ابي اذي احد» is
+  // someone worried about hurting another person, and it is not this class.
+  if (/(?:^|\s)(?:و|ف|ب|ك|ل)?(?:ابي|ودي|بدي|افكر|راح|بغيت|بـ)\s*[^ ]{0,6}(?:اذي|اوذي|اؤذي|اجرح|اضر)\s+(?:نفسي|حالي|روحي|جسمي)/.test(clause)) {
+    return { tier: "emergency", termAr: "اذي نفسي", ruleId: "I.self_harm_intent" };
+  }
+  // «ما أبي أعيش» — ANCHORED AT THE END OF THE CLAUSE, and that anchor is the whole
+  // precision story: «ما أبي أعيش هالتجربة مرة ثانية» is a patient describing a bad
+  // visit, and handing them a suicide rail is the false positive §2 calls its most
+  // damaging. With nothing after it, it means what it says.
+  if (/(?:^|\s)ما\s+(?:ابي|ودي|بدي|بغيت)\s+اعيش\s*[.،؛!]*$/.test(clause)) {
+    return { tier: "emergency", termAr: "ما ابي اعيش", ruleId: "I.no_wish_to_live" };
+  }
   return null;
 }
 

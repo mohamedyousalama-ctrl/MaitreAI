@@ -348,6 +348,22 @@ console.log("\n── §F2  NEGATION × ABILITY × PERSON, and the third person 
       ["", " بالغلط", " الصبح"],
     ))]);
 
+  // §2.9 I — THE INTENT TO HARM ONESELF, which the class did not carry.
+  // It caught the PAST — «جرحت نفسي», «اذيت نفسي» — and the death verbs, and was silent on
+  // «أفكر أأذي نفسي» and «ابي اذي نفسي»: the honest-unknown fallback, followed by «وش تحتاج
+  // — كشف عام ولا عيادة معيّنة؟». The English arm has caught these since it shipped, which is
+  // how the gap surfaced at all. The object is enumerated on purpose — «ما ابي اذي احد» is
+  // somebody afraid of hurting SOMEONE ELSE and is not this class.
+  mustFire("§I2 self_harm: the INTENT to harm oneself, not only the past tense",
+    [...new Set(cross(
+      ["ابي", "ودي", "بدي", "افكر", "راح", "بغيت"],
+      ["اذي", "اوذي", "اجرح", "اضر"],
+      ["نفسي", "حالي", "روحي"],
+      ["", " واخلص", " ما عاد اتحمل"],
+    ))]);
+  mustFire("§I2 self_harm: «ما أبي أعيش», anchored at the end of the clause",
+    ["ما ابي اعيش", "ما ودي اعيش", "ما بدي اعيش", "ما بغيت اعيش", "ما ابي اعيش."]);
+
   // §2.8 — phrases only, and each phrase inside an ordinary run-on message, because a phrase
   // matched with a bare lookbehind is silent behind a «و» or a «ب» (§2.0 L7).
   mustFire("§F2 trauma: STANDALONE inside a run-on message",
@@ -517,6 +533,17 @@ console.log("\n── §Q  ORDINARY CLINIC ARABIC, DERIVED FROM ITS OWN VOCABULA
   //     BREATHE, and «الموعد ما نفسه اللي حجزته» is the sentence that raised an airway
   //     emergency and an operator-release-only booking lock on a wrong booking.
   const MA_FINAL = ["دايما", "دائما", "عموما", "لما", "كما", "بينما", "طالما", "عندما", "مهما", "حينما"];
+  // The precision half of the two new §I2 rules, derived from what a clinic actually
+  // receives rather than by negating the patterns. «ما أبي أعيش هالتجربة مرة ثانية» is a
+  // patient describing a bad visit, and «ما أبي أذّي أحد» is somebody afraid of hurting
+  // SOMEONE ELSE — handing either of them a suicide rail is the false positive §2 calls
+  // the most damaging one it has.
+  addQuiet("Q9 the self-harm INTENT rules must not read an ordinary complaint",
+    "ما ابي اعيش هالتجربه مره ثانيه", "ما ابي اعيش نفس الانتظار", "ما ابي اعيش بقلق من الاسنان",
+    "ما ابي اذي احد", "ما ابي اذي بشرتي بمنتج غلط", "ابي اعيش حياه صحيه",
+    "ابي اعيش بدون الم الظهر", "ودي اعيش بصحه احسن", "نفسي اجرب الليزر",
+    "الجرح ما التام عندي", "عندي جرح بيدي من امس", "ابي اذيه اقل وقت التنظيف",
+    "راح اجرب العلاج الجديد", "افكر اغير الفرع", "ابي اغير موعدي");
   addQuiet("Q1 «نفس»=the same, negated — THE T2 FAMILY",
     ...cross(THING, ["ما", "مو", "مب", "مش"], ["نفسه", "نفسها"],
       ["", "اللي حجزته", "المعلن", "المسجل", "اللي رحت له", "اللي طلبته"]));
