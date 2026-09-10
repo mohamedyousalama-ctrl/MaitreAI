@@ -1301,6 +1301,48 @@ console.log("\n── §R  THE RAIL: structural, not instructional ────�
       railCopyViolations(r.text).length === 0);
   }
 
+  // ── THE ENGLISH RAIL IS THE SAME RAIL ───────────────────────────────────────────────────
+  // The detector reads English; the instruction came back in Arabic. «997» and the siren carry
+  // across any script and «لا تسوق بنفسك» does not, so an English-speaking parent got a correct
+  // emergency verdict written in a language they could not read — the machine knew, and could
+  // not say. The English copy is a TRANSLATION of the frozen Arabic, and these assertions are
+  // what "translation, not a rewrite" means mechanically: same branch, same line count, same
+  // 997 on the same line, the same forbidden-token predicate, and no script leaking either way.
+  for (const cls of ["cardiac", "stroke", "hemorrhage", "airway", "obstetric", "infant_fever", "poisoning", "trauma", "self_harm", null] as const) {
+    for (const sites of [[fresh(3)], []] as const) {
+      const ar = emergencyRail({ cls, tier: "emergency", sites, now: NOW });
+      const en = emergencyRail({ cls, tier: "emergency", sites, now: NOW, language: "en" });
+      const label = `${cls ?? "exception"}/${sites.length ? "A" : "B"}`;
+      ok(`§RE ${label}: same branch in both languages`, ar.branch === en.branch, { ar: ar.branch, en: en.branch });
+      ok(`§RE ${label}: same number of lines`, ar.text.split("\n").length === en.text.split("\n").length,
+        { ar: ar.text.split("\n").length, en: en.text.split("\n").length });
+      ok(`§RE ${label}: 997 present in the English rail`, en.text.includes("997"));
+      ok(`§RE ${label}: §4.3 output guard clean in English — ${railCopyViolations(en.text).join(", ") || "none"}`,
+        railCopyViolations(en.text).length === 0);
+      // The SITE NAME is Arabic on purpose — «مجمع الوطن الطبي 1» is what is written on
+      // the building, and an English rail that renamed it would send someone looking for
+      // a door that does not exist. It is data, not copy, so it is removed before the
+      // script check and the check is about the SENTENCES only.
+      const enCopy = en.text.split(fresh(3).name).join(" ").split(fresh(3).address).join(" ");
+      ok(`§RE ${label}: no Arabic leaks into the English rail's own sentences`, !/[؀-ۿ]/.test(enCopy), enCopy);
+      ok(`§RE ${label}: every frozen field is identical`,
+        ar.canBook === en.canBook && ar.stopReason === en.stopReason && ar.triageHold === en.triageHold &&
+        ar.toolNames.length === en.toolNames.length && ar.presentation === en.presentation);
+      // …and the Arabic is untouched by any of it.
+      ok(`§RE ${label}: the Arabic rail is unchanged when no language is passed`,
+        emergencyRail({ cls, tier: "emergency", sites, now: NOW }).text === ar.text);
+    }
+  }
+  ok("§RE the English A branch names the site it was given",
+    emergencyRail({ cls: "cardiac", tier: "emergency", sites: [fresh(3)], now: NOW, language: "en" }).text.includes(fresh(3).name));
+  ok("§RE an unknown language falls back to Arabic, the tie-break",
+    emergencyRail({ cls: "cardiac", tier: "emergency", sites: [], now: NOW, language: "other" }).text === RAIL_B);
+  // The predicate itself must be able to fail on English, or it is decorative here.
+  ok("§RE the guard CATCHES an English booking word",
+    railCopyViolations("Call 997. Shall I book an appointment for you?").length > 0);
+  ok("§RE the guard CATCHES English reassurance",
+    railCopyViolations("Call 997. Don't worry, it is probably fine.").length > 0);
+
   // §4.2 / §11.3 — `997` in EVERY A–H branch, as the FIRST line, in WESTERN digits.
   for (const cls of ["cardiac", "airway", "trauma", null] as const) {
     const r = emergencyRail({ cls, tier: "emergency", sites: [fresh(3)], now: NOW });

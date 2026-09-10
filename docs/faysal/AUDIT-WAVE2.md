@@ -220,11 +220,23 @@ DOC-1 always said gender is a filter; the product simply had no way to apply one
 
 ### Still open
 
-**The highest item: the rail TEXT is Arabic-only.** The detector now reads English,
-so an English speaker gets a correct emergency verdict written in a language they
-cannot read — 997 and the siren are legible, the instruction is not. Fixing it
-means new frozen rail copy, which SPEC-2 §5.1 owns and SPEC-4 §12 row 4 sends to
-a clinician. It is the next thing to do and it is recorded rather than improvised.
+**The rail text is now bilingual — and the English copy needs SPEC-4 §12 row 4
+sign-off before a real patient sees it.** All three branches (A with a named ER, B
+with none, C for self-harm) have an English form, and the route picks the language
+from the raw inbound before any classifier runs, so it costs nothing and cannot
+throw.
+
+Every English line is a TRANSLATION of the frozen Arabic beside it: same branch,
+same line count, same 997 on the same line, the same forbidden-token predicate —
+which now reads English too, or it would have waved through «don't worry, book an
+appointment», both banned things in one sentence. The ER site name stays in Arabic
+on purpose: «مجمع الوطن الطبي 1» is what is written on the building, and renaming
+it would send someone looking for a door that does not exist.
+
+It is still new rail copy. SPEC-2 §5.1 owns the wording and §12 row 4 sends it to
+a clinician, and that has not happened. **Shipping a translation and flagging it
+beats shipping an emergency instruction nobody in the room can read** — but it is
+flagged, not signed off, and this line is the record of that.
 
 Two new ACCEPTED OVER-FIRES from the English arm have **no row in SPEC-4 §12** and
 need one. Both are carried in MUST_FIRE with written reasons rather than hidden in

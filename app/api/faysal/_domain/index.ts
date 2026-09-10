@@ -690,12 +690,13 @@ export function readRedFlag(text: string): RedFlagVerdict {
  * build carries one. "Branch B is not a degraded fallback to be avoided… it must
  * be the default the code reaches when anything is uncertain."
  */
-export function emergencyRailText(verdict: RedFlagVerdict): string {
+export function emergencyRailText(verdict: RedFlagVerdict, language: "ar" | "en" | "other" = "ar"): string {
   return emergencyRail({
     cls: (verdict.cls ?? null) as never,
     tier: (verdict.tier ?? "emergency") as never,
     sites: [],
     now: new Date(),
+    language,
   }).text;
 }
 

@@ -67,6 +67,14 @@ export const EN = {
 
   closing: "Done. Anything else you need, I am here.",
 
+  /** The held-thread line, in English. Same shape as the Arabic: §5.3's refusal with
+   *  the booking clause removed, the emergency route restated, and the number they
+   *  asked for — H-6 says a held patient may always be handed a phone number. */
+  holdTurn: (branchPhone: string) =>
+    "I do not give treatment advice. If it gets worse, the emergency department is closer to you than an appointment.\n" +
+    "997 and the emergency department are there for you right now, and I cannot book you an appointment while things are like this.\n" +
+    `And the branch number if you need it: ${branchPhone}.`,
+
   holdReask:
     "I did not catch that, and I would rather not guess.\nShall I confirm the appointment I am holding for you? If you want it under your name, type your name and mobile number.",
 } as const;

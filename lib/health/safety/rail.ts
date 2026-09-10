@@ -137,6 +137,56 @@ export function railC(): string {
   return lines.join("\n");
 }
 
+// ── THE SAME THREE BRANCHES, IN ENGLISH ─────────────────────────────────────
+//
+// THE DETECTOR READS ENGLISH AND THE INSTRUCTION CAME BACK IN ARABIC. «997» and the
+// siren carry across any script; «لا تسوق بنفسك» — do not drive yourself — does not.
+// An English-speaking parent got a correct emergency verdict written in a language
+// they cannot read, which is a worse failure than the detector not firing at all:
+// the machine knew, and could not say.
+//
+// EVERY LINE BELOW IS A TRANSLATION OF THE FROZEN ARABIC ABOVE IT. Nothing is added,
+// nothing is softened, no clinical claim exists here that does not exist there — the
+// line count, the order, the 997, the refusal to diagnose and the absence of any
+// booking word are all one-to-one, and §11.3's byte-exactness and §4.3's forbidden-
+// token predicate are asserted over both. It is still NEW RAIL COPY: SPEC-2 §5.1
+// owns the wording and SPEC-4 §12 row 4 sends it to a clinician, and it is recorded
+// in docs/faysal/AUDIT-WAVE2.md as awaiting exactly that. Shipping the translation
+// and flagging it beats shipping an emergency nobody can read.
+
+/** A. Classes A–H, with a verified-open ER site from the tool. */
+export function railAEn(siteName: string, siteAddress: string): string {
+  return [
+    "🚨 Call an ambulance on 997 now.",
+    "What you have described needs to be seen urgently. It does not wait for an appointment.",
+    `Nearest emergency department open now: ${siteName} — ${siteAddress}`,
+    "Do not drive yourself. If it gets worse, or if there is any loss of consciousness, call 997 first.",
+    "Your safety matters more, and I cannot diagnose over chat.",
+  ].join("\n");
+}
+
+/** B. Classes A–H with no site confirmed open — the correct output whenever the
+ *  roster cannot answer, and the one reachable from inside a `catch` (§1.5 R3). */
+export const RAIL_B_EN = [
+  "🚨 Call an ambulance on 997 now.",
+  "What you have described needs to be seen urgently. It does not wait for an appointment.",
+  "I cannot confirm which branch is open right now, so please do not rely on me for that — 997 is faster and more certain.",
+  "Your safety matters more, and I cannot diagnose over chat.",
+].join("\n");
+
+/** C. Class I (`self_harm`) — the different rail, in English. Note what it still does
+ *  NOT say: no instruction about what not to do, no appeal to family, no minimising,
+ *  and no promise that somebody will call within a time we do not control. */
+export function railCEn(): string {
+  const lines = [
+    "I have read what you wrote and I am taking it seriously 🙏",
+    "If your life is in danger right now, call 997 or go to the nearest emergency department.",
+  ];
+  if (SUPPORT_LINE_SENTENCE) lines.push(SUPPORT_LINE_SENTENCE);
+  lines.push("I will not continue with any booking right now. Would you like me to connect you with someone from our team?");
+  return lines.join("\n");
+}
+
 const FROZEN: Omit<RailResult, "branch" | "text" | "siteNamed"> = Object.freeze({
   toolNames: Object.freeze([]) as readonly string[],
   canBook: false,
@@ -160,19 +210,28 @@ export function emergencyRail(input: {
   readonly tier: RedFlagTier;
   readonly sites?: readonly ErSite[];
   readonly now?: Date;
+  /** The language the patient wrote in. Arabic is the default and the tie-break, so a
+   *  caller that does not pass it gets exactly what it got before. */
+  readonly language?: "ar" | "en" | "other";
 }): RailResult {
+  const en = input.language === "en";
   if (input.cls === "self_harm") {
-    return { ...FROZEN, branch: "C", text: railC(), siteNamed: null };
+    return { ...FROZEN, branch: "C", text: en ? railCEn() : railC(), siteNamed: null };
   }
   // A detector exception names NO site — §1.5 R3 — and neither does a rail with no eligible,
   // recently-verified site. It never guesses "the nearest".
   if (input.cls === null) {
-    return { ...FROZEN, branch: "B", text: RAIL_B, siteNamed: null };
+    return { ...FROZEN, branch: "B", text: en ? RAIL_B_EN : RAIL_B, siteNamed: null };
   }
   const eligible = eligibleErSites(input.sites ?? [], input.now ?? new Date(0));
   const site = eligible[0];
-  if (!site) return { ...FROZEN, branch: "B", text: RAIL_B, siteNamed: null };
-  return { ...FROZEN, branch: "A", text: railA(site.name, site.address), siteNamed: site.name };
+  if (!site) return { ...FROZEN, branch: "B", text: en ? RAIL_B_EN : RAIL_B, siteNamed: null };
+  return {
+    ...FROZEN,
+    branch: "A",
+    text: en ? railAEn(site.name, site.address) : railA(site.name, site.address),
+    siteNamed: site.name,
+  };
 }
 
 /** §4.3 — WHAT THE RAIL MAY NEVER CONTAIN, as a predicate rather than a hope. Returned as the
@@ -202,6 +261,13 @@ export function emergencyRail(input: {
  *  Any OTHER occurrence of a booking word, in any inflection, still fails.
  *  ═══════════════════════════════════════════════════════════════════════════════════════ */
 export const RAIL_BOOKING_WORD_EXEMPTIONS: readonly string[] = [
+  // The English rail's own refusal-to-book sentences. They contain the banned word
+  // BECAUSE they are the refusal — «I cannot book you an appointment while things
+  // are like this» is the rule being obeyed out loud, exactly like «ما ينتظر موعد».
+  "It does not wait for an appointment",
+  "I cannot book you an appointment while things are like this",
+  "I will not continue with any booking right now",
+  "the emergency department is closer to you than an appointment",
   "وما ينتظر موعد",       // branch A and B — "and it does not wait for an appointment"
   "ما راح أكمل أي حجز",   // branch C       — "I will not continue any booking"
 ];
@@ -219,6 +285,16 @@ export function railCopyViolations(text: string): string[] {
   }
   for (const w of ["لا تقلق", "ما فيك شي", "شكله عادي", "مو خطير", "ما يحتاج طوارئ", "الأمور تمام"]) {
     if (text.includes(w)) push(`reassurance «${w}»`);
+  }
+  // The same two lists in English, because the rail now answers in English and a
+  // predicate that only reads Arabic would wave through «don't worry, book an
+  // appointment» — which is both banned things in one sentence.
+  for (const w of ["booking", "book an appointment", "appointment", "offer", "discount", "package"]) {
+    if (new RegExp(`(?<![a-z])${w}(?![a-z])`, "i").test(text)) push(`booking word «${w}»`);
+  }
+  for (const w of ["don't worry", "do not worry", "nothing to worry", "it's probably fine", "it is probably fine",
+    "not serious", "no need for emergency", "you'll be fine", "you will be fine"]) {
+    if (text.toLowerCase().includes(w)) push(`reassurance «${w}»`);
   }
   return bad;
 }

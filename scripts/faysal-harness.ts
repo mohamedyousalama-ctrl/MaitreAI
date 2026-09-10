@@ -13,7 +13,8 @@
 //     "2026-09-10T23:10:00+03:00" "مساء الخير، ولدي عنده حرارة" "الروابي" "كاش"
 // ============================================================================
 import { REAL_CONTACTS, RAIL_STOP_REASON, SITES, emergencyRailText, readRedFlag, siteInDistrict, snapshotOfStore, storeFromSnapshot } from "../app/api/faysal/_domain";
-import { classify } from "../app/api/faysal/_engine/intent";
+import { classify, detectLanguage } from "../app/api/faysal/_engine/intent";
+import { EN } from "../app/api/faysal/_engine/english";
 import { compose } from "../app/api/faysal/_engine/render";
 import { openConversation, runTurn } from "../app/api/faysal/_engine/scenes";
 import { newSession, pushHistory, resetCourtesy } from "../app/api/faysal/_engine/session";
@@ -41,7 +42,7 @@ export class Conversation {
     if (verdict.fired && verdict.tier === "emergency") {
       s.triageHold = true; s.triageClass = verdict.cls;
       pushHistory(s, "user", raw); resetCourtesy(s);
-      const railText = compose(emergencyRailText(verdict), { isRail: true });
+      const railText = compose(emergencyRailText(verdict, detectLanguage(raw)), { isRail: true });
       pushHistory(s, "assistant", railText);
       const r = { messages: [{ from: "faysal" as const, text: railText }], chips: [], stopReason: RAIL_STOP_REASON, scene: "S0_safety" };
       this.record(r); return r;
@@ -49,9 +50,15 @@ export class Conversation {
     if (s.triageHold) {
       const held = readRedFlag(raw);
       const siteId = siteInDistrict(raw);
+      const railLanguage = detectLanguage(raw);
       const railText = held.fired
-        ? compose(emergencyRailText(held), { isRail: true })
-        : compose(S.holdTurn(siteId ? SITES[siteId].phoneAr : REAL_CONTACTS.unified), { isRail: true });
+        ? compose(emergencyRailText(held, railLanguage), { isRail: true })
+        : compose(
+            railLanguage === "en"
+              ? EN.holdTurn(siteId ? SITES[siteId].phoneAr : REAL_CONTACTS.unified)
+              : S.holdTurn(siteId ? SITES[siteId].phoneAr : REAL_CONTACTS.unified),
+            { isRail: true },
+          );
       pushHistory(s, "user", raw); pushHistory(s, "assistant", railText);
       const r = { messages: [{ from: "faysal" as const, text: railText }], chips: [], stopReason: RAIL_STOP_REASON, scene: "S0_safety" };
       this.record(r); return r;

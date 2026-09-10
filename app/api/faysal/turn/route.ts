@@ -33,7 +33,8 @@
 
 import { NextResponse } from "next/server";
 import { REAL_CONTACTS, RAIL_STOP_REASON, SITES, emergencyRailText, readRedFlag, siteInDistrict, snapshotOfStore, storeFromSnapshot } from "../_domain";
-import { classify, type Classification } from "../_engine/intent";
+import { classify, detectLanguage, type Classification } from "../_engine/intent";
+import { EN } from "../_engine/english";
 import { compose } from "../_engine/render";
 import { consumeSpendGuard, clientIp, preFilter } from "../_engine/guard";
 import { FAYSAL_MAX_CHARS } from "../_engine/limits";
@@ -102,6 +103,10 @@ export async function POST(req: Request) {
   //    screen runs BEFORE any greeting is selected. If the inbound message
   //    carries a red-flag symptom, NO greeting is sent at all."
   const verdict = readRedFlag(raw);
+  // The rail fires ABOVE the classifier, so the language it answers in cannot come
+  // from `classify()` — that call is below the spend guard and this one must not be.
+  // `detectLanguage` is a pure regex over the raw text: free, and it cannot throw.
+  const railLanguage = detectLanguage(raw);
 
   if (verdict.fired && verdict.tier === "emergency") {
     // openTriageHold() — §1.5 R2. Set BEFORE the reply is enqueued. A rail that
@@ -116,7 +121,7 @@ export async function POST(req: Request) {
     // Rule DEMO-1 detail 5: the rail is exempt from (b) and (c), and only from
     // those. Nothing is prepended or appended to §4.2's copy. `compose` with
     // `isRail` normalizes digits and does nothing else, so `997` stays `997`.
-    const railText = compose(emergencyRailText(verdict), { isRail: true });
+    const railText = compose(emergencyRailText(verdict, railLanguage), { isRail: true });
     pushHistory(session, "assistant", railText);
 
     return NextResponse.json({
@@ -142,8 +147,8 @@ export async function POST(req: Request) {
   if (session.triageHold) {
     const held = readRedFlag(raw);
     const railText = held.fired
-      ? compose(emergencyRailText(held), { isRail: true })
-      : compose(S.holdTurn(heldBranchPhone(raw)), { isRail: true });
+      ? compose(emergencyRailText(held, railLanguage), { isRail: true })
+      : compose(railLanguage === "en" ? EN.holdTurn(heldBranchPhone(raw)) : S.holdTurn(heldBranchPhone(raw)), { isRail: true });
     pushHistory(session, "user", raw);
     pushHistory(session, "assistant", railText);
     return NextResponse.json({
