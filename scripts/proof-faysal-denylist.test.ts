@@ -31,7 +31,7 @@
 // TWO MATCHING DISCIPLINES, BOTH REQUIRED (§6.4):
 //   * multi-token entries — FULL-NAME CONTAINMENT after normalizeAr on both
 //     sides. Not token matching: a naive token matcher flags the particle «ال» /
-//     "al" against 23 of the 30 invented names, fails the build on every one,
+//     "al" against most of the invented names, fails the build on every one,
 //     and gets loosened by the next person — after which the guard is gone.
 //   * the mononym «نورين» / "Noreen" (a nurse's given name, no surname) —
 //     BOUNDARY-MATCHED single token, per SPEC-4 §1.2's Arabic boundary form.
@@ -318,19 +318,60 @@ if (allHits.length > 0) {
 }
 
 // ---------------------------------------------------------------------------
-// Part D — the roster shares no name part with the denylist. §6.4's closing
-// note claims the seed roster is safe BY CONSTRUCTION; this checks the claim
+// Part D — NEITHER roster shares a name part with the denylist. §6.4's closing
+// note claims the invented roster is safe BY CONSTRUCTION; this checks the claim
 // rather than repeating it, and it is what catches a future addition like a
-// «د. سارة …» whose surname happens to be Al-Jundi.
+// «د. نورة …» whose surname happens to be Al-Jundi. Part C would not: containment
+// wants the WHOLE name, and «د. نورة الجندي» contains neither «سارة الجندي» nor
+// «Sarah Al-Jundi».
+//
+// THERE ARE TWO ROSTERS AND THIS USED TO READ ONE OF THEM. It parsed
+// `scripts/seed-faysal.ts`, which seeds a database, while the engine answers
+// patients out of `lib/health/clinicians.ts` — so the stricter of the two checks
+// in this file was blind to the very list a name reaches a patient from, and the
+// eleven clinicians added for the internal-medicine gap were checked by hand
+// instead. Both are parsed here now, under identical rules.
+//
+// A PARSE THAT FINDS NOTHING MUST FAIL, not pass. Each roster's extracted names
+// are counted against the roster rows declared in its own file, so reformatting
+// either file breaks this test loudly rather than quietly emptying the guard —
+// which is the same failure mode as a denylist nobody runs.
 // ---------------------------------------------------------------------------
 
-console.log("\nD. the invented roster shares no name part with a real clinician");
+console.log("\nD. neither invented roster shares a name part with a real clinician");
 
-const seedSource = readFileSync(resolve(ROOT, "scripts/seed-faysal.ts"), "utf8");
-const rosterAr = [...seedSource.matchAll(/ar: "(د\. [^"]+)"/g)].map((m) => m[1]);
-const rosterEn = [...seedSource.matchAll(/en: "([A-Z][^"]*)", gender:/g)].map((m) => m[1]);
+interface Roster {
+  file: string;
+  /** How a roster row opens in that file — what the extraction is counted against. */
+  declared: RegExp;
+  /** The Arabic name and then the Latin name out of one row. */
+  row: RegExp;
+}
 
-ok("roster parsed from the seed", rosterAr.length >= 30 && rosterEn.length >= 30, `ar=${rosterAr.length} en=${rosterEn.length}`);
+const ROSTERS: Roster[] = [
+  // The engine roster:  c("dr-x", "د. …", "…", "female", …)
+  { file: "lib/health/clinicians.ts", declared: /^\s*c\("dr-/gm, row: /c\("dr-[^"]+",\s*"(د\. [^"]+)",\s*"([^"]+)",\s*"(?:female|male)"/g },
+  // The seed roster:  { key: "dr-x", ar: "د. …", en: "…", gender: "female", … }
+  { file: "scripts/seed-faysal.ts", declared: /^\s*\{ key: "dr-/gm, row: /\{ key: "dr-[^"]+", ar: "(د\. [^"]+)", en: "([^"]+)", gender: "(?:female|male)"/g },
+];
+
+const rosterNames: Array<{ file: string; name: string }> = [];
+for (const roster of ROSTERS) {
+  const source = readFileSync(resolve(ROOT, roster.file), "utf8");
+  const declared = [...source.matchAll(roster.declared)].length;
+  const rows = [...source.matchAll(roster.row)];
+  ok(
+    `every roster row in ${roster.file} was parsed`,
+    declared > 0 && rows.length === declared,
+    `declared=${declared} parsed=${rows.length} — the extraction has fallen behind the file's shape`,
+  );
+  for (const m of rows) {
+    rosterNames.push({ file: roster.file, name: m[1] });
+    rosterNames.push({ file: roster.file, name: m[2] });
+  }
+}
+
+ok("both rosters were found", rosterNames.length >= 2 * 2 * 30, `names=${rosterNames.length}`);
 
 const denyParts = new Set<string>();
 for (const entry of DENYLIST) {
@@ -344,9 +385,9 @@ for (const entry of DENYLIST) {
 }
 
 const partClashes: string[] = [];
-for (const name of [...rosterAr, ...rosterEn]) {
+for (const { file, name } of rosterNames) {
   for (const part of latinFold(name).split(" ")) {
-    if (part.length > 2 && denyParts.has(part)) partClashes.push(`${name} shares "${part}"`);
+    if (part.length > 2 && denyParts.has(part)) partClashes.push(`${file}: ${name} shares "${part}"`);
   }
 }
 

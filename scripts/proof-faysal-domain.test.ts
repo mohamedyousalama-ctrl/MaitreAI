@@ -44,6 +44,7 @@ import {
   bookableWindows,
   cancelBooking,
   clinicBookableAt,
+  cliniciansFor,
   confirmBooking,
   createStore,
   dayHoursFor,
@@ -54,6 +55,7 @@ import {
   holdSlot,
   hoursDisclosure,
   insuranceAnswer,
+  isBookableSpecialty,
   minutesOf,
   openStateAt,
   patientPhoneDisplay,
@@ -65,7 +67,8 @@ import {
   searchSlots,
   slotIsStillBookable,
 } from "../lib/health/index.ts";
-import type { DayHours, DayKey, HoursTable, SiteId } from "../lib/health/index.ts";
+import type { DayHours, DayKey, HoursTable, SiteId, SpecialtyKey } from "../lib/health/index.ts";
+import { DOCTORS } from "./seed-faysal.ts";
 
 // ── the child-process arm of the determinism proof (criterion 23) ───────────
 // Same file, same query, a DIFFERENT process. If a slot list can drift between
@@ -885,18 +888,91 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   // asserts it per gender, so that a roster edit which takes the last woman off
   // a general clinic fails on this line instead of in front of a patient.
   const bookableSiteIds: SiteId[] = ["wattan-2", "shoaa-wurud", "shoaa-rawdah"];
+
+  /**
+   * The gendered ask, answered out of a roster the caller chooses. The live call
+   * passes the whole roster; the mutation arms pass it with one person removed,
+   * so what is verified is the engine's own search rather than a paraphrase of it.
+   */
+  function answersGender(
+    roster: readonly { id: string }[],
+    serviceId: string,
+    siteId: SiteId,
+    gender: "female" | "male"
+  ): boolean {
+    const ids = new Set(roster.map((c) => c.id));
+    const slots = searchSlots({ serviceId, siteId, dateISO: SAT, gender, ...DEMO }, { store: createStore() })
+      .filter((x) => ids.has(x.clinicianId));
+    return slots.length > 0 && slots.every((x) => CLINICIANS.find((c) => c.id === x.clinicianId)?.gender === gender);
+  }
+
   for (const siteId of bookableSiteIds) {
-    check(`SPEC-1 / §6.3: general practice mints slots at ${siteId} under DEMO_MODE`,
-      searchSlots({ serviceId: "gp-consult", siteId, dateISO: SAT, ...DEMO }, { store: createStore() }).length > 0);
+    for (const serviceId of ["gp-consult", "internal-consult"]) {
+      check(`SPEC-1 / §6.3: ${serviceId} mints slots at ${siteId} under DEMO_MODE`,
+        searchSlots({ serviceId, siteId, dateISO: SAT, ...DEMO }, { store: createStore() }).length > 0);
+    }
     for (const gender of ["female", "male"] as const) {
-      const filtered = searchSlots({ serviceId: "gp-consult", siteId, dateISO: SAT, gender, ...DEMO }, { store: createStore() });
       check(`DOC-1: general practice at ${siteId} answers a patient who asks for a ${gender} clinician`,
-        filtered.length > 0 && filtered.every((s) => CLINICIANS.find((c) => c.id === s.clinicianId)?.gender === gender));
+        answersGender(CLINICIANS, "gp-consult", siteId, gender));
     }
   }
   check("SPEC-1: and general practice still mints NOTHING with DEMO_MODE off — the roster is not a licence",
     bookableSiteIds.every((siteId) =>
       searchSlots({ serviceId: "gp-consult", siteId, dateISO: SAT, ...PROD }, { store: createStore() }).length === 0));
+
+  // Ar Rawdah is absent from this loop and the omission is the point. Internal
+  // medicine reads `group_only` there and is bookable only through the
+  // DEMO_SEEDED_CAPABILITY row, so the auditor's rule — a clinician may be added
+  // only where the routing or capability row already NAMES that specialty at that
+  // site — forbids putting a second internist in that building to balance it. The
+  // branch is staffed by one man; «أبغى دكتورة باطنية» in Ar Rawdah is a real gap
+  // and it is recorded rather than papered over.
+  for (const siteId of ["wattan-2", "shoaa-wurud"] as SiteId[]) {
+    for (const gender of ["female", "male"] as const) {
+      check(`DOC-1: internal medicine at ${siteId} answers a patient who asks for a ${gender} clinician`,
+        answersGender(CLINICIANS, "internal-consult", siteId, gender));
+    }
+  }
+
+  // THE GENERAL FORM OF THE DEFECT, asserted once for every clinic the engine
+  // claims rather than once per clinic somebody remembered. General practice and
+  // then internal medicine each shipped a site whose capability row said yes and
+  // whose roster was empty; the patient heard it as hours we could not confirm,
+  // because that is the only sentence the engine had left. `isBookableSpecialty`
+  // is the gate that opens the door and `cliniciansFor` is what has to be behind
+  // it — every pair where the first is true and the second is empty is one more
+  // «دوامه قيد التأكيد» about a branch whose hours are fine.
+  //
+  // The sweep runs over the whole matrix, not just the three seeded sites: hours
+  // are what HIDES this defect, never what causes it, and Al Yamamah's obgyn and
+  // lab clinics were empty for exactly as long as its hours stayed unseeded.
+  const CATALOGUE_SPECIALTIES = [...new Set(SERVICES.map((x) => x.specialty))] as SpecialtyKey[];
+
+  /**
+   * Both gates, asked in the order the engine asks them, over a roster the caller
+   * chooses. `cliniciansFor` is the function `searchSlots` itself calls, so the
+   * mutation arm below can take a person out of the roster and still be testing
+   * the engine's own answer rather than a copy of it that might drift.
+   */
+  function unstaffedPairs(roster: readonly { id: string }[]): string[] {
+    const ids = new Set(roster.map((c) => c.id));
+    const out: string[] = [];
+    for (const siteId of SITE_IDS) {
+      for (const specialty of CATALOGUE_SPECIALTIES) {
+        if (!isBookableSpecialty(siteId, specialty, true)) continue;
+        if (!cliniciansFor(siteId, specialty).some((c) => ids.has(c.id))) out.push(`${siteId}/${specialty}`);
+      }
+    }
+    return out;
+  }
+
+  const unstaffed = unstaffedPairs(CLINICIANS);
+  check(`SPEC-1 / §6.3: every bookable specialty at every site has a clinician (${unstaffed.join(", ") || "none unstaffed"})`,
+    unstaffed.length === 0);
+  mutation("take BOTH internists off Ar Rawabi and the sweep must name the empty clinic",
+    () => unstaffedPairs(CLINICIANS.filter((c) => c.id !== "dr-alshayea" && c.id !== "dr-alfawzan")).length === 0);
+  mutation("take the LAST WOMAN off Ar Rawabi's internal medicine and the gendered ask must go unanswered",
+    () => answersGender(CLINICIANS.filter((c) => c.id !== "dr-alshayea"), "internal-consult", "wattan-2", "female"));
 
   // DOC-1 / DOC-2 — gender is a filter; no credentials we cannot support.
   check("DOC-1: a female-clinician filter is honoured, not volunteered",
@@ -913,14 +989,18 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   check("Prohibition A: no denylisted real clinician appears in the seed data",
     REAL_CLINICIAN_DENYLIST.every((name) => !seed.includes(name)));
   // §6.3's table is 30 people, 15 of each. Staffing general practice at the three
-  // sites the demo can actually book added six more — a woman and a man each —
-  // so the count is 36 and the even split holds. The number is pinned rather than
-  // described because the roster is the easiest thing in this engine to edit, and
-  // a row missing from it reaches the patient as a branch whose hours we cannot
-  // confirm — which is how the family-medicine gap hid for as long as it did.
-  check("§6.3: the roster is 36 invented clinicians, evenly split by gender, every site staffed, every site with a woman",
-    CLINICIANS.length === 36 &&
-    CLINICIANS.filter((c) => c.gender === "female").length === 18 &&
+  // sites the demo can actually book added six; closing the five remaining clinics
+  // whose capability row was true over an empty roster — internal medicine at Ar
+  // Rawabi, at Shoaa Al Wurud and at Al Yamamah, dentistry at Shoaa Al Wurud, and
+  // Al Yamamah's obgyn and lab — added eleven more. 47 is odd, so 24/23 is as even
+  // as the split goes. The numbers are pinned rather than described because the
+  // roster is the easiest thing in this engine to edit, and a row missing from it
+  // reaches the patient as a branch whose hours we cannot confirm — which is how
+  // the family-medicine gap hid for as long as it did.
+  check("§6.3: the roster is 47 invented clinicians, 24 women and 23 men, every site staffed, every site with a woman",
+    CLINICIANS.length === 47 &&
+    CLINICIANS.filter((c) => c.gender === "female").length === 24 &&
+    CLINICIANS.filter((c) => c.gender === "male").length === 23 &&
     SITE_IDS.every((id) => CLINICIANS.filter((c) => c.siteIds.includes(id)).length >= 4) &&
     SITE_IDS.every((id) => CLINICIANS.some((c) => c.siteIds.includes(id) && c.gender === "female")));
 
@@ -998,6 +1078,157 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   // the source tree, and belongs in CI beside SPEC-4 §11.5's bundle assertion.
   // What this file can prove is the runtime half, asserted above: with
   // DEMO_MODE off, `demo_seeded` mints nothing at any site on any day.
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 15. The engine roster and the seed roster are the same people (§6.3)
+// ────────────────────────────────────────────────────────────────────────────
+//
+// They were not. `lib/health/clinicians.ts` answered patients out of 36 people
+// while `scripts/seed-faysal.ts` seeded 30, and nothing anywhere compared them —
+// the six missing were the six who make «أبغى كشف عام» bookable at all, so a
+// tenant seeded from that file could not serve the conversation this engine had
+// already had. Ten more rows disagreed on seniority and four on which clinic the
+// person's name hangs under.
+//
+// WHY THE CHECK IS SHAPED THIS WAY. The obvious alternative was to delete one of
+// the two lists and derive it from the other, and it was rejected: the seed is
+// applied to a database by a governed `--emit-sql` run that a human reads, and a
+// roster that is not in the file being read is a roster nobody reviews. So both
+// lists stay, and instead of a per-field loop that can be quietly narrowed later,
+// each roster is PROJECTED ONTO ONE STRING PER PERSON and the two projections are
+// compared whole. Narrowing it means deleting a field from the projection, which
+// is a visible edit; forgetting a field is not possible, because the projection
+// is written once and used for both sides.
+//
+// The two files disagree on vocabulary on purpose — the engine's `SpecialtyKey`
+// is what a sentence is built from, the seed's keys are rows in
+// `health_specialties` — so exactly one map stands between them, and it is
+// asserted TOTAL over both rosters before it is used. An unmapped specialty must
+// fail here, not silently compare a key against itself.
+{
+  const DB_SPECIALTY: Record<string, string> = {
+    general_family: "general_family",
+    internal_medicine: "internal_medicine",
+    paediatrics: "paediatrics",
+    obgyn: "obgyn",
+    ent: "ent",
+    ophthalmology: "ophthalmology",
+    dermatology: "dermatology_medical",
+    laser_aesthetics: "laser_aesthetics",
+    dentistry: "dentistry_general",
+    orthodontics: "orthodontics",
+    endodontics: "endodontics",
+    orthopaedics: "orthopaedics",
+    neurology: "neurology",
+    urology: "urology",
+    general_surgery: "general_surgery_day_case",
+    emergency: "emergency",
+    lab_radiology: "lab_radiology",
+    employment_medicals: "employment_medicals",
+  };
+
+  const engineKeys = new Set(CLINICIANS.flatMap((c) => [c.specialty, ...c.subSpecialties]));
+  const unmapped = [...engineKeys].filter((k) => !DB_SPECIALTY[k]);
+  check(`§6.2: every specialty on the engine roster has a database key (${unmapped.join(", ") || "all mapped"})`,
+    unmapped.length === 0);
+
+  const dbKeys = new Set(Object.values(DB_SPECIALTY));
+  const seedUnknown = DOCTORS.flatMap((d) => [d.specialty, ...(d.subSpecialties ?? [])]).filter((k) => !dbKeys.has(k));
+  check(`§6.2: every specialty on the seed roster is one the map can produce (${seedUnknown.join(", ") || "all known"})`,
+    seedUnknown.length === 0);
+
+  const project = (c: {
+    id: string;
+    nameAr: string;
+    nameEn: string;
+    gender: string;
+    specialty: string;
+    subSpecialties: readonly string[];
+    languages: readonly string[];
+    siteIds: readonly string[];
+    seniority: string;
+  }): string =>
+    [
+      c.id,
+      c.nameAr,
+      c.nameEn,
+      c.gender,
+      c.specialty,
+      [...c.subSpecialties].sort().join("+"),
+      [...c.languages].sort().join("+"),
+      [...c.siteIds].sort().join("+"),
+      c.seniority,
+    ].join(" | ");
+
+  const fromEngine = (roster: typeof CLINICIANS): string[] =>
+    roster
+      .map((c) =>
+        project({
+          ...c,
+          // An unmapped key becomes a string the seed side cannot produce, so a
+          // specialty nobody translated fails the comparison instead of passing
+          // by comparing itself against itself.
+          specialty: DB_SPECIALTY[c.specialty] ?? `unmapped:${c.specialty}`,
+          subSpecialties: c.subSpecialties.map((k) => DB_SPECIALTY[k] ?? `unmapped:${k}`),
+        })
+      )
+      .sort();
+
+  const fromSeed = (roster: typeof DOCTORS): string[] =>
+    roster
+      .map((d) =>
+        project({
+          id: d.key,
+          nameAr: d.ar,
+          nameEn: d.en,
+          gender: d.gender,
+          specialty: d.specialty,
+          subSpecialties: d.subSpecialties ?? [],
+          languages: d.languages,
+          siteIds: d.sites,
+          seniority: d.seniority,
+        })
+      )
+      .sort();
+
+  const agree = (engine: typeof CLINICIANS, seed: typeof DOCTORS): boolean =>
+    fromEngine(engine).join("\n") === fromSeed(seed).join("\n");
+
+  const engineRows = fromEngine(CLINICIANS);
+  const seedRows = fromSeed(DOCTORS);
+  const onlyEngine = engineRows.filter((r) => !seedRows.includes(r));
+  const onlySeed = seedRows.filter((r) => !engineRows.includes(r));
+  check(
+    `§6.3: lib/health/clinicians.ts and scripts/seed-faysal.ts are the same ${CLINICIANS.length} people` +
+      (onlyEngine.length || onlySeed.length
+        ? ` — engine only: [${onlyEngine.join("] [")}] · seed only: [${onlySeed.join("] [")}]`
+        : ""),
+    agree(CLINICIANS, DOCTORS)
+  );
+
+  // The three ways they drifted before, each one now fatal. None of the three
+  // names a clinician: a mutation pinned to an id quietly becomes a no-op the day
+  // that person is renamed, and a no-op mutation proves the assertion is fine
+  // when nothing was ever broken.
+  check("§6.3: somebody on the seed roster carries a sub-specialty, or the third mutation below is a no-op",
+    DOCTORS.some((d) => (d.subSpecialties ?? []).length > 0));
+  mutation("a person present in the engine and missing from the seed",
+    () => agree(CLINICIANS, DOCTORS.slice(1)));
+  mutation("a person whose seniority was edited on one side only",
+    () => agree(CLINICIANS, DOCTORS.map((d, i) => (i === 0 ? { ...d, seniority: d.seniority === "consultant" ? "specialist" as const : "consultant" as const } : d))));
+  mutation("a person whose sub-specialty was dropped on one side only",
+    () => agree(CLINICIANS, DOCTORS.map((d) => ((d.subSpecialties ?? []).length > 0 ? { ...d, subSpecialties: [] } : d))));
+
+  // The seed points every clinician at a service the seed itself defines, or at
+  // nothing where §9.4 refuses to price the clinic. A dangling key seeds a doctor
+  // who can never be booked, which is the same silence the sweep above exists to
+  // catch, one layer down.
+  const seedSource = readFileSync(new URL("./seed-faysal.ts", import.meta.url), "utf8");
+  const serviceKeys = new Set([...seedSource.matchAll(/\{ key: "([a-z0-9_]+)", ar: "[^"]*", en: "[^"]*", category:/g)].map((m) => m[1]));
+  const dangling = DOCTORS.filter((d) => d.defaultService && !serviceKeys.has(d.defaultService)).map((d) => d.key);
+  check(`§9.3: every seeded clinician's default service exists (${dangling.join(", ") || "none dangling"})`,
+    serviceKeys.size > 0 && dangling.length === 0);
 }
 
 console.log(`\nFAYSAL DOMAIN PROOF: ${pass} passed, ${fail} failed, ${mutations} mutations verified`);

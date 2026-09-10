@@ -33,6 +33,24 @@ export const CLINICIANS: readonly Clinician[] = Object.freeze([
   c("dr-alshammari", "د. طارق الشمري", "Tariq Al-Shammari", "male", "emergency", ["ar", "en"], ["wattan-1"], "specialist"),
   c("dr-hegazy", "د. ياسمين حجازي", "Yasmin Hegazy", "female", "paediatrics", ["ar", "en"], ["wattan-1"], "consultant"),
   c("dr-alqahtani", "د. سامي القحطاني", "Sami Al-Qahtani", "male", "neurology", ["ar", "en"], ["wattan-1"], "consultant"),
+  // Al Yamamah's §6.2 column names «نساء وولادة» and «مختبر وأشعة» at this
+  // building, and until now neither had anybody in it. Al Yamamah mints no slots
+  // today because Rule HRS-DEMO does not seed its hours, so the two empty clinics
+  // were invisible — but the capability gate is what opens the door and the hours
+  // gate is what times it, and the day the hours land the patient meets the
+  // general-practice defect again, one clinic over. Staffing them now is the
+  // cheaper half of that trade.
+  c("dr-almuhanna", "د. عبير المهنا", "Abeer Al-Muhanna", "female", "obgyn", ["ar", "en"], ["wattan-1"], "consultant"),
+  c("dr-alruwaili", "د. عادل الرويلي", "Adel Al-Ruwaili", "male", "obgyn", ["ar", "en"], ["wattan-1"], "specialist"),
+  // §9.4 gives laboratory and radiology no price on purpose, so these two are
+  // rostered against a capability the money path deliberately refuses. That is
+  // the honest shape: the building really does name a lab, and quoting one is
+  // what we may not do.
+  c("dr-alkhuraiji", "د. شذى الخريجي", "Shatha Al-Khuraiji", "female", "lab_radiology", ["ar", "en"], ["wattan-1"], "consultant"),
+  c("dr-alwuhaibi", "د. تركي الوهيبي", "Turki Al-Wuhaibi", "male", "lab_radiology", ["ar", "en"], ["wattan-1"], "specialist"),
+  // Al Yamamah's internal medicine was a one-man clinic, so «أبغى دكتورة باطنية»
+  // emptied the day here for the same reason it emptied it at the other two.
+  c("dr-alshathri", "د. نوف الشثري", "Nouf Al-Shathri", "female", "internal_medicine", ["ar", "en"], ["wattan-1"], "specialist"),
 
   // ── wattan-2 — Ar Rawabi: derm/laser and dental heavy ─────────────────────
   c("dr-albaqami", "د. ريم البقمي", "Reem Al-Baqami", "female", "dermatology", ["ar", "en"], ["wattan-2"], "consultant", ["laser_aesthetics"]),
@@ -57,6 +75,16 @@ export const CLINICIANS: readonly Clinician[] = Object.freeze([
   // a filter's clothes.
   c("dr-alanazi", "د. لطيفة العنزي", "Latifa Al-Anazi", "female", "general_family", ["ar", "en"], ["wattan-2"], "specialist"),
   c("dr-aljasser", "د. سلطان الجاسر", "Sultan Al-Jasser", "male", "general_family", ["ar", "en"], ["wattan-2"], "general_practitioner"),
+  // The family-medicine defect above, one need over and word for word. §6.2 reads
+  // `named_at_site` for internal medicine at Ar Rawabi, at Shoaa Al Wurud and at
+  // Al Yamamah — the whole of §5.3's internal-medicine chain — and not one of the
+  // three had an internist. «أبغى دكتور باطنية» therefore minted nothing at the
+  // branch the chain names FIRST, and the engine reported the silence as hours it
+  // could not confirm: «دوامه قيد التأكيد» about a branch whose hours are seeded
+  // and fine. No capability row is added for any of this, and none is needed —
+  // unlike Ar Rawdah's family medicine, every site here was already named.
+  c("dr-alshayea", "د. جمانة الشايع", "Jumanah Al-Shayea", "female", "internal_medicine", ["ar", "en"], ["wattan-2"], "consultant"),
+  c("dr-alfawzan", "د. مازن الفوزان", "Mazen Al-Fawzan", "male", "internal_medicine", ["ar", "en"], ["wattan-2"], "specialist"),
 
   // ── wattan-3 — Ar Rabwah: endodontics ─────────────────────────────────────
   c("dr-alansari", "د. وليد الأنصاري", "Waleed Al-Ansari", "male", "endodontics", ["ar", "en"], ["wattan-3"], "consultant"),
@@ -79,6 +107,13 @@ export const CLINICIANS: readonly Clinician[] = Object.freeze([
   c("dr-bashir", "د. عثمان بشير", "Othman Bashir", "male", "employment_medicals", ["ar", "en", "ur"], ["shoaa-wurud", "shoaa-rawdah"], "specialist"),
   c("dr-alsuwailem", "د. غادة السويلم", "Ghada Al-Suwailem", "female", "general_family", ["ar", "en"], ["shoaa-wurud"], "specialist"),
   c("dr-albarrak", "د. خالد البراك", "Khalid Al-Barrak", "male", "general_family", ["ar", "en"], ["shoaa-wurud"], "general_practitioner"),
+  c("dr-alqathami", "د. بشاير القثامي", "Bashayer Al-Qathami", "female", "internal_medicine", ["ar", "en"], ["shoaa-wurud"], "specialist"),
+  c("dr-alduraiham", "د. يوسف الدريهم", "Yousef Al-Duraiham", "male", "internal_medicine", ["ar", "en"], ["shoaa-wurud"], "consultant"),
+  // Dentistry is `named_at_site` here and §5.3's dental chain ends at this
+  // branch, so a patient who has refused Ar Rawabi lands on an empty dental
+  // clinic — the same product of a true capability and an absent roster.
+  c("dr-almuqbil", "د. رغد المقبل", "Raghad Al-Muqbil", "female", "dentistry", ["ar", "en"], ["shoaa-wurud"], "specialist"),
+  c("dr-alturaif", "د. نايف الطريف", "Naif Al-Turaif", "male", "dentistry", ["ar", "en"], ["shoaa-wurud"], "general_practitioner"),
 
   // ── shoaa-rawdah — Ar Rawdah ──────────────────────────────────────────────
   c("dr-aldakhil", "د. هيفاء الدخيل", "Haifa Al-Dakhil", "female", "paediatrics", ["ar", "en"], ["shoaa-rawdah"], "consultant"),
@@ -128,7 +163,7 @@ export function cliniciansFor(siteId: SiteId, specialty: SpecialtyKey): Clinicia
 //
 // Matching discipline, both halves required:
 //   • multi-token entries → FULL-NAME CONTAINMENT after normalisation
-//     (token matching flags the particle «ال»/"al" against 23 of 30 invented
+//     (token matching flags the particle «ال»/"al" against most of the invented
 //      names, after which someone loosens the test and the guard is gone)
 //   • mononyms («نورين») → BOUNDARY-MATCHED single token
 //

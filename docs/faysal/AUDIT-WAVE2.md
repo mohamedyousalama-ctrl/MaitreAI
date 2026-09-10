@@ -83,6 +83,7 @@ parent words × seven age phrasings × four fever phrasings. Suite: 18,883/18,88
 | **The confirmation matches what they said** | A cash patient is no longer told to bring an insurance card. |
 | **Held emergency thread** | Below. |
 | **General practice books** | Six invented GPs (three women, three men) at the three demo-bookable sites, plus the Ar Rawdah capability row. «أبغى كشف عام» minted zero slots at every site and the engine reported it as unconfirmed *hours*. |
+| **Internal medicine books** | Below — items 7, 8 and 9 of the old open list, closed together. |
 | **English echo** | An English thread's greeting echo is English end to end, and the thread language comes from the last substantive message. |
 
 ### The held emergency thread
@@ -150,6 +151,50 @@ insurance turn) was Modern Standard Arabic officialese and is now Riyadh Arabic
 with the meaning unchanged word for word; and the routing reason no longer prints
 «…والتقويم عندهم..» because half the reason rows already end in a full stop.
 
+### The clinician-data items (old §4 items 7, 8, 9), closed
+
+**7 — internal medicine had the family-medicine defect, at three sites.** §6.2 reads
+`named_at_site` for باطنية at Ar Rawabi, Shoaa Al Wurud and Al Yamamah — the whole of
+§5.3's internal-medicine chain — and not one of the three had an internist. So
+`planFor("internal")` minted nothing at the branch the chain names *first*, and the
+only sentence the engine had left was «دوامه قيد التأكيد»: a claim about hours that
+are seeded and fine, caused by a roster that was empty.
+
+A **sweep over every (site, specialty) pair whose capability gate opens** found three
+more of the same shape, all `named_at_site`, all fixed the same way:
+
+| Site | Clinic | Was | Reachable? |
+|---|---|---|---|
+| Ar Rawabi | باطنية | 0 rostered | yes — rank 1 of the internal-medicine chain, hours seeded |
+| Shoaa Al Wurud | باطنية | 0 rostered | yes — rank 2, hours seeded |
+| Al Yamamah | باطنية | 1 man | rank 3; «أبغى دكتورة» emptied it |
+| Shoaa Al Wurud | أسنان | 0 rostered | yes — §5.3's dental chain ends here, and the site's hours are seeded |
+| Al Yamamah | نساء وولادة | 0 rostered | latent — the site has no seeded hours yet |
+| Al Yamamah | مختبر وأشعة | 0 rostered | latent — and §9.4 prices neither, so it never books |
+
+Eleven invented clinicians, a woman and a man each. **No capability row was added and
+none was needed**: unlike Ar Rawdah's family medicine, every site above was already
+named in §6.2. Roster 36 → 47 (24 women, 23 men).
+
+`proof-faysal-domain` now asserts the **general form** rather than the instance:
+every pair where `isBookableSpecialty` is true and `cliniciansFor` is empty fails the
+build, at all six sites — hours are what *hides* this defect, never what causes it.
+
+**8 — the denylist guard read the wrong file.** Part D parsed the seed roster only,
+so the stricter name-part check was blind to `lib/health/clinicians.ts`, which is the
+list a name actually reaches a patient from. Both rosters are parsed now under
+identical rules, and each file's extracted names are counted against the roster rows
+declared in it, so a reformat fails the guard loudly instead of emptying it. Driven:
+«د. نورة الجندي» in the engine roster passed the old guard 28/0 and fails the new one.
+
+**9 — the seed was six people behind, and eleven more after item 7.** It was also
+wrong about ten seniorities and four primary specialties, and it seeded
+`sub_specialties` empty. `proof-faysal-domain` §15 now projects each roster onto one
+string per person and compares the two projections whole — narrowing the check means
+deleting a field from a projection that is written once and used for both sides. The
+one map between the engine's `SpecialtyKey` and the database's specialty keys is
+asserted total over both rosters before it is used.
+
 ### Still open (not shipped, recorded)
 
 1. **The `urgent` tier has no voice.** `safetyUrgent` in `strings.ts` has zero call
@@ -170,13 +215,23 @@ with the meaning unchanged word for word; and the routing reason no longer print
 6. **Cadence.** SPEC-2 §4.2 is ≤2 messages per turn, 3 only for the split-recap.
    `assertCadence` enforces ≤3, and `mergeOpening` drops the greeting at 3. Nothing
    enforces the rule that actually governs.
-7. **`internal_medicine` has the identical latent defect one need over**: it is
-   `named_at_site` at two sites with zero internists rostered.
-8. **The denylist guard reads the seed file, not the engine roster.** Part C's
-   full-name containment scan does cover `lib/health`, but the stricter name-part
-   check is blind to `lib/health/clinicians.ts`. The new roster was checked against it
-   by hand — zero clashes — and widening Part D is a small follow-up.
-9. **`scripts/seed-faysal.ts` is six people behind the engine roster.**
+7. **Ar Rawdah's باطنية is a one-man clinic and must stay one.** The site books
+   internal medicine only through its `DEMO_SEEDED_CAPABILITY` row — §6.2 reads
+   `group_only` there — and the auditor's rule is that a clinician may be added only
+   where the routing or capability row already **names** that specialty at that site.
+   So «أبغى دكتورة باطنية» in Ar Rawdah has no answer, and balancing it would mean
+   inventing a capability claim. Recorded, not papered over; the domain proof says so
+   in a comment beside the loop that skips the site.
+8. **Eighteen demo-bookable clinics are staffed by one gender** (five more at the
+   unseeded sites). Not the same defect — the roster is not empty — but the same
+   sentence to the patient, because a filter that empties the day is a refusal wearing
+   a filter's clothes. The full list is what the §15 sweep prints; the one that
+   matters most is **Ar Rawabi's جلدية and ليزر, two women and no man**, on the demo's
+   busiest path: «أبغى دكتور جلدية» in Ar Rawabi empties the day today. Every one of
+   these sites is `named_at_site` for the clinic in question, so the auditor's rule
+   permits the fix — it was left out of this pass because the gap the audit named is
+   an *empty* roster, and widening the fix to gender balance is a roster decision, not
+   a defect repair.
 
 ---
 

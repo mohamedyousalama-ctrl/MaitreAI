@@ -64,10 +64,17 @@
 // `health_members` is EMPTY on purpose — see `--owner-email` at the bottom of
 // this file. The bookable 4,004 slots sit at exactly the three Rule HRS-DEMO
 // sites; Al Yamamah, Ar Rabwah and Ash Shifa have none, which is the point.
+//
+// Those counts are the record of THAT run and are left standing. The roster has
+// since grown to the 47 people `lib/health/clinicians.ts` answers patients from,
+// so the seeded tenant is one apply behind this file; re-running it with the same
+// `--from` is what closes the gap.
 // ============================================================================
 
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   Confidence,
   DayHours,
@@ -1141,8 +1148,23 @@ const SERVICES: ServiceSeed[] = [
 // price, and a price we do not have is not a price we may invent past §9.3.
 
 // ---------------------------------------------------------------------------
-// The roster — SPEC-1 §6.3. ALL FICTIONAL. 30 clinicians, 15 female, 15 male,
-// every site carrying at least four and at least one female clinician.
+// The roster — SPEC-1 §6.3. ALL FICTIONAL. 47 clinicians, 24 female and 23 male,
+// every site carrying at least four and at least one of each gender wherever a
+// clinic here can actually be booked.
+//
+// THIS LIST AND `lib/health/clinicians.ts` ARE THE SAME PEOPLE, and
+// scripts/proof-faysal-domain.test.ts fails the build when they stop being. The
+// engine roster is the authority — it is the one a patient is answered from —
+// and this file is its database projection, so a doctor added there and not here
+// seeds a tenant that cannot serve the conversation the demo has already had.
+// The two drifted to thirty against thirty-six before anything checked, and the
+// six missing people were the six who make «أبغى كشف عام» bookable at all.
+//
+// The two files disagree on VOCABULARY, and deliberately: the engine's
+// `SpecialtyKey` union is what a sentence is built from, while these keys are
+// rows in `health_specialties`, which splits dermatology from laser and names
+// day-case surgery in full. The proof holds one map between them, asserts it
+// covers every key in use, and compares the rosters through it.
 // ---------------------------------------------------------------------------
 
 interface DoctorSeed {
@@ -1151,48 +1173,74 @@ interface DoctorSeed {
   en: string;
   gender: "female" | "male";
   specialty: string;
+  /** A second clinic this person also staffs — the engine's `subSpecialties`. */
+  subSpecialties?: string[];
   languages: Array<"ar" | "en" | "ur" | "fr">;
   sites: SiteKey[];
   seniority: "consultant" | "specialist" | "general_practitioner";
-  defaultService: string;
+  /**
+   * Null where §9.4 leaves the specialty unpriced. Laboratory and radiology are
+   * named at Al Yamamah and have no figure anywhere in the dossier, so the two
+   * clinicians who staff that clinic are seeded as people and given no slots: a
+   * bookable minute we could not quote is worse than no minute at all.
+   */
+  defaultService: string | null;
 }
 
-const DOCTORS: DoctorSeed[] = [
+/** Exported so the proof can compare it to the engine roster object-for-object. */
+export const DOCTORS: DoctorSeed[] = [
   { key: "dr-aldosari", ar: "د. عبدالله الدوسري", en: "Abdullah Al-Dosari", gender: "male", specialty: "internal_medicine", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "consultant", defaultService: "consult_internal" },
-  { key: "dr-alotaibi", ar: "د. منيرة العتيبي", en: "Munirah Al-Otaibi", gender: "female", specialty: "general_family", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "general_practitioner", defaultService: "consult_general" },
+  { key: "dr-alotaibi", ar: "د. منيرة العتيبي", en: "Munirah Al-Otaibi", gender: "female", specialty: "general_family", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "specialist", defaultService: "consult_general" },
   { key: "dr-alshammari", ar: "د. طارق الشمري", en: "Tariq Al-Shammari", gender: "male", specialty: "emergency", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "specialist", defaultService: "consult_general" },
-  { key: "dr-hegazy", ar: "د. ياسمين حجازي", en: "Yasmin Hegazy", gender: "female", specialty: "paediatrics", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "specialist", defaultService: "consult_paediatric" },
+  { key: "dr-hegazy", ar: "د. ياسمين حجازي", en: "Yasmin Hegazy", gender: "female", specialty: "paediatrics", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "consultant", defaultService: "consult_paediatric" },
   { key: "dr-alqahtani", ar: "د. سامي القحطاني", en: "Sami Al-Qahtani", gender: "male", specialty: "neurology", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "consultant", defaultService: "consult_neurology" },
+  { key: "dr-almuhanna", ar: "د. عبير المهنا", en: "Abeer Al-Muhanna", gender: "female", specialty: "obgyn", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "consultant", defaultService: "consult_obgyn" },
+  { key: "dr-alruwaili", ar: "د. عادل الرويلي", en: "Adel Al-Ruwaili", gender: "male", specialty: "obgyn", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "specialist", defaultService: "consult_obgyn" },
+  { key: "dr-alkhuraiji", ar: "د. شذى الخريجي", en: "Shatha Al-Khuraiji", gender: "female", specialty: "lab_radiology", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "consultant", defaultService: null },
+  { key: "dr-alwuhaibi", ar: "د. تركي الوهيبي", en: "Turki Al-Wuhaibi", gender: "male", specialty: "lab_radiology", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "specialist", defaultService: null },
+  { key: "dr-alshathri", ar: "د. نوف الشثري", en: "Nouf Al-Shathri", gender: "female", specialty: "internal_medicine", languages: ["ar", "en"], sites: ["wattan-1"], seniority: "specialist", defaultService: "consult_internal" },
 
-  { key: "dr-albaqami", ar: "د. ريم البقمي", en: "Reem Al-Baqami", gender: "female", specialty: "laser_aesthetics", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "consultant", defaultService: "consult_dermatology" },
-  { key: "dr-alkhatib", ar: "د. لينا الخطيب", en: "Lina Al-Khatib", gender: "female", specialty: "laser_aesthetics", languages: ["ar", "en", "fr"], sites: ["wattan-2"], seniority: "specialist", defaultService: "consult_dermatology" },
+  { key: "dr-albaqami", ar: "د. ريم البقمي", en: "Reem Al-Baqami", gender: "female", specialty: "dermatology_medical", subSpecialties: ["laser_aesthetics"], languages: ["ar", "en"], sites: ["wattan-2"], seniority: "consultant", defaultService: "consult_dermatology" },
+  { key: "dr-alkhatib", ar: "د. لينا الخطيب", en: "Lina Al-Khatib", gender: "female", specialty: "dermatology_medical", subSpecialties: ["laser_aesthetics"], languages: ["ar", "en", "fr"], sites: ["wattan-2"], seniority: "specialist", defaultService: "consult_dermatology" },
   { key: "dr-almutairi", ar: "د. فهد المطيري", en: "Fahd Al-Mutairi", gender: "male", specialty: "orthodontics", languages: ["ar", "en"], sites: ["wattan-2", "wattan-4"], seniority: "consultant", defaultService: "ortho_assessment" },
   { key: "dr-alharbi", ar: "د. نورة الحربي", en: "Noura Al-Harbi", gender: "female", specialty: "dentistry_general", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "specialist", defaultService: "dental_scaling_polishing" },
-  { key: "dr-alghamdi", ar: "د. عمر الغامدي", en: "Omar Al-Ghamdi", gender: "male", specialty: "ent", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "specialist", defaultService: "consult_ent" },
+  { key: "dr-alghamdi", ar: "د. عمر الغامدي", en: "Omar Al-Ghamdi", gender: "male", specialty: "ent", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "consultant", defaultService: "consult_ent" },
   { key: "dr-saadeldin", ar: "د. أميرة سعد الدين", en: "Amira Saad El-Din", gender: "female", specialty: "obgyn", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "consultant", defaultService: "consult_obgyn" },
   { key: "dr-alzahrani", ar: "د. بدر الزهراني", en: "Badr Al-Zahrani", gender: "male", specialty: "ophthalmology", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "specialist", defaultService: "consult_ophthalmology" },
   { key: "dr-mansour", ar: "د. هالة منصور", en: "Hala Mansour", gender: "female", specialty: "paediatrics", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "specialist", defaultService: "consult_paediatric" },
+  { key: "dr-alanazi", ar: "د. لطيفة العنزي", en: "Latifa Al-Anazi", gender: "female", specialty: "general_family", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "specialist", defaultService: "consult_general" },
+  { key: "dr-aljasser", ar: "د. سلطان الجاسر", en: "Sultan Al-Jasser", gender: "male", specialty: "general_family", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "general_practitioner", defaultService: "consult_general" },
+  { key: "dr-alshayea", ar: "د. جمانة الشايع", en: "Jumanah Al-Shayea", gender: "female", specialty: "internal_medicine", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "consultant", defaultService: "consult_internal" },
+  { key: "dr-alfawzan", ar: "د. مازن الفوزان", en: "Mazen Al-Fawzan", gender: "male", specialty: "internal_medicine", languages: ["ar", "en"], sites: ["wattan-2"], seniority: "specialist", defaultService: "consult_internal" },
 
-  { key: "dr-alansari", ar: "د. وليد الأنصاري", en: "Waleed Al-Ansari", gender: "male", specialty: "endodontics", languages: ["ar", "en"], sites: ["wattan-3"], seniority: "specialist", defaultService: "dental_scaling_polishing" },
+  { key: "dr-alansari", ar: "د. وليد الأنصاري", en: "Waleed Al-Ansari", gender: "male", specialty: "endodontics", languages: ["ar", "en"], sites: ["wattan-3"], seniority: "consultant", defaultService: "dental_scaling_polishing" },
   { key: "dr-alsaleh", ar: "د. دانة الصالح", en: "Dana Al-Saleh", gender: "female", specialty: "dentistry_general", languages: ["ar", "en"], sites: ["wattan-3"], seniority: "specialist", defaultService: "dental_scaling_polishing" },
-  { key: "dr-alsubaie", ar: "د. ماجد السبيعي", en: "Majed Al-Subaie", gender: "male", specialty: "general_family", languages: ["ar", "en", "ur"], sites: ["wattan-3"], seniority: "general_practitioner", defaultService: "consult_general" },
+  { key: "dr-alsubaie", ar: "د. ماجد السبيعي", en: "Majed Al-Subaie", gender: "male", specialty: "internal_medicine", subSpecialties: ["general_family"], languages: ["ar", "en", "ur"], sites: ["wattan-3"], seniority: "specialist", defaultService: "consult_internal" },
   { key: "dr-benyoussef", ar: "د. عائشة بن يوسف", en: "Aisha Ben Youssef", gender: "female", specialty: "dermatology_medical", languages: ["ar", "en", "fr"], sites: ["wattan-3"], seniority: "specialist", defaultService: "consult_dermatology" },
 
-  { key: "dr-alnuaimi", ar: "د. إبراهيم النعيمي", en: "Ibrahim Al-Nuaimi", gender: "male", specialty: "orthodontics", languages: ["ar", "en"], sites: ["wattan-4"], seniority: "specialist", defaultService: "ortho_assessment" },
-  { key: "dr-altayeb", ar: "د. سلمى الطيب", en: "Salma Al-Tayeb", gender: "female", specialty: "general_family", languages: ["ar", "en"], sites: ["wattan-4"], seniority: "general_practitioner", defaultService: "consult_general" },
-  { key: "dr-alajmi", ar: "د. راكان العجمي", en: "Rakan Al-Ajmi", gender: "male", specialty: "dentistry_general", languages: ["ar", "en"], sites: ["wattan-4"], seniority: "specialist", defaultService: "dental_scaling_polishing" },
+  { key: "dr-alnuaimi", ar: "د. إبراهيم النعيمي", en: "Ibrahim Al-Nuaimi", gender: "male", specialty: "orthodontics", languages: ["ar", "en"], sites: ["wattan-4"], seniority: "consultant", defaultService: "ortho_assessment" },
+  { key: "dr-altayeb", ar: "د. سلمى الطيب", en: "Salma Al-Tayeb", gender: "female", specialty: "general_family", languages: ["ar", "en"], sites: ["wattan-4"], seniority: "specialist", defaultService: "consult_general" },
+  { key: "dr-alajmi", ar: "د. راكان العجمي", en: "Rakan Al-Ajmi", gender: "male", specialty: "dentistry_general", languages: ["ar", "en"], sites: ["wattan-4"], seniority: "general_practitioner", defaultService: "dental_scaling_polishing" },
 
   { key: "dr-alhamdan", ar: "د. عبدالرحمن الحمدان", en: "Abdulrahman Al-Hamdan", gender: "male", specialty: "general_surgery_day_case", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "consultant", defaultService: "consult_general" },
   { key: "dr-binomar", ar: "د. ليلى بن عمر", en: "Layla Bin Omar", gender: "female", specialty: "obgyn", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "consultant", defaultService: "consult_obgyn" },
   { key: "dr-alshehri", ar: "د. مها الشهري", en: "Maha Al-Shehri", gender: "female", specialty: "obgyn", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "specialist", defaultService: "consult_obgyn" },
   { key: "dr-alhalabi", ar: "د. زياد الحلبي", en: "Ziad Al-Halabi", gender: "male", specialty: "ent", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "consultant", defaultService: "consult_ent" },
-  { key: "dr-abdeljalil", ar: "د. أنس عبد الجليل", en: "Anas Abdel-Jalil", gender: "male", specialty: "paediatrics", languages: ["ar", "en", "ur"], sites: ["shoaa-wurud"], seniority: "specialist", defaultService: "consult_paediatric" },
-  { key: "dr-alqarni", ar: "د. رنا القرني", en: "Rana Al-Qarni", gender: "female", specialty: "laser_aesthetics", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "consultant", defaultService: "consult_dermatology" },
+  { key: "dr-abdeljalil", ar: "د. أنس عبد الجليل", en: "Anas Abdel-Jalil", gender: "male", specialty: "paediatrics", languages: ["ar", "en", "ur"], sites: ["shoaa-wurud"], seniority: "consultant", defaultService: "consult_paediatric" },
+  { key: "dr-alqarni", ar: "د. رنا القرني", en: "Rana Al-Qarni", gender: "female", specialty: "dermatology_medical", subSpecialties: ["laser_aesthetics"], languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "specialist", defaultService: "consult_dermatology" },
   { key: "dr-bashir", ar: "د. عثمان بشير", en: "Othman Bashir", gender: "male", specialty: "employment_medicals", languages: ["ar", "en", "ur"], sites: ["shoaa-wurud", "shoaa-rawdah"], seniority: "specialist", defaultService: "employment_basic" },
+  { key: "dr-alsuwailem", ar: "د. غادة السويلم", en: "Ghada Al-Suwailem", gender: "female", specialty: "general_family", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "specialist", defaultService: "consult_general" },
+  { key: "dr-albarrak", ar: "د. خالد البراك", en: "Khalid Al-Barrak", gender: "male", specialty: "general_family", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "general_practitioner", defaultService: "consult_general" },
+  { key: "dr-alqathami", ar: "د. بشاير القثامي", en: "Bashayer Al-Qathami", gender: "female", specialty: "internal_medicine", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "specialist", defaultService: "consult_internal" },
+  { key: "dr-alduraiham", ar: "د. يوسف الدريهم", en: "Yousef Al-Duraiham", gender: "male", specialty: "internal_medicine", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "consultant", defaultService: "consult_internal" },
+  { key: "dr-almuqbil", ar: "د. رغد المقبل", en: "Raghad Al-Muqbil", gender: "female", specialty: "dentistry_general", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "specialist", defaultService: "dental_scaling_polishing" },
+  { key: "dr-alturaif", ar: "د. نايف الطريف", en: "Naif Al-Turaif", gender: "male", specialty: "dentistry_general", languages: ["ar", "en"], sites: ["shoaa-wurud"], seniority: "general_practitioner", defaultService: "dental_scaling_polishing" },
 
-  { key: "dr-aldakhil", ar: "د. هيفاء الدخيل", en: "Haifa Al-Dakhil", gender: "female", specialty: "paediatrics", languages: ["ar", "en"], sites: ["shoaa-rawdah"], seniority: "specialist", defaultService: "consult_paediatric" },
-  { key: "dr-alnour", ar: "د. مصعب النور", en: "Musab Al-Nour", gender: "male", specialty: "internal_medicine", languages: ["ar", "en"], sites: ["shoaa-rawdah"], seniority: "consultant", defaultService: "consult_internal" },
+  { key: "dr-aldakhil", ar: "د. هيفاء الدخيل", en: "Haifa Al-Dakhil", gender: "female", specialty: "paediatrics", languages: ["ar", "en"], sites: ["shoaa-rawdah"], seniority: "consultant", defaultService: "consult_paediatric" },
+  { key: "dr-alnour", ar: "د. مصعب النور", en: "Musab Al-Nour", gender: "male", specialty: "internal_medicine", languages: ["ar", "en"], sites: ["shoaa-rawdah"], seniority: "specialist", defaultService: "consult_internal" },
   { key: "dr-alfahad", ar: "د. جواهر الفهد", en: "Jawaher Al-Fahad", gender: "female", specialty: "dentistry_general", languages: ["ar", "en"], sites: ["shoaa-rawdah"], seniority: "specialist", defaultService: "dental_scaling_polishing" },
+  { key: "dr-alhumaidi", ar: "د. أروى الحميدي", en: "Arwa Al-Humaidi", gender: "female", specialty: "general_family", languages: ["ar", "en"], sites: ["shoaa-rawdah"], seniority: "specialist", defaultService: "consult_general" },
+  { key: "dr-alsudairi", ar: "د. مشعل السديري", en: "Mishal Al-Sudairi", gender: "male", specialty: "general_family", languages: ["ar", "en"], sites: ["shoaa-rawdah"], seniority: "general_practitioner", defaultService: "consult_general" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1373,6 +1421,10 @@ function generateSlots(fromISO: string): GeneratedSlot[] {
       const site = bookableSites[Math.abs(fnv1a32(`${doctor.key}|${dateISO}`)) % bookableSites.length];
 
       const { windows, confidence } = bookableClinicWindows(site, dayKey);
+      // §9.4's unpriced specialties reach here as a null default service. They
+      // get no slots and no row, which is the same answer the catalogue gives:
+      // the clinic exists, the price does not, and reception takes it from here.
+      if (!doctor.defaultService) continue;
       const service = serviceByKey.get(doctor.defaultService);
       if (!service) throw new Error(`seed: doctor ${doctor.key} points at unknown service ${doctor.defaultService}`);
 
@@ -1515,7 +1567,7 @@ function buildRows(fromISO: string): { table: string; conflict: string; rows: Ro
     name_en: d.en,
     gender: d.gender,
     specialty_id: specialtyId(d.specialty),
-    sub_specialties: [],
+    sub_specialties: d.subSpecialties ?? [],
     languages: d.languages,
     seniority: d.seniority,
     default_service_key: d.defaultService,
@@ -1903,7 +1955,12 @@ async function main(): Promise<void> {
   console.log("ALL CLINICIANS ARE FICTIONAL · ALL PRICES ARE DEMO DATA");
 }
 
-main().catch((e: unknown) => {
-  console.error("SEED FAILED:", e instanceof Error ? e.message : e);
-  process.exit(1);
-});
+// Only when this file is the program. It exports its roster for the proof that
+// keeps it level with `lib/health/clinicians.ts`, and an import must never write
+// to a database or print a seed to stdout.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((e: unknown) => {
+    console.error("SEED FAILED:", e instanceof Error ? e.message : e);
+    process.exit(1);
+  });
+}
