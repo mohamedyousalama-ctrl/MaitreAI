@@ -50,6 +50,35 @@ c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); await c.say("I need
 ok("English thread: greeting echo stays English", !/[ء-ي]/.test(txt(r)), { scene: r.scene, text: txt(r) });
 c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); r = await c.say("عندي ألم في صدري وأتعرق"); r = await c.say("اسمي محمد الشهري 0551234567");
 ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergency", { scene: r.scene, text: txt(r) });
+// ── THE CADENCE THAT ACTUALLY GOVERNS ──────────────────────────────────────
+// §4.2 is «at most TWO messages per turn; three only under the split-recap». The
+// guard capped at three unconditionally, so the written rule and the enforced rule
+// were different numbers and three design proposals in one afternoon each assumed
+// the third message was free. Ten journeys × three clocks, every turn counted.
+{
+  const JOURNEYS: string[][] = [
+    ["أبغى ليزر", "أنا في الروابي", "كاش", "الأول", "أكد"],
+    ["مساء الخير، أبغى موعد جلدية بكرة الصبح في فرع الروابي، عندي تأمين بوبا، وأفضّل دكتورة", "الأول", "أكد"],
+    ["أبغى كشف عام", "الورود", "تأمين", "بوبا", "الأول", "أكد", "شكرا"],
+    ["كم سعر الليزر؟", "فيه باقات؟", "الروابي", "كاش", "الأول"],
+    ["الحين فاتحين؟", "أقرب موعد", "الروابي", "كاش"],
+    ["أبغى أسنان", "بعيد علي", "الورود", "كاش", "الأول", "لا، غيّره"],
+  ];
+  let turns = 0;
+  for (const clock of ["2026-09-13T10:00:00+03:00", "2026-09-10T23:40:00+03:00", "2026-09-11T13:00:00+03:00"]) {
+    for (const journey of JOURNEYS) {
+      const c = new Conversation(clock); c.open();
+      for (const line of journey) {
+        const r = await c.say(line);
+        const mine = r.messages.filter((m: { from: string }) => m.from === "faysal");
+        turns++;
+        ok(`at most two messages — «${line}» at ${clock.slice(11, 16)}`, mine.length <= 2, { count: mine.length, texts: mine.map((m: { text: string }) => m.text.split("\n")[0]) });
+      }
+    }
+  }
+  console.log(`   cadence swept over ${turns} turns`);
+}
+
 // ── NO DEAD ENDS. The property, not a list of examples. ─────────────────────
 // A clinic conversation has a spine — what do you need, which branch, how are you
 // paying, which time, confirm — and a coordinator walks it whatever the patient

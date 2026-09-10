@@ -248,6 +248,9 @@ function mergeOpening(session: FaysalSession, raw: string, cls: Classification, 
   const system = opening.messages.filter((m) => m.from === "system");
   const greeting = opening.messages.filter((m) => m.from === "faysal");
   const merged = [...system, ...greeting, ...rest.messages];
+  // THE ONE DOCUMENTED SPLIT-RECAP: the system line, the greeting, and the answer to
+  // what they actually asked, in the same turn (§9's turn 2). Everywhere else the cap
+  // is two, and `assertCadence` now enforces that rather than assuming three is free.
   const faysalCount = merged.filter((m) => m.from === "faysal").length;
   if (faysalCount <= 3) return { ...rest, messages: merged };
   // Over the §4.2 cap. The substantive answer wins; the greeting is what a real

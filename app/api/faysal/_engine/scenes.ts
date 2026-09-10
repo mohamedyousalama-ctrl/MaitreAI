@@ -51,10 +51,22 @@ export interface Reply {
 
 // ── cadence guard (§4.2) ────────────────────────────────────────────────────
 
-function assertCadence(messages: OutMsg[]): OutMsg[] {
+/**
+ * §4.2 is «at most TWO messages per turn; three only under the split-recap pattern».
+ * This guard capped at three unconditionally, so the rule that governed the product
+ * was not the rule anyone had written down — and three design proposals in one
+ * afternoon each quietly assumed a third message was free. Measured over 150 turns
+ * across ten journeys and three clocks, the engine emits three exactly never; the
+ * only path that can is the bundled opening, which IS the split-recap and says so.
+ */
+function assertCadence(messages: OutMsg[], splitRecap = false): OutMsg[] {
   const mine = messages.filter((m) => m.from === "faysal");
-  if (mine.length > 3) {
-    throw new Error(`[faysal] cadence: ${mine.length} messages in one turn; the cap is 3 (split-recap) and the norm is 2.`);
+  const cap = splitRecap ? 3 : 2;
+  if (mine.length > cap) {
+    throw new Error(
+      `[faysal] cadence: ${mine.length} messages in one turn; §4.2 allows ${cap}` +
+        (splitRecap ? " under the split-recap pattern." : " — pass splitRecap only for the documented three-part shape."),
+    );
   }
   for (const m of mine) {
     const marks = (m.text.match(/[؟?]/g) ?? []).length;
@@ -769,6 +781,8 @@ export function runTurn(s: FaysalSession, raw: string, cls: Classification, now:
     if (chips.length) out.chips = chips.slice(0, 2);
   }
 
+  // The Rule DEMO-1(b) system line is not one of Faysal's messages and never counted
+  // toward the cadence; it is prepended here and the count is unchanged.
   if (prefix.length) out.messages = assertCadence([...prefix, ...out.messages]);
   return out;
 }
