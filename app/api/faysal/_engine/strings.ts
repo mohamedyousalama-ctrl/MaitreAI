@@ -271,7 +271,17 @@ export const RATING_NO_ARGUMENT =
 
 export const MOTION_DISCOVER = "عشان أرتّب لك صح: وش تحتاج بالضبط، وأنت بأي حي؟";
 export const MOTION_DISCOVER_PAYMENT = "تمام. وآخر شي: الزيارة تأمين ولا كاش؟";
-export const MOTION_DISCOVER_SHORT = "تمام. أنت بأي حي، والزيارة تأمين ولا كاش؟";
+// ONE QUESTION PER TURN. This asked «أنت بأي حي، والزيارة تأمين ولا كاش؟» — two
+// questions in one sentence, with chips for only one of them, so a patient answered
+// the half that had buttons and the other half had to be asked again. The payment
+// question is not lost: MOTION_DISCOVER_PAYMENT follows the moment the district is in.
+export const MOTION_DISCOVER_SHORT = "تمام. أنت بأي حي؟";
+
+/** The district ask, said BEFORE any branch is named, with the reason it is asked.
+ *  Naming a branch first and asking after is what made him contradict himself one
+ *  turn later — see `matchAndAsk`. */
+export const askDistrictFor = (needNounAr: string) =>
+  `تمام، ${needNounAr}. أنت بأي حي عشان أشوف أقرب فرع لك؟`;
 
 /** The window the patient named has nothing in it. Their words back, then the truth,
  *  then what does exist — «ابغى بعد الساعة ٧» answered with 4:30 م and nothing said
@@ -311,6 +321,35 @@ export const motionMatchFork = (a: {
 1) ${a.optionNear}
 2) ${a.optionBest}
 أي طريق أريح لك؟`;
+
+/**
+ * THE FORK WHEN THE NEAR BRANCH CAN DO IT TOO.
+ *
+ * `motionMatchFork` above says «${procedure} نسويه في ${bestBranch}» — that the
+ * further branch is where the thing is done. True when the near branch has no
+ * strength for the need at all. FALSE when it has one: Shoaa Al Wurud carries an
+ * authored derm_laser strength (§3.5 L194, `group_marketing`), so telling a patient
+ * in Al Wurud that dermatology is done at Ar Rawabi denies a service the group
+ * itself advertises there.
+ *
+ * A `named_capability` at the near branch does not reach this string at all — the
+ * router picks the near branch and there is nothing to fork. This is the middle
+ * case: the group markets it near you, and concentrates it further away. Both facts
+ * are said, neither is denied, and the patient chooses.
+ */
+export const motionMatchForkFocus = (a: {
+  nearBranch: string;
+  nearShort: string;
+  nearCapability: string;
+  /** The near site's OWN authored line for this need, with its leading branch name
+   *  already removed by the caller — else the branch is named twice in one breath. */
+  nearAlso: string;
+  bestShort: string;
+  bestReason: string;
+}) =>
+  `أقرب فرع لك هو ${a.nearBranch}، وفيه ${a.nearCapability}.
+وهو ${a.nearAlso.replace(/[.。]+$/, "")}، بس ${a.bestReason.replace(/[.。]+$/, "")}، و${a.bestShort} أبعد عليك.
+أثبّت لك في ${a.nearShort} ولا ${a.bestShort}؟`;
 
 // §6.4 — acknowledge → one specific → one fork. Never argue, never a third attempt.
 export const motionObjectionDistance = (nearBranch: string, capability: string, bestBranch: string) =>

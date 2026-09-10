@@ -315,6 +315,92 @@ const has = (t: string, ...needles: string[]) => needles.some((n) => t.includes(
 const hasPhrase = (t: string, ...needles: string[]): boolean =>
   needles.some((n) => new RegExp(`${normalizeArabic(n).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![ء-يa-z0-9])`).test(t));
 
+/**
+ * SPECIALTIES THE GROUP'S DOSSIER RECORDS AT NO SITE.
+ *
+ * «نظر» — I need my eyes seen — came back as a dermatology-and-laser
+ * recommendation for Ar Rawabi. Nothing deterministic matched it, so it fell to the
+ * model tier, and `need: parsed.need ?? facts.need` lets the model's label win: it
+ * read «نظر» as laser vision correction and handed back `laser`, whose chain head is
+ * the derm branch. A patient asking about their eyes was routed to hair removal.
+ *
+ * Ophthalmology is not in NEED_PLANS, not in the routing chains, and not in the
+ * dossier at any of the six sites. There is no honest branch to name, so the model
+ * must not be allowed to invent one: this list is deterministic, it runs BEFORE the
+ * model, and it also VETOES a need the model returns. Rule STR-1 — naming a branch
+ * for a clinic we cannot claim runs there is an availability_claim.
+ *
+ * Scope is deliberately narrow. It carries the specialties whose words cannot mean
+ * anything else in a booking chat; «قلب», «نفسي», «سكري», «كلى» and «تجميل» stay OUT
+ * because they live inside ordinary sentences («بنفسي», «انقلب») and inside the red
+ * flag classes, and a wrong short-circuit there is worse than a generic answer.
+ * They keep their existing label-only handling.
+ *
+ * Every needle here is word-bounded via `needWord`: «نظر» sits inside «انتظر» and
+ * «منظر», «عين» inside «معين» and «عينة», «رمد» inside longer words. That class of
+ * bug has been shipped in this file more than once.
+ */
+const OUT_OF_CATALOGUE: readonly (readonly [readonly string[], string])[] = [
+  [["عيون", "عين", "العيون", "نظر", "نظري", "نظاره", "نظارات", "عدسات", "رمد", "عيادة عيون",
+    "eye", "eyes", "vision", "optician", "optometry", "ophthalmology", "ophthalmologist"], "العيون"],
+  [["عظام", "ركبه", "الركبه", "كتف", "المفاصل", "ظهري", "orthopaedic", "orthopedic", "orthopaedics"], "العظام"],
+  [["مسالك", "urology", "urologist"], "المسالك"],
+  [["اورام", "oncology", "oncologist"], "الأورام"],
+  [["تخاطب", "speech therapy"], "التخاطب"],
+  [["علاج طبيعي", "physiotherapy", "physical therapy"], "العلاج الطبيعي"],
+  [["روماتيزم", "rheumatology", "rheumatism"], "الروماتيزم"],
+] as const;
+
+/** The out-of-catalogue specialty named in this text, in the patient's own register,
+ *  or null. Exported so the SCENE says the same word back that the detector matched —
+ *  two lists would drift, and the apology naming the wrong clinic is worse than none. */
+export function outOfCatalogueSpecialty(raw: string): string | null {
+  const t = normalizeArabic(raw);
+  for (const [words, label] of OUT_OF_CATALOGUE) if (words.some((w) => needWord(t, w))) return label;
+  return null;
+}
+
+/** True when the eye words fired — used to override `laser`, because «ليزر العيون»
+ *  is LASIK and the only laser this group has is the dermatology one. */
+function eyeWordIn(t: string): boolean {
+  return OUT_OF_CATALOGUE[0][0].some((w) => needWord(t, w));
+}
+
+/**
+ * THE VETO, in one place so the deterministic path and the model path cannot drift.
+ *
+ * Returns the need this text is allowed to carry. It is `null` when the text names a
+ * specialty the group has no branch for and nothing in-catalogue was recognised —
+ * and also when the only need found is `laser` while the eye words fired, because
+ * the only laser this group has is the dermatology one and «ليزر للعيون» is LASIK.
+ *
+ * Exported because it is the whole defence against a model that reads «نظر» as
+ * `laser` and gets a patient routed to hair removal; a rule that cannot be called
+ * directly cannot be proved directly.
+ */
+export function needAfterVeto(raw: string, need: DemoNeed | null): DemoNeed | null {
+  if (!outOfCatalogueSpecialty(raw)) return need;
+  // Once an out-of-catalogue specialty is on the table, only a need the TEXT ITSELF
+  // states may survive — never one a model inferred. That asymmetry is the whole
+  // point: «نظر» contains no in-catalogue need word, and the model's `laser` is a
+  // guess about what it resembles, not something the patient said.
+  const t = normalizeArabic(raw);
+  const stated = needIn(t);
+  if (!stated) return null;
+  return stated === "laser" && eyeWordIn(t) ? null : stated;
+}
+
+/**
+ * A needle that must stand as its OWN word — no attached «و/ف/ب/ل» prefix, only «ال».
+ *
+ * `needWord` allows those prefixes, which is right for «والليزر» and fatal for
+ * «نفسي»: «بروح بنفسي للعيادة» — "I'll come myself" — matched the psychiatry needle
+ * through its «ب», and a patient saying they would come in person was told the
+ * psychiatry clinic cannot be booked from here. Measured, not hypothetical.
+ */
+const strictWord = (t: string, ...needles: string[]): boolean =>
+  needles.some((n) => new RegExp(`(?:^|\\s)(?:ال)?${normalizeArabic(n)}(?![ء-يa-z0-9])`).test(t));
+
 const needIn = (t: string): DemoNeed | null => NEEDS.find((row) => row.words.some((w) => needWord(t, w)))?.need ?? null;
 const needWord = (t: string, w: string): boolean => {
   const n = normalizeArabic(w);
@@ -565,7 +651,18 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
       // in a patient's words: «عندي ألم في الركبة من شهر» got the generic
       // honest-unknown line three times because it named no clinic.
       has(t, "عندي الم", "يعورني", "يوجعني", "الم في", "الم ب", "وجع")) &&
-    has(t, "قلب", "قلبيه", "مسالك", "كلي", "اورام", "نفسي", "نفسيه", "سكري", "تجميل", "تخاطب", "علاج طبيعي", "روماتيزم", "عظام", "الركبه", "ركبه", "كتف", "الظهر", "ظهري", "المفاصل")
+    // TWO SUBSTRING TRAPS, BOTH MEASURED LIVE, BOTH FIXED HERE.
+    //
+    // «الظهر» is noon far more often than it is a back. «ابغى موعد بعد الظهر» — the
+    // most ordinary sentence in an appointment chat — carried «موعد» (clinic context)
+    // and «الظهر», and came back as «عيادة العظام ما أقدر أثبّت لها موعد من هنا».
+    // The back is now reached through «ظهري» and the explicit pain phrases only.
+    //
+    // «نفسي» sits inside «بنفسي». See `strictWord`.
+    (has(t, "قلبيه", "مسالك", "اورام", "سكري", "تجميل", "تخاطب", "علاج طبيعي", "روماتيزم",
+          "عظام", "الركبه", "ركبه", "المفاصل",
+          "الم الظهر", "الم في الظهر", "وجع الظهر", "وجع في الظهر", "ظهري يعور", "ظهري يوجع") ||
+      strictWord(t, "قلب", "كلي", "نفسي", "نفسيه", "كتف", "كتفي", "ظهري"))
   ) {
     return { ...base, kind: "unsupported_specialty" };
   }
@@ -695,6 +792,13 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // فيصل، مع السلامة» — which has no «شكرا» in it — did not.
   if (base.courtesyOnly) return { ...base, kind: "close" };
 
+  // A specialty we cannot name a branch for. ABOVE the bare-need rule, and it also
+  // overrides `laser` when the eye words fired: the only laser this group has is the
+  // dermatology one, so «ليزر للعيون» is not it.
+  if (outOfCatalogueSpecialty(raw) && needAfterVeto(raw, base.need) === null) {
+    return { ...base, need: null, kind: "unsupported_specialty" };
+  }
+
   // A stated need — checked after the specific intents so «كم سعر الليزر» reads as
   // a price question about laser, not as a bare need.
   if (base.need) return { ...base, kind: "need" };
@@ -823,6 +927,13 @@ export async function classify(
     // decided on its own that the patient said goodbye would close a live booking.
     const facts = extractFacts(raw, normalizeArabic(raw));
     if (!parsed) return { ...EMPTY, kind: "other", language, ...facts };
+    // THE VETO. `parsed.need ?? facts.need` lets the model's label win, which is how
+    // «نظر» became `laser`. A specialty this group has no branch for stays unbookable
+    // whatever the model decided it resembled.
+    const merged = parsed.need ?? facts.need;
+    if (needAfterVeto(raw, merged) === null && outOfCatalogueSpecialty(raw)) {
+      return { ...parsed, ...facts, need: null, kind: "unsupported_specialty" };
+    }
     return {
       ...parsed,
       ...facts,

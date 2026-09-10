@@ -47,7 +47,15 @@ export const EN = {
 
   match: (branch: string, reason: string) => `The one that suits you is ${branch} — ${reason}.`,
 
-  discoverShort: "Which district are you in, and is the visit on insurance or cash?",
+  // ONE QUESTION PER TURN — the Arabic side's MOTION_DISCOVER_SHORT carried the same
+  // defect and the same fix: two questions in one sentence with buttons for one of
+  // them. `discoverPayment` follows the moment the district is in.
+  discoverShort: "Which district are you in?",
+  /** The district ask with the reason it is being asked — said BEFORE any branch is
+   *  named, because naming one first is naming a guess the next turn contradicts.
+   *  No need-noun here: `NeedPlan` authors its nouns in Arabic only, and a
+   *  transliterated one in an English sentence reads worse than none. */
+  askDistrictBecause: "Right. Which district are you in, so I can find your nearest branch?",
   discoverPayment: "One last thing: is the visit on insurance or cash?",
 
   insurance: (insurer: string) =>

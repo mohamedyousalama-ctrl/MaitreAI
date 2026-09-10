@@ -397,6 +397,11 @@ export interface Recommendation {
   reasonEn: string;
   /** SPEC-2 §6.2's geography fork — REPORTED, never substituted (Rule STR-3). */
   nearestSiteId: SiteId | null;
+  /** True when the branch in the patient's own district carries a strength for
+   *  this need — i.e. the honest answer is "book here", not "we do that elsewhere". */
+  nearestServesNeed: boolean;
+  nearestStrengthAr: string | null;
+  nearestStrengthBasis: "named_capability" | "group_marketing" | "accreditation" | "geography" | "hours" | null;
   /** Rule C4-2 — a contested site is never the only option offered. */
   mustNameAlternate: boolean;
   alternates: SiteId[];
@@ -417,6 +422,9 @@ export function recommend(need: DemoNeed | null, opts: { districtAr?: string | n
       reasonAr: r.reasonAr,
       reasonEn: r.reasonEn,
       nearestSiteId: r.nearestSiteId,
+      nearestServesNeed: r.nearestServesNeed,
+      nearestStrengthAr: r.nearestStrengthAr,
+      nearestStrengthBasis: r.nearestStrengthBasis,
       mustNameAlternate: r.mustNameAlternate,
       alternates: r.alternates,
       appointmentKind: r.appointmentKind,

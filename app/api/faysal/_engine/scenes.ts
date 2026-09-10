@@ -28,7 +28,7 @@
 import { callback as domainCallback, canBook, cancel as domainCancel, clinicsAtSite, confirm as domainConfirm, genderAvailability, hold as domainHold, insurance, NEED_PLANS, nextOpening, normalizeArabic, openState, OPS, packageFor, planFor, price, REAL_CONTACTS, recommend, riyadhDateISO, riyadhParts, serviceNameAr, siteInDistrict, SITES, twoSlotsAcrossDays, type Appointment, type DemoNeed, type FaysalStore, type SiteId, type SiteView, type SlotView } from "../_domain";
 import { EN } from "./english";
 import { compose } from "./render";
-import { classifyDeterministic, detectLanguage, nameInConfirm, nameShaped } from "./intent";
+import { classifyDeterministic, detectLanguage, nameInConfirm, nameShaped, outOfCatalogueSpecialty } from "./intent";
 import type { Classification } from "./intent";
 import type { FaysalSession } from "./session";
 import * as S from "./strings";
@@ -266,6 +266,40 @@ function forkReply(s: FaysalSession, bestId: SiteId, nearId: SiteId, reasonAr: s
   const text = contested ? S.motionMatchForkUnverified(args) : S.motionMatchFork(args);
 
   return reply(s, [faysal(s, text)], [near.districtAr, best.districtAr]);
+}
+
+/** The near branch can do it too — see `S.motionMatchForkFocus`. */
+function focusForkReply(s: FaysalSession, bestId: SiteId, nearId: SiteId, bestReason: string, nearAlsoAr: string): Reply {
+  const best = SITES[bestId];
+  const near = SITES[nearId];
+
+  s.siteId = bestId;
+  s.nearSiteId = nearId;
+  s.forkOffered = true;
+  s.scene = "S3_route";
+
+  // The authored strength lines start with the branch's own short name («شعاع الورود
+  // كمان يسوّق…»), and this sentence has already named it. Strip it, so the branch is
+  // named once per clause instead of twice in a row.
+  const nearAlso = nearAlsoAr.replace(new RegExp(`^${near.shortAr}\\s*`), "").trim();
+
+  return reply(
+    s,
+    [
+      faysal(
+        s,
+        S.motionMatchForkFocus({
+          nearBranch: near.nameAr,
+          nearShort: near.shortAr,
+          nearCapability: clinicsAtSite(nearId).slice(0, 2).join(" و") || "عيادات عامة",
+          nearAlso,
+          bestShort: best.shortAr,
+          bestReason,
+        }),
+      ),
+    ],
+    [near.districtAr, best.districtAr],
+  );
 }
 
 type ForkChoice = "near" | "best" | null;
@@ -563,8 +597,31 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
   const rec = recommend(needOf(s), { districtAr: s.districtAr, now });
   if (!rec) return unsupportedSpecialty(s, raw);
 
+  // NEVER NAME A BRANCH BEFORE THE DISTRICT IS KNOWN.
+  //
+  // The recommendation depends on the district — that is the whole point of asking
+  // for it — so announcing one first is announcing a guess. It read like this:
+  //   «اللي يناسبك: مجمع الوطن الطبي 2 — الروابي»   ← before the district
+  //   «تمام. أنت بأي حي؟»
+  //   «الورود»
+  //   «أقرب فرع لك هو مجمع شعاع الطبي — الورود»      ← a different branch, one turn later
+  // Two recommendations, contradicting each other, from a coordinator who is meant to
+  // sound like he was listening. The ask on its own is the whole turn; the branch is
+  // named once, when it is actually known.
+  if (!s.districtAr) {
+    s.scene = "S2_discover";
+    const ask = language === "en" ? EN.askDistrictBecause : S.askDistrictFor(planFor(needOf(s)).nounAr);
+    return reply(s, [faysal(s, ask)], BOOKABLE_DISTRICTS);
+  }
+
   if (rec.nearestSiteId && rec.nearestSiteId !== rec.siteId) {
-    return forkReply(s, rec.siteId, rec.nearestSiteId, rec.reasonAr, now);
+    // Which fork: the near branch has NO strength for this need (say plainly where
+    // it is done), or it has one the group only markets (say both, deny neither).
+    // A `named_capability` near the patient never gets here — the router already
+    // chose it, so there is nothing to fork.
+    return rec.nearestServesNeed && rec.nearestStrengthAr
+      ? focusForkReply(s, rec.siteId, rec.nearestSiteId, rec.reasonAr, rec.nearestStrengthAr)
+      : forkReply(s, rec.siteId, rec.nearestSiteId, rec.reasonAr, now);
   }
 
   s.siteId = rec.siteId;
@@ -621,7 +678,10 @@ function unsupportedSpecialty(s: FaysalSession, raw: string): Reply {
   // It must not presuppose the clinic exists either — «الاستقبال يقول لك أي فرع فيه
   // العيادة» quietly asserts there is one (§8.1 #12). Reception is asked WHETHER and
   // where, in that order.
-  const asked = specialtyWordIn(raw);
+  // The SAME list that classified this turn, so the apology names the clinic the
+  // detector actually matched. Two lists drift, and drifting here means apologising
+  // for the wrong specialty.
+  const asked = outOfCatalogueSpecialty(raw) ?? specialtyWordIn(raw);
   s.objections.unsupported = (s.objections.unsupported ?? 0) + 1;
   const opener = s.objections.unsupported === 1 ? "الله يعافيك." : "أعرف، وأعتذر إني ما أقدر أثبّتها من هنا.";
   return reply(
@@ -797,6 +857,12 @@ export function runTurn(s: FaysalSession, raw: string, cls: Classification, now:
   // does not already ask something, the spine's open question is appended to the LAST
   // message (a line, not a new message, so the cadence is untouched) and the chips
   // for that position are attached. A branch that set its own chips keeps them.
+  // THE SPINE SPEAKS THE THREAD'S LANGUAGE. A short reply carries no language of its
+  // own — «hello again» is five Latin letters, under the §3.1 threshold, so
+  // `detectLanguage` returns "other" and the tie-break is Arabic. That is right for
+  // picking a language from nothing and wrong here: an English thread got an English
+  // greeting echo with «أنت بأي حي؟» stapled underneath it, in one message. The
+  // greeting branch already resolves this the same way; the spine now does too.
   const question = spineQuestion(s, language);
   const asks = out.messages.some((m) => m.from === "faysal" && /[؟?]/.test(m.text));
   if (question && !asks) {
@@ -1226,7 +1292,13 @@ function dispatch(
         // letters — under the §3.1 threshold), so the echo speaks the language of the
         // thread's last substantive message, not the tie-break.
         const lang = language === "en" ? "en" : threadLanguage(s, raw);
-        return reply(s, [faysal(s, S.greetingEcho(raw, openQuestionFor(s, lang), lang))], chipsFor(s));
+        // `spineQuestion`, not `openQuestionFor`: the latter is null at S2_discover, so
+        // the echo ended without a «؟» and the spine appended its own question below —
+        // computed from THIS turn's language, which for a bare «hello» is Arabic by
+        // §3.1's tie-break. An English thread got an English greeting with «أنت بأي
+        // حي؟» stapled underneath it, in one message. Asking here, in `lang`, means
+        // the reply already carries a question and the spine leaves it alone.
+        return reply(s, [faysal(s, S.greetingEcho(raw, spineQuestion(s, lang), lang))], chipsFor(s));
       }
 
     default: {

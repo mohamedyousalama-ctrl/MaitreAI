@@ -379,7 +379,16 @@ ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergenc
   const c = new Conversation("2026-09-10T19:00:00+03:00"); c.open();
   const first = await c.say("أبغى كشف عام");
   const second = await c.say("أنا في الروابي");
-  ok("the branch recommendation is said once, not on every turn", !txt(second).includes("اللي يناسبك"), { first: txt(first), second: txt(second) });
+  const afterPayment = await c.say("كاش");
+  // The recommendation now lands on the turn the DISTRICT arrives, not before it —
+  // naming a branch while the fact that decides it is still unknown is naming a
+  // guess, and the machine proved it was a guess by changing its answer one turn
+  // later (proof-faysal-routing §1). The property this assertion has always been
+  // about is that it is said ONCE, so it is counted across the thread instead of
+  // being pinned to a turn index.
+  const recommended = [first, second, afterPayment].filter((r) => txt(r).includes("اللي يناسبك")).length;
+  ok("the branch recommendation is said once, not on every turn", recommended <= 1, { first: txt(first), second: txt(second), third: txt(afterPayment) });
+  ok("…and never before the district that decides it", !txt(first).includes("اللي يناسبك"), { first: txt(first) });
   ok("…and the outstanding question is still asked", /[؟?]/.test(txt(second)), { second: txt(second) });
   const third = await c.say("كاش");
   ok("…and the booking still moves", third.scene === "S5_slots" || third.scene === "S11_offhours", { scene: third.scene, text: txt(third) });

@@ -233,5 +233,6 @@
   "node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-faysal-hold-step.test.ts",
   "node --experimental-strip-types scripts/proof-faysal-denylist.test.ts",
   "REAL_NEXT_SERVER=1 node --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-faysal-host.test.ts",
+  "FAYSAL_DEMO_MODE=1 NEXT_PUBLIC_FAYSAL_DEMO_MODE=1 node --conditions=react-server --import ./scripts/webhook-route-loader.mjs --experimental-strip-types scripts/proof-faysal-routing.test.ts",
   "node --import ./scripts/ts-ext-loader.mjs --experimental-strip-types scripts/proof-faysal-safety.test.ts"
 ]

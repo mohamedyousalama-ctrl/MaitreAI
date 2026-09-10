@@ -337,10 +337,38 @@ export function recommendBranch(need: NeedKey | string, opts: RecommendOpts = {}
     }
   }
 
-  // The branch in the patient's district, if they named one. It is REPORTED,
-  // never substituted: the fork is «أقرب فرع لك هو X … بس أصارحك، Y هو اللي
-  // نسوي فيه هذا» and the caller renders both halves.
+  // The branch in the patient's district, if they named one.
   const nearest = opts.districtAr ? siteInDistrict(opts.districtAr) : null;
+  const nearestStrength = nearest ? strengthFor(nearest, key) : null;
+
+  // PROXIMITY WINS WHEN THE NEAREST BRANCH GENUINELY RUNS THE CLINIC.
+  //
+  // `nearest !== chain[0]` was being rendered as "the nearest branch cannot do this",
+  // and that is not what it means — it means the nearest branch is not the chain
+  // HEAD. A patient in Al Wurud asking for a general checkup was told, in consecutive
+  // lines, that Shoaa Al Wurud runs family medicine and that general checkups are
+  // done at Ar Rawabi. Both sentences came from this function. One of them was false.
+  //
+  // A `named_capability` strength is the dossier recording that the clinic is AT that
+  // site, so when the patient's own district has one, that is the answer and there is
+  // nothing to fork about. `group_marketing` is deliberately NOT enough: it records
+  // that the group advertises the service there without naming the clinic, so the
+  // chain head still leads and the caller says why — see `nearestStrengthBasis`.
+  //
+  // This is the ONE thing the district changes. It picks between sites the need's own
+  // chain already sanctions; it never reaches outside it, never overrides `dateISO`
+  // bookability, and never touches which needs exist at all.
+  if (
+    nearest &&
+    nearest !== chosen &&
+    chain.includes(nearest) &&
+    nearestStrength?.basis === "named_capability" &&
+    (!opts.dateISO || bookableOn(nearest))
+  ) {
+    chosen = nearest;
+    fallbackFromSiteId = undefined;
+    fallbackReasonAr = undefined;
+  }
 
   const s = strengthFor(chosen, key) ?? strengthFor(primary, key);
   if (!s) throw new Error(`no_strength_for:${key}:${chosen}`);
@@ -376,6 +404,10 @@ export function recommendBranch(need: NeedKey | string, opts: RecommendOpts = {}
     fallbackFromSiteId,
     fallbackReasonAr,
     nearestSiteId: nearest,
+    nearestServesNeed: !!nearestStrength,
+    nearestStrengthAr: nearestStrength?.reasonAr ?? null,
+    nearestStrengthEn: nearestStrength?.reasonEn ?? null,
+    nearestStrengthBasis: nearestStrength?.basis ?? null,
     nearestReasonAr: nearest && nearest !== chosen ? `فرع ${siteById(nearest).nameAr} هو الأقرب لك.` : null,
     safetyRailOutranks: key === "urgent_tonight" || key === "after_hours_er",
   };

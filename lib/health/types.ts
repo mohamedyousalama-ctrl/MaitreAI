@@ -340,6 +340,27 @@ export interface BranchRecommendation {
    * named no district or named one we have no branch in.
    */
   nearestSiteId: SiteId | null;
+  /**
+   * WHETHER THE NEAREST BRANCH CAN ACTUALLY DO THIS. The fork copy said «بس
+   * أصارحك: كشف الجلدية نسويه في الروابي» to a patient in Al Wurud — and Shoaa Al
+   * Wurud carries an AUTHORED derm_laser strength (§3.5 L194), so the sentence was
+   * false. Same for a general checkup: the same message said Al Wurud runs family
+   * medicine and then that general checkups are done at Ar Rawabi, in consecutive
+   * lines. `nearestSiteId !== siteId` was being read as "the nearest one cannot",
+   * when all it means is "the nearest one is not the chain head". This is the
+   * distinction the copy actually needs: it is true exactly when the nearest site
+   * carries a strength for this need.
+   */
+  nearestServesNeed: boolean;
+  /** That strength's own line, so the caller never has to invent one. */
+  nearestStrengthAr: string | null;
+  nearestStrengthEn: string | null;
+  /** The EVIDENCE behind that strength. `named_capability` means the dossier records
+   *  the clinic at that site; `group_marketing` means the group advertises the
+   *  service there without naming the clinic. The copy must not treat the two the
+   *  same — the first is "book here", the second is "they advertise it, the focus is
+   *  at the other branch". */
+  nearestStrengthBasis: SiteStrength["basis"] | null;
   nearestReasonAr: string | null;
   /**
    * MED-2 — for an urgent/tonight need the red-flag rail outranks this answer
