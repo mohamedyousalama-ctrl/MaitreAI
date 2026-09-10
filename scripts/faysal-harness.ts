@@ -12,7 +12,7 @@
 //     --experimental-strip-types scripts/faysal-harness.ts \
 //     "2026-09-10T23:10:00+03:00" "مساء الخير، ولدي عنده حرارة" "الروابي" "كاش"
 // ============================================================================
-import { REAL_CONTACTS, RAIL_STOP_REASON, emergencyRailText, readRedFlag, snapshotOfStore, storeFromSnapshot } from "../app/api/faysal/_domain";
+import { REAL_CONTACTS, RAIL_STOP_REASON, SITES, emergencyRailText, readRedFlag, siteInDistrict, snapshotOfStore, storeFromSnapshot } from "../app/api/faysal/_domain";
 import { classify } from "../app/api/faysal/_engine/intent";
 import { compose } from "../app/api/faysal/_engine/render";
 import { openConversation, runTurn } from "../app/api/faysal/_engine/scenes";
@@ -48,7 +48,10 @@ export class Conversation {
     }
     if (s.triageHold) {
       const held = readRedFlag(raw);
-      const railText = compose(emergencyRailText(held.fired ? held : { fired: true, cls: s.triageClass, tier: "emergency", ruleId: "triage_hold", label: null } as any), { isRail: true });
+      const siteId = siteInDistrict(raw);
+      const railText = held.fired
+        ? compose(emergencyRailText(held), { isRail: true })
+        : compose(S.holdTurn(siteId ? SITES[siteId].phoneAr : REAL_CONTACTS.unified), { isRail: true });
       pushHistory(s, "user", raw); pushHistory(s, "assistant", railText);
       const r = { messages: [{ from: "faysal" as const, text: railText }], chips: [], stopReason: RAIL_STOP_REASON, scene: "S0_safety" };
       this.record(r); return r;

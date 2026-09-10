@@ -79,6 +79,13 @@ export interface FaysalSession {
   holdId: string | null;
   heldSlot: SlotView | null;
   bookingRef: string | null;
+  /** What was actually booked, in the words the patient read. Answers «موعدي باقي
+   *  صح؟» and «خليه» without re-deriving anything, and survives the round trip
+   *  through the sealed session envelope. */
+  booked: { kind: "slot" | "callback"; slotLabelAr: string; branchShortAr: string; clinicAr: string } | null;
+  /** The patient asked for a female clinician at some point. It rides with the
+   *  booking (SPEC-2 §9 turn 10) instead of being answered once and forgotten. */
+  prefersFemaleDoctor: boolean;
   /** Rule C4-1 — a coarse window in the patient's OWN words, never a clock time. */
   preferredWindowAr: string | null;
   /** The patient chose the contested branch; we are waiting on their own window. */
@@ -129,6 +136,8 @@ export function newSession(): FaysalSession {
     offeredSlots: [],
     store: null,
     holdId: null,
+    booked: null,
+    prefersFemaleDoctor: false,
     heldSlot: null,
     bookingRef: null,
     preferredWindowAr: null,

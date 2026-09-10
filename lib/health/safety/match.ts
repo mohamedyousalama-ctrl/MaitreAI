@@ -230,12 +230,39 @@ export const REFILL_CLAUSE_RE =
   /تجديد ?(?:ال)?(?:وصفه|بخاخ|علاج|دوا|روشته)|صرف ?(?:ال)?دوا|نفس ?(?:ال)?علاج/;
 
 /** Temperature in a body range, §2.6. Digits are already ASCII (see `normalize.ts`). */
+/**
+ * AN AGE IS NOT A TEMPERATURE, AND READING ONE AS THE OTHER SILENCES THE RAIL.
+ *
+ * «رضيعي عمره ٣٦ يوم وعنده حرارة» — a thirty-six-day-old with a fever, which is the
+ * exact population §2.6 exists for — was SILENT. The scan took the first two-digit
+ * number in [35,43] anywhere in the clause, found the 36 that belongs to «يوم», and
+ * `infantFever` then applied its own `value < 38.0 → return null`. Driven: fired
+ * false, ruleId none. The same clause without the age fires `emergency`.
+ *
+ * So a number that is bound to an AGE UNIT — «٣٦ يوم», «٣٨ يوم», «40 اسبوع» — or
+ * that sits directly after an age lead is skipped, and the scan continues to the
+ * next candidate. Skipping it fails TOWARD firing: with no temperature value an
+ * infant marker plus a fever term is still an emergency (§2.6's own tier table),
+ * which is the direction §13 requires while row 3 is unsigned.
+ *
+ * Nothing else changes. A bare «حرارته 39» is still 39, «٣٩ درجه» is still 39, and
+ * a number outside [35,43] was never a body temperature to begin with.
+ */
+const AGE_UNIT_AFTER = /^\s*(?:يوم|ايام|يوما|اسبوع|اسابيع|شهر|شهور|اشهر|سنه|سنوات|سنين|سنة|day|days|week|weeks|month|months|year|years)(?![ء-يa-z])/;
+const AGE_LEAD_BEFORE = /(?:عمره|عمرها|عمرهم|بعمر|عمر|عنده|عندها)\s*$/;
 export function bodyTemperature(clause: string): number | null {
-  const m = clause.match(/\b(\d{2}(?:\.\d)?)\b/g);
-  if (!m) return null;
-  for (const raw of m) {
-    const v = Number(raw);
-    if (v >= 35 && v <= 43) return v;
+  const re = /\b(\d{2}(?:\.\d)?)\b/g;
+  for (let m = re.exec(clause); m; m = re.exec(clause)) {
+    const v = Number(m[1]);
+    if (v < 35 || v > 43) continue;
+    const after = clause.slice(m.index + m[0].length);
+    if (AGE_UNIT_AFTER.test(after)) continue; // «٣٦ يوم» — an age, not a fever
+    // «عمره 40» with no unit: an age lead immediately before it, and no «درجة» after.
+    if (AGE_LEAD_BEFORE.test(clause.slice(0, m.index)) && !/^\s*(?:درجه|درجة|c\b|°)/.test(after)) {
+      const lead = clause.slice(0, m.index);
+      if (/(?:عمره|عمرها|عمرهم|بعمر|عمر)\s*$/.test(lead)) continue;
+    }
+    return v;
   }
   return null;
 }

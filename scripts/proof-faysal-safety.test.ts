@@ -280,6 +280,24 @@ console.log("\n── §F2  NEGATION × ABILITY × PERSON, and the third person 
       INFANT_FEVER.sets.PRED_PERSIST as string[],
     ))]);
 
+  // AN AGE IN THE SENTENCE MUST NOT SILENCE THE FEVER. `bodyTemperature` scanned for the
+  // first two-digit number in [35, 43] and took «٣٦» out of «٣٦ يوم» as the temperature —
+  // then `infantFever`'s own `value < 38.0 → return null` made a thirty-six-day-old with a
+  // fever produce NO HIT AT ALL. Driven before the fix: fired false, ruleId none. The age
+  // window that lands inside [35, 43] days is five and a half weeks — squarely the
+  // population §2.6 exists for — and every unit a parent writes is here, because the bug is
+  // the unit, not the number.
+  mustFire("§F2 infant_fever: an age in days/weeks is not a temperature  (the silent miss)",
+    [...new Set(cross(
+      ["رضيعي", "مولودي", "ابني", "بنتي", "طفلي"],
+      // With AND without the «عمره» lead: the lead and the unit are two independent
+      // guards, and a corpus that only ever writes both cannot tell which one is doing
+      // the work — remove either in isolation and it would still read green.
+      ["عمره 36 يوم", "عمره ٣٦ يوم", "عمرها 40 يوم", "عمره 38 يوما", "عمره 41 يوم", "عمره 6 اسابيع", "عمره 35 يوم",
+       "36 يوم", "٣٦ يوم", "40 يوم", "عنده 38 يوم", "عمره سنه و 41 يوم"],
+      ["وعنده حرارة", "وعندها حرارة", "وحرارته عالية", "وعنده سخونة"],
+    ))]);
+
   // §2.8 — phrases only, and each phrase inside an ordinary run-on message, because a phrase
   // matched with a bare lookbehind is silent behind a «و» or a «ب» (§2.0 L7).
   mustFire("§F2 trauma: STANDALONE inside a run-on message",

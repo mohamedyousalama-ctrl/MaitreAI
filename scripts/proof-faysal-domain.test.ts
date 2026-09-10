@@ -875,6 +875,29 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   check("POL-07: the women's-health path with a female clinician survives, at Ar Rawabi",
     searchSlots({ serviceId: "obgyn-consult", siteId: "wattan-2", dateISO: SAT, gender: "female", ...DEMO }, { store: createStore() }).length > 0);
 
+  // The commonest ask in the building, asserted as INVENTORY rather than as a
+  // matrix row. Ar Rawabi read `named_at_site` for family medicine while no
+  // family doctor was rostered there, so the capability gate opened onto an
+  // empty roster and «أبغى كشف عام» came back as a callback with the branch's
+  // hours «قيد التأكيد» — a lie about the hours, caused by the staffing. Neither
+  // half of that was individually wrong, which is why nothing here caught it.
+  // This asserts the PRODUCT of the two at every site the demo can book, and it
+  // asserts it per gender, so that a roster edit which takes the last woman off
+  // a general clinic fails on this line instead of in front of a patient.
+  const bookableSiteIds: SiteId[] = ["wattan-2", "shoaa-wurud", "shoaa-rawdah"];
+  for (const siteId of bookableSiteIds) {
+    check(`SPEC-1 / §6.3: general practice mints slots at ${siteId} under DEMO_MODE`,
+      searchSlots({ serviceId: "gp-consult", siteId, dateISO: SAT, ...DEMO }, { store: createStore() }).length > 0);
+    for (const gender of ["female", "male"] as const) {
+      const filtered = searchSlots({ serviceId: "gp-consult", siteId, dateISO: SAT, gender, ...DEMO }, { store: createStore() });
+      check(`DOC-1: general practice at ${siteId} answers a patient who asks for a ${gender} clinician`,
+        filtered.length > 0 && filtered.every((s) => CLINICIANS.find((c) => c.id === s.clinicianId)?.gender === gender));
+    }
+  }
+  check("SPEC-1: and general practice still mints NOTHING with DEMO_MODE off — the roster is not a licence",
+    bookableSiteIds.every((siteId) =>
+      searchSlots({ serviceId: "gp-consult", siteId, dateISO: SAT, ...PROD }, { store: createStore() }).length === 0));
+
   // DOC-1 / DOC-2 — gender is a filter; no credentials we cannot support.
   check("DOC-1: a female-clinician filter is honoured, not volunteered",
     searchSlots({ serviceId: "derm-consult", siteId: "wattan-2", dateISO: SAT, gender: "female", limit: 10, ...DEMO }, { store: createStore() })
@@ -889,8 +912,15 @@ console.log("FAYSAL DOMAIN PROOF — lib/health against docs/faysal/SPEC-1-DOMAI
   const seed = JSON.stringify(CLINICIANS) + JSON.stringify(SITES) + JSON.stringify(STRENGTHS);
   check("Prohibition A: no denylisted real clinician appears in the seed data",
     REAL_CLINICIAN_DENYLIST.every((name) => !seed.includes(name)));
-  check("§6.3: the roster is 30 invented clinicians, every site staffed, every site with a woman",
-    CLINICIANS.length === 30 &&
+  // §6.3's table is 30 people, 15 of each. Staffing general practice at the three
+  // sites the demo can actually book added six more — a woman and a man each —
+  // so the count is 36 and the even split holds. The number is pinned rather than
+  // described because the roster is the easiest thing in this engine to edit, and
+  // a row missing from it reaches the patient as a branch whose hours we cannot
+  // confirm — which is how the family-medicine gap hid for as long as it did.
+  check("§6.3: the roster is 36 invented clinicians, evenly split by gender, every site staffed, every site with a woman",
+    CLINICIANS.length === 36 &&
+    CLINICIANS.filter((c) => c.gender === "female").length === 18 &&
     SITE_IDS.every((id) => CLINICIANS.filter((c) => c.siteIds.includes(id)).length >= 4) &&
     SITE_IDS.every((id) => CLINICIANS.some((c) => c.siteIds.includes(id) && c.gender === "female")));
 

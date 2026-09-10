@@ -316,6 +316,49 @@ function pickSlot(
   return reply(s, [faysal(s, text)], ["إي، ثبّته", "لا، غيّره"]);
 }
 
+/**
+ * WHAT IS BOOKED, SAID BACK. Reached by «موعدي باقي صح؟», «خليه», a yes after the
+ * confirmation, and by any courtesy that is not a goodbye. It reads only what
+ * `renderAppointment` recorded — it never re-derives a time, and it never touches
+ * the store, so it cannot create a second appointment.
+ */
+function bookingStands(s: FaysalSession): Reply {
+  if (!s.booked) return reply(s, [faysal(s, S.NO_BOOKING_YET)], ["أقرب موعد"]);
+  const text =
+    s.booked.kind === "callback"
+      ? S.bookingStandsCallback(s.booked.branchShortAr)
+      : S.bookingStands(s.booked.slotLabelAr, s.booked.branchShortAr, s.booked.clinicAr);
+  // A patient asking whether their booking survived is not objecting to anything.
+  s.objections.decline = 0;
+  return reply(s, [faysal(s, text)]);
+}
+
+/**
+ * «أبي أغير الوقت» — SPEC-1 §8's التعديل, which had no implementation at all: the
+ * word «أغير» reached the negation layer and the patient was answered as if they
+ * had walked away. The current appointment is named first, then two alternatives;
+ * nothing is cancelled until the patient picks one.
+ */
+function rescheduleReply(s: FaysalSession, raw: string, now: Date, language: "ar" | "en" | "other", store: FaysalStore): Reply {
+  if (!s.booked && !s.holdId) return offerSlots(s, now, language, store);
+  if (!s.booked) return offerSlots(s, now, language, store); // only a hold — re-offering IS the change
+  const target = s.siteId ?? "wattan-2";
+  const alternatives = twoSlotsAcrossDays(target, needOf(s), now, now, store).filter(
+    (x) => x.labelAr !== s.booked?.slotLabelAr,
+  );
+  if (alternatives.length < 2) {
+    const phone = branchPhoneFor(s) ?? REAL_CONTACTS.unified;
+    return reply(s, [faysal(s, S.rescheduleNoAlternative(s.booked.slotLabelAr, phone))]);
+  }
+  s.offeredSlots = alternatives.slice(0, 2);
+  s.scene = "S5_slots";
+  return reply(
+    s,
+    [faysal(s, S.rescheduleOffer(s.booked.slotLabelAr, s.offeredSlots[0].labelAr, s.offeredSlots[1].labelAr))],
+    s.offeredSlots.map((x) => x.labelAr),
+  );
+}
+
 function confirmHeld(s: FaysalSession, now: Date, store: FaysalStore): Reply {
   if (!s.holdId || !s.heldSlot) return reply(s, [faysal(s, S.fallbackHonestUnknown("أشوف لك أقرب موعد من جديد"))]);
   const appt = domainConfirm(s.holdId, s.id, s.patientNameAr, now, store);
@@ -334,6 +377,18 @@ function renderAppointment(s: FaysalSession, appt: Appointment): Reply {
   s.bookingRef = appt.ref;
   s.holdId = null;
   s.scene = "S7_confirmed";
+  // WHAT WAS BOOKED, IN THE WORDS THE PATIENT READ. Everything after this turn —
+  // «موعدي باقي صح؟», «خليه», «تسلم» — is answered from here. The offered slots go
+  // with it: leaving them behind made the next «تمام مشكور» try to hold a slot that
+  // was already booked, and the patient saw a SECOND appointment appear.
+  s.booked = {
+    kind: appt.kind === "callback_request" ? "callback" : "slot",
+    slotLabelAr: s.heldSlot?.labelAr ?? "",
+    branchShortAr: branch.shortAr,
+    clinicAr: s.heldSlot?.clinicAr ?? serviceNameAr(appt.serviceId),
+  };
+  s.offeredSlots = [];
+  s.heldSlot = appt.kind === "callback_request" ? s.heldSlot : s.heldSlot;
 
   // §6.7: the confirmation block is ATOMIC — its own message, nothing appended,
   // no question glued on. The pre-visit block is a SEPARATE message.
@@ -352,7 +407,7 @@ function renderAppointment(s: FaysalSession, appt: Appointment): Reply {
       s,
       [
         { from: "faysal", text: compose(block, { isConfirmation: true, branchPhone: branch.phoneAr }) },
-        faysal(s, S.PRE_VISIT_CALLBACK),
+        faysal(s, S.preVisitCallback(s.payment)),
       ],
       [],
     );
@@ -370,7 +425,7 @@ function renderAppointment(s: FaysalSession, appt: Appointment): Reply {
     s,
     [
       { from: "faysal", text: compose(block, { isConfirmation: true, branchPhone: branch.phoneAr }) },
-      faysal(s, S.motionPreVisit(OPS.arrivalBufferMinutes)),
+      faysal(s, S.motionPreVisit(OPS.arrivalBufferMinutes, s.payment)),
     ],
     [],
   );
@@ -413,9 +468,21 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
 
   // Split-recap (§4.2): the match is one atomic message, the ask is the next. Two
   // messages in one turn — within cadence, and the ask carries the only «؟».
+  // ASK ONLY WHAT IS STILL MISSING. The combined question went out even to a patient
+  // who had just named their district AND their insurer in the same sentence, which
+  // is the moment testers said he stopped sounding like he was listening.
   if (!s.districtAr || !s.payment) {
-    const ask = language === "en" ? EN.discoverShort : S.MOTION_DISCOVER_SHORT;
-    return reply(s, [faysal(s, matchText), faysal(s, ask)], ["تأمين", "كاش"]);
+    const needsDistrict = !s.districtAr;
+    const ask = language === "en"
+      ? needsDistrict
+        ? EN.discoverShort
+        : EN.discoverPayment
+      : needsDistrict && !s.payment
+        ? S.MOTION_DISCOVER_SHORT
+        : needsDistrict
+          ? "تمام. أنت بأي حي؟"
+          : S.MOTION_DISCOVER_PAYMENT;
+    return reply(s, [faysal(s, matchText), faysal(s, ask)], needsDistrict && s.payment ? [] : ["تأمين", "كاش"]);
   }
   return offerSlots(s, now, language, store);
 }
@@ -558,6 +625,11 @@ function dispatch(
   if (cls.districtAr) s.districtAr = cls.districtAr;
   if (cls.payment) s.payment = cls.payment;
   if (cls.carrierRaw) s.carrierAr = cls.carrierRaw;
+  if (cls.preferredWindowAr) s.preferredWindowAr = cls.preferredWindowAr;
+  if (cls.prefersFemale) {
+    s.prefersFemaleDoctor = true;
+    s.askedFemaleDoctor = true;
+  }
 
   // A pending callback window outranks a fresh read: the patient was asked one
   // question and this is the answer to it.
@@ -569,7 +641,16 @@ function dispatch(
   // Picking a slot by its OWN WORDS — «السبت 11», «الخميس», «11:30». Only this
   // layer can see the offered labels, so the classifier deliberately does not try:
   // it reads ordinals, and this reads the times we actually named.
-  if (s.offeredSlots.length && cls.kind !== "cancel" && cls.kind !== "decline") {
+  // The decline exclusion used to sit here too, so «اليوم 4:30 بس أبي أتأكد إني ما
+  // أنتظر» — a patient CHOOSING a slot while complaining — never reached the picker.
+  if (s.offeredSlots.length && cls.kind !== "cancel") {
+    if (namesBothOffers(raw, s.offeredSlots) && matchOfferedSlot(raw, s.offeredSlots) === null) {
+      return reply(
+        s,
+        [faysal(s, S.whichOfTwo(s.offeredSlots[0].labelAr, s.offeredSlots[1].labelAr))],
+        s.offeredSlots.slice(0, 2).map((x) => x.labelAr),
+      );
+    }
     const picked = matchOfferedSlot(raw, s.offeredSlots);
     if (picked) return pickSlot(s, picked, language, now, store);
     const origin = weekdayOrigin(raw, now);
@@ -611,6 +692,18 @@ function dispatch(
     // §5.3 — own it FIRST, no explanation before the apology, then ONE concrete
     // action. Compensation is never self-authorised.
     case "complaint": {
+      // A COMPLAINT WHILE SOMETHING IS HELD OR BOOKED MUST NOT RE-SEARCH. The old
+      // code called `twoSlotsAcrossDays` unconditionally; the held slot is out of
+      // inventory by then, so it vanished from the offer list and the patient's
+      // 4:30 — which they had just argued for — was silently gone.
+      const live = s.booked?.slotLabelAr || s.heldSlot?.labelAr;
+      if (live) {
+        const phone = branchPhoneFor(s) ?? REAL_CONTACTS.unified;
+        const first = (s.objections.complaint ?? 0) === 0;
+        s.objections.complaint = (s.objections.complaint ?? 0) + 1;
+        const own = first ? S.complaintWaitOwnIt(planFor(needOf(s)).clinicAr, live) : S.COMPLAINT_OWN_IT_AGAIN;
+        return reply(s, [faysal(s, `${own}\n${S.complaintRoute(phone)}`)], chipsFor(s));
+      }
       const slots = s.siteId ? twoSlotsAcrossDays(s.siteId, needOf(s), now, now, store) : [];
       if (!slots.length) {
         s.scene = "S10_escalate";
@@ -672,7 +765,11 @@ function dispatch(
     // patient's gender from the service they asked for.
     case "female_doctor":
       s.askedFemaleDoctor = true;
-      return reply(s, [faysal(s, S.GENDER_CARE_HONESTY)]);
+      s.prefersFemaleDoctor = true;
+      // The paragraph alone, as a whole turn, is only right when the message was
+      // ONLY that request. When it rides on a booking ask it is appended to the
+      // substantive reply instead — see the `prefersFemale` merge above.
+      return reply(s, [faysal(s, `${S.GENDER_CARE_HONESTY}\n${S.MOTION_DISCOVER}`)], ["أقرب موعد"]);
 
     case "doctor_quality":
       return reply(s, [faysal(s, S.motionObjectionDoctor("ما عندي تفاصيله، والاستقبال يعطيك إياها"))]);
@@ -738,6 +835,10 @@ function dispatch(
       return pickSlot(s, cls.slotPick ?? 1, language, now, store);
 
     case "confirm": {
+      // A yes AFTER the booking is confirmed is agreement with what he just said,
+      // not an instruction to book again. It was re-opening the slot list and
+      // placing a second hold on the same thread.
+      if (s.booked && !s.holdId) return bookingStands(s);
       if (s.scene === "S6_close" && s.holdId) {
         const named = nameInConfirm(raw); // «ثبته باسم محمد الشهري»
         if (named) s.patientNameAr = named.nameAr;
@@ -799,15 +900,41 @@ function dispatch(
       );
     }
 
+    // AFTER A BOOKING EXISTS. Three ordinary sentences, each of which used to
+    // produce a second hold, a refusal, or the honest-unknown line.
+    case "booking_status":
+    case "keep_booking":
+      return bookingStands(s);
+
+    case "reschedule":
+      return rescheduleReply(s, raw, now, language, store);
+
     case "objection_delay":
       return reply(s, [faysal(s, S.motionObjectionDelay(s.offeredSlots[0]?.labelAr ?? "أقرب موعد"))], ["إي", "لا"]);
 
     case "unsupported_specialty":
       return unsupportedSpecialty(s);
 
-    case "close":
+    case "close": {
+      // A goodbye at S6_close with a live hold is NOT a goodbye — the hold step owns
+      // that turn (a bare courtesy there re-asks; a courtesy after a yes confirms).
+      if (s.scene === "S6_close" && s.holdId) {
+        return reply(s, [faysal(s, language === "en" ? EN.holdReask : S.HOLD_REASK)], chipsFor(s));
+      }
       s.scene = "S14_closed";
-      return reply(s, [faysal(s, language === "en" ? EN.closing : S.SCENE_CLOSE)]);
+      if (language === "en") return reply(s, [faysal(s, EN.closing)]);
+      if (s.booked?.kind === "slot") {
+        // §4.4 — one religious courtesy per conversation, and a farewell after a
+        // booking is exactly where a Riyadh coordinator spends it.
+        const text = s.blessingUsed
+          ? S.closeBookedPlain(s.booked.slotLabelAr, s.booked.branchShortAr)
+          : S.closeBooked(s.booked.slotLabelAr, s.booked.branchShortAr);
+        s.blessingUsed = true;
+        return reply(s, [faysal(s, text)]);
+      }
+      if (s.booked?.kind === "callback") return reply(s, [faysal(s, S.CLOSE_BOOKED_CALLBACK)]);
+      return reply(s, [faysal(s, S.SCENE_CLOSE)]);
+    }
 
     case "greeting_only":
       if (!s.greeted) return openConversation(s, now, language);
@@ -855,24 +982,112 @@ const WEEKDAY_WORDS = ["الاحد", "الاثنين", "الثلاثاء", "ال
  * A day we did not offer matches nothing, and the turn falls through rather than
  * booking a time we never said.
  */
+/**
+ * Which of the two offered slots did the patient name?
+ *
+ * THE FIRST NUMBER IN THE MESSAGE IS NOT THE ANSWER. «ليش 5:15؟ انت قلت 4:30!! ثبت
+ * 4:30» held 5:15 — the time the patient was complaining about — and «no no, I said
+ * the 9:15 one, not 11:30» held 11:30. Both were driven; both are the same bug: a
+ * single `exec` takes the leftmost match, and in a correction the leftmost number is
+ * the one being rejected. So every time in the message is collected, the ones that
+ * sit right after a negation or a question word are dropped, and a pick verb — if
+ * there is one — decides which of the survivors is the choice.
+ *
+ * When two survive and both map to offers, NOTHING is held: he asks which. One
+ * re-ask costs a turn; a wrong hold costs the appointment.
+ */
+const PICK_STEM_RE = /(?:^|\s)(?:ثبت|اثبت|ثبته|احجز|احجزه|ابي|ابغي|خله|خليه|اعطني|اعطيني|book|take|the|that|please)(?![ء-ي])/g;
+// A time that follows one of these is being QUESTIONED or REJECTED, not chosen:
+// «ليش 5:15؟», «مو 4:30», «is the 9:15 tomorrow?», «هل 9:15 بكرة؟».
+const REJECT_HEAD_RE = /(?:^|\s)(?:مو|مب|موب|لا|ليش|مش|هل|وش|ايش|not|no|why|is|are|was)(?![ء-يa-z])/;
 function matchOfferedSlot(raw: string, offered: SlotView[]): number | null {
   const t = normalizeArabic(raw);
-  const hour = /(?:^|\D)(\d{1,2})(?::(\d{2}))?(?:\D|$)/.exec(t);
-  const wantedDay = WEEKDAY_WORDS.find((d) => t.includes(d)) ?? null;
-  if (!wantedDay && !hour) return null;
 
-  let dayMatch: number | null = null;
-  for (let i = 0; i < offered.length; i++) {
-    const label = normalizeArabic(offered[i].labelAr);
-    if (wantedDay && !label.includes(wantedDay)) continue;
-    if (hour) {
-      const h = Number(hour[1]);
-      const labelHour = /(\d{1,2}):(\d{2})/.exec(label);
-      if (labelHour && Number(labelHour[1]) === h) return i + 1;
+  // Where each weekday word sits, so a time can be paired with the day IN FRONT OF
+  // IT rather than with the first weekday in the message. «اليوم الأحد 4:30 ولا بكرة
+  // الاثنين 9:15؟» names both offers; taking the first weekday made 9:15 unmatchable
+  // and the message read as an unambiguous pick of 4:30.
+  const days: { day: string; at: number }[] = [];
+  for (const d of WEEKDAY_WORDS) {
+    let from = 0;
+    for (;;) {
+      const at = t.indexOf(d, from);
+      if (at < 0) break;
+      days.push({ day: d, at });
+      from = at + d.length;
     }
-    if (wantedDay && dayMatch === null) dayMatch = i + 1;
   }
-  return dayMatch;
+  days.sort((a, b) => a.at - b.at);
+  const dayBefore = (at: number): string | null => {
+    let best: string | null = null;
+    for (const d of days) if (d.at < at) best = d.day;
+    return best;
+  };
+
+  // Every clock time in the message, with where it sits.
+  const times: { hour: number; at: number }[] = [];
+  for (const m of t.matchAll(/(?:^|\D)(\d{1,2})(?::(\d{2}))?(?=\D|$)/g)) {
+    const h = Number(m[1]);
+    if (h >= 1 && h <= 12) times.push({ hour: h, at: (m.index ?? 0) + m[0].indexOf(m[1]) });
+  }
+  const indexOf = (h: number, dayHint: string | null): number | null => {
+    const byHour: number[] = [];
+    for (let i = 0; i < offered.length; i++) {
+      const label = normalizeArabic(offered[i].labelAr);
+      const labelHour = /(\d{1,2}):(\d{2})/.exec(label);
+      if (labelHour && Number(labelHour[1]) === h) byHour.push(i + 1);
+    }
+    if (byHour.length <= 1) return byHour[0] ?? null;
+    // The hour alone is ambiguous — the day decides.
+    const withDay = byHour.filter((i) => dayHint && normalizeArabic(offered[i - 1].labelAr).includes(dayHint));
+    return withDay.length === 1 ? withDay[0] : null;
+  };
+  const indexOfHour = (h: number): number | null => indexOf(h, days.length === 1 ? days[0].day : null);
+
+  // A time within three tokens after «مو» / «لا» / «ليش» / «not» is the one being
+  // REJECTED, not chosen.
+  const kept = times.filter(({ at }) => {
+    const before = t.slice(Math.max(0, at - 24), at);
+    return !(REJECT_HEAD_RE.test(before) && before.split(/\s+/).filter(Boolean).length <= 3);
+  });
+  const resolve = (x: { hour: number; at: number }) => indexOf(x.hour, dayBefore(x.at) ?? (days.length === 1 ? days[0].day : null));
+  const candidates = (kept.length ? kept : times).filter((x) => resolve(x) !== null);
+
+  if (candidates.length > 1) {
+    // A pick verb resolves it: the time that comes AFTER the last «ثبت / that one».
+    const stems = [...t.matchAll(PICK_STEM_RE)].map((m) => (m.index ?? 0));
+    const lastStem = stems.length ? stems[stems.length - 1] : -1;
+    const after = candidates.filter((x) => x.at > lastStem);
+    if (lastStem >= 0 && after.length === 1) return resolve(after[0]);
+    const distinct = new Set(candidates.map(resolve));
+    if (distinct.size > 1) return null; // two real choices, no verb — ask, do not guess
+  }
+  if (candidates.length >= 1) return resolve(candidates[0]);
+
+  // No usable time: a single named weekday picks its offer; two named days are two
+  // choices, and he asks rather than guessing.
+  const namedDays = [...new Set(days.map((d) => d.day))].filter((d) =>
+    offered.some((o) => normalizeArabic(o.labelAr).includes(d)),
+  );
+  if (namedDays.length !== 1) return null;
+  for (let i = 0; i < offered.length; i++) {
+    if (normalizeArabic(offered[i].labelAr).includes(namedDays[0])) return i + 1;
+  }
+  return null;
+}
+
+/** Two offered times named in one message with no pick verb — «4:30 ولا 5:15؟». */
+function namesBothOffers(raw: string, offered: SlotView[]): boolean {
+  if (offered.length < 2) return false;
+  const t = normalizeArabic(raw);
+  const hours = new Set<number>();
+  for (const m of t.matchAll(/(?:^|\D)(\d{1,2})(?::(\d{2}))?(?=\D|$)/g)) hours.add(Number(m[1]));
+  const byHour = offered.every((o) => {
+    const h = /(\d{1,2}):(\d{2})/.exec(normalizeArabic(o.labelAr));
+    return h ? hours.has(Number(h[1])) : false;
+  });
+  if (byHour) return true;
+  return offered.every((o) => WEEKDAY_WORDS.some((d) => t.includes(d) && normalizeArabic(o.labelAr).includes(d)));
 }
 
 /**

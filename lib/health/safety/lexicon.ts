@@ -924,7 +924,11 @@ export const INFANT_FEVER: ClassSpec = {
     // no persistence predicate on the fever axis at all, so «طفلي حرارته ما تنزل» — a parent
     // saying their child's fever will not come down — produced no hit at any tier.
     PRED_INFANT: [
-      "رضيع", "رضيعي", "مولود", "بيبي", "عمره شهر", "عمره شهرين",
+      // «مولودي» / «مولودتي» — the possessive a parent actually types. The list carried
+      // the bare «مولود» only, and `has` is a substring test, so «مولودي» matched it by
+      // accident of spelling while «مولودتي» did not. Both mean one thing in an inbox,
+      // and the word has no second reading to over-fire on.
+      "رضيع", "رضيعي", "مولود", "مولودي", "مولودتي", "بيبي", "عمره شهر", "عمره شهرين",
       "عمرها شهر", "حديث الولاده",
       "طفلي", "طفلتي", "ولدي", "ابني", "بنتي",
     ],

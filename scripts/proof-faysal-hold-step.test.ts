@@ -50,5 +50,46 @@ c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); await c.say("I need
 ok("English thread: greeting echo stays English", !/[ء-ي]/.test(txt(r)), { scene: r.scene, text: txt(r) });
 c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); r = await c.say("عندي ألم في صدري وأتعرق"); r = await c.say("اسمي محمد الشهري 0551234567");
 ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergency", { scene: r.scene, text: txt(r) });
+// ── the slot the patient asked for, with no pick verb in the message ────────
+// «ليش 5:15؟ انت قلت 4:30» has no «ثبت» to anchor on, so ONLY the negation-head drop
+// can get this right. The version with a verb passes either way, which is exactly why
+// it cannot stand alone as the proof.
+{
+  const c = new Conversation("2026-09-13T10:00:00+03:00"); c.open();
+  await c.say("أبغى أسنان"); await c.say("أنا في الروابي"); await c.say("كاش"); await c.say("متى أقرب موعد؟");
+  const [a, b] = c.s.offeredSlots.map((x: { labelAr: string }) => x.labelAr);
+  const hourOf = (l: string) => (/(\d{1,2}):(\d{2})/.exec(l) ?? [])[1];
+  const r = await c.say(`ليش ${hourOf(b)}:00؟ انت قلت ${a}`);
+  // The assertion is the HOLD, not the text: an "which of the two?" re-ask mentions
+  // both labels, so a text check passes even when nothing was understood.
+  ok("a correction with no pick verb holds the time the patient named", (c.s.heldSlot?.labelAr ?? "") === a, { offered: [a, b], held: c.s.heldSlot?.labelAr, text: txt(r) });
+  ok("…and never the time being questioned", (c.s.heldSlot?.labelAr ?? "") !== b, { held: c.s.heldSlot?.labelAr });
+}
+
+// ── the triage hold: it still blocks, and it stops shouting ─────────────────
+// SPEC-4 §1.5 R2. H-7: a new HARD hit re-fires the frozen rail byte for byte.
+// H-3/H-6: any other later message gets the refusal plus a phone number — the hold
+// blocks committing, never unwinding or helping. Six verbatim sirens in one thread
+// is what two testers named as the moment he stopped being a person.
+{
+  const c = new Conversation("2026-09-11T21:30:00+03:00"); c.open();
+  const first = await c.say("أبوي عنده ألم بصدره وتعرق من عشرين دقيقة");
+  const railText = txt(first);
+  ok("a red flag fires the rail", first.stopReason === "faysal_redflag_emergency" && railText.includes("997"), { scene: first.scene, text: railText });
+  const later = await c.say("لا لا هو بخير الحين، بس يبي كشف عام بكرة");
+  ok("a later turn still blocks the booking", later.stopReason === "faysal_redflag_emergency" && later.scene === "S0_safety" && later.chips.length === 0, { scene: later.scene, stop: later.stopReason });
+  ok("…and is NOT the siren again", txt(later) !== railText, { text: txt(later) });
+  ok("…and still names 997", txt(later).includes("997"), { text: txt(later) });
+  const asked = await c.say("طيب عطني رقم الفرع أتصل عليهم بكرة، أنا بالروابي");
+  ok("a request for the branch number is answered (H-6)", /\d{3}\s?\d{3}\s?\d{4}|920009303/.test(txt(asked)), { text: txt(asked) });
+  ok("…while the hold still blocks", asked.stopReason === "faysal_redflag_emergency", { stop: asked.stopReason });
+  const thanks = await c.say("يعطيك العافية");
+  ok("a thank-you inside the hold is not the siren", txt(thanks) !== railText && thanks.stopReason === "faysal_redflag_emergency", { text: txt(thanks) });
+  const again = await c.say("رجع ألم الصدر وصار يتعرق أكثر");
+  ok("a NEW hard hit re-fires the frozen rail byte for byte (H-7)", txt(again) === railText, { text: txt(again) });
+  const bookNow = await c.say("أكد");
+  ok("nothing books inside the hold, ever", bookNow.scene === "S0_safety" && bookNow.stopReason === "faysal_redflag_emergency", { scene: bookNow.scene });
+}
+
 console.log(`\nFAYSAL HOLD-STEP PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

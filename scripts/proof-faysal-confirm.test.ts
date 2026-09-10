@@ -144,5 +144,83 @@ const GREETINGS = ["مساء الخير", "صباح الخير", "السلام �
 for (const g of GREETINGS) ok(`greeting classifies as greeting_only: «${g}»`, kind(g) === "greeting_only", kind(g));
 ok("a greeting with a request is NOT greeting_only", kind("السلام عليكم ابغى موعد ليزر") !== "greeting_only", kind("السلام عليكم ابغى موعد ليزر"));
 
+// ── the two demo chips, byte-exact ──────────────────────────────────────────
+// They are what a patient TAPS, so they are the one input that must never regress
+// on a classifier edit — and they are literals here, not built from any axis.
+ok("chip «إي، ثبّته» confirms", kind("إي، ثبّته") === "confirm", kind("إي، ثبّته"));
+ok("chip «لا، غيّره» does not confirm and is not silent", kind("لا، غيّره") !== "confirm" && kind("لا، غيّره") !== undefined, kind("لا، غيّره"));
+for (const chip of ["تأمين", "كاش", "الصبح", "بعد العصر", "أقرب موعد", "إي", "لا"]) {
+  ok(`chip «${chip}» classifies deterministically`, cls(chip) !== null, chip);
+}
+
+// ── MUST-NOT-DECLINE, generated from the EXTRACTION axes ────────────────────
+// Independently derived from the decline regex: a negation token is injected into
+// an ordinary booking sentence at each position. None of these is a walk-away —
+// «أبي موعد أسنان بس ما أبي أنتظر» closed the conversation on a patient who was
+// booking, because the negation layer matched anywhere in the message.
+const NEG_TOKENS = ["ما ابي انتظر", "مو متأخر", "لا اطول", "ما اقدر بعد المغرب", "مو بعيد"];
+const ASK_HEADS = ["ابي موعد اسنان", "ابغى جلدية", "احجز لي ليزر", "ابي كشف عام", "موعد اطفال"];
+const ASK_TAILS = ["", " في الروابي", " بكرة الصبح", " كاش", " عندي تأمين بوبا"];
+let notDecline = 0;
+for (const head of ASK_HEADS) {
+  for (const neg of NEG_TOKENS) {
+    for (const tail of ASK_TAILS) {
+      const text = `${head} بس ${neg}${tail}`;
+      notDecline++;
+      ok(`a negation inside a booking ask is not a decline: «${text}»`, kind(text) !== "decline", kind(text));
+    }
+  }
+}
+console.log(`negation-inside-a-request corpus: ${notDecline}`);
+
+// ── every fact in one message ───────────────────────────────────────────────
+// The generated grid: whatever the ordering, all of it must survive the read.
+const G_GREET = ["", "مساء الخير، ", "السلام عليكم "];
+const G_NEED: [string, string][] = [["جلدية", "dermatology"], ["ليزر", "laser"], ["اسنان", "dental"], ["اطفال", "paediatrics"]];
+const G_DISTRICT = ["الروابي", "الورود", "الروضة"];
+const G_PAY: [string, "cash" | "insurance"][] = [["كاش", "cash"], ["عندي تأمين بوبا", "insurance"]];
+const G_FEMALE = ["", "، وأفضّل دكتورة"];
+let grid = 0;
+for (const g of G_GREET) {
+  for (const [needWord, needKey] of G_NEED) {
+    for (const d of G_DISTRICT) {
+      for (const [payWord, payKey] of G_PAY) {
+        for (const f of G_FEMALE) {
+          const text = `${g}أبغى موعد ${needWord} في ${d}، ${payWord}${f}`;
+          const c = cls(text);
+          grid++;
+          ok(
+            `reads the whole message: «${text}»`,
+            !!c && c.need === needKey && c.districtAr === d && c.payment === payKey && c.prefersFemale === (f !== "") && c.kind !== "female_doctor",
+            c && { kind: c.kind, need: c.need, d: c.districtAr, pay: c.payment, f: c.prefersFemale },
+          );
+        }
+      }
+    }
+  }
+}
+console.log(`whole-message grid: ${grid}`);
+// …and the one message that IS only a doctor-gender request still is one.
+ok("«ابي دكتورة» alone is female_doctor", kind("ابي دكتورة") === "female_doctor", kind("ابي دكتورة"));
+ok("«كم سعر الليزر» keeps the laser need", cls("كم سعر الليزر")?.need === "laser" && kind("كم سعر الليزر") === "price_question", cls("كم سعر الليزر"));
+ok("«فيه عرض على الباكج؟» is a package question", kind("فيه عرض على باكج الليزر؟") === "package_question", kind("فيه عرض على باكج الليزر؟"));
+
+// ── courtesy, status, keep, reschedule ──────────────────────────────────────
+for (const t of ["شكرا", "تسلم", "مع السلامة", "تسلم يا فيصل، مع السلامة", "الله يعطيك العافية", "thanks", "thank you, bye", "تمام، الله يسعدك"]) {
+  ok(`courtesy is a close: «${t}»`, kind(t) === "close", kind(t));
+}
+for (const t of ["شكرا بس ابي اغير الوقت", "تسلم، بس وش الأسعار؟", "مشكور، متى أقرب موعد؟"]) {
+  ok(`courtesy PLUS a request is not a close: «${t}»`, kind(t) !== "close", kind(t));
+}
+for (const t of ["موعدي باقي صح؟", "حجزي ثابت؟", "is my appointment still booked?"]) {
+  ok(`booking status: «${t}»`, kind(t) === "booking_status", kind(t));
+}
+for (const t of ["خليه", "خلاص خليه", "لا لا خلاص خليه، نفس الموعد", "keep it"]) {
+  ok(`keep the booking: «${t}»`, kind(t) === "keep_booking", kind(t));
+}
+for (const t of ["ممكن أغير الوقت؟", "أبي أغير الموعد", "ابي وقت ثاني", "change the time please", "reschedule"]) {
+  ok(`reschedule: «${t}»`, kind(t) === "reschedule", kind(t));
+}
+
 console.log(`\nFAYSAL CONFIRM PROOF: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

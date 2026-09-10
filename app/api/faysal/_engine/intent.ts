@@ -58,6 +58,9 @@ export type IntentKind =
   | "handoff"
   | "hours_question"
   | "unsupported_specialty"
+  | "booking_status"
+  | "keep_booking"
+  | "reschedule"
   | "close"
   | "other";
 
@@ -77,6 +80,17 @@ export interface Classification {
   language: "ar" | "en" | "other";
   /** True when the deterministic pass was confident; false means the LLM ran. */
   deterministic: boolean;
+  /** The patient asked for a female clinician ANYWHERE in the message. It is a
+   *  preference that travels with the booking, not an intent that replaces it:
+   *  «أبغى موعد جلدية بكرة الصبح في الروابي وأفضّل دكتورة» is a booking ask. */
+  prefersFemale: boolean;
+  /** The whole message is thanks or goodbye — nothing else in it. */
+  courtesyOnly: boolean;
+  /** The message opens by correcting Faysal («لا، أنا قصدي…», «مو الروابي…»). The
+   *  correction is not a refusal; whatever it names REPLACES what we recorded. */
+  correction: boolean;
+  /** «فيه عرض؟ خصم؟» — asked alongside a price or package question. */
+  offerAsked: boolean;
 }
 
 const EMPTY: Classification = {
@@ -89,6 +103,10 @@ const EMPTY: Classification = {
   preferredWindowAr: null,
   language: "ar",
   deterministic: true,
+  prefersFemale: false,
+  courtesyOnly: false,
+  correction: false,
+  offerAsked: false,
 };
 
 // ── language (§3.1) ─────────────────────────────────────────────────────────
@@ -147,6 +165,12 @@ const CONFIRM_NEGATED = new RegExp(
     "(?:^|\\s)(?:ا)?(?:اكد|ثبت)\\s*لي\\s+(?!(?:ال)?موعد|(?:ال)?حجز)[ء-ي]|" +
     // The one idiom: «ماشي الحال» is «how are things», not a yes.
     "^ماشي الحال",
+);
+/** «تمام بس بعدين», «نعم ولكن», «yes but tomorrow» — a yes that is not yet. It is not
+ *  a confirmation and it is NOT a refusal: counted as a refusal, two of them closed
+ *  the conversation on a patient who was still choosing. */
+const CONFIRM_HEDGE = new RegExp(
+  `^${CONFIRM_LEAD}(?:${CONFIRM_YES})\\s*[،,]?\\s*(?:بس|لكن|ولكن|but|however)(?![ء-يa-z])`,
 );
 /** Not a yes and NOT a no either: a question that opens politely. It must not confirm,
  *  and it must not count as an objection — two objections close the conversation, and
@@ -311,7 +335,37 @@ function findCarrier(raw: string): string | null {
   return carrierNameAr(raw);
 }
 
+/**
+ * A message that is ONLY thanks or goodbye. It must be read as what it is in every
+ * scene: after a confirmed booking «تسلم يا فيصل، مع السلامة» was reaching the
+ * honest-unknown line, and «تمام مشكور» was re-opening the slot list, because
+ * «تمام» is also a yes and «شكرا» was only half-listed. The whole message must be
+ * courtesy — one substantive word anywhere and this is false.
+ */
+const COURTESY_WORDS =
+  "شكرا لك|شكرا|شكر|مشكور|مشكورين|تسلم|تسلمون|الله يسلمك|يعطيك العافيه|الله يعطيك العافيه|الله يسعدك|" +
+  "ما قصرت|جزاك الله خير|بالتوفيق|مع السلامه|في امان الله|تصبح علي خير|الله يجزاك خير|" +
+  "thanks|thank you|thank u|bye|goodbye|good night|see you|appreciate it|🙏|❤️|😊|👍";
+const COURTESY_LEAD = "(?:(?:تمام|خلاص|طيب|اوكي|اوك|زين|ok|okay)\\s*[،,]?\\s*)?";
+const COURTESY_ONLY_RE = new RegExp(
+  `^${COURTESY_LEAD}(?:${COURTESY_WORDS})(?:[،,.!\\s]+(?:${COURTESY_WORDS}|يا فيصل|فيصل|والله))*[،,.!\\s]*$`,
+);
+/** A doctor noun in the message, feminine. «بنت» alone is far too broad — a patient
+ *  saying «بنتي» means their daughter, not a preference about the clinician. */
+const FEMALE_DOCTOR_RE = /(?:^|\s)(?:ال)?(?:دكتوره|دكتورة|طبيبه|اخصائيه|اخصاءيه)(?![ء-ي])|female doctor|lady doctor|woman doctor/;
+/** «لا، أنا قصدي الليزر», «مو الروابي، الروضة»: the head is a negation and the rest
+ *  of the message names something. That is a correction, never a walk-away. */
+const CORRECTION_HEAD_RE = /^(?:لا+\s*)+(?:لا)?\s*(?:انا\s*)?(?:اقصد|قصدي|قلت لك|قلت)?|^(?:مو|مب|موب)\s|(?:^|\s)(?:انا\s*)?(?:اقصد|قصدي|غلط|مو صحيح)(?![ء-ي])|^no,? ?no|^i said|^i meant/;
+
+/**
+ * A coarse window IN THE PATIENT'S OWN WORDS (Rule C4-1 — never a clock time we
+ * then promise). «بعد الساعة 7» is kept verbatim rather than collapsed to «بعد
+ * العصر»: the confirmation prints this string back, and a patient who said "after
+ * seven" and read "after Asr" has been contradicted by his own appointment.
+ */
 function findWindow(t: string): string | null {
+  const clock = /(?:بعد|من)\s*(?:الساعه)?\s*(\d{1,2})(?::(\d{2}))?/.exec(t);
+  if (clock) return `بعد الساعة ${clock[1]}${clock[2] ? `:${clock[2]}` : ""}`;
   if (has(t, "الصبح", "الصباح", "بكره الصبح", "صباحا")) return "الصبح";
   if (has(t, "بعد العصر", "العصر", "بعد الظهر", "المسا", "المساء", "بالليل")) return "بعد العصر";
   return null;
@@ -321,13 +375,46 @@ function findWindow(t: string): string | null {
  * The deterministic pass. Returns `null` when it is NOT confident, which is the
  * only condition under which the model is asked.
  */
-export { CONFIRM_RE, CONFIRM_NEGATED, CONFIRM_BLOCKED };
+export { CONFIRM_RE, CONFIRM_NEGATED, CONFIRM_BLOCKED, CONFIRM_HEDGE };
+
+/**
+ * EVERY FACT IN THE MESSAGE, READ ONCE, REGARDLESS OF THE INTENT.
+ *
+ * The classifier used to return on the first thing it recognised and drop the rest
+ * of the sentence with it. «مساء الخير، أبغى موعد جلدية بكرة الصبح في فرع الروابي،
+ * عندي تأمين بوبا، وأفضّل دكتورة» matched the doctor word, returned `female_doctor`,
+ * and the next turn asked the patient what they need and which district — a patient
+ * who had just said both. Twelve testers hit this; it is the single loudest reason
+ * Faysal reads as a form rather than a person.
+ *
+ * So the facts are extracted first and ride on EVERY classification, including the
+ * model tier's. The `kind` decides what he SAYS; these decide what he KNOWS.
+ */
+function extractFacts(raw: string, t: string): Pick<
+  Classification,
+  "need" | "districtAr" | "carrierRaw" | "payment" | "preferredWindowAr" | "prefersFemale" | "courtesyOnly" | "correction" | "offerAsked"
+> {
+  const carrier = findCarrier(raw);
+  const declaring = has(t, "عندي", "معي", "معاي", "معنا", "تاميني", "بتامين", "علي تامين", "معي بطاقه", "i have", "we have", "we're on", "my insurance");
+  const cash = has(t, "كاش", "نقدا", "ادفع كاش", "cash");
+  return {
+    need: needIn(t),
+    districtAr: findDistrict(raw),
+    carrierRaw: carrier,
+    payment: cash ? "cash" : declaring && carrier ? "insurance" : null,
+    preferredWindowAr: findWindow(t),
+    prefersFemale: FEMALE_DOCTOR_RE.test(t),
+    courtesyOnly: COURTESY_ONLY_RE.test(t),
+    correction: CORRECTION_HEAD_RE.test(t),
+    offerAsked: has(t, "عرض", "عروض", "خصم", "تخفيض", "offer", "discount", "promo"),
+  };
+}
 
 export function classifyDeterministic(raw: string, offeredCount: number): Classification | null {
   const t = normalizeArabic(raw);
   const language = detectLanguage(raw);
-  const base: Classification = { ...EMPTY, language, deterministic: true };
-  if (!t) return { ...base, kind: "other" };
+  const base: Classification = { ...EMPTY, language, deterministic: true, ...extractFacts(raw, t) };
+  if (!t) return { ...EMPTY, language, deterministic: true, kind: "other" };
 
   // Identity — asked sincerely (§1.5). Checked early: it outranks a booking read.
   if (has(t, "انت روبوت", "انت بوت", "انت انسان", "انت ذكاء", "are you a bot", "are you human", "انت مين", "من انت", "انت حقيقي"))
@@ -356,7 +443,6 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   if (has(t, "نتيجه التحليل", "نتيجه الاشعه", "تقريري", "تقرير الاشعه", "التحاليل طلعت", "lab result", "my report"))
     return { ...base, kind: "records" };
 
-  if (has(t, "دكتوره", "طبيبه", "female doctor", "lady doctor")) return { ...base, kind: "female_doctor" };
   if (has(t, "الدكتور زين", "الدكتور شاطر", "احسن دكتور", "افضل دكتور", "is the doctor good", "best doctor"))
     return { ...base, kind: "doctor_quality" };
 
@@ -391,29 +477,29 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // clinic-context requirement is what keeps «من القلب أشكركم» out of it — a bare
   // `includes` on «قلب» fires on gratitude, which is SPEC-4 §2.1's own near-miss.
   if (
-    has(t, "عياده", "عيادة", "دكتور", "طبيب", "قسم", "موعد") &&
-    has(t, "قلب", "قلبيه", "مسالك", "كلي", "اورام", "نفسي", "نفسيه", "سكري", "تجميل", "تخاطب", "علاج طبيعي", "روماتيزم", "عظام", "الركبه", "ركبه", "كتف")
+    (has(t, "عياده", "عيادة", "دكتور", "طبيب", "قسم", "موعد") ||
+      // A bare complaint about a body part we carry no clinic for is the same ask
+      // in a patient's words: «عندي ألم في الركبة من شهر» got the generic
+      // honest-unknown line three times because it named no clinic.
+      has(t, "عندي الم", "يعورني", "يوجعني", "الم في", "الم ب", "وجع")) &&
+    has(t, "قلب", "قلبيه", "مسالك", "كلي", "اورام", "نفسي", "نفسيه", "سكري", "تجميل", "تخاطب", "علاج طبيعي", "روماتيزم", "عظام", "الركبه", "ركبه", "كتف", "الظهر", "ظهري", "المفاصل")
   ) {
     return { ...base, kind: "unsupported_specialty" };
   }
 
   // Price (§5.2). «كم» / «السعر» / «التكلفة».
-  if (has(t, "باقه", "باقات", "package", "packages")) return { ...base, kind: "package_question" };
+  if (has(t, "باقه", "باقات", "باكج", "الباكج", "بكج", "بكجات", "package", "packages") || (base.offerAsked && base.need))
+    return { ...base, kind: "package_question" };
   if (has(t, "كم سعر", "السعر", "بكم", "التكلفه", "كم يكلف", "كم تكلف", "how much", "price", "cost"))
     return { ...base, kind: "price_question" };
 
   // Insurance (§5.2). Distinguish "do you take X?" from "I have X".
-  const carrier = findCarrier(raw);
-  if (has(t, "تامين", "التامين", "insurance") || carrier) {
-    const declaring = has(t, "عندي", "معي", "معاي", "i have", "my insurance is");
-    if (declaring && carrier) return { ...base, kind: "payment", payment: "insurance", carrierRaw: carrier };
-    return { ...base, kind: "insurance_question", carrierRaw: carrier };
-  }
-  if (has(t, "كاش", "نقدا", "ادفع كاش", "cash")) return { ...base, kind: "payment", payment: "cash" };
+  if (base.payment) return { ...base, kind: "payment" };
+  if (has(t, "تامين", "التامين", "insurance") || base.carrierRaw) return { ...base, kind: "insurance_question" };
 
   // Hours / branch status (§2.3, Rule C4-1).
-  if (has(t, "الدوام", "متي تفتحون", "متي يفتح", "مفتوح", "مسكر", "شغالين", "open now", "opening hours"))
-    return { ...base, kind: "hours_question", districtAr: district };
+  if (has(t, "الدوام", "متي تفتحون", "متي يفتح", "مفتوح", "مسكر", "شغالين", "فاتحين", "فاتح", "تفتحون", "دواماتكم", "open now", "are you open", "opening hours"))
+    return { ...base, kind: "hours_question" };
 
   // Confirm / decline — DERIVED, NOT LISTED, and checked BEFORE the slots ask so «ثبّت
   // الموعد» reads as a confirmation rather than as a request for slots. It still sits
@@ -435,7 +521,36 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // Faysal to confirm something else («أكد لي الدوام») is not a yes either — the
   // object gate below requires the confirmation to be bare, or to point at the
   // appointment/booking/it.
-  if (CONFIRM_NEGATED.test(t)) return { ...base, kind: "decline" };
+  // AFTER A BOOKING EXISTS, three ordinary sentences were being read as new
+  // bookings, refusals or noise. They are read as themselves now, before the
+  // confirm block, because «خليه» carries a «لا» and «موعدي باقي؟» carries «موعد».
+  if (has(t, "خليه", "خلاص خليه", "نفس الموعد", "زي ما هو", "زي ماهو", "خله زي ما هو", "leave it", "keep it", "as it is"))
+    return { ...base, kind: "keep_booking" };
+  if (
+    has(t, "موعدي", "حجزي", "موعدي باقي", "my appointment", "still booked", "is it booked", "my booking") &&
+    !has(t, "الغي", "غير", "بدل", "cancel", "change")
+  )
+    return { ...base, kind: "booking_status" };
+  if (has(t, "اغير الوقت", "غير الوقت", "اغير الموعد", "غير الموعد", "ابدل الموعد", "بدل الموعد", "انقل الموعد", "اقدم الموعد", "اخر الموعد", "وقت ثاني", "موعد ثاني", "change the time", "move it", "reschedule", "different time", "another time"))
+    return { ...base, kind: "reschedule" };
+
+  if (CONFIRM_NEGATED.test(t)) {
+    // A NEGATION INSIDE A REQUEST IS A CONSTRAINT ON THE REQUEST, NOT A WALK-AWAY.
+    // The old line returned `decline` on any «لا» / «ما» / «مو» anywhere in the
+    // message, so «أبي موعد أسنان بس ما أبي أنتظر مرة ثانية» — a patient booking —
+    // counted as an objection, and the second one closed the thread on them.
+    const carriesAnAsk =
+      base.need !== null ||
+      base.districtAr !== null ||
+      base.payment !== null ||
+      base.preferredWindowAr !== null ||
+      has(t, "موعد", "احجز", "حجز", "appointment", "book") ||
+      /\d{1,2}(?::\d{2})?/.test(t);
+    if (CONFIRM_HEDGE.test(t)) return { ...base, kind: "objection_delay" };
+    if (!carriesAnAsk) return { ...base, kind: "decline" };
+    // …otherwise fall through and let the ask be read. CONFIRM_RE is anchored at
+    // both ends, so nothing here can be mistaken for a yes on the way down.
+  }
   if (!CONFIRM_BLOCKED.test(t) && (CONFIRM_RE.test(t) || CONFIRM_NAMED_RE.test(t)))
     return { ...base, kind: "confirm", preferredWindowAr: findWindow(t) };
 
@@ -446,8 +561,8 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // «كم سعر الموعد؟» still reads as a price question.
   // A booking ask that names its clinic keeps the clinic: «احجز لي موعد اسنان في
   // الشفا» carries both the district and the need, or the routing has to ask again.
-  if (has(t, "موعد", "المواعيد", "متابعه", "متي اقدر اجي", "احجز", "حجز", "appointment", "book", "slots", "follow up"))
-    return { ...base, kind: "slots_question", districtAr: district, need: needIn(t), carrierRaw: carrier };
+  if (has(t, "موعد", "المواعيد", "متابعه", "متي اقدر اجي", "احجز", "حجز", "appointment", "book", "slots", "times", "what time", "follow up"))
+    return { ...base, kind: "slots_question" };
 
   // The legacy bare-no line (the confirm block above already read the hedges and
   // negations; this catches a plain «لا» that reached here past the slots branch).
@@ -456,18 +571,25 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   const wordEnd = "(?![ء-يa-z0-9])";
   if (new RegExp(`^(?:لا|ما ابي|مو الحين|no|nope|not now)${wordEnd}`).test(t)) return { ...base, kind: "decline" };
 
-  if (has(t, "شكرا", "مشكور", "الله يعطيك العافيه", "thanks", "thank you", "bye", "سلام عليكم فقط"))
-    return { ...base, kind: "close" };
+  // Courtesy is read as courtesy in EVERY scene. The old test was a bare `includes`
+  // on «شكرا», so «شكرا بس أبي أغير الوقت» closed the conversation while «تسلم يا
+  // فيصل، مع السلامة» — which has no «شكرا» in it — did not.
+  if (base.courtesyOnly) return { ...base, kind: "close" };
 
   // A stated need — checked after the specific intents so «كم سعر الليزر» reads as
   // a price question about laser, not as a bare need.
-  for (const row of NEEDS) {
-    if (row.words.some((w) => needWord(t, w))) {
-      return { ...base, kind: "need", need: row.need, districtAr: district, carrierRaw: carrier };
-    }
-  }
+  if (base.need) return { ...base, kind: "need" };
 
-  if (district) return { ...base, kind: "district", districtAr: district };
+  // A doctor-gender request with NOTHING else in the message is its own intent; in
+  // any other message it is a preference carried by `prefersFemale` (§9 turn 10).
+  if (base.prefersFemale) return { ...base, kind: "female_doctor" };
+
+  if (base.districtAr) return { ...base, kind: "district" };
+
+  // A bare window — the «الصبح» / «بعد العصر» chips, and «بعد الساعة ٧». It answers
+  // whatever question is open (the callback window, or which half of the day), so
+  // it is classified deterministically and the scene machine consumes it.
+  if (base.preferredWindowAr) return { ...base, kind: "other" };
 
   // Greeting only — «السلام عليكم» with nothing after it.
   if (GREETING_TOKENS.test(t) && t.split(" ").length <= 6) return { ...base, kind: "greeting_only" };
@@ -529,6 +651,13 @@ function parseClassifierJson(text: string, language: Classification["language"])
     preferredWindowAr: window === "الصبح" || window === "بعد العصر" ? window : null,
     language,
     deterministic: false,
+    // These four are read from the TEXT, never from the model: they are cheap,
+    // exact, and a model that invents «the patient said thank you» would close a
+    // live booking. The model tier only ever supplies the intent label.
+    prefersFemale: false,
+    courtesyOnly: false,
+    correction: false,
+    offerAsked: false,
   };
 }
 
@@ -547,7 +676,7 @@ export async function classify(
   if (quick) return quick;
 
   const language = detectLanguage(raw);
-  if (!isClaudeConfigured()) return { ...EMPTY, kind: "other", language };
+  if (!isClaudeConfigured()) return { ...EMPTY, kind: "other", language, ...extractFacts(raw, normalizeArabic(raw)) };
 
   try {
     const adapter = await getAdapter();
@@ -563,8 +692,21 @@ export async function classify(
       },
       "perception",
     );
-    return parseClassifierJson(result.text, language) ?? { ...EMPTY, kind: "other", language };
+    const parsed = parseClassifierJson(result.text, language);
+    // The model supplies the LABEL; the facts stay deterministic. A model that
+    // decided on its own that the patient said goodbye would close a live booking.
+    const facts = extractFacts(raw, normalizeArabic(raw));
+    if (!parsed) return { ...EMPTY, kind: "other", language, ...facts };
+    return {
+      ...parsed,
+      ...facts,
+      need: parsed.need ?? facts.need,
+      districtAr: parsed.districtAr ?? facts.districtAr,
+      carrierRaw: parsed.carrierRaw ?? facts.carrierRaw,
+      payment: parsed.payment ?? facts.payment,
+      preferredWindowAr: parsed.preferredWindowAr ?? facts.preferredWindowAr,
+    };
   } catch {
-    return { ...EMPTY, kind: "other", language };
+    return { ...EMPTY, kind: "other", language, ...extractFacts(raw, normalizeArabic(raw)) };
   }
 }

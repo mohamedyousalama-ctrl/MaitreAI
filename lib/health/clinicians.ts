@@ -43,6 +43,20 @@ export const CLINICIANS: readonly Clinician[] = Object.freeze([
   c("dr-saadeldin", "د. أميرة سعد الدين", "Amira Saad El-Din", "female", "obgyn", ["ar", "en"], ["wattan-2"], "consultant"),
   c("dr-alzahrani", "د. بدر الزهراني", "Badr Al-Zahrani", "male", "ophthalmology", ["ar", "en"], ["wattan-2"], "specialist"),
   c("dr-mansour", "د. هالة منصور", "Hala Mansour", "female", "paediatrics", ["ar", "en"], ["wattan-2"], "specialist"),
+  // «أبغى كشف عام» is the commonest way a patient opens, and the §6.2 matrix reads
+  // `named_at_site` for family medicine at Ar Rawabi and at Shoaa Al Wurud. The
+  // roster contradicted it: general practice was staffed only at Al Yamamah, Ar
+  // Rabwah and Ash Shifa — precisely the three sites Rule HRS-DEMO does not seed —
+  // so the capability gate opened onto an empty roster, and a patient standing in
+  // Ar Rawabi asking for the commonest service in the building was told the branch
+  // was still confirming its hours. The gap was here, not in hours.ts, and every
+  // sentence downstream of it was therefore false about the wrong thing.
+  //
+  // A woman AND a man at each of the three, because «أبغى دكتورة» is a filter
+  // (Rule DOC-1) and a filter that empties the day at a site is a refusal wearing
+  // a filter's clothes.
+  c("dr-alanazi", "د. لطيفة العنزي", "Latifa Al-Anazi", "female", "general_family", ["ar", "en"], ["wattan-2"], "specialist"),
+  c("dr-aljasser", "د. سلطان الجاسر", "Sultan Al-Jasser", "male", "general_family", ["ar", "en"], ["wattan-2"], "general_practitioner"),
 
   // ── wattan-3 — Ar Rabwah: endodontics ─────────────────────────────────────
   c("dr-alansari", "د. وليد الأنصاري", "Waleed Al-Ansari", "male", "endodontics", ["ar", "en"], ["wattan-3"], "consultant"),
@@ -63,11 +77,15 @@ export const CLINICIANS: readonly Clinician[] = Object.freeze([
   c("dr-abdeljalil", "د. أنس عبد الجليل", "Anas Abdel-Jalil", "male", "paediatrics", ["ar", "en", "ur"], ["shoaa-wurud"], "consultant"),
   c("dr-alqarni", "د. رنا القرني", "Rana Al-Qarni", "female", "dermatology", ["ar", "en"], ["shoaa-wurud"], "specialist", ["laser_aesthetics"]),
   c("dr-bashir", "د. عثمان بشير", "Othman Bashir", "male", "employment_medicals", ["ar", "en", "ur"], ["shoaa-wurud", "shoaa-rawdah"], "specialist"),
+  c("dr-alsuwailem", "د. غادة السويلم", "Ghada Al-Suwailem", "female", "general_family", ["ar", "en"], ["shoaa-wurud"], "specialist"),
+  c("dr-albarrak", "د. خالد البراك", "Khalid Al-Barrak", "male", "general_family", ["ar", "en"], ["shoaa-wurud"], "general_practitioner"),
 
   // ── shoaa-rawdah — Ar Rawdah ──────────────────────────────────────────────
   c("dr-aldakhil", "د. هيفاء الدخيل", "Haifa Al-Dakhil", "female", "paediatrics", ["ar", "en"], ["shoaa-rawdah"], "consultant"),
   c("dr-alnour", "د. مصعب النور", "Musab Al-Nour", "male", "internal_medicine", ["ar", "en"], ["shoaa-rawdah"], "specialist"),
   c("dr-alfahad", "د. جواهر الفهد", "Jawaher Al-Fahad", "female", "dentistry", ["ar", "en"], ["shoaa-rawdah"], "specialist"),
+  c("dr-alhumaidi", "د. أروى الحميدي", "Arwa Al-Humaidi", "female", "general_family", ["ar", "en"], ["shoaa-rawdah"], "specialist"),
+  c("dr-alsudairi", "د. مشعل السديري", "Mishal Al-Sudairi", "male", "general_family", ["ar", "en"], ["shoaa-rawdah"], "general_practitioner"),
 ]);
 
 function c(
@@ -195,6 +213,11 @@ const CODE_TO_EVIDENCE: Record<Code, SpecialtyEvidence> = {
  * so it is stamped as invented — accepted ONLY under DEMO_MODE, exactly like a
  * `demo_seeded` hours record, and never spoken as an Al Wattan fact.
  *
+ * Family medicine joins the list for exactly the reason the other four are on it,
+ * and for no new one: Ar Rawdah now carries two invented family-medicine
+ * clinicians, and without a row here they would be a roster nobody can book —
+ * the mirror image of the defect the Ar Rawabi entries above were added to fix.
+ *
  * Shoaa Al Wurud's OB-GYN is deliberately NOT on this list: re-adding it here
  * would smuggle back the path the S10 downgrade above removed on purpose.
  */
@@ -203,6 +226,7 @@ const DEMO_SEEDED_CAPABILITY: ReadonlyArray<{ siteId: SiteId; specialty: Special
   { siteId: "shoaa-rawdah", specialty: "internal_medicine" },
   { siteId: "shoaa-rawdah", specialty: "dentistry" },
   { siteId: "shoaa-rawdah", specialty: "employment_medicals" },
+  { siteId: "shoaa-rawdah", specialty: "general_family" },
 ]);
 
 export function specialtyEvidence(siteId: SiteId, specialty: SpecialtyKey): SpecialtyEvidence {

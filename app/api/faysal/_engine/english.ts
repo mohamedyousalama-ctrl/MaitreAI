@@ -48,6 +48,7 @@ export const EN = {
   match: (branch: string, reason: string) => `The one that suits you is ${branch} — ${reason}.`,
 
   discoverShort: "Which district are you in, and is the visit on insurance or cash?",
+  discoverPayment: "One last thing: is the visit on insurance or cash?",
 
   insurance: (insurer: string) =>
     `Your ${insurer} network class and deductible come from your own card, and reception verifies them before the consultation.\n` +

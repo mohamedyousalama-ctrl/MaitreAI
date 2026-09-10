@@ -32,7 +32,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { REAL_CONTACTS, RAIL_STOP_REASON, emergencyRailText, readRedFlag, snapshotOfStore, storeFromSnapshot } from "../_domain";
+import { REAL_CONTACTS, RAIL_STOP_REASON, SITES, emergencyRailText, readRedFlag, siteInDistrict, snapshotOfStore, storeFromSnapshot } from "../_domain";
 import { classify, type Classification } from "../_engine/intent";
 import { compose } from "../_engine/render";
 import { consumeSpendGuard, clientIp, preFilter } from "../_engine/guard";
@@ -63,6 +63,17 @@ function payload(sessionId: string, r: Reply) {
     stopReason: r.stopReason,
     scene: r.scene,
   });
+}
+
+/**
+ * The number handed over inside a triage hold. Read straight off the raw text with
+ * the domain's own district resolver — no classifier, no model, no session state, so
+ * it cannot be influenced by anything the hold is meant to block. A district we do
+ * not recognise falls back to the group's unified line, which is never wrong.
+ */
+function heldBranchPhone(raw: string): string {
+  const siteId = siteInDistrict(raw);
+  return siteId ? SITES[siteId].phoneAr : REAL_CONTACTS.unified;
 }
 
 export async function POST(req: Request) {
@@ -120,16 +131,19 @@ export async function POST(req: Request) {
     });
   }
 
-  // The hold survives the turn that set it. Every later inbound in this thread
-  // gets the rail again — including "never mind, I'm fine".
+  // The hold survives the turn that set it. Every later inbound in this thread is
+  // still refused a booking — including "never mind, I'm fine".
+  //
+  // WHAT IT SAYS CHANGED; WHAT IT DOES DID NOT. A new HARD hit re-fires the frozen
+  // rail byte for byte (§1.5 R2 H-7). Anything else — a thank-you, «هو بخير الحين»,
+  // «عطني رقم الفرع» — gets §5.3's refusal plus the branch number, because H-6 says
+  // a held patient «may always be handed a phone number. The hold blocks committing,
+  // never unwinding or helping», and six verbatim sirens in one thread is not help.
   if (session.triageHold) {
     const held = readRedFlag(raw);
-    const railText = compose(
-      emergencyRailText(
-        held.fired ? held : { fired: true, cls: session.triageClass, tier: "emergency", ruleId: "triage_hold", label: null },
-      ),
-      { isRail: true },
-    );
+    const railText = held.fired
+      ? compose(emergencyRailText(held), { isRail: true })
+      : compose(S.holdTurn(heldBranchPhone(raw)), { isRail: true });
     pushHistory(session, "user", raw);
     pushHistory(session, "assistant", railText);
     return NextResponse.json({

@@ -363,8 +363,11 @@ ${DEMO_1_C}`;
  * (fasting, stopping a medication, shaving an area, avoiding sun) unless it is a
  * loaded, clinician-authored field on the appointment type.
  */
-export const motionPreVisit = (arrivalBuffer: number = OPS.arrivalBufferMinutes) =>
-  `تجيب معك الهوية أو الإقامة وبطاقة التأمين، وتحاول توصل قبل الموعد بـ ${arrivalBuffer} دقيقة عشان إجراءات الاستقبال.
+export const motionPreVisit = (arrivalBuffer: number = OPS.arrivalBufferMinutes, payment: "insurance" | "cash" | null = null) =>
+  // A patient who said «كاش» was still being told to bring an insurance card. It is
+  // a small line and it is the last thing they read, so it is the line that decides
+  // whether the whole confirmation sounds like it was written for them.
+  `تجيب معك ${payment === "cash" ? "الهوية أو الإقامة" : "الهوية أو الإقامة وبطاقة التأمين"}، وتحاول توصل قبل الموعد بـ ${arrivalBuffer} دقيقة عشان إجراءات الاستقبال.
 وأي تعديل بعدين، ترد هنا على نفس المحادثة وأنا أتابع معك.`;
 
 /**
@@ -373,8 +376,8 @@ export const motionPreVisit = (arrivalBuffer: number = OPS.arrivalBufferMinutes)
  * (SPEC-1 §4.6). Telling someone to arrive early for an appointment that does not
  * exist is the same defect as rendering a provisional time, one message later.
  */
-export const PRE_VISIT_CALLBACK =
-  `لما يتصلون ويثبتون الوقت، تجيب معك الهوية أو الإقامة وبطاقة التأمين.
+export const preVisitCallback = (payment: "insurance" | "cash" | null = null) =>
+  `لما يتصلون ويثبتون الوقت، تجيب معك ${payment === "cash" ? "الهوية أو الإقامة" : "الهوية أو الإقامة وبطاقة التأمين"}.
 وأي تعديل بعدين، ترد هنا على نفس المحادثة وأنا أتابع معك.`;
 
 // ── §7 — scene strings ─────────────────────────────────────────────────────
@@ -383,6 +386,54 @@ export const sceneFollowup = (firstName: string, branch: string) =>
   `هلا ${firstName}. زيارتك في ${branch} تمت أمس — تحتاج أي شي متعلق بها، موعد متابعة أو تعديل؟`;
 
 export const SCENE_CLOSE = "تم. أي شي ثاني تحتاجه، أنا هنا.";
+
+/**
+ * THE BOOKING IS MADE AND THE PATIENT SAID THANK YOU. He was answering that with
+ * «ما أقدر أأكدها لك من عندي» — the honest-unknown line — or, worse, with a fresh
+ * slot list that placed a SECOND hold. A person who has just booked someone says
+ * the appointment back to them and lets them go.
+ */
+export const bookingStands = (slot: string, branch: string, clinic: string) =>
+  `إي، باقي زي ما هو: ${slot} في ${branch} عند ${clinic}.
+وأي تعديل، رد هنا وأنا أعدّله لك.`;
+export const bookingStandsCallback = (branch: string) =>
+  `طلبك مسجّل في ${branch} والفرع يتصل عليك يثبّت الوقت.
+وأي تعديل، رد هنا وأنا أتابع معك.`;
+export const NO_BOOKING_YET = `ما عندي حجز مثبّت لك في هذي المحادثة.
+تبيني أشوف لك أقرب موعد؟`;
+export const closeBooked = (slot: string, branch: string) =>
+  `الله يسلمك. موعدك ${slot} في ${branch}، ونشوفك على خير.`;
+export const closeBookedPlain = (slot: string, branch: string) =>
+  `تم. موعدك ${slot} في ${branch}، وأي شي ثاني أنا هنا.`;
+export const CLOSE_BOOKED_CALLBACK =
+  "تم. طلبك مسجّل والفرع يتصل عليك يثبّت الوقت، وأي تعديل رد هنا.";
+
+/** «أبي أغير الوقت» after a confirmed booking. The current appointment is said
+ *  back FIRST — a patient who is not sure what they have cannot choose. */
+export const rescheduleOffer = (current: string, a: string, b: string) =>
+  `أكيد. موعدك الحالي ${current}.
+عندي بداله:
+• ${a}
+• ${b}
+أي وقت أنقله له؟`;
+export const rescheduleNoAlternative = (current: string, branchPhone: string) =>
+  `موعدك الحالي ${current}، وما لقيت له بديل مثبّت من عندي.
+تتصل على ${branchPhone} والاستقبال ينقله لك، وأنا موجود هنا.`;
+
+/** Two offered times, both named in one message («4:30 ولا 5:15؟»). Faysal must not
+ *  guess: he holds NOTHING and asks which. */
+export const whichOfTwo = (a: string, b: string) => `أي وقت أثبّت لك: ${a} ولا ${b}؟`;
+
+/** A complaint while a slot is held or booked. The held time is NEVER re-searched
+ *  away (that silently lost the 4:30 a patient had just fought for), and no
+ *  wait-time is promised — only a route to a human. */
+// «وأنا أتابع معهم» narrates an action with a third party that has not happened —
+// §8.1 #22 escalation_pre_claim, the same rule that keeps the handoff line from
+// being said before the handoff fires. What he can honestly promise is that this
+// thread stays open and that the branch has a number.
+export const complaintRoute = (branchPhone: string) =>
+  `وإذا وصلت وصار تأخير عند الاستقبال، رد هنا على نفس المحادثة وأنا أتابع معك، أو تتصل على ${branchPhone}.`;
+export const COMPLAINT_OWN_IT_AGAIN = "معك حق، وأعتذر لك.";
 
 // ── §8.2 — the universal fallback ──────────────────────────────────────────
 
@@ -398,11 +449,41 @@ export const fallbackHonestUnknown = (concreteAlternative: string) =>
 // ── refusals from §8.1, in-voice ───────────────────────────────────────────
 
 export const CLINICAL_DIAGNOSIS_REFUSAL = "ما أقدر أقول لك وش السبب — هذا شغل الدكتور، وأنا أوصّلك له بأسرع موعد.";
+
 export const DRUG_NAMING_REFUSAL = "الدواء يكتبه الدكتور بعد الكشف.";
 export const TREATMENT_ADVICE_REFUSAL =
   "ما أعطي إرشادات علاجية. لو الوضع يزيد، الطوارئ أقرب لك من الموعد.";
+/**
+ * A LATER TURN INSIDE AN OPEN TRIAGE HOLD (SPEC-4 §1.5 R2, H-3 and H-6).
+ *
+ * The first message of a red flag is §4.2's frozen rail, byte for byte, and it stays
+ * that way. What changed is turn three: the full four-line siren was re-sent verbatim
+ * for «شكرا», for «يعطيك العافية», and for «عطني رقم الفرع أتصل عليهم بكرة» — six
+ * identical copies in one thread. Two testers named that as the moment he stopped
+ * being a person, and H-6 is explicit that a patient under a hold «may always be
+ * handed a phone number. The hold blocks committing, never unwinding or helping.»
+ *
+ * So the hold is unchanged — no booking, no slot, no chips, the same stopReason and
+ * the same S0_safety scene — and only the WORDS change: §5.3's own refusal with the
+ * booking clause removed, the emergency route restated, and the number they asked
+ * for. A new HARD hit re-fires the byte-exact rail (H-7), which the route enforces.
+ *
+ * WORDING PROVENANCE: assembled from sentences already frozen in SPEC-2 §5.1/§5.3;
+ * it introduces no new clinical claim. It is nonetheless a rail-adjacent string and
+ * is recorded in docs/faysal/AUDIT-WAVE2.md for the §12 row 4 clinician review.
+ */
+export const holdTurn = (branchPhone: string) =>
+  `${TREATMENT_ADVICE_REFUSAL}
+997 و الطوارئ موجودين لك الحين، وما أقدر أثبّت لك موعد والوضع كذا.
+ورقم الفرع لو تحتاجه: ${branchPhone}.`;
+
 export const GUARANTEED_OUTCOME_REFUSAL =
   "النتيجة تختلف من حالة لحالة، والدكتور يقول لك المتوقع بعد التقييم.";
+/** The same promise-nothing sentence, shortened to ride at the END of a reply that
+ *  is doing something else. §9 turn 10's shape: the booking moves, the preference
+ *  is noted out loud, and nothing about a specific clinician is claimed. */
+export const GENDER_NOTED =
+  "وطلبك يكون مع دكتورة مسجّل، والاستقبال يثبّته وقت الحجز — ولو ما توفرت، أعطيك وقت ثاني بدل ما تجي وتتفاجأ.";
 export const GENDER_CARE_HONESTY =
   "وبخصوص طلب دكتورة: هذا ما أأكده من عندي — أثبته مع الاستقبال وقت الحجز ويوصلك في التأكيد. لو ما توفرت، أعطيك وقت ثاني، ما أخليك تجي وتتفاجأ.";
 export const RECORDS_OVER_CHAT_REFUSAL =
