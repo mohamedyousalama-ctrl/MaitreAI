@@ -55,7 +55,7 @@ import {
 } from "../_domain";
 import { EN } from "./english";
 import { compose } from "./render";
-import { classifyDeterministic, nameShaped } from "./intent";
+import { classifyDeterministic, detectLanguage, nameInConfirm, nameShaped } from "./intent";
 import type { Classification } from "./intent";
 import type { FaysalSession } from "./session";
 import * as S from "./strings";
@@ -113,11 +113,23 @@ function reply(s: FaysalSession, msgs: OutMsg[], chips: string[] = [], stopReaso
 }
 
 /** The question currently open in this thread, for a greeting echo to nudge back to. */
-function openQuestionFor(s: FaysalSession): string | null {
-  if (s.scene === "S6_close" && s.holdId) return "أثبّت لك الموعد اللي ماسكه لك؟";
-  if (s.scene === "S5_slots" && s.offeredSlots.length) return "أي وقت أثبّت لك؟";
-  if (s.awaitingCallbackWindow) return "الصبح ولا بعد العصر؟";
-  if (s.scene === "S3_route" || s.scene === "S4_insurance") return "الزيارة تأمين ولا كاش؟";
+/** The language of the last SUBSTANTIVE user message before this one — greetings and
+ *  one-word replies decide nothing; the tie-break is Arabic (§3.1). */
+function threadLanguage(s: FaysalSession, current: string): "ar" | "en" | "other" {
+  const users = s.history.filter((h) => h.role === "user").map((h) => h.content);
+  if (users.length && users[users.length - 1] === current) users.pop();
+  for (let i = users.length - 1; i >= 0; i--) {
+    const text = users[i];
+    if ((text.match(/[A-Za-z؀-ۿ]/g) ?? []).length >= 6) return detectLanguage(text);
+  }
+  return "ar";
+}
+function openQuestionFor(s: FaysalSession, language: "ar" | "en" | "other" = "ar"): string | null {
+  const en = language === "en";
+  if (s.scene === "S6_close" && s.holdId) return en ? "Shall I confirm the appointment I am holding for you?" : "أثبّت لك الموعد اللي ماسكه لك؟";
+  if (s.scene === "S5_slots" && s.offeredSlots.length) return en ? "Which time shall I book?" : "أي وقت أثبّت لك؟";
+  if (s.awaitingCallbackWindow) return en ? "Morning, or after Asr?" : "الصبح ولا بعد العصر؟";
+  if (s.scene === "S3_route" || s.scene === "S4_insurance") return en ? "Is the visit on insurance or cash?" : "الزيارة تأمين ولا كاش؟";
   return null;
 }
 /** The chips that were on screen for the open question, re-offered unchanged. */
@@ -583,7 +595,9 @@ function dispatch(
   // yes, no, question, greeting or slot pick is handled by its own branch; only a
   // message the rules could not read is tried as a name.
   if (s.scene === "S6_close" && s.holdId && classifyDeterministic(raw, s.offeredSlots.length) === null) {
-    const named = nameShaped(normalizeArabic(raw));
+    // Positive signal required (a mobile, or «اسمي»/«انا»/«باسم»): an unread message
+    // with neither is NOT a name — see the `default` branch, which re-asks instead.
+    const named = nameShaped(raw);
     if (named) {
       s.patientNameAr = named.nameAr;
       return confirmHeld(s, now, store);
@@ -724,7 +738,11 @@ function dispatch(
       return pickSlot(s, cls.slotPick ?? 1, language, now, store);
 
     case "confirm": {
-      if (s.scene === "S6_close" && s.holdId) return confirmHeld(s, now, store);
+      if (s.scene === "S6_close" && s.holdId) {
+        const named = nameInConfirm(raw); // «ثبته باسم محمد الشهري»
+        if (named) s.patientNameAr = named.nameAr;
+        return confirmHeld(s, now, store);
+      }
       if (s.scene === "S9_expand" && s.offeredSlots.length) return pickSlot(s, 1, language, now, store);
       if (s.awaitingCallbackWindow) {
         const win = cls.preferredWindowAr ?? readWindow(raw);
@@ -799,9 +817,21 @@ function dispatch(
       // Faysal's own greeting got introduced to Faysal twice in a row — driven on
       // a real phone at 02:00. Mirror the greeting, then nudge back to whatever
       // was open, and re-offer the same chips so the thread does not lose its place.
-      return reply(s, [faysal(s, S.greetingEcho(raw, openQuestionFor(s)))], chipsFor(s));
+      {
+        // A bare greeting carries no language of its own («hello again» is five Latin
+        // letters — under the §3.1 threshold), so the echo speaks the language of the
+        // thread's last substantive message, not the tie-break.
+        const lang = language === "en" ? "en" : threadLanguage(s, raw);
+        return reply(s, [faysal(s, S.greetingEcho(raw, openQuestionFor(s, lang), lang))], chipsFor(s));
+      }
 
     default: {
+      // A live hold and a message the rules could not read: the honest move is to say
+      // so and ask the open question AGAIN with its chips — never to guess a yes, and
+      // never to book the message as a name (the first version did exactly that).
+      if (s.scene === "S6_close" && s.holdId) {
+        return reply(s, [faysal(s, language === "en" ? EN.holdReask : S.HOLD_REASK)], chipsFor(s));
+      }
       // §8.2 — the universal fallback. `{concrete_alternative}` is always a branch
       // phone, a booking he CAN make, or an offered handoff. Never "check the
       // website", never "try again later", never nothing.

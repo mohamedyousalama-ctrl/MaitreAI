@@ -26,7 +26,7 @@
 // ============================================================================
 
 import { getAdapter, isClaudeConfigured } from "@/lib/ai/llm";
-import { NEED_PLANS, SITES, carrierNameAr, normalizeArabic, siteInDistrict, type DemoNeed } from "../_domain";
+import { NEED_PLANS, SITES, carrierNameAr, foldDigits, normalizeArabic, siteInDistrict, type DemoNeed } from "../_domain";
 import { FAYSAL_MAX_HISTORY } from "./limits";
 
 export type IntentKind =
@@ -98,66 +98,137 @@ const EMPTY: Classification = {
 // «ة» to «ه», no tashkeel. The boundary is a negative lookahead for a letter or
 // digit, never `\b` (ASCII-only in JS; never matched an Arabic token).
 const CONFIRM_WORD_END = "(?![ء-يa-z0-9])";
-/** Bare-yes tokens: a whole reply on their own. */
-const CONFIRM_YES = "اي|ايه|ايوه|ايوا|نعم|تمام|زين|اوك|اوكي|اوكيه|اكيد|موافق|ماشي|ابشر|يلا|يالله|ok|okay|okey|yes|yep|yeah|sure";
+/** Bare-yes tokens and yes-idioms: a whole reply on their own. «ما عندي مانع» and
+ *  «ما فيه مشكله» are yeses that happen to start with «ما» — which is why the
+ *  negation layer below does not treat a bare «ما» as a no. */
+const CONFIRM_YES =
+  "اي|ايه|ايوه|ايوا|نعم|تمام|زين|طيب|خلاص|تم|صح|اوك|اوكي|اوكيه|اكيد|موافق|ماشي|ابشر|يلا|يالله|" +
+  "ان شاء الله|انشالله|انشاء الله|ما عندي مانع|ما فيه مشكله|ما في مشكله|" +
+  "ok|okay|okey|yes|yep|yeah|sure|fine|tamam|yalla|inshallah|go ahead|no problem|👍|✅|👌";
 /** Verb stems that mean "go ahead and lock it": أكد / ثبت / اعتمد / كمل / احجز, with
- *  the imperative prefix «ا» optional and the object suffix optional. */
+ *  the imperative prefix «ا» optional and the object optional — «ثبته», «ثبت لي»,
+ *  «ثبته الموعد», «اكد الموعد لي». */
 const CONFIRM_STEM = "(?:ا)?(?:اكد|ثبت|اعتمد|كمل|حجز|احجز)";
-const CONFIRM_OBJ = "(?:ه|ها|لي|ه لي|الموعد|الحجز|it)?";
+const CONFIRM_OBJ = "(?:\\s*(?:ه|ها|it))?(?:\\s*لي)?(?:\\s*(?:الموعد|الحجز|the appointment))?(?:\\s*لي)?";
 /** Nominal forms: «تأكيد» / «تثبيت» / «اعتماد» as a one-word reply. */
-const CONFIRM_NOUN = "(?:تاكيد|تثبيت|اعتماد|confirm|confirmed|book)";
-/** Optional leading particles a patient glues on: «و», «ف», «ايه،», «تمام،». */
-const CONFIRM_LEAD = "(?:(?:و|ف)\\s*|(?:اي|ايه|ايوه|تمام|زين|اوك|اوكي)\\s*[،,]?\\s*)?";
-const CONFIRM_RE = new RegExp(
-  `^${CONFIRM_LEAD}(?:(?:${CONFIRM_YES})${CONFIRM_WORD_END}|${CONFIRM_STEM}${CONFIRM_OBJ}${CONFIRM_WORD_END}|${CONFIRM_NOUN}${CONFIRM_WORD_END})`,
-);
-/** Anything that turns a yes into a no or a not-yet, or asks Faysal to confirm
- *  something OTHER than the held appointment. Checked before CONFIRM_RE. */
+const CONFIRM_NOUN = "(?:تاكيد|تثبيت|اعتماد|confirm|confirmed|book it)";
+/** Leading particles a patient glues on, at most two: «و», «ف», «ايه،», «تمام،»,
+ *  «انا», «ان شاء الله». */
+const CONFIRM_LEAD =
+  "(?:(?:و|ف)\\s*|(?:اي|ايه|ايوه|تمام|زين|طيب|خلاص|اوك|اوكي|انا|ان شاء الله|انشالله|ما شاء الله|يعطيك العافيه)\\s*[،,]?\\s*){0,2}";
+/** What may follow a yes without changing it: thanks, his name, a smiley, a full
+ *  stop. NOT a question mark — «أثبته؟» is a question — and NOT another clause:
+ *  «اكد بس بكرا», «ثبته وابي اغير الفرع», «احجز لي موعد اسنان في الشفا» all carry
+ *  a tail that is not on this list, so the anchored pattern below refuses them. The
+ *  first version had no end anchor and confirmed every one of those. */
+const CONFIRM_TAIL_WORDS =
+  "شكرا لك|شكرا|مشكور|تسلم|يا فيصل|فيصل|الله يعطيك العافيه|يعطيك العافيه|الله يسلمك|ان شاء الله|انشالله|please|pls|thanks|thank you|🙏|👍|✅|❤️|😊";
+const CONFIRM_TAIL = `(?:\\s*[،,.!]?\\s*(?:${CONFIRM_TAIL_WORDS})){0,3}\\s*[،,.!]*\\s*`;
+const CONFIRM_CORE = `(?:(?:${CONFIRM_YES})${CONFIRM_WORD_END}|${CONFIRM_STEM}${CONFIRM_OBJ}${CONFIRM_WORD_END}|${CONFIRM_NOUN}${CONFIRM_WORD_END})`;
+/** The WHOLE message is a yes: lead(s), one or two yes-cores, a courtesy tail. Anchored
+ *  at both ends on purpose (see CONFIRM_TAIL). */
+const CONFIRM_RE = new RegExp(`^${CONFIRM_LEAD}${CONFIRM_CORE}(?:\\s*[،,]?\\s+${CONFIRM_CORE})?${CONFIRM_TAIL}$`);
+/** «ثبته باسم محمد الشهري» — a yes that carries the name to book under. The name
+ *  itself is cut from the raw text by `nameInConfirm`. */
+const CONFIRM_NAMED_RE = new RegExp(`^${CONFIRM_LEAD}${CONFIRM_STEM}${CONFIRM_OBJ}\\s*(?:باسم|علي اسم|تحت اسم|under the name|for)\\s+\\S`);
+/** A no, a not-now, a change request or a consult-first, anywhere → decline. Every
+ *  token is word-bounded: «مو» must not fire inside «موعد», «لا» not inside «لازم». */
 const CONFIRM_NEGATED = new RegExp(
-  // A no, a not-now, or a not-me anywhere in the message.
-  "(?:^|\\s)(?:لا|ما|مو|مب|موب|ماني|ما ابي|ما ابغي|مو الحين|مب الحين|بعدين|لاحقا|خلني افكر)(?:\\s|$)|" +
-  // A yes followed by «بس» is a hedge, whatever follows the «بس»: «تمام بس بعدين»,
-  // «اوكي بس خلني اشوف», «إي بس غالي».
-  `^(?:${CONFIRM_YES})\\s*[،,]?\\s*بس(?![ء-ي])|` +
-  // A yes followed by a question word is a question that happens to start politely:
-  // «تمام وش الأسعار؟», «زين الدكتور؟» is «is the doctor good?».
-  `^(?:${CONFIRM_YES})\\s*[،,]?\\s*(?:وش|ايش|كم|متي|وين|هل|ليش|مين|كيف)${CONFIRM_WORD_END}|` +
-  // «أي» the question word («تمام أي وقت») folds to the same letters as «إي» the yes
-  // («إي، إي»). It is a question only when a non-yes word follows it.
-  `^(?:${CONFIRM_YES})\\s*[،,]?\\s*اي\\s+(?!(?:${CONFIRM_YES}|${CONFIRM_STEM})${CONFIRM_WORD_END})[ء-ي]|` +
-  // Anything that starts with a yes/stem and ENDS with a question mark is the
-  // patient asking, not deciding: «أثبته؟», «confirm?», «زين الدكتور؟».
-  `^(?:(?:${CONFIRM_YES})|${CONFIRM_STEM}${CONFIRM_OBJ}|${CONFIRM_NOUN}).*[؟?]\\s*$|` +
-  // «أكد لي الدوام» / «ثبت لي السعر» — an object that is not the booking.
-  "(?:^|\\s)(?:ا)?(?:اكد|ثبت)\\s*لي\\s+(?!الموعد|الحجز)[ء-ي]|" +
-  // The one idiom: «ماشي الحال» is «how are things», not a yes.
-  "^ماشي الحال",
+  `(?:^|\\s)(?:لا|مو|مب|موب|ماني|ما ابي|ما ابغي|ما اقدر|ما يناسب|ما ينفع|مو الحين|مب الحين|بعدين|لاحقا|خلني افكر|خلني اشوف|اشاور|بشوف|ارد عليك|اردلك|بردلك|not now|later|no(?!\\s*problem))${CONFIRM_WORD_END}|` +
+    // A yes followed by «بس»/«لكن»/«but» is a hedge, whatever follows: «تمام بس
+    // بعدين», «نعم ولكن ابي اغير الفرع», «yes but tomorrow». A confirm STEM with a
+    // hedge («اكد بس بكرا») is not listed on purpose: the anchored CONFIRM_RE already
+    // refuses it, and "yes-but-tomorrow" is a not-yet to re-ask about, not a no.
+    `^${CONFIRM_LEAD}(?:${CONFIRM_YES})\\s*[،,]?\\s*(?:بس|لكن|ولكن|but|however)(?![ء-يa-z])|` +
+    // A change request anywhere — «غيّره» is the demo's own chip word: «تمام غيره»,
+    // «ثبته وابي اغير الفرع», «ايه غير الوقت».
+    `(?:^|\\s)(?:ا)?(?:غير|غيره|غيرها|غيرلي|اغير|تغير|بدل|بدله|بدلها|ابدل|change)${CONFIRM_WORD_END}|` +
+    // «أكد لي الدوام» / «ثبت لي السعر» — an object that is not the booking.
+    "(?:^|\\s)(?:ا)?(?:اكد|ثبت)\\s*لي\\s+(?!(?:ال)?موعد|(?:ال)?حجز)[ء-ي]|" +
+    // The one idiom: «ماشي الحال» is «how are things», not a yes.
+    "^ماشي الحال",
 );
-
+/** Not a yes and NOT a no either: a question that opens politely. It must not confirm,
+ *  and it must not count as an objection — two objections close the conversation, and
+ *  two ordinary questions did exactly that in the first version. It falls through to
+ *  the branches below (slots, price, …) or to the model tier. Most of this is already
+ *  refused by CONFIRM_RE's end anchor; the guard that still bites is the question mark
+ *  on a NAMED confirm — «ثبته باسم زوجتي؟» is a question about whose name goes on it. */
+const CONFIRM_BLOCKED = new RegExp(
+  // «تمام وش الأسعار», «زين الدكتور؟», «ايوه وين الفرع».
+  `^${CONFIRM_LEAD}(?:${CONFIRM_YES})\\s*[،,]?\\s*(?:وش|ايش|كم|متي|وين|هل|ليش|مين|كيف)${CONFIRM_WORD_END}|` +
+    // «أي» the question word («اي وقت», «تمام أي وقت») folds to the same letters as «إي»
+    // the yes («إي، إي ثبّته»). It is a question only when a non-yes word follows it.
+    `^${CONFIRM_LEAD}اي\\s+(?!(?:${CONFIRM_YES}|${CONFIRM_STEM}${CONFIRM_OBJ}|${CONFIRM_NOUN}|${CONFIRM_TAIL_WORDS})${CONFIRM_WORD_END})[ء-ي]|` +
+    // Anything that ends with a question mark is the patient asking, not deciding.
+    "[؟?]\\s*$",
+);
 
 const GREETING_TOKENS =
   // NOT `\\b`. It is ASCII-word-based in JS, so after an Arabic letter there is never a
   // boundary and this regex could not match a single Arabic greeting — «مساء الخير»
   // reached the honest-unknown fallback whenever the model tier was absent. Driven.
   // Same defect the confirm line documents; same fix: a letter-or-digit lookahead.
+  // Tested on NORMALIZED text, so «أهلاً» arrives as «اهلا».
   /^(?:hi|hello|hey|salam|salaam|السلام عليكم|سلام عليكم|هلا|مرحبا|مساء الخير|صباح الخير|اهلا|السلام|صباح النور|مساء النور)(?![ء-يa-z0-9])/i;
 
-/** A NAME-SHAPED reply — what a patient sends to «أثبّته باسم ضيف العرض التجريبي؟»
- *  when the honest answer is "yes, but under my name". Two to four tokens of
- *  Arabic or Latin letters, optionally followed by a Saudi mobile, and containing
- *  no confirm stem, no need word, no district. Consumed ONLY at S6_close with a
- *  live hold (scenes.ts) — a name anywhere else is not a confirmation. */
-const SAUDI_MOBILE = /(?:\+?966|0)5\d{8}/;
-const NAME_TOKEN = "[ء-يa-z][ء-يa-z'\\-]{1,20}";
-const NAME_RE = new RegExp(`^(?:د\\.?\\s*|dr\\.?\\s*)?(?:${NAME_TOKEN})(?:\\s+(?:${NAME_TOKEN})){1,3}\\s*(?:${SAUDI_MOBILE.source})?\\s*$`);
-export function nameShaped(normalized: string): { nameAr: string; mobile: string | null } | null {
-  const t = normalized.trim();
-  if (!NAME_RE.test(t)) return null;
-  if (CONFIRM_RE.test(t) || CONFIRM_NEGATED.test(t) || GREETING_TOKENS.test(t)) return null;
-  const m = t.match(SAUDI_MOBILE);
-  const mobile = m ? m[0] : null;
-  const nameAr = t.replace(SAUDI_MOBILE, "").replace(/^(?:د\\.?\\s*|dr\\.?\\s*)/, "د. ").trim().slice(0, 40);
-  return { nameAr, mobile };
+// ── A NAME-SHAPED REPLY ─────────────────────────────────────────────────────
+// What a patient sends to «أثبّته باسم ضيف العرض التجريبي؟» when the honest answer
+// is "yes, but under MY name". It is accepted only on a POSITIVE signal: a Saudi
+// mobile, or an explicit lead («اسمي», «انا», «باسم», «my name is»). "The rules
+// could not read it" is NOT that signal — the first version accepted any unread
+// two-to-four-word message and booked «ابي اغير الوقت» as a patient. Consumed ONLY at
+// S6_close with a live hold (scenes.ts). The display name is cut from the RAW text,
+// so «سارة» stays «سارة» and never becomes «ساره».
+/** ASCII digits only — callers fold Arabic-Indic digits first. Spaces and dashes
+ *  inside the number are tolerated: «055 123 4567», «0551-234-567». */
+const SAUDI_MOBILE_RAW = /(?:\+?966|0)[\s\-]?5(?:[\s\-]?\d){8}/;
+const NAME_LEAD_RAW = /^(?:اسمي|أنا|انا|باسم|على اسم|علي اسم|تحت اسم|my name is|name is|name|i am|i'm|this is)\s*[:،,\-]?\s*/i;
+const NAME_TOKEN_RE = /^(?:[ء-يa-z][ء-يa-z'\-]{1,20}|[ء-يa-z]\.)$/i;
+/** Words that are never part of a name — function words, question words, wishes,
+ *  courtesy, the booking vocabulary. Normalized spelling. */
+const NAME_STOP = new Set(
+  (
+    "ابي ابغي ابغى ممكن اقدر وش ايش وين مين كم ليش ليه كيف متي هل غير اغير غيره بدل عندي الوقت الموعد الفرع " +
+    "دكتور دكتوره عياده موعد بكرا بكره الحين بعد قبل لحظه شوي خلني اشوف اشاور زوجتي زوجي افضل احسن ثاني ثانيه " +
+    "صداع الم حراره الله يسلمك يعطيك العافيه جزاك خير حياك وعليكم السلام سلام تمام طيب خلاص شكرا تم صح اي ايه " +
+    "ايوه نعم زين اوكي موافق لا مو ما مب انت انتم انا هو هي احنا ضيف العرض التجريبي مانع مشكله " +
+    "not maybe later sure yet change time doctor who what when where why how please thanks ok okay yes no"
+  ).split(" "),
+);
+/** A trailing yes or courtesy after the name is allowed: «محمد الشهري 0551234567 ثبته». */
+const NAME_TRAIL_RE = /^(?:(?:ا)?(?:اكد|ثبت|اعتمد|كمل|احجز)(?:ه|ها)?|تمام|اوكي|اوك|اي|ايه|ايوه|نعم|شكرا|please|thanks|ok|yes)$/;
+export function nameShaped(raw: string): { nameAr: string; mobile: string | null } | null {
+  let text = foldDigits(raw).trim();
+  const lead = NAME_LEAD_RAW.exec(text);
+  if (lead) text = text.slice(lead[0].length).trim();
+  const m = SAUDI_MOBILE_RAW.exec(text);
+  const mobile = m ? m[0].replace(/[\s\-]/g, "") : null;
+  if (m) text = `${text.slice(0, m.index)} ${text.slice(m.index + m[0].length)}`;
+  if (!lead && !mobile) return null; // no positive signal — not a name, whatever its shape
+  const tokens = text.split(/[\s،,:!.]+/).filter((tok) => tok && !/^[\-–—_]+$/.test(tok));
+  while (tokens.length && NAME_TRAIL_RE.test(normalizeArabic(tokens[tokens.length - 1]))) tokens.pop();
+  let prefix = "";
+  if (tokens.length && /^(?:د|dr)\.?$/i.test(tokens[0])) {
+    prefix = "د. ";
+    tokens.shift();
+  }
+  if (tokens.length < 1 || tokens.length > 4) return null;
+  for (const tok of tokens) {
+    if (!NAME_TOKEN_RE.test(tok)) return null;
+    const n = normalizeArabic(tok);
+    if (NAME_STOP.has(n)) return null;
+    if (NEEDS.some((row) => row.words.some((w) => normalizeArabic(w) === n))) return null;
+  }
+  const joined = tokens.join(" ");
+  if (findDistrict(joined)) return null;
+  if (GREETING_TOKENS.test(normalizeArabic(joined))) return null;
+  return { nameAr: `${prefix}${joined}`.slice(0, 40), mobile };
+}
+/** «ثبته باسم محمد الشهري» → the name after the lead, by the same rules as above. */
+export function nameInConfirm(raw: string): { nameAr: string; mobile: string | null } | null {
+  const m = /(?:باسم|على اسم|علي اسم|تحت اسم|under the name|for)\s+(.+)$/i.exec(foldDigits(raw).trim());
+  return m ? nameShaped(`باسم ${m[1]}`) : null;
 }
 
 /**
@@ -191,6 +262,15 @@ export function detectLanguage(raw: string): "ar" | "en" | "other" {
 // ── deterministic matchers ──────────────────────────────────────────────────
 
 const has = (t: string, ...needles: string[]) => needles.some((n) => t.includes(normalizeArabic(n)));
+/** A need word is a substring match EXCEPT when it is three letters or fewer: «سن»
+ *  lives inside «حسن» and «أحسن», «اذن» inside «اذنك», «ent» inside «appointment».
+ *  Short needles are word-bounded, with the ordinary Arabic prefixes allowed. */
+const needIn = (t: string): DemoNeed | null => NEEDS.find((row) => row.words.some((w) => needWord(t, w)))?.need ?? null;
+const needWord = (t: string, w: string): boolean => {
+  const n = normalizeArabic(w);
+  if (n.length > 3) return t.includes(n);
+  return new RegExp(`(?<![ء-يa-z])(?:و|ف|ب|ل|ال|وال|بال)?${n}(?![ء-يa-z])`).test(t);
+};
 
 /**
  * The demo's needs, each a key of `NEED_PLANS`, which pins it to one of the
@@ -202,10 +282,10 @@ const NEEDS: readonly { need: DemoNeed; words: string[] }[] = [
   { need: "laser", words: ["ليزر", "ازاله شعر", "إزالة الشعر", "laser", "hair removal"] },
   { need: "orthodontics", words: ["تقويم", "braces", "aligner", "الينر"] },
   { need: "endodontics", words: ["عصب", "حشو عصب", "علاج جذور", "root canal"] },
-  { need: "dental", words: ["اسنان", "سن", "ضرس", "تنظيف اسنان", "تبييض", "dental", "teeth", "tooth"] },
+  { need: "dental", words: ["اسنان", "سن", "سني", "ضرس", "ضرسي", "تنظيف اسنان", "تبييض", "dental", "teeth", "tooth"] },
   { need: "dermatology", words: ["جلديه", "جلدية", "بشره", "حبوب الوجه", "derma", "skin"] },
   { need: "paediatrics", words: ["اطفال", "طفلي", "ابني الصغير", "بيبي", "pediatric", "paediatric"] },
-  { need: "obgyn", words: ["نساء وولاده", "نسائيه", "حمل", "ولاده", "obgyn", "gynae"] },
+  { need: "obgyn", words: ["نساء وولاده", "نسائيه", "حمل", "حامل", "ولاده", "obgyn", "gynae"] },
   { need: "ent", words: ["انف واذن", "حنجره", "اذن", "ent"] },
   { need: "employment_medical", words: ["فحص توظيف", "ما قبل التوظيف", "employment medical", "pre-employment"] },
   { need: "neurology", words: ["مخ واعصاب", "اعصاب", "صداع مزمن", "neurology"] },
@@ -241,7 +321,7 @@ function findWindow(t: string): string | null {
  * The deterministic pass. Returns `null` when it is NOT confident, which is the
  * only condition under which the model is asked.
  */
-export { CONFIRM_RE, CONFIRM_NEGATED };
+export { CONFIRM_RE, CONFIRM_NEGATED, CONFIRM_BLOCKED };
 
 export function classifyDeterministic(raw: string, offeredCount: number): Classification | null {
   const t = normalizeArabic(raw);
@@ -356,7 +436,7 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // object gate below requires the confirmation to be bare, or to point at the
   // appointment/booking/it.
   if (CONFIRM_NEGATED.test(t)) return { ...base, kind: "decline" };
-  if (CONFIRM_RE.test(t) || has(t, "احجز لي", "confirm it", "book it"))
+  if (!CONFIRM_BLOCKED.test(t) && (CONFIRM_RE.test(t) || CONFIRM_NAMED_RE.test(t)))
     return { ...base, kind: "confirm", preferredWindowAr: findWindow(t) };
 
   // Slots.
@@ -364,21 +444,15 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // both booking asks, and both were falling to `fallback.honest_unknown` because
   // the needles were all multi-word. It sits AFTER price and insurance, so
   // «كم سعر الموعد؟» still reads as a price question.
+  // A booking ask that names its clinic keeps the clinic: «احجز لي موعد اسنان في
+  // الشفا» carries both the district and the need, or the routing has to ask again.
   if (has(t, "موعد", "المواعيد", "متابعه", "متي اقدر اجي", "احجز", "حجز", "appointment", "book", "slots", "follow up"))
-    return { ...base, kind: "slots_question", districtAr: district };
+    return { ...base, kind: "slots_question", districtAr: district, need: needIn(t), carrierRaw: carrier };
 
-  // Confirm / decline. Kept LATE so «إي غالي» reads as an objection, not a yes.
-  //
-  // NOTE THE BOUNDARY. These used `\b`, and `\b` in JS is ASCII-word-based: between
-  // «ي» and a space there is NO boundary, so `/^(?:اي|…)\b/` never matched a single
-  // Arabic token in its life. Driven: «إي ثبته» fell through to `other` and the
-  // patient got the honest-unknown line one tap from a confirmed booking. Same
-  // class of bug as SPEC-4 §1.2's first row, in a different file.
-  //
-  // The boundary is a negative lookahead for a LETTER OR DIGIT, not `\s|$`: the
-  // patient taps the chip «إي، ثبّته» and normalization leaves the «،» in place, so
-  // a whitespace-only boundary missed the yes on the turn before a confirmed
-  // booking. Punctuation is a boundary; a letter is not.
+  // The legacy bare-no line (the confirm block above already read the hedges and
+  // negations; this catches a plain «لا» that reached here past the slots branch).
+  // NOTE THE BOUNDARY: `\b` is ASCII-word-based in JS and never matched an Arabic
+  // token; a letter-or-digit lookahead is the boundary everywhere in this file.
   const wordEnd = "(?![ء-يa-z0-9])";
   if (new RegExp(`^(?:لا|ما ابي|مو الحين|no|nope|not now)${wordEnd}`).test(t)) return { ...base, kind: "decline" };
 
@@ -388,7 +462,7 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // A stated need — checked after the specific intents so «كم سعر الليزر» reads as
   // a price question about laser, not as a bare need.
   for (const row of NEEDS) {
-    if (has(t, ...row.words)) {
+    if (row.words.some((w) => needWord(t, w))) {
       return { ...base, kind: "need", need: row.need, districtAr: district, carrierRaw: carrier };
     }
   }
@@ -396,7 +470,7 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   if (district) return { ...base, kind: "district", districtAr: district };
 
   // Greeting only — «السلام عليكم» with nothing after it.
-  if (GREETING_TOKENS.test(raw.trim()) && t.split(" ").length <= 4) return { ...base, kind: "greeting_only" };
+  if (GREETING_TOKENS.test(t) && t.split(" ").length <= 6) return { ...base, kind: "greeting_only" };
 
   return null; // NOT confident → ask the model.
 }

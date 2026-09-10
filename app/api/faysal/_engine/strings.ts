@@ -82,9 +82,19 @@ export const PERSONA_IDENTITY_HONEST =
  *  and the patient sends a courtesy. Mirrors the form («مساء الخير» → «مساء
  *  النور», «السلام عليكم» → «وعليكم السلام»), then nudges back to the open
  *  question if there is one. One question mark at most; nothing else appended. */
-export const greetingEcho = (raw: string, openQuestion: string | null): string => {
+/** A live hold and a message the rules could not read — re-ask, and say how to
+ *  book under a name. Exactly one question mark. */
+export const HOLD_REASK = "ما فهمت عليك، وما أبي أخمّن.\nأثبّت لك الموعد اللي ماسكه لك؟ ولو تبيه باسمك، اكتب اسمك ورقم جوالك.";
+
+export const greetingEcho = (raw: string, openQuestion: string | null, language: "ar" | "en" | "other" = "ar"): string => {
   const t = raw.trim();
   let ack: string;
+  if (language === "en") {
+    // An English thread gets an English echo AND an English open question — never
+    // an English hello glued to an Arabic question (§3.1 register).
+    ack = "Hello, welcome back.";
+    return openQuestion ? `${ack}\n${openQuestion}` : `${ack}\nTell me what you need and which district, and I will arrange it.`;
+  }
   if (/^(?:ال)?سلام/.test(t)) ack = "وعليكم السلام ورحمة الله.";
   else if (/^مساء/.test(t)) ack = "مساء النور.";
   else if (/^صباح/.test(t)) ack = "صباح النور.";

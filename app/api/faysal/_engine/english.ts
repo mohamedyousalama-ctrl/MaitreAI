@@ -65,6 +65,9 @@ export const EN = {
     `I cannot confirm that from my side, and I do not want to give you something uncertain.\nYour quickest route: ${alternative}.`,
 
   closing: "Done. Anything else you need, I am here.",
+
+  holdReask:
+    "I did not catch that, and I would rather not guess.\nShall I confirm the appointment I am holding for you? If you want it under your name, type your name and mobile number.",
 } as const;
 
 // Fail at import time rather than in front of a client.

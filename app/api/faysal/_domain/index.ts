@@ -90,6 +90,10 @@ export { PRICE_LABEL_AR, SITE_IDS, isNeedKey, isSiteId, siteInDistrict };
 
 /** SPEC-4 §1.1's normalizer, reused verbatim rather than re-derived. */
 export const normalizeArabic = normalizeForSafety;
+/** Arabic-Indic digits → ASCII, nothing else. The engine reads mobiles and ages through
+ *  this seam, never from lib/health/safety directly (proof-faysal-safety §W keeps every
+ *  Faysal surface behind the union). */
+export { foldDigits } from "@/lib/health/safety/normalize";
 
 /** Rule DEMO-1(b) — the REAL booking numbers, from the engine's own constants. */
 export const REAL_CONTACTS = {
