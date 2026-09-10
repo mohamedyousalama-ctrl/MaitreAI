@@ -195,7 +195,65 @@ deleting a field from a projection that is written once and used for both sides.
 one map between the engine's `SpecialtyKey` and the database's specialty keys is
 asserted total over both rosters before it is used.
 
-### Still open (not shipped, recorded)
+### Closed since this file was written
+
+Items 1–6 below are **all fixed and pushed**, and item 8 turned out not to be a
+roster problem at all — see "the answer was Faysal, not the roster" underneath.
+They are kept in place, struck through in intent rather than deleted, because the
+reasoning behind each is the reading list for whoever picks this up next.
+
+| Was | Now |
+|---|---|
+| 1. the `urgent` tier had no voice | speaks, above the spend guard, and survives a guard refusal |
+| 2. class F was Arabic-only | every class has an English arm; 34,492 assertions |
+| 3. no English age reading | months, years, weeks and days, and never read as a temperature |
+| 4. hours were day-blind | `nextOpening` scans forward; asserted at five clocks |
+| 5. insurance answer in MSA | Riyadh Arabic, meaning unchanged word for word |
+| 6. cadence enforced 3, rule says 2 | cap is 2, `splitRecap` is the documented opt-in |
+
+**The answer to item 8 was Faysal, not the roster.** Padding the roster with
+invented male dermatologists to avoid an awkward sentence is the same defect as
+the availability claims this product refuses everywhere else. He now says which
+of three truths applies — we have one here, we have one at another branch, or we
+do not have one and I am sorry — and on the third he does **not** book. Rule
+DOC-1 always said gender is a filter; the product simply had no way to apply one.
+
+### Still open
+
+**The highest item: the rail TEXT is Arabic-only.** The detector now reads English,
+so an English speaker gets a correct emergency verdict written in a language they
+cannot read — 997 and the siren are legible, the instruction is not. Fixing it
+means new frozen rail copy, which SPEC-2 §5.1 owns and SPEC-4 §12 row 4 sends to
+a clinician. It is the next thing to do and it is recorded rather than improvised.
+
+Two new ACCEPTED OVER-FIRES from the English arm have **no row in SPEC-4 §12** and
+need one. Both are carried in MUST_FIRE with written reasons rather than hidden in
+the quiet corpus, which is this repo's rule for an over-fire it has chosen:
+
+- «is there a self harm awareness leaflet for schools?» — the exclusion that would
+  close it has the same shape as «I'm suicidal, is there a programme?».
+- «I had a heart attack in 2019 and I need a cardiology follow up» — a phrase term
+  inside a follow-up frame. §2.1 says such terms fire alone and §1.5 R1 forbids a
+  frame veto on a HARD class.
+
+And one deliberate non-guess: «I take a lot of medicines for my blood pressure»
+fires poisoning. Only the verb aspect separates it from «he took a lot of pills»,
+so it is left firing per §13 rather than closed on a guess.
+
+Smaller, and each real:
+
+- **`hit.termAr` now carries English strings.** Pre-existing, but the field name is
+  Arabic-specific and it reaches `rail.ts`, the pager and the audit row. Worth a
+  rename to `term`.
+- **Arabizi beyond the enumerated franco phrases is unreached**, and the English
+  quiet corpus is one register — a patient typing to a clinic.
+- **§12 row 13 (CI) is unchanged.** The proof is registered in `unit-suite.json`,
+  which is visible, not enforcing.
+- **Walls of text.** The insurance answer is still five sentences in one bubble,
+  and the package terms are four clauses on one line right after two prices. The
+  shape to aim for is one fact, one consequence, one question.
+
+### The original list, kept for its reasoning
 
 1. **The `urgent` tier has no voice.** `safetyUrgent` in `strings.ts` has zero call
    sites and `turn/route.ts` discards a non-emergency verdict. Wiring it must happen
