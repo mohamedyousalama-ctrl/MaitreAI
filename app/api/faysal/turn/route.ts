@@ -156,11 +156,39 @@ export async function POST(req: Request) {
     });
   }
 
+  // 3b. THE URGENT TIER. Set HERE — above the guard, beside the emergency check —
+  //     because this file's own header rule is that a safety rail gated on a billing
+  //     counter is not a safety rail. Unlike `emergency` it does not stop the turn:
+  //     §1.3 says the same-day appointment is offered AND the ER is named, so the
+  //     booking machinery runs underneath the line.
+  if (verdict.fired && verdict.tier === "urgent") {
+    session.urgentPending = true;
+    // The audit row references the rule, NEVER the patient's sentence (§6.4).
+    console.warn("[faysal] urgent", { ruleId: verdict.ruleId, cls: verdict.cls, session: session.id });
+  }
+
   // 4. THE FIRST PAID LINE. Everything above is free; the guard precedes every
   //    operation that can cost money, and it is consumed only now that the
   //    request is known to be valid and non-emergency.
   const guard = await consumeSpendGuard(clientIp(req));
   if (!guard.ok) {
+    // …but an urgent verdict is already in hand, and it is free to say. A patient
+    // who tripped the daily ceiling still gets told their symptom needs seeing today
+    // and that 997 exists; what they lose is the booking, not the warning.
+    if (session.urgentPending) {
+      session.urgentPending = false;
+      const urgentText = compose(S.SAFETY_URGENT_OFFER);
+      pushHistory(session, "user", raw);
+      pushHistory(session, "assistant", urgentText);
+      return NextResponse.json({
+        ok: true,
+        sessionId: encodeSession(session),
+        messages: [{ from: "faysal", text: urgentText }],
+        chips: [],
+        stopReason: "spend_guard_urgent",
+        scene: session.scene,
+      });
+    }
     return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 

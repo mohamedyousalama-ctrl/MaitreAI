@@ -25,7 +25,7 @@
 // `assertCadence()` is the mechanical form of that rule.
 // ============================================================================
 
-import { callback as domainCallback, canBook, cancel as domainCancel, clinicsAtSite, confirm as domainConfirm, hold as domainHold, insurance, normalizeArabic, openState, OPS, packageFor, planFor, price, REAL_CONTACTS, recommend, riyadhDateISO, riyadhParts, serviceNameAr, siteInDistrict, SITES, twoSlotsAcrossDays, type Appointment, type DemoNeed, type FaysalStore, type SiteId, type SiteView, type SlotView } from "../_domain";
+import { callback as domainCallback, canBook, cancel as domainCancel, clinicsAtSite, confirm as domainConfirm, hold as domainHold, insurance, nextOpening, normalizeArabic, openState, OPS, packageFor, planFor, price, REAL_CONTACTS, recommend, riyadhDateISO, riyadhParts, serviceNameAr, siteInDistrict, SITES, twoSlotsAcrossDays, type Appointment, type DemoNeed, type FaysalStore, type SiteId, type SiteView, type SlotView } from "../_domain";
 import { EN } from "./english";
 import { compose } from "./render";
 import { classifyDeterministic, detectLanguage, nameInConfirm, nameShaped } from "./intent";
@@ -664,6 +664,18 @@ export function runTurn(s: FaysalSession, raw: string, cls: Classification, now:
 
   const out = dispatch(s, raw, cls, now, language, store);
 
+  // THE URGENT LINE LEADS THE TURN. It is set in the route BEFORE the spend guard
+  // (see `urgentPending`), so it is here whether or not the rest of the turn was
+  // paid for. Booking stays open underneath it — that is the whole difference
+  // between `urgent` and the emergency rail, which allows no booking at all.
+  if (s.urgentPending) {
+    s.urgentPending = false;
+    const rest = out.messages;
+    // §4.2 caps a normal turn at two. The safety line is never the one dropped; the
+    // message that carries the open question is the one worth keeping beside it.
+    out.messages = rest.length > 1 ? [faysal(s, S.SAFETY_URGENT_OFFER), rest[rest.length - 1]] : [faysal(s, S.SAFETY_URGENT_OFFER), ...rest];
+  }
+
   // §9 turn 10's shape: the preference is noted OUT LOUD, on the turn that moves the
   // booking, as the last line of a message that is already doing something — never as
   // a paragraph of its own, and never twice. Saying it once and forgetting it is what
@@ -899,8 +911,13 @@ function dispatch(
         return reply(s, [faysal(s, S.greetingBranchUnverified(b.nameAr, alt.nameAr, b.phoneAr))], [alt.districtAr, b.districtAr]);
       }
       s.siteId = target;
-      if (!state.opensAtAr) return reply(s, [faysal(s, S.fallbackHonestUnknown(`تتصل على ${b.phoneAr} والاستقبال يأكد لك الدوام`))]);
-      return reply(s, [faysal(s, `${b.nameAr} يفتح اليوم ${state.opensAtAr}.\nتبي أثبّت لك موعد؟`)], ["أقرب موعد"]);
+      // «يفتح اليوم 9:00 ص» went out at 11:40 PM, and «اليوم» was hard-coded into the
+      // sentence. What a patient asking «الحين فاتحين؟» needs is two facts: whether
+      // it is open RIGHT NOW, and when it next opens if it is not.
+      const next = nextOpening(target, now);
+      if (state.state === "OPEN") return reply(s, [faysal(s, S.branchOpenNow(b.shortAr))], ["أقرب موعد", "وين الفرع"]);
+      if (!next) return reply(s, [faysal(s, S.fallbackHonestUnknown(`تتصل على ${b.phoneAr} والاستقبال يأكد لك الدوام`))], ["فرع ثاني"]);
+      return reply(s, [faysal(s, S.branchClosedUntil(b.shortAr, `${next.labelAr} ${next.timeAr}`))], ["أقرب موعد", "فرع ثاني"]);
     }
 
     case "slots_question":

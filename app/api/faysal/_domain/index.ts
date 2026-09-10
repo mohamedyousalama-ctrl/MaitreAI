@@ -345,6 +345,35 @@ export function openState(siteId: SiteId, when: Date): OpenStateResult {
   };
 }
 
+/**
+ * THE NEXT TIME THIS BRANCH ACTUALLY OPENS — not the first window of today, which is
+ * what `opensAtAr` returns and what produced «الروابي يفتح اليوم 9:00 ص» AT 11:40 PM.
+ * Today's nine o'clock is fourteen hours in the past by then, and the word «اليوم»
+ * had been hard-coded into the sentence besides.
+ *
+ * Scans forward from `now`, day by day, up to a week, and returns the first window
+ * that has not already closed, labelled the way a person says it: «اليوم», «بكرة»,
+ * or the weekday. A branch with no window in the next seven days returns null, and
+ * the caller must then say it does not know rather than guess.
+ */
+export function nextOpening(siteId: SiteId, now: Date): { labelAr: string; timeAr: string } | null {
+  const nowISO = now.toISOString();
+  for (let i = 0; i <= 7; i++) {
+    const day = new Date(now.getTime() + i * 24 * 3600_000);
+    const dateISO = riyadhDateISO(day);
+    for (const w of healthBookableWindows(siteId, dateISO, { ...DEMO, now: nowISO })) {
+      // A window that has already closed today is not an opening.
+      if (fromRiyadh(dateISO, w.close).getTime() <= now.getTime()) continue;
+      const weekday = WEEKDAY_AR[riyadhParts(fromRiyadh(dateISO, "12:00")).weekday];
+      const today = riyadhDateISO(now);
+      const tomorrow = riyadhDateISO(new Date(now.getTime() + 24 * 3600_000));
+      const labelAr = dateISO === today ? "اليوم" : dateISO === tomorrow ? `بكرة ${weekday}` : weekday;
+      return { labelAr, timeAr: timeAr(w.open) };
+    }
+  }
+  return null;
+}
+
 export interface BookableWindowView {
   labelAr: string;
   isFriday: boolean;

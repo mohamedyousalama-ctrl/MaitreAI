@@ -178,6 +178,30 @@ export const languageThirdLanguage = (branchPhone: string) =>
  * message and 🚨 belongs to the rail alone). The escalation sentence is LAST,
  * never buried mid-message and never omitted to keep the tone light.
  */
+/**
+ * THE URGENT TIER, WHICH HAD NO VOICE AT ALL.
+ *
+ * `safetyUrgent` below has existed since the first build and has never had a single
+ * call site: `turn/route.ts` handled `tier === "emergency"` and DISCARDED everything
+ * else, so a verdict of `urgent` — «حرارة 39 عند بالغ», «دم مع البول» — fell through
+ * to the ordinary classifier and, more often than not, to «ما أقدر أأكدها لك من
+ * عندي». The safety tier the spec spends a section on was, in practice, silence.
+ *
+ * This is the same string with its middle line changed from a slot we do not have
+ * yet to the OFFER of one, because it is emitted on the first turn — before any
+ * branch or time is known. Lines one and three are §5.1's frozen wording, untouched.
+ * §1.3: "offers a same-day appointment AND states plainly that if it worsens the ER
+ * and 997 are there. Booking remains available." All three halves of that sentence
+ * matter, and this says all three.
+ *
+ * Recorded in docs/faysal/AUDIT-WAVE2.md for the §12 clinician review, like every
+ * other rail-adjacent string.
+ */
+export const SAFETY_URGENT_OFFER =
+  `اللي وصفته يحتاج يتشاف اليوم، مو بعد أيام.
+أشوف لك أقرب موعد اليوم؟
+ولو زاد عليك قبل الموعد، لا تنتظر — الطوارئ و 997 موجودين.`;
+
 export const safetyUrgent = (sameDaySlot: string, branch: string) =>
   `اللي وصفته يحتاج يتشاف اليوم، مو بعد أيام.
 عندي ${sameDaySlot} في ${branch}. أثبّته لك؟
@@ -552,6 +576,13 @@ export const motionMatchForkUnverified = (a: {
 1) ${a.optionNear}
 2) ${a.optionBest}
 أي طريق أريح لك؟`;
+
+/** «الحين فاتحين؟» — the two facts a patient asking that needs, and nothing else.
+ *  Never «٢٤ ساعة»: SPEC-4 §5.3 bans the bare round-the-clock phrase on its own,
+ *  hedge or no hedge, because the BUILDING being open is not the CLINIC being open. */
+export const branchOpenNow = (branch: string) => `${branch} مفتوح الحين.\nتبيني أثبّت لك أقرب موعد؟`;
+export const branchClosedUntil = (branch: string, nextOpening: string) =>
+  `${branch} مسكّر الحين، وأقرب دوام ${nextOpening}.\nأثبّت لك موعد فيه؟`;
 
 /** SPEC-1 §10.4 permitted shape — the networks the BUILDING appears on. Not eligibility. */
 export const insuranceNetworksListed = (branchName: string, examples: string) =>

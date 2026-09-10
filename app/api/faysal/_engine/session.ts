@@ -95,6 +95,10 @@ export interface FaysalSession {
   /** The branch whose recommendation line has already been said. Saying «اللي
    *  يناسبك: …» twice in a row is the loudest tell that nobody is listening. */
   announcedSiteId: SiteId | null;
+  /** A red flag fired at the URGENT tier this turn. Set before the spend guard and
+   *  read when the reply is composed, so the line survives a guard refusal — a
+   *  safety line gated on a billing counter is not a safety line. */
+  urgentPending: boolean;
   /** Rule C4-1 — a coarse window in the patient's OWN words, never a clock time. */
   preferredWindowAr: string | null;
   /** The patient chose the contested branch; we are waiting on their own window. */
@@ -150,6 +154,7 @@ export function newSession(): FaysalSession {
     genderNoteSent: false,
     preferredDayAr: null,
     announcedSiteId: null,
+    urgentPending: false,
     heldSlot: null,
     bookingRef: null,
     preferredWindowAr: null,

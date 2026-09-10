@@ -56,6 +56,7 @@ export class Conversation {
       const r = { messages: [{ from: "faysal" as const, text: railText }], chips: [], stopReason: RAIL_STOP_REASON, scene: "S0_safety" };
       this.record(r); return r;
     }
+    if (verdict.fired && verdict.tier === "urgent") s.urgentPending = true;
     const cls = await classify(raw, s.history, s.offeredSlots.length);
     pushHistory(s, "user", raw); resetCourtesy(s);
     const store = storeFromSnapshot(s.store);

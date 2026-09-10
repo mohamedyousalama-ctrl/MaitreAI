@@ -50,6 +50,48 @@ c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); await c.say("I need
 ok("English thread: greeting echo stays English", !/[ء-ي]/.test(txt(r)), { scene: r.scene, text: txt(r) });
 c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); r = await c.say("عندي ألم في صدري وأتعرق"); r = await c.say("اسمي محمد الشهري 0551234567");
 ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergency", { scene: r.scene, text: txt(r) });
+// ── hours that know what day and hour it is ────────────────────────────────
+// «الروابي يفتح اليوم 9:00 ص» went out AT 11:40 PM — today's nine o'clock was
+// fourteen hours in the past, and «اليوم» was hard-coded into the sentence. The
+// property is mechanical and holds at every clock: a stated opening is in the
+// FUTURE, and the day word matches the day it names.
+{
+  const CLOCKS = ["2026-09-10T23:40:00+03:00", "2026-09-11T21:30:00+03:00", "2026-09-13T10:00:00+03:00", "2026-09-13T06:00:00+03:00", "2026-09-15T13:00:00+03:00"];
+  for (const clock of CLOCKS) {
+    const c = new Conversation(clock); c.open();
+    const r = await c.say("الحين فاتحين؟");
+    const text = txt(r);
+    const openNow = text.includes("مفتوح الحين");
+    ok(`hours answer says open or when it next opens: ${clock}`, openNow || text.includes("أقرب دوام") || text.includes("ما أقدر أأكدها"), { text });
+    // «اليوم» may only appear when the opening really is later today.
+    if (text.includes("أقرب دوام اليوم")) {
+      const hhmm = /أقرب دوام اليوم (\d{1,2}):(\d{2})\s*(ص|م)/.exec(text);
+      const hour = hhmm ? (hhmm[3] === "م" && Number(hhmm[1]) !== 12 ? Number(hhmm[1]) + 12 : Number(hhmm[1])) : -1;
+      const nowHour = Number(clock.slice(11, 13));
+      ok(`…and an opening «اليوم» is still ahead of the clock: ${clock}`, hour > nowHour, { text, hour, nowHour });
+    }
+    ok(`…and it offers a next step: ${clock}`, r.chips.length > 0 || /[؟?]/.test(text), { chips: r.chips, text });
+    ok(`…and never claims a round-the-clock building: ${clock}`, !/٢٤ ساعه|24 ساعه|علي مدار الساعه/.test(text.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه")), { text });
+  }
+}
+
+// ── the urgent tier, which had no voice at all ──────────────────────────────
+// `safetyUrgent` sat in strings.ts with zero call sites while the route discarded
+// every non-emergency verdict, so «دم مع البول» — a documented `urgent` — was
+// answered by the ordinary classifier. §1.3 wants three things in one turn: seen
+// today, the ER named, and the booking still open.
+{
+  const c = new Conversation("2026-09-13T10:00:00+03:00"); c.open();
+  const r = await c.say("عندي دم مع البول وأبغى موعد");
+  ok("an urgent verdict speaks", txt(r).includes("يحتاج يتشاف اليوم"), { text: txt(r) });
+  ok("…and names the emergency route", txt(r).includes("997"), { text: txt(r) });
+  ok("…and is NOT the emergency rail", r.stopReason !== "faysal_redflag_emergency" && r.scene !== "S0_safety", { scene: r.scene, stop: r.stopReason });
+  ok("…and the booking stays open underneath it", r.messages.length > 1 || /[؟?]/.test(txt(r)), { text: txt(r) });
+  const next = await c.say("أنا في الروابي، كاش");
+  ok("…and it is said once, not on every later turn", !txt(next).includes("يحتاج يتشاف اليوم"), { text: txt(next) });
+  ok("…and the booking actually moves", next.scene === "S5_slots" || next.scene === "S11_offhours", { scene: next.scene, text: txt(next) });
+}
+
 // ── nothing is said twice in a row ──────────────────────────────────────────
 // «أبغى كشف عام» → «اللي يناسبك: الروابي…» then «أنا في الروابي» → the identical
 // sentence again, because the payment ask was still outstanding. Verbatim repetition
