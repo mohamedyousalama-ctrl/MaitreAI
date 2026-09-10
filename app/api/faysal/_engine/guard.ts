@@ -98,6 +98,11 @@ export async function consumeSpendGuard(ip: string): Promise<GuardVerdict> {
         p_global_bucket: `faysal:${globalDayBucket()}`,
         p_ip_limit: FAYSAL_PER_IP_TURNS,
         p_global_limit: FAYSAL_GLOBAL_DAILY_TURNS,
+        // Faysal's OWN kill switch row (migration 0124). Before it, `demo_controls`
+        // was a single row, so stopping this demo also stopped Khalid's — the wrong
+        // failure mode on the day one client's demo has to come down and the other's
+        // must not. `demo_controls` remains the global stop-everything switch.
+        p_product: "faysal",
       })
       .maybeSingle<{ allowed: boolean; reason: string | null }>();
 

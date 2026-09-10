@@ -226,6 +226,51 @@ for (const t of ["demo_usage_counters", "demo_controls"]) {
   ok(`${t} has RLS enabled`, new RegExp(`alter table public\\.${t} enable row level security`).test(mig));
 }
 
+// ── 11b. ONE KILL SWITCH PER DEMO (migration 0124) ─────────────────────────
+// `demo_controls` is a single row, so before 0124 `update demo_controls set
+// enabled = false` to pull one demo pulled the other with it. Two clients, one
+// button. These assertions pin the shape that fixes it, and the two properties
+// that make it safe: the 4-arg form survives as a wrapper (so a caller not yet
+// updated behaves exactly as before), and a NAMED product with no row fails
+// CLOSED (so deleting a row cannot silently re-enable a demo an operator
+// believes is stopped).
+const mig24 = codeOf("supabase/migrations/0124_demo_kill_switch_per_product.sql");
+ok("there is a per-product controls table",
+  /create table if not exists public\.demo_product_controls\s*\(\s*product\s+text\s+primary key/.test(mig24));
+ok("both demos are seeded enabled", /values \('kivo', true\)/.test(mig24) && /values \('faysal', true\)/.test(mig24));
+ok("the 5-arg function takes p_product with NO default (else 4-arg calls go ambiguous)",
+  /create or replace function public\.kv_demo_try_consume\([^)]*p_product text\s*\)/.test(mig24));
+ok("the 4-arg form is KEPT and delegates with null",
+  /return query select \* from public\.kv_demo_try_consume\(\s*p_ip_bucket, p_global_bucket, p_ip_limit, p_global_limit, null::text\)/.test(mig24));
+ok("a NULL product keeps the pre-0124 behaviour (no product gate)",
+  /if p_product is not null then/.test(mig24));
+ok("a named product with no row FAILS CLOSED",
+  /v_product_enabled is null or v_product_enabled = false/.test(mig24));
+ok("the global switch is still checked first and still fails closed",
+  mig24.indexOf("v_enabled is null or v_enabled = false") < mig24.indexOf("if p_product is not null then"));
+ok("the product table is revoked from anon AND authenticated (RLS does not gate TRUNCATE)",
+  /revoke all on table public\.demo_product_controls from anon, authenticated;/.test(mig24));
+ok("the product table has RLS enabled",
+  /alter table public\.demo_product_controls enable row level security/.test(mig24));
+for (const sig of ["text, text, bigint, bigint, text", "text, text, bigint, bigint"]) {
+  ok(`the ${sig.split(",").length}-arg function is revoked from anon AND authenticated`,
+    new RegExp(`revoke all on function public\\.kv_demo_try_consume\\(${sig.replace(/, /g, ", ")}\\) from anon, authenticated;`).test(mig24));
+  ok(`only service_role may execute the ${sig.split(",").length}-arg function`,
+    new RegExp(`grant execute on function public\\.kv_demo_try_consume\\(${sig.replace(/, /g, ", ")}\\) to service_role;`).test(mig24));
+}
+// The switch is worth nothing if a caller forgets to name its product: that caller
+// silently falls back to the shared behaviour the migration exists to end.
+for (const [file, product] of [
+  ["app/api/faysal/_engine/guard.ts", "faysal"],
+  ["app/api/demo/turn/route.ts", "kivo"],
+  ["app/api/demo/voice/route.ts", "kivo"],
+  ["app/api/demo/greeting/route.ts", "kivo"],
+] as const) {
+  const src = codeOf(file);
+  ok(`${file} names its product to the guard`,
+    /rpc\("kv_demo_try_consume"/.test(src) && new RegExp(`p_product:\\s*"${product}"`).test(src));
+}
+
 // ── 12. THE VOICE ROUTE — same controls, plus what audio specifically needs ────
 // These assertions were rewritten after an audit showed the first version was regex
 // theatre: it counted identifier occurrences and matched string literals, and would

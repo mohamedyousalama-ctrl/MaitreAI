@@ -203,6 +203,9 @@ export async function POST(req: Request) {
       p_global_bucket: globalBucket(),
       p_ip_limit: DEMO_PER_IP_TURNS,
       p_global_limit: DEMO_GLOBAL_DAILY_TURNS,
+      // Khalid's own kill switch row (migration 0124), so this demo and Faysal's
+      // stop independently. `demo_controls` stays the global stop-everything switch.
+      p_product: "kivo",
     })
     .maybeSingle<{ allowed: boolean; reason: string | null }>();
   if (guardErr || !guard) {
