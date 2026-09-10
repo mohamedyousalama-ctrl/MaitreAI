@@ -123,6 +123,11 @@ export function payerByName(carrier: string): (Payer & { aliases: string[] }) | 
 // transcripts flagged it as the one place where the whole persona drops. The MEANING
 // is unchanged, word for word: still no coverage promise, still the card, still the
 // class and the deductible, still reception verifying before the visit.
+// ONE FACT, ONE CONSEQUENCE, ONE INSTRUCTION — on three lines, not one paragraph.
+// These clauses were joined with a space, so every insurance answer arrived as a
+// five-sentence block: the single least readable thing in the product on a phone,
+// and the reviewer's example when they said he stops sounding like a person. The
+// WORDS are unchanged; only where they break is.
 const BRING_CARD =
   "خذ معك الهوية أو الإقامة وبطاقة التأمين، واسأل الاستقبال زيارتك تحت أي فئة.";
 
@@ -150,12 +155,12 @@ export function insuranceAnswer(carrier: string, siteId: SiteId): InsuranceAnswe
     // like an unrecognised carrier.
     payerKind = p ? "directory_source" : null;
     accepted = "unknown";
-    sentenceAr = `ما أقدر أأكد لك إن ${shown} ضمن الشبكات المعتمدة عند ${site.nameAr}. ${CLASS_HONESTY} ${BRING_CARD}`;
+    sentenceAr = `ما أقدر أأكد لك إن ${shown} ضمن الشبكات المعتمدة عند ${site.nameAr}.\n${CLASS_HONESTY}\n${BRING_CARD}`;
   } else if (p.kind === "tpa_discount_card") {
     accepted = "yes";
     sentenceAr =
-      `${shown} بطاقة خصم وليست تأمين — يعني ما تشتغل مثل بوليصة التأمين. ` +
-      `المجموعة تتعامل مع بطاقات الخصم، والاستقبال يوضح لك الخصم على بطاقتك بالتحديد. ${BRING_CARD}`;
+      `${shown} بطاقة خصم وليست تأمين — يعني ما تشتغل مثل بوليصة التأمين.\n` +
+      `المجموعة تتعامل مع بطاقات الخصم، والاستقبال يوضح لك الخصم على بطاقتك بالتحديد.\n${BRING_CARD}`;
   } else {
     const forThisSite = p.siteEvidence.some((e) => e.siteId === siteId);
     const contested = site.operatingStatus.state === "operational_contested";
@@ -164,14 +169,14 @@ export function insuranceAnswer(carrier: string, siteId: SiteId): InsuranceAnswe
       // Never a present-tense fact: the evidence is a June 2024 announcement at
       // a branch whose status is contested (§3.4.1).
       sentenceAr =
-        `مرضى ${shown} انعلن استقبالهم في ${site.nameAr} (إعلان يونيو ٢٠٢٤)، والاستقبال يأكد لك الوضع الحالي. ` +
-        `${CLASS_HONESTY} ${BRING_CARD}`;
+        `مرضى ${shown} انعلن استقبالهم في ${site.nameAr} (إعلان يونيو ٢٠٢٤)، والاستقبال يأكد لك الوضع الحالي.\n` +
+        `${CLASS_HONESTY}\n${BRING_CARD}`;
     } else if (forThisSite) {
-      sentenceAr = `${site.nameAr} داخل شبكات كذا شركة تأمين، منها ${shown}. ${CLASS_HONESTY} ${BRING_CARD}`;
+      sentenceAr = `${site.nameAr} داخل شبكات كذا شركة تأمين، منها ${shown}.\n${CLASS_HONESTY}\n${BRING_CARD}`;
     } else {
       sentenceAr =
         `مجمعاتنا داخل شبكات كذا شركة تأمين، منها ${shown}، ` +
-        `بس ما عندي تأكيد خاص بـ${site.nameAr}. ${CLASS_HONESTY} ${BRING_CARD}`;
+        `بس ما عندي تأكيد خاص بـ${site.nameAr}.\n${CLASS_HONESTY}\n${BRING_CARD}`;
       accepted = "unknown";
     }
     if (contested && p.id !== "bupa") {
