@@ -453,6 +453,25 @@ function confirmHeld(s: FaysalSession, now: Date, store: FaysalStore): Reply {
   return renderAppointment(s, appt);
 }
 
+/**
+ * FRI-1 on a CONFIRMED Friday booking.
+ *
+ * The rule's post-pass fires on a message that names Friday, and the confirmation
+ * block — which does name it — is atomic (§6.7), so the suffix used to land after
+ * «حجز تجريبي — غير مسجّل لدى الفرع»: an instruction below the block's own legal
+ * label, on the one screenshot the whole demo is built around. It rides on the
+ * pre-visit message instead, which is where a thing-to-do-before-you-leave belongs.
+ *
+ * It appends the rule's OWN suffix rather than a second sentence about Friday: the
+ * first attempt wrote its own version and the patient read the warning twice.
+ */
+function fridaySuffix(s: FaysalSession): string {
+  const label = s.booked?.slotLabelAr || s.heldSlot?.labelAr || "";
+  if (!/الجمعه/.test(normalizeArabic(label))) return "";
+  const phone = branchPhoneFor(s);
+  return phone ? `\n${S.friday1Suffix(phone)}` : "";
+}
+
 function renderAppointment(s: FaysalSession, appt: Appointment): Reply {
   const branch = SITES[appt.siteId];
   s.bookingRef = appt.ref;
@@ -488,7 +507,7 @@ function renderAppointment(s: FaysalSession, appt: Appointment): Reply {
       s,
       [
         { from: "faysal", text: compose(block, { isConfirmation: true, branchPhone: branch.phoneAr }) },
-        faysal(s, S.preVisitCallback(s.payment)),
+        faysal(s, S.preVisitCallback(s.payment) + fridaySuffix(s)),
       ],
       [],
     );
@@ -506,7 +525,13 @@ function renderAppointment(s: FaysalSession, appt: Appointment): Reply {
     s,
     [
       { from: "faysal", text: compose(block, { isConfirmation: true, branchPhone: branch.phoneAr }) },
-      faysal(s, S.motionPreVisit(OPS.arrivalBufferMinutes, s.payment)),
+      // FRI-1's Friday line rides HERE now, on the pre-visit message, because the
+      // confirmation block above it is atomic (§6.7). The renderer's post-pass fires
+      // on a message that NAMES Friday, and the pre-visit text does not — so the day
+      // is carried in explicitly. Dropping it silently is worse than the placement
+      // problem it replaced: FRI-1 exists because a Friday booking needs a phone call
+      // before the patient leaves home.
+      faysal(s, S.motionPreVisit(OPS.arrivalBufferMinutes, s.payment) + fridaySuffix(s)),
     ],
     [],
   );
@@ -715,7 +740,9 @@ export function runTurn(s: FaysalSession, raw: string, cls: Classification, now:
     // With no branch in play the group's own unified line is the right number —
     // it is the one Rule DEMO-1(b) already published in this thread.
     const phone = branchPhoneFor(s) ?? REAL_CONTACTS.unified;
-    return reply(s, [faysal(s, S.languageThirdLanguage(phone))]);
+    // The frozen bilingual sentence, with a way back in. Without chips this was the
+    // last hard dead end in the product: no question, nothing to tap, thread over.
+    return reply(s, [faysal(s, S.languageThirdLanguage(phone))], ["العربية", "English"]);
   }
 
   // Rule DEMO-1(b), detail 4b: deferred to the first NON-RAIL turn if turn 1 was
@@ -804,6 +831,7 @@ function dispatch(
   if (cls.carrierRaw) s.carrierAr = cls.carrierRaw;
   if (cls.preferredWindowAr) s.preferredWindowAr = cls.preferredWindowAr;
   if (cls.preferredDayAr) s.preferredDayAr = cls.preferredDayAr;
+  if (cls.kind !== "other") s.objections.unread = 0;
   if (cls.prefersFemale) {
     s.prefersFemaleDoctor = true;
     s.askedFemaleDoctor = true;
@@ -991,6 +1019,26 @@ function dispatch(
     case "package_question":
       return packageReply(s);
 
+    case "pre_visit":
+      return reply(s, [faysal(s, S.whatToBring(s.payment, OPS.arrivalBufferMinutes))], chipsFor(s));
+
+    case "unserved_district":
+      // An answer, not an unknown. The short list is the point: it teaches the
+      // patient that there are three, which is why «العليا» kept coming back.
+      return reply(s, [faysal(s, S.districtNotServed(BOOKABLE_DISTRICTS.join(" و")))], BOOKABLE_DISTRICTS);
+
+    case "labs_question":
+      return reply(s, [faysal(s, S.LABS_NOT_BOOKABLE)], ["سجّل لي طلب", "كشف عام"]);
+
+    case "callback_request": {
+      // «سجّل لي طلب» is now a real request, not a chip that apologises. It needs the
+      // window the branch will call in, which is the one question left to ask.
+      s.awaitingCallbackWindow = true;
+      s.siteId = s.siteId ?? recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? "wattan-2";
+      s.scene = "S11_offhours";
+      return reply(s, [faysal(s, "أبشر، أسجّل لك الطلب وأكتب فيه اللي تحتاجه، والفرع يتصل عليك ويثبّت الوقت.\nالصبح ولا بعد العصر؟")], ["الصبح", "بعد العصر"]);
+    }
+
     case "location_question": {
       const b = site(s.siteId) ?? site(recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? null) ?? SITES["wattan-2"];
       return reply(s, [faysal(s, S.branchLocation(b.shortAr, b.addressAr, b.phoneAr))], chipsFor(s));
@@ -1004,7 +1052,10 @@ function dispatch(
     }
 
     case "hours_question": {
-      const target = s.siteId ?? recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? null;
+      // «فرع الشفا فاتح؟» was answered about Ar Rawabi, because the target was read
+      // from the session and never from the sentence. The branch they NAMED wins.
+      const named = siteInDistrict(raw);
+      const target = named ?? s.siteId ?? recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? null;
       if (!target) return unsupportedSpecialty(s, raw);
       const state = openState(target, now);
       const b = SITES[target];
@@ -1037,13 +1088,16 @@ function dispatch(
       // A yes AFTER the booking is confirmed is agreement with what he just said,
       // not an instruction to book again. It was re-opening the slot list and
       // placing a second hold on the same thread.
+      // The expansion gate (§6.6) REQUIRES a confirmed booking, so putting the
+      // booked-already guard first made S9 unreachable by any typed yes: «إي» after
+      // «أثبّته؟» recited the first appointment and the second one evaporated.
+      if (s.scene === "S9_expand" && s.offeredSlots.length) return pickSlot(s, 1, language, now, store);
       if (s.booked && !s.holdId) return bookingStands(s);
       if (s.scene === "S6_close" && s.holdId) {
         const named = nameInConfirm(raw); // «ثبته باسم محمد الشهري»
         if (named) s.patientNameAr = named.nameAr;
         return confirmHeld(s, now, store);
       }
-      if (s.scene === "S9_expand" && s.offeredSlots.length) return pickSlot(s, 1, language, now, store);
       if (s.awaitingCallbackWindow) {
         const win = cls.preferredWindowAr ?? readWindow(raw);
         if (win) return confirmCallback(s, win, now, store);
@@ -1059,6 +1113,11 @@ function dispatch(
       }
       if (s.scene === "S5_slots" && s.offeredSlots.length) return pickSlot(s, 1, language, now, store);
       if (s.siteId) return offerSlots(s, now, language, store);
+      // «تمام» AND «اوك» ARE NOT A NEED. Both match the confirm shape, and with no
+      // site this fell through to `matchAndAsk`, which asked `recommend(null)` and got
+      // general practice — so two filler words put a patient one tap from a booking in
+      // a clinic they never mentioned, with the discovery step skipped entirely.
+      if (!s.need) return reply(s, [faysal(s, S.MOTION_DISCOVER)], chipsFor(s));
       return matchAndAsk(s, now, language, store, raw);
     }
 
@@ -1152,6 +1211,13 @@ function dispatch(
       }
 
     default: {
+      // A BARE «الصبح» OR «بكرة» IS THE ANSWER TO «أي وقت أثبّت لك؟». `extractFacts`
+      // writes the preference into the session and the classifier then returns
+      // `other`, so he recorded what they wanted and told them he could not confirm
+      // it — with his own question still on the screen above.
+      if ((cls.preferredWindowAr || cls.preferredDayAr) && s.siteId) {
+        return offerSlots(s, now, language, store);
+      }
       // A live hold and a message the rules could not read: the honest move is to say
       // so and ask the open question AGAIN with its chips — never to guess a yes, and
       // never to book the message as a name (the first version did exactly that).
@@ -1162,6 +1228,14 @@ function dispatch(
       // phone, a booking he CAN make, or an offered handoff. Never "check the
       // website", never "try again later", never nothing.
       const b = site(s.siteId);
+      // ONE honest «I don't know» is character. The SAME paragraph twice in a row is
+      // the moment he stops being a person — and «تحاليل وأشعة / أشعة / تحليل دم» got
+      // it three times running. A second miss changes the move.
+      s.objections.unread = (s.objections.unread ?? 0) + 1;
+      if (s.objections.unread >= 2 && language !== "en") {
+        s.objections.unread = 0;
+        return reply(s, [faysal(s, S.secondMiss(branchPhoneFor(s) ?? REAL_CONTACTS.unified))], ["سجّل لي طلب", "أحوّلني لمسؤول"]);
+      }
       const alternative = b
         ? `أثبّت لك موعد في ${b.shortAr}، أو تتصل على ${b.phoneAr}`
         : `تقول لي وش تحتاج وبأي حي، وأرتّب لك موعد — أو تتصل على ${REAL_CONTACTS.unified}`;

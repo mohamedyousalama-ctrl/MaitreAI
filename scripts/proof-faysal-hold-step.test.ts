@@ -50,6 +50,66 @@ c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); await c.say("I need
 ok("English thread: greeting echo stays English", !/[ء-ي]/.test(txt(r)), { scene: r.scene, text: txt(r) });
 c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); r = await c.say("عندي ألم في صدري وأتعرق"); r = await c.say("اسمي محمد الشهري 0551234567");
 ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergency", { scene: r.scene, text: txt(r) });
+// ── THE CONTINUITY AUDIT'S FINDINGS, EACH PINNED TO ITS OWN REPRODUCTION ────
+// Forty-eight driven conversations found seventeen ways the thread stopped moving.
+// Every row here is the exact message that produced the defect, not a paraphrase.
+{
+  const WALL = "ما أقدر أأكدها لك من عندي";
+  const run = async (prefix: string[], last: string, clock = "2026-09-13T10:00:00+03:00") => {
+    const c = new Conversation(clock); c.open();
+    for (const line of prefix) await c.say(line);
+    const r = await c.say(last);
+    return { c, r, text: txt(r) };
+  };
+  const BOOKED = ["أبغى ليزر", "أنا في الروابي", "كاش", "الأول", "أكد"];
+  const SLOTS = ["أبغى ليزر", "أنا في الروابي", "كاش"];
+
+  let x = await run([], "ولدي عمره 5 سنوات ويحتاج كشف");
+  ok("«كشف» alone is a need — the commonest thing a parent types first", !x.text.includes(WALL) && x.c.s.need !== null, { need: x.c.s.need, text: x.text });
+  x = await run(["أبغى ليزر"], "أنا في العليا");
+  ok("a Riyadh district we do not serve is an ANSWER, not an unknown", !x.text.includes(WALL) && x.text.includes("فروعنا"), { text: x.text });
+  x = await run(BOOKED, "وش أجيب معي؟");
+  ok("«وش أجيب معي؟» is answered from the line he wrote one message earlier", !x.text.includes(WALL) && x.text.includes("الهوية"), { text: x.text });
+  x = await run(["أبي موعد عظام"], "سجّل لي طلب");
+  ok("his own «سجّل لي طلب» chip records a request instead of apologising", !x.text.includes(WALL) && x.c.s.awaitingCallbackWindow, { text: x.text });
+  x = await run([], "تحاليل وأشعة");
+  ok("the greeting's own third door is not a wall", !x.text.includes(WALL) && x.text.includes("التحاليل والأشعة"), { text: x.text });
+  x = await run(SLOTS, "الصبح");
+  ok("a bare «الصبح» answers «أي وقت أثبّت لك؟»", !x.text.includes(WALL), { text: x.text });
+  x = await run([], "عطني الموقع على قوقل ماب");
+  ok("a map request is not answered with a speech about star ratings", !x.text.includes("ما راح أجادلك في التقييم") && x.text.includes("Unayzah"), { text: x.text });
+  x = await run(SLOTS, "first");
+  ok("an English patient can pick a time", x.c.s.holdId !== null, { held: x.c.s.heldSlot?.labelAr, text: x.text });
+  x = await run([], "تمام");
+  ok("a filler word does not invent a need", x.c.s.need === null && !x.text.includes("اللي يناسبك"), { need: x.c.s.need, text: x.text });
+  {
+    const c = new Conversation("2026-09-13T10:00:00+03:00"); c.open();
+    const a = await c.say("؟"); const b = await c.say("...");
+    ok("the same refusal paragraph is never sent twice in a row", txt(a) !== txt(b), { first: txt(a).slice(0, 60), second: txt(b).slice(0, 60) });
+  }
+  x = await run(BOOKED, "ألغه");
+  ok("«ألغه» cancels — «الغي» was the only spelling listed", x.c.s.bookingRef === null && x.text.includes("تم الإلغاء"), { text: x.text });
+  x = await run([], "فرع الشفا فاتح؟");
+  ok("the hours answer is about the branch they NAMED", x.text.includes("الشفا"), { text: x.text });
+  x = await run([], "مرحبا, मुझे अपॉइंटमेंट चाहिए");
+  ok("the third-language reply offers a way back in", x.r.chips.length > 0, { chips: x.r.chips, text: x.text });
+  x = await run(["انتظرت الأسبوع الماضي ٥٠ دقيقة"], "ما أبي أعتذار أبي حل");
+  ok("a patient demanding a fix is not read as walking away", !x.text.includes("خذ راحتك"), { text: x.text });
+
+  // §6.7 — the confirmation block is ATOMIC. FRI-1's suffix was landing AFTER the
+  // demo label, on the one screenshot the whole demo is built around.
+  for (const [clock, friday] of [["2026-09-11T12:00:00+03:00", true], ["2026-09-13T10:00:00+03:00", false]] as [string, boolean][]) {
+    const c = new Conversation(clock); c.open();
+    let r: { messages: { from: string; text: string }[] } = { messages: [] };
+    for (const line of BOOKED) r = await c.say(line);
+    const block = r.messages.find((m) => m.text.includes("تم الحجز"));
+    const after = r.messages[r.messages.length - 1];
+    ok(`the confirmation block ends at its own demo label (${clock.slice(0, 10)})`, !!block && block.text.trimEnd().endsWith("غير مسجّل لدى الفرع."), { block: block?.text });
+    ok(`…and the Friday warning is ${friday ? "on the next message" : "absent"} (${clock.slice(0, 10)})`, after.text.includes("يوم الجمعة") === friday, { after: after.text });
+    if (friday) ok("…exactly once", (after.text.match(/يوم الجمعة/g) ?? []).length === 1, { after: after.text });
+  }
+}
+
 // ── THE CADENCE THAT ACTUALLY GOVERNS ──────────────────────────────────────
 // §4.2 is «at most TWO messages per turn; three only under the split-recap». The
 // guard capped at three unconditionally, so the written rule and the enforced rule

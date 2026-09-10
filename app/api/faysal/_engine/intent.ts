@@ -59,6 +59,10 @@ export type IntentKind =
   | "hours_question"
   | "unsupported_specialty"
   | "clinic_list"
+  | "callback_request"
+  | "pre_visit"
+  | "labs_question"
+  | "unserved_district"
   | "location_question"
   | "booking_status"
   | "keep_booking"
@@ -330,7 +334,7 @@ const NEEDS: readonly { need: DemoNeed; words: string[] }[] = [
   { need: "employment_medical", words: ["فحص توظيف", "ما قبل التوظيف", "employment medical", "pre-employment"] },
   { need: "neurology", words: ["مخ واعصاب", "اعصاب", "صداع مزمن", "neurology"] },
   { need: "internal", words: ["باطنه", "باطنية", "internal medicine"] },
-  { need: "general", words: ["كشف عام", "طب اسره", "عياده عامه", "general checkup", "family medicine"] },
+  { need: "general", words: ["كشف عام", "كشف", "يحتاج كشف", "ابي كشف", "طب اسره", "عياده عامه", "general checkup", "check up", "checkup", "family medicine"] },
 ];
 
 /**
@@ -341,6 +345,24 @@ const NEEDS: readonly { need: DemoNeed; words: string[] }[] = [
  * a neighbourhood-adjacency table would be a geographic claim we cannot support.
  * A null answer is the honest one, and the fork simply does not run.
  */
+/**
+ * RIYADH HAS HUNDREDS OF DISTRICTS AND THIS DEMO SERVES SIX. «أنا في العليا» — an
+ * answer to Faysal's OWN question «أنت بأي حي؟» — produced «هذي المعلومة ما أقدر
+ * أأكدها لك من عندي» and left `districtAr` null, so the identical question came back
+ * on the next turn. Three testers in a row will type العليا or الملز.
+ *
+ * This is not a route: it is the ability to recognise that the patient answered, so
+ * the reply can say plainly that there is no branch there and name the ones there
+ * are. Deliberately the big, unmistakable names — a district word we do not know at
+ * all still falls through to the model tier, where a guess is cheap and reversible.
+ */
+const UNSERVED_DISTRICTS: readonly string[] = [
+  "العليا", "الملز", "النخيل", "السليمانيه", "المروج", "الياسمين", "النرجس", "قرطبه", "الحمراء",
+  "الخليج", "المرسلات", "الصحافه", "المغرزات", "الازدهار", "الوزارات", "الديره", "البطحاء",
+  "العزيزيه", "المنار", "بدر", "الشميسي", "السويدي", "ظهره لبن", "الحاير", "العريجاء", "لبن",
+  "الدرعيه", "حطين", "الملقا", "الغدير", "المؤتمرات", "الرحمانيه", "عرقه", "طويق", "المهديه",
+];
+
 function findDistrict(raw: string): string | null {
   const id = siteInDistrict(raw);
   return id ? SITES[id].districtAr : null;
@@ -465,11 +487,19 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
     return { ...base, kind: "handoff" };
 
   // Complaint (§5.3) — outranks price and booking in the stance order (§5.5).
-  if (has(t, "انتظرت", "تاخرت عليكم", "زعلان", "مستاء", "سيئ", "شكوي", "اشتكي", "ضاع علي", "ما احترمتوا", "استرجاع", "ارجعوا فلوسي", "تعويض"))
+  if (has(t, "انتظرت", "تاخرت عليكم", "زعلان", "مستاء", "سيئ", "سيءه", "شكوي", "اشتكي", "ضاع علي", "ما احترمتوا", "استرجاع", "ارجعوا فلوسي", "تعويض",
+    // «ما أبي اعتذار أبي حل» was read as a decline — the «ما أبي» trips the negation
+    // layer — so a patient demanding a resolution was offered a no-obligation booking.
+    "ما ابي اعتذار", "ابي حل", "خدمه زفت", "خدمتكم سيئه", "ما تردون", "ما ترد علي", "زفت"))
     return { ...base, kind: "complaint" };
 
   // Rating (§5.4) — before competitor, because it names us, not them.
-  if (has(t, "تقييم", "نجوم", "جوجل", "قوقل", "review", "stars", "rating")) return { ...base, kind: "rating" };
+  // A map pin is not a review. «قوقل» appears in both «تقييمكم في قوقل» and «الموقع
+  // على قوقل ماب», and the rating branch answered an accusation the patient never
+  // made. The location read runs first (it is below, before hours) and this now
+  // requires a rating word, not merely the platform's name.
+  if (has(t, "تقييم", "نجوم", "review", "stars", "rating") || (has(t, "جوجل", "قوقل") && has(t, "تقييم", "نجمه", "نجوم", "ضعيف", "سيئ")))
+    return { ...base, kind: "rating" };
 
   if (has(t, "احسن من", "افضل من", "ارخص من", "مستشفي ثاني", "مجمع ثاني", "عيادات ثانيه", "compared to", "better than"))
     return { ...base, kind: "competitor" };
@@ -487,13 +517,13 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
     return { ...base, kind: "doctor_quality" };
 
   // Cancellation (Rule MED-6 — never argued).
-  if (has(t, "الغي", "الغاء", "ابي الغي", "cancel")) return { ...base, kind: "cancel" };
+  if (has(t, "الغي", "الغه", "الغيه", "الغاء", "ابي الغي", "ابي الغاء", "cancel", "cancel it")) return { ...base, kind: "cancel" };
 
   // Slot pick by ordinal. Picking by the slot's OWN WORDS — «السبت 11» — is matched
   // in the scene machine, which is the only layer that can see the offered labels.
   if (offeredCount > 0) {
-    if (/(^|\s)(1|الاول|الاولي|الخيار الاول)(\s|$)/.test(t)) return { ...base, kind: "pick_slot", slotPick: 1 };
-    if (/(^|\s)(2|الثاني|الثانيه|الخيار الثاني)(\s|$)/.test(t) && offeredCount > 1)
+    if (/(^|\s)(1|الاول|الاولي|الخيار الاول|first|the first one|first one)(\s|$)/.test(t)) return { ...base, kind: "pick_slot", slotPick: 1 };
+    if (/(^|\s)(2|الثاني|الثانيه|الخيار الثاني|second|the second one|second one)(\s|$)/.test(t) && offeredCount > 1)
       return { ...base, kind: "pick_slot", slotPick: 2 };
   }
 
@@ -543,6 +573,22 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // line, which is the one answer that is definitely wrong when we know the answer.
   if (has(t, "وين الفرع", "وين مكانكم", "العنوان", "عنوانكم", "الموقع", "وين موقعكم", "لوكيشن", "المواقف", "موقف السيارات", "where are you", "your address", "location", "parking"))
     return { ...base, kind: "location_question" };
+
+  // «وش أجيب معي؟» — asked one message after he wrote the answer himself. The
+  // pre-visit line already says what to bring; he answered «ما أقدر أأكدها لك من
+  // عندي» and then offered to book an appointment the patient had just booked.
+  if (has(t, "وش اجيب", "ايش اجيب", "وش اخذ معي", "اجيب معي", "المطلوب معي", "اوراق", "what should i bring", "what do i need to bring", "documents"))
+    return { ...base, kind: "pre_visit" };
+
+  // «سجّل لي طلب» — HIS OWN CHIP, on the scene the spec calls the honesty showpiece,
+  // and it had no intent at all: tapping it produced «ما أقدر أأكدها لك من عندي».
+  if (has(t, "سجل لي طلب", "سجل طلب", "سجل لي", "اكتب لي طلب", "طلب مكتوب", "register the request", "log the request"))
+    return { ...base, kind: "callback_request" };
+
+  // «تحاليل وأشعة» — the THIRD door the greeting itself offers, and the only one that
+  // was a wall. The demo books clinics, not labs; that is a limit to say, not to hide.
+  if (has(t, "تحاليل", "تحليل", "اشعه", "أشعة", "مختبر", "سونار", "رنين", "اشعه مقطعيه", "lab", "labs", "blood test", "x-ray", "xray", "mri", "ultrasound", "scan"))
+    return { ...base, kind: "labs_question" };
 
   // «عيادة معيّنة» — the second half of the opener's own question, and one of the two
   // chips under it. A chip the engine cannot read is worse than no chip at all.
@@ -631,6 +677,9 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // a price question about laser, not as a bare need.
   if (base.need) return { ...base, kind: "need" };
   if (base.districtAr) return { ...base, kind: "district" };
+
+  // A district we do not serve is an ANSWER to «أنت بأي حي؟», not an unknown.
+  if (UNSERVED_DISTRICTS.some((d) => t.includes(normalizeArabic(d)))) return { ...base, kind: "unserved_district" };
 
   // A doctor-gender request with NOTHING else in the message is its own intent; in
   // any other message it is a preference carried by `prefersFemale` (§9 turn 10).

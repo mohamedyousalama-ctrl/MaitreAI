@@ -119,7 +119,12 @@ export function compose(text: string, opts: ComposeOpts = {}): string {
   let out = text;
   out = applyPrice1(out);
   out = applyPackageTerms(out, !!opts.quotedPackage, opts.packageTermsAr);
-  out = applyFriday1(out, opts.branchPhone ?? null);
+  // §6.7 — THE CONFIRMATION BLOCK IS ATOMIC. Nothing is appended to it, and FRI-1 was
+  // appending the Friday line AFTER «حجز تجريبي — غير مسجّل لدى الفرع»: the screenshot
+  // artefact of the whole demo carried an instruction below its own legal label. The
+  // Friday warning is not lost — the caller renders it on the pre-visit message, which
+  // is the next bubble and the right place for a thing to do before you leave home.
+  if (!opts.isConfirmation) out = applyFriday1(out, opts.branchPhone ?? null);
   if (opts.isConfirmation) assertConfirmationDisclosed(out);
   return normalizeOutbound(out);
 }

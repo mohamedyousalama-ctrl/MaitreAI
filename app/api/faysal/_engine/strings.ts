@@ -577,6 +577,25 @@ export const motionMatchForkUnverified = (a: {
 2) ${a.optionBest}
 أي طريق أريح لك؟`;
 
+/** «وش أجيب معي؟» — answered from what the pre-visit line already says, rather than
+ *  with «ما أقدر أأكدها». Reads the payment, so a cash patient is not sent for a card. */
+export const whatToBring = (payment: "insurance" | "cash" | null, arrivalBuffer: number) =>
+  `${payment === "cash" ? "تجيب الهوية أو الإقامة وبس" : "تجيب الهوية أو الإقامة وبطاقة التأمين"}، وتوصل قبل الموعد بـ ${arrivalBuffer} دقيقة عشان الاستقبال.\nتحتاج شي ثاني قبل الزيارة؟`;
+
+/** A Riyadh district we have no branch in. It is an ANSWER to «أنت بأي حي؟», so it is
+ *  met with the truth and the short list — never with «ما أقدر أأكدها». */
+export const districtNotServed = (districts: string) =>
+  `ما عندنا فرع في الحي هذا نفسه.\nفروعنا في ${districts} — أيهم أسهل عليك؟`;
+
+/** Labs and imaging: the greeting's own third door, and the demo books clinics. */
+export const LABS_NOT_BOOKABLE =
+  "التحاليل والأشعة ما أثبّت لها موعد من هنا، وما أبي أقول لك موعد وأطلع غلط.\nأسجّل لك طلب والفرع يتصل عليك، ولا أثبّت لك كشف عام؟";
+
+/** The SECOND time in a row he cannot read a message. One honest «I don't know» is
+ *  character; the same paragraph twice is the moment he stops being a person. */
+export const secondMiss = (branchPhone: string) =>
+  `ما ضبطت معي، وأعتذر.\nأسجّل لك طلب والاستقبال يتصل عليك، ولا تتصل أنت على ${branchPhone}؟`;
+
 /** «وين الفرع؟» — the address, the district, and the way to get the rest. Nothing
  *  about hours: that is a different question with a different honesty problem. */
 export const branchLocation = (branch: string, address: string, phone: string) =>
