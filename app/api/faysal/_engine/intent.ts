@@ -289,6 +289,16 @@ const has = (t: string, ...needles: string[]) => needles.some((n) => t.includes(
 /** A need word is a substring match EXCEPT when it is three letters or fewer: «سن»
  *  lives inside «حسن» and «أحسن», «اذن» inside «اذنك», «ent» inside «appointment».
  *  Short needles are word-bounded, with the ordinary Arabic prefixes allowed. */
+/**
+ * A needle that must END at a word boundary. `has` is a plain `includes`, and
+ * «أفضّل دكتورة» — "I'd prefer a female doctor" — contains «افضل دكتور», so a
+ * patient stating a preference was answered with «ما أقيّم لك دكتور» ("I don't rate
+ * doctors"). Driven. The Arabic feminine «ة» folds to «ه», which is a letter, so the
+ * only thing that separates the two phrases is what comes after the last one.
+ */
+const hasPhrase = (t: string, ...needles: string[]): boolean =>
+  needles.some((n) => new RegExp(`${normalizeArabic(n).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![ء-يa-z0-9])`).test(t));
+
 const needIn = (t: string): DemoNeed | null => NEEDS.find((row) => row.words.some((w) => needWord(t, w)))?.need ?? null;
 const needWord = (t: string, w: string): boolean => {
   const n = normalizeArabic(w);
@@ -443,7 +453,7 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   if (has(t, "نتيجه التحليل", "نتيجه الاشعه", "تقريري", "تقرير الاشعه", "التحاليل طلعت", "lab result", "my report"))
     return { ...base, kind: "records" };
 
-  if (has(t, "الدكتور زين", "الدكتور شاطر", "احسن دكتور", "افضل دكتور", "is the doctor good", "best doctor"))
+  if (hasPhrase(t, "الدكتور زين", "الدكتور شاطر", "احسن دكتور", "افضل دكتور", "is the doctor good", "best doctor"))
     return { ...base, kind: "doctor_quality" };
 
   // Cancellation (Rule MED-6 — never argued).

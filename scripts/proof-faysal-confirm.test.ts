@@ -144,6 +144,18 @@ const GREETINGS = ["مساء الخير", "صباح الخير", "السلام �
 for (const g of GREETINGS) ok(`greeting classifies as greeting_only: «${g}»`, kind(g) === "greeting_only", kind(g));
 ok("a greeting with a request is NOT greeting_only", kind("السلام عليكم ابغى موعد ليزر") !== "greeting_only", kind("السلام عليكم ابغى موعد ليزر"));
 
+// «أفضّل دكتورة» is a PREFERENCE. It contains «أفضل دكتور» as a substring, so it was
+// answered «ما أقيّم لك دكتور» — "I don't rate doctors" — with every fact in the
+// message correctly recorded and nothing done with any of them. The feminine «ة»
+// folds to «ه», a letter, so only a boundary after the phrase tells the two apart.
+for (const t of ["أفضّل دكتورة", "وأفضّل دكتورة", "ابغى دكتورة", "أفضل دكتورة لو تقدر"]) {
+  ok(`a female-doctor preference is not a doctor-quality question: «${t}»`, kind(t) !== "doctor_quality", kind(t));
+  ok(`…and it is recorded as a preference: «${t}»`, cls(t)?.prefersFemale === true, cls(t)?.prefersFemale);
+}
+for (const t of ["مين أفضل دكتور عندكم؟", "الدكتور زين؟", "احسن دكتور بالجلدية مين؟"]) {
+  ok(`a doctor-quality question still is one: «${t}»`, kind(t) === "doctor_quality", kind(t));
+}
+
 // ── the two demo chips, byte-exact ──────────────────────────────────────────
 // They are what a patient TAPS, so they are the one input that must never regress
 // on a classifier edit — and they are literals here, not built from any axis.
@@ -191,7 +203,11 @@ for (const g of G_GREET) {
           grid++;
           ok(
             `reads the whole message: «${text}»`,
-            !!c && c.need === needKey && c.districtAr === d && c.payment === payKey && c.prefersFemale === (f !== "") && c.kind !== "female_doctor",
+            // The kind matters as much as the facts: a message that carries all five
+            // was reaching `doctor_quality` and being answered «ما أقيّم لك دكتور»,
+            // with every fact correctly recorded and nothing done with them.
+            !!c && c.need === needKey && c.districtAr === d && c.payment === payKey && c.prefersFemale === (f !== "") &&
+              (c.kind === "slots_question" || c.kind === "need" || c.kind === "payment"),
             c && { kind: c.kind, need: c.need, d: c.districtAr, pay: c.payment, f: c.prefersFemale },
           );
         }

@@ -116,11 +116,18 @@ export function payerByName(carrier: string): (Payer & { aliases: string[] }) | 
 
 // ── The permitted sentence shapes (§10.4) ───────────────────────────────────
 
+// RIYADH ARABIC, NOT A CIRCULAR. These two sentences appear in every insurance
+// answer the product gives, and they were written in Modern Standard Arabic —
+// «مُدرجة ضمن», «تُحتسب», «احضر», «يتحقق لك منها» — which is the register of a
+// government form, not of a coordinator on WhatsApp. A reviewer reading the twelve
+// transcripts flagged it as the one place where the whole persona drops. The MEANING
+// is unchanged, word for word: still no coverage promise, still the card, still the
+// class and the deductible, still reception verifying before the visit.
 const BRING_CARD =
-  "احضر الهوية أو الإقامة وبطاقة التأمين، واسأل الاستقبال تحت أي فئة شبكة تُحتسب الزيارة.";
+  "خذ معك الهوية أو الإقامة وبطاقة التأمين، واسأل الاستقبال زيارتك تحت أي فئة.";
 
 const CLASS_HONESTY =
-  "تغطية زيارتك تعتمد على فئة شبكتك والتحمّل في بطاقتك — الاستقبال يتحقق لك منها قبل الكشف.";
+  "التغطية نفسها تعتمد على فئة شبكتك والتحمّل اللي في بطاقتك — الاستقبال يتأكد لك منها قبل الكشف.";
 
 /**
  * The ONE insurance answer. Renderer-emitted, never composed by a model, and
@@ -160,11 +167,11 @@ export function insuranceAnswer(carrier: string, siteId: SiteId): InsuranceAnswe
         `مرضى ${shown} انعلن استقبالهم في ${site.nameAr} (إعلان يونيو ٢٠٢٤)، والاستقبال يأكد لك الوضع الحالي. ` +
         `${CLASS_HONESTY} ${BRING_CARD}`;
     } else if (forThisSite) {
-      sentenceAr = `${site.nameAr} مدرج ضمن شبكات عدة شركات تأمين، منها ${shown}. ${CLASS_HONESTY} ${BRING_CARD}`;
+      sentenceAr = `${site.nameAr} داخل شبكات كذا شركة تأمين، منها ${shown}. ${CLASS_HONESTY} ${BRING_CARD}`;
     } else {
       sentenceAr =
-        `مجمعات المجموعة مدرجة ضمن شبكات عدة شركات تأمين، منها ${shown}، ` +
-        `وما عندي تأكيد خاص بـ${site.nameAr}. ${CLASS_HONESTY} ${BRING_CARD}`;
+        `مجمعاتنا داخل شبكات كذا شركة تأمين، منها ${shown}، ` +
+        `بس ما عندي تأكيد خاص بـ${site.nameAr}. ${CLASS_HONESTY} ${BRING_CARD}`;
       accepted = "unknown";
     }
     if (contested && p.id !== "bupa") {

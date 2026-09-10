@@ -606,6 +606,24 @@ export function runTurn(s: FaysalSession, raw: string, cls: Classification, now:
   }
 
   const out = dispatch(s, raw, cls, now, language, store);
+
+  // §9 turn 10's shape: the preference is noted OUT LOUD, on the turn that moves the
+  // booking, as the last line of a message that is already doing something — never as
+  // a paragraph of its own, and never twice. Saying it once and forgetting it is what
+  // produced a confirmation block with no mention of the request the patient made.
+  if (
+    s.prefersFemaleDoctor &&
+    !s.genderNoteSent &&
+    language !== "en" &&
+    (out.scene === "S5_slots" || out.scene === "S6_close" || out.scene === "S7_confirmed")
+  ) {
+    const last = [...out.messages].reverse().find((m) => m.from === "faysal");
+    if (last) {
+      last.text = `${last.text}\n${S.GENDER_NOTED}`;
+      s.genderNoteSent = true;
+    }
+  }
+
   if (prefix.length) out.messages = assertCadence([...prefix, ...out.messages]);
   return out;
 }
@@ -1139,6 +1157,24 @@ function insuranceReply(
 
   // Split-recap (§4.2, and §9's turn 5): the insurance note is its own atomic
   // message and the ONE question follows it.
+  //
+  // WHEN THE PATIENT ALREADY TOLD US EVERYTHING, THE NOTE IS A NOTE — NOT THE TURN.
+  // «أبغى موعد جلدية بكرة الصبح في الروابي، عندي بوبا» ended on the insurance
+  // paragraph and no appointment, so the next thing the patient read was silence
+  // where the slots should have been. The note goes first, the slots follow it: the
+  // §4.2 split-recap shape, which is exactly what this case is.
+  // Routing has not run yet when the patient names their clinic, their district and
+  // their insurer in ONE message — the payment branch reaches here first. Adopt the
+  // recommendation only when there is no geography fork to put to them; a fork is a
+  // question, and a question is not something to answer on the patient's behalf.
+  if (!s.siteId && s.need) {
+    const rec = recommend(needOf(s), { districtAr: s.districtAr, now });
+    if (rec && !(rec.nearestSiteId && rec.nearestSiteId !== rec.siteId)) s.siteId = rec.siteId;
+  }
+  if (s.siteId && s.need && !s.forkOffered) {
+    const slots = offerSlots(s, now, language, store);
+    return { ...slots, messages: assertCadence([faysal(s, body), ...slots.messages]) };
+  }
   const msgs = [faysal(s, body)];
   if (s.forkOffered) {
     msgs.push(faysal(s, "أي طريق أريح لك؟"));

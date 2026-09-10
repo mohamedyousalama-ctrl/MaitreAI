@@ -543,8 +543,8 @@ export const motionMatchForkUnverified = (a: {
 
 /** SPEC-1 §10.4 permitted shape — the networks the BUILDING appears on. Not eligibility. */
 export const insuranceNetworksListed = (branchName: string, examples: string) =>
-  `${branchName} مدرج ضمن شبكات عدة شركات تأمين، منها ${examples}.
-بس التغطية نفسها تعتمد على فئة شبكتك والتحمّل في بطاقتك، والاستقبال يتحقق لك منها قبل الكشف.`;
+  `${branchName} داخل شبكات كذا شركة تأمين، منها ${examples}.
+بس التغطية نفسها تعتمد على فئة شبكتك والتحمّل اللي في بطاقتك، والاستقبال يتأكد لك منها قبل الكشف.`;
 
 /** Rule MED-6 — cancellation is never argued, and no penalty is quoted. */
 export const CANCEL_DONE = "تم الإلغاء. ما عليك شي، ومتى ما تحتاج موعد ثاني ترد هنا وأرتّبه لك.";

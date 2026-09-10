@@ -86,6 +86,9 @@ export interface FaysalSession {
   /** The patient asked for a female clinician at some point. It rides with the
    *  booking (SPEC-2 §9 turn 10) instead of being answered once and forgotten. */
   prefersFemaleDoctor: boolean;
+  /** The «طلبك مع دكتورة مسجّل» note is said ONCE, on the first turn that actually
+   *  moves the booking — not on every turn, and never as a turn of its own. */
+  genderNoteSent: boolean;
   /** Rule C4-1 — a coarse window in the patient's OWN words, never a clock time. */
   preferredWindowAr: string | null;
   /** The patient chose the contested branch; we are waiting on their own window. */
@@ -138,6 +141,7 @@ export function newSession(): FaysalSession {
     holdId: null,
     booked: null,
     prefersFemaleDoctor: false,
+    genderNoteSent: false,
     heldSlot: null,
     bookingRef: null,
     preferredWindowAr: null,
