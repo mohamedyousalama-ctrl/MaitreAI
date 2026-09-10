@@ -15,10 +15,12 @@
 // without gaining its assertions on both sides in the same commit.
 // ============================================================================
 
-import { normalizeForSafety } from "./normalize";
+import { normalizeForSafety, normalizeEn } from "./normalize";
 import {
   adj, adjPick, bodyTemperature, has, hasNonPersonSubject, hasPersonAnchor, pick, splitClauses,
   HYPOTHETICAL_RE, SPELLED_FEVER, termRe,
+  adjEn, adjEnAny, ageInMonthsEn, bodyTemperatureEn, hasEn, hasPersonAnchorEn, pickEn,
+  splitClausesEn, termReEn, HYPOTHETICAL_EN_RE,
 } from "./match";
 import {
   AIRWAY, CARDIAC, HEMORRHAGE, INFANT_FEVER, OBSTETRIC, POISONING,
@@ -50,7 +52,7 @@ const hit = (
 
 // ── §2.9 I — SELF-HARM ───────────────────────────────────────────────────────
 // Evaluated FIRST (§2.0 L7). «أخذت حبوب كثير عشان أخلص» is a crisis before it is a poisoning.
-function selfHarm(clause: string, raw: string): Candidate | null {
+function selfHarm(clause: string): Candidate | null {
   const S = SELF_HARM.sets;
   // Rule 4 — bereavement SUPPRESSES the class outright. A grieving patient cancelling an
   // appointment handed a suicide rail is the single most damaging false positive in §2.
@@ -88,10 +90,6 @@ function selfHarm(clause: string, raw: string): Candidate | null {
   }
   const std = pick(S.STANDALONE, clause);
   if (std) return { tier: "emergency", termAr: std, ruleId: "I.standalone" };
-  // The English/franco arm runs on the RAW text, lowercased — `normalizeAr` lowercases too,
-  // but the Arabic folds must not reach a Latin string.
-  const en = S.STANDALONE_EN.find((p) => raw.toLowerCase().includes(p));
-  if (en) return { tier: "emergency", termAr: en, ruleId: "I.standalone_en" };
   // Rule 1 — a first-person death/harm verb with no idiom object left standing.
   if (/(?:^|\s)(?:و|ف|ب|ك|ل)?(?:ابي|ودي|بدي|افكر|راح|بغيت) [^ ]{0,12}(?:اموت|انتحر|اختفي)/.test(clause)) {
     return { tier: "emergency", termAr: "اموت", ruleId: "I.first_person_intent" };
@@ -100,12 +98,10 @@ function selfHarm(clause: string, raw: string): Candidate | null {
 }
 
 // ── §2.1 A — CARDIAC ─────────────────────────────────────────────────────────
-function cardiac(clause: string, raw: string): Candidate | null {
+function cardiac(clause: string): Candidate | null {
   const S = CARDIAC.sets;
   const std = pick(S.STANDALONE, clause);
   if (std) return { tier: "emergency", termAr: std, ruleId: "A.standalone" };
-  const en = S.STANDALONE_EN.find((p) => raw.toLowerCase().includes(p));
-  if (en) return { tier: "emergency", termAr: en, ruleId: "A.standalone_en" };
   const term = pick(S.TERM, clause);
   if (!term) return null;
   // A COMPANION counts as the predicate ONLY with a TERM in the same clause — which is why
@@ -120,7 +116,7 @@ function cardiac(clause: string, raw: string): Candidate | null {
 }
 
 // ── §2.2 B — STROKE ──────────────────────────────────────────────────────────
-function stroke(clause: string, raw: string): Candidate | null {
+function stroke(clause: string): Candidate | null {
   const S = STROKE.sets;
   // An EXPLICIT benign cause named in the message (§2.0 L5) — an arm exclusion, not a frame.
   // Without it this class's rule was WIDER than its own near-miss table: «تنميل في رجلي من
@@ -128,8 +124,6 @@ function stroke(clause: string, raw: string): Candidate | null {
   const benign = has(S.EXCL_BENIGN, clause);
   const std = pick(S.STANDALONE, clause);
   if (std) return { tier: "emergency", termAr: std, ruleId: "B.standalone" };
-  const en = S.STANDALONE_EN.find((p) => raw.toLowerCase().includes(p));
-  if (en) return { tier: "emergency", termAr: en, ruleId: "B.standalone_en" };
   // `شلل` on its own — the BOUNDARY DOES NOT SAVE IT. Verified: a boundary-matched `شلل`
   // FIRES on «متى تطعيم شلل الأطفال؟», one of the highest-volume paediatric questions in the
   // Kingdom. The rule is a negative lookahead on the GOVERNED noun. That is the whole rule.
@@ -167,7 +161,7 @@ const ARM5 = adj(AIRWAY.sets.CYANOSIS_SUBJ, [], AIRWAY.sets.BLUE);
 const IDIOM_OBJ = AIRWAY.sets.IDIOM_OBJECT.join("|");
 const ARM3 = new RegExp(`نفسي ?(?:ضايق|ضاق|يضيق|مسدود|واقف)(?! ?من ?(?:ال)?(?:${IDIOM_OBJ})(?![ء-ي]))`);
 
-function airway(clause: string, raw: string): Candidate | null {
+function airway(clause: string): Candidate | null {
   const S = AIRWAY.sets;
   if (ARM1.test(clause)) {
     return { tier: "emergency", termAr: adjPick(S.NEGATION, S.AUX, S.BREATHE, clause, { aParticle: true }) ?? "تنفس", ruleId: "D.arm1_inability" };
@@ -204,8 +198,6 @@ function airway(clause: string, raw: string): Candidate | null {
   if (termRe("ربو").test(clause) && has(S.EXACERBATION, clause)) {
     return { tier: "emergency", termAr: "ربو", ruleId: "D.arm7_asthma" };
   }
-  const en = S.STANDALONE_EN.find((p) => raw.toLowerCase().includes(p));
-  if (en) return { tier: "emergency", termAr: en, ruleId: "D.arm8_english" };
   return null;
 }
 
@@ -228,13 +220,11 @@ function obstetric(clause: string): Candidate | null {
 }
 
 // ── §2.3 C — HEMORRHAGE ──────────────────────────────────────────────────────
-function hemorrhage(clause: string, raw: string): Candidate | null {
+function hemorrhage(clause: string): Candidate | null {
   const S = HEMORRHAGE.sets;
   if (has(S.EXCL_RESOLVED, clause)) return null;
   const std = pick(S.STANDALONE, clause);
   if (std) return { tier: "emergency", termAr: std, ruleId: "C.standalone" };
-  const en = S.STANDALONE_EN.find((p) => raw.toLowerCase().includes(p));
-  if (en) return { tier: "emergency", termAr: en, ruleId: "C.standalone_en" };
   const term = pick(S.TERM, clause);
   if (!term) return null;
   // The GUM/NOSE VETO SITS OUTSIDE THE PREDICATE TEST — or the `شديد` intensifier buys back
@@ -343,19 +333,320 @@ function trauma(clause: string): Candidate | null {
   return std ? { tier: "emergency", termAr: std, ruleId: "H.standalone" } : null;
 }
 
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// THE ENGLISH ARM — one function per class, over `normalizeEn`'s clauses.
+//
+// WHY THESE ARE SEPARATE FUNCTIONS AND NOT AN EXTRA `if` INSIDE EACH ARABIC ARM. The two
+// scripts have different boundaries (§1.2's `(?<![ء-ي])` against ASCII `\b`), different
+// clause splitters (`بس` against `but`), different normalizers and — because a message is
+// segmented independently in each — different clause LISTS. An arm that took both would have
+// to carry the whole distinction inline, in nine places, which is how a matcher discipline
+// drifts. `match.ts` holds one pair of tools; each class holds one pair of rules.
+//
+// WHAT SHIPPED BEFORE, AND WHY IT WAS NOT AN ENGLISH ARM: four classes had a `STANDALONE_EN`
+// array read with `raw.toLowerCase().includes(p)` — the WHOLE MESSAGE, no boundary, no clause,
+// no composition — and five classes had nothing at all. So «my baby has a fever and won't wake
+// up» was silent, and so was every other English sentence in §2.5, §2.6, §2.7 and §2.8. Driven
+// through the real engine: a booking offer, no rail.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── §2.9 I — SELF-HARM, ENGLISH ──────────────────────────────────────────────
+// STANDALONE PHRASES AND NOTHING ELSE. §1.3 singles this class out as the one where the
+// over-fire cost is itself a safety cost, and English death talk is idiom before it is
+// ideation — «killing me», «dying to», «to die for», «dead tired». No bare verb is a term, so
+// every one of those is quiet because NOTHING MATCHES, which is the state §2.9's T6 inversion
+// had to engineer for Arabic and English gets by construction.
+function selfHarmEn(clause: string): Candidate | null {
+  const S = SELF_HARM.sets;
+  if (hasEn(S.BEREAVEMENT_EN, clause)) return null;
+  if (hasEn(S.IDIOM_EXCL_EN, clause)) return null;
+  const std = pickEn(S.STANDALONE_EN, clause);
+  if (!std) return null;
+  // «I cut myself shaving» is an injury report and «I cut myself again last night» is not, and
+  // the two are one word apart. An enumerated accident term IN THE MESSAGE (§2.0 L5) scopes
+  // this arm only; §11.2 pairs both sentences so neither can be traded for the other.
+  if (/cut(ting)? myself/.test(std) && hasEn(S.ACCIDENT_EXCL_EN, clause)) return null;
+  return { tier: "emergency", termAr: std, ruleId: "I.standalone_en" };
+}
+
+// ── §2.1 A — CARDIAC, ENGLISH ────────────────────────────────────────────────
+// THE PREDICATE IS ADJACENT TO THE TERM AND THE COMPANION IS NOT, which is §2.1's own shape:
+// «chest pain» / «pain in my chest» / «my chest hurts» are the finding, and «sweating» is a
+// companion that counts only with a term in the same clause. Adjacency is what keeps «I need a
+// chest x-ray because my throat is sore» quiet — four tokens apart, and `sore` never reaches.
+const A_MIDS_EN = ["is", "was", "feels", "felt", "in", "on", "of", "my", "his", "her", "the",
+  "around", "under", "with", "really", "very", "so", "getting", "gets", "keeps"];
+const A_TERM_PRED_EN = adjEn(CARDIAC.sets.TERM_EN, A_MIDS_EN,
+  [...CARDIAC.sets.PRED_PAIN_EN, ...CARDIAC.sets.PRED_PRESSURE_EN, ...CARDIAC.sets.PRED_BURNING_EN]);
+const A_PRED_TERM_EN = adjEn(
+  [...CARDIAC.sets.PRED_PAIN_EN, ...CARDIAC.sets.PRED_PRESSURE_EN, ...CARDIAC.sets.PRED_BURNING_EN],
+  A_MIDS_EN, CARDIAC.sets.TERM_EN);
+
+function cardiacEn(clause: string): Candidate | null {
+  const S = CARDIAC.sets;
+  const std = pickEn(S.STANDALONE_EN, clause);
+  if (std) return { tier: "emergency", termAr: std, ruleId: "A.standalone_en" };
+  const term = pickEn(S.TERM_EN, clause);
+  if (!term) return null;
+  if (A_TERM_PRED_EN.test(clause) || A_PRED_TERM_EN.test(clause)) {
+    return { tier: "emergency", termAr: term, ruleId: "A.term_predicate_en" };
+  }
+  if (hasEn(S.PRED_COMPANION_EN, clause)) {
+    return { tier: "emergency", termAr: term, ruleId: "A.companion_en" };
+  }
+  return null;
+}
+
+// ── §2.2 B — STROKE, ENGLISH ─────────────────────────────────────────────────
+const B_MIDS_EN = ["is", "are", "was", "were", "his", "her", "my", "the", "on", "one", "of",
+  "went", "feels", "completely", "totally", "suddenly", "still", "and"];
+const B_TERM_FAIL_EN = adjEn(STROKE.sets.TERM_EN, B_MIDS_EN, STROKE.sets.PRED_FAILURE_EN);
+const B_FAIL_TERM_EN = adjEn(STROKE.sets.PRED_FAILURE_EN, B_MIDS_EN, STROKE.sets.TERM_EN);
+
+function strokeEn(clause: string): Candidate | null {
+  const S = STROKE.sets;
+  const benign = hasEn(S.EXCL_BENIGN_EN, clause);
+  const std = pickEn(S.STANDALONE_EN, clause);
+  if (std) {
+    // THE FOLLOW-UP EXCLUSION SCOPES THE BARE NOUN AND NOTHING ELSE (§2.0 L5). §2.2's near-miss
+    // table rules «متابعة بعد الجلطة» and «موعد علاج طبيعي بعد الجلطة» quiet, and Arabic gets
+    // that free because bare `جلطة` is not a term. Bare `stroke` IS an English term — it
+    // shipped as one, and deleting it would take «my father had a stroke» with it — so the
+    // rehabilitation reading is named in the message instead. A clause carrying a FAST sign
+    // fires whatever else is in it.
+    const bareNoun = std === "stroke";
+    if (!bareNoun || !hasEn(S.EXCL_FOLLOWUP_EN, clause)) {
+      return { tier: "emergency", termAr: std, ruleId: "B.standalone_en" };
+    }
+  }
+  // THE INTRANSITIVE ARM — the T6 inversion, in a second class and on a second axis.
+  // «I CAN'T SPEAK ARABIC» is the commonest sentence in an expatriate clinic inbox and it is
+  // aphasia word for word; «I'm seeing double entries for the same booking» is a duplicate
+  // booking and it is diplopia word for word. Both findings are INTRANSITIVE — the patient
+  // reports them with no object — and both idioms TAKE one, over a complement slot that is
+  // open (every language, «right now», «entries», «bookings»). So the rule fires on an EMPTY
+  // complement or on an enumerated adverb, and on nothing else. Driven, and the four rows are
+  // the whole test: «my father suddenly can't speak» FIRES · «he is seeing double» FIRES ·
+  // «I can't speak Arabic» quiet · «I'm seeing double entries» quiet.
+  for (const phrase of S.INTRANSITIVE_EN) {
+    const m = termReEn(phrase).exec(clause);
+    if (!m) continue;
+    const after = clause.slice(m.index + m[0].length).trim();
+    if (after === "" || S.INTRANSITIVE_ADVERB_EN.some((adv) => after.startsWith(adv))) {
+      return { tier: "emergency", termAr: phrase, ruleId: "B.intransitive_en" };
+    }
+  }
+  if (benign) return null;
+  const term = pickEn(S.TERM_EN, clause);
+  if (term && (B_TERM_FAIL_EN.test(clause) || B_FAIL_TERM_EN.test(clause))) {
+    return { tier: "emergency", termAr: term, ruleId: "B.term_failure_en" };
+  }
+  // The onset arm, scoped to the PERSON-ONLY failures — «the queue is not moving», «my file
+  // hasn't moved», «the booking system is paralysed» are ordinary English and each of them is
+  // a failure predicate with an onset. Nothing administrative slurs its speech or sees double.
+  if (hasEn(S.PRED_ONSET_EN, clause) && hasEn(S.PRED_FAILURE_PERSON_ONLY_EN, clause)) {
+    return {
+      tier: "emergency",
+      termAr: pickEn(S.PRED_FAILURE_PERSON_ONLY_EN, clause) ?? "drooping",
+      ruleId: "B.onset_failure_en",
+    };
+  }
+  return null;
+}
+
+// ── §2.4 D — AIRWAY, ENGLISH ─────────────────────────────────────────────────
+const D_ARM1_EN = adjEn(AIRWAY.sets.NEG_EN, AIRWAY.sets.MID_EN, AIRWAY.sets.BREATHE_EN);
+const D_ARM2_EN = adjEn(AIRWAY.sets.DIFFICULTY_EN, AIRWAY.sets.DIFFICULTY_MID_EN, AIRWAY.sets.BREATHE_NOUN_EN);
+const D_ARM2_DENIAL_EN = adjEn(AIRWAY.sets.DENIAL_HEAD_EN, AIRWAY.sets.DENIAL_MID_EN, AIRWAY.sets.DIFFICULTY_EN);
+const D_PART_SWELL_EN = adjEn(AIRWAY.sets.PART_EN, AIRWAY.sets.PART_MID_EN,
+  [...AIRWAY.sets.SWELL_EN, ...AIRWAY.sets.CLOSE_EN]);
+const D_SWELL_PART_EN = adjEn([...AIRWAY.sets.SWELL_EN, ...AIRWAY.sets.CLOSE_EN],
+  AIRWAY.sets.PART_MID_EN, AIRWAY.sets.PART_EN);
+/** «turning blue» is cyanosis AND a bruise, so it takes the ARM 5 treatment: the tell is on the
+ *  LEFT. A symptom report names a person; «the bruise is turning blue» does not. */
+const D_NEEDS_PERSON_EN = ["turning blue", "went blue", "going blue"];
+
+function airwayEn(clause: string): Candidate | null {
+  const S = AIRWAY.sets;
+  if (D_ARM1_EN.test(clause)) {
+    return { tier: "emergency", termAr: pickEn(S.BREATHE_EN, clause) ?? "breathe", ruleId: "D.arm1_inability_en" };
+  }
+  // ARM 2's DENIAL GOVERNS THE NOUN, exactly as it does in Arabic. «no difficulty breathing»,
+  // «he has no trouble breathing at all» and «not short of breath» are what a patient writes
+  // when they are FINE, and a co-occurrence reading sends every one of them an ambulance.
+  if (D_ARM2_EN.test(clause) && !D_ARM2_DENIAL_EN.test(clause)) {
+    return { tier: "emergency", termAr: pickEn(S.DIFFICULTY_EN, clause) ?? "difficulty", ruleId: "D.arm2_difficulty_en" };
+  }
+  if (D_PART_SWELL_EN.test(clause) || D_SWELL_PART_EN.test(clause)) {
+    return { tier: "emergency", termAr: pickEn(S.PART_EN, clause) ?? "throat", ruleId: "D.arm4_part_verb_en" };
+  }
+  const ph = pickEn(S.PHRASE_EN, clause);
+  if (ph && (!D_NEEDS_PERSON_EN.includes(ph) || hasPersonAnchorEn(clause))) {
+    return { tier: "emergency", termAr: ph, ruleId: "D.arm6_phrase_en" };
+  }
+  const std = pickEn(S.STANDALONE_EN, clause);
+  if (std && !(std === "choking" && hasEn(S.EXCL_HAZARD_EN, clause))) {
+    return { tier: "emergency", termAr: std, ruleId: "D.standalone_en" };
+  }
+  return null;
+}
+
+// ── §2.5 E — OBSTETRIC, ENGLISH ──────────────────────────────────────────────
+function obstetricEn(clause: string): Candidate | null {
+  const S = OBSTETRIC.sets;
+  const std = pickEn(S.STANDALONE_EN, clause);
+  if (std) return { tier: "emergency", termAr: std, ruleId: "E.standalone_en" };
+  const term = pickEn(S.TERM_EN, clause);
+  if (!term) return null;
+  for (const [set, id] of [
+    [S.PRED_BLEED_EN, "E.bleeding_en"], [S.PRED_MOVE_EN, "E.movement_en"],
+    [S.PRED_LABOUR_EN, "E.labour_en"], [S.PRED_PREECL_EN, "E.preeclampsia_en"],
+    [S.PRED_PAIN_EN, "E.pain_en"],
+  ] as const) {
+    if (hasEn(set, clause)) return { tier: "emergency", termAr: term, ruleId: id };
+  }
+  return null;
+}
+
+// ── §2.3 C — HEMORRHAGE, ENGLISH ─────────────────────────────────────────────
+const C_MIDS_EN = ["is", "was", "are", "with", "of", "in", "from", "the", "a", "his", "her", "my", "and", "so", "very", "really"];
+const C_VOL_TERM_EN = adjEn(HEMORRHAGE.sets.PRED_VOLUME_EN, C_MIDS_EN, HEMORRHAGE.sets.TERM_EN);
+const C_TERM_VOL_EN = adjEn(HEMORRHAGE.sets.TERM_EN, C_MIDS_EN, HEMORRHAGE.sets.PRED_VOLUME_EN);
+
+function hemorrhageEn(clause: string): Candidate | null {
+  const S = HEMORRHAGE.sets;
+  // A NEGATED RESOLUTION IS NOT A RESOLUTION. «the wound hasn't stopped bleeding» carries the
+  // whole exclusion phrase «stopped bleeding» inside it, and honouring it there would silence
+  // the strongest sentence in the class. Any negation in the clause disables the exclusion,
+  // which fails toward firing — the direction §13 requires while every §12 row is unsigned.
+  if (hasEn(S.EXCL_RESOLVED_EN, clause) && !/(?<![a-z])(?:hasnt|havent|wont|doesnt|didnt|never|not|still)(?![a-z])/.test(clause)) {
+    return null;
+  }
+  const std = pickEn(S.STANDALONE_EN, clause);
+  if (std) return { tier: "emergency", termAr: std, ruleId: "C.standalone_en" };
+  const term = pickEn(S.TERM_EN, clause);
+  if (!term) return null;
+  // The gum / nose veto sits OUTSIDE the predicate test, or the volume predicate buys back the
+  // commonest dental complaint in the product (§2.3, S1.5-5).
+  const capped = hasEn(S.SITE_CAPPED_EN, clause);
+  if (capped && hasEn(S.EXCL_HYGIENE_EN, clause)) return null;
+  const pred = C_VOL_TERM_EN.test(clause) || C_TERM_VOL_EN.test(clause) || hasEn(S.PRED_PERSIST_EN, clause);
+  const site = hasEn(S.SITE_EN, clause);
+  const siteUrgent = hasEn(S.SITE_URGENT_EN, clause);
+  if (!pred && !site && !siteUrgent) return null;
+  if (siteUrgent && !pred && !site) {
+    const withPainOrFever = /(?<![a-z])(?:pain|painful|hurts|fever|temperature|burning)(?![a-z])/.test(clause);
+    return { tier: withPainOrFever ? "emergency" : "urgent", termAr: term, ruleId: "C.site_urgent_en" };
+  }
+  if (capped) {
+    const lift = hasEn(S.CAP_LIFT_EN, clause);
+    return { tier: lift ? "emergency" : "urgent", termAr: term, ruleId: lift ? "C.gum_cap_lifted_en" : "C.gum_capped_en" };
+  }
+  return { tier: "emergency", termAr: term, ruleId: pred ? "C.term_predicate_en" : "C.term_site_en" };
+}
+
+// ── §2.6 F — INFANT FEVER, ENGLISH ───────────────────────────────────────────
+function infantFeverEn(clause: string): Candidate | null {
+  const S = INFANT_FEVER.sets;
+  // The red-flag arm NEVER consults the fever-side exclusions (§2.0 L5): a seizure last month
+  // is still a seizure, and a child who will not wake is not made safe by a past-time word.
+  for (const rf of S.PRED_REDFLAG_EN) {
+    if (!termReEn(rf).test(clause)) continue;
+    // `unresponsive` · `lethargic` · `floppy` ARE ADMINISTRATIVE WORDS TOO — «the clinic is
+    // unresponsive on the phone», «the app is unresponsive since the update». This is §2.6's
+    // `خامل` finding in English and it takes the same guard: a person in the clause, or a
+    // second red flag beside it.
+    if (S.PRED_REDFLAG_NEEDS_PERSON_EN.includes(rf)
+      && !hasPersonAnchorEn(clause)
+      && !hasEn(S.PRED_REDFLAG_EN.filter((x) => x !== rf), clause)) continue;
+    // A STIFF NECK IS MENINGISM IN A CHILD AND A PILLOW IN AN ADULT (§2.0 L5, the §2.2
+    // benign-cause exclusion in a second class): the writer named the cause, and a parent
+    // reporting meningism does not attribute it to the way they slept.
+    if (/neck/.test(rf) && hasEn(S.EXCL_BENIGN_NECK_EN, clause)) continue;
+    return { tier: "emergency", termAr: rf, ruleId: "F.redflag_en" };
+  }
+  const term = pickEn(S.TERM_EN, clause);
+  if (!term) return null;
+  if (hasEn(S.EXCL_NOT_BODY_EN, clause)) return null;      // the subject is not a body
+  // AN EXPLICIT PAST-TIME MARKER OR A RESOLUTION, IN THE MESSAGE (§2.0 L5). «my son had a fever
+  // last month, he's fine now, I want a check-up» is three clauses and the resolution is in the
+  // third, so the FIRST has to be quiet on its own — and what makes it quiet is the month in it.
+  if (hasEn(S.EXCL_PAST_EN, clause)) return null;
+  if (hasEn(S.EXCL_RESOLVED_EN, clause)) return null;
+  const value = bodyTemperatureEn(clause);
+  const months = ageInMonthsEn(clause);
+  const infant = hasEn(S.PRED_INFANT_EN, clause);
+  const child = hasEn(S.PRED_CHILD_EN, clause);
+  const persist = hasEn(S.PRED_PERSIST_EN, clause);
+  if (value !== null && value < 38.0) return null;         // not a fever
+  // AN AGE UNDER THREE MONTHS IS A MARKER; AN AGE OVER IT IS NOT. «she is 36 days old and has a
+  // fever» must fire with no marker word at all — that IS the population §2.6 exists for — and
+  // «post-vaccine fever in my 4-year-old» must not, because an age is not a report of illness.
+  const youngAge = months !== null && months < 3;
+  if (!infant && !child && !persist && value === null && !youngAge) return null;
+  if (hasEn(S.EXCL_CHRONIC_EN, clause)) return { tier: "urgent", termAr: term, ruleId: "F.fever_chronic_en" };
+  if (youngAge) return { tier: "emergency", termAr: term, ruleId: "F.infant_age_en" };
+  // AN EXPLICIT AGE ≥ 3 MONTHS CAPS THE HIT AT `urgent`, and this is the one place an English
+  // rule is stronger than its Arabic twin rather than equal to it. §2.6's own tier table says
+  // «age ≥ 3 months + fever alone → urgent»; the Arabic arm cannot honour it because it has no
+  // age reader and must fail toward firing on a child word plus a value. `ageInMonthsEn` reads
+  // what the parent actually wrote, so the English arm can obey the row instead of guessing.
+  if (months !== null) return { tier: "urgent", termAr: term, ruleId: "F.child_age_en" };
+  if (infant) return { tier: "emergency", termAr: term, ruleId: "F.infant_fever_en" };
+  if (value !== null && value >= 38.0) {
+    return { tier: child ? "emergency" : "urgent", termAr: term, ruleId: child ? "F.child_fever_value_en" : "F.fever_value_en" };
+  }
+  return { tier: "urgent", termAr: term, ruleId: persist ? "F.fever_persistent_en" : "F.child_fever_en" };
+}
+
+// ── §2.7 G — POISONING, ENGLISH ──────────────────────────────────────────────
+const G_OBJECTS_EN = [...POISONING.sets.SITE_POISON_EN, ...POISONING.sets.SITE_MEDICATION_EN];
+const G_SWALLOW_EN = adjEnAny(POISONING.sets.VERB_SWALLOW_EN, G_OBJECTS_EN, 4);
+const G_TAKE_EN = adjEnAny(POISONING.sets.VERB_TAKE_EN, G_OBJECTS_EN, 4);
+
+function poisoningEn(clause: string): Candidate | null {
+  const S = POISONING.sets;
+  const past = hasEn(S.EXCL_PAST_EN, clause);
+  const std = pickEn(S.STANDALONE_EN, clause);
+  if (std) return { tier: past ? "urgent" : "emergency", termAr: std, ruleId: past ? "G.standalone_past_en" : "G.standalone_en" };
+  const swallow = G_SWALLOW_EN.test(clause);
+  const take = G_TAKE_EN.test(clause);
+  if (!swallow && !take) return null;
+  const obj = pickEn(G_OBJECTS_EN, clause) ?? "medicine";
+  // T3 IN ENGLISH. «I took my medicine this morning» is what a chronic patient does every day
+  // of their life, and a TAKE verb with a medication object and no quantity or ownership
+  // qualifier is a prescription being followed. SWALLOW verbs are untouched: «my daughter
+  // swallowed pills» fires with no qualifier at all, because SWALLOWING pills is alarming on
+  // its own and TAKING them is not. §11.2 pairs the two so neither can be traded away.
+  if (!swallow && take && !hasEn(S.SITE_POISON_EN, clause) && !hasEn(S.QUALIFIER_EN, clause)) return null;
+  return { tier: past ? "urgent" : "emergency", termAr: obj, ruleId: past ? "G.ingestion_past_en" : "G.ingestion_en" };
+}
+
+// ── §2.8 H — TRAUMA, ENGLISH ─────────────────────────────────────────────────
+// PHRASES ONLY, and the English homographs are why: bare `accident` is the ER department's own
+// name in English, bare `fell` is «fell behind on my payments», bare `burn` is «fat burning»,
+// bare `fracture` is a follow-up booking. There is no recall net worth those four.
+function traumaEn(clause: string): Candidate | null {
+  const std = pickEn(TRAUMA.sets.STANDALONE_EN, clause);
+  return std ? { tier: "emergency", termAr: std, ruleId: "H.standalone_en" } : null;
+}
+
 // ── THE UNION ────────────────────────────────────────────────────────────────
 const ARMS: ReadonlyArray<{
-  cls: RedFlagClass; label: string; run: (clause: string, raw: string) => Candidate | null;
+  cls: RedFlagClass; label: string;
+  run: (clause: string) => Candidate | null;
+  runEn: (clause: string) => Candidate | null;
 }> = [
-  { cls: "self_harm", label: SELF_HARM.label, run: selfHarm },
-  { cls: "cardiac", label: CARDIAC.label, run: cardiac },
-  { cls: "stroke", label: STROKE.label, run: stroke },
-  { cls: "airway", label: AIRWAY.label, run: airway },
-  { cls: "obstetric", label: OBSTETRIC.label, run: obstetric },
-  { cls: "hemorrhage", label: HEMORRHAGE.label, run: hemorrhage },
-  { cls: "infant_fever", label: INFANT_FEVER.label, run: infantFever },
-  { cls: "poisoning", label: POISONING.label, run: poisoning },
-  { cls: "trauma", label: TRAUMA.label, run: trauma },
+  { cls: "self_harm", label: SELF_HARM.label, run: selfHarm, runEn: selfHarmEn },
+  { cls: "cardiac", label: CARDIAC.label, run: cardiac, runEn: cardiacEn },
+  { cls: "stroke", label: STROKE.label, run: stroke, runEn: strokeEn },
+  { cls: "airway", label: AIRWAY.label, run: airway, runEn: airwayEn },
+  { cls: "obstetric", label: OBSTETRIC.label, run: obstetric, runEn: obstetricEn },
+  { cls: "hemorrhage", label: HEMORRHAGE.label, run: hemorrhage, runEn: hemorrhageEn },
+  { cls: "infant_fever", label: INFANT_FEVER.label, run: infantFever, runEn: infantFeverEn },
+  { cls: "poisoning", label: POISONING.label, run: poisoning, runEn: poisoningEn },
+  { cls: "trauma", label: TRAUMA.label, run: trauma, runEn: traumaEn },
 ];
 
 /**
@@ -381,11 +672,23 @@ export function detectRedFlag(text: string): RedFlagHit | null {
   const raw = String(text ?? "");
   const n = normalizeForSafety(raw);
   if (!n) return null;
+  // TWO SEGMENTATIONS OF ONE MESSAGE, NOT TWO MESSAGES. The Arabic and English views are built
+  // from the same text by two normalizers and split by two splitters, so their clause lists do
+  // not line up and neither can be derived from the other — «I want a slot, but he can't
+  // breathe» breaks at `but`, which the Arabic splitter has never heard of. The CLASS ORDER
+  // (§2.0 L7) is the outer loop in both, so precedence is the same whichever script the finding
+  // arrives in.
   const clauses = splitClauses(n);
-  for (const { cls, label, run } of ARMS) {
+  const enClauses = splitClausesEn(normalizeEn(raw));
+  for (const { cls, label, run, runEn } of ARMS) {
     for (const clause of clauses) {
       if (HYPOTHETICAL_RE.test(clause)) continue;
-      const c = run(clause, raw);
+      const c = run(clause);
+      if (c) return hit(cls, label, c);
+    }
+    for (const clause of enClauses) {
+      if (HYPOTHETICAL_EN_RE.test(clause)) continue;
+      const c = runEn(clause);
       if (c) return hit(cls, label, c);
     }
   }

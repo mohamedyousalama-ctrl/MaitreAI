@@ -18,7 +18,7 @@ export { detectRedFlag };
 export type { RedFlagHit, RedFlagClass, RedFlagTier };
 export * from "./rail";
 export * from "./triage-hold";
-export { normalizeForSafety, foldDigits } from "./normalize";
+export { normalizeForSafety, normalizeEn, foldDigits } from "./normalize";
 export {
   CLASSES, CLASS_ORDER, everyEnumeratedMember,
   AIRWAY, CARDIAC, HEMORRHAGE, INFANT_FEVER, OBSTETRIC, POISONING, SELF_HARM, STROKE, TRAUMA,

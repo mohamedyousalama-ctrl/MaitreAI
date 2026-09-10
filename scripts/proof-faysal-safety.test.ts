@@ -54,12 +54,27 @@
 //   family here is constrained; adding a FRAME is not, and this file cannot tell you which
 //   one you just did.
 //
-//   SCRIPT. §Q is Arabic by construction. The English/franco arms (§2.1, §2.4, §2.9) have
-//   only their own Fires entries and the near-miss rows; there is NO ordinary-clinic-ENGLISH
-//   corpus here. The sibling proof read "zero false positives" through a widening of an
-//   English arm that fired on 616 of 1,325 ordinary strings. If the English arms are widened,
-//   NOTHING HERE WILL OBJECT. Arabizi (`ma agdar atnafas`, `abi amoot`) is a third surface
-//   with its own homographs and is not reached at all.
+//   SCRIPT — THIS GAP IS NOW CLOSED FOR ENGLISH, AND THE PARAGRAPH IT REPLACES IS KEPT IN
+//   FULL BELOW BECAUSE IT IS WHY §QE EXISTS. It read:
+//
+//       "§Q is Arabic by construction. The English/franco arms (§2.1, §2.4, §2.9) have only
+//        their own Fires entries and the near-miss rows; there is NO ordinary-clinic-ENGLISH
+//        corpus here. The sibling proof read 'zero false positives' through a widening of an
+//        English arm that fired on 616 of 1,325 ordinary strings. If the English arms are
+//        widened, NOTHING HERE WILL OBJECT."
+//
+//   That was written when English was four `STANDALONE_EN` arrays read with a bare `includes`
+//   over the whole message. §2 now has a full English arm in all nine classes, so §QE is the
+//   ordinary-clinic-ENGLISH corpus that paragraph says is missing — generated the same way §Q
+//   is, from a clinic inbox's own vocabulary crossed through the ENGLISH homographs, never from
+//   the English rules' axes. It found nineteen defects in those rules on its first run, every
+//   one of them a sentence a clinic actually receives: «the wheelchair is not fitting through
+//   the door», «I'm seeing double entries for the same booking», «my eyes are sensitive to
+//   light after the laser», «I'm killing myself trying to reach your call centre».
+//
+//   STILL OPEN: Arabizi beyond the enumerated franco phrases (`ma agdar atnafas`) is a third
+//   surface with its own homographs and is not reached at all; and §QE is one register — a
+//   patient typing to a clinic — like §Q.
 //
 //   REGISTER AND CHANNEL. Every string here is a patient or a parent typing to a clinic on
 //   WhatsApp. Voice transcripts, operator replies and forwarded text arrive on other paths;
@@ -80,10 +95,13 @@ import {
   emergencyRail, eligibleErSites, railCopyViolations, SUPPORT_LINE_SENTENCE, RAIL_B,
   isTriageHeld, checkBookingTriageHold, releaseTriageHold,
   COMMITTED_APPOINTMENT_STATES, OPEN_TRIAGE_HOLD_PATCH,
-  normalizeForSafety, foldDigits,
+  normalizeForSafety, normalizeEn, foldDigits,
   type ErSite, type RedFlagHit,
 } from "../lib/health/safety/index.ts";
-import { adj, termRe, has, pick } from "../lib/health/safety/match.ts";
+import {
+  adj, adjEn, adjEnAny, termRe, termReEn, has, hasEn, pick,
+  bodyTemperatureEn, ageInMonthsEn,
+} from "../lib/health/safety/match.ts";
 import { normalizeAr, detectAllergenAvoidance } from "../lib/ai/allergen-gate.ts";
 
 let pass = 0;
@@ -150,7 +168,17 @@ console.log("\n── §N  EVERY OPERATIVE SET IS WRITTEN NORMALIZED ───�
     for (const [set, list] of Object.entries(c.sets)) {
       for (const m of list) {
         members++;
-        if (/^[\x20-\x7e]+$/.test(m)) continue;   // the English/franco arms are not Arabic
+        // THE ENGLISH ARM HAS THE SAME DISCIPLINE AND IT IS NOT THE SAME NORMALIZER. An ASCII
+        // member is written in `normalizeEn`'s spelling, and the assertion is what makes the
+        // apostrophe a data problem rather than a matcher problem: the shipped sets held
+        // «can't breathe», «bleeding won't stop» and «i want to die», which were matchable ONLY
+        // because the arm ran a bare `includes` over the raw message. Against a normalized
+        // English string every one of them was dead code of exactly the §2.0 L6 kind — the
+        // «تورم مفاجئ» defect in a second script, and this line is what finds it.
+        if (/^[\x20-\x7e]+$/.test(m)) {
+          if (normalizeEn(m) !== m) { bad++; ok(`§N ${c.cls}.${set}: «${m}» ≠ normalizeEn → «${normalizeEn(m)}»`, false); }
+          continue;
+        }
         if (normalizeAr(m) !== m) { bad++; ok(`§N ${c.cls}.${set}: «${m}» ≠ normalizeAr → «${normalizeAr(m)}»`, false); }
       }
     }
@@ -302,6 +330,126 @@ console.log("\n── §F2  NEGATION × ABILITY × PERSON, and the third person 
   // matched with a bare lookbehind is silent behind a «و» or a «ب» (§2.0 L7).
   mustFire("§F2 trauma: STANDALONE inside a run-on message",
     [...new Set(cross(["", "ابني", "السلام عليكم", "لو سمحت"], TRAUMA.sets.STANDALONE as string[], ["", "وش اسوي", "بسرعة"]))]);
+}
+
+// ═══ §FE — THE ENGLISH CROSS PRODUCTS (§2.0 L6, in the second script) ═══════════════════════
+console.log("\n── §FE  ENGLISH: the slots, crossed, not the sentences somebody thought of ─");
+{
+  // A SLOT WITH ONE VALUE IN IT is what §F2 exists to find, and the English arm shipped with
+  // FOUR of them: `STANDALONE_EN` arrays of four, one, one and seven strings, read with
+  // `raw.toLowerCase().includes(p)`. «can't breathe» was in the list and «he can't breathe»,
+  // «she cannot breathe», «he stopped breathing» and «I'm struggling to breathe» were not —
+  // the same first-person-only defect §2.4 drove against the Kivo detector, one script over.
+  const PERSON = ["", "he", "she", "my son", "my baby", "my father"];
+  mustFire("§FE airway: PERSON × NEGATION × [mid] × BREATHE",
+    [...new Set(cross(PERSON, AIRWAY.sets.NEG_EN as string[], ["", "even", "really", "properly"],
+      AIRWAY.sets.BREATHE_EN as string[]))]);
+  mustFire("§FE airway: DIFFICULTY × [in|with|of] × BREATHE-NOUN",
+    [...new Set(cross(["", "he has", "she has", "my son has"], AIRWAY.sets.DIFFICULTY_EN as string[],
+      ["", "in", "with", "of"], AIRWAY.sets.BREATHE_NOUN_EN as string[]))]);
+  mustFire("§FE airway: (throat ∪ tongue ∪ lips ∪ face) × (swelling ∪ closing)",
+    [...new Set(cross(["his", "her", "my"], AIRWAY.sets.PART_EN as string[], ["is", "are"],
+      [...AIRWAY.sets.SWELL_EN, ...AIRWAY.sets.CLOSE_EN] as string[]))]);
+
+  // §2.1 — the chest term against every pain / pressure / burning predicate, in both word
+  // orders, because English writes «chest pain» and «pain in my chest» with equal frequency and
+  // a rule that only carries one of them is deaf to half its own patients.
+  const A_PRED = [...CARDIAC.sets.PRED_PAIN_EN, ...CARDIAC.sets.PRED_PRESSURE_EN,
+    ...CARDIAC.sets.PRED_BURNING_EN] as string[];
+  mustFire("§FE cardiac: chest × PREDICATE", [...new Set(cross(["", "i have", "he has"], ["chest", "my chest"], ["", "is"], A_PRED))]);
+  mustFire("§FE cardiac: PREDICATE × in my chest", [...new Set(cross(["", "i have"], A_PRED, ["in my", "on my"], ["chest"]))]);
+  // The COMPANIONS, mirrored as complete sentences (§2.0 L6) — each is a hit ONLY with a term.
+  mustFire("§FE cardiac: chest term + companion",
+    [...new Set(cross(["my chest hurts and i am", "my chest hurts and he is"], CARDIAC.sets.PRED_COMPANION_EN as string[]))]);
+
+  // §2.2 — body term × failure of function, both orders.
+  mustFire("§FE stroke: TERM × FAILURE",
+    [...new Set(cross(["his", "her", "my"], STROKE.sets.TERM_EN as string[], ["is", "are"], STROKE.sets.PRED_FAILURE_EN as string[]))]);
+  mustFire("§FE stroke: FAILURE × TERM",
+    [...new Set(cross(["he", "she"], STROKE.sets.PRED_FAILURE_EN as string[], ["his", "her"], STROKE.sets.TERM_EN as string[]))]);
+
+  // §2.3 — blood/bleeding × volume, both orders, and the persistence predicates.
+  mustFire("§FE hemorrhage: VOLUME × TERM",
+    [...new Set(cross(["there is", "he has"], HEMORRHAGE.sets.PRED_VOLUME_EN as string[], ["", "of"], HEMORRHAGE.sets.TERM_EN.filter((t) => t !== "hemorrhage" && t !== "haemorrhage") as string[]))]);
+  mustFire("§FE hemorrhage: TERM × VOLUME",
+    [...new Set(cross(["the wound is", "he is"], HEMORRHAGE.sets.TERM_EN.filter((t) => t !== "hemorrhage" && t !== "haemorrhage") as string[], ["", "is"], HEMORRHAGE.sets.PRED_VOLUME_EN as string[]))]);
+  mustFire("§FE hemorrhage: TERM × PERSISTENCE",
+    [...new Set(cross(["the", "his"], ["bleeding", "blood"], HEMORRHAGE.sets.PRED_PERSIST_EN as string[]))]);
+
+  // §2.6 — THE TEMPERATURE, IN BOTH SCALES. `bodyTemperature` accepts a bare number in [35, 43]
+  // because that is Celsius, which is what a patient writing Arabic types. «102», «102.5F» and
+  // «103 degrees» are all OUTSIDE that window, so the Arabic reader returns null on every one
+  // of them and the fever-value arm was deaf to the commonest English fever report there is.
+  mustFire("§FE infant_fever: infant marker × fever term × value, °C AND °F",
+    [...new Set(cross(
+      ["my baby", "my newborn", "the infant", "my baby"],
+      ["has a fever of", "temperature is", "temp is", "has a temperature of"],
+      ["39", "38.5", "40", "102 f", "102.5f", "103 degrees", "101", "100.4 f"],
+    ))]);
+  // AN AGE IN DAYS OR WEEKS MUST NOT BE READ AS A TEMPERATURE, and in English the collision is
+  // wider than in Arabic: «38 days old» and «40 weeks» are how a parent of a newborn writes an
+  // age, and 38 and 40 are both fevers. The discriminating values are 35, 36 and 37 — under the
+  // bug they are read as the temperature, fall below 38.0, and the class returns NO HIT AT ALL
+  // for the exact population §2.6 exists for. Every unit a parent writes is here, because the
+  // bug is the unit and not the number.
+  mustFire("§FE infant_fever: an age under three months IS the marker  (and is not a temperature)",
+    [...new Set(cross(
+      ["", "my baby", "my son", "she", "he"],
+      ["is 35 days old", "is 36 days old", "is 37 days old", "is 38 days old", "is 40 days old",
+       "is 6 weeks old", "is 3 weeks old", "is 8 weeks", "is 2 months old", "is 36 days"],
+      ["and has a fever", "and has a temperature", "with a fever", "and is feverish"],
+    ))]);
+  mustFire("§FE infant_fever: the red flags, at any age",
+    [...new Set(cross(["my baby", "my son", "my daughter"], ["", "has a fever and"],
+      INFANT_FEVER.sets.PRED_REDFLAG_EN.filter((r) => !INFANT_FEVER.sets.PRED_REDFLAG_NEEDS_PERSON_EN.includes(r)) as string[]))]);
+
+  // §2.5 — the pregnancy marker against every danger predicate.
+  mustFire("§FE obstetric: marker × danger predicate",
+    [...new Set(cross(["im pregnant and", "my wife is pregnant and", "im 30 weeks pregnant and"],
+      ["", "i have", "there is"],
+      [...OBSTETRIC.sets.PRED_BLEED_EN, ...OBSTETRIC.sets.PRED_MOVE_EN,
+       ...OBSTETRIC.sets.PRED_LABOUR_EN, ...OBSTETRIC.sets.PRED_PREECL_EN,
+       ...OBSTETRIC.sets.PRED_PAIN_EN] as string[]))]);
+
+  // §2.7 — every SWALLOW verb against every poison object, in three persons.
+  mustFire("§FE poisoning: PERSON × SWALLOW × POISON",
+    [...new Set(cross(["", "my son", "my daughter", "the baby"], POISONING.sets.VERB_SWALLOW_EN as string[],
+      ["", "some", "a"], POISONING.sets.SITE_POISON_EN as string[]))]);
+  // …AND THE TAKE VERB WITH A QUALIFIER, which is the half T3 must not have taken with it.
+  mustFire("§FE poisoning: TAKE × QUALIFIER × medication  (T3's other side)",
+    [...new Set(cross(["he", "she", "my son"], POISONING.sets.VERB_TAKE_EN as string[],
+      ["too many", "a lot of", "his mother", "the wrong"], ["pills", "tablets", "medicine"]))]);
+
+  // §2.8 — phrases only, each inside an ordinary run-on message.
+  mustFire("§FE trauma: STANDALONE inside a run-on message",
+    [...new Set(cross(["", "my son", "hello", "please help"], TRAUMA.sets.STANDALONE_EN as string[], ["", "what do i do", "quickly"]))]);
+
+  // §2.9 — the intent phrases, with the lead-ins a person actually types.
+  mustFire("§FE self_harm: STANDALONE with lead-ins",
+    [...new Set(cross(["", "i think", "honestly", "please help me"], SELF_HARM.sets.STANDALONE_EN as string[], ["", "please"]))]);
+
+  // …AND THE READER ITSELF, driven rather than trusted. A conversion that is wrong by a degree
+  // is a class F threshold that is wrong by a degree, and §12 row 3 is unsigned.
+  const T = (t: string) => bodyTemperatureEn(normalizeEn(t));
+  ok("§FE 102 F → 38.9 °C", T("his temperature is 102 f") === 38.9);
+  ok("§FE 102.5F → 39.2 °C", T("temperature 102.5f") === 39.2);
+  ok("§FE 103 degrees → 39.4 °C", T("a temperature of 103 degrees") === 39.4);
+  ok("§FE 100 F is NOT a fever (37.8 °C)", T("temperature 100 f") === 37.8);
+  ok("§FE a bare 39 is Celsius", T("his temperature is 39") === 39);
+  ok("§FE 38.5 survives the decimal point", T("temperature 38.5") === 38.5);
+  ok("§FE «38 days old» is not a temperature", T("she is 38 days old") === null);
+  ok("§FE «40 weeks» is not a temperature", T("she was born at 40 weeks") === null);
+  ok("§FE a phone number is not a temperature", T("call me on 0504490460") === null);
+  ok("§FE a price is not a temperature", T("the consultation is 250 riyals") === null);
+  const AGE = (t: string) => ageInMonthsEn(normalizeEn(t));
+  ok("§FE «36 days old» → under three months", (AGE("she is 36 days old") ?? 99) < 3);
+  ok("§FE «6 weeks» → under three months", (AGE("my baby is 6 weeks") ?? 99) < 3);
+  ok("§FE «3 months» → NOT under three months", (AGE("my baby is 3 months") ?? 0) >= 3);
+  ok("§FE «my daughter is 9» → nine YEARS", AGE("my daughter is 9") === 108);
+  ok("§FE «he's 2 years old» → 24 months", AGE("he's 2 years old") === 24);
+  // THE PAIR THAT MAKES THE BARE-AGE RULE SAFE: an age in years is under 18 and a body
+  // temperature is at least 35, so no number can be claimed by both readings.
+  ok("§FE «his temperature is 39» is NOT read as an age", AGE("his temperature is 39") === null);
 }
 
 // ═══ §Q — THE QUIET CORPUS, GENERATED FROM ORDINARY CLINIC ARABIC ═══════════════════════════
@@ -519,7 +667,15 @@ console.log("\n── §L8  EVERY ENUMERATED SET MEMBER HAS A PAIRED NEAR-MISS �
     // A PAIRING IS ONLY A PAIRING IF THE SENTENCE ACTUALLY CARRIES THE MEMBER. A frame that
     // does not is a pairing that proves nothing about that member — which is the whole
     // failure mode L8 exists to end, one level down.
-    const carrying = sentences.filter((t) => termRe(member).test(normalizeForSafety(t)));
+    // AN ENGLISH MEMBER IS CARRIED IN AN ENGLISH SENTENCE AND CHECKED WITH THE ENGLISH
+    // MATCHER. `termRe` is §1.2's Arabic matcher: its `(?<![ء-ي])` boundary is satisfied by
+    // every Latin character, so against English it degrades to a substring test and would call
+    // «my heart» carried by «my heartburn». One matcher per script (§2.0 L7, as `match.ts`
+    // extends it), on this side of the mirror as well as inside the detector.
+    const ascii = /^[\x20-\x7e]+$/.test(member);
+    const carrying = sentences.filter((t) => (ascii
+      ? termReEn(member).test(normalizeEn(t))
+      : termRe(member).test(normalizeForSafety(t))));
     if (carrying.length === 0) {
       missing.push(`${cls}.${set}.«${member}» — no near-miss carries it (${sentences.length} candidate(s))`);
       continue;
@@ -537,14 +693,19 @@ console.log("\n── §L8  EVERY ENUMERATED SET MEMBER HAS A PAIRED NEAR-MISS �
   // …AND THE ANNOTATION IS NOT A LOOPHOLE. An `onlyFinding` set may not contain a member that
   // an ordinary clinic sentence in §Q already carries — that would be an assertion that a word
   // has no benign reading, contradicted by this file's own corpus.
-  const ordinary = [...new Set([...QUIET_BY_FAMILY.entries()].filter(([k]) => k.startsWith("Q")).flatMap(([, v]) => v))]
-    .map(normalizeForSafety);
+  const ordinaryRaw = [...new Set([...QUIET_BY_FAMILY.entries()].filter(([k]) => k.startsWith("Q")).flatMap(([, v]) => v))];
+  const ordinary = ordinaryRaw.map(normalizeForSafety);
+  const ordinaryEn = ordinaryRaw.map(normalizeEn);
   const bogus: string[] = [];
   for (const { cls, set, member } of members) {
     const m = CLASSES.find((c) => c.cls === cls)!.mirror[set];
     if (!m?.onlyFinding && !m?.onlyFindingMembers?.includes(member)) continue;
     if (member.length < 4) continue;                     // a 3-letter stem is not a claim
-    if (ordinary.some((t) => termRe(member).test(t))) bogus.push(`${cls}.${set}.«${member}»`);
+    const asciiMember = /^[\x20-\x7e]+$/.test(member);
+    const hitsOrdinary = asciiMember
+      ? ordinaryEn.some((t) => termReEn(member).test(t))
+      : ordinary.some((t) => termRe(member).test(t));
+    if (hitsOrdinary) bogus.push(`${cls}.${set}.«${member}»`);
   }
   for (const b of bogus) ok(`§L8 «only-finding» claimed for ${b}, but §Q carries it in an ordinary sentence`, false);
   pass += annotated - bogus.length;

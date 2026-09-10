@@ -21,6 +21,11 @@
 // including the one §2.8's own correction note said it had fixed.
 // ============================================================================
 
+import {
+  CARDIAC_EN, STROKE_EN, HEMORRHAGE_EN, AIRWAY_EN, OBSTETRIC_EN,
+  INFANT_FEVER_EN, POISONING_EN, TRAUMA_EN, SELF_HARM_EN,
+} from "./lexicon-en";
+
 export type RedFlagClass =
   | "cardiac" | "stroke" | "hemorrhage" | "airway"
   | "obstetric" | "infant_fever" | "poisoning" | "trauma" | "self_harm";
@@ -76,6 +81,35 @@ export interface ClassSpec {
   readonly mirror: Readonly<Record<string, Mirror>>;
 }
 
+/** A class's ENGLISH arm — the same four things, in `normalizeEn`'s spelling. It is a separate
+ *  shape and a separate file only so the diff that adds a second script does not run through
+ *  1,400 lines of Arabic; it is MERGED into the ClassSpec below, so `everyEnumeratedMember`,
+ *  the L6 mirror, the L8 mirror and §N all reach it with no change of their own. A set that
+ *  lives outside the merged object is a set no mirror can see, which is the failure the whole
+ *  file is built to prevent. */
+export type EnglishArm = Pick<ClassSpec, "sets" | "fires" | "nearMiss" | "mirror">;
+
+/** Merge the English arm into the class. THROWS ON A KEY COLLISION, and that is not defensive
+ *  programming — a silently replaced set is a rule that disappears with every proof still
+ *  green, which is the exact failure mode §2.0 L6 and L8 exist to make impossible. It is a
+ *  module-load invariant over two literals in this repository, so it can only fire for a
+ *  developer, never for a patient. */
+export function withEn(ar: ClassSpec, en: EnglishArm): ClassSpec {
+  for (const k of Object.keys(en.sets)) {
+    if (k in ar.sets) throw new Error(`lexicon: ${ar.cls} English set «${k}» collides with an Arabic one`);
+  }
+  for (const k of Object.keys(en.mirror)) {
+    if (k in ar.mirror) throw new Error(`lexicon: ${ar.cls} English mirror «${k}» collides with an Arabic one`);
+  }
+  return {
+    ...ar,
+    sets: { ...ar.sets, ...en.sets },
+    fires: [...ar.fires, ...en.fires],
+    nearMiss: [...ar.nearMiss, ...en.nearMiss],
+    mirror: { ...ar.mirror, ...en.mirror },
+  };
+}
+
 // ── §2.0 L7 — PRECEDENCE. When more than one class hits, the FIRST in this order wins. ────
 // Two orderings are load-bearing and both are driven: «أخذت حبوب كثير عشان أخلص» is class I,
 // not class G (an intentional overdose is a crisis before it is a poisoning); «نزيف بعد
@@ -89,7 +123,7 @@ export const CLASS_ORDER: readonly RedFlagClass[] = [
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // §2.1 A — CARDIAC (HARD)
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-export const CARDIAC: ClassSpec = {
+export const CARDIAC: ClassSpec = withEn({
   cls: "cardiac",
   label: "ألم صدر",
   sets: {
@@ -118,7 +152,6 @@ export const CARDIAC: ClassSpec = {
       "جلطه قلب", "جلطه بالقلب", "جلطه في القلب", "ذبحه صدريه", "احتشاء",
       "ازمه قلبيه", "سكته قلبيه",
     ],
-    STANDALONE_EN: ["chest pain", "heart attack", "pressure in my chest", "sadri ye3awerni"],
   },
   fires: [
     { text: "صدري يعورني", tier: "emergency" },
@@ -231,14 +264,13 @@ export const CARDIAC: ClassSpec = {
       },
     },
     STANDALONE: { onlyFinding: "named cardiac events — a phrase term with no benign clinic reading" },
-    STANDALONE_EN: { onlyFinding: "named cardiac events in English — no benign clinic reading" },
   },
-};
+}, CARDIAC_EN);
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // §2.2 B — STROKE (HARD)
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-export const STROKE: ClassSpec = {
+export const STROKE: ClassSpec = withEn({
   cls: "stroke",
   label: "أعراض جلطة دماغية",
   sets: {
@@ -271,7 +303,6 @@ export const STROKE: ClassSpec = {
       "شلل نصفي", "نصي مشلول", "سكته دماغيه", "جلطه بالمخ", "جلطه دماغيه",
       "جلطه في المخ", "ما يقدر يتكلم", "ما تقدر تتكلم", "ما يقدر يوقف",
     ],
-    STANDALONE_EN: ["stroke"],
     /** `شلل` on its own, subject to the EXCLUSIONs below. */
     PARALYSIS: ["شلل"],
     EXCL_BENIGN: ["من الجلسه", "من النوم", "من القعده", "من الوقفه", "من المخده"],
@@ -364,7 +395,6 @@ export const STROKE: ClassSpec = {
       },
     },
     STANDALONE: { onlyFinding: "named stroke events / hemiplegia phrases — no benign clinic reading" },
-    STANDALONE_EN: { onlyFinding: "the English named event — no benign clinic reading" },
     PARALYSIS: {
       // THE BOUNDARY DOES NOT SAVE `شلل`. Verified: a boundary-matched `شلل` FIRES on
       // «متى تطعيم شلل الأطفال؟» — it is a whole word there, followed by a space. The rule
@@ -374,12 +404,12 @@ export const STROKE: ClassSpec = {
     },
     EXCL_BENIGN: { frames: ["تنميل في رجلي {}", "ظهري تعبان {}"] },
   },
-};
+}, STROKE_EN);
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // §2.3 C — HEMORRHAGE (HARD)
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-export const HEMORRHAGE: ClassSpec = {
+export const HEMORRHAGE: ClassSpec = withEn({
   cls: "hemorrhage",
   label: "نزيف",
   sets: {
@@ -412,7 +442,6 @@ export const HEMORRHAGE: ClassSpec = {
       "براز اسود", "تقيا دم", "تقيات دم", "تقيت دم", "استفرغ دم", "استفرغت دم",
       "قيء دموي", "قي دموي", "دم بالبراز", "دم مع البراز",
     ],
-    STANDALONE_EN: ["bleeding won't stop"],
     EXCL_RESOLVED: ["وقف النزيف", "وقف الدم", "بطل النزيف", "انحبس النزيف", "ما عاد ينزف"],
     EXCL_HYGIENE: ["افرش", "تفريش", "فرشاه", "المعجون", "اسناني"],
     /** The extraction / anticoagulant terms that LIFT the gum cap back to `emergency` (S1.5-5). */
@@ -528,7 +557,6 @@ export const HEMORRHAGE: ClassSpec = {
       },
     },
     STANDALONE: { onlyFinding: "haematemesis / melena phrases — no benign clinic reading" },
-    STANDALONE_EN: { onlyFinding: "the English phrase — no benign clinic reading" },
     EXCL_RESOLVED: { frames: ["الحمدلله {}"] },
     EXCL_HYGIENE: {
       per: {
@@ -562,12 +590,12 @@ export const HEMORRHAGE: ClassSpec = {
       },
     },
   },
-};
+}, HEMORRHAGE_EN);
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // §2.4 D — AIRWAY (HARD) — inherit, do not re-invent
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-export const AIRWAY: ClassSpec = {
+export const AIRWAY: ClassSpec = withEn({
   cls: "airway",
   label: "صعوبة تنفس",
   sets: {
@@ -627,7 +655,6 @@ export const AIRWAY: ClassSpec = {
       "دوام", "مواعيد", "موعد", "حجز", "اجراءات", "مستشفي", "عياده", "مجمع",
       "فاتوره", "استقبال", "تحويله", "تامين", "مراجعه",
     ],
-    STANDALONE_EN: ["can't breathe", "cannot breathe", "choking", "anaphylaxis", "throat closing"],
   },
   fires: [
     { text: "ما أقدر أتنفس", tier: "emergency" },
@@ -813,14 +840,13 @@ export const AIRWAY: ClassSpec = {
       per: { "يغص": ["الطفل يغص شوي وقت الاكل بس يرجع طبيعي"] },
     },
     IDIOM_OBJECT: { frames: ["نفسي ضايق من ال{}"] },
-    STANDALONE_EN: { onlyFinding: "the English airway phrases — no benign clinic reading" },
   },
-};
+}, AIRWAY_EN);
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // §2.5 E — OBSTETRIC (HARD)
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-export const OBSTETRIC: ClassSpec = {
+export const OBSTETRIC: ClassSpec = withEn({
   cls: "obstetric",
   label: "طوارئ حمل",
   sets: {
@@ -905,12 +931,12 @@ export const OBSTETRIC: ClassSpec = {
     STANDALONE: { onlyFinding: "membrane rupture / pre-eclampsia phrases — no benign clinic reading" },
     EXCL_GOVERNED: { frames: ["انا حامل {} من الشركة"] },
   },
-};
+}, OBSTETRIC_EN);
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // §2.6 F — INFANT FEVER (HARD)
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-export const INFANT_FEVER: ClassSpec = {
+export const INFANT_FEVER: ClassSpec = withEn({
   cls: "infant_fever",
   label: "حرارة رضيع",
   sets: {
@@ -1013,12 +1039,12 @@ export const INFANT_FEVER: ClassSpec = {
     EXCL_MUSCLE: { frames: ["تشنج ب{} رقبتي من النوم"] },
     EXCL_CHRONIC: { frames: ["انا مراجع عندكم {}"] },
   },
-};
+}, INFANT_FEVER_EN);
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // §2.7 G — POISONING (HARD)
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-export const POISONING: ClassSpec = {
+export const POISONING: ClassSpec = withEn({
   cls: "poisoning",
   label: "ابتلاع مادة",
   sets: {
@@ -1153,7 +1179,7 @@ export const POISONING: ClassSpec = {
       },
     },
   },
-};
+}, POISONING_EN);
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // §2.8 H — TRAUMA (HARD) — PHRASES ONLY, DELIBERATELY
@@ -1162,7 +1188,7 @@ export const POISONING: ClassSpec = {
 // named «الطوارئ والحوادث»); bare `كسر` turns «الكسر العشري» — the decimal fraction — into one;
 // bare `طاح` turns a price drop into one. There is no recall net here worth the false
 // positives, and §11.2 pins all three.
-export const TRAUMA: ClassSpec = {
+export const TRAUMA: ClassSpec = withEn({
   cls: "trauma",
   label: "إصابة",
   sets: {
@@ -1213,7 +1239,7 @@ export const TRAUMA: ClassSpec = {
         "with no bare term has nothing to over-match, which is the whole design.",
     },
   },
-};
+}, TRAUMA_EN);
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 // §2.9 I — SELF-HARM (HARD, exact match only, no fuzzy, no STT net)
@@ -1222,7 +1248,7 @@ export const TRAUMA: ClassSpec = {
 // or joking patient handed a crisis rail is harmed by the interaction and learns to stop
 // talking to us. That is why rule 2 is a WHITELIST (T6) and not a blacklist, and it is the
 // one place in §2 where a rule is stated positively.
-export const SELF_HARM: ClassSpec = {
+export const SELF_HARM: ClassSpec = withEn({
   cls: "self_harm",
   label: "خطر على النفس",
   sets: {
@@ -1236,7 +1262,6 @@ export const SELF_HARM: ClassSpec = {
       "ما عاد لي نفس اعيش", "ما لي داعي اعيش", "جرحت نفسي", "اذيت نفسي",
       "ابي ارتاح للابد", "ابي اختفي", "عبء علي اهلي",
     ],
-    STANDALONE_EN: ["i want to die", "kill myself", "end it all", "suicidal", "self harm", "3ayez amoot", "abi amoot"],
     // T6 — THE WHITELIST. `أموت على X` is a hit ONLY when X is one of these. Every other
     // complement, and an absent complement, is quiet. No food list is required and none is
     // written, which is the point: the vocabulary of things Saudis love is not closable.
@@ -1332,7 +1357,6 @@ export const SELF_HARM: ClassSpec = {
       ],
     },
     STANDALONE: { onlyFinding: "first-person intent / plan / act — no benign clinic reading" },
-    STANDALONE_EN: { onlyFinding: "the English/franco intent phrases — no benign clinic reading" },
     LIFE_OBJECT: {
       // A WHITELIST STILL NEEDS ITS MIRROR: each member must be quiet in an ordinary sentence
       // that does NOT carry a death verb, or the whitelist becomes the false positive.
@@ -1374,7 +1398,7 @@ export const SELF_HARM: ClassSpec = {
       },
     },
   },
-};
+}, SELF_HARM_EN);
 
 /** THE NINE CLASSES, in §2.0 L7's precedence order. `detect.ts` walks this array in order. */
 export const CLASSES: readonly ClassSpec[] = [

@@ -271,3 +271,257 @@ export function bodyTemperature(clause: string): number | null {
 export const SPELLED_FEVER: readonly string[] = [
   "تسعه وثلاثين", "ثمانيه وثلاثين", "اربعين", "تسعه وثلاثون", "ثمانيه وثلاثون",
 ];
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// THE ENGLISH ARM'S MATCHER, SPLITTER AND COMPOSER — the same three tools, over `normalizeEn`.
+//
+// §2.0 L7 says ONE MATCHER, ONE SPLITTER, ONE ORDER. It says that about Arabic, and everything
+// above this line is Arabic: `(?<![ء-ي])` and `(?![ء-ي])` are the Arabic-letter boundary, and
+// against a Latin string they are satisfied by every character — so an Arabic-matched English
+// term degrades to a bare `includes`, which is what `raw.toLowerCase().includes(p)` already was.
+//
+// SO ENGLISH GETS ITS OWN BOUNDARY, AND THE REASON IS THE ONE §1.2 GIVES FOR ARABIC'S: JS `\b`
+// IS ASCII-ONLY. That makes it exactly right here and wrong one line up. `\b` after an Arabic
+// letter is a boundary between two letters, which is why Arabic must carry `(?<![ء-ي])` — and
+// why a single regex written across both scripts is a rule that is loose in one of them. The
+// two matchers below never see each other's script: `normalizeEn` turns every non-Latin run
+// into a clause terminator, so by the time these run the string is `[a-z0-9., ]` and nothing else.
+//
+// WHAT ENGLISH DOES NOT NEED: the proclitic group. `و|ف|ب|ك|ل` attach to an Arabic noun; English
+// writes them as separate words («in my chest», «for the report»), so the prefix group has no
+// English analogue and adding one would only widen the match. What it DOES need is the same
+// two-sided boundary, for the same reason: «fell» inside «fell behind», «heart» inside
+// «heartburn», «ache» inside «headache», «kid» inside «kidney».
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+/** §1.2's boundary, in Latin. Written as explicit lookarounds rather than `\b` so a term that
+ *  begins or ends with a digit («102 f») is bounded the same way a word is. */
+export function termReEn(term: string): RegExp {
+  return new RegExp(`(?<![a-z0-9])${esc(term.trim())}(?![a-z0-9])`);
+}
+
+function termSrcEn(term: string): string {
+  return `(?<![a-z0-9])${esc(term.trim())}(?![a-z0-9])`;
+}
+
+/** Which member of `set` this clause carries, longest first — `pick`'s English twin, and the
+ *  longest-first rule is the same one: «blood in my urine» must win over «blood» so the audit
+ *  row names the finding a person can read. */
+export function pickEn(set: readonly string[], clause: string): string | null {
+  let best: string | null = null;
+  for (const t of set) {
+    if (!termReEn(t).test(clause)) continue;
+    if (best === null || t.length > best.length) best = t;
+  }
+  return best;
+}
+
+export function hasEn(set: readonly string[], clause: string): boolean {
+  return pickEn(set, clause) !== null;
+}
+
+/**
+ * §2.0 L2 — ADJACENCY, NOT CO-OCCURRENCE, in English.
+ *
+ *     ADJ_EN(A, [m], B)  →  M(A) (?:(m) ){0,2} M(B)
+ *
+ * The Arabic `ADJ` writes ` ?` between the operands because an Arabic clitic may attach with no
+ * space at all. English words are space-separated, so the join is one MANDATORY space and the
+ * middle slots carry the optional material: «cant breathe» · «cant even breathe» ·
+ * «cant catch my breath» is A + {0,1,2} + B.
+ *
+ * THE MIDDLE SLOTS ARE ENUMERATED AND THAT IS THE WHOLE PRECISION STORY. A rule written as
+ * "a negation and a breathe word somewhere in the clause" fires on «does not include breathing
+ * exercises» and on «no charge for the breathing test» — the co-occurrence reading §2.0 L2
+ * measured and refused in Arabic, which behaves identically in English. Driven, on this file's
+ * own English quiet corpus: the co-occurrence reading of ARM 2 fires on the denials
+ * «no difficulty breathing» and «he has no trouble breathing at all», which is an ambulance
+ * instruction and a P0 page sent to a patient SAYING THEY ARE FINE.
+ */
+export function adjEn(
+  a: readonly string[],
+  mids: readonly string[],
+  b: readonly string[],
+): RegExp {
+  const A = a.map(termSrcEn).join("|");
+  const B = b.map(termSrcEn).join("|");
+  const M = mids.length ? `(?:(?:${mids.map(esc).join("|")}) ){0,2}` : "";
+  return new RegExp(`(?:${A}) ${M}(?:${B})`);
+}
+
+/** Which member the `adjEn` match landed on — `adjPick`'s English twin, same technique. */
+export function adjPickEn(
+  a: readonly string[],
+  mids: readonly string[],
+  b: readonly string[],
+  clause: string,
+): string | null {
+  const m = adjEn(a, mids, b).exec(clause);
+  if (!m) return null;
+  return pickEn(a, m[0]) ?? pickEn(b, m[0]) ?? m[0];
+}
+
+/**
+ * THE ENGLISH CLAUSE SPLITTER (§1.2, §2.0 L4). Same law, English punctuation and English
+ * connectives: `but` · `although` · `however` are what `بس` · `لكن` · `مع إن` are in the Arabic
+ * splitter, and they are here for the same sentence — «I want to book, but I cant breathe».
+ *
+ * IT DOES NOT SPLIT BETWEEN TWO DIGITS. «38.5» and «102.5 f» are one number and the temperature
+ * reader below is the only thing that reads them; the Arabic splitter breaks there and that is
+ * left alone (see `normalize.ts`). `\b` is not used at all: the connectives carry their own
+ * spaces, so a `but` inside «butter» or «rebuttal» cannot be reached.
+ */
+export function splitClausesEn(normalized: string): string[] {
+  return normalized
+    .split(/(?<!\d)\.(?!\d)|,|\s+but\s+|\s+although\s+|\s+however\s+|\s+though\s+/)
+    .map((c) => c.trim())
+    .filter((c) => c !== "");
+}
+
+/**
+ * §1.4's hypothetical veto, in English — THE ONLY VETO THAT REACHES A HARD CLASS (§1.5 R1), and
+ * it reaches the English arms for exactly the reason it reaches the Arabic ones: «if he stops
+ * breathing should I come in?» is a question about a future, and «what if my baby gets a fever
+ * after the vaccine?» is the single most common question a paediatric clinic is asked.
+ *
+ * Shaped like `HYPOTHETICAL_RE`: a conditional head, then a bounded gap, then an event verb.
+ * The gap is bounded at three words because an unbounded one turns «if you have a slot tomorrow
+ * my son had a seizure last night» into a hypothetical, and a veto that reaches across a whole
+ * message is the message-scoped `PAST_RE` defect §1.2 records.
+ */
+export const HYPOTHETICAL_EN_RE =
+  /(?:^|\s)(?:if|what if|in case|suppose|supposing|whenever)\s+(?:[a-z0-9]+\s+){0,3}?(?:has|had|have|gets|got|get|happens|happened|starts|started|stops|stopped|feels|felt|is|was|becomes|turns|swallows|swallowed|eats|ate|falls|fell)(?![a-z])/;
+
+/**
+ * §2.6's temperature, read the way an English speaker writes it — AND FAHRENHEIT IS THE POINT.
+ *
+ * `bodyTemperature` above accepts a bare number in [35, 43] because that is Celsius, which is
+ * what a Riyadh patient writing Arabic types. A patient writing English types «102», «102.5F»
+ * or «103 degrees», and every one of those is OUTSIDE [35, 43] — so the Arabic reader returns
+ * `null` on all three and §2.6's fever-value arm is deaf to the commonest English fever report
+ * there is. Driven: `bodyTemperature("his temperature is 102")` → null.
+ *
+ * THE RESOLUTION ORDER, AND WHY IT IS NOT AMBIGUOUS. 35–43 °C and 95–110 °F do not overlap, so
+ * a number that is a plausible body temperature is a plausible body temperature in exactly one
+ * scale. An explicit `f` / `c` is honoured first anyway; a bare number is read as Celsius if it
+ * lands in the Celsius window and as Fahrenheit if it lands in the Fahrenheit one; and a number
+ * in neither — a file number, a price, a phone number, a room — IS NOT A TEMPERATURE and the
+ * scan continues, which is the same "a value outside human range is not a temperature" rule the
+ * Arabic reader has always had.
+ *
+ * AN AGE IS NOT A TEMPERATURE — THE SAME BUG, IN ENGLISH, AND IT IS WORSE HERE. The comment on
+ * `bodyTemperature` records «رضيعي عمره ٣٦ يوم وعنده حرارة» reading 36 as the fever and going
+ * silent. In English the collision is wider, because «38 days old» and «40 weeks» are the
+ * ordinary way a parent of a newborn writes an age and 38 and 40 are both fevers. So a number
+ * bound to an age UNIT is skipped and the scan continues to the next candidate — skipping fails
+ * TOWARD firing, because an infant marker plus a fever term with no value is still an emergency
+ * (§2.6's tier table), which is the direction §13 requires while row 3 is unsigned.
+ *
+ * WHAT IS DELIBERATELY NOT GUARDED, AND THIS IS THE HALF THAT COULD GO WRONG THE OTHER WAY: a
+ * BARE «is NN» with no unit. «my daughter is 39» is an age; «his temperature is 39» is a fever;
+ * they are the same five characters, and the second is the commonest way an English speaker
+ * reports a fever there is. Guarding the age would take the fever with it, so the number is read
+ * as a temperature and the age reader below refuses bare numbers ≥ 18 for the mirror-image
+ * reason. The cost is an adult's age read as a fever, which fires at `urgent` with no infant
+ * marker; the alternative cost is a silent infant fever, and §1.3 says which way this class fails.
+ */
+const EN_AGE_UNIT_AFTER =
+  /^\s*(?:day|days|week|weeks|month|months|year|years|yr|yrs|wk|wks|mo|mos|yo)(?![a-z])/;
+
+export function bodyTemperatureEn(clause: string): number | null {
+  const re = /(?<![\d.])(\d{2,3}(?:\.\d)?)(?![\d])/g;
+  for (let m = re.exec(clause); m; m = re.exec(clause)) {
+    const v = Number(m[1]);
+    const after = clause.slice(m.index + m[0].length);
+    if (EN_AGE_UNIT_AFTER.test(after)) continue;              // «38 days old» is an AGE
+    const scale = /^\s*(?:degrees?\s*)?(f|fahrenheit|c|celsius|centigrade)(?![a-z])/.exec(after);
+    const named = scale ? scale[1][0] : null;
+    if (named === "c") return v >= 35 && v <= 43 ? v : null;
+    if (named === "f") { const c = fromF(v); if (c !== null) return c; continue; }
+    if (v >= 35 && v <= 43) return v;                          // Celsius, the Arabic window
+    const c = fromF(v);                                        // «103 degrees» · «102.5» · «101»
+    if (c !== null) return c;
+  }
+  return null;
+}
+
+/** °F → °C, rejecting anything outside the same [35, 43] body window the Celsius arm uses. */
+function fromF(f: number): number | null {
+  const c = Math.round(((f - 32) * 5 / 9) * 10) / 10;
+  return c >= 35 && c <= 43 ? c : null;
+}
+
+/**
+ * §2.6's AGE, in months, read from English — the reading the `< 3 months` threshold is made of.
+ *
+ * §2.6 puts an age threshold at the centre of this class («age < 3 months + any temperature
+ * ≥ 38.0 → emergency, with no further question asked») and the Arabic detector has no age reader
+ * at all: it substitutes a WORD LIST — `رضيع`, `مولود`, `عمره شهرين` — and treats every child
+ * word as "not an infant". That is why «ابني عمره شهرين» is enumerated as a marker and
+ * «my son is 6 weeks old» has nothing to key on. An English parent writes the age itself far
+ * more often than the word «newborn», so the English arm reads it.
+ *
+ * A UNIT-BOUND NUMBER IS AN AGE WHATEVER ITS VALUE — «36 days», «6 weeks», «3 months» — and this
+ * is the same test that keeps it out of the temperature reader, written once and used from both
+ * sides so the two cannot disagree about which number is which.
+ *
+ * A BARE NUMBER IS AN AGE ONLY UNDER 18, and that bound is what makes the two readings disjoint
+ * rather than merely ordered: a child's age in years is < 18 and a body temperature in either
+ * scale is ≥ 35, so no number can be claimed by both. «my daughter is 9» is nine years old;
+ * «his temperature is 39» is not a thirty-nine-year-old. Driven, that pair is the whole test.
+ */
+const EN_AGE_UNITS: Readonly<Record<string, number>> = {
+  day: 1 / 30.44, days: 1 / 30.44, week: 7 / 30.44, weeks: 7 / 30.44, wk: 7 / 30.44, wks: 7 / 30.44,
+  month: 1, months: 1, mo: 1, mos: 1, year: 12, years: 12, yr: 12, yrs: 12, yo: 12,
+};
+
+export function ageInMonthsEn(clause: string): number | null {
+  const unit = /(?<![\d.])(\d{1,3})\s*(day|days|week|weeks|month|months|year|years|yr|yrs|wk|wks|mo|mos|yo)(?![a-z])/.exec(clause);
+  if (unit) return Number(unit[1]) * EN_AGE_UNITS[unit[2]]!;
+  const bare = /(?:^|\s)(?:is|are|hes|shes|im|i am|aged|age|turned|turns)\s+(\d{1,2})(?![\d.])/.exec(clause);
+  if (bare) {
+    const years = Number(bare[1]);
+    if (years < 18) return years * 12;
+  }
+  return null;
+}
+
+/**
+ * WHO AN ENGLISH MESSAGE IS ABOUT — `hasPersonAnchor`'s twin, and it exists for exactly the two
+ * findings §2.6 and §2.4 had to guard in Arabic with the same technique.
+ *
+ * `خامل` is «lethargic» and «dormant», and the §2.0 L8 mirror caught «الحساب خامل من سنة» — a
+ * dormant ACCOUNT — raising an infant-fever emergency. English has the same word twice over:
+ * `unresponsive` is a lethargic child AND a clinic that will not answer the phone, and
+ * `turning blue` is cyanosis AND a bruise. A one-word red flag whose other reading is
+ * administrative fires only with a person in the clause, and every way a parent actually
+ * writes it has one.
+ *
+ * It is a LOCAL list rather than an import because `lib/ai/symptom-frames.ts` is Arabic — its
+ * `PERSON_WORDS` are `ابني`, `امي`, `زوجتي` — and §12 row 15, which is unsigned, is the row that
+ * would give it a second script. The debt is recorded in the same place as the Arabic one.
+ */
+const PERSON_EN =
+  "baby|babies|newborn|infant|neonate|toddler|son|sons|daughter|daughters|child|children|kid|kids" +
+  "|boy|girl|he|she|him|her|his|hers|my wife|my husband|wife|husband|mother|father|mum|mom|dad" +
+  "|grandmother|grandfather|granddad|grandma|grandpa|brother|sister|patient|parent";
+
+const PERSON_EN_RE = new RegExp(`(?<![a-z0-9])(?:${PERSON_EN})(?![a-z0-9])`);
+
+export function hasPersonAnchorEn(clause: string): boolean {
+  return PERSON_EN_RE.test(clause);
+}
+
+/**
+ * ADJACENCY WITH AN UNENUMERATED GAP — the shape §2.7 already uses («the verb and the object
+ * must be within two tokens of each other») and the ONLY place this file allows one, because an
+ * ingestion object is separated from its verb by an open run of quantifiers: «swallowed a whole
+ * bottle of pills», «took two of his mother's tablets». Enumerating that run is the "closed list
+ * of the complements somebody thought of" §2.0 L8 detail 3 forbids, and the gap is bounded at
+ * four tokens so it cannot reach across a clause it never crossed.
+ */
+export function adjEnAny(a: readonly string[], b: readonly string[], gap: number): RegExp {
+  const A = a.map((t) => `(?<![a-z0-9])${esc(t.trim())}(?![a-z0-9])`).join("|");
+  const B = b.map((t) => `(?<![a-z0-9])${esc(t.trim())}(?![a-z0-9])`).join("|");
+  return new RegExp(`(?:${A}) (?:[a-z0-9.]+ ){0,${gap}}(?:${B})`);
+}

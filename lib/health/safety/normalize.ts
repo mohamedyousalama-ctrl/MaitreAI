@@ -47,3 +47,70 @@ export function normalizeForSafety(text: string): string {
 }
 
 export { normalizeAr };
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE ENGLISH VIEW OF THE SAME MESSAGE. §1.1's normalizer is Arabic: it folds
+// أإآ→ا, ة→ه and 3+ letter runs, none of which a Latin string has, and it leaves
+// the apostrophe, the hyphen and the degree sign exactly where the patient typed
+// them. That is why the English arms shipped as `raw.toLowerCase().includes(p)` —
+// there was no English normal form for them to match against.
+//
+// WHAT AN ENGLISH NORMAL FORM HAS TO DO, AND WHY EACH STEP IS HERE:
+//
+//   THE APOSTROPHE IS THE WHOLE PROBLEM. «can't breathe» · «cant breathe» ·
+//   «can’t breathe» (the iOS smart quote) are one sentence, and a term list that
+//   spells it one way is deaf to the other two — the §2.0 L6 defect («تورم مفاجئ»,
+//   «طاح على راسه») in a second script. Every apostrophe form folds to nothing, so
+//   the list is written «cant breathe» and hears all three.
+//
+//   THE HYPHEN IS AN AGE. «3-month-old», «38-day-old», «4-year-old» are how a
+//   parent writes an age in English, and §2.6's threshold is read off exactly
+//   those words. A hyphen is a space.
+//
+//   A NON-LATIN RUN IS A CLAUSE BREAK, NOT A SPACE. «عندي ألم بس chest pain» is
+//   two clauses in two scripts; folding the Arabic to a space would splice the
+//   Latin fragments on either side of it into one clause and invent an adjacency
+//   the patient never typed — the co-occurrence failure §2.0 L2 refuses, arriving
+//   through the normalizer instead of through the rule. So the Arabic becomes a
+//   clause terminator and the English arms read only what was typed in English.
+//
+// THE DECIMAL POINT SURVIVES: «38.5» and «102.5F» are one number, and
+// `splitClausesEn` is written not to break between two digits. The Arabic splitter
+// does break there and always has; it costs nothing because «38.5» truncates to 38
+// and 38 ≥ 38.0 either way, and changing it would move every Arabic clause boundary
+// in the corpus for no gain.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Straight, curly, modifier-letter and prime apostrophes — every form a phone keyboard emits. */
+const APOSTROPHES = /['‘’ʼ′`´]/g;
+/** «'s» AT A WORD END IS A WHOLE TOKEN AND IT BECOMES A SPACE, WHILE EVERY OTHER APOSTROPHE
+ *  BECOMES NOTHING. Driven, and the pair is why: «my son's fever won't come down» folds to
+ *  «my sons fever wont come down» under a blanket deletion, and `my son` NO LONGER MATCHES —
+ *  the trailing `s` fails the English boundary exactly as a trailing `ي` fails the Arabic one
+ *  in §2.1's «صدري» note. Folding it to a space gives «my son fever wont come down», where the
+ *  marker matches and the fever arm reaches its own Fires entry. The same rule folds «he's not
+ *  breathing» to «he not breathing» and «my baby's temperature is 102» to «my baby temperature
+ *  is 102», both of which their arms still read; «can't» and «won't» carry no `s` and are
+ *  untouched. */
+const POSSESSIVE_S = /['‘’ʼ]s(?![a-z])/g;
+
+/** Hyphens (ASCII and the Unicode dash block), slashes and underscores: «3-month-old», «y/o». */
+const EN_JOINERS = /[-‐-―−/\\_]/g;
+
+/** THE ONE ENGLISH NORMALIZER every Faysal English rule matches against.
+ *
+ *  Digits are folded first, exactly as `normalizeForSafety` does and for the same reason:
+ *  «my baby is ٣٩» is a fever report typed on an Arabic keyboard by someone writing English,
+ *  and a temperature rule that only sees one digit alphabet protects one keyboard by accident. */
+export function normalizeEn(text: string): string {
+  return foldDigits(String(text ?? ""))
+    .toLowerCase()
+    .replace(POSSESSIVE_S, " ")
+    .replace(APOSTROPHES, "")
+    .replace(EN_JOINERS, " ")
+    .replace(/°/g, " ")          // «102°F» → «102 f»
+    .replace(/[!?;:]/g, ".")          // one clause terminator, so the splitter reads one character
+    .replace(/[^a-z0-9., ]+/g, " . ") // a non-Latin run — Arabic, emoji — is a CLAUSE BREAK
+    .replace(/ +/g, " ")
+    .trim();
+}
