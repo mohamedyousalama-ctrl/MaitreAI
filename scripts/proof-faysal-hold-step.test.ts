@@ -10,6 +10,9 @@
 // الوقت» got a booking. Three independent reviewers found it; this file keeps it found.
 // ============================================================================
 import { Conversation } from "./faysal-harness";
+import { classifyDeterministic } from "../app/api/faysal/_engine/intent";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean, d?: any) => { if (c) { pass++; console.log("  PASS", n); } else { fail++; console.log("  FAIL", n, "\n     ", JSON.stringify(d).slice(0, 500)); } };
 const txt = (r: any) => r.messages.map((m: any) => m.text).join(" | ");
@@ -184,6 +187,50 @@ ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergenc
     }
   }
   ok(`the whole off-spine grid has no dead ends (${OFF_SPINE.length * PREFIXES.length} turns)`, deadEnds === 0, { deadEnds });
+}
+
+// ── THE WHOLE EMITTED CHIP VOCABULARY, READ OFF THE SOURCE ─────────────────
+// The journey-driven checks below only reach the chips on the paths they walk. THREE
+// trapdoor chips shipped anyway — «سجّل لي طلب», «فرع ثاني», «وين الفرع» — each of
+// them the only tappable thing on its scene, and each producing «ما أقدر أأكدها لك
+// من عندي» when tapped. So this reads every chip LITERAL out of scenes.ts and asserts
+// the classifier can read it. A chip the engine cannot understand is worse than no
+// chip: the patient taps the thing he offered them and he says he did not follow.
+{
+  const source = readFileSync(resolve(import.meta.dirname, "../app/api/faysal/_engine/scenes.ts"), "utf8");
+  const literals = new Set<string>();
+  // A chips array is the argument AFTER the messages array in a `reply(...)` call —
+  // `reply(s, [ … ], ["إي، ثبّته", "لا، غيّره"])`. Matching bare array literals instead
+  // swept up the specialty word-pair table and every other `[string, string]` in the
+  // file, which is why this anchors on the `], [` that only a chips argument has.
+  // …and the chips array is the LAST argument, so a closing paren follows it. Without
+  // that, the `[string, string][]` specialty table matches too: consecutive rows put
+  // a literal `], [` between them, which is the same shape as a chips argument.
+  for (const m of source.matchAll(/\]\s*,\s*\[\s*("(?:[^"\\]|\\.)*"(?:\s*,\s*"(?:[^"\\]|\\.)*")*)\s*\]\s*\)/g)) {
+    for (const raw of m[1].split(/"\s*,\s*"/)) {
+      const chip = raw.replace(/^"|"$/g, "").trim();
+      // Latin chips count too — «English» is exactly as tappable as «العربية», and
+      // leaving it out of the scan is how a trapdoor survives a proof about chips.
+      if (!chip || chip.length > 24 || !/[ء-يA-Za-z]/.test(chip)) continue;
+      literals.add(chip);
+    }
+  }
+  ok(`the chip scan found chips in scenes.ts (${literals.size})`, literals.size >= 8, { found: [...literals] });
+  for (const chip of literals) {
+    const c = classifyDeterministic(chip, 2);
+    // «الصبح» and «بعد العصر» are read as a WINDOW rather than as an intent — the
+    // scene machine consumes the fact, and that is a real answer. So the bar is that
+    // the chip carries something actionable, not that it names an intent.
+    const actionable =
+      !!c &&
+      (c.kind !== "other" ||
+        c.need !== null ||
+        c.districtAr !== null ||
+        c.payment !== null ||
+        c.preferredWindowAr !== null ||
+        c.preferredDayAr !== null);
+    ok(`the engine can read the chip «${chip}»`, actionable, { chip, kind: c?.kind ?? null, window: c?.preferredWindowAr ?? null });
+  }
 }
 
 // ── EVERY CHIP IS UNDERSTOOD WHEN IT IS TAPPED ──────────────────────────────

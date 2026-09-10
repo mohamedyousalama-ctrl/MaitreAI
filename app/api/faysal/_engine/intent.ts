@@ -61,6 +61,8 @@ export type IntentKind =
   | "clinic_list"
   | "callback_request"
   | "pre_visit"
+  | "other_branch"
+  | "language_choice"
   | "labs_question"
   | "unserved_district"
   | "location_question"
@@ -573,6 +575,15 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // line, which is the one answer that is definitely wrong when we know the answer.
   if (has(t, "وين الفرع", "وين مكانكم", "العنوان", "عنوانكم", "الموقع", "وين موقعكم", "لوكيشن", "المواقف", "موقف السيارات", "where are you", "your address", "location", "parking"))
     return { ...base, kind: "location_question" };
+
+  // «فرع ثاني» and «العربية» / «English» — both of them CHIPS this engine emits, and
+  // neither had an intent. A chip the engine cannot read is worse than no chip: the
+  // patient taps the thing he offered them and he says he did not follow. Found by
+  // the proof that reads every chip literal out of scenes.ts, not by a person.
+  if (has(t, "فرع ثاني", "فرع اخر", "فرع ثالث", "another branch", "different branch"))
+    return { ...base, kind: "other_branch" };
+  if (/^(?:العربيه|عربي|بالعربي|arabic|english|انجليزي|بالانجليزي)\s*[.!،,]?$/.test(t))
+    return { ...base, kind: "language_choice" };
 
   // «وش أجيب معي؟» — asked one message after he wrote the answer himself. The
   // pre-visit line already says what to bring; he answered «ما أقدر أأكدها لك من

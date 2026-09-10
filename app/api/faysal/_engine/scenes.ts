@@ -1019,6 +1019,27 @@ function dispatch(
     case "package_question":
       return packageReply(s);
 
+    case "other_branch": {
+      // The branch they are NOT currently being offered, named, with its hours state
+      // honest. Never a claim that it is open — that is `openState`'s job.
+      const current = s.siteId;
+      const alt = (["wattan-2", "shoaa-wurud", "shoaa-rawdah"] as SiteId[]).find((id) => id !== current) ?? "wattan-2";
+      s.siteId = alt;
+      s.announcedSiteId = null;
+      const next = nextOpening(alt, now);
+      const b = SITES[alt];
+      return reply(
+        s,
+        [faysal(s, next ? S.branchClosedUntil(b.shortAr, `${next.labelAr} ${next.timeAr}`) : S.fallbackHonestUnknown(`تتصل على ${b.phoneAr} والاستقبال يأكد لك الدوام`))],
+        ["أقرب موعد", "فرع ثاني"],
+      );
+    }
+
+    case "language_choice":
+      // The patient chose a language. Arabic is what this engine speaks natively and
+      // English is the parity path; either way the answer is to get back to the work.
+      return reply(s, [faysal(s, language === "en" ? EN.discoverShort : S.MOTION_DISCOVER)], chipsFor(s));
+
     case "pre_visit":
       return reply(s, [faysal(s, S.whatToBring(s.payment, OPS.arrivalBufferMinutes))], chipsFor(s));
 
