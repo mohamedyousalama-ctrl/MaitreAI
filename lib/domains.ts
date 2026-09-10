@@ -13,7 +13,8 @@
 
 export type HostMapping =
   | { kind: "storefront"; slug: string } // public customer storefront for a tenant
-  | { kind: "operator"; restaurantId?: string }; // the normal login-gated operator app; restaurantId pins the console to a specific tenant
+  | { kind: "operator"; restaurantId?: string } // the normal login-gated operator app; restaurantId pins the console to a specific tenant
+  | { kind: "faysal" }; // the Al Wattan health-agent demo, and NOTHING else on that host
 
 export const HOST_MAP: Record<string, HostMapping> = {
   "wesayachicken.com": { kind: "storefront", slug: "wesaya" },
@@ -21,6 +22,20 @@ export const HOST_MAP: Record<string, HostMapping> = {
   "order.wesayachicken.com": { kind: "storefront", slug: "wesaya" },
   "app.wesayachicken.com": { kind: "storefront", slug: "wesaya" },
   "console.wesayachicken.com": { kind: "operator", restaurantId: "5acbc72f-def3-46cd-ad6c-bf0ff4a23642" },
+
+  // فيصل / Faysal — the Al Wattan Medical Group demo. A hostname exists for it so a
+  // client can be sent ONE short, permanent link instead of a preview URL carrying a
+  // share token that expires. BOTH names are mapped on purpose: whichever of the two
+  // company domains the subdomain is finally attached to in Vercel, the code already
+  // knows it, so attaching it is a settings change and never a redeploy.
+  //
+  // On these hosts the middleware serves the demo at "/" and 404s everything else —
+  // see the `faysal` branch in middleware.ts. That lockdown is the reason this map
+  // entry is a security control and not a convenience: the deployment behind it also
+  // serves the operator console and every other API, and none of that may be
+  // reachable from a link that goes out to a clinic manager.
+  "faysal.maitre.chat": { kind: "faysal" },
+  "faysal.getkivo.io": { kind: "faysal" },
 };
 
 /** Normalize a Host header (strip port, lowercase) and look up its mapping. */

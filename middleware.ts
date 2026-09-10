@@ -47,6 +47,53 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
+  // Faysal demo host (faysal.maitre.chat / faysal.getkivo.io): this hostname exists
+  // to carry ONE page to a client's phone, so it serves exactly that page and
+  // nothing else. "/" renders the demo, "/api/faysal/*" answers its turns, and every
+  // other path is a hard 404 — the operator console, the Wesaya storefront and all
+  // ~36 other API families stay unreachable here even though the SAME deployment
+  // serves them on other hosts.
+  //
+  // Why the lockdown is load-bearing: the link that goes to a clinic manager is
+  // public, unauthenticated and forwardable. Without this branch, "short and clean"
+  // would also mean "the whole product, on one guessable hostname". With it, the
+  // public surface of that hostname is the demo page plus its own two endpoints,
+  // which are already bounded by the per-IP limit and the durable daily spend
+  // ceiling in app/api/faysal/_engine/limits.ts.
+  //
+  // It runs BEFORE the auth path on purpose: the demo has no Supabase session and
+  // must never be sent through one. Static assets never reach here — the matcher
+  // below excludes _next/static and _next/image, which is where next/font and every
+  // client chunk the page needs are served from.
+  if (mapping?.kind === "faysal") {
+    const path = request.nextUrl.pathname;
+    // Canonicalise: the page's own route redirects to the bare host, so the link a
+    // client sees, copies and forwards is always the short one.
+    if (path === "/faysal") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      return NextResponse.redirect(url);
+    }
+    if (path === "/") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/faysal";
+      return NextResponse.rewrite(url);
+    }
+    if (path === "/api/faysal/turn" || path === "/api/faysal/reset") {
+      return NextResponse.next();
+    }
+    return new NextResponse("Not found.", {
+      status: 404,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+        // Belt and braces with the page's own `robots` metadata: nothing on this
+        // host may be indexed, including the 404 body.
+        "x-robots-tag": "noindex, nofollow",
+      },
+    });
+  }
+
   // Operator host root: skip MaitreAI's marketing landing — send staff to login.
   // (An authed operator hitting /login is redirected to /dashboard by the auth
   // helper, so this never strands a logged-in user.) Applies even in demo mode so

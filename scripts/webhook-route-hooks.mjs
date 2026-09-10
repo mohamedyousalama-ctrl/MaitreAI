@@ -14,12 +14,22 @@ import { join } from "node:path";
 
 const NEXT_SERVER_STUB = pathToFileURL(join(process.cwd(), "scripts/stubs/next-server.mjs")).href;
 
+// `next/server` has no ESM export map in Next 14, so bare node cannot resolve it and
+// every route proof gets the minimal stub above. A MIDDLEWARE proof cannot use that
+// stub: it asserts on NextResponse.rewrite / .redirect / .next, and asserting against
+// a stub I wrote would prove the stub, not the framework. Setting REAL_NEXT_SERVER=1
+// resolves the CommonJS entry directly instead, so such a proof runs the real classes
+// and the real `x-middleware-rewrite` / 307 / `x-middleware-next` semantics.
+// Opt-in, because the real module is heavier and the route proofs do not need it.
+const NEXT_SERVER_REAL = pathToFileURL(join(process.cwd(), "node_modules/next/server.js")).href;
+const useRealNextServer = process.env.REAL_NEXT_SERVER === "1";
+
 export async function resolve(specifier, context, next) {
   if (specifier === "server-only") {
     return { url: "data:text/javascript,export%20default%20{}", shortCircuit: true };
   }
   if (specifier === "next/server") {
-    return { url: NEXT_SERVER_STUB, shortCircuit: true };
+    return { url: useRealNextServer ? NEXT_SERVER_REAL : NEXT_SERVER_STUB, shortCircuit: true };
   }
   let spec = specifier;
   if (spec.startsWith("@/")) {
