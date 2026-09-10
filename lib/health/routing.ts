@@ -144,6 +144,10 @@ export const STRENGTHS: readonly SiteStrength[] = Object.freeze([
     "الروابي عندهم نساء وولادة.",
     "Ar Rawabi runs OB-GYN.",
     "§3.2 L146"),
+  strength("wattan-2", "ophthalmology", 1, "named_capability",
+    "الروابي فيه عيادة عيون.",
+    "Ar Rawabi runs an ophthalmology clinic.",
+    "§3.2 L146"),
   strength("wattan-2", "ent", 1, "named_capability",
     "الروابي عندهم أنف وأذن وحنجرة.",
     "Ar Rawabi runs ENT.",
@@ -210,6 +214,12 @@ const CHAINS: Record<NeedKey, readonly SiteId[]> = {
   paediatrics: ["shoaa-wurud", "wattan-2", "wattan-1"],
   obgyn: ["wattan-2", "shoaa-wurud"],
   ent: ["wattan-2", "shoaa-wurud"],
+  // §6.2 records ophthalmology as `N` — named_at_site — at Ar Rawabi and `G`
+  // everywhere else, the dossier names it in that branch's specialty list (§3.2
+  // L146), the catalogue prices «كشف عيون», and a specialist is rostered there.
+  // One site, so the chain is one site: Rule STR-1 is satisfied and no second
+  // branch may be implied.
+  ophthalmology: ["wattan-2"],
   general_practice: ["wattan-2", "shoaa-wurud", "wattan-1"],
   internal_medicine: ["wattan-2", "shoaa-wurud", "wattan-1"],
 };
@@ -232,6 +242,7 @@ const NEED_ALIASES: ReadonlyArray<[NeedKey, string[]]> = [
   ["east_riyadh", ["الروضة", "rawdah", "شرق الرياض", "الدائري الشرقي"]],
   ["paediatrics", ["أطفال", "paediatrics", "pediatrics", "طفلي", "ولدي"]],
   ["obgyn", ["نساء وولادة", "نسائية", "obgyn", "ob-gyn", "حامل", "حمل"]],
+  ["ophthalmology", ["عيون", "عين", "نظر", "نظارات", "عدسات", "eye", "eyes", "vision", "ophthalmology"]],
   ["ent", ["أنف", "أذن", "حنجرة", "ent"]],
   ["internal_medicine", ["باطنية", "باطني", "internal"]],
   ["general_practice", ["طب أسرة", "عيادة عامة", "طب عام", "general", "family medicine", "gp"]],
@@ -287,8 +298,10 @@ export interface RecommendOpts extends HoursOpts {
   excludeSiteIds?: SiteId[];
   /**
    * The patient's district IN THEIR OWN WORDS. It never changes the clinical
-   * pick — it populates `nearestSiteId` so the caller can render SPEC-2 §6.2's
-   * geography fork honestly: nearest first, then what is only at the other one.
+   * pick — it populates `nearestSiteId`, `nearestServesNeed`, `nearestStrengthAr`,
+   * `nearestGated` and `nearestContested` so the caller can render SPEC-2 §6.2's
+   * geography fork honestly: nearest first, then what is only at the other one —
+   * and, when the nearest branch DOES carry the need, without pretending it does not.
    */
   districtAr?: string | null;
 }
@@ -341,34 +354,23 @@ export function recommendBranch(need: NeedKey | string, opts: RecommendOpts = {}
   const nearest = opts.districtAr ? siteInDistrict(opts.districtAr) : null;
   const nearestStrength = nearest ? strengthFor(nearest, key) : null;
 
-  // PROXIMITY WINS WHEN THE NEAREST BRANCH GENUINELY RUNS THE CLINIC.
+  // PROXIMITY DOES NOT CHANGE THE PICK — it changes what is SAID about it.
   //
-  // `nearest !== chain[0]` was being rendered as "the nearest branch cannot do this",
-  // and that is not what it means — it means the nearest branch is not the chain
-  // HEAD. A patient in Al Wurud asking for a general checkup was told, in consecutive
-  // lines, that Shoaa Al Wurud runs family medicine and that general checkups are
-  // done at Ar Rawabi. Both sentences came from this function. One of them was false.
+  // A first attempt at the founder's transcript let the patient's own district win
+  // when it carried a `named_capability`. It fixed the sentence and broke the
+  // booking: the gate that actually decides whether a site can mint a service is
+  // §6.2's capability matrix (`clinicBookableAt`), not a strength row, and four
+  // (need, district) pairs that booked before came back with zero slots and a
+  // «دوامه قيد التأكيد» about branches that are neither gated nor contested. It also
+  // inverted `rank` — a rank-3 strength inferred from a price list outranking the
+  // branch the group markets — and contradicted §5.3, which defines the chain as a
+  // FALLBACK order entered when the primary is unbookable.
   //
-  // A `named_capability` strength is the dossier recording that the clinic is AT that
-  // site, so when the patient's own district has one, that is the answer and there is
-  // nothing to fork about. `group_marketing` is deliberately NOT enough: it records
-  // that the group advertises the service there without naming the clinic, so the
-  // chain head still leads and the caller says why — see `nearestStrengthBasis`.
-  //
-  // This is the ONE thing the district changes. It picks between sites the need's own
-  // chain already sanctions; it never reaches outside it, never overrides `dateISO`
-  // bookability, and never touches which needs exist at all.
-  if (
-    nearest &&
-    nearest !== chosen &&
-    chain.includes(nearest) &&
-    nearestStrength?.basis === "named_capability" &&
-    (!opts.dateISO || bookableOn(nearest))
-  ) {
-    chosen = nearest;
-    fallbackFromSiteId = undefined;
-    fallbackReasonAr = undefined;
-  }
+  // The defect the transcript actually showed was a false SENTENCE, not a wrong
+  // branch: «كشف الجلدية نسويه في الروابي» told a patient in Al Wurud that a service
+  // the group advertises at their own branch is done elsewhere. That is fixed where
+  // it belongs — `nearestServesNeed` and `nearestStrengthAr` below carry the fact,
+  // and the caller picks copy that denies nothing. The clinical pick is untouched.
 
   const s = strengthFor(chosen, key) ?? strengthFor(primary, key);
   if (!s) throw new Error(`no_strength_for:${key}:${chosen}`);
@@ -408,6 +410,8 @@ export function recommendBranch(need: NeedKey | string, opts: RecommendOpts = {}
     nearestStrengthAr: nearestStrength?.reasonAr ?? null,
     nearestStrengthEn: nearestStrength?.reasonEn ?? null,
     nearestStrengthBasis: nearestStrength?.basis ?? null,
+    nearestGated: !!nearestStrength?.gated,
+    nearestContested: !!nearest && isContested(nearest),
     nearestReasonAr: nearest && nearest !== chosen ? `فرع ${siteById(nearest).nameAr} هو الأقرب لك.` : null,
     safetyRailOutranks: key === "urgent_tonight" || key === "after_hours_er",
   };

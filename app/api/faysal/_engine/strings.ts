@@ -340,15 +340,16 @@ export const motionMatchFork = (a: {
 export const motionMatchForkFocus = (a: {
   nearBranch: string;
   nearShort: string;
-  nearCapability: string;
-  /** The near site's OWN authored line for this need, with its leading branch name
-   *  already removed by the caller — else the branch is named twice in one breath. */
+  /** What the near branch offers, as ONE clause that does not name it again — the
+   *  caller supplies either its authored strength line with the leading branch name
+   *  removed, or its clinic list. Saying both, as an earlier version did, produced
+   *  «…وفيه طب الأسرة والباطنة. وهو فيه طب أسرة» in consecutive lines. */
   nearAlso: string;
   bestShort: string;
   bestReason: string;
 }) =>
-  `أقرب فرع لك هو ${a.nearBranch}، وفيه ${a.nearCapability}.
-وهو ${a.nearAlso.replace(/[.。]+$/, "")}، بس ${a.bestReason.replace(/[.。]+$/, "")}، و${a.bestShort} أبعد عليك.
+  `أقرب فرع لك هو ${a.nearBranch}، و${a.nearAlso.replace(/[.。]+$/, "")}.
+بس ${a.bestReason.replace(/[.。]+$/, "")}، و${a.bestShort} أبعد عليك.
 أثبّت لك في ${a.nearShort} ولا ${a.bestShort}؟`;
 
 // §6.4 — acknowledge → one specific → one fork. Never argue, never a third attempt.
@@ -629,7 +630,7 @@ export const motionMatchForkUnverified = (a: {
   optionBest: string;
 }) =>
   `أقرب فرع لك هو ${a.nearBranch}، وفيه ${a.nearCapability}.
-بس أصارحك: دوامه اليوم مو مؤكد عندي، وما أبي أعطيك معلومة غير أكيدة وتطلع من بيتك على الفاضي. و${a.procedure} نسويه في ${a.bestBranch} — ${a.bestReason}. ${a.bestShort} أبعد عليك، وهذا الفرق الوحيد بين الخيارين.
+بس أصارحك: دوامه اليوم مو مؤكد عندي، وما أبي أعطيك معلومة غير أكيدة وتطلع من بيتك على الفاضي. و${a.procedure} نسويه في ${a.bestBranch} — ${a.bestReason.replace(/[.。]+$/, "")}. ${a.bestShort} أبعد عليك، وهذا الفرق الوحيد بين الخيارين.
 عندك طريقين:
 1) ${a.optionNear}
 2) ${a.optionBest}

@@ -253,19 +253,47 @@ function forkReply(s: FaysalSession, bestId: SiteId, nearId: SiteId, reasonAr: s
     ? `أسجّل لك طلب في ${near.shortAr}، والفرع يتصل عليك ويثبت الوقت — وقبل ما تطلع اتصل على ${near.phoneAr} وتأكد إنه فاتح.`
     : `كشف في ${near.shortAr} لأنه قريب، و${plan.nounAr} بعدين في ${best.shortAr}.`;
 
+  // «مجمع الوطن الطبي 2 — الروابي — الروابي فرع الأسنان والتقويم عندهم. الروابي أبعد
+  // عليك» — three times in one line, which is the founder's defect #3 and it was only
+  // half fixed: `motionMatchForkFocus` got the strip, this template did not. The
+  // authored reasons mostly OPEN with the branch's short name, and the template has
+  // just written the full name, which already ends in it. Same strip, same reason.
+  const bestReason = withoutLeadBranch(reasonAr, best.shortAr) ?? reasonAr;
+
   const args = {
     nearBranch: near.nameAr,
     nearCapability: capability,
     procedure: plan.nounAr,
     bestBranch: best.nameAr,
     bestShort: best.shortAr,
-    bestReason: reasonAr,
+    bestReason,
     optionNear,
     optionBest,
   };
   const text = contested ? S.motionMatchForkUnverified(args) : S.motionMatchFork(args);
 
   return reply(s, [faysal(s, text)], [near.districtAr, best.districtAr]);
+}
+
+/**
+ * An authored strength line with its own leading branch mention removed.
+ *
+ * The templates that use these lines have ALREADY named the branch — its full name
+ * ends in the short one — so re-opening with it produced «مجمع الوطن الطبي 2 —
+ * الروابي — فرع الروابي هو الفرع اللي…»: the district three times in one line, which
+ * is the founder's defect #3. Two lead-ins occur in the table, «الروابي …» and «فرع
+ * الروابي …», and a first fix handled only the first, which is why three of five
+ * districts still shipped the reported sentence verbatim.
+ *
+ * Returns null when the line does not open with the branch at all (twelve of the
+ * thirty-six do not), so callers can fall back rather than splice something
+ * ungrammatical into the middle of a sentence.
+ */
+function withoutLeadBranch(line: string, shortAr: string): string | null {
+  for (const lead of [`فرع ${shortAr}`, shortAr]) {
+    if (line.startsWith(lead)) return line.slice(lead.length).trim();
+  }
+  return null;
 }
 
 /** The near branch can do it too — see `S.motionMatchForkFocus`. */
@@ -281,7 +309,19 @@ function focusForkReply(s: FaysalSession, bestId: SiteId, nearId: SiteId, bestRe
   // The authored strength lines start with the branch's own short name («شعاع الورود
   // كمان يسوّق…»), and this sentence has already named it. Strip it, so the branch is
   // named once per clause instead of twice in a row.
-  const nearAlso = nearAlsoAr.replace(new RegExp(`^${near.shortAr}\\s*`), "").trim();
+  // The authored strength lines mostly start with the branch's own short name
+  // («شعاع الورود فيه طب أسرة») and this sentence has already named it — so the name
+  // is stripped and the rest is used. TWELVE of the thirty-six do NOT start that way
+  // («فرع الروابي هو الفرع اللي…», «عيادة المخ والأعصاب مذكورة في…»), and splicing
+  // those in produced «وهو فرع الشفا فيه تقويم معلن» — ungrammatical, and it names
+  // the branch twice in a row, which is the very defect this template exists to fix.
+  // When the line does not start with the short name, its clinic list is used
+  // instead: always grammatical, never re-names, and still specific to that branch.
+  // startsWith/slice rather than a RegExp: `shortAr` is data and nothing enforces
+  // that it stays free of regex metacharacters.
+  const nearAlso =
+    withoutLeadBranch(nearAlsoAr, near.shortAr) ??
+    `فيه ${clinicsAtSite(nearId).slice(0, 2).join(" و") || "عيادات عامة"}`;
 
   return reply(
     s,
@@ -291,7 +331,6 @@ function focusForkReply(s: FaysalSession, bestId: SiteId, nearId: SiteId, bestRe
         S.motionMatchForkFocus({
           nearBranch: near.nameAr,
           nearShort: near.shortAr,
-          nearCapability: clinicsAtSite(nearId).slice(0, 2).join(" و") || "عيادات عامة",
           nearAlso,
           bestShort: best.shortAr,
           bestReason,
@@ -588,9 +627,25 @@ function confirmCallback(s: FaysalSession, windowAr: string, now: Date, store: F
 
 // ── discovery ───────────────────────────────────────────────────────────────
 
+/**
+ * THE CHIPS ARE DERIVED FROM THE QUESTION, so the two cannot drift apart.
+ *
+ * `askDistrict` asked «أنت بأي حي؟» and offered «تأمين / كاش» — the two-in-one
+ * defect inverted, and invisible because that function is reached from `offerSlots`
+ * and `confirmCallback` rather than from the booking path a proof walks. Pairing
+ * them by hand at each ask site is what allowed it; reading the question is what
+ * stops it. Exported so it can be proved directly.
+ */
+export function chipsAnswering(question: string, s: FaysalSession): string[] {
+  if (/بأي حي|أي حي|which district/i.test(question)) return BOOKABLE_DISTRICTS;
+  if (/تأمين ولا كاش|insurance or cash/i.test(question)) return ["تأمين", "كاش"];
+  return chipsFor(s);
+}
+
 function askDistrict(s: FaysalSession): Reply {
   s.scene = "S2_discover";
-  return reply(s, [faysal(s, s.need ? S.MOTION_DISCOVER_SHORT : S.MOTION_DISCOVER)], ["تأمين", "كاش"]);
+  const text = s.need ? S.MOTION_DISCOVER_SHORT : S.MOTION_DISCOVER;
+  return reply(s, [faysal(s, text)], chipsAnswering(text, s));
 }
 
 function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other", store: FaysalStore, raw = ""): Reply {
@@ -610,8 +665,22 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
   // named once, when it is actually known.
   if (!s.districtAr) {
     s.scene = "S2_discover";
-    const ask = language === "en" ? EN.askDistrictBecause : S.askDistrictFor(planFor(needOf(s)).nounAr);
-    return reply(s, [faysal(s, ask)], BOOKABLE_DISTRICTS);
+    // ASKED THREE TIMES IS NOT ASKED. A patient who types «ابي اقرب موعد» and never
+    // names a district got the identical sentence again and again — every other
+    // repeat risk in this file is capped (`s.objections.*`, `alreadySaid`) and this
+    // one was not. After two asks he stops asking and offers the two branches he can
+    // actually book, which is the answer to «أقرب» without the district.
+    s.objections.district = (s.objections.district ?? 0) + 1;
+    if (s.objections.district > 2) {
+      return reply(s, [faysal(s, S.districtNotServed(BOOKABLE_DISTRICTS.join(" و")))], BOOKABLE_DISTRICTS);
+    }
+    // `planFor(null)` yields the general-checkup noun, so asking «تمام، الكشف العام.
+    // أنت بأي حي؟» of someone who only said «ابغى موعد» puts a need in their mouth.
+    // With no need on the session, the need is what is missing — ask for that.
+    const need = needOf(s);
+    if (!need) return reply(s, [faysal(s, language === "en" ? EN.discover : S.MOTION_DISCOVER)], chipsFor(s));
+    const ask = language === "en" ? EN.askDistrictBecause : S.askDistrictFor(planFor(need).nounAr);
+    return reply(s, [faysal(s, ask)], chipsAnswering(ask, s));
   }
 
   if (rec.nearestSiteId && rec.nearestSiteId !== rec.siteId) {
@@ -619,7 +688,13 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
     // it is done), or it has one the group only markets (say both, deny neither).
     // A `named_capability` near the patient never gets here — the router already
     // chose it, so there is nothing to fork.
-    return rec.nearestServesNeed && rec.nearestStrengthAr
+    // A GATED OR CONTESTED near branch always takes the original fork, whatever its
+    // strength says. `forkReply` is the one that carries Rule C4-1's copy — a
+    // callback instead of a time, the branch's phone number, and «قبل ما تطلع اتصل
+    // … وتأكد إنه فاتح». The focus fork offers a flat choice of a fixed time, which
+    // at الشفا is a promise the next turn walks back.
+    const nearIsSafe = !rec.nearestGated && !rec.nearestContested && openState(rec.nearestSiteId, now).state !== "UNVERIFIED";
+    return nearIsSafe && rec.nearestServesNeed && rec.nearestStrengthAr
       ? focusForkReply(s, rec.siteId, rec.nearestSiteId, rec.reasonAr, rec.nearestStrengthAr)
       : forkReply(s, rec.siteId, rec.nearestSiteId, rec.reasonAr, now);
   }
@@ -640,23 +715,14 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
   // ASK ONLY WHAT IS STILL MISSING. The combined question went out even to a patient
   // who had just named their district AND their insurer in the same sentence, which
   // is the moment testers said he stopped sounding like he was listening.
-  if (!s.districtAr || !s.payment) {
-    const needsDistrict = !s.districtAr;
-    const ask = language === "en"
-      ? needsDistrict
-        ? EN.discoverShort
-        : EN.discoverPayment
-      : needsDistrict && !s.payment
-        ? S.MOTION_DISCOVER_SHORT
-        : needsDistrict
-          ? "تمام. أنت بأي حي؟"
-          : S.MOTION_DISCOVER_PAYMENT;
+  // The district is known by the time execution reaches here — the branch above
+  // returns without it — so payment is the only thing that can still be missing.
+  // The old district/payment fan-out here was dead the moment that branch went in.
+  if (!s.payment) {
+    const ask = language === "en" ? EN.discoverPayment : S.MOTION_DISCOVER_PAYMENT;
     const msgs = alreadySaid ? [faysal(s, ask)] : [faysal(s, matchText), faysal(s, ask)];
-    // THE CHIPS ANSWER THE QUESTION THAT WAS ASKED. This branch asks for the district
-    // — sometimes for the district AND the payment — and offered «تأمين / كاش» in
-    // every case, so a patient who had not said where they were got two buttons that
-    // answered the other half of the sentence. The first missing fact wins.
-    return reply(s, msgs, needsDistrict ? BOOKABLE_DISTRICTS : ["تأمين", "كاش"]);
+    // THE CHIPS ANSWER THE QUESTION THAT WAS ASKED — read off it, never paired by hand.
+    return reply(s, msgs, chipsAnswering(ask, s));
   }
   return offerSlots(s, now, language, store);
 }

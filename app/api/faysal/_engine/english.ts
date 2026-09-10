@@ -51,6 +51,9 @@ export const EN = {
   // defect and the same fix: two questions in one sentence with buttons for one of
   // them. `discoverPayment` follows the moment the district is in.
   discoverShort: "Which district are you in?",
+  /** The need is what is missing — asked when nothing has been stated yet. Mirrors
+   *  MOTION_DISCOVER, which is what the Arabic arm uses at the same position. */
+  discover: "So I can arrange this properly: what exactly do you need, and which district are you in?",
   /** The district ask with the reason it is being asked — said BEFORE any branch is
    *  named, because naming one first is naming a guess the next turn contradicts.
    *  No need-noun here: `NeedPlan` authors its nouns in Arabic only, and a

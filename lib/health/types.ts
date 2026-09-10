@@ -292,6 +292,7 @@ export type NeedKey =
   | "paediatrics"
   | "obgyn"
   | "ent"
+  | "ophthalmology"
   | "urgent_tonight"
   | "general_practice"
   | "internal_medicine";
@@ -361,6 +362,11 @@ export interface BranchRecommendation {
    *  same — the first is "book here", the second is "they advertise it, the focus is
    *  at the other branch". */
   nearestStrengthBasis: SiteStrength["basis"] | null;
+  /** Rule C4-1 / C4-2: a gated or contested nearest branch must be offered WITH its
+   *  caveat and never as a flat alternative, so the caller picks the fork copy that
+   *  carries the phone number and the "call before you leave" line. */
+  nearestGated: boolean;
+  nearestContested: boolean;
   nearestReasonAr: string | null;
   /**
    * MED-2 — for an urgent/tonight need the red-flag rail outranks this answer

@@ -340,10 +340,35 @@ const hasPhrase = (t: string, ...needles: string[]): boolean =>
  * «منظر», «عين» inside «معين» and «عينة», «رمد» inside longer words. That class of
  * bug has been shipped in this file more than once.
  */
+/**
+ * EYES ARE A NEED, NOT A REFUSAL.
+ *
+ * These words used to sit in OUT_OF_CATALOGUE and produced «عيادة العيون ما أقدر
+ * أثبّت لها موعد من هنا». That was false: §6.2 marks ophthalmology `named_at_site`
+ * at Ar Rawabi, the dossier names it there (§3.2 L146), the catalogue prices «كشف
+ * عيون», and a specialist is rostered. Refusing a clinic the client runs is
+ * inventing UNavailability — the same defect as inventing availability, pointed the
+ * other way, and in front of a manager who knows their own branch has an eye clinic.
+ *
+ * Matched with `catalogueWord`, not `needWord`: the latter leaves any needle over
+ * three characters as a bare `includes`, so «نظري» fired inside «منظري» and routed
+ * "my appearance" to the eye clinic, and its prefix set has no «لل», so «ليزر للعين»
+ * matched nothing at all. Both were measured.
+ *
+ * Checked BEFORE the NEEDS table so «ليزر للعيون» reads as the eye clinic rather
+ * than the dermatology laser, which is the only laser this group has.
+ */
+const EYE_WORDS = [
+  "عيون", "عيوني", "عين", "عيني", "عينين", "نظر", "نظري", "النظر", "نظاره", "نظارات",
+  "عدسات", "رمد", "جفن", "قرنيه", "ليزك", "مياه بيضاء", "عيادة عيون", "طب العيون",
+  "eye", "eyes", "vision", "optician", "optometry", "ophthalmology", "ophthalmologist", "lasik",
+  // Arabizi — the digits sit outside the letter class, so the boundary still holds.
+  "3youn", "3ain", "3ayni", "nathar", "nadhar",
+] as const;
+
+/** Words that cannot mean anything else in a booking chat. No context gate. */
 const OUT_OF_CATALOGUE: readonly (readonly [readonly string[], string])[] = [
-  [["عيون", "عين", "العيون", "نظر", "نظري", "نظاره", "نظارات", "عدسات", "رمد", "عيادة عيون",
-    "eye", "eyes", "vision", "optician", "optometry", "ophthalmology", "ophthalmologist"], "العيون"],
-  [["عظام", "ركبه", "الركبه", "كتف", "المفاصل", "ظهري", "orthopaedic", "orthopedic", "orthopaedics"], "العظام"],
+  [["عظام", "ركبه", "الركبه", "المفاصل", "orthopaedic", "orthopedic", "orthopaedics", "orthopedics"], "العظام"],
   [["مسالك", "urology", "urologist"], "المسالك"],
   [["اورام", "oncology", "oncologist"], "الأورام"],
   [["تخاطب", "speech therapy"], "التخاطب"],
@@ -351,19 +376,79 @@ const OUT_OF_CATALOGUE: readonly (readonly [readonly string[], string])[] = [
   [["روماتيزم", "rheumatology", "rheumatism"], "الروماتيزم"],
 ] as const;
 
+/**
+ * Words that DO mean something else, and so need a clinic word beside them.
+ *
+ * «من القلب أشكركم» is gratitude and SPEC-4 §2.1's own near-miss; «بروح بنفسي» is a
+ * patient saying they will come in person. The gate is what separates those from
+ * «دكتور قلب» and «عيادة نفسية». `strictWord` additionally refuses the attached
+ * و/ف/ب/ل prefixes, which is what «بنفسي» was slipping through.
+ *
+ * «الظهر» is NOT here in any form: it is noon far more often than it is a back, and
+ * «ابغى موعد بعد الظهر» carries «موعد», so the gate would not have saved it. The
+ * back is reached through «ظهري» and the explicit pain phrases only.
+ */
+const AMBIGUOUS_SPECIALTY: readonly (readonly [readonly string[], string])[] = [
+  [["قلب", "قلبيه", "cardiology", "cardiac"], "القلب"],
+  [["كلي", "nephrology"], "الكلى"],
+  [["نفسي", "نفسيه", "psychiatry", "psychiatrist"], "النفسية"],
+  [["سكري", "diabetes"], "السكري"],
+  [["تجميل", "cosmetic surgery", "plastic surgery"], "التجميل"],
+  [["كتف", "كتفي"], "العظام"],
+  [["ظهري", "الم الظهر", "الم في الظهر", "وجع الظهر", "وجع في الظهر"], "العظام"],
+] as const;
+
+/**
+ * Every needle in both tables, flattened — exported so a proof can DERIVE its
+ * boundary corpus instead of hand-listing traps. A hand-written list missed
+ * «المركبة», «مظهري», «منظري» and `television`, all of which shipped as refusals.
+ */
+export const SPECIALTY_NEEDLES: readonly string[] = [
+  ...OUT_OF_CATALOGUE.flatMap(([words]) => words),
+  ...AMBIGUOUS_SPECIALTY.flatMap(([words]) => words),
+];
+
+/**
+ * ADJACENCY, not a message-wide gate.
+ *
+ * The old rule asked whether a clinic word appeared ANYWHERE in the message. That is
+ * too loose for words that mean something else: «حاسس نفسي تعبان وأبي موعد» — "I feel
+ * tired and I want an appointment" — carries «موعد» and «نفسي» and came back as a
+ * psychiatry refusal; «بشكل كلي أبي موعد» came back as nephrology; «من القلب أشكركم
+ * على الموعد» as cardiology, which is the sentence SPEC-4 §2.1 names as this class's
+ * own near-miss. All three measured.
+ *
+ * A patient asking for one of these clinics puts the words TOGETHER — «عيادة نفسية»,
+ * «دكتور قلب», «قسم الكلى» — or names a body part with the pain beside it, in either
+ * order («ألم في الكتف», «كتفي يعورني»). That adjacency is the signal; a word
+ * somewhere else in the sentence is not.
+ */
+const CLINIC_LEAD = "(?:عياده|عيادة|دكتور|دكتوره|طبيب|طبيبه|قسم|طب|اخصائي|استشاري|clinic|doctor|specialist)";
+const PAIN = "(?:الم|وجع|يعورني|يوجعني|يعور|يوجع|تعورني)";
+const adjacentSpecialty = (t: string, ...needles: string[]): boolean =>
+  needles.some((raw) => {
+    const w = normalizeArabic(raw).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return (
+      new RegExp(`${CLINIC_LEAD}\\s+(?:ال)?${w}(?![ء-يa-z0-9])`).test(t) ||
+      new RegExp(`${PAIN}\\s+(?:في\\s+|ب)?(?:ال)?${w}(?![ء-يa-z0-9])`).test(t) ||
+      new RegExp(`(?:^|\\s)(?:ال)?${w}\\s+${PAIN}`).test(t)
+    );
+  });
+
 /** The out-of-catalogue specialty named in this text, in the patient's own register,
  *  or null. Exported so the SCENE says the same word back that the detector matched —
  *  two lists would drift, and the apology naming the wrong clinic is worse than none. */
 export function outOfCatalogueSpecialty(raw: string): string | null {
   const t = normalizeArabic(raw);
-  for (const [words, label] of OUT_OF_CATALOGUE) if (words.some((w) => needWord(t, w))) return label;
+  for (const [words, label] of OUT_OF_CATALOGUE) if (catalogueWord(t, ...words)) return label;
+  for (const [words, label] of AMBIGUOUS_SPECIALTY) if (adjacentSpecialty(t, ...words)) return label;
   return null;
 }
 
 /** True when the eye words fired — used to override `laser`, because «ليزر العيون»
  *  is LASIK and the only laser this group has is the dermatology one. */
 function eyeWordIn(t: string): boolean {
-  return OUT_OF_CATALOGUE[0][0].some((w) => needWord(t, w));
+  return catalogueWord(t, ...EYE_WORDS);
 }
 
 /**
@@ -378,7 +463,7 @@ function eyeWordIn(t: string): boolean {
  * `laser` and gets a patient routed to hair removal; a rule that cannot be called
  * directly cannot be proved directly.
  */
-export function needAfterVeto(raw: string, need: DemoNeed | null): DemoNeed | null {
+export function vetoedNeed(raw: string, need: DemoNeed | null): DemoNeed | null {
   if (!outOfCatalogueSpecialty(raw)) return need;
   // Once an out-of-catalogue specialty is on the table, only a need the TEXT ITSELF
   // states may survive — never one a model inferred. That asymmetry is the whole
@@ -387,8 +472,18 @@ export function needAfterVeto(raw: string, need: DemoNeed | null): DemoNeed | nu
   const t = normalizeArabic(raw);
   const stated = needIn(t);
   if (!stated) return null;
-  return stated === "laser" && eyeWordIn(t) ? null : stated;
+  // «كشف» on its own is the generic word for an examination — it is QUALIFIED by
+  // whatever follows it, so «كم سعر كشف العيون» and «ابي احجز كشف عيون» state no
+  // general checkup at all. Both leaked past this veto and were answered with a
+  // family-medicine price and a family-medicine booking. A general need survives
+  // only when the text says so specifically.
+  if (stated === "general" && !has(t, ...SPECIFIC_GENERAL)) return null;
+  return stated;
 }
+
+/** The words that mean a general consultation and cannot be read as anything else —
+ *  unlike the bare «كشف», which is the generic exam noun. */
+const SPECIFIC_GENERAL = ["كشف عام", "طب اسره", "عياده عامه", "general checkup", "check up", "checkup", "family medicine"] as const;
 
 /**
  * A needle that must stand as its OWN word — no attached «و/ف/ب/ل» prefix, only «ال».
@@ -399,7 +494,48 @@ export function needAfterVeto(raw: string, need: DemoNeed | null): DemoNeed | nu
  * psychiatry clinic cannot be booked from here. Measured, not hypothetical.
  */
 const strictWord = (t: string, ...needles: string[]): boolean =>
-  needles.some((n) => new RegExp(`(?:^|\\s)(?:ال)?${normalizeArabic(n)}(?![ء-يa-z0-9])`).test(t));
+  needles.some((n) => STRICT_RE(n).test(t));
+
+/**
+ * A needle bounded at BOTH ends, at every length, with the ordinary Arabic prefixes
+ * allowed in front.
+ *
+ * This exists because `needWord` only bounds needles of three characters or fewer
+ * and falls back to a bare `includes` for anything longer — right for its own
+ * callers, wrong for a rule that REFUSES to book. Four-letter needles took the
+ * `includes` path and fired inside longer words:
+ *
+ *   «ركبه»  ⊂ «المركبة»   → «وين أوقف المركبة» refused as orthopaedics
+ *   «ظهري»  ⊂ «مظهري»     → «أبغى أحسّن مظهري» — an aesthetics lead — refused as orthopaedics
+ *   «نظري»  ⊂ «منظري»     → refused as ophthalmology
+ *   `vision` ⊂ `television`
+ *
+ * The lookarounds cover Arabic AND Latin, so `television` is excluded by the same
+ * rule as «المركبة». Every needle in the two specialty tables goes through here.
+ */
+// The prefix set is WIDER than `needWord`'s, because «ليزر للعيون» — the phrasing
+// this whole rule exists for — carries the doubled «لل», which that list does not
+// have. `vetoedNeed("ليزر للعيون", "laser")` returned `laser` until it was added.
+const CATALOGUE_RE = memoRe((n: string) => `(?<![ء-يa-z])(?:و|ف|ب|ل|ك|ال|لل|وال|بال|فال|كال|ولل|بالـ)?${n}(?![ء-يa-z])`);
+const STRICT_RE = memoRe((n: string) => `(?:^|\\s)(?:ال)?${n}(?![ء-يa-z0-9])`);
+/** Compiles each needle's RegExp once. `classifyDeterministic` runs on every turn. */
+function memoRe(build: (n: string) => string): (needle: string) => RegExp {
+  const cache = new Map<string, RegExp>();
+  return (needle: string) => {
+    const n = normalizeArabic(needle);
+    let re = cache.get(n);
+    if (!re) {
+      // Needles are authored data, not input. Escaped anyway, so a future needle
+      // carrying «(» or «+» mis-matches loudly at review instead of throwing at
+      // runtime — `hasPhrase` already escapes and these three should not differ.
+      re = new RegExp(build(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      cache.set(n, re);
+    }
+    return re;
+  };
+}
+const catalogueWord = (t: string, ...needles: string[]): boolean =>
+  needles.some((n) => CATALOGUE_RE(n).test(t));
 
 const needIn = (t: string): DemoNeed | null => NEEDS.find((row) => row.words.some((w) => needWord(t, w)))?.need ?? null;
 const needWord = (t: string, w: string): boolean => {
@@ -551,7 +687,8 @@ function extractFacts(raw: string, t: string): Pick<
   // insurer is the NEXT question, not a precondition for hearing the first answer.
   const bareInsurance = /^(?:و|ف)?\s*(?:ال)?(?:تامين|بتامين|insurance)\s*[.!،,]?$/.test(t);
   return {
-    need: needIn(t),
+    // Eyes first — «ليزر للعيون» is the eye clinic, not the dermatology laser.
+    need: eyeWordIn(t) ? ("ophthalmology" as DemoNeed) : needIn(t),
     districtAr: findDistrict(raw),
     carrierRaw: carrier,
     payment: cash ? "cash" : (declaring && carrier) || bareInsurance ? "insurance" : null,
@@ -641,30 +778,24 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   if (nearest) return { ...base, kind: "prefer_nearest" };
 
   // Rule STR-3 forbids a SILENT substitution, and routing «دكتور قلب» to a general
-  // consultation is exactly that. A specialty we carry no route for is said out
-  // loud (§8.2) rather than quietly turned into a different appointment. The
-  // clinic-context requirement is what keeps «من القلب أشكركم» out of it — a bare
-  // `includes` on «قلب» fires on gratitude, which is SPEC-4 §2.1's own near-miss.
-  if (
-    (has(t, "عياده", "عيادة", "دكتور", "طبيب", "قسم", "موعد") ||
-      // A bare complaint about a body part we carry no clinic for is the same ask
-      // in a patient's words: «عندي ألم في الركبة من شهر» got the generic
-      // honest-unknown line three times because it named no clinic.
-      has(t, "عندي الم", "يعورني", "يوجعني", "الم في", "الم ب", "وجع")) &&
-    // TWO SUBSTRING TRAPS, BOTH MEASURED LIVE, BOTH FIXED HERE.
-    //
-    // «الظهر» is noon far more often than it is a back. «ابغى موعد بعد الظهر» — the
-    // most ordinary sentence in an appointment chat — carried «موعد» (clinic context)
-    // and «الظهر», and came back as «عيادة العظام ما أقدر أثبّت لها موعد من هنا».
-    // The back is now reached through «ظهري» and the explicit pain phrases only.
-    //
-    // «نفسي» sits inside «بنفسي». See `strictWord`.
-    (has(t, "قلبيه", "مسالك", "اورام", "سكري", "تجميل", "تخاطب", "علاج طبيعي", "روماتيزم",
-          "عظام", "الركبه", "ركبه", "المفاصل",
-          "الم الظهر", "الم في الظهر", "وجع الظهر", "وجع في الظهر", "ظهري يعور", "ظهري يوجع") ||
-      strictWord(t, "قلب", "كلي", "نفسي", "نفسيه", "كتف", "كتفي", "ظهري"))
-  ) {
-    return { ...base, kind: "unsupported_specialty" };
+  // consultation is exactly that. A specialty we carry no route for is said out loud
+  // (§8.2) rather than quietly turned into a different appointment.
+  //
+  // IT SITS HERE, ABOVE PRICE AND ABOVE SLOTS, ON PURPOSE. A first attempt put the
+  // ophthalmology check near the bottom of this function, and every ordinary phrasing
+  // was swallowed by a rule above it: «ابغى موعد عيون» read as `slots_question` and
+  // came back «تمام، الكشف العام. أنت بأي حي؟» — the silent substitution again — and
+  // «كم سعر كشف العيون» read as `price_question` and quoted a family-medicine fee for
+  // a clinic the group does not run. WHICH clinic outranks when it opens and what it
+  // costs, because the answer to both is "not that one, not from here".
+  //
+  // It stays BELOW cancel / pick_slot / confirm, which are about a booking already in
+  // play rather than about a clinic.
+  //
+  // The veto is applied so a message that names an in-catalogue need as well —
+  // «ابغى ليزر وعندي استفسار عن العيون» — keeps the need the patient actually stated.
+  if (outOfCatalogueSpecialty(raw) && vetoedNeed(raw, base.need) === null) {
+    return { ...base, need: null, kind: "unsupported_specialty" };
   }
 
   // Price (§5.2). «كم» / «السعر» / «التكلفة».
@@ -791,13 +922,6 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // on «شكرا», so «شكرا بس أبي أغير الوقت» closed the conversation while «تسلم يا
   // فيصل، مع السلامة» — which has no «شكرا» in it — did not.
   if (base.courtesyOnly) return { ...base, kind: "close" };
-
-  // A specialty we cannot name a branch for. ABOVE the bare-need rule, and it also
-  // overrides `laser` when the eye words fired: the only laser this group has is the
-  // dermatology one, so «ليزر للعيون» is not it.
-  if (outOfCatalogueSpecialty(raw) && needAfterVeto(raw, base.need) === null) {
-    return { ...base, need: null, kind: "unsupported_specialty" };
-  }
 
   // A stated need — checked after the specific intents so «كم سعر الليزر» reads as
   // a price question about laser, not as a bare need.
@@ -930,14 +1054,17 @@ export async function classify(
     // THE VETO. `parsed.need ?? facts.need` lets the model's label win, which is how
     // «نظر» became `laser`. A specialty this group has no branch for stays unbookable
     // whatever the model decided it resembled.
-    const merged = parsed.need ?? facts.need;
-    if (needAfterVeto(raw, merged) === null && outOfCatalogueSpecialty(raw)) {
+    const allowed = vetoedNeed(raw, parsed.need ?? facts.need);
+    if (allowed === null && outOfCatalogueSpecialty(raw)) {
       return { ...parsed, ...facts, need: null, kind: "unsupported_specialty" };
     }
     return {
       ...parsed,
       ...facts,
-      need: parsed.need ?? facts.need,
+      // The VETTED need, not the raw merge. Using the merge here while only testing
+      // the vetted value above would have let a model's guess through on any turn the
+      // early return did not catch.
+      need: allowed,
       districtAr: parsed.districtAr ?? facts.districtAr,
       carrierRaw: parsed.carrierRaw ?? facts.carrierRaw,
       payment: parsed.payment ?? facts.payment,

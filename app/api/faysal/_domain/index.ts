@@ -228,6 +228,14 @@ export interface NeedPlan {
 /**
  * The demo's needs, each pinned to one of `lib/health`'s NeedKeys.
  *
+ * OPHTHALMOLOGY WAS ABSENT AND SHOULD NOT HAVE BEEN. «نظر» reached the model tier,
+ * which read it as laser vision correction and routed a patient's eyes to the
+ * dermatology chain. The first fix answered «عيادة العيون ما أقدر أثبّت لها موعد من
+ * هنا» — which is worse, because it is false: §6.2 marks it `named_at_site` at Ar
+ * Rawabi, the dossier names it there (§3.2 L146), the catalogue prices it, and a
+ * specialist is rostered. Refusing a clinic the client runs is inventing
+ * UNavailability, the same defect as inventing availability, pointed the other way.
+ *
  * ORTHOPAEDICS IS DELIBERATELY ABSENT, and that absence is the engine's verdict,
  * not an omission: SPEC-1 §6.2 records orthopaedics as `G` — group-wide only — at
  * all six sites, so there is no NeedKey for it and no site can book it. The
@@ -243,6 +251,7 @@ export const NEED_PLANS: Readonly<Record<string, NeedPlan>> = {
   paediatrics: { need: "paediatrics", serviceId: "paeds-consult", clinicAr: "الأطفال", nounAr: "كشف الأطفال", extraPriceIds: [] },
   obgyn: { need: "obgyn", serviceId: "obgyn-consult", clinicAr: "النساء والولادة", nounAr: "كشف النساء والولادة", extraPriceIds: [] },
   ent: { need: "ent", serviceId: "ent-consult", clinicAr: "الأنف والأذن والحنجرة", nounAr: "كشف الأنف والأذن", extraPriceIds: [] },
+  ophthalmology: { need: "ophthalmology", serviceId: "ophth-consult", clinicAr: "العيون", nounAr: "كشف العيون", extraPriceIds: [] },
   internal: { need: "internal_medicine", serviceId: "internal-consult", clinicAr: "الباطنة", nounAr: "كشف الباطنة", extraPriceIds: [] },
   general: { need: "general_practice", serviceId: "gp-consult", clinicAr: "الكشف العام", nounAr: "الكشف العام", extraPriceIds: [] },
   employment_medical: { need: "employment_medical", serviceId: "emp-basic", clinicAr: "فحوصات ما قبل التوظيف", nounAr: "فحص ما قبل التوظيف", extraPriceIds: [] },
@@ -402,6 +411,8 @@ export interface Recommendation {
   nearestServesNeed: boolean;
   nearestStrengthAr: string | null;
   nearestStrengthBasis: "named_capability" | "group_marketing" | "accreditation" | "geography" | "hours" | null;
+  nearestGated: boolean;
+  nearestContested: boolean;
   /** Rule C4-2 — a contested site is never the only option offered. */
   mustNameAlternate: boolean;
   alternates: SiteId[];
@@ -425,6 +436,8 @@ export function recommend(need: DemoNeed | null, opts: { districtAr?: string | n
       nearestServesNeed: r.nearestServesNeed,
       nearestStrengthAr: r.nearestStrengthAr,
       nearestStrengthBasis: r.nearestStrengthBasis,
+      nearestGated: r.nearestGated,
+      nearestContested: r.nearestContested,
       mustNameAlternate: r.mustNameAlternate,
       alternates: r.alternates,
       appointmentKind: r.appointmentKind,
