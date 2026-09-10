@@ -56,6 +56,7 @@ import {
   createStore,
   holdSlot as healthHoldSlot,
   insuranceAnswer as healthInsuranceAnswer,
+  cliniciansFor,
   isBookableSpecialty,
   isContested,
   isNeedKey,
@@ -604,6 +605,37 @@ export function packageFor(serviceId: string): {
     paidSessions: p.paidSessions,
     termsAr: serviceTermsAr(p.packageId),
   };
+}
+
+/**
+ * WHO IS ACTUALLY IN THIS CLINIC, BY GENDER — the honest answer to «أبغى دكتورة»
+ * and «أبغى دكتور رجّال».
+ *
+ * Rule DOC-1 makes gender a FILTER, never a recommendation, and the product had no
+ * way to apply the filter: it answered every gendered request with the same
+ * promise-nothing paragraph and booked whoever the slot generator produced. On the
+ * demo's busiest path — dermatology and laser at Ar Rawabi — that meant a patient
+ * asking for a male dermatologist was quietly booked with one of the two women who
+ * work there.
+ *
+ * There is no third answer to invent here. Either the branch has someone, or
+ * another branch does, or nobody does and that is a thing to say out loud.
+ */
+export function genderAvailability(
+  siteId: SiteId,
+  need: DemoNeed | null,
+  wanted: "female" | "male",
+): { hereAr: string | null; elsewhereAr: string | null; elsewhereId: SiteId | null } {
+  const plan = planFor(need);
+  const service = plan.serviceId ? serviceById(plan.serviceId) : null;
+  if (!service) return { hereAr: null, elsewhereAr: null, elsewhereId: null };
+  const specialty = service.specialty;
+  const matches = (id: SiteId) =>
+    isBookableSpecialty(id, specialty, DEMO.demoMode) &&
+    cliniciansFor(id, specialty).some((clinician) => clinician.gender === wanted);
+  if (matches(siteId)) return { hereAr: SITES[siteId].shortAr, elsewhereAr: null, elsewhereId: null };
+  const other = (Object.keys(SITES) as SiteId[]).find((id) => id !== siteId && matches(id)) ?? null;
+  return { hereAr: null, elsewhereAr: other ? SITES[other].shortAr : null, elsewhereId: other };
 }
 
 export const serviceNameAr = (serviceId: string): string => serviceById(serviceId)?.nameAr ?? serviceId;

@@ -92,6 +92,9 @@ export interface Classification {
    *  preference that travels with the booking, not an intent that replaces it:
    *  «أبغى موعد جلدية بكرة الصبح في الروابي وأفضّل دكتورة» is a booking ask. */
   prefersFemale: boolean;
+  /** The patient asked for a MALE clinician. Rule DOC-1's filter has two directions
+   *  and the product could only ever express one of them. */
+  prefersMale: boolean;
   /** The whole message is thanks or goodbye — nothing else in it. */
   courtesyOnly: boolean;
   /** The message opens by correcting Faysal («لا، أنا قصدي…», «مو الروابي…»). The
@@ -115,6 +118,7 @@ const EMPTY: Classification = {
   language: "ar",
   deterministic: true,
   prefersFemale: false,
+  prefersMale: false,
   courtesyOnly: false,
   correction: false,
   offerAsked: false,
@@ -396,6 +400,11 @@ const COURTESY_ONLY_RE = new RegExp(
 // «بدكتورة», «للدكتورة» — and a boundary that forbids them misses the commonest
 // way it is typed: as the second half of a sentence joined with «و».
 const FEMALE_DOCTOR_RE = /(?:^|\s)(?:و|ف|ب|ل)?(?:ال)?(?:دكتوره|دكتورة|طبيبه|اخصائيه|اخصاءيه)(?![ء-ي])|female doctor|lady doctor|woman doctor/;
+/** «أبغى دكتور رجّال» / «دكتور مو دكتورة» — the other half of Rule DOC-1's filter,
+ *  which the product could not express at all. A bare «دكتور» is NOT this: it is
+ *  how everyone says "a doctor", and reading it as a gender request would filter
+ *  every patient who never asked for one. It needs the word that makes it explicit. */
+const MALE_DOCTOR_RE = /(?:^|\s)(?:و|ف|ب|ل)?(?:ال)?دكتور\s*(?:رجال|رجل|ذكر)(?![ء-ي])|دكتور مو دكتوره|طبيب رجال|male doctor|man doctor/;
 /** «لا، أنا قصدي الليزر», «مو الروابي، الروضة»: the head is a negation and the rest
  *  of the message names something. That is a correction, never a walk-away. */
 const CORRECTION_HEAD_RE = /^(?:لا+\s*)+(?:لا)?\s*(?:انا\s*)?(?:اقصد|قصدي|قلت لك|قلت)?|^(?:مو|مب|موب)\s|(?:^|\s)(?:انا\s*)?(?:اقصد|قصدي|غلط|مو صحيح)(?![ء-ي])|^no,? ?no|^i said|^i meant/;
@@ -441,6 +450,7 @@ function extractFacts(raw: string, t: string): Pick<
   | "payment"
   | "preferredWindowAr"
   | "prefersFemale"
+  | "prefersMale"
   | "courtesyOnly"
   | "correction"
   | "offerAsked"
@@ -460,7 +470,8 @@ function extractFacts(raw: string, t: string): Pick<
     carrierRaw: carrier,
     payment: cash ? "cash" : (declaring && carrier) || bareInsurance ? "insurance" : null,
     preferredWindowAr: findWindow(t),
-    prefersFemale: FEMALE_DOCTOR_RE.test(t),
+    prefersFemale: FEMALE_DOCTOR_RE.test(t) && !MALE_DOCTOR_RE.test(t),
+    prefersMale: MALE_DOCTOR_RE.test(t),
     courtesyOnly: COURTESY_ONLY_RE.test(t),
     correction: CORRECTION_HEAD_RE.test(t),
     offerAsked: has(t, "عرض", "عروض", "خصم", "تخفيض", "offer", "discount", "promo"),
@@ -697,7 +708,7 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // It sits BELOW the district: «انا في الروضة، وابغى دكتورة» is a patient telling
   // us where they are, and answering it with «وش تحتاج وبأي حي؟» — which is what
   // happened — asks for the sentence they just typed.
-  if (base.prefersFemale) return { ...base, kind: "female_doctor" };
+  if (base.prefersFemale || base.prefersMale) return { ...base, kind: "female_doctor" };
 
   // A bare window — the «الصبح» / «بعد العصر» chips, and «بعد الساعة ٧». It answers
   // whatever question is open (the callback window, or which half of the day), so
@@ -768,6 +779,7 @@ function parseClassifierJson(text: string, language: Classification["language"])
     // exact, and a model that invents «the patient said thank you» would close a
     // live booking. The model tier only ever supplies the intent label.
     prefersFemale: false,
+    prefersMale: false,
     courtesyOnly: false,
     correction: false,
     offerAsked: false,

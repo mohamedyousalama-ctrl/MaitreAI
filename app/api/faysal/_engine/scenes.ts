@@ -25,7 +25,7 @@
 // `assertCadence()` is the mechanical form of that rule.
 // ============================================================================
 
-import { callback as domainCallback, canBook, cancel as domainCancel, clinicsAtSite, confirm as domainConfirm, hold as domainHold, insurance, NEED_PLANS, nextOpening, normalizeArabic, openState, OPS, packageFor, planFor, price, REAL_CONTACTS, recommend, riyadhDateISO, riyadhParts, serviceNameAr, siteInDistrict, SITES, twoSlotsAcrossDays, type Appointment, type DemoNeed, type FaysalStore, type SiteId, type SiteView, type SlotView } from "../_domain";
+import { callback as domainCallback, canBook, cancel as domainCancel, clinicsAtSite, confirm as domainConfirm, genderAvailability, hold as domainHold, insurance, NEED_PLANS, nextOpening, normalizeArabic, openState, OPS, packageFor, planFor, price, REAL_CONTACTS, recommend, riyadhDateISO, riyadhParts, serviceNameAr, siteInDistrict, SITES, twoSlotsAcrossDays, type Appointment, type DemoNeed, type FaysalStore, type SiteId, type SiteView, type SlotView } from "../_domain";
 import { EN } from "./english";
 import { compose } from "./render";
 import { classifyDeterministic, detectLanguage, nameInConfirm, nameShaped } from "./intent";
@@ -836,6 +836,7 @@ function dispatch(
     s.prefersFemaleDoctor = true;
     s.askedFemaleDoctor = true;
   }
+  if (cls.prefersMale) s.askedFemaleDoctor = true;
 
   // A pending callback window outranks a fresh read: the patient was asked one
   // question and this is the answer to it.
@@ -971,11 +972,8 @@ function dispatch(
     // patient's gender from the service they asked for.
     case "female_doctor":
       s.askedFemaleDoctor = true;
-      s.prefersFemaleDoctor = true;
-      // The paragraph alone, as a whole turn, is only right when the message was
-      // ONLY that request. When it rides on a booking ask it is appended to the
-      // substantive reply instead — see the `prefersFemale` merge above.
-      return reply(s, [faysal(s, `${S.GENDER_CARE_HONESTY}\n${S.MOTION_DISCOVER}`)], ["أقرب موعد"]);
+      if (cls.prefersFemale) s.prefersFemaleDoctor = true;
+      return genderReply(s, cls.prefersMale ? "male" : "female", now);
 
     case "doctor_quality":
       return reply(s, [faysal(s, S.motionObjectionDoctor("ما عندي تفاصيله، والاستقبال يعطيك إياها"))]);
@@ -1416,6 +1414,48 @@ function readWindow(raw: string): string | null {
  * the default and answered a 68-year-old who had just written «أنا في الورود» about
  * Ar Rawabi. Their own district first, the recommendation second, the default last.
  */
+/**
+ * THE HONEST ANSWER TO A GENDERED REQUEST. Rule DOC-1 makes gender a filter, and
+ * the product had no way to apply it: every «أبغى دكتورة» got the same
+ * promise-nothing paragraph and the booking went to whoever the slot generator
+ * produced. At Ar Rawabi's dermatology clinic — two women, no man, the demo's
+ * busiest path — a patient asking for a male doctor was quietly booked with a woman.
+ *
+ * Three truths, no fourth: here, elsewhere, or nowhere. The third one is an apology,
+ * not a workaround, and it is a better demo than a booking made under a false
+ * expectation.
+ */
+function genderReply(s: FaysalSession, wanted: "female" | "male", now: Date): Reply {
+  const whoAr = wanted === "female" ? "دكتورة" : "دكتور رجّال";
+  const target = s.siteId ?? recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? null;
+  if (!target || !s.need) {
+    // Nothing to check against yet — ask what is missing rather than guess a clinic.
+    return reply(s, [faysal(s, `${S.GENDER_CARE_HONESTY}`)], chipsFor(s));
+  }
+  const clinicAr = planFor(needOf(s)).clinicAr;
+  // He has just answered the gender question with the real roster. The generic
+  // «طلبك مع دكتورة مسجّل» note that rides on the booking turn would repeat it in
+  // vaguer words, so it is spent here.
+  s.genderNoteSent = true;
+  const found = genderAvailability(target, needOf(s), wanted);
+  if (found.hereAr) {
+    return reply(s, [faysal(s, S.genderHere(whoAr, clinicAr, found.hereAr))], chipsFor(s));
+  }
+  if (found.elsewhereAr && found.elsewhereId) {
+    s.nearSiteId = target;
+    return reply(
+      s,
+      [faysal(s, S.genderElsewhere(whoAr, clinicAr, SITES[target].shortAr, found.elsewhereAr))],
+      [found.elsewhereAr, SITES[target].shortAr],
+    );
+  }
+  return reply(
+    s,
+    [faysal(s, S.genderNowhere(whoAr, clinicAr, branchPhoneFor(s) ?? REAL_CONTACTS.unified))],
+    ["سجّل لي طلب", "أقرب موعد"],
+  );
+}
+
 function insuranceSite(s: FaysalSession, now: Date): SiteId {
   return (
     s.siteId ??

@@ -53,6 +53,34 @@ c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); await c.say("I need
 ok("English thread: greeting echo stays English", !/[ء-ي]/.test(txt(r)), { scene: r.scene, text: txt(r) });
 c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); r = await c.say("عندي ألم في صدري وأتعرق"); r = await c.say("اسمي محمد الشهري 0551234567");
 ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergency", { scene: r.scene, text: txt(r) });
+// ── A GENDERED REQUEST GETS THE ROSTER, NOT A PARAGRAPH (Rule DOC-1) ────────
+// Gender is a FILTER, and the product could not apply it: every «أبغى دكتورة» got
+// the same promise-nothing sentence and the booking went to whoever the slot
+// generator produced. At Ar Rawabi's dermatology clinic — two women, no man, the
+// demo's busiest path — a patient asking for a male doctor was quietly booked with
+// a woman. Three truths, no fourth: here, elsewhere, or nowhere-and-sorry.
+{
+  const ask = async (need: string, district: string, request: string) => {
+    const c = new Conversation("2026-09-13T10:00:00+03:00"); c.open();
+    await c.say(need); await c.say(district); await c.say("كاش");
+    const r = await c.say(request);
+    return { c, r, text: txt(r) };
+  };
+  let g = await ask("أبغى ليزر", "أنا في الروابي", "أبغى دكتور رجّال");
+  ok("no male dermatologist at Ar Rawabi: he says so and apologises", g.text.includes("أعتذر") && g.text.includes("ما فيها"), { text: g.text });
+  ok("…and does NOT book one anyway", g.c.s.holdId === null, { held: g.c.s.heldSlot?.labelAr });
+  ok("…and still offers a way forward", g.r.chips.length > 0, { chips: g.r.chips });
+  g = await ask("أبغى ليزر", "أنا في الروابي", "أبغى دكتورة");
+  ok("a female dermatologist at Ar Rawabi is confirmed as present", g.text.includes("موجودين"), { text: g.text });
+  ok("…and the vaguer note is not repeated after it", (g.text.match(/الاستقبال يثبّته وقت الحجز/g) ?? []).length <= 1, { text: g.text });
+  g = await ask("أبغى أسنان", "أنا في الروابي", "أبغى دكتور رجّال");
+  ok("a branch that HAS one is named instead", g.text.includes("ما فيها") && !g.text.includes("أعتذر"), { text: g.text });
+  ok("…and both branches are offered as chips", g.r.chips.length === 2, { chips: g.r.chips });
+  // A bare «دكتور» is how everyone says "a doctor" — it must not filter anyone.
+  const plain = await ask("أبغى ليزر", "أنا في الروابي", "أبغى دكتور");
+  ok("a bare «دكتور» is not read as a gender request", !plain.text.includes("ما فيها") && !plain.text.includes("أعتذر"), { text: plain.text });
+}
+
 // ── THE CONTINUITY AUDIT'S FINDINGS, EACH PINNED TO ITS OWN REPRODUCTION ────
 // Forty-eight driven conversations found seventeen ways the thread stopped moving.
 // Every row here is the exact message that produced the defect, not a paraphrase.

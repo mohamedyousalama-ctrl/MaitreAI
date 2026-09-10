@@ -518,6 +518,25 @@ export const GUARANTEED_OUTCOME_REFUSAL =
 /** The same promise-nothing sentence, shortened to ride at the END of a reply that
  *  is doing something else. §9 turn 10's shape: the booking moves, the preference
  *  is noted out loud, and nothing about a specific clinician is claimed. */
+/**
+ * THE HONEST ANSWERS TO A GENDERED REQUEST (Rule DOC-1 — gender is a filter).
+ *
+ * The product had ONE answer for «أبغى دكتورة»: a paragraph promising nothing and
+ * booking whoever the slot generator produced. On the demo's busiest path that
+ * meant a patient asking for a male dermatologist at Ar Rawabi — where both
+ * dermatologists are women — was quietly booked with one of them.
+ *
+ * There are exactly three truths and no fourth to invent: we have one here, we have
+ * one at another branch, or we do not have one and that is a thing to say and
+ * apologise for.
+ */
+export const genderHere = (whoAr: string, clinicAr: string, branch: string) =>
+  `${whoAr} في ${clinicAr} موجودين في ${branch}، وأكتب طلبك للاستقبال يثبّته وقت الحجز.`;
+export const genderElsewhere = (whoAr: string, clinicAr: string, here: string, there: string) =>
+  `أصارحك: ${clinicAr} في ${here} ما فيها ${whoAr} حالياً.\nفي ${there} فيه — أنقلك له، ولا أثبّت لك في ${here}؟`;
+export const genderNowhere = (whoAr: string, clinicAr: string, branchPhone: string) =>
+  `أعتذر لك: ${clinicAr} عندنا ما فيها ${whoAr} حالياً، وما أبي أثبّت لك وأنت تتوقع غير كذا.\nأسجّل لك طلب والاستقبال يتصل عليك لو تغيّر الوضع، ولا تتصل على ${branchPhone}؟`;
+
 export const GENDER_NOTED =
   "وطلبك يكون مع دكتورة مسجّل، والاستقبال يثبّته وقت الحجز — ولو ما توفرت، أعطيك وقت ثاني بدل ما تجي وتتفاجأ.";
 export const GENDER_CARE_HONESTY =
