@@ -92,6 +92,9 @@ export interface FaysalSession {
   /** «بكرة» / «اليوم» in the patient's own words, so the slot search starts on the
    *  day they asked for instead of on the first day with inventory. */
   preferredDayAr: string | null;
+  /** The branch whose recommendation line has already been said. Saying «اللي
+   *  يناسبك: …» twice in a row is the loudest tell that nobody is listening. */
+  announcedSiteId: SiteId | null;
   /** Rule C4-1 — a coarse window in the patient's OWN words, never a clock time. */
   preferredWindowAr: string | null;
   /** The patient chose the contested branch; we are waiting on their own window. */
@@ -146,6 +149,7 @@ export function newSession(): FaysalSession {
     prefersFemaleDoctor: false,
     genderNoteSent: false,
     preferredDayAr: null,
+    announcedSiteId: null,
     heldSlot: null,
     bookingRef: null,
     preferredWindowAr: null,

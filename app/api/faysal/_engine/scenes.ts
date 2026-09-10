@@ -485,6 +485,12 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
   s.siteId = rec.siteId;
   s.scene = "S3_route";
   const branch = SITES[rec.siteId];
+  // THE RECOMMENDATION IS SAID ONCE PER BRANCH. «أبغى كشف عام» → «اللي يناسبك:
+  // الروابي…» and then «أنا في الروابي» → the identical sentence again, because the
+  // ask was still outstanding. Repeating it verbatim is the loudest possible tell
+  // that the last message was not read; the ask on its own is the whole turn.
+  const alreadySaid = s.announcedSiteId === rec.siteId;
+  s.announcedSiteId = rec.siteId;
   const matchText = language === "en" ? EN.match(branch.nameEn, rec.reasonEn) : S.motionMatch(branch.nameAr, rec.reasonAr);
 
   // Split-recap (§4.2): the match is one atomic message, the ask is the next. Two
@@ -503,7 +509,8 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
         : needsDistrict
           ? "تمام. أنت بأي حي؟"
           : S.MOTION_DISCOVER_PAYMENT;
-    return reply(s, [faysal(s, matchText), faysal(s, ask)], needsDistrict && s.payment ? [] : ["تأمين", "كاش"]);
+    const msgs = alreadySaid ? [faysal(s, ask)] : [faysal(s, matchText), faysal(s, ask)];
+    return reply(s, msgs, needsDistrict && s.payment ? [] : ["تأمين", "كاش"]);
   }
   return offerSlots(s, now, language, store);
 }

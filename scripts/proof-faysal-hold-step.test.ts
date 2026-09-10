@@ -50,6 +50,20 @@ c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); await c.say("I need
 ok("English thread: greeting echo stays English", !/[ء-ي]/.test(txt(r)), { scene: r.scene, text: txt(r) });
 c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); r = await c.say("عندي ألم في صدري وأتعرق"); r = await c.say("اسمي محمد الشهري 0551234567");
 ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergency", { scene: r.scene, text: txt(r) });
+// ── nothing is said twice in a row ──────────────────────────────────────────
+// «أبغى كشف عام» → «اللي يناسبك: الروابي…» then «أنا في الروابي» → the identical
+// sentence again, because the payment ask was still outstanding. Verbatim repetition
+// is the loudest possible tell that the previous message was not read.
+{
+  const c = new Conversation("2026-09-10T19:00:00+03:00"); c.open();
+  const first = await c.say("أبغى كشف عام");
+  const second = await c.say("أنا في الروابي");
+  ok("the branch recommendation is said once, not on every turn", !txt(second).includes("اللي يناسبك"), { first: txt(first), second: txt(second) });
+  ok("…and the outstanding question is still asked", /[؟?]/.test(txt(second)), { second: txt(second) });
+  const third = await c.say("كاش");
+  ok("…and the booking still moves", third.scene === "S5_slots" || third.scene === "S11_offhours", { scene: third.scene, text: txt(third) });
+}
+
 // ── the day and the window the patient named ────────────────────────────────
 // «بكرة» answered with today, and «بعد الساعة ٧» answered with 4:30 م and nothing
 // said about it, are the two ways a slot list ignores the sentence that asked for it.
