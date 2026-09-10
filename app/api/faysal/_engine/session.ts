@@ -89,6 +89,9 @@ export interface FaysalSession {
   /** The «طلبك مع دكتورة مسجّل» note is said ONCE, on the first turn that actually
    *  moves the booking — not on every turn, and never as a turn of its own. */
   genderNoteSent: boolean;
+  /** «بكرة» / «اليوم» in the patient's own words, so the slot search starts on the
+   *  day they asked for instead of on the first day with inventory. */
+  preferredDayAr: string | null;
   /** Rule C4-1 — a coarse window in the patient's OWN words, never a clock time. */
   preferredWindowAr: string | null;
   /** The patient chose the contested branch; we are waiting on their own window. */
@@ -142,6 +145,7 @@ export function newSession(): FaysalSession {
     booked: null,
     prefersFemaleDoctor: false,
     genderNoteSent: false,
+    preferredDayAr: null,
     heldSlot: null,
     bookingRef: null,
     preferredWindowAr: null,

@@ -249,8 +249,18 @@ export const MOTION_DISCOVER = "عشان أرتّب لك صح: وش تحتاج �
 export const MOTION_DISCOVER_PAYMENT = "تمام. وآخر شي: الزيارة تأمين ولا كاش؟";
 export const MOTION_DISCOVER_SHORT = "تمام. أنت بأي حي، والزيارة تأمين ولا كاش؟";
 
+/** The window the patient named has nothing in it. Their words back, then the truth,
+ *  then what does exist — «ابغى بعد الساعة ٧» answered with 4:30 م and nothing said
+ *  is a patient reading a time they had already ruled out. */
+export const windowNotAvailable = (windowAr: string, branch: string) =>
+  `ما لقيت لك ${windowAr} في ${branch} — هذا اللي متاح، ولو ما ناسبك أسجّل لك طلب بالوقت اللي تبيه.`;
+
 /** One branch, and the reason it is that branch. Never «أي فرع يمشي». */
-export const motionMatch = (branchName: string, reason: string) => `اللي يناسبك: ${branchName} — ${reason}.`;
+// The reason comes from the routing table and half of those rows end in a full
+// stop already, so the template was printing «…والتقويم عندهم..» to every patient
+// it routed. Two dots is the smallest possible tell that a machine wrote the line.
+export const motionMatch = (branchName: string, reason: string) =>
+  `اللي يناسبك: ${branchName} — ${reason.replace(/[.。]+$/, "")}.`;
 
 /**
  * The geography fork. Order is BINDING: nearest first (he is not hiding it),
@@ -269,8 +279,10 @@ export const motionMatchFork = (a: {
   optionNear: string;
   optionBest: string;
 }) =>
+  // Same trailing-stop strip as `motionMatch`: the routing reasons are data and half
+  // of them already end in a full stop.
   `أقرب فرع لك هو ${a.nearBranch}، وفيه ${a.nearCapability}.
-بس أصارحك: ${a.procedure} نسويه في ${a.bestBranch} — ${a.bestReason}. ${a.bestShort} أبعد عليك، وهذا الفرق الوحيد بين الخيارين.
+بس أصارحك: ${a.procedure} نسويه في ${a.bestBranch} — ${a.bestReason.replace(/[.。]+$/, "")}. ${a.bestShort} أبعد عليك، وهذا الفرق الوحيد بين الخيارين.
 عندك طريقين:
 1) ${a.optionNear}
 2) ${a.optionBest}

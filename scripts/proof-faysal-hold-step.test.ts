@@ -50,6 +50,43 @@ c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); await c.say("I need
 ok("English thread: greeting echo stays English", !/[ء-ي]/.test(txt(r)), { scene: r.scene, text: txt(r) });
 c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); r = await c.say("عندي ألم في صدري وأتعرق"); r = await c.say("اسمي محمد الشهري 0551234567");
 ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergency", { scene: r.scene, text: txt(r) });
+// ── the day and the window the patient named ────────────────────────────────
+// «بكرة» answered with today, and «بعد الساعة ٧» answered with 4:30 م and nothing
+// said about it, are the two ways a slot list ignores the sentence that asked for it.
+{
+  const c = new Conversation("2026-09-14T17:00:00+03:00"); c.open();
+  const r = await c.say("مساء الخير، أبغى موعد جلدية بكرة في الروابي، كاش");
+  const first = c.s.offeredSlots[0]?.labelAr ?? "";
+  ok("«بكرة» is offered tomorrow first, not today", first.includes("بكرة"), { offered: c.s.offeredSlots.map((x: { labelAr: string }) => x.labelAr), text: txt(r) });
+}
+{
+  const c = new Conversation("2026-09-15T14:20:00+03:00"); c.open();
+  await c.say("أبغى ليزر"); await c.say("أنا في الروابي"); await c.say("كاش");
+  const r = await c.say("ابغى موعد مسائي بعد الساعة ٧");
+  const labels = c.s.offeredSlots.map((x: { labelAr: string }) => x.labelAr);
+  const after7 = labels.every((l: string) => /(\d{1,2}):\d{2}\s*م/.test(l) && Number(/(\d{1,2}):/.exec(l)![1]) >= 7);
+  ok("a window with nothing in it is SAID, not ignored", after7 || txt(r).includes("ما لقيت لك"), { offered: labels, text: txt(r) });
+  ok("…and something bookable is still offered", labels.length > 0, { offered: labels });
+}
+{
+  // …and when the window DOES have inventory, only that inventory is offered. The
+  // «ما لقيت لك» line alone is not proof of the filter: it fires precisely when the
+  // filter finds nothing, so a corpus that only ever misses cannot constrain it.
+  // This clock is chosen because the unfiltered list at Ar Rawabi holds ONE afternoon
+  // slot and one morning slot. Without the filter the morning one is still offered to
+  // a patient who asked for the afternoon — which is the whole defect.
+  const c = new Conversation("2026-09-15T14:20:00+03:00"); c.open();
+  await c.say("أبغى ليزر"); await c.say("أنا في الروابي"); await c.say("كاش");
+  const r = await c.say("ابغى موعد بعد العصر");
+  const labels = c.s.offeredSlots.map((x: { labelAr: string }) => x.labelAr);
+  const isPm = (l: string) => {
+    const m = /(\d{1,2}):(\d{2})\s*(ص|م)/.exec(l);
+    return !!m && m[3] === "م" && (Number(m[1]) === 12 ? 12 : Number(m[1]) + 12) >= 15;
+  };
+  ok("«بعد العصر» never offers a morning slot", labels.length > 0 && labels.every(isPm), { offered: labels, text: txt(r) });
+  ok("…and the honest-miss line is not used when afternoon slots exist", !txt(r).includes("ما لقيت لك"), { offered: labels, text: txt(r) });
+}
+
 // ── the slot the patient asked for, with no pick verb in the message ────────
 // «ليش 5:15؟ انت قلت 4:30» has no «ثبت» to anchor on, so ONLY the negation-head drop
 // can get this right. The version with a verb passes either way, which is exactly why

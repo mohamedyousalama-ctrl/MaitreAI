@@ -91,6 +91,9 @@ export interface Classification {
   correction: boolean;
   /** «فيه عرض؟ خصم؟» — asked alongside a price or package question. */
   offerAsked: boolean;
+  /** «بكرة» / «اليوم» — a day the patient named. A patient who says «بكرة» and is
+   *  offered today first has not been listened to, however good the slot is. */
+  preferredDayAr: string | null;
 }
 
 const EMPTY: Classification = {
@@ -107,6 +110,7 @@ const EMPTY: Classification = {
   courtesyOnly: false,
   correction: false,
   offerAsked: false,
+  preferredDayAr: null,
 };
 
 // ── language (§3.1) ─────────────────────────────────────────────────────────
@@ -362,7 +366,10 @@ const COURTESY_ONLY_RE = new RegExp(
 );
 /** A doctor noun in the message, feminine. «بنت» alone is far too broad — a patient
  *  saying «بنتي» means their daughter, not a preference about the clinician. */
-const FEMALE_DOCTOR_RE = /(?:^|\s)(?:ال)?(?:دكتوره|دكتورة|طبيبه|اخصائيه|اخصاءيه)(?![ء-ي])|female doctor|lady doctor|woman doctor/;
+// The ordinary Arabic prefixes ride on this word like any other — «ودكتورة»,
+// «بدكتورة», «للدكتورة» — and a boundary that forbids them misses the commonest
+// way it is typed: as the second half of a sentence joined with «و».
+const FEMALE_DOCTOR_RE = /(?:^|\s)(?:و|ف|ب|ل)?(?:ال)?(?:دكتوره|دكتورة|طبيبه|اخصائيه|اخصاءيه)(?![ء-ي])|female doctor|lady doctor|woman doctor/;
 /** «لا، أنا قصدي الليزر», «مو الروابي، الروضة»: the head is a negation and the rest
  *  of the message names something. That is a correction, never a walk-away. */
 const CORRECTION_HEAD_RE = /^(?:لا+\s*)+(?:لا)?\s*(?:انا\s*)?(?:اقصد|قصدي|قلت لك|قلت)?|^(?:مو|مب|موب)\s|(?:^|\s)(?:انا\s*)?(?:اقصد|قصدي|غلط|مو صحيح)(?![ء-ي])|^no,? ?no|^i said|^i meant/;
@@ -402,7 +409,16 @@ export { CONFIRM_RE, CONFIRM_NEGATED, CONFIRM_BLOCKED, CONFIRM_HEDGE };
  */
 function extractFacts(raw: string, t: string): Pick<
   Classification,
-  "need" | "districtAr" | "carrierRaw" | "payment" | "preferredWindowAr" | "prefersFemale" | "courtesyOnly" | "correction" | "offerAsked"
+  | "need"
+  | "districtAr"
+  | "carrierRaw"
+  | "payment"
+  | "preferredWindowAr"
+  | "prefersFemale"
+  | "courtesyOnly"
+  | "correction"
+  | "offerAsked"
+  | "preferredDayAr"
 > {
   const carrier = findCarrier(raw);
   const declaring = has(t, "عندي", "معي", "معاي", "معنا", "تاميني", "بتامين", "علي تامين", "معي بطاقه", "i have", "we have", "we're on", "my insurance");
@@ -417,6 +433,13 @@ function extractFacts(raw: string, t: string): Pick<
     courtesyOnly: COURTESY_ONLY_RE.test(t),
     correction: CORRECTION_HEAD_RE.test(t),
     offerAsked: has(t, "عرض", "عروض", "خصم", "تخفيض", "offer", "discount", "promo"),
+    preferredDayAr: has(t, "بعد بكره", "بعد بكرة", "day after tomorrow")
+      ? "بعد بكرة"
+      : has(t, "بكره", "بكرة", "tomorrow")
+        ? "بكرة"
+        : has(t, "اليوم", "today")
+          ? "اليوم"
+          : null,
   };
 }
 
@@ -589,12 +612,14 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   // A stated need — checked after the specific intents so «كم سعر الليزر» reads as
   // a price question about laser, not as a bare need.
   if (base.need) return { ...base, kind: "need" };
+  if (base.districtAr) return { ...base, kind: "district" };
 
   // A doctor-gender request with NOTHING else in the message is its own intent; in
   // any other message it is a preference carried by `prefersFemale` (§9 turn 10).
+  // It sits BELOW the district: «انا في الروضة، وابغى دكتورة» is a patient telling
+  // us where they are, and answering it with «وش تحتاج وبأي حي؟» — which is what
+  // happened — asks for the sentence they just typed.
   if (base.prefersFemale) return { ...base, kind: "female_doctor" };
-
-  if (base.districtAr) return { ...base, kind: "district" };
 
   // A bare window — the «الصبح» / «بعد العصر» chips, and «بعد الساعة ٧». It answers
   // whatever question is open (the callback window, or which half of the day), so
@@ -668,6 +693,7 @@ function parseClassifierJson(text: string, language: Classification["language"])
     courtesyOnly: false,
     correction: false,
     offerAsked: false,
+    preferredDayAr: null,
   };
 }
 

@@ -152,6 +152,14 @@ for (const t of ["أفضّل دكتورة", "وأفضّل دكتورة", "ابغ
   ok(`a female-doctor preference is not a doctor-quality question: «${t}»`, kind(t) !== "doctor_quality", kind(t));
   ok(`…and it is recorded as a preference: «${t}»`, cls(t)?.prefersFemale === true, cls(t)?.prefersFemale);
 }
+// A district AND a gender preference in one message is the patient telling us where
+// they are. Answered as a bare gender request, it re-asked «وش تحتاج وبأي حي؟» — the
+// sentence they had just typed.
+for (const t of ["انا في الروضة، وابغى دكتورة", "أنا في الورود وأفضّل دكتورة", "بالروابي، ودكتورة لو تقدر"]) {
+  ok(`a district outranks a bare gender preference: «${t}»`, kind(t) === "district", kind(t));
+  ok(`…and the preference is still recorded: «${t}»`, cls(t)?.prefersFemale === true, cls(t)?.prefersFemale);
+  ok(`…and the district is read: «${t}»`, !!cls(t)?.districtAr, cls(t)?.districtAr);
+}
 for (const t of ["مين أفضل دكتور عندكم؟", "الدكتور زين؟", "احسن دكتور بالجلدية مين؟"]) {
   ok(`a doctor-quality question still is one: «${t}»`, kind(t) === "doctor_quality", kind(t));
 }

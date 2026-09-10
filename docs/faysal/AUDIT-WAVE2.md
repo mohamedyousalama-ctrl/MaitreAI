@@ -131,6 +131,25 @@ Consequence, stated plainly: **a two-year-old with a 38.9 fever still gets the
 emergency rail.** That is an over-fire, it is the direction the spec chooses while row
 3 is unsigned, and it is the single most important line on the client-call brief.
 
+### Also shipped, after re-driving the personas against the fixed tree
+
+Driving the four worst transcripts again found six more, each of them the same
+shape — a sentence read past rather than read.
+
+| What the patient typed | What he did | What he does now |
+|---|---|---|
+| «وأفضّل دكتورة» | «ما أقيّم لك دكتور» — it contains «أفضل دكتور» as a substring | A preference, recorded and said back once on the booking turn. The doctor-quality needles end at a word boundary; the Arabic prefixes (و/ب/ل) ride on «دكتورة» like any other word |
+| «انا في الروضة، وابغى دكتورة» | «وش تحتاج بالضبط، وأنت بأي حي؟» | A district outranks a bare gender preference — the preference is a flag, not an intent |
+| «عندي ألم في الركبة من شهر» ×3 | The generic honest-unknown paragraph, verbatim, three times | «الله يعافيك» first, the specialty said back in their own word, no claim that the clinic exists, and a written request offered |
+| «أنا في الورود» + insurance | Answered about Ar Rawabi | Their own district first, the recommendation second, the default last |
+| «أبغى موعد جلدية بكرة» | Today's slot offered first | The named day moves the search origin; it never invents inventory |
+| «موعد مسائي بعد الساعة ٧» | 4:30 م and 9:45 ص, no comment | The window filters what is offered, and when nothing matches, that is said in their own words before what does exist |
+
+Plus two register fixes: the insurance answer (two sentences that appear in EVERY
+insurance turn) was Modern Standard Arabic officialese and is now Riyadh Arabic
+with the meaning unchanged word for word; and the routing reason no longer prints
+«…والتقويم عندهم..» because half the reason rows already end in a full stop.
+
 ### Still open (not shipped, recorded)
 
 1. **The `urgent` tier has no voice.** `safetyUrgent` in `strings.ts` has zero call
