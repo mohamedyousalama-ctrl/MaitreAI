@@ -58,6 +58,8 @@ export type IntentKind =
   | "handoff"
   | "hours_question"
   | "unsupported_specialty"
+  | "clinic_list"
+  | "location_question"
   | "booking_status"
   | "keep_booking"
   | "reschedule"
@@ -423,11 +425,16 @@ function extractFacts(raw: string, t: string): Pick<
   const carrier = findCarrier(raw);
   const declaring = has(t, "عندي", "معي", "معاي", "معنا", "تاميني", "بتامين", "علي تامين", "معي بطاقه", "i have", "we have", "we're on", "my insurance");
   const cash = has(t, "كاش", "نقدا", "ادفع كاش", "cash");
+  // A BARE «تأمين» IS AN ANSWER. It is one of the two chips under «تأمين ولا كاش؟»,
+  // and tapping it left `payment` null because the insurance branch wanted a carrier
+  // name too — so the patient answered the question and was asked it again. The
+  // insurer is the NEXT question, not a precondition for hearing the first answer.
+  const bareInsurance = /^(?:و|ف)?\s*(?:ال)?(?:تامين|بتامين|insurance)\s*[.!،,]?$/.test(t);
   return {
     need: needIn(t),
     districtAr: findDistrict(raw),
     carrierRaw: carrier,
-    payment: cash ? "cash" : declaring && carrier ? "insurance" : null,
+    payment: cash ? "cash" : (declaring && carrier) || bareInsurance ? "insurance" : null,
     preferredWindowAr: findWindow(t),
     prefersFemale: FEMALE_DOCTOR_RE.test(t),
     courtesyOnly: COURTESY_ONLY_RE.test(t),
@@ -531,6 +538,17 @@ export function classifyDeterministic(raw: string, offeredCount: number): Classi
   if (has(t, "تامين", "التامين", "insurance") || base.carrierRaw) return { ...base, kind: "insurance_question" };
 
   // Hours / branch status (§2.3, Rule C4-1).
+  // «وين الفرع؟», «العنوان؟», «وين المواقف؟» — the address is data we hold, and a
+  // patient about to drive somewhere asks for it. It was reaching the honest-unknown
+  // line, which is the one answer that is definitely wrong when we know the answer.
+  if (has(t, "وين الفرع", "وين مكانكم", "العنوان", "عنوانكم", "الموقع", "وين موقعكم", "لوكيشن", "المواقف", "موقف السيارات", "where are you", "your address", "location", "parking"))
+    return { ...base, kind: "location_question" };
+
+  // «عيادة معيّنة» — the second half of the opener's own question, and one of the two
+  // chips under it. A chip the engine cannot read is worse than no chip at all.
+  if (has(t, "عياده معينه", "عيادة معينة", "عيادة معيّنة", "تخصص معين", "قسم معين", "specific clinic", "a clinic"))
+    return { ...base, kind: "clinic_list" };
+
   if (has(t, "الدوام", "متي تفتحون", "متي يفتح", "مفتوح", "مسكر", "شغالين", "فاتحين", "فاتح", "تفتحون", "دواماتكم", "open now", "are you open", "opening hours"))
     return { ...base, kind: "hours_question" };
 

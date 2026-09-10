@@ -50,6 +50,121 @@ c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); await c.say("I need
 ok("English thread: greeting echo stays English", !/[ء-ي]/.test(txt(r)), { scene: r.scene, text: txt(r) });
 c = new Conversation("2026-09-13T10:00:00+03:00"); c.open(); r = await c.say("عندي ألم في صدري وأتعرق"); r = await c.say("اسمي محمد الشهري 0551234567");
 ok("rail holds against a name+mobile", r.stopReason === "faysal_redflag_emergency", { scene: r.scene, text: txt(r) });
+// ── NO DEAD ENDS. The property, not a list of examples. ─────────────────────
+// A clinic conversation has a spine — what do you need, which branch, how are you
+// paying, which time, confirm — and a coordinator walks it whatever the patient
+// says. Twenty branches answered honestly and then STOPPED: no question, nothing to
+// tap, and the patient had to restart the booking themselves. Every message below is
+// something a real patient sends mid-booking; the assertion is mechanical and holds
+// for all of them at every point in the flow.
+{
+  const OFF_SPINE = [
+    "انت روبوت؟", "شفت تقييمكم بجوجل ٣ نجوم بس", "وين نتيجة تحليلي؟", "أي دواء آخذ للحكة؟",
+    "الدكتور زين؟", "عندكم تأمين؟", "وين المواقف؟", "كم سعر الكشف؟", "مين أفضل من مستشفى ثاني؟",
+    "أبي موظف يكلمني", "ألغي الموعد", "وش عندي؟", "فيه باقات؟", "الحين فاتحين؟", "شكرا", "ok",
+    "أبغى دكتورة", "عندي ألم في الركبة", "بعيد علي", "غالي شوي", "خلني أفكر",
+  ];
+  // Four points in the booking: nothing known, need known, slots on screen, hold live.
+  const PREFIXES: [string, string[]][] = [
+    ["fresh", []],
+    ["need known", ["أبغى ليزر"]],
+    ["slots offered", ["أبغى ليزر", "أنا في الروابي", "كاش"]],
+    ["hold live", ["أبغى ليزر", "أنا في الروابي", "كاش", "الأول"]],
+  ];
+  const TERMINAL = new Set(["S7_confirmed", "S14_closed"]);
+  let deadEnds = 0;
+  for (const [label, prefix] of PREFIXES) {
+    for (const message of OFF_SPINE) {
+      const c = new Conversation("2026-09-13T10:00:00+03:00"); c.open();
+      for (const line of prefix) await c.say(line);
+      const r = await c.say(message);
+      const text = txt(r);
+      const terminal = TERMINAL.has(r.scene) || r.stopReason === "faysal_redflag_emergency";
+      // TWO assertions, not one «either/or». A reply with chips and no question, or a
+      // question and no chips, is half a next step — and an OR cannot tell which half
+      // went missing: turning either one off leaves the other holding the proof up.
+      const asksSomething = /[؟?]/.test(text);
+      const offersSomething = r.chips.length > 0;
+      if (!terminal && !(asksSomething && offersSomething)) deadEnds++;
+      ok(`asks the next question — «${message}» at ${label}`, terminal || asksSomething, { scene: r.scene, text });
+      ok(`offers something to tap — «${message}» at ${label}`, terminal || offersSomething, { scene: r.scene, chips: r.chips, text });
+      // …and never two questions in one message, whatever was appended to it.
+      for (const m of r.messages) {
+        ok(`one question mark at most — «${message}» at ${label}`, (m.text.match(/[؟?]/g) ?? []).length <= 1, m.text);
+      }
+    }
+  }
+  ok(`the whole off-spine grid has no dead ends (${OFF_SPINE.length * PREFIXES.length} turns)`, deadEnds === 0, { deadEnds });
+}
+
+// ── EVERY CHIP IS UNDERSTOOD WHEN IT IS TAPPED ──────────────────────────────
+// A chip the engine cannot read is worse than no chip: the patient taps the thing
+// he offered them and gets «ما فهمت عليك». So each chip is tapped, at the exact
+// point it is offered, and the turn must move — never the honest-unknown fallback.
+{
+  const JOURNEYS: [string, string[]][] = [
+    ["opener", []],
+    ["need known", ["أبغى ليزر"]],
+    ["district known", ["أبغى ليزر", "أنا في الروابي"]],
+    ["slots offered", ["أبغى ليزر", "أنا في الروابي", "كاش"]],
+    ["hold live", ["أبغى ليزر", "أنا في الروابي", "كاش", "الأول"]],
+    ["booked", ["أبغى ليزر", "أنا في الروابي", "كاش", "الأول", "أكد"]],
+    ["hours at night", []],
+  ];
+  for (const [label, prefix] of JOURNEYS) {
+    const probe = new Conversation("2026-09-13T10:00:00+03:00"); probe.open();
+    let last: { chips: string[] } = { chips: [] };
+    for (const line of prefix) last = await probe.say(line);
+    if (!prefix.length) last = await probe.say(label === "hours at night" ? "الحين فاتحين؟" : "السلام عليكم");
+    for (const chip of last.chips) {
+      // A fresh conversation per chip: tapping one must not depend on the others.
+      const c = new Conversation("2026-09-13T10:00:00+03:00"); c.open();
+      for (const line of prefix) await c.say(line);
+      if (!prefix.length) await c.say(label === "hours at night" ? "الحين فاتحين؟" : "السلام عليكم");
+      const r = await c.say(chip);
+      const text = txt(r);
+      ok(`chip «${chip}» is understood at ${label}`, !text.includes("ما أقدر أأكدها لك من عندي") && !text.includes("ما فهمت عليك"), { chip, scene: r.scene, text });
+    }
+  }
+
+  // …AND A CHIP MUST ADVANCE THE BOOKING, NOT MERELY BE UNDERSTOOD. «وين المواقف» is
+  // a perfectly readable message and a useless thing to offer someone who has just
+  // been asked which district they are in: swap the district chips for it and the
+  // «understood» assertion above stays green while the conversation stops moving.
+  // The chips at a step where a fact is missing must FILL that fact.
+  // The district and payment chips must FILL their field — no escape clause. The
+  // spine appends a question to every reply, so «the reply asks something» is true of
+  // everything and cannot discriminate; it was in the first version of this check and
+  // it kept a deliberately wrong chip set green. Only the «need» step is allowed to
+  // answer with a sub-question, because «عيادة معيّنة» legitimately opens one.
+  const FILLS: [string, string[], (c: Conversation) => unknown, boolean][] = [
+    ["need", [], (c) => c.s.need, true],
+    ["district", ["أبغى ليزر"], (c) => c.s.districtAr, false],
+    ["payment", ["أبغى ليزر", "أنا في الروابي"], (c) => c.s.payment, false],
+  ];
+  for (const [field, prefix, read, mayOpenSubQuestion] of FILLS) {
+    const probe = new Conversation("2026-09-13T10:00:00+03:00"); probe.open();
+    let last: { chips: string[] } = { chips: [] };
+    for (const line of prefix) last = await probe.say(line);
+    if (!prefix.length) last = await probe.say("السلام عليكم");
+    ok(`chips exist at the «${field}» step`, last.chips.length > 0, { chips: last.chips });
+    for (const chip of last.chips) {
+      const c = new Conversation("2026-09-13T10:00:00+03:00"); c.open();
+      for (const line of prefix) await c.say(line);
+      if (!prefix.length) await c.say("السلام عليكم");
+      const before = read(c);
+      const r = await c.say(chip);
+      const after = read(c);
+      // Either the missing fact is now known, or the tap opened the next question
+      // about it («عيادة معيّنة» lists the clinics and asks which) — never nothing.
+      const filled = after !== before && after !== null && after !== undefined;
+      const listsClinics = txt(r).includes("اللي أقدر أثبّت لك فيه");
+      const moved = filled || (mayOpenSubQuestion && listsClinics);
+      ok(`chip «${chip}» advances the «${field}» step`, moved, { chip, before, after, text: txt(r) });
+    }
+  }
+}
+
 // ── hours that know what day and hour it is ────────────────────────────────
 // «الروابي يفتح اليوم 9:00 ص» went out AT 11:40 PM — today's nine o'clock was
 // fourteen hours in the past, and «اليوم» was hard-coded into the sentence. The

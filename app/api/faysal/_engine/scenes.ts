@@ -25,7 +25,7 @@
 // `assertCadence()` is the mechanical form of that rule.
 // ============================================================================
 
-import { callback as domainCallback, canBook, cancel as domainCancel, clinicsAtSite, confirm as domainConfirm, hold as domainHold, insurance, nextOpening, normalizeArabic, openState, OPS, packageFor, planFor, price, REAL_CONTACTS, recommend, riyadhDateISO, riyadhParts, serviceNameAr, siteInDistrict, SITES, twoSlotsAcrossDays, type Appointment, type DemoNeed, type FaysalStore, type SiteId, type SiteView, type SlotView } from "../_domain";
+import { callback as domainCallback, canBook, cancel as domainCancel, clinicsAtSite, confirm as domainConfirm, hold as domainHold, insurance, NEED_PLANS, nextOpening, normalizeArabic, openState, OPS, packageFor, planFor, price, REAL_CONTACTS, recommend, riyadhDateISO, riyadhParts, serviceNameAr, siteInDistrict, SITES, twoSlotsAcrossDays, type Appointment, type DemoNeed, type FaysalStore, type SiteId, type SiteView, type SlotView } from "../_domain";
 import { EN } from "./english";
 import { compose } from "./render";
 import { classifyDeterministic, detectLanguage, nameInConfirm, nameShaped } from "./intent";
@@ -105,13 +105,61 @@ function openQuestionFor(s: FaysalSession, language: "ar" | "en" | "other" = "ar
   if (s.scene === "S3_route" || s.scene === "S4_insurance") return en ? "Is the visit on insurance or cash?" : "الزيارة تأمين ولا كاش؟";
   return null;
 }
-/** The chips that were on screen for the open question, re-offered unchanged. */
+/**
+ * THE CHIPS ARE THE ANSWER TO THE QUESTION HE JUST ASKED. Nothing else.
+ *
+ * They were previously attached at about a dozen call sites and absent at twenty
+ * more, so a patient who asked about the doctor, the rating, a competitor, their
+ * records, or a cancellation got a reply with nothing to tap and no question to
+ * answer — a dead end they had to rescue by guessing what to type next.
+ *
+ * This reads the SPINE POSITION rather than the intent, because the right two
+ * options depend on where the booking has got to, not on what was asked. Two is the
+ * cap: §4.1 #4's two-option rule, and more than two on a phone is a menu.
+ */
 function chipsFor(s: FaysalSession): string[] {
+  // The rail never reaches this file — `turn/route.ts` returns before `runTurn` on a
+  // red flag, with chips [] hard-coded (SPEC-4 §4.1: never a tappable button beside
+  // an ambulance instruction). There is no S0 branch here because there cannot be.
   if (s.scene === "S6_close" && s.holdId) return ["إي، ثبّته", "لا، غيّره"];
   if (s.scene === "S5_slots" && s.offeredSlots.length) return s.offeredSlots.slice(0, 2).map((x) => x.labelAr);
   if (s.awaitingCallbackWindow) return ["الصبح", "بعد العصر"];
-  if (s.scene === "S3_route" || s.scene === "S4_insurance") return ["تأمين", "كاش"];
-  return [];
+  if (s.scene === "S7_confirmed" || s.booked) return ["أغيّر الموعد", "شكراً"];
+  if (s.scene === "S14_closed") return ["أبغى موعد"];
+  if (s.forkOffered && s.nearSiteId && s.siteId) return [SITES[s.nearSiteId].districtAr, SITES[s.siteId].districtAr];
+  if (!s.need) return ["كشف عام", "عيادة معيّنة"];
+  if (!s.districtAr) return BOOKABLE_DISTRICTS;
+  if (!s.payment) return ["تأمين", "كاش"];
+  return ["أقرب موعد"];
+}
+
+/** The two districts the demo can actually book in, offered when he asks where the
+ *  patient is. Naming a district we cannot book is an availability claim (§8.1 #12). */
+const BOOKABLE_DISTRICTS: string[] = [SITES["wattan-2"].districtAr, SITES["shoaa-wurud"].districtAr];
+
+/**
+ * THE ONE QUESTION THE CONVERSATION IS WAITING ON, whatever the patient just said.
+ *
+ * A clinic conversation has a spine — what do you need, which branch, how are you
+ * paying, which time, confirm, what to bring — and a coordinator walks it whether or
+ * not the patient's last message was about it. Faysal answered off-spine messages
+ * («انت روبوت؟», «شفت تقييمكم», «وين نتيجة تحليلي») honestly and then STOPPED, so the
+ * patient had to restart the booking themselves. The answer keeps its own voice; this
+ * is what gets added after it, so the thread always has a next move.
+ *
+ * Returns null at a terminal position — the rail, a finished booking, a closed
+ * thread — because those are the three places a conversation is allowed to end.
+ */
+function spineQuestion(s: FaysalSession, language: "ar" | "en" | "other"): string | null {
+  if (s.scene === "S7_confirmed" || s.scene === "S14_closed") return null;
+  if (s.scene === "S6_close" && s.holdId) return openQuestionFor(s, language);
+  if (s.scene === "S5_slots" && s.offeredSlots.length) return openQuestionFor(s, language);
+  if (s.awaitingCallbackWindow) return openQuestionFor(s, language);
+  const en = language === "en";
+  if (!s.need) return en ? "What do you need — a general consultation, or a specific clinic?" : "وش تحتاج — كشف عام ولا عيادة معيّنة؟";
+  if (!s.districtAr) return en ? "Which district are you in?" : "أنت بأي حي؟";
+  if (!s.payment) return en ? "Is the visit on insurance or cash?" : "الزيارة تأمين ولا كاش؟";
+  return en ? "Shall I find you the earliest appointment?" : "أشوف لك أقرب موعد؟";
 }
 
 const needOf = (s: FaysalSession): DemoNeed | null => s.need;
@@ -510,7 +558,11 @@ function matchAndAsk(s: FaysalSession, now: Date, language: "ar" | "en" | "other
           ? "تمام. أنت بأي حي؟"
           : S.MOTION_DISCOVER_PAYMENT;
     const msgs = alreadySaid ? [faysal(s, ask)] : [faysal(s, matchText), faysal(s, ask)];
-    return reply(s, msgs, needsDistrict && s.payment ? [] : ["تأمين", "كاش"]);
+    // THE CHIPS ANSWER THE QUESTION THAT WAS ASKED. This branch asks for the district
+    // — sometimes for the district AND the payment — and offered «تأمين / كاش» in
+    // every case, so a patient who had not said where they were got two buttons that
+    // answered the other half of the sentence. The first missing fact wins.
+    return reply(s, msgs, needsDistrict ? BOOKABLE_DISTRICTS : ["تأمين", "كاش"]);
   }
   return offerSlots(s, now, language, store);
 }
@@ -693,6 +745,30 @@ export function runTurn(s: FaysalSession, raw: string, cls: Classification, now:
     }
   }
 
+  // ── THE SPINE (§7). Every reply carries the next step, or it ends the thread. ──
+  //
+  // A coordinator answers what you asked AND keeps the booking moving. Faysal
+  // answered — honestly, in his own voice — and then stopped: «انت روبوت؟», «شفت
+  // تقييمكم بجوجل», «وين نتيجة تحليلي», «ألغي الموعد» each produced a reply with no
+  // question and nothing to tap, and the patient had to restart the booking
+  // themselves. Twenty branches had that shape.
+  //
+  // The fix is one rule applied centrally rather than twenty edits: after the branch
+  // has said its piece, if the thread is not at a terminal position and the reply
+  // does not already ask something, the spine's open question is appended to the LAST
+  // message (a line, not a new message, so the cadence is untouched) and the chips
+  // for that position are attached. A branch that set its own chips keeps them.
+  const question = spineQuestion(s, language);
+  const asks = out.messages.some((m) => m.from === "faysal" && /[؟?]/.test(m.text));
+  if (question && !asks) {
+    const last = [...out.messages].reverse().find((m) => m.from === "faysal");
+    if (last) last.text = `${last.text}\n${question}`;
+  }
+  if (!out.chips.length) {
+    const chips = chipsFor(s);
+    if (chips.length) out.chips = chips.slice(0, 2);
+  }
+
   if (prefix.length) out.messages = assertCadence([...prefix, ...out.messages]);
   return out;
 }
@@ -867,6 +943,10 @@ function dispatch(
       s.bookingRef = null;
       s.holdId = null;
       s.heldSlot = null;
+      // The cancelled booking must go with it, or the next turn offers «أغيّر الموعد»
+      // for an appointment that no longer exists.
+      s.booked = null;
+      s.offeredSlots = [];
       s.scene = "S14_closed";
       return reply(s, [faysal(s, S.CANCEL_DONE)]);
     }
@@ -896,6 +976,18 @@ function dispatch(
 
     case "package_question":
       return packageReply(s);
+
+    case "location_question": {
+      const b = site(s.siteId) ?? site(recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? null) ?? SITES["wattan-2"];
+      return reply(s, [faysal(s, S.branchLocation(b.shortAr, b.addressAr, b.phoneAr))], chipsFor(s));
+    }
+
+    case "clinic_list": {
+      // Only what the demo can actually book, read off the plans rather than typed
+      // out here — a hand-written list drifts from the roster the moment one changes.
+      const bookable = [...new Set(Object.values(NEED_PLANS).map((plan) => plan.clinicAr))].slice(0, 5);
+      return reply(s, [faysal(s, S.clinicList(bookable.join("، ")))], bookable.slice(0, 2));
+    }
 
     case "hours_question": {
       const target = s.siteId ?? recommend(needOf(s), { districtAr: s.districtAr, now })?.siteId ?? null;

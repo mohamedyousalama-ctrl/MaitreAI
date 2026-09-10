@@ -577,6 +577,15 @@ export const motionMatchForkUnverified = (a: {
 2) ${a.optionBest}
 أي طريق أريح لك؟`;
 
+/** «وين الفرع؟» — the address, the district, and the way to get the rest. Nothing
+ *  about hours: that is a different question with a different honesty problem. */
+export const branchLocation = (branch: string, address: string, phone: string) =>
+  `${branch}: ${address}.\nولو تبي أي تفصيل ثاني عن الموقع، الاستقبال على ${phone}.`;
+
+/** «عيادة معيّنة» — the clinics the demo can actually book, and nothing else. Naming
+ *  a clinic the engine cannot book is an availability claim (§8.1 #12). */
+export const clinicList = (clinics: string) => `اللي أقدر أثبّت لك فيه من هنا: ${clinics}.\nأي وحدة تحتاج؟`;
+
 /** «الحين فاتحين؟» — the two facts a patient asking that needs, and nothing else.
  *  Never «٢٤ ساعة»: SPEC-4 §5.3 bans the bare round-the-clock phrase on its own,
  *  hedge or no hedge, because the BUILDING being open is not the CLINIC being open. */
