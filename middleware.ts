@@ -28,14 +28,18 @@ export async function middleware(request: NextRequest) {
   // A prod deploy with missing env is a deploy ERROR: refuse loudly (503) for every
   // matched route rather than silently running unauthenticated. Dev/test are
   // unaffected (the guard is prod-only); configured prod never reaches this.
+  const mapping = hostMapping(request.headers.get("host"));
+
   if (process.env.NODE_ENV === "production" && !isSupabaseConfigured()) {
-    return new NextResponse("Service not configured.", {
+    // Same 503 for every host — but the Faysal demo host is read by an Arabic-speaking
+    // clinic manager on a phone, and an English "Service not configured." is a worse
+    // failure than the outage it reports. Same status, same fail-closed behaviour.
+    const arabic = mapping?.kind === "faysal";
+    return new NextResponse(arabic ? "الخدمة غير متاحة حالياً. جرّب بعد شوي." : "Service not configured.", {
       status: 503,
       headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
     });
   }
-
-  const mapping = hostMapping(request.headers.get("host"));
 
   // Storefront host: serve the tenant's public storefront at the root path by
   // rewriting "/" → the existing /order/[slug] rendering. Internal rewrite, so
@@ -61,23 +65,53 @@ export async function middleware(request: NextRequest) {
   // which are already bounded by the per-IP limit and the durable daily spend
   // ceiling in app/api/faysal/_engine/limits.ts.
   //
-  // It runs BEFORE the auth path on purpose: the demo has no Supabase session and
-  // must never be sent through one. Static assets never reach here — the matcher
-  // below excludes _next/static and _next/image, which is where next/font and every
-  // client chunk the page needs are served from.
+  // ORDERING, both directions, because both are load-bearing:
+  //   • AFTER the prod fail-closed 503 above, deliberately. The demo needs no
+  //     Supabase SESSION, but its durable daily spend ceiling is Supabase-backed
+  //     (app/api/faysal/_engine/guard.ts imports createAdminClient), so a prod
+  //     deploy with no Supabase env is a demo with NO wallet protection on a
+  //     public endpoint. That must close, not open. proof-faysal-host asserts it.
+  //   • BEFORE the operator redirect and before updateSession — the demo has no
+  //     session and must never be sent through the auth path.
+  // Every asset the page needs is served from /_next/static (next/font emits the
+  // TTFs to /_next/static/media, chunks and CSS live under /_next/static), and the
+  // matcher below excludes that prefix, so none of it reaches this branch. Other
+  // public/ files DO reach it and are 404'd — nothing on this page requests one.
   if (mapping?.kind === "faysal") {
     const path = request.nextUrl.pathname;
     // Canonicalise: the page's own route redirects to the bare host, so the link a
-    // client sees, copies and forwards is always the short one.
+    // client sees, copies and forwards is always the short one. The query string is
+    // dropped with it — the page reads no searchParams, and a forwarded link with a
+    // stranger's tracking parameters still on it is not "the short one". Same
+    // `url.search = ""` the operator branch below uses, for the same reason.
     if (path === "/faysal") {
       const url = request.nextUrl.clone();
       url.pathname = "/";
+      url.search = "";
       return NextResponse.redirect(url);
     }
     if (path === "/") {
       const url = request.nextUrl.clone();
       url.pathname = "/faysal";
-      return NextResponse.rewrite(url);
+      // Vercel stamps x-robots-tag on GENERATED preview URLs; it does not on a custom
+      // domain, and this page wears a real clinic group's trade name over invented
+      // prices. The page's own robots metadata is the primary control — this is the
+      // header half of the same promise, so both layers say it on every host.
+      return NextResponse.rewrite(url, {
+        headers: { "x-robots-tag": "noindex, nofollow, nocache" },
+      });
+    }
+    // A 404 on /robots.txt reads to a crawler as "allow all". Say the opposite out
+    // loud instead — it costs one response and no app surface.
+    if (path === "/robots.txt") {
+      return new NextResponse("User-agent: *\nDisallow: /\n", {
+        status: 200,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": "no-store",
+          "x-robots-tag": "noindex, nofollow",
+        },
+      });
     }
     if (path === "/api/faysal/turn" || path === "/api/faysal/reset") {
       return NextResponse.next();

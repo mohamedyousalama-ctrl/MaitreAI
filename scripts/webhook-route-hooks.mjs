@@ -11,6 +11,7 @@
 // ============================================================================
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 
 const NEXT_SERVER_STUB = pathToFileURL(join(process.cwd(), "scripts/stubs/next-server.mjs")).href;
 
@@ -21,8 +22,28 @@ const NEXT_SERVER_STUB = pathToFileURL(join(process.cwd(), "scripts/stubs/next-s
 // resolves the CommonJS entry directly instead, so such a proof runs the real classes
 // and the real `x-middleware-rewrite` / 307 / `x-middleware-next` semantics.
 // Opt-in, because the real module is heavier and the route proofs do not need it.
-const NEXT_SERVER_REAL = pathToFileURL(join(process.cwd(), "node_modules/next/server.js")).href;
+// Resolved through Node, not by hardcoding node_modules/next/server.js: `shortCircuit`
+// skips resolution AND the package `exports` map, so a hardcoded path would keep
+// "working" on a Next version where that file is no longer the designated entry for
+// `next/server` — silently loading something other than what the import means. This
+// throws instead, naming the switch, so the failure is legible.
 const useRealNextServer = process.env.REAL_NEXT_SERVER === "1";
+let NEXT_SERVER_REAL = null;
+if (useRealNextServer) {
+  try {
+    NEXT_SERVER_REAL = pathToFileURL(createRequire(import.meta.url).resolve("next/server")).href;
+  } catch (err) {
+    throw new Error(
+      `REAL_NEXT_SERVER=1 was set but "next/server" could not be resolved: ${err?.message ?? err}`,
+    );
+  }
+}
+
+// NOTE: this switch is process-global and read once, at hook load. Exporting
+// REAL_NEXT_SERVER=1 in a shell would flip EVERY loader-based proof to the real
+// module, and at least one of them (proof-demo-speak-route) asserts on a `res.body`
+// shape the stub and the real NextResponse implement differently. Set it per command
+// — the suite manifest does exactly that — never in an environment.
 
 export async function resolve(specifier, context, next) {
   if (specifier === "server-only") {
