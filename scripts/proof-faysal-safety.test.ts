@@ -91,7 +91,7 @@ import { resolve } from "node:path";
 import {
   detectRedFlag, isFaysalSafetyInbound, DETECTOR_EXCEPTION,
   CLASSES, everyEnumeratedMember,
-  AIRWAY, CARDIAC, HEMORRHAGE, INFANT_FEVER, POISONING, SELF_HARM, STROKE, TRAUMA,
+  AIRWAY, CARDIAC, HEMORRHAGE, INFANT_FEVER, OBSTETRIC, POISONING, SELF_HARM, STROKE, TRAUMA,
   emergencyRail, eligibleErSites, railCopyViolations, SUPPORT_LINE_SENTENCE, RAIL_B,
   isTriageHeld, checkBookingTriageHold, releaseTriageHold,
   COMMITTED_APPOINTMENT_STATES, OPEN_TRIAGE_HOLD_PATCH,
@@ -326,6 +326,28 @@ console.log("\n── §F2  NEGATION × ABILITY × PERSON, and the third person 
       ["وعنده حرارة", "وعندها حرارة", "وحرارته عالية", "وعنده سخونة"],
     ))]);
 
+  // SOMEONE ELSE TOOK THE SPEAKER'S MEDICATION. Filed as ordinary clinic English by the
+  // family above and silent in Arabic for the mirror reason — the possessive forms «دوايي»
+  // and «حبوبي» were not medication objects at all. §13's fail-toward-firing decides it: the
+  // cost of firing wrongly is a patient told to call 997 who did not need to, and the cost of
+  // missing is a child who took an adult's dose. The separator is WHO IS TAKING, not the
+  // possessive — «أخذتْ» (she took) and «أخذتُ» (I took) are the same consonants, so the
+  // person marker in the clause is the whole test.
+  mustFire("§G3 poisoning: someone else took the speaker's own medication",
+    [...new Set(cross(
+      ["my son", "my daughter", "my mother", "my father", "my wife", "the baby", "my child"],
+      ["took", "swallowed", "has taken"],
+      ["my medicine", "my pills", "my tablets", "my blood pressure tablets", "my meds"],
+      ["", " this morning", " by mistake", " instead of his"],
+    ))]);
+  mustFire("§G3 poisoning: the same sentence in Arabic",
+    [...new Set(cross(
+      ["ابني", "بنتي", "امي", "ابوي", "الطفل", "الولد"],
+      ["بلع", "اخذ", "اخذت", "شرب"],
+      ["دوايي", "حبوبي", "علاجي", "دواي"],
+      ["", " بالغلط", " الصبح"],
+    ))]);
+
   // §2.8 — phrases only, and each phrase inside an ordinary run-on message, because a phrase
   // matched with a bare lookbehind is silent behind a «و» or a «ب» (§2.0 L7).
   mustFire("§F2 trauma: STANDALONE inside a run-on message",
@@ -386,6 +408,16 @@ console.log("\n── §FE  ENGLISH: the slots, crossed, not the sentences someb
       ["has a fever of", "temperature is", "temp is", "has a temperature of"],
       ["39", "38.5", "40", "102 f", "102.5f", "103 degrees", "101", "100.4 f"],
     ))]);
+  // …AND THE SAME VALUES WITH NO MARKER AT ALL, which is what an English-speaking adult types
+  // about themselves. These are the rows that can SEE the Fahrenheit conversion: with an infant
+  // marker the hit survives on the marker alone with no value, so a corpus written only in the
+  // paediatric frame cannot tell whether the conversion is there at all.
+  mustFire("§FE infant_fever: a Fahrenheit report with NO marker  (the °F conversion, isolated)",
+    [...new Set(cross(
+      ["my temperature is", "the temperature is", "temperature", "his temperature is", "her temp is"],
+      ["102 f", "103 degrees", "101 f", "104 degrees", "102.5f", "100.5 f"],
+    ))]);
+
   // AN AGE IN DAYS OR WEEKS MUST NOT BE READ AS A TEMPERATURE, and in English the collision is
   // wider than in Arabic: «38 days old» and «40 weeks» are how a parent of a newborn writes an
   // age, and 38 and 40 are both fevers. The discriminating values are 35, 36 and 37 — under the
@@ -641,6 +673,195 @@ console.log("\n── §Q  ORDINARY CLINIC ARABIC, DERIVED FROM ITS OWN VOCABULA
   mustBeQuiet("§Q ordinary-clinic (all families)", uniq);
 }
 
+// ═══ §QE — THE QUIET CORPUS, GENERATED FROM ORDINARY CLINIC ENGLISH ═════════════════════════
+// The header names this corpus as the gap §Q could not cover: §Q is Arabic by construction, and
+// an Arabic corpus can prove NOTHING about `chest` also being a chest of drawers or `fell` also
+// being «fell behind on my payments». Those are properties of ENGLISH, and only a corpus
+// generated from English finds them. Same discipline as §Q, other end of the same rule: this
+// starts from what an English-speaking patient in Riyadh actually sends a clinic — booking,
+// price, insurance, directions, records, pharmacy, complaints — and crosses it DELIBERATELY
+// THROUGH THE ENGLISH HOMOGRAPHS:
+//
+//   chest      the thorax · A CHEST OF DRAWERS · a chest x-ray      heart   the organ · A HEART CLINIC
+//   blood      haemorrhage · A BLOOD TEST · BLOOD PRESSURE          fell    fell over · FELL BEHIND
+//   accident   a crash · «ACCIDENT AND EMERGENCY», the department   burn    a scald · FAT BURNING
+//   breathing  dyspnoea · A BREATHING EXERCISES CLASS               stroke  a CVA · STROKE REHAB
+//   killing    ending a life · KILLING TIME · «killing me»          dying   dying · «DYING TO GET…»
+//   took       an overdose · «TOOK MY MEDICINE THIS MORNING»        speak   aphasia · «CAN'T SPEAK ARABIC»
+//   fever      a fever now · «HAD A FEVER LAST MONTH»               moving  hemiplegia · A QUEUE
+//   unresponsive  a lethargic child · A CLINIC THAT WON'T ANSWER    swallowed  ingestion · «my card»
+console.log("\n── §QE  ORDINARY CLINIC ENGLISH, DERIVED FROM ITS OWN VOCABULARY ─");
+{
+  const ASK_EN = ["how much is", "what is the price of", "when is", "where is", "can i get", "do you have"];
+  const WANT_EN = ["i want", "i need", "id like", "please book", "can i book"];
+  const SERVICE_EN = ["an appointment", "a booking", "a consultation", "a follow up", "a check up",
+    "a vaccination", "a blood test", "an x ray", "a medical report", "a dental cleaning"];
+  const WHO_EN = ["my son", "my daughter", "my wife", "my husband", "my mother", "my father",
+    "my baby", "my child", "my brother", "my sister"];
+  const WHEN_EN = ["", "tomorrow", "on saturday", "this week", "please", "in the morning"];
+
+  // QE1. «chest» = A CHEST OF DRAWERS · a chest x-ray · the chest clinic. The English «الصدر»,
+  //      and saved by exactly the same thing: the predicate requirement (§2.1).
+  addQuiet("QE1 «chest» = furniture, imaging, a clinic",
+    ...cross([...ASK_EN, ...WANT_EN], ["a chest x ray", "a chest scan", "a chest ct", "the chest clinic appointment", "a chest physio session"], WHEN_EN),
+    "my chest of drawers is broken", "the chest freezer at the pharmacy is off",
+    "the chest x ray report is ready", "he has a chest infection, which clinic do i book");
+
+  // QE2. «heart» = A HEART CLINIC · cardiology · the idiom «my heart is heavy». Bare `heart` is
+  //      not a term for the same reason bare `قلب` is not, and «my heart is heavy» is grief.
+  addQuiet("QE2 «heart» = a clinic, a follow-up, an idiom",
+    ...cross([...ASK_EN, ...WANT_EN], ["a heart check up", "the heart clinic appointment", "a cardiology follow up", "an ecg", "an echo test"], WHEN_EN),
+    ...cross(["my heart is heavy", "my heart feels heavy", "his heart is heavy"],
+      ["after the news", "today", "since my father passed away", "about the funeral"]),
+    "from the heart, thank you all",
+    "my heart goes out to the family", "he has a heart of gold, that doctor",
+    "my heart is with you in this", "heart clinic appointment", "cardiology follow-up");
+
+  // QE3. «blood» = A BLOOD TEST · blood work · BLOOD PRESSURE · a blood type. This is most of
+  //      what a laboratory inbox receives, and every one of them carries the class C term.
+  addQuiet("QE3 «blood» = a lab test, a pressure reading, a donation",
+    ...cross(ASK_EN, ["a blood test", "blood work", "the blood work results", "my blood type",
+      "a blood sugar test", "the blood bank", "my blood pressure reading"], ["", "?", "please"]),
+    "blood test", "blood work results", "i need a blood test before the appointment",
+    "do you check blood pressure at reception", "i have high blood pressure and take pills");
+
+  // QE4. «breathing» = A BREATHING EXERCISES CLASS · a spirometry — AND THE DENIAL FAMILY, which
+  //      is the §2.4 ARM 2 test in English: a denial that GOVERNS the difficulty noun is a
+  //      patient saying they are FINE, and a co-occurrence reading sends every one an ambulance.
+  addQuiet("QE4 «breathing» = a class, a test",
+    ...cross(["do you have", "i want to join", "how much is", "when is"],
+      ["a breathing exercises class", "a breathing test", "the spirometry test", "a breathing course"], ["", "?", "please"]),
+    "breathing exercises class", "it's not the breathing test I booked");
+  addQuiet("QE4 THE DENIAL that governs the difficulty noun",
+    ...cross(["no", "not", "without", "he has no", "she has no", "i have no", "there is no", "denies"],
+      ["difficulty breathing", "trouble breathing", "difficulty in breathing", "trouble with his breathing",
+       "shortness of breath", "difficulty with her breathing"],
+      ["", "at all", "thank god", "the doctor checked"]));
+
+  // QE5. «fell» · «accident» · «burn» · «fracture» — the four bare stems §2.8 refuses to admit,
+  //      in the language where «Accident and Emergency» IS the department's name.
+  addQuiet("QE5 «fell» = a payment, a price",
+    ...cross(["i", "we", "the family"], ["fell behind on my payments", "fell behind on the instalments", "fell behind with the insurance"], ["", "sorry", "can you help"]),
+    "the price fell last month", "the number of no shows fell this year");
+  addQuiet("QE5 «accident» = the ER department's own name",
+    ...cross(["where is", "what time does", "how do i get to", "is"], ["accident and emergency", "the accident and emergency department"], ["", "open", "?"]),
+    "i need an accident report for the insurance", "the accident report was sent to the police",
+    "do you write accident reports for work");
+  addQuiet("QE5 «burn» = fat burning, a cream · «fracture» = a follow-up",
+    "do you have a fat burning programme", "burn cream, do you sell it",
+    "the laser burns a little, is that normal", "my fracture follow up appointment",
+    "is there a fracture clinic on saturday", "he had a fall last week and needs an x ray");
+
+  // QE6. «killing» · «dying» · «dead» — the T6 family in English, and the reason class I is
+  //      standalone phrases only: the complement slot after an English death idiom is open.
+  addQuiet("QE6 English death idioms are ENTHUSIASM, ANNOYANCE and FATIGUE",
+    ...cross(["", "honestly", "wallah", "seriously"],
+      ["killing time in the waiting room", "im dying to get an appointment", "this headache is killing me",
+       "the waiting is killing me", "im dead tired after work", "your coffee is to die for",
+       "i could kill for an earlier slot", "im dying for a coffee", "im dying of boredom here",
+       "i could kill myself for forgetting the appointment", "im killing myself trying to reach your call centre",
+       "i died laughing at the hold music"], ["", "haha", "😅"]));
+
+  // QE7. «stroke» = STROKE REHAB · physio · a stroke clinic. §2.2's own near-miss table rules
+  //      «متابعة بعد الجلطة» quiet; English gets there by naming the follow-up in the message.
+  addQuiet("QE7 «stroke» = rehabilitation, physio, a clinic",
+    ...cross(["", "my father needs", "i want", "how much is"],
+      ["stroke rehab", "physio after his stroke", "rehab after her stroke", "the stroke clinic appointment",
+       "post stroke follow up", "speech therapy for my son", "occupational therapy after his stroke"], ["", "please", "?"]),
+    "my father is a stroke patient and needs a follow up", "do you have a stroke prevention clinic");
+
+  // QE8. «took my medicine this morning» — T3 IN ENGLISH, the whole family. A TAKE verb with a
+  //      medication object and no qualifier is a prescription being followed, not an ingestion.
+  //
+  //      WITH ONE SPLIT, ADDED AFTER THIS FAMILY SHIPPED. The subjects crossed here included
+  //      «my son» and «my mother», and the objects included «my medicine» — so «my son took my
+  //      medicine this morning» was generated as ORDINARY CLINIC ENGLISH. It is not: a child
+  //      reaching the adult's box is the commonest paediatric poisoning presentation there is,
+  //      and the same sentence in Arabic («ابني أخذ دوايي») was silent for the mirror reason.
+  //      The speaker taking the speaker's own medication stays quiet, which is all T3 claimed.
+  addQuiet("QE8 TAKE × MEDICATION — the T3 family in English, FIRST PERSON",
+    ...cross(["i"], ["took", "take", "am taking", "have taken"],
+      ["my medicine", "the tablets", "the pills", "her medication", "the syrup", "my meds", "the drops"],
+      ["this morning", "after food", "on time", "as the doctor said", "before bed", "with water"]),
+    ...cross(["my son", "my mother", "he", "she"], ["took", "take", "am taking", "have taken"],
+      ["the tablets", "the pills", "her medication", "the syrup", "the drops"],
+      ["this morning", "after food", "on time", "as the doctor said", "before bed", "with water"]),
+    "i forgot to take my medicine yesterday", "when do i take the syrup",
+    "the prescription has three medicines on it", "do you have this medication in stock",
+    "i need a refill for my daughters drops");
+
+  // QE9. «fever» = a fever NOW · «had a fever last month» · post-vaccine · the room, the weather.
+  addQuiet("QE9 «temperature» with a non-body subject",
+    ...cross(["the room temperature is", "the weather is", "the ac temperature is", "the water temperature is"],
+      ["39", "40", "43", "102", "38.5"], ["", "today", "in the waiting area"]));
+  addQuiet("QE9 a fever that is OVER, and a fever that never was",
+    ...cross(["my son", "my daughter", "my baby", "my child", "my kid", "my boy", "my girl",
+      "the baby", "my newborn", "my toddler"],
+      ["had a fever last month", "had a fever last week", "had a temperature two weeks ago",
+       "had a fever a month ago", "had a high temperature last month", "had a fever in ramadan"],
+      ["", "and is fine now", "and recovered", "i want a check up", "he is fine now", "it cleared up"]),
+    "post-vaccine fever in my 4-year-old", "is a fever normal after the vaccine",
+    "his temperature is 37 and he is fine", "the fever is gone now, thank you",
+    "my son had a fever last month, he's fine now, I want a check-up");
+  addQuiet("QE9 a child with NO fever term at all",
+    ...cross(WHO_EN, ["is 9 and needs a dentist", "needs a vaccination appointment", "lost his insurance card",
+      "is 2 years old and needs braces", "has an appointment tomorrow", "needs a school medical report"]));
+
+  // QE10. «pregnant» = an antenatal booking · A PREGNANCY TEST. The English collision §2.5 does
+  //       not have: `حمل` and `حامل` are two words, `pregnancy` and `pregnant` are one stem.
+  addQuiet("QE10 «pregnant» with no danger predicate",
+    ...cross(["im pregnant and", "my wife is pregnant and", "im 12 weeks pregnant and"],
+      ["i want to book", "we want a scan", "i need an antenatal appointment", "i need a blood test",
+       "i want to register for delivery", "everything is fine alhamdulillah"], ["", "please"]),
+    "pregnancy test price", "do you do pregnancy blood tests", "i need a blood test to see if im pregnant",
+    "the baby is moving a lot, is that normal", "do you do postpartum check ups");
+
+  // QE11. «can't speak Arabic» · «can't talk right now» · «can't move my appointment» — the
+  //       intransitive inversion's whole reason, and §2.2's «ما أقدر أحرك موعدي» in English.
+  addQuiet("QE11 «cant speak / cant talk / cant move» with an OBJECT",
+    ...cross(["i", "he", "she", "my husband"],
+      ["cant speak arabic", "cannot speak arabic well", "cant speak english", "cant talk right now",
+       "cant move my appointment", "cant move the booking", "cant talk at work"],
+      ["", "sorry", "please call later", "is there a translator"]),
+    "im seeing double entries for the same booking", "i can't speak Arabic, do you have an English doctor?");
+
+  // QE12. «unresponsive» · «not moving» · «lethargic» with an ADMINISTRATIVE subject — §2.6's
+  //       `خامل` finding in English, and §2.2's «الدور ما يتحرك من ساعة» in English.
+  addQuiet("QE12 an administrative subject with a clinical adjective",
+    ...cross(["the clinic", "the app", "the phone line", "the queue", "the booking system", "the website", "the file"],
+      ["is unresponsive", "is not moving", "is not responding", "is lethargic", "hasnt moved", "is paralysed"],
+      ["", "today", "since the update", "for an hour"]));
+
+  // QE13. «swallowed» · «choking» — a card, a leaflet, food down the wrong way.
+  addQuiet("QE13 «swallowed» and «choking» without an ingestion",
+    "is there a choking hazard leaflet for toddlers", "i swallowed my food the wrong way and coughed",
+    "the machine swallowed my card at the payment kiosk", "a choking hazards brochure for parents please",
+    "do you sell hearing aid batteries", "is there a button battery warning leaflet for parents");
+
+  // QE14. THE ORDINARY INBOX, with no homograph at all. This is most of what a clinic receives,
+  //       and a rail that fires here teaches patients to stop talking to it (§1.3).
+  addQuiet("QE14 booking", ...cross(WANT_EN, SERVICE_EN, WHEN_EN));
+  addQuiet("QE14 booking for someone else", ...cross(WANT_EN, SERVICE_EN, ["for"], WHO_EN));
+  addQuiet("QE14 price and insurance", ...cross(ASK_EN, SERVICE_EN, ["", "?", "with insurance?"]));
+  addQuiet("QE14 insurance", ...cross(["do you accept", "im with", "is this covered by", "does"], ["bupa", "tawuniya", "medgulf", "al rajhi takaful"], ["", "?", "for dental?"]));
+  addQuiet("QE14 directions and hours", ...cross(["where is", "what time does", "how do i get to", "is there parking at"],
+    ["the branch", "the lab", "the pharmacy", "the clinic", "reception"], ["", "open", "?"]));
+  addQuiet("QE14 complaints", ...cross(["", "honestly"], ["nobody answered the phone", "i have been waiting for an hour",
+    "the doctor was late", "i did not get a confirmation", "the app keeps logging me out", "i was sent to the wrong branch"], ["", "please fix it", "who do i talk to"]));
+  addQuiet("QE14 records and admin", ...cross(["when will", "where do i get", "can you send"],
+    ["my report", "the results", "my file", "the invoice", "the prescription", "the medical report"], ["", "be ready", "?"]));
+  addQuiet("QE14 cancel and reschedule", ...cross(["please", "can you", "id like to"],
+    ["cancel my appointment", "move my appointment", "reschedule the booking", "change the doctor"], WHEN_EN));
+
+  const uniqEn = [...new Set([...QUIET_BY_FAMILY.entries()].filter(([k]) => k.startsWith("QE")).flatMap(([, v]) => v))];
+  if (process.env.FAYSAL_DEBUG_QUIET) {
+    const byRule = new Map<string, string[]>();
+    for (const t of uniqEn) { const h = detectRedFlag(t); if (h) { const k = `${h.class}/${h.ruleId} on «${h.termAr}»`; byRule.set(k, [...(byRule.get(k) ?? []), t]); } }
+    for (const [k, v] of byRule) console.log(`   DEBUG ${v.length}x ${k}  e.g. «${v[0]}» «${v[v.length - 1]}»`);
+  }
+  mustBeQuiet("§QE ordinary-clinic ENGLISH (all families)", uniqEn);
+}
+
 // ═══ §L8 — THE PRECISION MIRROR (§2.0 L8). THE BLOCKING ASSERTION OF THIS WAVE ══════════════
 console.log("\n── §L8  EVERY ENUMERATED SET MEMBER HAS A PAIRED NEAR-MISS ─────");
 {
@@ -771,10 +992,16 @@ console.log("\n── §M  MUTATION: narrowing AND widening ──────�
   const ALL_QUIET = [...new Set(everyQuiet.map(([, t]) => t))];
   const ALL_FIRE = [...new Set([...everyMustFire, ...CLASSES.flatMap((c) => c.fires.map((e) => e.text))])];
   const N = (t: string) => normalizeForSafety(t);
+  const NV = (t: string, view?: "ar" | "en") => (view === "en" ? normalizeEn(t) : normalizeForSafety(t));
 
   type Mutation = {
     name: string;
     dir: "widening" | "narrowing";
+    /** WHICH VIEW THE MUTANT READS. An English mutant tested against Arabic-normalized text is
+     *  a mutation that cannot fail: `normalizeForSafety` leaves «can't breathe» with its
+     *  apostrophe and every English pattern here is written without one. The view picks the
+     *  normalizer, exactly as `detectRedFlag` picks one per arm. */
+    view?: "ar" | "en";
     /** For a widening: does the MUTANT fire where the live rule does not? */
     mutantFires?: (n: string) => boolean;
     /** For a narrowing: the MUTATED ARM. A Fires string is "lost" when the LIVE hit came from
@@ -784,6 +1011,10 @@ console.log("\n── §M  MUTATION: narrowing AND widening ──────�
      *  reports is the size of the corpus rather than the reach of the mutation. */
     mutantArm?: (n: string) => boolean;
     ruleIdPrefix?: string;
+    /** Scopes a narrowing to ONE SCRIPT's arms. Every English rule id ends `_en`, so a
+     *  mutation of the English airway arm is `{ ruleIdPrefix: "D.", ruleIdEndsWith: "_en" }`
+     *  and cannot claim the Arabic rows it never touched — the same reason the prefix exists. */
+    ruleIdEndsWith?: string;
     floor: number;
   };
 
@@ -897,10 +1128,133 @@ console.log("\n── §M  MUTATION: narrowing AND widening ──────�
     mutantFires: (n) => ARM2_LIVE.test(n) && !DENIAL_NO_MAFI.test(n),
   });
 
+  // ── THE ENGLISH MUTATIONS. Every one is a defect this wave actually shipped and §QE or §FE
+  //    caught, re-applied on purpose — which is the only way to know the English corpora are
+  //    load-bearing rather than decorative. A widening is measured against §QE (ordinary clinic
+  //    ENGLISH, derived from a clinic inbox); a narrowing against §FE (the English slots,
+  //    crossed). The header's own warning is what these close: "if the English arms are
+  //    widened, NOTHING HERE WILL OBJECT."
+  const BARE_EN = ["heart", "fell", "accident", "burn", "fracture", "blood", "chest", "speak", "stroke", "fever"];
+  const A_PRED_ALL = [...CARDIAC.sets.PRED_PAIN_EN, ...CARDIAC.sets.PRED_PRESSURE_EN, ...CARDIAC.sets.PRED_BURNING_EN] as string[];
+  const A_MIDS = ["is", "was", "feels", "felt", "in", "on", "of", "my", "his", "her", "the",
+    "around", "under", "with", "really", "very", "so", "getting", "gets", "keeps"];
+  const A_NO_IDIOM = (n: string) =>
+    adjEn(CARDIAC.sets.TERM_EN, A_MIDS, A_PRED_ALL).test(n) || adjEn(A_PRED_ALL, A_MIDS, CARDIAC.sets.TERM_EN).test(n);
+  const G_OBJ = [...POISONING.sets.SITE_POISON_EN, ...POISONING.sets.SITE_MEDICATION_EN] as string[];
+  const G_TAKE = adjEnAny(POISONING.sets.VERB_TAKE_EN, G_OBJ, 4);
+  const F_MARKER = (n: string) => hasEn(INFANT_FEVER.sets.TERM_EN, n)
+    && (hasEn(INFANT_FEVER.sets.PRED_INFANT_EN, n) || hasEn(INFANT_FEVER.sets.PRED_CHILD_EN, n));
+
+  mutations.push(
+    {
+      name: "WE1 bare English stems added as «recall nets» — `heart` `fell` `accident` `blood` `chest` `fever`",
+      dir: "widening", view: "en", floor: 200,
+      mutantFires: (n) => BARE_EN.some((t) => termReEn(t).test(n)),
+    },
+    {
+      name: "WE2 ARM 2 EN read as CO-OCCURRENCE instead of adjacency  (§2.0 L2, in English)",
+      dir: "widening", view: "en", floor: 100,
+      // The denial family is the whole point: «no difficulty breathing» is a patient saying
+      // they are FINE, and co-occurrence hands them an ambulance and a P0 page.
+      mutantFires: (n) => hasEn(AIRWAY.sets.DIFFICULTY_EN, n) && hasEn(AIRWAY.sets.BREATHE_NOUN_EN, n),
+    },
+    {
+      name: "WE3 the ownership qualifier back to CLAUSE-SCOPED  (T3's defect, rebuilt in English)",
+      dir: "widening", view: "en", floor: 100,
+      mutantFires: (n) => G_TAKE.test(n) && hasEn(POISONING.sets.QUALIFIER_OWNER_EN, n),
+    },
+    {
+      name: "WE4 the intransitive inversion reverted — «cant speak» / «seeing double» as STANDALONE",
+      dir: "widening", view: "en", floor: 40,
+      mutantFires: (n) => hasEn(STROKE.sets.INTRANSITIVE_EN, n),
+    },
+    {
+      name: "WE5 §2.2's English follow-up exclusion deleted — bare `stroke` fires again",
+      dir: "widening", view: "en", floor: 30,
+      mutantFires: (n) => termReEn("stroke").test(n),
+    },
+    {
+      name: "WE6 §2.1's English grief-idiom exclusion deleted — «my heart is heavy»",
+      dir: "widening", view: "en", floor: 8,
+      mutantFires: A_NO_IDIOM,
+    },
+    {
+      name: "WE7 §2.6's English past / resolved exclusions deleted — «had a fever last month»",
+      dir: "widening", view: "en", floor: 100,
+      mutantFires: F_MARKER,
+    },
+  );
+
+  // ── ENGLISH NARROWINGS ──────────────────────────────────────────────────────────────────
+  // NE1 is the bug the comment above `bodyTemperature` records, in the script where it is
+  // WORSE: «38 days old» and «40 weeks» are how a parent of a newborn writes an age, and the
+  // discriminating values are 35, 36 and 37 — read as a temperature they fall under 38.0 and
+  // the class returns NO HIT AT ALL for the population §2.6 exists for.
+  const MUT_TEMP_NO_AGE_GUARD = (n: string): number | null => {
+    const re = /(?<![\d.])(\d{2,3}(?:\.\d)?)(?![\d])/g;
+    for (let m = re.exec(n); m; m = re.exec(n)) {
+      const v = Number(m[1]);
+      if (v >= 35 && v <= 43) return v;
+      const c = Math.round(((v - 32) * 5 / 9) * 10) / 10;
+      if (c >= 35 && c <= 43) return c;
+    }
+    return null;
+  };
+  const MUT_TEMP_NO_F = (n: string): number | null => {
+    const re = /(?<![\d.])(\d{2,3}(?:\.\d)?)(?![\d])/g;
+    for (let m = re.exec(n); m; m = re.exec(n)) {
+      const v = Number(m[1]);
+      if (/^\s*(?:day|days|week|weeks|month|months|year|years)/.test(n.slice(m.index + m[0].length))) continue;
+      if (v >= 35 && v <= 43) return v;
+    }
+    return null;
+  };
+  const unApos = (t: string) => t
+    .replace(/(^|[a-z])cant([a-z]|$)/g, "$1can't$2").replace(/(^|[a-z])wont([a-z]|$)/g, "$1won't$2")
+    .replace(/\bcant\b/g, "can't").replace(/\bwont\b/g, "won't").replace(/\bisnt\b/g, "isn't")
+    .replace(/\bcouldnt\b/g, "couldn't").replace(/\bdidnt\b/g, "didn't").replace(/\bdoesnt\b/g, "doesn't");
+  const D_ARM2 = adjEn(AIRWAY.sets.DIFFICULTY_EN, AIRWAY.sets.DIFFICULTY_MID_EN, AIRWAY.sets.BREATHE_NOUN_EN);
+  const D_ARM2_DEN = adjEn(AIRWAY.sets.DENIAL_HEAD_EN, AIRWAY.sets.DENIAL_MID_EN, AIRWAY.sets.DIFFICULTY_EN);
+  const D_PART = adjEn(AIRWAY.sets.PART_EN, AIRWAY.sets.PART_MID_EN, [...AIRWAY.sets.SWELL_EN, ...AIRWAY.sets.CLOSE_EN]);
+  const D_PART_REV = adjEn([...AIRWAY.sets.SWELL_EN, ...AIRWAY.sets.CLOSE_EN], AIRWAY.sets.PART_MID_EN, AIRWAY.sets.PART_EN);
+  const airwayEnWith = (neg: readonly string[], phrase: readonly string[], std: readonly string[]) =>
+    (n: string) => adjEn(neg, AIRWAY.sets.MID_EN, AIRWAY.sets.BREATHE_EN).test(n)
+      || (D_ARM2.test(n) && !D_ARM2_DEN.test(n)) || D_PART.test(n) || D_PART_REV.test(n)
+      || hasEn(phrase, n) || hasEn(std, n);
+
+  mutations.push(
+    {
+      name: "NE1 the age-unit guard removed from the ENGLISH temperature reader  (an age read as a fever)",
+      dir: "narrowing", view: "en", ruleIdPrefix: "F.", ruleIdEndsWith: "_en", floor: 40,
+      mutantArm: (n) => { const v = MUT_TEMP_NO_AGE_GUARD(n); return !(v !== null && v < 38.0); },
+    },
+    {
+      name: "NE2 Fahrenheit dropped from the ENGLISH temperature reader  («102 F» · «103 degrees»)",
+      dir: "narrowing", view: "en", ruleIdPrefix: "F.", ruleIdEndsWith: "_en", floor: 3,
+      mutantArm: (n) => {
+        if (MUT_TEMP_NO_F(n) !== null) return true;
+        return hasEn(INFANT_FEVER.sets.PRED_INFANT_EN, n) || hasEn(INFANT_FEVER.sets.PRED_CHILD_EN, n)
+          || hasEn(INFANT_FEVER.sets.PRED_PERSIST_EN, n) || hasEn(INFANT_FEVER.sets.PRED_REDFLAG_EN, n)
+          || (ageInMonthsEn(n) ?? 99) < 3;
+      },
+    },
+    {
+      name: "NE3 the ENGLISH sets written UN-NORMALIZED — the apostrophe restored  (T1, in English)",
+      dir: "narrowing", view: "en", ruleIdPrefix: "D.", ruleIdEndsWith: "_en", floor: 100,
+      mutantArm: airwayEnWith(AIRWAY.sets.NEG_EN.map(unApos), AIRWAY.sets.PHRASE_EN.map(unApos), AIRWAY.sets.STANDALONE_EN.map(unApos)),
+    },
+    {
+      name: "NE4 «stopped» and «struggling» dropped from the ENGLISH negation slot",
+      dir: "narrowing", view: "en", ruleIdPrefix: "D.", ruleIdEndsWith: "_en", floor: 50,
+      mutantArm: airwayEnWith(AIRWAY.sets.NEG_EN.filter((x) => x !== "stopped" && x !== "struggling"),
+        AIRWAY.sets.PHRASE_EN, AIRWAY.sets.STANDALONE_EN),
+    },
+  );
+
   let inert = 0;
   for (const m of mutations) {
     if (m.dir === "widening") {
-      const caught = ALL_QUIET.filter((t) => m.mutantFires!(N(t)) && !fires(t));
+      const caught = ALL_QUIET.filter((t) => m.mutantFires!(NV(t, m.view)) && !fires(t));
       console.log(`   ${String(caught.length).padStart(5)} quiet strings FIRE under  ${m.name}  (floor ${m.floor})`);
       if (caught.length) console.log(`         e.g. «${caught[0]}»  …  «${caught[caught.length - 1]}»`);
       if (caught.length < m.floor) inert++;
@@ -909,7 +1263,8 @@ console.log("\n── §M  MUTATION: narrowing AND widening ──────�
       const lost = ALL_FIRE.filter((t) => {
         const h = detectRedFlag(t);
         if (!h || !h.ruleId.startsWith(m.ruleIdPrefix!)) return false;
-        return !m.mutantArm!(N(t));
+        if (m.ruleIdEndsWith && !h.ruleId.endsWith(m.ruleIdEndsWith)) return false;
+        return !m.mutantArm!(NV(t, m.view));
       });
       console.log(`   ${String(lost.length).padStart(5)} Fires entries GO SILENT under ${m.name}  (floor ${m.floor})`);
       if (lost.length) console.log(`         e.g. «${lost[0]}»  …  «${lost[lost.length - 1]}»`);
@@ -1182,7 +1537,7 @@ console.log("\n── §W  WIRING, AND THE SHARED-LEXICON BINDING ────�
   // §3.5 / §11.10 — FAYSAL DOES NOT REWIRE THE PHONETIC NET. No fuzzy matching on typed text:
   // no edit distance, no phonetic folding, no "within 2 of a safety word". The Founder retired
   // that net after «هلا والله» became an allergy consultation in front of him.
-  const src = ["normalize", "match", "lexicon", "detect", "rail", "triage-hold", "index"]
+  const src = ["normalize", "match", "lexicon", "lexicon-en", "detect", "rail", "triage-hold", "index"]
     .map((f) => readFileSync(resolve(import.meta.dirname, `../lib/health/safety/${f}.ts`), "utf8"))
     .join("\n")
     .split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
@@ -1198,7 +1553,10 @@ console.log("\n── §W  WIRING, AND THE SHARED-LEXICON BINDING ────�
 
 // ═══ TOTALS ═════════════════════════════════════════════════════════════════════════════════
 console.log(`\n   corpus totals: ${mustFireTotal} MUST_FIRE · ${mustQuietTotal} MUST_BE_QUIET · ${mustFireTotal + mustQuietTotal} assertions`);
-console.log(`   …of which ${[...QUIET_BY_FAMILY.entries()].filter(([k]) => k.startsWith("Q")).reduce((n, [, v]) => n + v.length, 0)} are ordinary clinic strings derived from ARABIC, not from the detector's axes`);
+const ordinaryCount = (pred: (k: string) => boolean) =>
+  [...QUIET_BY_FAMILY.entries()].filter(([k]) => pred(k)).reduce((n, [, v]) => n + v.length, 0);
+console.log(`   …of which ${ordinaryCount((k) => k.startsWith("Q") && !k.startsWith("QE"))} are ordinary clinic strings derived from ARABIC`);
+console.log(`   and ${ordinaryCount((k) => k.startsWith("QE"))} from ENGLISH — both from a clinic inbox's own vocabulary, neither from the detector's axes`);
 console.log(`\n   NOT PROVEN HERE, AND BLOCKING (§12): the clinical correctness of every threshold;`);
 console.log(`   the emergency/urgent boundary; the infant-fever cut-offs; the rail's wording; the`);
 console.log(`   self-harm copy and escalation; the mental-health number (ships BLANK); which sites`);

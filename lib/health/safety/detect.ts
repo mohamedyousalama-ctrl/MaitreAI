@@ -306,6 +306,11 @@ const TAKE_HIT_GAPPED = new RegExp(
   adj(POISONING.sets.VERB_TAKE, [], ALL_OBJECTS).source.replace(" ?", " ?(?:[^ ]+ ){0,2}"),
 );
 
+/** «دوايي» / «حبوبي» — the speaker's own medication in Arabic. */
+// Written in POST-normalization spelling, like every other pattern here: «دوائي»
+// folds to «دوايي», and listing both is a duplicate the §N stability check rejects.
+const MY_MEDICATION_AR = /(?:^|\s)(?:دوايي|دواي|حبوبي|علاجي)(?![ء-ي])/;
+
 function poisoning(clause: string): Candidate | null {
   const S = POISONING.sets;
   const std = pick(S.STANDALONE, clause);
@@ -322,7 +327,17 @@ function poisoning(clause: string): Candidate | null {
   if (!swallow && take) {
     const poisonObject = has(S.SITE_POISON, clause);
     const qualified = has(S.QUALIFIER, clause);
-    if (!poisonObject && !qualified) return null;
+    // «MY medicine» is ordinary when I am the one taking it and alarming when somebody
+    // else is: «ابني أخذ دوايي» was silent because the possessive forms were not
+    // objects at all, and adding them as QUALIFIERS instead made «أخذت دوايي الصبح»
+    // fire — the exact sentence T3 exists for. The separator is not the possessive,
+    // it is WHO IS TAKING: a person marker in the clause and no first-person verb.
+    // THE VERB CANNOT SEPARATE THEM. «أخذتْ» (she took) and «أخذتُ» (I took) are the
+    // same consonants, so «بنتي أخذت حبوبي» and «أخذت حبوبي» differ only by the
+    // person marker at the front. That marker is the whole test: someone else is
+    // named in the clause, and the medication is the speaker's.
+    const mineButNotMine = MY_MEDICATION_AR.test(clause) && hasPersonAnchor(clause);
+    if (!poisonObject && !qualified && !mineButNotMine) return null;
   }
   return { tier: past ? "urgent" : "emergency", termAr: obj, ruleId: past ? "G.ingestion_past" : "G.ingestion" };
 }
@@ -361,13 +376,17 @@ function selfHarmEn(clause: string): Candidate | null {
   const S = SELF_HARM.sets;
   if (hasEn(S.BEREAVEMENT_EN, clause)) return null;
   if (hasEn(S.IDIOM_EXCL_EN, clause)) return null;
-  const std = pickEn(S.STANDALONE_EN, clause);
-  if (!std) return null;
   // «I cut myself shaving» is an injury report and «I cut myself again last night» is not, and
   // the two are one word apart. An enumerated accident term IN THE MESSAGE (§2.0 L5) scopes
-  // this arm only; §11.2 pairs both sentences so neither can be traded for the other.
-  if (/cut(ting)? myself/.test(std) && hasEn(S.ACCIDENT_EXCL_EN, clause)) return null;
-  return { tier: "emergency", termAr: std, ruleId: "I.standalone_en" };
+  // the `cut myself` members ALONE — tested per member, so an accident word cannot silence
+  // «I want to die» standing beside it — and §11.2 pairs both sentences so neither can be
+  // traded for the other.
+  for (const std of S.STANDALONE_EN) {
+    if (!termReEn(std).test(clause)) continue;
+    if (/cut(ting)? myself/.test(std) && hasEn(S.ACCIDENT_EXCL_EN, clause)) continue;
+    return { tier: "emergency", termAr: std, ruleId: "I.standalone_en" };
+  }
+  return null;
 }
 
 // ── §2.1 A — CARDIAC, ENGLISH ────────────────────────────────────────────────
@@ -389,6 +408,10 @@ function cardiacEn(clause: string): Candidate | null {
   if (std) return { tier: "emergency", termAr: std, ruleId: "A.standalone_en" };
   const term = pickEn(S.TERM_EN, clause);
   if (!term) return null;
+  // «my heart is heavy» IS GRIEF, and it is a term and a pressure predicate in three words.
+  // An enumerated closed compound in the message (§2.0 L5), scoping the TERM × PREDICATE arm
+  // only — a named cardiac event still fires through it, and so does any chest predicate.
+  if (hasEn(S.EXCL_IDIOM_EN, clause)) return null;
   if (A_TERM_PRED_EN.test(clause) || A_PRED_TERM_EN.test(clause)) {
     return { tier: "emergency", termAr: term, ruleId: "A.term_predicate_en" };
   }
@@ -407,18 +430,16 @@ const B_FAIL_TERM_EN = adjEn(STROKE.sets.PRED_FAILURE_EN, B_MIDS_EN, STROKE.sets
 function strokeEn(clause: string): Candidate | null {
   const S = STROKE.sets;
   const benign = hasEn(S.EXCL_BENIGN_EN, clause);
-  const std = pickEn(S.STANDALONE_EN, clause);
-  if (std) {
-    // THE FOLLOW-UP EXCLUSION SCOPES THE BARE NOUN AND NOTHING ELSE (§2.0 L5). §2.2's near-miss
-    // table rules «متابعة بعد الجلطة» and «موعد علاج طبيعي بعد الجلطة» quiet, and Arabic gets
-    // that free because bare `جلطة` is not a term. Bare `stroke` IS an English term — it
-    // shipped as one, and deleting it would take «my father had a stroke» with it — so the
-    // rehabilitation reading is named in the message instead. A clause carrying a FAST sign
-    // fires whatever else is in it.
-    const bareNoun = std === "stroke";
-    if (!bareNoun || !hasEn(S.EXCL_FOLLOWUP_EN, clause)) {
-      return { tier: "emergency", termAr: std, ruleId: "B.standalone_en" };
-    }
+  // THE FOLLOW-UP EXCLUSION SCOPES THE BARE NOUN AND NOTHING ELSE (§2.0 L5). §2.2's near-miss
+  // table rules «متابعة بعد الجلطة» and «موعد علاج طبيعي بعد الجلطة» quiet, and Arabic gets
+  // that free because bare `جلطة` is not a term. Bare `stroke` IS an English term — it shipped
+  // as one, and deleting it would take «my father had a stroke» with it — so the rehabilitation
+  // reading is named in the message instead. Tested PER MEMBER, so «stroke rehab, and her face
+  // is drooping» still fires on the FAST sign standing beside the excluded noun.
+  for (const std of S.STANDALONE_EN) {
+    if (!termReEn(std).test(clause)) continue;
+    if (std === "stroke" && hasEn(S.EXCL_FOLLOWUP_EN, clause)) continue;
+    return { tier: "emergency", termAr: std, ruleId: "B.standalone_en" };
   }
   // THE INTRANSITIVE ARM — the T6 inversion, in a second class and on a second axis.
   // «I CAN'T SPEAK ARABIC» is the commonest sentence in an expatriate clinic inbox and it is
@@ -481,12 +502,20 @@ function airwayEn(clause: string): Candidate | null {
   if (D_PART_SWELL_EN.test(clause) || D_SWELL_PART_EN.test(clause)) {
     return { tier: "emergency", termAr: pickEn(S.PART_EN, clause) ?? "throat", ruleId: "D.arm4_part_verb_en" };
   }
-  const ph = pickEn(S.PHRASE_EN, clause);
-  if (ph && (!D_NEEDS_PERSON_EN.includes(ph) || hasPersonAnchorEn(clause))) {
+  // A GUARDED MEMBER MUST NOT SILENCE ITS UNGUARDED SIBLINGS, and picking the longest match
+  // first and testing its guard afterwards does exactly that: «the bruise is turning blue and
+  // he is not breathing» would pick `turning blue`, fail its person anchor, and return with
+  // `not breathing` never consulted. So each member is tested with its own guard and the first
+  // that passes wins — the shape §2.6's red-flag loop already uses, where `خامل` is skipped
+  // with a `continue` rather than deciding the whole arm.
+  for (const ph of S.PHRASE_EN) {
+    if (!termReEn(ph).test(clause)) continue;
+    if (D_NEEDS_PERSON_EN.includes(ph) && !hasPersonAnchorEn(clause)) continue;
     return { tier: "emergency", termAr: ph, ruleId: "D.arm6_phrase_en" };
   }
-  const std = pickEn(S.STANDALONE_EN, clause);
-  if (std && !(std === "choking" && hasEn(S.EXCL_HAZARD_EN, clause))) {
+  for (const std of S.STANDALONE_EN) {
+    if (!termReEn(std).test(clause)) continue;
+    if (std === "choking" && hasEn(S.EXCL_HAZARD_EN, clause)) continue;
     return { tier: "emergency", termAr: std, ruleId: "D.standalone_en" };
   }
   return null;
@@ -605,6 +634,13 @@ const G_OBJECTS_EN = [...POISONING.sets.SITE_POISON_EN, ...POISONING.sets.SITE_M
 const G_SWALLOW_EN = adjEnAny(POISONING.sets.VERB_SWALLOW_EN, G_OBJECTS_EN, 4);
 const G_TAKE_EN = adjEnAny(POISONING.sets.VERB_TAKE_EN, G_OBJECTS_EN, 4);
 
+/** «my medicine», «my pills», «my blood pressure tablets» — the speaker's own
+ *  medication, with room for the two words people put in front of the noun. */
+const MY_MEDICATION_EN = /\bmy (?:[a-z]+\s+){0,2}(?:medicine|medication|meds|pills|tablets|prescription|drugs)\b/;
+/** «I took …» / «I've taken …» — the speaker is the one taking it, which is T3's
+ *  ordinary case and must stay quiet however the sentence is phrased. */
+const FIRST_PERSON_TAKER_EN = /\b(?:i|i've|i have|ive)\s+(?:just\s+|already\s+)?(?:took|take|taken|swallowed)\b/;
+
 function poisoningEn(clause: string): Candidate | null {
   const S = POISONING.sets;
   const past = hasEn(S.EXCL_PAST_EN, clause);
@@ -619,7 +655,16 @@ function poisoningEn(clause: string): Candidate | null {
   // qualifier is a prescription being followed. SWALLOW verbs are untouched: «my daughter
   // swallowed pills» fires with no qualifier at all, because SWALLOWING pills is alarming on
   // its own and TAKING them is not. §11.2 pairs the two so neither can be traded away.
-  if (!swallow && take && !hasEn(S.SITE_POISON_EN, clause) && !hasEn(S.QUALIFIER_EN, clause)) return null;
+  const owned = adjEn(S.QUALIFIER_OWNER_EN, [], G_OBJECTS_EN).test(clause);
+  // «MY medicine» is ordinary when I am the one taking it and alarming when somebody
+  // else is: «my son took my medicine» was silent, because "my" was left out of the
+  // owner list precisely so that «I took my medicine this morning» stays quiet. The
+  // separator is not the possessive — it is WHO IS TAKING. A third-person subject
+  // with the speaker's own medication is a child reaching the parent's box, which is
+  // the commonest paediatric poisoning presentation there is.
+  const mineButNotMine = MY_MEDICATION_EN.test(clause) && hasPersonAnchorEn(clause) && !FIRST_PERSON_TAKER_EN.test(clause);
+  if (!swallow && take && !hasEn(S.SITE_POISON_EN, clause) && !hasEn(S.QUALIFIER_EN, clause) && !owned && !mineButNotMine)
+    return null;
   return { tier: past ? "urgent" : "emergency", termAr: obj, ruleId: past ? "G.ingestion_past_en" : "G.ingestion_en" };
 }
 

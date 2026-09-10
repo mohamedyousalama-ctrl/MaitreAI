@@ -70,6 +70,16 @@ export const CARDIAC_EN: EnglishArm = {
       "sweating", "cold sweat", "sweaty", "clammy", "dizzy", "nauseous", "nausea",
       "radiating", "down my left arm", "down his left arm", "into my jaw", "between my shoulders",
     ],
+    // ENGLISH PUTS A PRESSURE PREDICATE INSIDE ITS GRIEF IDIOM, AND ARABIC DOES NOT. §2.1's
+    // near-miss table already rules «قلبي معكم» and «من القلب أشكركم» quiet, and it gets that
+    // free: `قلبي` is a term but «معكم» is not a predicate. «my heart is heavy» is a term AND a
+    // predicate in three words, and §QE found it firing `cardiac/emergency` on a sentence about
+    // bereavement. These are CLOSED COMPOUNDS — a fixed possessive plus a fixed complement, the
+    // shape §2.9 says IS enumerable — and the exclusion scopes the TERM × PREDICATE arm only.
+    EXCL_IDIOM_EN: [
+      "heart is heavy", "heart feels heavy", "heavy heart", "heart goes out", "from the heart", "heart of gold",
+      "heart is with you", "heart to heart", "heart is broken", "broken heart",
+    ],
     STANDALONE_EN: [
       "chest pain", "chest pains", "heart attack", "pressure in my chest", "cardiac arrest",
       "angina", "myocardial infarction", "crushing chest pain",
@@ -107,6 +117,20 @@ export const CARDIAC_EN: EnglishArm = {
     // §11.1's denial-opener row, in English. §1.2: a denial may suppress VOCABULARY, never a
     // SYMPTOM. «I have no other problems but my chest hurts and I'm sweating» is an infarct.
     { text: "I have no other problems but my chest hurts and I'm sweating", tier: "emergency" },
+    {
+      text: "I had a heart attack in 2019 and I need a cardiology follow up", tier: "emergency",
+      acceptedOverFire:
+        "A named cardiac event fires inside a follow-up frame, and §2.2's English arm carries " +
+        "an exclusion for exactly this shape while §2.1's does not. The difference is which " +
+        "row of §2 applies, not an oversight. §2.2's near-miss table rules «متابعة بعد الجلطة» " +
+        "quiet because BARE `جلطة` is not a term — and bare `stroke` IS the English term, so " +
+        "the exclusion there restores the outcome the spec states. §2.1's «جلطه قلب» is a " +
+        "PHRASE term that the spec says fires ALONE, and «heart attack» is its exact analogue; " +
+        "the row §2.1 rules quiet, «متابعة بعد جلطة أبوي», is about the bare noun, which this " +
+        "arm does not carry either. Narrowing it would be a veto invented for a HARD class " +
+        "where §1.3 prices the under-fire at «death, minutes» and §1.5 R1 forbids frame vetoes " +
+        "outright, so it fires and the trade is carried to the physician with §12 row 1.",
+    },
   ],
   nearMiss: [
     { text: "I need a chest x-ray", paired: "pain in my chest" },
@@ -120,6 +144,10 @@ export const CARDIAC_EN: EnglishArm = {
     { text: "my heart medication needs a refill" },
     { text: "the report says my heart is fine" },
     { text: "I have high blood pressure and I take pills for it" },
+    { text: "my heart is heavy after the news", paired: "heaviness in my chest since this morning" },
+    { text: "my heart feels heavy since the funeral", paired: "heaviness in my chest since this morning" },
+    { text: "with a heavy heart I am cancelling the appointment", paired: "heaviness in my chest since this morning" },
+    { text: "my heart goes out to the family" },
     { text: "work pressure is killing me, I need a day off" },
   ],
   mirror: {
@@ -169,6 +197,20 @@ export const CARDIAC_EN: EnglishArm = {
       },
     },
     STANDALONE_EN: { onlyFinding: "named cardiac events in English and franco — no benign clinic reading" },
+    EXCL_IDIOM_EN: {
+      per: {
+        "heart is heavy": ["my heart is heavy after the news"],
+        "heart feels heavy": ["my heart feels heavy since the funeral"],
+        "heavy heart": ["with a heavy heart i am cancelling the appointment"],
+        "heart goes out": ["my heart goes out to the family"],
+        "from the heart": ["from the heart, thank you all"],
+        "heart of gold": ["he has a heart of gold, that doctor"],
+        "heart is with you": ["my heart is with you in this"],
+        "heart to heart": ["can i have a heart to heart with the doctor"],
+        "heart is broken": ["my heart is broken about the news"],
+        "broken heart": ["a broken heart is not a clinic thing, sorry"],
+      },
+    },
   },
 };
 
@@ -679,6 +721,16 @@ export const AIRWAY_EN: EnglishArm = {
     { text: "asthma attack and the inhaler isn't working", tier: "emergency" },
     { text: "the inhaler is not working", tier: "emergency" },
     { text: "I want an appointment but I can't breathe", tier: "emergency" },
+    {
+      text: "a swollen face after the dental extraction, is it normal?", tier: "emergency",
+      acceptedOverFire:
+        "Post-extraction facial swelling raises the airway rail. §2.4's Arabic part-and-" +
+        "swelling arm behaves identically on «وجهي منتفخ بعد خلع الضرس» and §2.4's near-miss " +
+        "table has no row for it, so this is the shipped trade in a second script rather than " +
+        "a new one. The exclusion that would close it — «after the extraction» — is one word " +
+        "from «after the injection», and facial swelling after an injection is anaphylaxis, " +
+        "which is why no exclusion is written. Carried to the physician with §12 row 1.",
+    },
   ],
   nearMiss: [
     { text: "breathing exercises class", paired: "difficulty breathing" },
@@ -1076,6 +1128,7 @@ export const INFANT_FEVER_EN: EnglishArm = {
     PRED_REDFLAG_EN: {
       per: {
         "unresponsive": ["the clinic is unresponsive on the phone", "the app is unresponsive since the update"],
+        "lethargic": ["the booking system is lethargic today"],
         "floppy": ["the floppy disk in the old file cabinet, do you still keep records like that"],
         "stiff neck": ["a stiff neck from the pillow, which clinic"],
         "neck is stiff": ["my neck is stiff from the way i slept"],
@@ -1083,7 +1136,7 @@ export const INFANT_FEVER_EN: EnglishArm = {
       onlyFindingMembers: [
         "seizure", "seizures", "convulsion", "convulsions", "had a fit",
         "wont wake up", "will not wake up", "cant wake him", "cant wake her", "cant wake him up",
-        "not waking up", "lethargic", "not feeding", "wont feed", "refusing to feed",
+        "not waking up", "not feeding", "wont feed", "refusing to feed",
         "wont drink", "refusing the bottle", "not taking the bottle", "not drinking anything",
         "rash that doesnt fade", "rash doesnt fade", "doesnt fade when i press", "non blanching",
         "purple spots", "spots that dont fade",
@@ -1216,8 +1269,18 @@ export const POISONING_EN: EnglishArm = {
     // SWALLOWING pills is alarming on its own and TAKING them is a prescription being followed.
     QUALIFIER_EN: [
       "too many", "a lot of", "lots of", "whole bottle", "the whole box", "all the", "handful",
-      "a box of", "overdose", "by mistake", "by accident", "his mother", "her mother",
-      "my mother", "his sister", "her brother", "the wrong", "double dose", "twice the dose",
+      "a box of", "overdose", "by mistake", "by accident", "double dose", "twice the dose",
+    ],
+    // THE OWNERSHIP QUALIFIER IS MATCHED ADJACENT TO THE OBJECT AND THE QUANTITY ONE IS NOT,
+    // and §QE is what forced the split: «my mother took her medication on time» carries «my
+    // mother» in the clause and it is the SUBJECT, not the owner of the pills. 169 ordinary
+    // strings — a chronic patient's daily sentence — raised a poisoning emergency and an
+    // operator-release-only booking lock. Adjacent, «took his mother tablets» still fires and
+    // «my mother took the tablets» does not. `the wrong` is here for the same reason: «I took
+    // my medicine at the wrong time» is ordinary and «he took the wrong medicine» is not.
+    QUALIFIER_OWNER_EN: [
+      "his mother", "her mother", "my mother", "his father", "her father", "his sister",
+      "her brother", "someone else", "the wrong",
     ],
     STANDALONE_EN: [
       "overdose", "overdosed", "took too many pills", "swallowed pills", "swallowed a battery",
@@ -1254,6 +1317,8 @@ export const POISONING_EN: EnglishArm = {
     { text: "I take pills for blood pressure" },
     { text: "do you have this medication in stock?" },
     { text: "I need a refill for my daughter's drops" },
+    { text: "my mother took her medication on time", paired: "my son took his mother's tablets" },
+    { text: "I took my medicine at the wrong time, does it matter?", paired: "he took the wrong medicine by mistake" },
   ],
   mirror: {
     VERB_SWALLOW_EN: {
@@ -1326,16 +1391,23 @@ export const POISONING_EN: EnglishArm = {
         "a box of": ["a box of gloves, do you sell them"],
         "by mistake": ["i booked the wrong branch by mistake"],
         "by accident": ["i cancelled by accident, can you restore it"],
-        "his mother": ["his mother file is the one with the insurance"],
-        "her mother": ["her mother name is on the booking"],
-        "my mother": ["my mother appointment is at ten"],
-        "his sister": ["his sister has the same file number"],
-        "her brother": ["her brother is booked after her"],
-        "the wrong": ["i went to the wrong branch"],
         "double dose": ["is a double dose covered by insurance"],
         "twice the dose": ["the leaflet says twice the dose for adults"],
       },
       onlyFindingMembers: ["overdose"],
+    },
+    QUALIFIER_OWNER_EN: {
+      per: {
+        "his mother": ["his mother is the one with the insurance"],
+        "her mother": ["her mother name is on the booking"],
+        "my mother": ["my mother took her medication on time"],
+        "his father": ["his father will bring him to the appointment"],
+        "her father": ["her father paid the invoice already"],
+        "his sister": ["his sister has the same file number"],
+        "her brother": ["her brother is booked after her"],
+        "someone else": ["someone else booked that slot before me"],
+        "the wrong": ["i took my medicine at the wrong time, does it matter"],
+      },
     },
     STANDALONE_EN: { onlyFinding: "ingestion events in English — overdose, swallowed poison, a swallowed battery" },
     EXCL_PAST_EN: {

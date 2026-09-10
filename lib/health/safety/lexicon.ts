@@ -1062,6 +1062,11 @@ export const POISONING: ClassSpec = withEn({
     SITE_MEDICATION: [
       "دوا", "دواء", "الدوا", "الدواء", "الكبار", "دواء الكبار", "حبوب",
       "علاج", "العلاج", "روشته", "الروشته",
+      // «ابني بلع دوايي» — my son swallowed MY medicine — was silent, because the
+      // possessive forms are different words and none of them was listed. A child
+      // reaching a parent's medication is one of the commonest paediatric poisonings
+      // there is, and the sentence that reports it is this one. Driven.
+      "دوايي", "دواي", "حبوبي", "علاجي", "دواها", "دواه", "حبوبها", "حبوبه",
     ],
     STANDALONE: ["تسمم", "اخذ جرعه زايده", "جرعه زايده", "اشتم غاز", "بلع بطاريه"],
     EXCL_PAST: ["قبل اسبوع", "قبل شهر", "قبل كم يوم", "قبل يومين", "قبل سنه", "صار لي قبل", "كان قبل"],
